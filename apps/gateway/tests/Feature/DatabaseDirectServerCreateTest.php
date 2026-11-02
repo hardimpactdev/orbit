@@ -39,34 +39,38 @@ it('records a server whose run inputs hold vault key names, never a secret', fun
     expect($intent['container_input'])->toBe(['image' => $driver === 'pgsql' ? 'postgres:18' : ($driver === 'redis' ? 'valkey/valkey:8.0' : 'mysql:8.0')]);
     expect($intent['ssh_execution']['target']['host'])->toBe('10.44.0.9');
     $commands = $intent['commands'];
-    $run = implode(' ', $commands['run_first']);
-    expect(str_contains($run, '--env-file /run/orbit-database-server-create-'.$operation->id.'-first.env'))->toBe($driver !== 'redis');
-    expect($commands['run_final'])->not->toContain('--env-file');
-    expect($run)->toContain('orbit.process.id='.$server->process_id)->toContain('--health-start-period 300s');
+    $start = implode(' ', $commands['start']);
+    expect(str_contains($start, '--env-file /dev/stdin'))->toBe($driver !== 'redis');
+    expect(implode(' ', $commands['scrub']))->not->toContain('--env-file');
+    expect($start)->toContain('orbit.process.id='.$server->process_id)->toContain('--health-start-period 300s');
     expect(array_slice($commands['wait'], 0, 5))->toBe(['timeout', '60', 'docker', 'exec', $intent['container']]);
     expect($commands['acl_path'])->toBe($driver === 'redis' ? '/var/lib/docker/volumes/orbit-proof-data/_data/users.acl' : '');
-    expect(array_keys($input['execution_secrets']))->toBe(['client_env', ...($driver === 'redis' ? ['acl'] : ['first_env'])]);
-    expect($input['execution_secrets']['client_env'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'database-server-'.$server->id.'-client-env']);
+    expect(array_keys($input['execution_secrets']))->toBe(['login', 'start', ...($driver === 'redis' ? ['acl'] : [])]);
     expect(json_encode($input))->not->toContain($server->root_password);
     expect(json_encode($operation->fresh()->toArray()))->not->toContain($server->root_password);
     expect(json_encode($server->process->toArray()))->not->toContain($server->root_password);
     $puts = collect(app(WebSocketClient::class)->sent)->where('type', 'vault.put')->pluck('payload.value', 'payload.key');
-    $variable = ['mysql' => 'MYSQL_PWD', 'pgsql' => 'PGPASSWORD', 'redis' => 'REDISCLI_AUTH'][$driver];
-    expect($puts['database-server-'.$server->id.'-client-env'])->toBe($variable.'='.$server->root_password."\n");
-    if ($driver !== 'redis') {
-        expect($puts['database-server-'.$server->id.'-first-env'])->toBe(['mysql' => 'MYSQL_ROOT_PASSWORD', 'pgsql' => 'POSTGRES_PASSWORD'][$driver].'='.$server->root_password."\n");
-    }
+    expect($puts['database-server-create-login-'.$operation->id])->toBe($server->root_password."\n".($driver === 'redis' ? "PING\n" : "SELECT 1;\n"));
+    expect($puts['database-server-create-start-'.$operation->id])->toBe($driver === 'redis' ? "\n" : ['mysql' => 'MYSQL_ROOT_PASSWORD', 'pgsql' => 'POSTGRES_PASSWORD'][$driver].'='.$server->root_password."\n");
     if ($driver === 'redis') {
         expect($puts['database-server-create-intent-'.$operation->id])->toStartWith('user default on #');
     }
 })->with(['mysql', 'pgsql', 'redis']);
 
-it('records the failed step and error code of a failed run on the server', function (): void {
+it('maps the failed step of the native result to the server error code', function (): void {
     $operation = ($this->create)('mysql');
     $this->postJson('/api/v1/direct-operations/'.$operation->id.'/result', ['run_id' => $this->runId, 'status' => 'failed', 'started_at' => '2026-10-30T19:00:00.000Z', 'finished_at' => '2026-10-30T19:00:01.000Z',
-        'error_code' => 'database.server_unhealthy', 'result' => ['failed_step' => 'Wait until healthy', 'error_code' => 'database.server_unhealthy']])->assertOk();
+        'error_code' => 'swamp.step_failed', 'result' => ['steps' => ['Wait until healthy' => ['status' => 'failed']], 'summary' => ['status' => 'failed', 'succeeded' => 3, 'failed' => 1, 'skipped' => 1, 'failed_steps' => ['Wait until healthy']]]])->assertOk();
     $server = DatabaseServer::query()->sole();
     expect([$server->status->value, $server->failed_step, $server->error_code])->toBe(['failed', 'Wait until healthy', 'database.server_unhealthy']);
+});
+
+it('fails a run whose admin login check did not answer', function (): void {
+    $operation = ($this->create)('mysql');
+    $this->postJson('/api/v1/direct-operations/'.$operation->id.'/result', ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-30T19:00:00.000Z', 'finished_at' => '2026-10-30T19:00:01.000Z',
+        'result' => ['steps' => ['Check the admin login' => ['status' => 'succeeded', 'stdout' => "ERROR 1045 (28000): Access denied\n"]], 'summary' => ['status' => 'succeeded', 'succeeded' => 5, 'failed' => 0, 'skipped' => 1, 'failed_steps' => []]]])->assertOk();
+    $server = DatabaseServer::query()->sole();
+    expect([$operation->fresh()->status->value, $server->status->value, $server->failed_step, $server->error_code])->toBe(['failed', 'failed', 'Check the admin login', 'database.server_login_failed']);
 });
 
 it('refuses a Node without a stored SSH host key before it records anything', function (): void {
@@ -79,7 +83,8 @@ it('projects native server success once and refuses later private reads', functi
     $operation = ($this->create)('mysql');
     $server = DatabaseServer::query()->sole();
     $path = '/api/v1/direct-operations/'.$operation->id;
-    $result = ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-30T19:00:00.000Z', 'finished_at' => '2026-10-30T19:00:01.000Z', 'result' => ['backend' => 'active']];
+    $result = ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-30T19:00:00.000Z', 'finished_at' => '2026-10-30T19:00:01.000Z',
+        'result' => ['steps' => ['Check the admin login' => ['status' => 'succeeded', 'stdout' => "1\n"]], 'summary' => ['status' => 'succeeded', 'succeeded' => 5, 'failed' => 0, 'skipped' => 1, 'failed_steps' => []]]];
     $intent = DatabaseExecutionIntent::recorded($operation->input['intent_id']);
     $intent->update(['payload' => array_diff_key($intent->payload, ['commands' => true])]);
     $this->postJson($path.'/result', $result)->assertOk();

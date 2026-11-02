@@ -43,14 +43,13 @@ The SQL user parent resolves private data inside its existing read boundary. The
 | Step | What it does |
 | --- | --- |
 | Pull the image | `@swamp/cfgmgmt/docker_image` keeps the image present. |
-| Create the volume, Write the ACL file | Valkey only. The ACL file holds password hashes and goes into the data volume with `@swamp/cfgmgmt/file` (0600). |
-| Write the first login | MySQL and PostgreSQL on an empty volume. The password variable goes into a 0600 env file. |
-| Remove the old container, Start the container | `docker rm --force`, then `docker run` with the env file. A rerun starts over from the data volume. |
-| Wait until ready | One bounded probe loop (`timeout 60`). The server accepts TCP only after its first-start initialization. |
-| Stop, remove and start the final container | MySQL and PostgreSQL. The final container runs without the password variable, on the same volume. |
-| Check the admin login | The admin logs in over TCP with the password from a 0600 env file. |
+| Write the ACL file | Valkey only. The ACL file holds password hashes and goes into the data volume with `@swamp/cfgmgmt/file` (0600). |
+| Start the container | One `docker run`. On a first start, `--env-file /dev/stdin` reads the password variable from the vault. A rerun keeps an existing container. |
+| Wait until healthy | One bounded probe loop (`timeout 60`). The server accepts TCP only after its first-start initialization. |
+| Check the admin login | One `docker exec -i` reads the password from the first stdin line and logs in over TCP. The Gateway checks the answer. |
+| Remove the first-start env | MySQL and PostgreSQL. One bounded command starts the container again without the password variable and waits for it. |
 
-The password reaches the vault under two server keys: `database-server-<id>-client-env` holds the admin login for clients, and `database-server-<id>-first-env` holds the first-start variable. A Valkey ACL file goes under `database-server-create-intent-<operation>`. No value enters the workflow inputs, a step output, or a command argument. Always-run steps remove both env files from the Node. The result names the failed step and its error code, for example `database.server_unhealthy`, and the server record keeps both.
+Each secret reaches the Node only on standard input, from one whole vault value per run: `database-server-create-start-<operation>` holds the first-start line, and `database-server-create-login-<operation>` holds the password line and the check. A Valkey ACL file goes under `database-server-create-intent-<operation>`. No value enters the workflow inputs, a step output, a file or a command argument. The run has no report step: the failed step names the error code, for example `database.server_unhealthy`, and the server record keeps both.
 
 `database:server:create` creates the server and its Process in one command. It refuses a server with an unfinished removal intent, and a Node without a stored SSH host key (`swamp.ssh_target_unavailable`).
 

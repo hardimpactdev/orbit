@@ -14,22 +14,9 @@ use App\Models\DatabaseServer;
  */
 final readonly class DatabaseServerAdminSecret
 {
-    public const string KEY_PATTERN = '^database-server-[1-9][0-9]*-(client-env|first-env)$';
+    public const string KEY_PATTERN = '^database-server-[1-9][0-9]*-client-env$';
 
     public const array EXECUTION_COPY = ['vault' => 'orbit-control-inputs', 'key_pattern' => self::KEY_PATTERN];
-
-    /**
-     * The first-start password as the Docker env file MySQL or PostgreSQL reads once on an empty data volume. A step
-     * writes it with cfgmgmt/file (0600), `docker run --env-file` reads it, and an always-run step removes it.
-     *
-     * @return array{vault: string, key: string}
-     */
-    public static function firstEnvCopy(DatabaseServer $server): array
-    {
-        $variable = DatabaseServerProcess::passwordVariable($server);
-
-        return app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', "database-server-{$server->id}-first-env", "{$variable}={$server->root_password}\n");
-    }
 
     /**
      * The admin login as a Docker env file, for clients run with `docker exec --env-file` (Q-DBAUTH). A step writes it

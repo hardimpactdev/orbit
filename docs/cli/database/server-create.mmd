@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, single-swamp-node, DECISIONS R1-R4 (root password by vault key), docs/reference/database-servers.md. Valkey adoption (--process, --connection) removed.
+  %% Tightened: flow-tighten 2026-11-02, rules 14, 22 (secrets from the vault on stdin, one bounded timeout wait, docker exec -i login; no script read, report or assert step).
   %% status: draft
   %% command: database:server:create
   %% kind: database_server.create
@@ -40,22 +41,21 @@ sequenceDiagram
   %%> - Database server app-mysql recorded with status provisioning
   %%> - task #5150 recorded with the full intent
   %%> - nothing has happened on the Node yet
-  GW->>SW: Store the logins<br/>vault orbit-control-inputs
+  GW->>SW: Store the root password<br/>vault orbit-control-inputs
   %%> What it does:
-  %%> - writes the admin login as an env file line under the server's own key `database-server-14-client-env`
-  %%> - for mysql and pgsql on an empty volume: writes the first-start variable under `database-server-14-first-env`
-  %%> - for redis: writes the ACL file, which holds only password hashes, under `database-server-create-intent-5150`
+  %%> - writes the first-start line `MYSQL_ROOT_PASSWORD=…` under `database-server-create-start-5150`
+  %%> - writes the login check, the root password line and `SELECT 1`, under `database-server-create-login-5150`
+  %%> - for redis: also writes the ACL file, which holds only password hashes, under `database-server-create-intent-5150`
   %%> Why:
-  %%> - the password never enters the intent, the run inputs, the Process record or a command argument (R3)
-  %%> - steps read each value whole with `vault.get` into a 0600 file (Q-SECRET)
+  %%> - the password never enters the intent, the run inputs, the Process record, a file or a command argument (R3)
+  %%> - steps read each value whole with `vault.get` and pass it on standard input
   GW->>SW: Start run, full intent<br/>operation-database-server-create
   %%> What it does:
   %%> - starts one Swamp run on serve (Node 209)
   %%> Inputs:
   %%> - driver, image, port, container name and volume
   %%> - the private bindings: Node 12's WireGuard address, and its LAN address when it has one
-  %%> - the vault key names of the logins and the ACL file, never the values
-  %%> - each docker command the run needs, rendered by the Gateway
+  %%> - the vault key names of the password and the ACL file, never the values
   %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
   GW-->>CLI: 202 Accepted<br/>task #5150
   %%> What you get:
@@ -68,71 +68,48 @@ sequenceDiagram
   %%> What it does:
   %%> - pulls `mysql:8.4`; an image that is already present is kept
   opt driver is redis
-    SW->>N: Create the volume<br/>docker volume create
+    SW->>N: Write the ACL file<br/>@swamp/cfgmgmt/file · 0600
     %%> What it does:
-    %%> - creates the data volume `orbit-app-valkey-data`; an existing volume is kept
-    SW->>N: Write the ACL file<br/>cfgmgmt file · users.acl 0600
-    %%> What it does:
-    %%> - writes `users.acl` into the volume with the official `@swamp/cfgmgmt/file` behavior
-    %%> - one line for the user `default` with the SHA-256 hash of the admin password, and one per ACL user
+    %%> - writes `users.acl` into the data volume with one line for the user `default` and the SHA-256 hash of the admin password
+    %%> - it holds only hashes
     %%> Why:
     %%> - Valkey starts only from this file; without it Valkey refuses to start, so a damaged server stays closed
+    %%> Repair:
+    %%> - on an active Valkey server, the same command rebuilds the file from the records, with every ACL user
   end
-  opt mysql or pgsql on an empty volume
-    SW->>N: Write the first login<br/>cfgmgmt file · env file 0600
-    %%> What it does:
-    %%> - writes `MYSQL_ROOT_PASSWORD` or `POSTGRES_PASSWORD` into a 0600 env file under `/run`
-  end
-  SW->>N: Remove the old container<br/>docker rm --force
+  SW->>N: Start the container<br/>stdin env · docker run
   %%> What it does:
-  %%> - removes a container left by an earlier run; the data volume keeps the data and the password
-  %%> Why:
-  %%> - a rerun starts over from the volume, so it needs no check of what the earlier run did
-  SW->>N: Start the container<br/>docker run · env file
-  %%> What it does:
-  %%> - starts `app-mysql` with the volume, the health probe and the port bound only on the private addresses
-  %%> - passes the first-start env file with `--env-file`
+  %%> - starts `app-mysql` with the volume, the health probe and the port bound only on the private addresses, as one `docker run` argv
+  %%> - for mysql and pgsql: `--env-file /dev/stdin` reads `MYSQL_ROOT_PASSWORD` or `POSTGRES_PASSWORD` from `vault.get`; no file holds it
+  %%> - for redis: no environment; Valkey runs with `--aclfile /data/users.acl`
+  %%> - a rerun keeps an existing container and continues from it
   %%> Never:
   %%> - binds `0.0.0.0`, an IPv6 wildcard or a public address
-  SW->>N: Wait until ready<br/>timeout 60 · probe loop
+  SW->>N: Wait until healthy<br/>@swamp/ssh exec · timeout 60
   %%> What it does:
-  %%> - runs the server's probe inside the container until it answers, at most 60 seconds (Q-WAIT)
+  %%> - one bounded command: `timeout 60` around the server's own probe, run in the container until it answers
+  %%> - MySQL and PostgreSQL accept TCP only after first-start initialization; 60 s without an answer fails the step
   %%> Why:
-  %%> - MySQL and PostgreSQL accept TCP only after their first-start initialization
-  opt mysql or pgsql on an empty volume
-    SW->>N: Stop the first container<br/>docker stop --time 60
-    %%> Why:
-    %%> - the first container carries the password variable in its environment
-    SW->>N: Remove the first container<br/>docker rm
-    SW->>N: Start the final container<br/>docker run · no env file
+  %%> - Swamp has no wait primitive, so one bounded command waits (Q-WAIT)
+  SW->>N: Check the admin login<br/>docker exec -i · SELECT 1
+  %%> What it does:
+  %%> - one `docker exec -i` that reads the root password from the first stdin line inside the container, logs in over TCP and runs `SELECT 1`
+  %%> - for redis: logs in as `default` and sends `PING`
+  %%> - the Gateway checks the answer, `1` or `PONG`, in the run's native result
+  %%> Why:
+  %%> - only the final server accepts this login, so the next step never recreates a container that is still initializing
+  opt driver is mysql or pgsql
+    SW->>N: Remove the first-start env<br/>recreate · wait again
+    %%> What it does:
+    %%> - one bounded command removes `app-mysql` and starts it again without `--env-file`; the data volume keeps the password
+    %%> - waits for the server's probe again; this is the end check for mysql and pgsql
     %%> Result:
     %%> - the password is absent from the container environment and `docker inspect`
-    SW->>N: Wait for the final server<br/>timeout 60 · probe loop
   end
-  SW->>N: Write the client login<br/>cfgmgmt file · env file 0600
-  %%> What it does:
-  %%> - writes `MYSQL_PWD`, `PGPASSWORD` or `REDISCLI_AUTH` into a 0600 env file under `/run`
-  SW->>N: Check the admin login<br/>docker exec · SELECT 1 or PING
-  %%> What it does:
-  %%> - logs in as the admin over TCP inside the container, with the env file
-  %%> Result:
-  %%> - `1` for mysql and pgsql, `PONG` for redis; anything else fails with `database.server_login_failed`
-  SW->>N: Remove the first login<br/>file absent · always
-  %%> What it does:
-  %%> - removes the first-start env file, whatever happened above
-  SW->>N: Remove the client login<br/>file absent · always
-  %%> What it does:
-  %%> - removes the client env file, whatever happened above
-  Note over SW: Report the result<br/>backend · failed_step · error_code
-  %%> What it does:
-  %%> - maps the first failed step to its error code, for example `database.server_unhealthy`
-  Note over SW: Fail on an error<br/>assert · exit code 0
-  %%> What it does:
-  %%> - fails the run when the report holds an `error_code`, so the task fails with that code
   alt every step succeeds
-    N-->>SW: ready, login works
+    N-->>SW: healthy, login works
     %%> Returns:
-    %%> - the server is ready and the admin login works
+    %%> - the container is healthy and the admin login works
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
     %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
@@ -142,9 +119,9 @@ sequenceDiagram
     %%> - task #5150 succeeds
     %%> - `database:create --server=app-mysql` can now create databases on it
   else a step fails
-    N--xSW: exit ≠ 0 or not ready
+    N--xSW: exit ≠ 0 or unhealthy
     %%> When:
-    %%> - the pull fails, the server is not ready within 60 seconds, or the admin login fails
+    %%> - the pull fails, the container does not become healthy, or the admin login fails
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
     %%> - which step failed and its error code, such as `database.server_start_failed`

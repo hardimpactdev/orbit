@@ -20,32 +20,37 @@ use Illuminate\Support\Facades\DB;
 /** The admitted intent as run inputs, and the server and Process records from the terminal result. */
 final readonly class DatabaseServerCreateProjection implements DirectOperationProjection
 {
+    private const array CODES = ['Pull the image' => 'database.server_image_pull_failed', 'Write the ACL file' => 'database.valkey_acl_failed',
+        'Start the container' => 'database.server_start_failed', 'Wait until healthy' => 'database.server_unhealthy',
+        'Check the admin login' => 'database.server_login_failed', 'Remove the first-start env' => 'database.server_scrub_failed'];
+
     public function input(Operation $operation): array
     {
         $input = ValidatedData::object($this->intent($operation)->payload['admission']['input'] ?? null);
         $server = DatabaseServer::query()->findOrFail($operation->target_id);
         $initialize = $input['initialize'] === true;
-        $secrets = ['client_env' => ['vault' => 'orbit-control-inputs', 'key' => "database-server-{$server->id}-client-env"]];
-        if ($initialize) {
-            $secrets['first_env'] = ['vault' => 'orbit-control-inputs', 'key' => "database-server-{$server->id}-first-env"];
-        }
+        $secrets = ['login' => ['vault' => 'orbit-control-inputs', 'key' => "database-server-create-login-{$operation->id}"],
+            'start' => ['vault' => 'orbit-control-inputs', 'key' => "database-server-create-start-{$operation->id}"]];
         if ($server->driver === DatabaseDriver::Redis) {
             $secrets['acl'] = ['vault' => 'orbit-control-inputs', 'key' => "database-server-create-intent-{$operation->id}"];
         }
         if (! $operation->status->terminal()) {
-            $secrets['client_env'] = DatabaseServerAdminSecret::clientEnvCopy($server);
-            if ($initialize) {
-                $secrets['first_env'] = DatabaseServerAdminSecret::firstEnvCopy($server);
-            }
+            $copy = app(SwampCommandStep::class);
+            // The admin password is the first stdin line of the login check, followed by its statement (Q-DBAUTH).
+            $login = $server->driver === DatabaseDriver::Redis ? "PING\n" : "SELECT 1;\n";
+            $secrets['login'] = $copy->executionCopy('orbit-control-inputs', $secrets['login']['key'], "{$server->root_password}\n{$login}");
+            // `docker run --env-file /dev/stdin` reads the first-start password; a later start reads a blank line.
+            $start = $initialize ? DatabaseServerProcess::passwordVariable($server)."={$server->root_password}\n" : "\n";
+            $secrets['start'] = $copy->executionCopy('orbit-control-inputs', $secrets['start']['key'], $start);
             if (isset($secrets['acl'])) {
-                $secrets['acl'] = app(SwampCommandStep::class)->executionCopy($secrets['acl']['vault'], $secrets['acl']['key'], ValkeyAcl::file($server));
+                $secrets['acl'] = $copy->executionCopy($secrets['acl']['vault'], $secrets['acl']['key'], ValkeyAcl::file($server));
             }
         }
         $commands = app(DatabaseServerCommands::class)->render(['driver' => ValidatedData::string($input['driver']),
             'process_id' => ValidatedData::integer($input['process_id']), 'container' => ValidatedData::string($input['container']),
             'container_input' => ValidatedData::object($input['container_input']), 'spec' => ValidatedData::string($input['spec']),
             'scrub_spec' => ValidatedData::string($input['scrub_spec']), 'initialize' => $initialize,
-            'volume' => ValidatedData::nullableString($input['volume'] ?? null)], $operation->id);
+            'volume' => ValidatedData::nullableString($input['volume'] ?? null)]);
 
         return ['intent' => [...array_intersect_key($input, array_flip(['server_id', 'driver', 'container', 'initialize'])),
             'container_input' => ['image' => ValidatedData::object($input['container_input'])['image']], 'commands' => $commands,
@@ -55,14 +60,21 @@ final readonly class DatabaseServerCreateProjection implements DirectOperationPr
 
     public function apply(Operation $operation, array $data): Operation
     {
-        $raw = ValidatedData::object($data['result'] ?? []);
-        $result = ($raw['backend'] ?? null) === 'active' ? ['backend' => 'active'] : [];
-        if (is_string($raw['error_code'] ?? null) && preg_match('/\A[a-z0-9_.-]{1,100}\z/D', $raw['error_code']) === 1) {
-            $result['error_code'] = $raw['error_code'];
-        }
-        $failedStep = is_string($raw['failed_step'] ?? null) ? $raw['failed_step'] : null;
+        // Native result (no report step): the failed step names the error code, and the admin login must answer.
+        $native = ValidatedData::object($data['result'] ?? []);
         $status = ValidatedData::string($data['status']);
-        $code = ValidatedData::nullableString($data['error_code'] ?? null) ?? ($result['error_code'] ?? null);
+        $failedStep = ValidatedData::stringList(ValidatedData::object($native['summary'] ?? [])['failed_steps'] ?? [])[0] ?? null;
+        if ($status === 'succeeded') {
+            $login = ValidatedData::object(ValidatedData::object($native['steps'] ?? [])['Check the admin login'] ?? []);
+            $answer = trim(ValidatedData::nullableString($login['stdout'] ?? null) ?? '');
+            if ($answer !== ($operation->input['driver'] === 'redis' ? 'PONG' : '1')) {
+                [$status, $failedStep] = ['failed', 'Check the admin login'];
+                $data = [...$data, 'status' => 'failed', 'failure' => ['failed_step' => $failedStep, 'stderr_recorded' => true]];
+            }
+        }
+        $code = $status === 'succeeded' ? null : (self::CODES[$failedStep ?? ''] ?? ValidatedData::nullableString($data['error_code'] ?? null) ?? 'database.server_create_failed');
+        $result = $status === 'succeeded' ? ['backend' => 'active'] : ['error_code' => $code];
+        $data = [...$data, 'error_code' => $code];
 
         return DB::transaction(function () use ($operation, $data, $result, $status, $code, $failedStep): Operation {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);

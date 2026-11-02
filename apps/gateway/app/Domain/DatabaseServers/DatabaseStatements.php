@@ -165,6 +165,24 @@ final readonly class DatabaseStatements
     }
 
     /**
+     * One `docker exec -i` login that reads the password from the first stdin line inside the container, then runs the
+     * rest of stdin (Q-DBAUTH): no login file and no password in argv. Stdin is the vault value plus the statements.
+     *
+     * @return list<string>
+     */
+    public static function login(DatabaseDriver $driver, string $container, string $user, string $database): array
+    {
+        $client = match ($driver) {
+            DatabaseDriver::Pgsql => 'PGPASSWORD && exec psql --no-psqlrc --host=127.0.0.1 --username="$1" --dbname="$2" --no-align --tuples-only --quiet --set=ON_ERROR_STOP=1',
+            DatabaseDriver::Redis => 'REDISCLI_AUTH && exec valkey-cli --user "$1" --no-auth-warning',
+            default => 'MYSQL_PWD && exec mysql --protocol=TCP --host=127.0.0.1 --user="$1" --database="$2" --batch --skip-column-names',
+        };
+        $variable = strtok($client, ' ');
+
+        return ['docker', 'exec', '-i', $container, 'sh', '-c', "IFS= read -r {$variable} && export {$client}", 'sh', $user, $database];
+    }
+
+    /**
      * The admin client argv for one `docker exec -i` with the statement on stdin. MySQL and Valkey read the admin login
      * from the env file a step writes with cfgmgmt/file; PostgreSQL uses local trust inside the container.
      *

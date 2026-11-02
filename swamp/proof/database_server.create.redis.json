@@ -25,21 +25,9 @@
       "budget_seconds": 600
     },
     {
-      "name": "Create the volume",
-      "job": "server",
-      "step": "Create the volume",
-      "budget_seconds": 30
-    },
-    {
       "name": "Write the ACL file",
       "job": "server",
       "step": "Write the ACL file",
-      "budget_seconds": 30
-    },
-    {
-      "name": "Remove the old container",
-      "job": "server",
-      "step": "Remove the old container",
       "budget_seconds": 30
     },
     {
@@ -49,33 +37,15 @@
       "budget_seconds": 60
     },
     {
-      "name": "Wait until ready",
+      "name": "Wait until healthy",
       "job": "server",
-      "step": "Wait until ready",
-      "budget_seconds": 60
-    },
-    {
-      "name": "Write the client login",
-      "job": "server",
-      "step": "Write the client login",
-      "budget_seconds": 30
+      "step": "Wait until healthy",
+      "budget_seconds": 70
     },
     {
       "name": "Check the admin login",
       "job": "server",
       "step": "Check the admin login",
-      "budget_seconds": 30
-    },
-    {
-      "name": "Remove the client login",
-      "job": "server",
-      "step": "Remove the client login",
-      "budget_seconds": 30
-    },
-    {
-      "name": "Report the result",
-      "job": "server",
-      "step": "Report the result",
       "budget_seconds": 30
     }
   ],

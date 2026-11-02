@@ -17,30 +17,25 @@ final readonly class DatabaseServerCommands
      * @param  array{driver: string, process_id: int, container: string, container_input: array<string, mixed>, spec: string, scrub_spec: string, initialize: bool, volume: ?string}  $input
      * @return array<string, list<string>|string>
      */
-    public function render(array $input, int $operationId): array
+    public function render(array $input): array
     {
         $driver = DatabaseDriver::from($input['driver']);
         $name = $input['container'];
-        $firstLogin = "/run/orbit-database-server-create-{$operationId}-first.env";
-        $clientLogin = "/run/orbit-database-server-create-{$operationId}.env";
+        $wait = 'until '.self::probe($driver).' >/dev/null 2>&1; do sleep 1; done';
 
         return [
-            'first_login' => $firstLogin,
-            'client_login' => $clientLogin,
-            'volume_create' => $input['volume'] === null ? [] : ['docker', 'volume', 'create', $input['volume']],
             'acl_path' => $input['volume'] === null ? '' : "/var/lib/docker/volumes/{$input['volume']}/_data/users.acl",
-            // --force also removes a running container; the data volume keeps the data and the password.
-            'remove_old' => ['docker', 'rm', '--force', $name],
-            'run_first' => $this->run($input, $input['initialize'] ? $input['spec'] : $input['scrub_spec'], $input['initialize'] ? $firstLogin : null),
+            // A rerun keeps an existing container and continues from it; the first start reads its password from stdin.
+            'start' => ['sh', '-c', 'name=$1; shift; docker container inspect "$name" >/dev/null 2>&1 || exec "$@"', 'sh', $name,
+                ...$this->run($input, $input['initialize'] ? $input['spec'] : $input['scrub_spec'], $input['initialize'])],
             // Q-WAIT: one bounded probe loop. MySQL and PostgreSQL accept TCP only after first-start initialization.
-            'wait' => ['timeout', '60', 'docker', 'exec', $name, 'sh', '-c', 'until '.self::probe($driver).' >/dev/null 2>&1; do sleep 1; done'],
-            'stop' => ['docker', 'stop', '--time', '60', $name],
-            'remove' => ['docker', 'rm', $name],
-            'run_final' => $this->run($input, $input['scrub_spec'], null),
-            'login_client' => DatabaseStatements::ownerClient($driver, $name, $clientLogin, match ($driver) {
+            'wait' => ['timeout', '60', 'docker', 'exec', $name, 'sh', '-c', $wait],
+            'login_client' => DatabaseStatements::login($driver, $name, match ($driver) {
                 DatabaseDriver::Pgsql => 'postgres', DatabaseDriver::Redis => 'default', default => 'root'
-            }, 'postgres'),
-            'login' => $driver === DatabaseDriver::Redis ? "PING\n" : "SELECT 1;\n",
+            }, $driver === DatabaseDriver::Pgsql ? 'postgres' : 'mysql'),
+            // The final container runs without the password variable on the same volume; the step waits for it again.
+            'scrub' => ['timeout', '180', 'sh', '-c', 'name=$1; wait=$2; shift 2; docker rm --force "$name" >/dev/null && "$@" >/dev/null && exec timeout 60 docker exec "$name" sh -c "$wait"',
+                'sh', $name, $wait, ...$this->run($input, $input['scrub_spec'], false)],
         ];
     }
 
@@ -57,7 +52,7 @@ final readonly class DatabaseServerCommands
      * @param  array{driver: string, process_id: int, container: string, container_input: array<string, mixed>}  $input
      * @return list<string>
      */
-    private function run(array $input, string $spec, ?string $envFile): array
+    private function run(array $input, string $spec, bool $firstStart): array
     {
         $definition = $input['container_input'];
         $argv = ['docker', 'run', '--detach', '--name', $input['container'],
@@ -79,8 +74,8 @@ final readonly class DatabaseServerCommands
         if ($workdir !== null) {
             array_push($argv, '--workdir', $workdir);
         }
-        if ($envFile !== null) {
-            array_push($argv, '--env-file', $envFile);
+        if ($firstStart) {
+            array_push($argv, '--env-file', '/dev/stdin');
         }
 
         return [...$argv, ValidatedData::string($definition['image']), ...ValidatedData::stringList($definition['command'])];
