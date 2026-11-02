@@ -25,7 +25,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/project-maintenance-input'
-          behaviorName: '${{ "maintenance-input" }}'
+          behaviorName: '${{ "maintenance-input-project-maintenance-input" }}'
           methodName: schedule
           inputs:
             revision: '${{ inputs.revision }}'

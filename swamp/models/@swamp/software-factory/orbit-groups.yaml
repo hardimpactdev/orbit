@@ -137,7 +137,7 @@ globalArguments:
                         string(size(artifacts.plan.repository)) + ":" + artifacts.plan.repository +
                         string(size(artifacts.plan.branch)) + ":" + artifacts.plan.branch +
                         string(size(string(artifacts.plan.docsSubtask))) + ":" + string(artifacts.plan.docsSubtask)))
-                message: "the latest decision must authorize this exact plan with note=planConsentNote(fresh plan payload); rejected, generic or replaced-plan consent does not apply"
+                message: "awaiting human approval 'plan-authorized' with note=planConsentNote(fresh plan payload): the latest decision of this cycle must authorize this exact plan; rejected, generic or replaced-plan consent does not apply"
 
     - id: analyze
       description: fixed read-only repository analysis; no agent turn (tasks.analyze)

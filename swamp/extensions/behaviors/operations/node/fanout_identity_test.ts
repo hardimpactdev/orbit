@@ -2,7 +2,6 @@ import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { analyzeYaml } from "../../../../bin/check-swamp-shape.ts";
 import { nodeRemovalWorkflow } from "../node-removal-command/workflows.ts";
-import { sshAccessWorkflow } from "../node-bootstrap/ssh_access_workflow.ts";
 
 const ownedWorkflow = (name: string) =>
     /(?:^|[-_.])(?:node|workers?|ssh)(?:[-_.]|$)/.test(name);
@@ -69,23 +68,4 @@ Deno.test("Node removal fan-outs isolate each target and iteration and retain ge
         }
     }
     assertEquals(names.length > 5, true);
-});
-
-Deno.test("SSH key convergence declares its bootstrap vault in generated and published source", async () => {
-    const generated = sshAccessWorkflow();
-    const source = await Deno.readTextFile(
-        new URL("workflow-operation-node-ssh-access-converge.yaml", workflows),
-    );
-    assertEquals(parse(source), generated);
-    assertEquals((generated as Record<string, unknown>).vaults, [
-        "orbit-control-inputs",
-    ]);
-    assertEquals(
-        analyzeYaml(
-            "workflows/workflow-operation-node-ssh-access-converge.yaml",
-            source,
-        ).findings
-            .filter((finding) => finding.rule === "workflow-vault-declaration"),
-        [],
-    );
 });

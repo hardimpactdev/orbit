@@ -36,7 +36,7 @@ jobs:
     steps:
       - name: prepare_key_asset
         labels: {role: swamp}
-        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "prepare_key_asset" }}', methodName: read, inputs: {action: prepare_key, input: '${{ {"existing_key":inputs.intent.existing_key} }}'}}
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "prepare_key_asset-network-command" }}', methodName: read, inputs: {action: prepare_key, input: '${{ {"existing_key":inputs.intent.existing_key} }}'}}
       - name: prepare_key
         labels: {role: swamp}
         dependsOn: [{step: prepare_key_asset, condition: &ref_0 {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
@@ -45,11 +45,11 @@ jobs:
       - name: key
         labels: {role: swamp}
         dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}]
-        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "key" }}', methodName: key, inputs: {stdout: '${{ steps.prepare_key.outputs.stdout }}', existing_key: '${{ inputs.intent.existing_key }}', other_public_keys: '${{ inputs.intent.other_public_keys+[inputs.intent.peer.server_public_key] }}'}}
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "key-network-command" }}', methodName: key, inputs: {stdout: '${{ steps.prepare_key.outputs.stdout }}', existing_key: '${{ inputs.intent.existing_key }}', other_public_keys: '${{ inputs.intent.other_public_keys+[inputs.intent.peer.server_public_key] }}'}}
       - name: publish_hub_asset
         labels: {role: swamp}
         dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}]
-        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "publish_hub_asset" }}', methodName: read, inputs: {action: hub_peer, input: '${{ {"existing_key":inputs.intent.existing_key,"public_key":steps.key.outputs.public_key,"address":inputs.intent.peer.address} }}'}}
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "publish_hub_asset-network-command" }}', methodName: read, inputs: {action: hub_peer, input: '${{ {"existing_key":inputs.intent.existing_key,"public_key":steps.key.outputs.public_key,"address":inputs.intent.peer.address} }}'}}
       - name: publish_hub
         labels: {role: swamp}
         dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}]
@@ -58,7 +58,7 @@ jobs:
       - name: configure_peer_asset
         labels: {role: swamp}
         dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}]
-        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "configure_peer_asset" }}', methodName: read, inputs: {action: peer_config, input: '${{ {"public_key":steps.key.outputs.public_key,"peer":inputs.intent.peer} }}'}}
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "configure_peer_asset-network-command" }}', methodName: read, inputs: {action: peer_config, input: '${{ {"public_key":steps.key.outputs.public_key,"peer":inputs.intent.peer} }}'}}
       - name: configure_peer
         labels: {role: swamp}
         dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}]
@@ -72,7 +72,7 @@ jobs:
       - name: apply_peer_asset
         labels: {role: swamp}
         dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}]
-        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "apply_peer_asset" }}', methodName: read, inputs: {action: apply_peer, input: {}}}
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "apply_peer_asset-network-command" }}', methodName: read, inputs: {action: apply_peer, input: {}}}
       - name: apply_peer
         labels: {role: swamp}
         dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}, {step: apply_peer_asset, condition: *ref_0}]
@@ -86,7 +86,7 @@ jobs:
       - name: inspect_asset
         labels: {role: swamp}
         dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}, {step: apply_peer_asset, condition: *ref_0}, {step: apply_peer, condition: *ref_0}, {step: trust_firewall, condition: *ref_0}]
-        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "inspect_asset" }}', methodName: read, inputs: {action: dns_inspect, input: '${{ {"server":inputs.intent.peer.dns_server} }}'}}
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "inspect_asset-network-command" }}', methodName: read, inputs: {action: dns_inspect, input: '${{ {"server":inputs.intent.peer.dns_server} }}'}}
       - name: inspect
         labels: {role: swamp}
         dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}, {step: apply_peer_asset, condition: *ref_0}, {step: apply_peer, condition: *ref_0}, {step: trust_firewall, condition: *ref_0}, {step: inspect_asset, condition: *ref_0}]
@@ -94,12 +94,12 @@ jobs:
       - name: decision
         labels: {role: swamp}
         dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}, {step: apply_peer_asset, condition: *ref_0}, {step: apply_peer, condition: *ref_0}, {step: trust_firewall, condition: *ref_0}, {step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}]
-        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "decision" }}', methodName: decideDns, inputs: {stdout: '${{ steps.inspect.outputs.stdout }}', policy: '${{ {"server":inputs.intent.peer.dns_server,"dns_server":inputs.intent.peer.dns_server,"domains":inputs.intent.peer.domains,"public_key":steps.key.outputs.public_key} }}', require_uplink: '${{ inputs.intent.peer.operator_dns == null }}'}}
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "decision-network-command" }}', methodName: decideDns, inputs: {stdout: '${{ steps.inspect.outputs.stdout }}', policy: '${{ {"server":inputs.intent.peer.dns_server,"dns_server":inputs.intent.peer.dns_server,"domains":inputs.intent.peer.domains,"public_key":steps.key.outputs.public_key} }}', require_uplink: '${{ inputs.intent.peer.operator_dns == null }}'}}
       - name: persist_asset
         labels: {role: swamp}
         dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}, {step: apply_peer_asset, condition: *ref_0}, {step: apply_peer, condition: *ref_0}, {step: trust_firewall, condition: *ref_0}, {step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}]
         guard: '${{ !steps.decision.outputs.changed }}'
-        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "persist_asset" }}', methodName: read, inputs: {action: dns_persist, input: '${{ {"server":inputs.intent.peer.dns_server,"dns_server":inputs.intent.peer.dns_server,"domains":inputs.intent.peer.domains,"public_key":steps.key.outputs.public_key} }}'}}
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "persist_asset-network-command" }}', methodName: read, inputs: {action: dns_persist, input: '${{ {"server":inputs.intent.peer.dns_server,"dns_server":inputs.intent.peer.dns_server,"domains":inputs.intent.peer.domains,"public_key":steps.key.outputs.public_key} }}'}}
       - name: persist
         labels: {role: swamp}
         dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}, {step: apply_peer_asset, condition: *ref_0}, {step: apply_peer, condition: *ref_0}, {step: trust_firewall, condition: *ref_0}, {step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}]
@@ -151,7 +151,7 @@ jobs:
       - name: verify_asset
         labels: {role: swamp}
         dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}, {step: apply_peer_asset, condition: *ref_0}, {step: apply_peer, condition: *ref_0}, {step: trust_firewall, condition: *ref_0}, {step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}, {step: set_default_route, condition: *ref_0}, {step: clear_old_dns, condition: *ref_0}, {step: clear_old_domains, condition: *ref_0}, {step: restore_default_route, condition: *ref_0}, {step: restore_uplink, condition: *ref_0}]
-        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "verify_asset" }}', methodName: read, inputs: {action: dns_inspect, input: '${{ {"server":inputs.intent.peer.dns_server} }}'}}
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "verify_asset-network-command" }}', methodName: read, inputs: {action: dns_inspect, input: '${{ {"server":inputs.intent.peer.dns_server} }}'}}
       - name: verify
         labels: {role: swamp}
         dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}, {step: apply_peer_asset, condition: *ref_0}, {step: apply_peer, condition: *ref_0}, {step: trust_firewall, condition: *ref_0}, {step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}, {step: set_default_route, condition: *ref_0}, {step: clear_old_dns, condition: *ref_0}, {step: clear_old_domains, condition: *ref_0}, {step: restore_default_route, condition: *ref_0}, {step: restore_uplink, condition: *ref_0}, {step: verify_asset, condition: *ref_0}]
@@ -159,4 +159,4 @@ jobs:
       - name: result
         labels: {role: swamp}
         dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}, {step: apply_peer_asset, condition: *ref_0}, {step: apply_peer, condition: *ref_0}, {step: trust_firewall, condition: *ref_0}, {step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}, {step: set_default_route, condition: *ref_0}, {step: clear_old_dns, condition: *ref_0}, {step: clear_old_domains, condition: *ref_0}, {step: restore_default_route, condition: *ref_0}, {step: restore_uplink, condition: *ref_0}, {step: verify_asset, condition: *ref_0}, {step: verify, condition: *ref_0}]
-        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "result" }}', methodName: networkResult, inputs: {stdout: '${{ steps.verify.outputs.stdout }}', policy: '${{ {"server":inputs.intent.peer.dns_server,"dns_server":inputs.intent.peer.dns_server,"domains":inputs.intent.peer.domains,"public_key":steps.key.outputs.public_key} }}', retained: '${{ inputs.intent.peer.retain }}', require_uplink: '${{ inputs.intent.peer.operator_dns == null }}'}}
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "result-network-command" }}', methodName: networkResult, inputs: {stdout: '${{ steps.verify.outputs.stdout }}', policy: '${{ {"server":inputs.intent.peer.dns_server,"dns_server":inputs.intent.peer.dns_server,"domains":inputs.intent.peer.domains,"public_key":steps.key.outputs.public_key} }}', retained: '${{ inputs.intent.peer.retain }}', require_uplink: '${{ inputs.intent.peer.operator_dns == null }}'}}

@@ -169,7 +169,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/route-mutation-command'
-      behaviorName: '${{ "route-result" }}'
+      behaviorName: '${{ "route-result-route-mutation-command" }}'
       methodName: environmentResult
       inputs:
         stdout: ${{ steps.write.outputs.stdout }}

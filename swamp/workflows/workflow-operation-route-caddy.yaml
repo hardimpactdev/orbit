@@ -88,7 +88,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/caddy-public-input'
-      behaviorName: '${{ "input" }}'
+      behaviorName: '${{ "input-caddy-public-input" }}'
       methodName: prepare
       inputs:
         publication: ${{ inputs.intent.caddy_publication }}
@@ -178,7 +178,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "result" }}'
+      behaviorName: '${{ "result-shell" }}'
       methodName: execute
       inputs:
         run: printf '{"ready":true,"result":"published","version":"%s"}\n' "$ORBIT_CADDY_VERSION"

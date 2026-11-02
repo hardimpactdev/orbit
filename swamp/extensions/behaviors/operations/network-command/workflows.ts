@@ -38,7 +38,8 @@ function steps() {
     ) => add(name, {
         type: "behavior",
         behaviorType: "@nckrtl/network-command",
-        behaviorName: expr(JSON.stringify(name)),
+        // Named with its type: fixed names such as `result` recur across behavior types.
+        behaviorName: expr(JSON.stringify(name + "-network-command")),
         methodName: method,
         inputs,
     }, guard);

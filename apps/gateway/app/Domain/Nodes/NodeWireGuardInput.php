@@ -95,18 +95,11 @@ final readonly class NodeWireGuardInput
         if (! is_array($snapshot) || count($snapshot) !== 6 || ($snapshot['schema_version'] ?? null) !== 1
             || ! is_int($snapshot['executor_node_id'] ?? null)
             || ! is_int($snapshot['hub_id'] ?? null) || ! is_int($snapshot['context_node_id'] ?? null)
-            || ! in_array($operation->kind, ['node.add',
-                'node.wireguard_hub_converge', 'task_vm.destroy',
+            || ! in_array($operation->kind, ['node.add', 'task_vm.destroy',
                 'task_vm.enroll', 'task_vm.prepare_runtime', 'task_vm.provision', 'tasks.provision'], true)
             || ! array_key_exists('excluded_node_id', $snapshot)
             || ($snapshot['excluded_node_id'] !== null && $snapshot['excluded_node_id'] !== $snapshot['context_node_id'])
             || ! is_string($snapshot['agent_sha256'] ?? null) || preg_match('/\A[a-f0-9]{64}\z/D', $snapshot['agent_sha256']) !== 1) {
-            return null;
-        }
-        if ($operation->kind === 'node.wireguard_hub_converge'
-            && ($operation->node_id !== $snapshot['hub_id'] || $operation->target_type !== 'node'
-                || $operation->target_id !== $snapshot['hub_id'] || $snapshot['context_node_id'] !== $snapshot['hub_id']
-                || $snapshot['executor_node_id'] !== $snapshot['hub_id'] || $snapshot['excluded_node_id'] !== null)) {
             return null;
         }
         $hub = Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Vpn))->sole();

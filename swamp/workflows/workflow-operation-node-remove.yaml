@@ -39,7 +39,7 @@ jobs:
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
       - name: assets
         labels: *ref_0
-        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "assets" }}', methodName: paths, inputs: {}}
+        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "assets-node-removal-command" }}', methodName: paths, inputs: {}}
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
       - name: probe
         labels: *ref_0
@@ -48,7 +48,7 @@ jobs:
         task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "node-remove-probe" }}', methodName: execute, inputs: {run: python3 "$PROBE_SCRIPT" "$PROBE_HOST" "$PROBE_PORT", env: {PROBE_SCRIPT: '${{ steps.assets.outputs.probe }}', PROBE_HOST: '${{ inputs.intent.probe.host }}', PROBE_PORT: '${{ string(inputs.intent.probe.port) }}'}}}
       - name: preflight
         labels: *ref_0
-        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "preflight" }}', methodName: preflight, inputs: {stdout: '${{ has(inputs.intent.machine_deleted) && inputs.intent.machine_deleted ? ''{"reachable":false}'' : steps.probe.outputs.stdout }}', offline: '${{ inputs.intent.offline }}', has_ssh: '${{ inputs.intent.ssh != null }}'}}
+        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "preflight-node-removal-command" }}', methodName: preflight, inputs: {stdout: '${{ has(inputs.intent.machine_deleted) && inputs.intent.machine_deleted ? ''{"reachable":false}'' : steps.probe.outputs.stdout }}', offline: '${{ inputs.intent.offline }}', has_ssh: '${{ inputs.intent.ssh != null }}'}}
         dependsOn: [{step: probe, condition: *ref_14}]
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
   - name: phase_roles
@@ -271,7 +271,7 @@ jobs:
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") || inputs.intent.task_vm_guest }}'
       - name: tokens
         labels: *ref_0
-        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "tokens" }}', methodName: tokens, inputs: {node_id: '${{ inputs.intent.node_id }}', worker_stdout: '${{ steps.worker_tokens.outputs.stdout }}', server_stdout: '${{ steps.access_tokens.outputs.stdout }}'}}
+        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "tokens-node-removal-command" }}', methodName: tokens, inputs: {node_id: '${{ inputs.intent.node_id }}', worker_stdout: '${{ steps.worker_tokens.outputs.stdout }}', server_stdout: '${{ steps.access_tokens.outputs.stdout }}'}}
         dependsOn: [{step: access_tokens, condition: *ref_14}]
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") || inputs.intent.task_vm_guest }}'
   - name: phase_revoke_worker
@@ -413,7 +413,7 @@ jobs:
     steps:
       - name: prepare_result
         labels: *ref_0
-        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "prepare_result" }}', methodName: result, inputs: {node_id: '${{ inputs.intent.node_id }}', name: '${{ inputs.intent.name }}', offline: '${{ steps.preflight.outputs.offline }}', roles_shed: '${{ inputs.intent.roles.map(role,role.role) }}', retained_on_node: '${{ inputs.intent.preserved_on_node + (steps.preflight.outputs.offline ? inputs.intent.retained_on_node : []) }}'}}
+        task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "prepare_result-node-removal-command" }}', methodName: result, inputs: {node_id: '${{ inputs.intent.node_id }}', name: '${{ inputs.intent.name }}', offline: '${{ steps.preflight.outputs.offline }}', roles_shed: '${{ inputs.intent.roles.map(role,role.role) }}', retained_on_node: '${{ inputs.intent.preserved_on_node + (steps.preflight.outputs.offline ? inputs.intent.retained_on_node : []) }}'}}
         guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
       - name: result
         labels: *ref_0

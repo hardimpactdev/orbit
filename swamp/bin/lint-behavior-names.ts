@@ -150,6 +150,44 @@ export function invalidNames(value: unknown): string[] {
     return found;
 }
 
+/** Names used with more than one behavior type: Swamp refuses the second type ("exists but has type"). */
+export function sharedAcrossTypes(
+    workflows: Record<string, unknown>,
+): string[] {
+    const types = new Map<string, Set<string>>();
+    for (const [path, value] of Object.entries(workflows)) {
+        for (
+            const job of Array.isArray(object(value).jobs)
+                ? object(value).jobs as unknown[]
+                : []
+        ) {
+            for (
+                const raw of Array.isArray(object(job).steps)
+                    ? object(job).steps as unknown[]
+                    : []
+            ) {
+                const task = object(object(raw).task);
+                const name = task.behaviorName ?? task.modelName;
+                const type = task.behaviorType ?? task.modelType;
+                if (typeof name !== "string" || typeof type !== "string") {
+                    continue;
+                }
+                const key = name.replace(/\s+/g, "");
+                if (!types.has(key)) types.set(key, new Set());
+                types.get(key)!.add(`${type} (${path})`);
+            }
+        }
+    }
+    return [...types].filter(([, used]) =>
+        new Set([...used].map((u) => u.split(" (")[0])).size > 1
+    )
+        .map(([name, used]) =>
+            `${name} is used with several behavior types: ${
+                [...used].join(", ")
+            }`
+        );
+}
+
 async function atBase(base: string, path: string): Promise<string | null> {
     const shown = await new Deno.Command("git", {
         args: ["show", `${base}:./${path}`],
@@ -165,10 +203,12 @@ export async function lintBehaviorNames(
     base: string,
 ): Promise<string[]> {
     const errors: string[] = [];
+    const parsed: Record<string, unknown> = {};
     for await (const entry of Deno.readDir(root)) {
         if (!entry.isFile || !/\.ya?ml$/.test(entry.name)) continue;
         const path = `${root}/${entry.name}`;
         const text = await Deno.readTextFile(path);
+        parsed[path] = parse(text);
         const invalid = invalidNames(parse(text));
         if (invalid.length) {
             errors.push(
@@ -185,6 +225,7 @@ export async function lintBehaviorNames(
             );
         }
     }
+    errors.push(...sharedAcrossTypes(parsed));
     return errors;
 }
 
@@ -202,6 +243,6 @@ if (import.meta.main) {
         Deno.exit(1);
     }
     console.log(
-        "No workflow adds a behavior name per run or one Swamp refuses",
+        "No workflow adds a behavior name per run, one Swamp refuses, or one shared across types",
     );
 }

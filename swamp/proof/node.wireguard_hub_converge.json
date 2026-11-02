@@ -1,0 +1,51 @@
+{
+  "kind": "node.wireguard_hub_converge",
+  "workflow": "operation-node-wireguard-hub-converge",
+  "topology": "minimal",
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "before_gateway": [
+    [
+      "sh",
+      "-c",
+      "printf '%s' \"$1\" | runuser -u orbit -- env -C apps/gateway php ../../tools/swamp-proof-guest/gateway.php fixture",
+      "sh",
+      "{\"roles\": {\"${node.target}\": [\"vpn\"]}, \"wireguard_keys\": {\"${node.gateway}\": \"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=\", \"${node.operator}\": \"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=\"}}"
+    ]
+  ],
+  "clean_target": [
+    [
+      "sh",
+      "-c",
+      "command -v wg-quick >/dev/null || DEBIAN_FRONTEND=noninteractive apt-get install -y -q wireguard-tools >/dev/null; umask 077; mkdir -p /etc/wireguard; rm -f /etc/wireguard/.orbit.conf.rollback; printf '[Interface]\\nAddress = 10.99.0.1/24\\nListenPort = 51820\\nPrivateKey = %s\\n' \"$(wg genkey)\" > /etc/wireguard/orbit.conf; systemctl enable wg-quick@orbit >/dev/null 2>&1; systemctl restart wg-quick@orbit"
+    ]
+  ],
+  "request": {
+    "method": "POST",
+    "path": "nodes/${node.target}/wireguard-hub/converge"
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Resolve the hub script",
+      "job": "hub",
+      "step": "Resolve the hub script",
+      "budget_seconds": 15
+    },
+    {
+      "name": "Apply the hub config",
+      "job": "hub",
+      "step": "Apply the hub config",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Confirm the outcome",
+      "job": "hub",
+      "step": "Confirm the outcome",
+      "budget_seconds": 15
+    }
+  ],
+  "parity": "swamp/proof/node.wireguard_hub_converge/parity.py"
+}

@@ -110,6 +110,14 @@ def target():
     run(['install', '-D', '-o', 'orbit', '-g', 'orbit', '-m', '0400', str(IDENTITY), '/etc/orbit/swamp-role-worker/ssh-identity'])
     public = IDENTITY.with_suffix('.pub').read_text().split()
     run(['incus', 'exec', node['key'], '--', 'bash', '/root/prepare-node.sh', 'gateway-authorize', ' '.join(public[:2])])
+    # The Gateway's bootstrap key, which an enrolled Node accepts beside the worker key (topology version 6).
+    bootstrap = HOME / '.orbit/ssh/id_ed25519'
+    if not bootstrap.exists():
+        bootstrap.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'swamp-proof-gateway', '-f', str(bootstrap)])
+        run(['chown', '-R', f'{ACCOUNT}:{ACCOUNT}', str(bootstrap.parent)])
+    run(['incus', 'exec', node['key'], '--', 'sh', '-c', 'cat >> /home/orbit/.ssh/authorized_keys'],
+        input=' '.join(bootstrap.with_suffix('.pub').read_text().split()[:2]) + ' swamp-proof-gateway\n')
     # Unmanaged SSH allowance and an active backend: the state an enrolled Node has.
     run(['incus', 'exec', node['key'], '--', 'sh', '-c', 'ufw allow 22/tcp comment proof-ssh && ufw --force enable'])
     host_key = run(['incus', 'exec', node['key'], '--', 'cat', '/etc/ssh/ssh_host_ed25519_key.pub']).split()
