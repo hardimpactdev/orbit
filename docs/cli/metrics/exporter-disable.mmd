@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: inverse of metrics.exporter_enable. ADR 0244 task, DECISIONS R1-R4, official @swamp/cfgmgmt behaviors. Prometheus stops scraping first, then the exporters go.
+  %% Tightened: flow-tighten 2026-11-02, rule 22 (allows removed with cfgmgmt firewall).
   %% status: reviewed
   %% command: metrics:exporter:disable
   %% kind: metrics.exporter_disable
@@ -58,9 +59,9 @@ sequenceDiagram
   %%> - removes the drop-in, the cAdvisor binary and the `prometheus-node-exporter` package
   %%> How:
   %%> - official `@swamp/cfgmgmt` behaviors (systemd, file, apt) over SSH from 209
-  SW->>N: Remove the allows<br/>ufw · ports 9100, 9102
+  SW->>N: Remove the allows<br/>@swamp/cfgmgmt/firewall absent
   %%> What it does:
-  %%> - removes the firewall allows for the Metrics Node on ports 9100 and 9102
+  %%> - removes the firewall allows for the Metrics Node on ports 9100 and 9102, with `ensure: absent`
   alt all steps pass
     N-->>SW: exporters gone
     %%> Returns:
