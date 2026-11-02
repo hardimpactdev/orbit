@@ -2,6 +2,7 @@
 import http.server
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -45,8 +46,10 @@ class PiProbeTest(unittest.TestCase):
                     # The bearer reaches curl as a header file, never as an argument.
                     self.assertNotIn('guest-local-probe-secret', ' '.join(command) + result.stdout + result.stderr)
                 value = yaml.safe_load((ROOT / 'workflows/workflow-operation-task-vm-resume.yaml').read_text())
-                step = next(step for job in value['jobs'] for step in job['steps'] if 'urllib.request' in str(step['task'].get('inputs', {}).get('argv', [])))
-                code = step['task']['inputs']['argv'][-1].replace('/home/orbit/.pi/agent/orbit-token', str(token))
+                argv = next(step for job in value['jobs'] for step in job['steps'] if step['name'] == 'Read the guest state')['task']['inputs']['argv']
+                # The Pi read is the CEL string literal after `"-c", ` in the forEach argv; CEL and JSON share its escapes.
+                literal = re.search(r'"-c", ("(?:[^"\\]|\\.)*")', argv).group(1)
+                code = json.loads(literal).replace('/home/orbit/.pi/agent/orbit-token', str(token))
                 for suffix, expected in (('', 0), ('/unavailable', 1)):
                     result = subprocess.run([sys.executable, '-c', code], input=json.dumps({'pi_url': url + suffix, 'pi_port': 1}), text=True, capture_output=True, env=env)
                     self.assertEqual(result.returncode, expected, result.stderr)

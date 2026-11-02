@@ -1,5 +1,4 @@
 """Disposable official SSH provider lifecycle; never contacts a fleet Node."""
-import hashlib
 import json
 import sys
 
@@ -81,7 +80,7 @@ raise SystemExit(result.returncode)
                         .replace("LOST", repr(str(self.lost))).replace("GUEST", repr(str(self.guest)))
                         .replace("POLL_RUNNER", repr(str(poll_runner))))
         fake.chmod(0o755)
-        for filename in ("workflow-task-vm-provider-power.yaml", "workflow-operation-task-vm-resume.yaml", "workflow-operation-task-park.yaml", "workflow-task-vm-ssh-prepare.yaml"):
+        for filename in ("workflow-task-vm-provider-power.yaml", "workflow-operation-task-park.yaml", "workflow-task-vm-ssh-prepare.yaml"):
             workflow = yaml.safe_load((ROOT / "workflows" / filename).read_text())
             for job in workflow["jobs"]:
                 self.assertEqual(job.pop("labels"), {"role": "swamp"})
@@ -151,29 +150,6 @@ class TaskVmLifecycleNative(TaskVmLifecycleFixture):
         run = self.run_workflow()
         self.assertEqual(run["status"], "succeeded")
         self.assertEqual(json.loads(self.state.read_text())["status"], "Running")
-
-    def test_resume_root_checks_guest_artifact_and_prints_own_stdout(self):
-        self.envelope.pop("action")
-        self.envelope["intent"] = {"task_vm_id": 42, "guest_node_id": 142, "eligible": True,"mode":"resume", "provider_input": self.provider, "ssh_execution": None, "ssh_identity": {k:v for k,v in self.ssh.items() if k!="target"},"node":{"node_id":142,"wireguard_ip":"10.44.0.142"},"provider":"incus","name":"tvm-42","user":"orbit", "runtime_json": json.dumps({"pi_sha256": hashlib.sha256(b"fixture-pi").hexdigest(), "pi_port": 3774})}
-        run = self.run_workflow("operation-task-vm-resume")
-        history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
-        result = json.loads(history["jobs"][0]["steps"][-1]["outputs"]["stdout"])
-        self.assertTrue(result.pop("ssh_host_key")["ssh_host_fingerprint"].startswith("SHA256:"))
-        self.assertEqual(result, {"task_vm_id": 42, "guest_node_id": 142, "resumed": True, "ready": True,"ssh_ready":True})
-        calls=[json.loads(row)["argv"] for row in self.calls.read_text().splitlines()]
-        self.assertTrue(any("openssh-server" in row for row in calls))
-        self.assertTrue(any("ssh.service" in row for row in calls))
-        self.assertTrue(any(any("authorized_keys" in part for part in row) for row in calls))
-        (self.guest / ".local/bin/pi-server").write_bytes(b"bad")
-        run = self.run_workflow("operation-task-vm-resume", success=False)
-        self.assertEqual(run["status"], "failed")
-        self.envelope["intent"]["mode"]="converge"
-        run=self.run_workflow("operation-task-vm-resume")
-        history=json.loads(self.cli("workflow","history","get",run["id"]).stdout)
-        result=json.loads(history["jobs"][0]["steps"][-1]["outputs"]["stdout"])
-        self.assertTrue(result["ssh_ready"])
-        self.assertTrue(result["converged"])
-        self.assertNotIn("resumed",result)
 
     def test_park_root_preserves_group_receipt_and_original_envelope(self):
         self.envelope.pop("action")

@@ -83,12 +83,9 @@ it('refuses moved VM ownership before exposing its input', function (array $chan
     expect(fn () => app(TaskVmResumeIntent::class)->input($operation))->toThrow(ResourceOperationException::class);
 })->with([[['host_node_id' => 0]], [['provider_id' => '8330af24-e530-48a0-810c-803f101c70ec']]]);
 
-it('reports lost resume eligibility without hiding an already terminal native result', function (): void {
+it('passes no eligibility flag: admission checked the state under the VM lock', function (): void {
     $operation = savedResumeIntent();
-    $this->vm->update(['state' => 'destroying']);
-    expect(app(TaskVmResumeIntent::class)->input($operation)['intent']['eligible'])->toBeFalse();
-    $this->vm->update(['state' => 'ready']);
-    expect(app(TaskVmResumeIntent::class)->input($operation)['intent']['eligible'])->toBeFalse();
+    expect(app(TaskVmResumeIntent::class)->input($operation)['intent'])->not->toHaveKey('eligible');
 });
 
 it('refuses guest account and address drift and a mismatched parent kind', function (string $change): void {
@@ -185,7 +182,7 @@ it('declares no private hydration or family callback for the converted resume', 
     $definition = app(DirectOperation::class)->definition('task_vm.resume');
     expect($definition['private_material'] ?? [])->toBe([])
         ->and($definition['workflow_inputs'])->toBeTrue()
-        ->and($definition['terminal_result'])->toBe(['job' => 'resume', 'step' => 'result']);
+        ->and($definition['terminal_result'])->toBe(['job' => 'check', 'step' => 'Check the guest is ready', 'native' => true]);
 });
 
 it('refuses resume admission when its Incus host is inactive', function (): void {
@@ -202,39 +199,30 @@ it('admits a fresh resume after an interrupted Operation releases its target', f
     expect($previous->fresh()->status)->toBe(OperationStatus::Interrupted);
 });
 
-it('captures missing guest pins through the trusted Incus host for existing ready VMs', function (): void {
+it('refuses a guest without a recorded host key, since the end check reads it over that pin', function (): void {
     $this->vm->update(['state' => TaskVmState::Ready]);
     $this->guest->update(['ssh_host_key_type' => null, 'ssh_host_key' => null, 'ssh_host_fingerprint' => null]);
-    $operation = savedResumeIntent();
-    $input = app(TaskVmResumeIntent::class)->input($operation);
-    expect($input['intent']['eligible'])->toBeTrue()
-        ->and($input['intent']['ssh_execution'])->toBeNull()
-        ->and($input['intent']['ssh_identity']['control_node_id'])->toBe(209)
-        ->and($input['intent']['node']['wireguard_ip'])->toBe($this->vm->wireguard_ip);
+    expect(fn () => app(TaskVmResumeIntent::class)->capture($this->vm->fresh()))->toThrow(ResourceOperationException::class);
 });
 
-it('records an observed host pin through the canonical endpoint action on resume success', function (): void {
+it('marks the VM ready from a native success and keeps the recorded host pin', function (): void {
     $pin = $this->guest->only(['ssh_host_key_type', 'ssh_host_key', 'ssh_host_fingerprint']);
-    $this->guest->update(['ssh_host_key_type' => null, 'ssh_host_key' => null, 'ssh_host_fingerprint' => null]);
     $operation = admitNativeResume();
     app(TaskVmResumeProjection::class)->apply($operation, [
-        'run_id' => '3fc3ad54-423a-4b4b-8187-99514098426b', 'status' => 'succeeded', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(), 'error_code' => null,
-        'result' => ['task_vm_id' => $this->vm->id, 'guest_node_id' => $this->guest->id, 'resumed' => true, 'ready' => true, 'ssh_ready' => true, 'ssh_host_key' => $pin],
+        'run_id' => '3fc3ad54-423a-4b4b-8187-99514098426b', 'status' => 'succeeded', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(),
+        'error_code' => null, 'result' => ['steps' => ['Check the guest is ready' => ['status' => 'succeeded']]],
     ]);
-    expect($this->guest->fresh()->only(array_keys($pin)))->toBe($pin);
+    expect($this->vm->fresh()->state)->toBe(TaskVmState::Ready)->and($this->guest->fresh()->only(array_keys($pin)))->toBe($pin);
 });
 
-it('rejects a changed recorded host pin without marking resume or VM successful', function (): void {
+it('fails a parked VM with the resume code when the native run fails', function (): void {
     $operation = admitNativeResume();
-    $pin = $this->guest->only(['ssh_host_key_type', 'ssh_host_key', 'ssh_host_fingerprint']);
-    $pin['ssh_host_fingerprint'] = 'SHA256:changed';
-    expect(fn () => app(TaskVmResumeProjection::class)->apply($operation, [
-        'run_id' => '3fc3ad54-423a-4b4b-8187-99514098426b', 'status' => 'succeeded',
-        'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(), 'error_code' => null,
-        'result' => ['task_vm_id' => $this->vm->id, 'guest_node_id' => $this->guest->id, 'resumed' => true, 'ready' => true, 'ssh_ready' => true, 'ssh_host_key' => $pin],
-    ]))->toThrow(ResourceOperationException::class);
-    expect($operation->fresh()->status)->toBe(OperationStatus::Running)
-        ->and($this->vm->fresh()->state)->toBe(TaskVmState::Parked);
+    app(TaskVmResumeProjection::class)->apply($operation, [
+        'run_id' => '3fc3ad54-423a-4b4b-8187-99514098426b', 'status' => 'failed', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(),
+        'error_code' => 'operation.native_failed', 'result' => ['error_code' => 'operation.native_failed'],
+    ]);
+    expect($operation->fresh()->error_code)->toBe('task_vm.resume_failed')->and($this->vm->fresh()->state)->toBe(TaskVmState::Failed)
+        ->and($this->vm->fresh()->error_code)->toBe('task_vm.resume_failed');
 });
 
 it('admits convergence of a ready VM through the normal resume command', function (): void {

@@ -20,7 +20,8 @@ return ['task_vm.hub_converge' => [
     'workflow' => 'operation-task-vm-resume',
     'projection' => TaskVmResumeProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'resume', 'step' => 'result'],
+    // No result step: the projector reads the run's step statuses; the native assert is the end check.
+    'terminal_result' => ['job' => 'check', 'step' => 'Check the guest is ready', 'native' => true],
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-upcloud-token$']],
 ], 'task_vm.destroy' => [
     'workflow' => 'operation-task-vm-destroy',

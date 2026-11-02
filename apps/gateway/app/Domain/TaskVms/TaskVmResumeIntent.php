@@ -23,8 +23,9 @@ final readonly class TaskVmResumeIntent
     {
         $guest = $vm->node;
         if (! in_array($vm->state, [TaskVmState::Parked, TaskVmState::Ready], true) || ! $guest instanceof Node || $guest->wireguard_ip !== $vm->wireguard_ip || $guest->user !== 'orbit'
-            || $guest->status !== LifecycleStatus::Active || ($vm->state === TaskVmState::Parked && ($vm->pi_token === null || $this->settings->piArtifactSha256 === null))) {
-            throw new ResourceOperationException('task_vm.resume_refused', 'Resume requires the parked VM, its active guest identity and its configured runtime.', 409);
+            || $guest->status !== LifecycleStatus::Active || $guest->ssh_host_key === null
+            || ($vm->state === TaskVmState::Parked && ($vm->pi_token === null || $this->settings->piArtifactSha256 === null))) {
+            throw new ResourceOperationException('task_vm.resume_refused', 'Resume requires the parked VM, its active guest identity with its recorded host key, and its configured runtime.', 409);
         }
         $host = $vm->provider === TaskVmProviderKind::Incus ? Node::query()->findOrFail($vm->host_node_id)
             : Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->firstOrFail();
@@ -39,7 +40,8 @@ final readonly class TaskVmResumeIntent
             'admitted_state' => $vm->state->value, 'mode' => $vm->state === TaskVmState::Ready ? 'converge' : 'resume',
             'node' => ['node_id' => $guest->id, 'wireguard_ip' => $guest->wireguard_ip],
             'ssh_identity' => $this->ssh->identity(),
-            'ssh_execution' => $guest->ssh_host_key === null && $vm->provider === TaskVmProviderKind::Incus ? null : $this->ssh->forNode($guest),
+            // The end check reads the guest over its recorded host key pin; resume collects no new key.
+            'ssh_execution' => $this->ssh->forNode($guest),
             'runtime_json' => json_encode(['pi_sha256' => $this->settings->piArtifactSha256, 'pi_port' => $this->pi->port(), 'pi_url' => $this->pi->baseUrl($guest)], JSON_THROW_ON_ERROR),
             ...$provider];
     }
@@ -66,8 +68,9 @@ final readonly class TaskVmResumeIntent
     /** @return array<string,mixed> */
     public function input(Operation $operation): array
     {
-        $vm = $this->owned($operation);
+        // Admission checked the state under the VM's Operation lock, so no step re-checks eligibility.
+        $this->owned($operation);
 
-        return TaskVmProviderWorkflowInput::envelope([...$operation->input, 'eligible' => $vm->state->value === ($operation->input['admitted_state'] ?? null) && in_array($vm->state, [TaskVmState::Parked, TaskVmState::Ready], true)]);
+        return TaskVmProviderWorkflowInput::envelope($operation->input);
     }
 }

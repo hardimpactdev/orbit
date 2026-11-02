@@ -704,7 +704,9 @@ It does not run automatic idle parking or retry a failed park. Swamp owns retry 
 
 The row enters `parked` with `stop_confirmed_at` only after the native root confirms settled, stopped power. Admission and cancellation leave a running VM `ready`. A failed stop clears the proof and retains the error. A resource observation job refreshes proof every minute for parked VMs in every group status, including assistance and ended groups. Running, missing, unsettled or unreadable power clears the proof. Observation never starts or stops a VM.
 
-A requested workspace operation queues the retained `ResumeTaskVm` job. It clears stop proof, starts the VM and waits for the Node agent and Pi within a fixed nine-minute deadline. Confirmed runtime readiness records `ready`; a failed wake retains its error evidence.
+A requested workspace operation admits `task_vm.resume`. It clears stop proof and starts one native run. On an Incus host the run starts the VM, and a VM that already runs counts as started. Incus's own agent wait follows, bounded to 120 seconds. On UpCloud the provider-power child starts the server. A `ready` VM that a workspace operation found stopped also gets 209's authorized key, its TCP 22 rule and `sshd` back, through `incus exec` on the host.
+
+The run then reads `orbit-agent` and the Pi capabilities over the guest's recorded host key pin, and a native `assert` checks both. A guest without a recorded host key is refused at admission. The run prints no result: a succeeded run records `ready`, and a failed run projects `task_vm.resume_failed`, which fails a parked VM with its error evidence.
 
 Parking retains the disk, workspace and sessions. It releases CPU and memory. It retains the provider's allocated VM count; Swamp's maintenance execution slots are separate.
 
