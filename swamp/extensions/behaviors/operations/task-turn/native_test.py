@@ -69,6 +69,11 @@ class NativeTurn(harness.NativeTestCase):
         self.git("config", "user.email", "test@example.test")
         self.git("config", "user.name", "Test")
         self.workspace.joinpath("file").write_text("original\n")
+        self.workspace.joinpath(".gitignore").write_text("ignored-tracked\n")
+        self.workspace.joinpath("ignored-tracked").write_text(
+            "tracked despite ignore\n"
+        )
+        self.git("add", "-f", "ignored-tracked")
         self.git("add", ".")
         self.git("commit", "-qm", "fixture")
         self.head = self.git("rev-parse", "HEAD")
@@ -243,7 +248,9 @@ class NativeTurn(harness.NativeTestCase):
         self.assertEqual(run["status"], "succeeded")
         self.assertEqual(index.read_bytes(), original)
         result = self.result(run)
-        self.assertNotEqual(result["before"]["tree"], self.head)
+        self.assertNotEqual(
+            result["before"]["tree"], self.git("rev-parse", "HEAD^{tree}")
+        )
         self.assertEqual(result["difference"]["summary"]["files"], 1)
         self.assertFalse(list(self.repo.glob("remote-*/*.index")))
 

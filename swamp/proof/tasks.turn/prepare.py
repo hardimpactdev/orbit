@@ -22,7 +22,9 @@ def git(*argv):
 
 target("mkdir", "-p", "/home/orbit/turn-proof")
 target("chown", "orbit:orbit", "/home/orbit/turn-proof")
-target("ufw", "allow", "from", "10.231.0.1", "to", "any", "port", "3774", "proto", "tcp")
+target(
+    "ufw", "allow", "from", "10.231.0.1", "to", "any", "port", "3774", "proto", "tcp"
+)
 git("init", "-qb", "proof")
 git("config", "user.name", "Proof")
 git("config", "user.email", "proof@example.invalid")
@@ -33,7 +35,7 @@ target(
     "--",
     "sh",
     "-c",
-    "printf 'original\\n' > /home/orbit/turn-proof/file",
+    "printf 'original\n' > /home/orbit/turn-proof/file",
 )
 git("add", ".")
 git("commit", "-qm", "Initial")

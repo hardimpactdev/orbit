@@ -114,10 +114,36 @@ jobs:
         direction: to
         timeoutSec: 60
     writes: true
-  - name: snapshot_before_add
+  - name: snapshot_before_index
     labels: {role: swamp}
     dependsOn:
     - step: copy_assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-turn-snapshot-before-index-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "task-turn-snapshot-before-index-" + string(inputs.node_id) }}
+        transport: *id001
+        hosts: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '60'
+        - cp
+        - --
+        - ${{ inputs.intent.checkout_path + "/.git/index" }}
+        - ${{ "/tmp/orbit-task-turn-" + run.id + "/before.index" }}
+        timeoutSec: 60
+    writes: true
+  - name: snapshot_before_add
+    labels: {role: swamp}
+    dependsOn:
+    - step: snapshot_before_index
       condition:
         type: succeeded
     task:
@@ -306,10 +332,36 @@ jobs:
           ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/observe.py" }}
         timeout: 1800000
       behaviorName: ${{ "task-turn-observe" }}
-  - name: snapshot_after_add
+  - name: snapshot_after_index
     labels: {role: swamp}
     dependsOn:
     - step: observe
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-turn-snapshot-after-index-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "task-turn-snapshot-after-index-" + string(inputs.node_id) }}
+        transport: *id001
+        hosts: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '60'
+        - cp
+        - --
+        - ${{ inputs.intent.checkout_path + "/.git/index" }}
+        - ${{ "/tmp/orbit-task-turn-" + run.id + "/after.index" }}
+        timeoutSec: 60
+    writes: true
+  - name: snapshot_after_add
+    labels: {role: swamp}
+    dependsOn:
+    - step: snapshot_after_index
       condition:
         type: succeeded
     task:
