@@ -6,17 +6,15 @@ namespace App\Domain\Nodes;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
-use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
-/** Records bounded native hub status only; never renders or publishes configuration. */
+/** Records the hub run's public outcome; the run replaced the peers. */
 final readonly class NodeWireGuardHubProjection implements DirectOperationProjection
 {
     public function input(Operation $operation): array
     {
-        return NodeWireGuardInput::bound($operation)
-            ?? throw new ResourceOperationException('operation.execution_forbidden', 'The hub differs from its admitted root.', 422);
+        return ['intent' => ValidatedData::object($operation->input['intent']), 'execution_secrets' => []];
     }
 
     public function apply(Operation $operation, array $data): Operation

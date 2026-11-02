@@ -25,8 +25,6 @@ final readonly class OperationKinds
     /** The form of every target type, one lower-case word, such as `instance`. */
     public const string TargetTypePattern = '/\A[a-z][a-z0-9_]*\z/D';
 
-    public const string InstanceSmoke = 'instance.smoke';
-
     public const string InstanceDeploy = 'instance.deploy';
 
     public const string InstanceRollback = 'instance.rollback';

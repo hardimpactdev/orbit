@@ -1,7 +1,9 @@
 """Database server create contract on the target (F9): an owned running container on the private port,
 no first-start password in its environment, and the admin login works with the recorded password unseen.
 
-Arguments: the expected Docker state of the server container, `running`.
+Database server destroy contract: no container of the Process is left, and the data volume stays.
+
+Arguments: the expected state, `running` after create or `removed` after destroy.
 """
 import json
 import os
@@ -22,6 +24,14 @@ def check(condition, message):
         sys.exit(f'parity: {message} ({container})')
 
 
+if sys.argv[1] == 'removed':
+    check(operation['status'] == 'succeeded' and operation['result'] == {'backend': 'absent'}, 'the projected result is backend absent')
+    left = target('docker', 'ps', '--all', '--quiet', '--filter', 'label=orbit.process.id=' + str(intent['process_id']))
+    check(left == '', f'no container of the Process is left, found {left}')
+    volume = 'orbit-' + container.split('-', 3)[3] + '-data'
+    check(target('docker', 'volume', 'inspect', '--format', '{{.Name}}', volume) == volume, f'the data volume {volume} stays')
+    print(f'parity: {operation["kind"]} removes {container} and keeps {volume}')
+    sys.exit(0)
 check(operation['status'] == 'succeeded' and operation['result'] == {'backend': 'active'}, 'the projected result is backend active')
 value = json.loads(target('docker', 'container', 'inspect', container) or '[{}]')[0]
 check(value.get('State', {}).get('Running') is True, 'the container runs')

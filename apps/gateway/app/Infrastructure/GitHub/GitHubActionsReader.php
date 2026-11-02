@@ -17,7 +17,7 @@ use Throwable;
 
 /**
  * Reads GitHub Actions runs and artifacts of one repository with an installation token of the
- * Gateway GitHub App that holds only Actions read. Smoke dispatch requests a separate Actions-write token.
+ * Gateway GitHub App that holds only Actions read.
  * Artifact archives are downloaded from the
  * storage URL GitHub redirects to, without the token. Every failure is a
  * {@see GitHubActionsUnavailable} without detail, so no token or signed URL reaches an error.
@@ -37,23 +37,8 @@ final readonly class GitHubActionsReader
         return '/repos/'.rawurlencode($repository->owner).'/'.rawurlencode($repository->name);
     }
 
-    /**
-     * A token for this one repository after the operator accepts Actions write.
-     *
-     * @throws GitHubActionsUnavailable
-     */
-    public function dispatchToken(GitHubRepository $repository): string
-    {
-        return $this->scopedToken($repository, 'write');
-    }
-
     /** A separate token that holds only Actions read. */
     public function token(GitHubRepository $repository): string
-    {
-        return $this->scopedToken($repository, 'read');
-    }
-
-    private function scopedToken(GitHubRepository $repository, string $permission): string
     {
         $credentials = $this->apps->credentials();
 
@@ -74,20 +59,14 @@ final readonly class GitHubActionsReader
             throw new GitHubActionsUnavailable;
         }
 
-        if ($permission === 'write' && (! is_array($installation['permissions'] ?? null)
-            || ($installation['permissions']['actions'] ?? null) !== 'write')) {
-            throw new ResourceOperationException('instance.smoke_invalid',
-                'The Gateway operator must grant Actions write in the App settings and accept the installation update.');
-        }
-
         $access = $this->json('/app/installations/'.$id.'/access_tokens', $jwt, [
-            'repositories' => [$repository->name], 'permissions' => ['actions' => $permission],
+            'repositories' => [$repository->name], 'permissions' => ['actions' => 'read'],
         ]);
         $token = $access['token'] ?? null;
         $permissions = $access['permissions'] ?? null;
 
         if (! is_string($token) || $token === '' || ! is_array($permissions)
-            || ($permissions['actions'] ?? null) !== $permission) {
+            || ($permissions['actions'] ?? null) !== 'read') {
             throw new GitHubActionsUnavailable;
         }
 

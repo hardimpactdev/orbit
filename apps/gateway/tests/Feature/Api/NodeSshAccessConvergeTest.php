@@ -6,6 +6,7 @@ use App\Domain\Nodes\NodeSshAccessProjection;
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\NodeFootprint;
 use App\Models\Operation;
 use Tests\Support\FakeRoutePublicationSocket;
@@ -16,7 +17,15 @@ beforeEach(function (): void {
     $this->gateway = $this->markAsGateway(FleetFixtures::node('ssh-policy-gateway', [RoleName::Gateway]));
     $this->target = FleetFixtures::node('ssh-policy-target');
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
+    $this->identity = tmpfile();
+    fwrite($this->identity, "-----BEGIN OPENSSH PRIVATE KEY-----\nfixture-access-identity\n-----END OPENSSH PRIVATE KEY-----\n");
+    $keys = Mockery::mock(SshKeyProvider::class);
+    $keys->shouldReceive('privateKeyPath')->andReturn(stream_get_meta_data($this->identity)['uri']);
+    app()->instance(SshKeyProvider::class, $keys);
     $this->socket = new FakeRoutePublicationSocket;
+    $this->socket->reply = fn (array $request): array => $request['type'] === 'vault.put'
+        ? [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]]
+        : [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'd2a3f9c1-6f0e-4b8a-9d3c-0f1e2a3b4c5d']]];
     app()->instance(WebSocketClient::class, $this->socket);
     config(['swamp.run_token' => 'fake.run.token']);
     $agents = Mockery::mock(AgentCommandRunner::class);
@@ -32,19 +41,21 @@ function sshAccessCompletion(Operation $operation, string $status = 'succeeded',
         'error_code' => $status === 'failed' ? 'swamp.run_failed' : null, 'result' => $result];
 }
 
-it('admits the fixed tracked public key and existing execution copy without a host call', function (): void {
+it('pushes the access identity copy, then admits the block keys without a host call', function (): void {
     $this->withHeader('Idempotency-Key', 'ssh-access-once')->post($this->path, [], ['Accept' => 'application/json'])
         ->assertAccepted()->assertJsonPath('data.kind', 'node.ssh_access_converge');
     $operation = Operation::query()->sole();
     $this->post($this->path, [], ['Accept' => 'application/json'])->assertAccepted()->assertJsonPath('data.id', $operation->id);
-    expect($this->socket->sent)->toHaveCount(1);
-    $payload = $this->socket->sent[0]['payload'];
+    expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'workflow.run']);
+    expect($this->socket->sent[0]['payload'])->toMatchArray(['vaultName' => 'orbit-control-inputs', 'key' => 'bootstrap-identity-node-14']);
+    $payload = $this->socket->sent[1]['payload'];
     expect($payload['workflowIdOrName'])->toBe('operation-node-ssh-access-converge');
     expect($payload['inputs'])->toMatchArray(['node_id' => $this->target->id, 'kind' => 'node.ssh_access_converge',
         'execution_secrets' => ['bootstrap_identity' => ['vault' => 'orbit-control-inputs', 'key' => 'bootstrap-identity-node-14']]]);
     expect($payload['inputs']['intent'])->toMatchArray(['control_node_id' => 209,
         'identity_file' => '/etc/orbit/swamp-role-worker/ssh-identity',
         'public_key' => 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND',
+        'keys' => ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND'],
         'target' => ['name' => 'target', 'host' => $this->target->wireguard_ip, 'user' => 'orbit', 'port' => 22,
             'host_keys' => [$this->target->ssh_host_key_type.' '.$this->target->ssh_host_key]]]);
     expect($operation->input['participant_node_ids'])->toBe([209, $this->target->id]);
@@ -93,7 +104,7 @@ it('records only its footprint contribution after native own-key verification an
     expect($operation->fresh()->result)->toBe(['ssh_access_ready' => true]);
     $this->post($this->path, [], ['Accept' => 'application/json'])->assertAccepted()->assertJsonPath('data.id', $operation->id);
     expect(Operation::query()->count())->toBe(1);
-    expect($this->socket->sent)->toHaveCount(1);
+    expect($this->socket->sent)->toHaveCount(2);
 });
 
 it('does not mark the footprint ready for a failed native run', function (): void {
@@ -118,5 +129,6 @@ it('captures a changed pinned target as a new publication rather than reusing an
     $this->target->update(['wireguard_ip' => '10.44.0.199', 'ssh_host_key' => 'new-host-key']);
     $this->post($this->path, [], ['Accept' => 'application/json'])->assertAccepted();
     expect(Operation::query()->count())->toBe(2);
-    expect($this->socket->sent)->toHaveCount(2);
+    // An unchanged identity copy is not sent again.
+    expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'workflow.run', 'workflow.run']);
 });

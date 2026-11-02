@@ -40,6 +40,6 @@ it('retains native interruption and records server failure without deleting its 
     expect($projected->error_code)->toBe('operation.native_failed');
     expect($server->fresh()->status->value)->toBe('failed');
     expect($server->fresh()->error_code)->toBe('operation.native_failed');
-    expect($server->fresh()->failed_step)->toBe($kind === 'database_server.create' ? null : 'database-apply');
+    expect($server->fresh()->failed_step)->toBeNull();
     expect(DatabaseServer::query()->count())->toBe(1);
 })->with([['database_server.create', 'provisioning'], ['database_server.destroy', 'removing']]);

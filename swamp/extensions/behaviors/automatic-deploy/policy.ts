@@ -108,7 +108,6 @@ export const isPolicyRefusal = (error: unknown): boolean =>
   error instanceof PolicyError && [
     "instance.auto_deploy_policy_owner",
     "instance.auto_deploy_role_inactive",
-    "instance.smoke_held",
   ].includes(error.code);
 
 export const AlertSchema = z.object({
@@ -371,7 +370,6 @@ export async function tick(
       !receipt.result?.deployment_id && [
       "deployment.paused",
       "instance.auto_deploy_role_inactive",
-      "instance.smoke_held",
       "instance.auto_deploy_policy_owner",
     ].includes(receipt.error_code ?? "");
     state.intent = null;

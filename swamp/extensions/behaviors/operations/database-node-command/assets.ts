@@ -6,7 +6,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/database-node-command",
-    version: "2026.11.02.1",
+    version: "2026.11.02.2",
     resources: {
         result: { schema: ObjectValue, lifetime: "1d", garbageCollection: 10 },
     },
@@ -26,6 +26,24 @@ export const behavior = {
                     ),
                 };
                 await ctx.writeResource("result", "server-create", value);
+                return value;
+            },
+        },
+        server_destroy: {
+            description:
+                "Read the shipped database:server:destroy phase script once for official SSH argv, with the public intent as JSON",
+            arguments: z.object({ intent: ObjectValue }),
+            execute: async (
+                args: { intent: Record<string, unknown> },
+                ctx: Context,
+            ) => {
+                const value = {
+                    intent_json: JSON.stringify(args.intent),
+                    destroy: await Deno.readTextFile(
+                        ctx.extensionFile("server/destroy.py"),
+                    ),
+                };
+                await ctx.writeResource("result", "server-destroy", value);
                 return value;
             },
         },
