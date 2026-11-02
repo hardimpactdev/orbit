@@ -159,22 +159,25 @@ final readonly class SwampCommandStep
             $result = ['error_code' => 'operation.native_failed'];
         }
 
-        return DB::transaction(function () use ($direct, $operation, $runId, $run, $status, $result): Operation {
+        $current = DB::transaction(function () use ($direct, $operation, $runId): Operation {
             $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $direct->assertRun($current, $runId);
-            if (ExpireOperationAction::awaitsSettlement($current)) {
-                return app(ExpireOperationAction::class)->settle($current, $runId, $status);
-            }
-            if ($current->status->terminal() || isset($current->state['swamp_scheduled_result'])) {
-                return $current;
-            }
 
-            return $direct->projection($current)->apply($current, [
-                'run_id' => $runId, 'status' => $status, 'started_at' => $run['startedAt'], 'finished_at' => $run['completedAt'],
-                'error_code' => in_array($status, ['failed', 'interrupted'], true) ? ($result['error_code'] ?? 'operation.native_failed') : null,
-                'result' => $result, 'failure' => app(NativeStepFailure::class)->fromRun($run, $current),
-            ]);
+            return $current;
         });
+        if (ExpireOperationAction::awaitsSettlement($current)) {
+            return app(ExpireOperationAction::class)->settle($current, $runId, $status);
+        }
+        if ($current->status->terminal() || isset($current->state['swamp_scheduled_result'])) {
+            return $current;
+        }
+
+        // Family projections read/clean native secrets outside their own short result transaction.
+        return $direct->projection($current)->apply($current, [
+            'run_id' => $runId, 'status' => $status, 'started_at' => $run['startedAt'], 'finished_at' => $run['completedAt'],
+            'error_code' => in_array($status, ['failed', 'interrupted'], true) ? ($result['error_code'] ?? 'operation.native_failed') : null,
+            'result' => $result, 'failure' => app(NativeStepFailure::class)->fromRun($run, $current),
+        ]);
     }
 
     /** Records a terminal root run of one Schedule's own workflow as its fire; a running fire waits for its end. */

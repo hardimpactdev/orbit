@@ -6,7 +6,6 @@ namespace App\Infrastructure\Database;
 
 use Closure;
 use Illuminate\Database\Events\TransactionBeginning;
-use Illuminate\Database\Events\TransactionCommitted;
 use Illuminate\Database\Events\TransactionRolledBack;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
@@ -38,21 +37,29 @@ final class LongWriteTransactionLog
                 $this->began = $this->now();
                 $this->level = $event->connection->transactionLevel();
                 $this->origin = self::origin();
+                // Register before application callbacks: Laravel's committed event follows their network I/O.
+                $event->connection->afterCommit(fn () => $this->ended('committed'));
             }
         });
-        $ended = function (TransactionCommitted|TransactionRolledBack $event): void {
+        Event::listen(TransactionRolledBack::class, function (TransactionRolledBack $event): void {
             if ($this->began === null || $event->connection->transactionLevel() >= $this->level) {
                 return;
             }
-            $held = (int) round($this->now() - $this->began);
-            if ($held >= self::ThresholdMilliseconds) {
-                Log::warning('Long SQLite write transaction', ['held_ms' => $held, 'origin' => $this->origin,
-                    'outcome' => $event instanceof TransactionCommitted ? 'committed' : 'rolled_back']);
-            }
-            $this->began = $this->origin = null;
-        };
-        Event::listen(TransactionCommitted::class, $ended);
-        Event::listen(TransactionRolledBack::class, $ended);
+            $this->ended('rolled_back');
+        });
+    }
+
+    private function ended(string $outcome): void
+    {
+        if ($this->began === null) {
+            return;
+        }
+        $held = (int) round($this->now() - $this->began);
+        $origin = $this->origin;
+        $this->began = $this->origin = null;
+        if ($held >= self::ThresholdMilliseconds) {
+            Log::warning('Long SQLite write transaction', ['held_ms' => $held, 'origin' => $origin, 'outcome' => $outcome]);
+        }
     }
 
     private function now(): float

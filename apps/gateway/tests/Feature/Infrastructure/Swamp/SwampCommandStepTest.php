@@ -14,6 +14,7 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Node;
 use App\Models\Operation;
+use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
@@ -52,6 +53,31 @@ it('reads history once after a native terminal event and projects only the fixed
     expect($this->socket->closed)->toBeTrue();
     $this->step->projectTerminal($result, $terminal, $this->selector);
     expect($this->socket->sent)->toHaveCount(1);
+});
+
+it('commits the terminal result before native secret cleanup without holding a write transaction', function (): void {
+    $this->operation->update(['kind' => 'node.agent_rekey', 'input' => ['_agent_rekey' => [
+        'verifier_hash' => str_repeat('b', 64), 'agent_key' => ['vault' => 'orbit-control-inputs', 'key' => 'node-agent-rekey-1-1'],
+    ]]]);
+    $this->history['workflowName'] = 'operation-node-agent-rekey';
+    $this->history['inputs']['kind'] = 'node.agent_rekey';
+    $this->history['jobs'] = [['name' => 'rekey', 'steps' => [['name' => 'Prove the new key', 'status' => 'succeeded']]]];
+    $level = DB::transactionLevel();
+    $this->socket->reply = function (array $request) use ($level): array {
+        expect(DB::transactionLevel())->toBe($level);
+        if ($request['type'] === 'vault.delete') {
+            expect($this->operation->fresh()->status)->toBe(OperationStatus::Succeeded)
+                ->and($this->node->fresh()->agent_secret_hash)->toBe(str_repeat('b', 64));
+        }
+
+        return [['type' => $request['type'], 'id' => $request['id'], 'payload' => ['data' => $request['type'] === 'workflow.history.get' ? $this->history : []]]];
+    };
+
+    $result = $this->step->projectTerminal($this->operation, ['id' => $this->runId, 'status' => 'succeeded'],
+        ['job' => 'rekey', 'step' => 'Prove the new key', 'native' => true]);
+
+    expect($result->status)->toBe(OperationStatus::Succeeded)
+        ->and(array_column($this->socket->sent, 'type'))->toBe(['workflow.history.get', 'vault.delete']);
 });
 
 it('projects terminal history with the read credential when the run credential is absent', function (): void {

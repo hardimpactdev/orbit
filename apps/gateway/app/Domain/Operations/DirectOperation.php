@@ -11,6 +11,7 @@ use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Container\Attributes\Tag;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use LogicException;
 
@@ -315,6 +316,18 @@ final readonly class DirectOperation
      * @param  array<string, mixed>  $result
      */
     public function project(Operation $operation, array $data, array $result): Operation
+    {
+        return DB::transaction(function () use ($operation, $data, $result): Operation {
+            $operation->setRawAttributes(Operation::query()->lockForUpdate()->findOrFail($operation->id)->getAttributes(), true);
+
+            return $this->record($operation, $data, $result);
+        });
+    }
+
+    /** @param array<string,mixed> $data
+     * @param  array<string,mixed>  $result
+     */
+    private function record(Operation $operation, array $data, array $result): Operation
     {
         $operation->refresh();
         if (! self::owns($operation)) {

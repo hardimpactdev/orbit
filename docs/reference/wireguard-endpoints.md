@@ -59,7 +59,7 @@ One Swamp run on 209 reaches both Nodes over official SSH, with no script on eit
 5. One `wg syncconf` command loads the peer list. It composes the key from the key file on the Node, and a running tunnel is not restarted.
 6. The firewall trust rule and the [resolver policy](/reference/private-dns) follow.
 
-The typed terminal result records the public key only after these steps succeed. When a step fails, the run stops; there is no rollback, and a rerun writes the same files again. There are no effect-time Gateway reads, callbacks, or child Operations.
+The typed terminal result records the public key only after these steps succeed. The key and Operation result commit together in one short database transaction. When a step fails, the run stops; there is no rollback, and a rerun writes the same files again. There are no effect-time Gateway reads, callbacks, or child Operations.
 
 `fleet.peer_dns` also runs on 209 with the stored WireGuard host pin. One read command prints the public key, the resolver servers, the `orbit` domains and default route, the DNS marker and the `PostUp` hook; a typed step decides drift from it. On drift, `@swamp/cfgmgmt/line` keeps the Gateway-rendered hook line in `orbit.conf` and leaves the rest of the file as it is, and `@swamp/cfgmgmt/file` writes the marker `/etc/wireguard/orbit.dns-link`. Then native steps set DNS, domains and default-route, restore any old uplink, and read the result again. The typed result checks the admitted policy and usable uplink. It never calls an agent action or restarts the tunnel.
 

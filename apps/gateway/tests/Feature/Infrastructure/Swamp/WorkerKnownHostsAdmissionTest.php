@@ -3,14 +3,14 @@
 declare(strict_types=1);
 
 use App\Actions\Nodes\AdmitWorkerKnownHostsAction;
+use App\Actions\Nodes\RecordNodeSshHostKeyAction;
 use App\Domain\Nodes\WorkerKnownHostsProjection;
 use App\Domain\Nodes\WorkerKnownHostsPublisher;
 use App\Domain\Operations\OperationIdempotency;
-use App\Domain\TaskVms\TaskVmEnrollmentProjection;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Ssh\HostKey;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Models\TaskVm;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\Fleet\FleetFixtures;
 
@@ -98,10 +98,8 @@ it('isolates automatic publication from the caller Operation idempotency scope',
 
 it('publishes public pins from the TaskVM enrollment observation path', function (): void {
     $node = $this->node;
-    $vm = new TaskVm(['name' => $node->name]);
-    app(TaskVmEnrollmentProjection::class)->recordPublic($vm, ['guest_node_id' => $node->id], [
-        'node' => ['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'new-task-vm-pin', 'ssh_host_fingerprint' => 'SHA256:public'],
-    ]);
+    Node::withoutEvents(fn () => $node->update(['ssh_host_key_type' => null, 'ssh_host_key' => null, 'ssh_host_fingerprint' => null]));
+    app(RecordNodeSshHostKeyAction::class)->execute($node, $node->wireguard_ip, new HostKey('ssh-ed25519', 'new-task-vm-pin', 'SHA256:public'));
     expect(Operation::query()->sole()->input['intent']['known_hosts_content'])->toContain('new-task-vm-pin');
     expect($this->socket->sent)->toHaveCount(1);
 });
