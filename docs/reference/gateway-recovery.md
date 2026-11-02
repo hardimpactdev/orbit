@@ -116,6 +116,8 @@ Swamp serve on Node 209 reads `swamp/` from a Git checkout of the Orbit reposito
 5. it runs `swamp access reload`, so serve creates, revokes or keeps grants to match the file;
 6. it compares the workflows serve lists with the workflows on disk, leaving out the `schedule-<uuid>` workflows that [Schedules](/reference/schedules) write into serve at any time.
 
+Required checks validate both grant files through the same renderer and the pinned serve startup parser before the commit can release.
+
 The step prints the commit, the previous commit, and the workflow count. Any failure, or no terminal within the wait, pauses the release with `gateway.release_swamp_load_failed`, and the old release stays live. The record names the Operation. A failed load can leave the checkout on the new commit; fix forward and resume.
 
 Serve's extension reload keeps each manifest's `additionalFiles` list from serve's start ([Lab #4282](https://swamp-club.com/lab/4282)), so a new shipped script reaches workers only after a restart. Only the release load moves the checkout, so its HEAD reflog at serve's start time names the commit serve started from. The step compares the lists of that commit with the release commit's. When the release commit lists a new file, it schedules a serve restart 5 seconds later and reports the commit serve started from and the manifests with new files.
