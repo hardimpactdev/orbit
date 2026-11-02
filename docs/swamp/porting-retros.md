@@ -171,9 +171,9 @@ Group 2511 completed the earlier proofs. Cancel Operation 7792 destroyed task VM
 
 The Process/Horizon audit follow-up removes the final Process Docker script and all three Horizon scripts. Process uses private cfgmgmt files and public Docker argv. Horizon uses six steps: inspect, guarded write/enable, graceful handoff or start, a check for the start branch, and a native assertion. Five Horizon native cases and eleven Gateway cases pass. The active branch still accepts termination without waiting for current jobs.
 
-The final Process/Horizon proof passed all twelve fixtures on minimal@7 at `93ebd83c63`, after a fresh `up` on Beast task VM 269. The six Process kinds took 13.7–23.5 s (six successes, nearest-rank p95 23.5 s); their budgets are 120 s with `queueTimeout: 30`. Docker create, stop and private environment cases took 12.8, 25.2 and 14.8 s within their 180 s budgets. 
+The final Process/Horizon proof passed all twelve fixtures on minimal@7 at `93ebd83c63`, after a fresh `up` on Beast task VM 269. The six Process kinds took 13.7–23.5 s (six successes, nearest-rank p95 23.5 s); their budgets are 120 s with `queueTimeout: 30`. Docker create, stop and private environment cases took 12.8, 25.2 and 14.8 s within their 180 s budgets.
 
-Horizon start and active handoff took 19.5 and 20.2 s within 120 s. The Horizon fixture exercises a PHP artisan boundary without a Redis job engine. 
+Horizon start and active handoff took 19.5 and 20.2 s within 120 s. The Horizon fixture exercises a PHP artisan boundary without a Redis job engine.
 
 Live development Process 168 on Beast restarted successfully as Operation 7796 at 12:54:05–08Z. The proof VM was destroyed through `bin/swamp-proof down`, with Incus absence verified. The earlier WebSocket 429 and capacity failures left no passing receipts and were cleaned up before this proof.
 
@@ -319,3 +319,9 @@ Three minimal@10 receipts pass at `bd9af9de1b08f4045b03d7a727dd8589ccb635b0`. Ea
 Eleven native workflow tests, three typed data tests and 108 Gateway tests pass. PHPStan, Pint, registry, chart, documentation, shape, naming and placement checks pass. The proof first exposed unexpanded phase names in the fixture; corrected fixtures produced the receipts above. A failed provision used an old parent against the new workspace input; the normal Gateway release resolved that mismatch. A later status-read failure was confirmed succeeded before the proof tool reused that same provision. No production serve restart or reload was used.
 
 Cancellation 8222 destroyed task VM 344 at 2026-11-02T19:27:26Z. The lane holds no VM. The rebased runtime files match the proven source.
+
+## Native Schedule manual run
+
+`schedule.run` already uses the shared one-step `task-command-run` workflow with official SSH argv and vault stdin; no execution rewrite or shipped script is needed. Its chart now says that command output stays in the Node journal. The fresh minimal@10 receipt at `f0ac508f0d` takes 2.34 seconds, verifies the marker file and no Node units, and proves that running a disabled Node Schedule leaves its trigger absent. Its one-sample p95 is 2.34 seconds; the fixture budget is 120 seconds and queue timeout 300. The receipt index is `swamp/proof/receipts/schedule-run-native.json`.
+
+Native command success, failure, timeout, context and secret isolation retain their six passing local cases. The proof uses test commands and a proof CA, with no production data or scale.
