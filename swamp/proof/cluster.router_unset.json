@@ -34,7 +34,8 @@
     }
   },
   "expect": {
-    "status": "succeeded"
+    "status": "succeeded",
+    "run": false
   },
   "parity": "swamp/proof/cluster.router_unset/parity.py"
 }
