@@ -11,6 +11,7 @@ use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Orbit\Extensions\Conn\Data\RegisterConnEnvironmentData;
 use Orbit\Extensions\Conn\Domain\T3ServerClient;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
@@ -63,6 +64,14 @@ final readonly class RegisterConnEnvironmentAction
                 'server_version' => $descriptor->serverVersion, 'admin_session' => $session->token,
                 'admin_session_expires_at' => $session->expiresAt, 'registered_at' => $now,
                 'cleanup_version' => $environment->cleanup_version + 1])->save();
+
+            DB::afterCommit(function () use ($environment, $node): void {
+                try {
+                    app(AdmitConnCleanupAction::class)->execute($environment, $node);
+                } catch (ResourceOperationException $error) {
+                    Log::warning('conn.cleanup_start_failed', ['environment_id' => $environment->environment_id, 'error_code' => $error->errorCode]);
+                }
+            });
 
             return $environment;
         });

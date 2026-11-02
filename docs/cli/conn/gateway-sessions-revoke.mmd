@@ -1,7 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R1 (an external API call is an effect, so it is a run), R2-R4. swamp/workflows/workflow-operation-conn-direct.yaml, docs/reference/conn.md#gateway-session-cleanup, conn.pairing_revoke chart.
   %% Tightened: flow-tighten 2026-11-02, rules 4, 14, 15, 16, 21 (no Gateway reads from the step, session to vault, one session list, no link step).
-  %% status: draft
+  %% status: migrated
   %% command: none · Conn API (conn-environment-cleanup)
   %% kind: conn.gateway_sessions_revoke
   autonumber
@@ -18,7 +18,7 @@ sequenceDiagram
   %%> - `POST /api/v1/conn/environments/env-beast/sessions/cleanup`
   %%> - syntax: the MCP tool `conn-environment-cleanup` with `environment`
   %%> Who starts it:
-  %%> - the Gateway itself, after a registration of env-beast commits a new cleanup revision
+  %%> - the Gateway itself, when a registration of env-beast commits a new cleanup revision; a start failure keeps registration successful and the revision pending
   %%> - an operator, to retry a revision that failed
   %%> Not included:
   %%> - there is no `orbit` command, and no per-minute Swamp check of pending revisions
@@ -29,7 +29,7 @@ sequenceDiagram
   %%> - no other cleanup runs for env-beast (`operation.target_busy`); the Gateway holds one lock per server
   %%> What it does:
   %%> - captures the T3 URL, the revision and the fixed client label `Orbit Gateway`
-  %%> - pushes the current admin session to the Swamp vault as `conn-session-5181` after commit (R3)
+  %%> - pushes the current admin session to the Swamp vault as `conn-pairing-revoke-<uuid>` after commit (R3)
   %%> While it runs:
   %%> - a new registration of env-beast refuses while the environment is busy, then validates its candidate session outside the database transaction
   %%> Why a run:

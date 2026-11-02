@@ -5,6 +5,7 @@ import secrets
 import subprocess
 import sys
 import threading
+from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -28,13 +29,17 @@ def serve():
         def do_GET(self):
             with lock:
                 data = json.loads(DATA.read_text())
+                if self.path == '/.well-known/t3/environment':
+                    return self.reply(200, {'environmentId': 'revoke-proof', 'label': 'proof', 'serverVersion': '0.9.1'})
                 if self.headers.get('Authorization') != 'Bearer ' + data['admin']:
                     return self.reply(401, {'private': data['private']})
+                if self.path == '/api/auth/session':
+                    return self.reply(200, {'authenticated': True, 'scopes': ['access:read', 'access:write'], 'expiresAt': (datetime.now(UTC) + timedelta(days=1)).isoformat()})
                 if self.path != '/api/auth/clients':
                     return self.reply(404, {})
                 data['reads'] += 1
                 DATA.write_text(json.dumps(data))
-                self.reply(200, b'invalid-json' if data['case'] == 'invalid-list' else data['sessions'])
+                self.reply(200, b'invalid-json' if data['case'] in ['invalid-list', 'gateway-invalid-list'] else data['sessions'])
 
         def do_POST(self):
             with lock:
@@ -45,6 +50,8 @@ def serve():
                 if self.path == '/api/auth/clients/revoke':
                     identity = body['sessionId']
                     assert identity not in ['gateway', 'foreign']
+                    if data['case'] == 'gateway-partial' and identity == 'second-session':
+                        return self.reply(500, {'private': data['private']})
                     found = any(row['sessionId'] == identity for row in data['sessions'])
                     data['sessions'] = [row for row in data['sessions'] if row['sessionId'] != identity]
                     data['revoked_sessions'].append(identity)

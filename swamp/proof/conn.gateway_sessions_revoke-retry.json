@@ -1,0 +1,43 @@
+{
+  "workflow": "operation-conn-direct",
+  "topology": "minimal",
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "before_gateway": [
+    [
+      "python3",
+      "-I",
+      "swamp/proof/conn/gateway_sessions_fixture.py",
+      "setup",
+      "retry"
+    ]
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "extensions/conn/enable",
+      "body": {},
+      "operation": false
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "conn/environments/revoke-proof/sessions/cleanup",
+    "body": {}
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Revoke old sessions",
+      "job": "conn",
+      "step": "Revoke old sessions",
+      "budget_seconds": 120
+    }
+  ],
+  "parity": [
+    "swamp/proof/conn/gateway_sessions_fixture.py",
+    "parity"
+  ]
+}

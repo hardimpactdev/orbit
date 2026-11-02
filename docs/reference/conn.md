@@ -130,7 +130,7 @@ The job sends that token as `admin_session`, with the server's environment id, i
 2. It reads `GET <url>/api/auth/session` with the session as its bearer token. A session T3 does not accept fails with `conn.session_rejected` (502).
 3. The session must carry `access:read` and `access:write`. `t3 auth session issue` grants both. A session without them fails with `conn.admin_scope_missing` (422).
 4. The Gateway stores the session encrypted, with the expiry T3 reports. T3 sessions last 30 days by default.
-5. It lists the server's client sessions and revokes every earlier `Orbit Gateway` session. A failure here does not fail the registration. This is why the job must issue the session with the label `Orbit Gateway`.
+5. After the registration commits, it starts native Swamp cleanup of earlier `Orbit Gateway` sessions. A cleanup or dispatch failure leaves registration successful. This is why the job must issue the session with the label `Orbit Gateway`.
 
 Registering again replaces the stored session. The job registers on each server start and before the session expires. An environment whose session expired shows `status: session_expired` and cannot mint pairings until it registers again.
 
@@ -224,9 +224,9 @@ Steps make no Gateway calls.
 
 Gateway session cleanup runs the shared native revocation workflow on Node 209 for the fixed Gateway client label. It captures the T3 URL, registration revision and vault reference at admission, with no step-to-Gateway callback. The child lists sessions once and keeps the current admin and every other label. Failed HTTP or reply checks report `conn.revocation_failed`; the revision stays pending.
 
-Registration keeps its normal response after it validates and stores the new encrypted admin session. It records a cleanup revision. The existing Conn publisher checks pending revisions each minute and admits `conn.gateway_sessions_revoke` through the Gateway-authorized cleanup endpoint. It runs separately from cleanup; cleanup steps make no Gateway call. Cleanup keeps the current admin session and other client labels.
+Registration stores the new encrypted admin session and increments its cleanup revision. After that transaction commits, the Gateway admits `conn.gateway_sessions_revoke` once. Registration keeps its normal response if admission or cleanup fails. A failed start records a safe warning, and the revision stays pending. No scheduled publisher scans registrations. Cleanup keeps the current admin session and other client labels.
 
-Registration refuses with `operation.target_busy` while a cleanup or pairing revocation holds that environment. Session validation runs outside the database transaction; a concurrent revocation or registration refuses with `conn.environment_changed` before storing the candidate session. The list and registration replies expose the non-secret `cleanup_version`. Admission uses a stable key for that environment and revision. A failed revision stays pending without another automatic Operation; a new registration or an explicit cleanup request permits a new attempt. Cleanup never discards the current admin session.
+Registration refuses with `operation.target_busy` while a cleanup or pairing revocation holds that environment. Session validation runs outside the database transaction; a concurrent revocation or registration refuses with `conn.environment_changed` before storing the candidate session. The list and registration replies expose the non-secret `cleanup_version`. The environment lock prevents overlapping revocations. A failed revision stays pending without another automatic Operation; a new registration or an explicit cleanup request permits a new attempt. A completed revision returns HTTP 204 without starting a run. Cleanup never discards the current admin session.
 
 ## Pairing Operations
 

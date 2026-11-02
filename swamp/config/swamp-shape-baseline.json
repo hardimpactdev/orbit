@@ -221,15 +221,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/conn/maintenance.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "GET /api/v1/conn/environments",
-        "POST <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/dependency-merge/admission.ts",
       "rule": "gateway-http",
       "count": 2,
@@ -502,14 +493,6 @@
         "/usr/bin/stat",
         "/usr/bin/sudo",
         "/usr/bin/test"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/integrations/mod.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
       ]
     },
     {

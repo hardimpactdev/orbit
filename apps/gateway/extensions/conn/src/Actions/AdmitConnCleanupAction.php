@@ -34,7 +34,7 @@ final readonly class AdmitConnCleanupAction
             $reference = ['vault' => 'orbit-control-inputs', 'key' => 'conn-pairing-revoke-'.Str::uuid()];
             $operation = $this->operations->execute('conn.gateway_sessions_revoke', 'conn_environment', $environment->id, $gateway,
                 ['conn_environment_id' => $environment->id, 'cleanup_version' => $environment->cleanup_version, 'caller_node_id' => $caller->id,
-                    'intent' => ['url' => $environment->url, 'labels' => [RegisterConnEnvironmentAction::GATEWAY_CLIENT_LABEL], 'links' => []],
+                    'intent' => ['url' => $environment->url, 'labels' => [RegisterConnEnvironmentAction::GATEWAY_CLIENT_LABEL], 'links' => [], 'revision' => $environment->cleanup_version],
                     'execution_secrets' => ['admin_session' => $reference]], 'operator', null,
                 lockKey: OperationStore::lockKey('conn_environment', $environment->id));
             if ($operation->wasRecentlyCreated) {

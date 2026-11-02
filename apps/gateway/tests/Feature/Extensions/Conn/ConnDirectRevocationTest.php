@@ -62,7 +62,7 @@ function nativeGatewayCleanup(object $test, string $status = 'succeeded', array 
 it('admits complete public cleanup intent and a vault reference without a Gateway callback', function (): void {
     $this->withHeader('Idempotency-Key', 'cleanup-native')->postJson($this->url)->assertAccepted();
     $operation = Operation::query()->sole();
-    expect($operation->input['intent'])->toBe(['url' => 'http://t3.test', 'labels' => ['Orbit Gateway'], 'links' => []]);
+    expect($operation->input['intent'])->toBe(['url' => 'http://t3.test', 'labels' => ['Orbit Gateway'], 'links' => [], 'revision' => 1]);
     expect($operation->input)->not->toHaveKey('environment');
     expect($operation->lock_key)->toBe('conn_environment:'.$this->environment->id);
     expect($this->copies)->toBe(['private-revoke-admin']);
@@ -132,3 +132,50 @@ it('validates registration outside a transaction and rejects a revocation that c
         expect($action->execute($this->gateway, $data)->admin_session)->toBe('candidate-session');
     }
 })->with([false, true]);
+
+it('admits cleanup after registration commits and keeps its normal response', function (): void {
+    $baseline = DB::transactionLevel();
+    $reply = $this->socket->reply;
+    $this->socket->reply = function (array $request) use ($baseline, $reply): array {
+        expect(DB::transactionLevel())->toBe($baseline);
+        expect($this->environment->fresh()->admin_session)->toBe('new-admin-session');
+
+        return $reply($request);
+    };
+    Http::fake([
+        'http://t3.test/.well-known/t3/environment' => Http::response(['environmentId' => 'revoke-proof', 'label' => 'test', 'serverVersion' => '0.9.1']),
+        'http://t3.test/api/auth/session' => Http::response(['authenticated' => true, 'expiresAt' => now()->addDay()->toIso8601String(), 'scopes' => ['access:read', 'access:write']]),
+    ]);
+    $this->postJson('/api/v1/conn/environments', ['environment_id' => 'revoke-proof', 'label' => 'test', 'url' => 'http://t3.test', 'admin_session' => 'new-admin-session'])
+        ->assertOk()->assertJsonPath('data.cleanup_version', 2)->assertJsonPath('data.cleanup_pending', true)->assertJsonMissingPath('data.admin_session');
+    $operation = Operation::query()->sole();
+    expect($operation->kind)->toBe('conn.gateway_sessions_revoke')->and($operation->input['cleanup_version'])->toBe(2)
+        ->and($operation->input['intent']['revision'])->toBe(2)->and($this->copies)->toBe(['new-admin-session']);
+    expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'workflow.run']);
+    Http::assertSentCount(2);
+    Http::assertNotSent(fn ($request) => str_ends_with($request->url(), '/api/auth/clients'));
+    $this->postJson('/api/v1/conn/environments', ['environment_id' => 'revoke-proof', 'label' => 'test', 'url' => 'http://t3.test', 'admin_session' => 'another-session'])
+        ->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
+    expect($this->environment->fresh()->admin_session)->toBe('new-admin-session');
+});
+
+it('preserves committed registration when native cleanup cannot start', function (): void {
+    $reply = $this->socket->reply;
+    $this->socket->reply = fn (array $request): array => $request['type'] === 'vault.put' ? $reply($request) : [['type' => 'error', 'id' => $request['id']]];
+    Http::fake([
+        'http://t3.test/.well-known/t3/environment' => Http::response(['environmentId' => 'revoke-proof', 'label' => 'test', 'serverVersion' => '0.9.1']),
+        'http://t3.test/api/auth/session' => Http::response(['authenticated' => true, 'expiresAt' => now()->addDay()->toIso8601String(), 'scopes' => ['access:read', 'access:write']]),
+    ]);
+    $this->postJson('/api/v1/conn/environments', ['environment_id' => 'revoke-proof', 'label' => 'test', 'url' => 'http://t3.test', 'admin_session' => 'new-admin-session'])
+        ->assertOk()->assertJsonPath('data.cleanup_pending', true);
+    expect($this->environment->fresh()->admin_session)->toBe('new-admin-session')
+        ->and($this->environment->fresh()->cleanup_completed_version)->toBe(0);
+    $operation = Operation::query()->sole();
+    expect($operation->status->value)->toBe('failed')->and($operation->error_code)->toBe('swamp.start_refused');
+});
+
+it('answers no content without a run when the cleanup revision is complete', function (): void {
+    $this->environment->update(['cleanup_completed_version' => 1]);
+    $this->postJson($this->url)->assertNoContent();
+    expect(Operation::query()->count())->toBe(0)->and($this->socket->sent)->toBe([]);
+});

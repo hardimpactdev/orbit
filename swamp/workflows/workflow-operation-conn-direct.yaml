@@ -23,6 +23,9 @@ inputs:
           type: array
           items:
             type: string
+        revision:
+          type: integer
+          minimum: 1
         links:
           type: array
           items:
@@ -31,6 +34,7 @@ inputs:
       - url
       - labels
       - links
+      - revision
       additionalProperties: false
     execution_secrets:
       type: object
@@ -75,5 +79,8 @@ jobs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: conn.pairing_revoke
-        intent: ${{ inputs.intent }}
+        intent:
+          url: ${{ inputs.intent.url }}
+          labels: ${{ inputs.intent.labels }}
+          links: ${{ inputs.intent.links }}
         execution_secrets: ${{ inputs.execution_secrets }}

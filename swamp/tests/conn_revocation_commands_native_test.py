@@ -161,6 +161,7 @@ class ConnRevocationNative(NativeTestCase):
 
     def test_gateway_cleanup_uses_child_receipt_and_preserves_current_admin(self):
         self.inputs["kind"] = "conn.gateway_sessions_revoke"
+        self.intent["revision"] = 1
         self.intent["labels"] = ["Orbit Gateway"]
         self.intent["links"] = []
         self.sessions[0]["client"]["label"] = "Orbit Gateway"
