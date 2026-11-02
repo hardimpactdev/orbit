@@ -1,0 +1,66 @@
+{
+  "kind": "tasks.dependency_merge",
+  "topology": "minimal@11",
+  "execution_commit": "d7a6aa5ad9023f5a22dc5e50ab1c8cc188d8734f",
+  "vm": {
+    "group_id": 2797,
+    "provision_operation_id": 8433,
+    "task_vm_id": 379,
+    "node_id": 407,
+    "name": "tvm-379",
+    "host_node_id": 13,
+    "seed": "ee3a19663b0281c764bfa73310be0450b8aaf118ba577b41dafa4c299fd1f669",
+    "provisioned_at": "2026-11-02T22:47:22Z",
+    "cancel_operation_id": 8455,
+    "destroyed": true,
+    "destroyed_at": "2026-11-02T23:02:51Z"
+  },
+  "script_files_deleted": 0,
+  "script_gap": null,
+  "receipts": [
+    {
+      "case": "tasks.dependency_merge",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/tasks.dependency_merge/20261102T225737Z-minimal.json",
+      "seconds": 20.84,
+      "sample": 1,
+      "p95_seconds": 20.84,
+      "budget_seconds": 1800,
+      "queue_timeout_seconds": 30,
+      "native_run": "2f6ec2c5-af71-4cbc-bf0c-94071b586daa"
+    },
+    {
+      "case": "tasks.dependency_merge-major",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/tasks.dependency_merge-major/20261102T225800Z-minimal.json",
+      "seconds": 18.93,
+      "sample": 1,
+      "p95_seconds": 18.93,
+      "budget_seconds": 1800,
+      "queue_timeout_seconds": 30,
+      "native_run": "42c41501-7ab3-4442-9531-21116152e234"
+    },
+    {
+      "case": "tasks.dependency_merge-merged",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/tasks.dependency_merge-merged/20261102T225816Z-minimal.json",
+      "seconds": 12.69,
+      "sample": 1,
+      "p95_seconds": 12.69,
+      "budget_seconds": 1800,
+      "queue_timeout_seconds": 30,
+      "native_run": "aa06b1be-056a-42bc-be41-824d448bbdb4"
+    }
+  ],
+  "tests": {
+    "data": 102,
+    "native_scheduler": 5,
+    "gateway": 29
+  },
+  "limits": "Disposable HTTPS GitHub contract service under the Orbit CA; real admission, scoped token minting, pinned Swamp, token revocation and terminal projection. No production merge, real hosted CI execution, populated Composer registry traffic or scale. Every production Project stays disabled.",
+  "skill_feedback": "No remaining unclear instruction. The installed gh 2.46 has no --slurp; the workflow uses --paginate and pure typed JSON-page parsing.",
+  "growth_reasons": {
+    "behaviors": "Pure JSON observation shaping and retained dependency policy replace HTTP and Gateway callbacks.",
+    "workflows": "Schema, native reads, independent fan-outs, expected-head PUT and cleanup are visible steps.",
+    "scripts": "No shipped or inline program added.",
+    "tests": "Replaced callback/resume fixtures with native lost-reply recovery and policy coverage.",
+    "fixtures": "Disposable HTTPS GitHub scope, merge/refusal/recovery evidence and proof receipts."
+  }
+}
