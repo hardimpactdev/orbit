@@ -1,0 +1,38 @@
+{
+  "kind": "project.routine",
+  "workflow": "project-routine",
+  "topology": "minimal",
+  "budget_seconds": 60,
+  "queue_timeout_seconds": 30,
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "projects",
+      "operation": false,
+      "bind": "project",
+      "body": {
+        "slug": "proof-routine",
+        "name": "Proof routine",
+        "type": "node-package",
+        "root": ".",
+        "repository_url": "https://github.com/octocat/Spoon-Knife.git",
+        "default_branch": "main",
+        "source_access": "github_app",
+        "task_check": "true"
+      }
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "projects/${project.id}/maintenance/routine"
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {"name": "Read the admitted input", "job": "routine", "step": "Read the admitted input", "budget_seconds": 20},
+    {"name": "Select this week's routine", "job": "routine", "step": "Select this week's routine", "budget_seconds": 20},
+    {"name": "Report the result", "job": "routine", "step": "Report the result", "budget_seconds": 10}
+  ],
+  "parity": "swamp/proof/project.routine/parity.py"
+}
