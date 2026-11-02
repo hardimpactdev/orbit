@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS 1 (cert signing is the one step→Gateway call), R2-R4. docs/reference/native-cluster-router.md, docs/cli/cluster.mdx.
+  %% Tightened: flow-tighten 2026-11-02, rules 17, 18, 22 (certificates installed in the publish step, as route:create does; cfgmgmt behaviors named).
   %% status: draft
   %% command: cluster:router:set
   %% kind: cluster.router_set
@@ -46,13 +47,13 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>N: Prepare the Router<br/>account · packages · Caddy
+  SW->>N: Prepare the Router<br/>@swamp/cfgmgmt user · apt
   %%> How:
   %%> - over SSH from 209 with `@swamp/ssh` and `@swamp/cfgmgmt` behaviors
   %%> What it does:
   %%> - the `router` role setup: the managed account, the required packages and the pinned Caddy package
   %%> - an existing, matching install is left as it is
-  SW->>N: Request the certificates<br/>CSR per Router scope
+  SW->>N: Request the certificates<br/>@swamp/ssh exec · openssl req
   %%> What it does:
   %%> - makes a key and a CSR on Node 7 for each Cluster Route domain that changed
   %%> - the private keys never leave Node 7
@@ -67,8 +68,10 @@ sequenceDiagram
   %%> - on Node 7: allows 443/tcp and 53/tcp+udp from each eligible member's LAN address
   %%> - on each workload member: allows Node 7's LAN address to its Route ports
   %%> - identical lines are left as they are
-  SW->>N: Publish Caddy, reload<br/>validate · caddy reload
+  %%> - one `forEach` over the members; it runs beside the certificate request, since neither needs the other
+  SW->>N: Install certs, publish<br/>@swamp/cfgmgmt/file · reload
   %%> What it does:
+  %%> - installs the signed certificates next to their keys and writes the Router site list with `@swamp/cfgmgmt/file`, in one step as `route:create` does
   %%> - validates the full Router site list, then reloads the running Caddy; no restart
   SW->>M: Probe the workloads<br/>TLS from Node 7 over the LAN
   %%> What it does:
