@@ -23,8 +23,7 @@ This section lists the main findings of the audit.
 
 1. `plan` (behavior `@nckrtl/doctor`, `planReads`) lists reads from the intent.
 2. `reads` runs each read as one `@swamp/ssh` `exec` from Node 209 (`okExitCodes` 0 and 1, 60 s bound). `sudo` is set per read.
-3. `logs` runs `scripts/logs.py` over SSH, only when the Gateway collects problems (`collect_problems`).
-4. `report` (`compare`) compares the output to intent and emits one typed report. `DoctorProjection` stores it in the Gateway.
+3. `report` (`compare`) compares the output to intent and emits one typed report. `DoctorProjection` stores it in the Gateway.
 
 The behavior is `swamp/extensions/behaviors/observation/doctor-read/doctor.ts`. The ufw parser and comparison are `swamp/extensions/behaviors/operations/firewall/inspection-result.ts`.
 
@@ -54,7 +53,6 @@ Each row is one SSH read that `planReads` plans for a Node.
 | process (systemd) | same `systemctl show` for `orbit-process-{id}-{name}.service` | flag set, not needed |
 | process (docker) | `docker container ls --all --filter name=^/NAME$ --format '{{.Names}}\t{{.State}}'` | yes (`sudo: true`) |
 | process awake marker | `test -e /…/app-instance-{id}.awake` (`RuntimeHibernation::awakePath`), only for hibernating dev Processes | flag set |
-| problem logs | `python3` `logs.py` reads the Gateway's `storage/logs` with a cursor | no |
 
 Registry-only checks make no host read: `node.lifecycle_not_active`, `role.lifecycle_not_active`, `firewall.lifecycle_not_active`, `node.task_vm_parked`, `node.agent_view_stale`. The last one already reads the Gateway's agent view (`DoctorObservations`).
 
@@ -127,7 +125,7 @@ Gaps in the store for the new model: the 60 s TTL deletes an observation, so "la
 | 14 | Process awake marker (hibernation `state_mismatch` exemption) | `sudo test -e …/app-instance-{id}.awake` | no | Stat the awake-marker directory (`RuntimeHibernation::MarkerDirectory`) and send the set of `app-instance-*.awake` names. | root only if the directory is not world-readable (to verify) | New `hibernation` observation |
 | 15 | Node/role/task-VM lifecycle (`*.lifecycle_not_active`, `node.task_vm_parked`) | registry | n/a | nothing | no | Registry |
 | 16 | Task VM host audit (`node.task_vm_orphaned`, `missing`, `stray_*`) | Gateway job via `IncusHost` | no | Send Incus instance names (project `tvm-*`) on task VM hosts. Today the sweep job reads Incus itself. | root or `incus` group | New `incus` observation |
-| 17 | Problem log scan (collector) | `logs.py` over SSH on the Gateway | partly: Laravel log reader exists only for live streams | A continuous tail that sends exception class, frame, request id, cursor. Decide whether the collector belongs in doctor at all. | no | `ProblemCollector` |
+| 17 | Problem log scan (collector) | The Gateway reads its own `storage/logs` after a successful collection run (`GatewayLogSignals`); no Node read | n/a | none | n/a | `ProblemCollector` |
 | 18 | Node network and DNS (`node.private_dns_*`, `public_dns_unreachable`, `wireguard_ip_mismatch`) | none today (old `doctor.inspect-node`) | no | Addresses (`ip -4 addr`), `wg show` summary, resolver state. Define per code before building. | `wg show` needs `CAP_NET_ADMIN` | New `network` observation |
 | 19 | Role prerequisites (`role.packages_missing`, `caddy_version_unsupported`, `caddy_build_drift`, `php_pool_directory_missing`, `vpn_*`, `dns_projection_mismatch`, `firewall_projection_mismatch`) | none today (old `doctor.inspect-role-runtime`) | no | Installed package versions, `caddy version`, live Caddyfile digest (`/etc/caddy/Caddyfile`), PHP pool dir, `wg` and dnsmasq config digests. | Caddyfile read: root | New `role` observation |
 | 20 | Project and Instance checkouts (`project.*`, `instance.*` source, layout, release, env, FPM, Caddy, TLS) | none today (old `doctor.inspect-project`, `-production-instance`) | partly: task checkouts only (Git state of 64 paths) | Extend the Git observer to the recorded Project and Instance paths; add release symlink, `.env` digest, FPM pool, Caddy fragment digests. | root (checkouts belong to `orbit`; libgit2 owner check already off) | `workspaces` plus new `instance` observation |

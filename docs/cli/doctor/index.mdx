@@ -54,6 +54,6 @@ Expected and observed issue values contain at most 255 characters. Recovery evid
 
 ## Scheduled collection
 
-Collection uses the same Doctor workflow. One focused Gateway log read remains because no native command supplies record-aware Laravel cursors and redaction. It runs as an official SSH script with public path/cursor input. The script reads at most 1 MiB per pass, finishing a record up to an 8 MiB cap. It returns exception class, safe source frame, request ID and timestamp; messages and raw logs stay on the Gateway host.
+Collection uses the same Doctor workflow. When the run succeeds, the Gateway reads its own Laravel log in `storage/logs` from the stored cursor; no Swamp step and no Node read is involved. It reads at most 1 MiB per pass, finishing a record up to an 8 MiB cap. It keeps exception class, safe source frame, request ID and timestamp; messages and raw logs never leave the reader.
 
 The first pass starts at the current end. Rotation preserves unread records by inode; truncation resumes at the shorter end. An unreadable log result preserves the cursor. The Gateway commits returned fingerprints and the cursor together. Activity and assistance collection keep their existing bounded database cursors and redacted inputs.

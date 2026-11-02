@@ -76,51 +76,10 @@ jobs:
         okExitCodes:
         - 0
         - 1
-- name: logs
-  labels: {role: swamp}
-  dependsOn:
-  - job: plan
-    condition:
-      type: succeeded
-  steps:
-  - name: logs
-    writes: false
-    allowFailure: true
-    forEach:
-      item: node
-      in: ${{ inputs.intent.nodes.filter(n, n.id == inputs.node_id && n.managed && !n.parked && inputs.intent.collect_problems) }}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "doctor-logs-" + run.id + "-" + string(self._index) }}
-      methodName: script
-      globalArgs:
-        name: ${{ "doctor-logs-" + run.id + "-" + string(self._index) }}
-        # F8: a stopped or stalled Node fails this read within its bound.
-        defaultTimeoutSec: 60
-        transport:
-          kind: ssh
-          user: ${{ self.node.ssh.user }}
-          port: ${{ self.node.ssh.port }}
-          connectTimeoutSec: 10
-          identityFile: /etc/orbit/swamp-role-worker/ssh-identity
-        hosts:
-        - name: target
-          address: ${{ self.node.ssh.host }}
-          transport:
-            hostKeys: ${{ self.node.ssh.host_keys }}
-      inputs:
-        hosts: name:target
-        interpreter: python3
-        sudo: false
-        script: ${{ steps.plan.outputs.log_script }}
 - name: report
   labels: {role: swamp}
   dependsOn:
   - job: reads
-    condition:
-      type: always
-  - job: logs
     condition:
       type: always
   - job: plan

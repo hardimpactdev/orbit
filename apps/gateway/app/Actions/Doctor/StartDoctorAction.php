@@ -16,7 +16,6 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Nodes\NodeRoleServiceCatalog;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Models\ProblemCollectorState;
 use App\Models\TaskVm;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
@@ -89,11 +88,6 @@ final readonly class StartDoctorAction
         $participants = array_values(array_unique([$rootId, ...array_column($intents, 'id')]));
         $input = ['nodes' => $intents, 'families' => array_map(static fn (DoctorFamily $family): string => $family->value, $selected),
             'collect_problems' => $collect, 'participant_node_ids' => $participants];
-        if ($collect) {
-            $state = ProblemCollectorState::query()->orderBy('id')->first();
-            $input['logs'] = ['log_directory' => storage_path('logs'), 'base_directory' => base_path(),
-                'cursor' => $state?->log_path === null ? null : ['path' => $state->log_path, 'inode' => $state->log_inode, 'offset' => $state->log_offset]];
-        }
 
         return [$rootId, $input];
     }

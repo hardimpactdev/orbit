@@ -31,6 +31,7 @@ final readonly class ProblemCollector
         private ProblemSuppression $suppression,
         private ProblemRecovery $recovery,
         private LogRedactor $redactor,
+        private GatewayLogSignals $logs,
     ) {}
 
     /** Safe state read. Swamp owns classification, ordering and source selection.
@@ -141,6 +142,14 @@ final readonly class ProblemCollector
             }
             $this->recovery->doctor($report, $startedAt);
         });
+    }
+
+    /** Reads the Gateway's own Laravel log from the stored cursor; its signals and the next cursor commit together. */
+    public function collectLogs(): void
+    {
+        $state = ProblemCollectorState::query()->orderBy('id')->first();
+        $cursor = $state?->log_path === null ? null : ['path' => $state->log_path, 'inode' => (int) $state->log_inode, 'offset' => (int) $state->log_offset];
+        $this->recordLogs($this->logs->collect(storage_path('logs'), base_path(), $cursor), $cursor);
     }
 
     /**

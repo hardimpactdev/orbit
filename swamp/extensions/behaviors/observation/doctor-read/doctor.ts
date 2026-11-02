@@ -112,21 +112,6 @@ const Output = z.object({
 });
 const Step = z.object({ status: z.string(), outputs: z.unknown().optional() });
 const Results = z.record(z.string(), Step);
-const Logs = z.object({
-    cursor: z.object({
-        path: z.string(),
-        inode: z.number().int(),
-        offset: z.number().int().nonnegative(),
-    }).nullable(),
-    signals: z.array(
-        z.object({
-            exception_class: z.string(),
-            frame: z.string(),
-            request_id: z.string().nullable(),
-            recorded_at: z.string(),
-        }),
-    ),
-});
 function output(results: z.infer<typeof Results>, key: string) {
     const step = results[key], parsed = Output.safeParse(step?.outputs);
     return step?.status === "succeeded" && parsed.success ? parsed.data : null;
@@ -601,7 +586,6 @@ export function compare(
     const issues = nodes.flatMap((n) => n.families.flatMap((f) => f.issues));
     const result: {
         report: unknown;
-        logs?: z.infer<typeof Logs>;
         signals?: ReturnType<typeof collectSignals>;
     } = {
         report: {
@@ -624,12 +608,6 @@ export function compare(
         },
     };
     if (intent.collect_problems) {
-        const logs = output(results, "logs-0");
-        if (logs?.exitCode === 0) {
-            try {
-                result.logs = Logs.parse(JSON.parse(logs.stdout));
-            } catch { /* Preserve cursor on an unreadable log result. */ }
-        }
         if (intent.signals) result.signals = collectSignals(intent.signals);
     }
     return result;
@@ -655,15 +633,14 @@ const Report = z.object({
 });
 export const Result = z.object({
     report: Report,
-    logs: Logs.optional(),
     signals: z.unknown().optional(),
 });
 export const behavior = {
     type: "@nckrtl/doctor",
-    version: "2026.11.01.4",
+    version: "2026.11.02.1",
     resources: {
         plan: {
-            schema: z.object({ reads: z.array(Read), log_script: z.string() }),
+            schema: z.object({ reads: z.array(Read) }),
             lifetime: "1d",
             garbageCollection: 10,
         },
@@ -684,7 +661,6 @@ export const behavior = {
             execute: async (
                 args: { intent: z.infer<typeof Input> },
                 ctx: {
-                    extensionFile(name: string): string;
                     writeResource(
                         spec: string,
                         name: string,
@@ -692,16 +668,7 @@ export const behavior = {
                     ): Promise<unknown>;
                 },
             ) => {
-                const log_script =
-                    args.intent.collect_problems && args.intent.logs
-                        ? (await Deno.readTextFile(
-                            ctx.extensionFile("scripts/logs.py"),
-                        )).replace(
-                            '"__DOCTOR_LOG_INPUT__"',
-                            JSON.stringify(JSON.stringify(args.intent.logs)),
-                        )
-                        : "";
-                const value = { reads: planReads(args.intent), log_script };
+                const value = { reads: planReads(args.intent) };
                 await ctx.writeResource("plan", "plan", value);
                 return value;
             },

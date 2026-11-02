@@ -16,6 +16,7 @@ use App\Models\ProblemCollectorState;
 use App\Models\ProblemFingerprint;
 use App\Models\Schedule;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\File;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
@@ -81,6 +82,30 @@ it('commits native log signals and cursors together and ignores stale native cur
     expect(ProblemCollectorState::query()->first()->log_offset)->toBe(150);
 });
 
+it('reads new Gateway log records on a successful collection run and commits them with the cursor', function (): void {
+    $storage = sys_get_temp_dir().'/doctor-gateway-storage-'.bin2hex(random_bytes(6));
+    mkdir($storage.'/logs', 0777, true);
+    $original = storage_path();
+    app()->useStoragePath($storage);
+    try {
+        $log = $storage.'/logs/laravel.log';
+        file_put_contents($log, "[2026-10-31 07:00:00] testing.INFO: start\n");
+        ProblemCollectorState::query()->create(['log_path' => $log, 'log_inode' => fileinode($log), 'log_offset' => filesize($log)]);
+        $root = base_path();
+        file_put_contents($log, "[2026-10-31 07:00:01] testing.ERROR: private message {\"request_id\":\"request-safe\",\"exception\":\"[object] (RuntimeException(code: 0): private message at {$root}/app/Example.php:1)\n[stacktrace]\n#0 {$root}/app/Example.php(15): App\\\\Example->run()\n\"}\n", FILE_APPEND);
+        $operation = native_doctor_operation($this->node, true);
+        app(DoctorProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(),
+            'result' => ['report' => ['nodes' => []]]]);
+
+        expect(ProblemCollectorState::query()->sole()->log_offset)->toBe(filesize($log))
+            ->and(ProblemFingerprint::query()->sole()->evidence['request_ids'] ?? null)->toBe(['request-safe'])
+            ->and(json_encode(ProblemFingerprint::query()->sole()))->not->toContain('private message');
+    } finally {
+        app()->useStoragePath($original);
+        File::deleteDirectory($storage);
+    }
+});
+
 it('keeps Schedule commands private and opts into fixed terminal projection', function (): void {
     $schedule = Schedule::query()->create(['id' => '0192e29b-9fd8-7c96-8e38-f863234d7112', 'target_type' => Node::class, 'target_id' => $this->node->id, 'host_node_id' => $this->node->id, 'name' => 'doctor-safe', 'command' => 'private schedule sentinel', 'calendar' => '*:0/5', 'timeout_seconds' => 30, 'desired_timer_state' => 'enabled']);
     $operation = app(StartDoctorAction::class)->execute($this->caller, $this->node->id, [DoctorFamily::Schedule]);
@@ -95,11 +120,10 @@ it('keeps Schedule commands private and opts into fixed terminal projection', fu
 it('exposes expectations only to their admitted participant and keeps final projection root-only', function (): void {
     $operation = native_doctor_operation($this->node, false);
     $operation->input = ['participant_node_ids' => [$this->node->id, $this->caller->id],
-        'nodes' => [['id' => $this->node->id, 'resources' => ['processes' => [['id' => 40]]]], ['id' => $this->caller->id, 'resources' => ['processes' => [['id' => 41]]]]],
-        'logs' => ['log_directory' => '/private/gateway/logs']];
+        'nodes' => [['id' => $this->node->id, 'resources' => ['processes' => [['id' => 40]]]], ['id' => $this->caller->id, 'resources' => ['processes' => [['id' => 41]]]]]];
     $projection = app(DoctorProjection::class);
     $view = $projection->publicInput($operation, $this->caller->id);
-    expect($view['nodes'][0]['resources'])->toEqual((object) [])->and($view['nodes'][1]['resources'])->toBe(['processes' => [['id' => 41]]])->and($view)->not->toHaveKey('logs');
+    expect($view['nodes'][0]['resources'])->toEqual((object) [])->and($view['nodes'][1]['resources'])->toBe(['processes' => [['id' => 41]]])->and($view)->not->toHaveKey('signals');
     expect(fn () => $projection->publicInput($operation, 999999))->toThrow(ResourceOperationException::class);
 });
 

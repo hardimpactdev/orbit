@@ -33,7 +33,7 @@ final readonly class DoctorProjection implements DirectOperationProjection, Dire
     /** @return array<string,mixed> */
     private function publicIntent(Operation $operation): array
     {
-        $input = array_intersect_key($operation->input, array_flip(['nodes', 'families', 'collect_problems', 'logs', 'participant_node_ids']));
+        $input = array_intersect_key($operation->input, array_flip(['nodes', 'families', 'collect_problems', 'participant_node_ids']));
         $nodes = [];
         foreach (Arr::array($input, 'nodes') as $value) {
             $node = ValidatedData::object($value);
@@ -70,7 +70,7 @@ final readonly class DoctorProjection implements DirectOperationProjection, Dire
             $nodes[] = $node;
         }
         $input['nodes'] = $nodes;
-        unset($input['logs'], $input['signals']);
+        unset($input['signals']);
 
         return $input;
     }
@@ -89,10 +89,7 @@ final readonly class DoctorProjection implements DirectOperationProjection, Dire
                 if ($report !== null) {
                     $collector->recordDoctor($report, $operation->started_at ?? Carbon::parse(Arr::string($data, 'started_at')));
                 }
-                if (isset($native['logs'])) {
-                    $input = ValidatedData::object($operation->input['logs'] ?? []);
-                    $collector->recordLogs(ValidatedData::object($native['logs']), isset($input['cursor']) ? ValidatedData::object($input['cursor']) : null);
-                }
+                $collector->collectLogs();
                 if (isset($native['signals'])) {
                     $collector->recordSignals(ValidatedData::object($native['signals']));
                 }

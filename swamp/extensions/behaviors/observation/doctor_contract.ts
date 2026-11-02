@@ -70,15 +70,6 @@ export const Input = z.object({
     families: z.array(z.enum(Families)),
     collect_problems: z.boolean(),
     signals: z.unknown().optional(),
-    logs: z.object({
-        log_directory: z.string(),
-        base_directory: z.string(),
-        cursor: z.object({
-            path: z.string(),
-            inode: z.number().int(),
-            offset: z.number().int().nonnegative(),
-        }).nullable(),
-    }).optional(),
 });
 export const Read = z.object({
     key: z.string(),

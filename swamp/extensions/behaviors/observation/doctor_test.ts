@@ -251,27 +251,20 @@ Deno.test("managed placement requires stored SSH pins", () => {
     delete value.nodes[0].ssh;
     assertThrows(() => planReads(value), Error, "doctor.ssh_missing");
 });
-Deno.test("typed result projects redacted collection and preserves a cursor on failed log read", async () => {
+Deno.test("a collection result carries no log data", async () => {
     const value = intent();
     value.collect_problems = true;
-    const results = facts(value), saved: { stdout?: string } = {};
-    const execute = () =>
-        behavior.methods.result.execute({ intent: value, results }, {
-            writeResource: (_s, _n, v) => {
-                Object.assign(saved, v);
-                return Promise.resolve();
-            },
-        });
-    await execute();
+    const saved: { stdout?: string } = {};
+    await behavior.methods.result.execute({
+        intent: value,
+        results: facts(value),
+    }, {
+        writeResource: (_s, _n, v) => {
+            Object.assign(saved, v);
+            return Promise.resolve();
+        },
+    });
     assertEquals(JSON.parse(saved.stdout!).logs, undefined);
-    results["logs-0"] = step(
-        JSON.stringify({
-            cursor: { path: "/logs/laravel.log", inode: 1, offset: 50 },
-            signals: [],
-        }),
-    );
-    await execute();
-    assertEquals(JSON.parse(saved.stdout!).logs.cursor.offset, 50);
 });
 
 Deno.test("one unavailable role service cannot clear a prior service failure", () => {
@@ -326,7 +319,11 @@ Deno.test("Doctor matches source allows and their deny by tuple without false dr
         nodes: [{
             ...node(),
             resources: {
-                firewall_rules: [{ id: 11, name: "7297/tcp from any", status: "active" }],
+                firewall_rules: [{
+                    id: 11,
+                    name: "7297/tcp from any",
+                    status: "active",
+                }],
                 firewall_expected: [
                     {
                         name: "7297/tcp from any",
@@ -356,7 +353,10 @@ Deno.test("Doctor matches source allows and their deny by tuple without false dr
             [read.key]: step("Status: active\n" + rows.join("\n")),
         });
     assertEquals(codes(observe([allow, deny, trust])), []);
-    assertEquals(codes(observe([allow.replace(" # " + comment, ""), deny, trust])), []);
+    assertEquals(
+        codes(observe([allow.replace(" # " + comment, ""), deny, trust])),
+        [],
+    );
     assert(codes(observe([deny, trust])).includes("firewall.rule_missing"));
     value.nodes[0].resources.firewall_rules[0].status = "failed";
     assert(

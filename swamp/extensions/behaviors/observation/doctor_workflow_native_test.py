@@ -44,9 +44,6 @@ if args[:3]==['sudo','-n','--']:args=args[3:]
 if args[:2]==['uname','-sm']:print('Linux x86_64')
 elif args[:2]==['df','-Pk']:print('Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/root 10000000 1000000 9000000 10% /')
 elif args[0]=='systemctl':print('LoadState=loaded\nActiveState=active\nSubState=running\nNRestarts=49')
-elif args[:2]==['python3','-']:
- # Execute the actual packaged one-read log script. It cannot invoke host commands.
- exec(sys.stdin.read(),{'__name__':'__main__'})
 else:raise RuntimeError('Unexpected native command '+repr(args))
 '''.replace('STATE', repr(str(self.state))))
         fake.chmod(0o700)
@@ -111,19 +108,6 @@ else:raise RuntimeError('Unexpected native command '+repr(args))
         result, history = self.run_doctor()
         self.assertEqual(result['report']['summary']['checks'], 0)
         self.assertEqual(next(j for j in history['jobs'] if j['name'] == 'reads')['steps'], [])
-
-    def test_single_log_script_resolves_actual_registered_asset_and_returns_cursor_only(self):
-        # Files are outside native history; only cursor metadata may leave the reader.
-        with self.subTest('first pass ignores historic messages'):
-            logs = self.repo / 'fixture-logs'
-            logs.mkdir()
-            (logs / 'laravel.log').write_text('[2026-11-01 01:00:00] testing.ERROR: private log content\n')
-            self.public['intent'].update(collect_problems=True, logs={'log_directory': str(logs), 'base_directory': '/gateway', 'cursor': None})
-            result, history = self.run_doctor()
-            self.assertIn('logs', result, json.dumps(next(j for j in history['jobs'] if j['name'] == 'logs')))
-            self.assertEqual(result['logs']['signals'], [])
-            self.assertEqual(result['logs']['cursor']['offset'], (logs / 'laravel.log').stat().st_size)
-            self.assertNotIn('private log content', json.dumps(history))
 
 
 if __name__ == '__main__':
