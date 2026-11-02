@@ -274,3 +274,9 @@ The fleet admissions carry each installing Node's public SSH descriptor. `fleet-
 | `evidence/proof/fleet.recipe/20261102T183327Z-minimal.json` | 135.06 s | 1800 / 60 s |
 
 The `fleet.cli_converge` fixture plants a script that prints `custom-build` at `/usr/local/bin/orbit` and checks it before the request; the run replaced it with Orbit 0.8725.0 and wrote the 0600 profile. `swamp/proof/receipts/fleet-cli-rule22.json` indexes both receipts. One shipped script is deleted. `fleet.rollout` is not proved here and is not rule 22 done while its observer step runs on the Node.
+
+## Task turn receipt without a helper (rule 22)
+
+Task turn ships no script. The agent writes `.git/orbit/receipt.json` itself, following the schema that the turn prompt states. `receipt_prepare.py` and `receipt_helper.py` are deleted with their manifest entries and the copy step. Two pinned `@swamp/ssh exec` argv steps create `.git/orbit` and remove an earlier receipt. The image-owned tool that the audit proposed is not needed.
+
+The helper's checks move to the TypeScript result shaper, with one fixed `receipt_error` code per rule. A broken receipt is evidence, not a failed turn: no helper refuses bad input during the turn, so Swamp decides what to do with it. The Gateway's unused legacy receipt path goes too: `resources/tasks/turn`, `TaskTurnReceipts`, `RemoteTaskTurnReceipts` and the metadata `turn`, `read`, `legacy` and `clear` operations. Gateway prompts now show the receipt JSON instead of the command. No live proof receipt exists for this change yet.

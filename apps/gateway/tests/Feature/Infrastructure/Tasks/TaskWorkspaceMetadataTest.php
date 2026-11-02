@@ -61,7 +61,6 @@ describe('TaskGitHardening', function (): void {
         $payload = match ($operation) {
             'snapshot' => ['script' => base64_encode('trusted check program')],
             'check' => ['script' => base64_encode('trusted check program'), 'setup' => '[]', 'command' => 'true', 'deliverables' => null],
-            'turn' => ['script' => base64_encode('trusted turn program'), 'turn' => '{}', 'context' => 'Task context'],
             'mcp' => ['config' => '{}'],
         };
         $probe = new Process(['python3', '-c', <<<'PYTHON'
@@ -105,7 +104,6 @@ describe('TaskGitHardening', function (): void {
     })->with([
         'check candidate' => ['check', 'candidate'],
         'snapshot candidate' => ['snapshot', 'candidate'],
-        'turn candidate' => ['turn', 'candidate'],
         'MCP candidate' => ['mcp', 'candidate'],
         'orbit directory' => ['check', 'orbit'],
         'git directory' => ['check', 'git'],

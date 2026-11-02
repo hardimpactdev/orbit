@@ -69,7 +69,7 @@ sequenceDiagram
   %%> What it does:
   %%> - joins VM 88 to WireGuard; its peer goes onto the hub through the shared hub step (`file` + `wg syncconf`)
   %%> - writes the model key and the Pi token from `vault.get` as 0600 files with `@swamp/cfgmgmt/file`, and starts the Pi server with `@swamp/cfgmgmt/systemd`, then checks Pi answers
-  %%> - the agent receipt helper ships in the recipe image, not per run
+  %%> - no receipt helper: the agent writes `.git/orbit/receipt.json` itself
   %%> - records the VM's SSH host key for the next steps
   SW->>VM: Set up the workspace<br/>clone · Project setup steps
   %%> What it does:

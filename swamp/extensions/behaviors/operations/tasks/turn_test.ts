@@ -1,9 +1,6 @@
+import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert@1";
 import {
-    assertEquals,
-    assertRejects,
-    assertThrows,
-} from "jsr:@std/assert@1";
-import {
+    checkReceipt,
     difference,
     finish,
     Input,
@@ -55,11 +52,22 @@ function result(role = "implementer") {
             },
         }),
         receipt: JSON.stringify({
-            thread: 14,
-            outcome: role === "reviewer" ? "approved" : "ready_for_review",
-            summary: "Changed the requested code",
+            receipt: {
+                thread: 14,
+                outcome: role === "reviewer" ? "approved" : "ready_for_review",
+                summary: "Changed the requested code",
+            },
+            error: null,
         }),
     };
+}
+function withReceipt(receipt: unknown, role = "implementer") {
+    return JSON.parse(
+        finish({
+            ...result(role),
+            receipt: JSON.stringify({ receipt, error: null }),
+        }).result_json,
+    );
 }
 Deno.test("public shaping preserves the immutable Pi key and session settings", () => {
     const input = turnInput();
@@ -106,21 +114,171 @@ Deno.test("turn result retains the existing board token metrics", () => {
         peak_context_tokens: 20,
     });
 });
-Deno.test("wrong thread, role and incomplete blocked receipts never authorize progress", () => {
+Deno.test("each broken receipt rule gives its own fixed code and no receipt", () => {
     for (
-        const receipt of [
-            { thread: 99, outcome: "ready_for_review", summary: "Old" },
-            { thread: 14, outcome: "approved", summary: "Wrong role" },
-            { thread: 14, outcome: "blocked", summary: "Missing question" },
+        const [receipt, code] of [
+            [
+                { thread: 99, outcome: "ready_for_review", summary: "Old" },
+                "tasks.receipt_thread_mismatch",
+            ],
+            [
+                { outcome: "ready_for_review", summary: "No thread" },
+                "tasks.receipt_thread_mismatch",
+            ],
+            [{
+                thread: "14",
+                outcome: "ready_for_review",
+                summary: "Text thread",
+            }, "tasks.receipt_thread_mismatch"],
+            [
+                { thread: 14, outcome: "approved", summary: "Wrong role" },
+                "tasks.receipt_outcome_invalid",
+            ],
+            [
+                { thread: 14, outcome: "finished", summary: "Unknown" },
+                "tasks.receipt_outcome_invalid",
+            ],
+            [
+                { thread: 14, outcome: "ready_for_review", summary: " " },
+                "tasks.receipt_summary_missing",
+            ],
+            [
+                { thread: 14, outcome: "ready_for_review" },
+                "tasks.receipt_summary_missing",
+            ],
+            [
+                { thread: 14, outcome: "blocked", summary: "Missing question" },
+                "tasks.receipt_question_missing",
+            ],
+            [{
+                thread: 14,
+                outcome: "blocked",
+                summary: "Blank",
+                question: " ",
+            }, "tasks.receipt_question_missing"],
+            [{
+                thread: 14,
+                outcome: "ready_for_review",
+                summary: "Done",
+                deliverables: { a: 1 },
+            }, "tasks.receipt_invalid"],
+            [{
+                thread: 14,
+                outcome: "ready_for_review",
+                summary: "Done",
+                deliverables: ["a"],
+            }, "tasks.receipt_invalid"],
+            [
+                { thread: 14, outcome: "ready_for_review", summary: 4 },
+                "tasks.receipt_invalid",
+            ],
+            [[], "tasks.receipt_invalid"],
+            ["text", "tasks.receipt_invalid"],
+        ] as const
+    ) {
+        const value = withReceipt(receipt);
+        assertEquals(
+            [value.receipt, value.receipt_error],
+            [null, code],
+            JSON.stringify(receipt),
+        );
+        assertEquals(value.state, "done");
+    }
+});
+Deno.test("a valid receipt keeps its public fields and drops unknown ones", () => {
+    const value = withReceipt({
+        thread: 14,
+        outcome: "blocked",
+        summary: "Needs a decision",
+        question: "Which export format?",
+        deliverables: { "export-test": "tests/Feature/ExportTest.php" },
+        nonce: "ignored",
+    });
+    assertEquals(value.receipt_error, null);
+    assertEquals(value.receipt, {
+        thread: 14,
+        outcome: "blocked",
+        summary: "Needs a decision",
+        question: "Which export format?",
+        deliverables: { "export-test": "tests/Feature/ExportTest.php" },
+    });
+    const consult = withReceipt({
+        thread: 14,
+        outcome: "answered",
+        summary: "Use CSV",
+        cause: "scope",
+    }, "consult");
+    assertEquals(consult.receipt.cause, "scope");
+    const approval = {
+        thread: 14,
+        outcome: "approved",
+        summary: "Checked",
+        pull_request: {
+            summary: "Adds export",
+            changes: ["Export command"],
+            breaking: [],
+        },
+    };
+    assertEquals(
+        withReceipt(approval, "reviewer").receipt.pull_request,
+        approval.pull_request,
+    );
+});
+Deno.test("no receipt and an unreadable receipt file are evidence, not failures", () => {
+    const none = JSON.parse(
+        finish({
+            ...result(),
+            receipt: JSON.stringify({ receipt: null, error: null }),
+        }).result_json,
+    );
+    assertEquals([none.state, none.receipt, none.receipt_error], [
+        "done",
+        null,
+        null,
+    ]);
+    const unread = JSON.parse(finish({ ...result(), receipt: "" }).result_json);
+    assertEquals([unread.receipt, unread.receipt_error], [null, null]);
+    const invalid = JSON.parse(
+        finish({
+            ...result(),
+            receipt: JSON.stringify({
+                receipt: null,
+                error: "tasks.receipt_invalid",
+            }),
+        }).result_json,
+    );
+    assertEquals([invalid.state, invalid.receipt, invalid.receipt_error], [
+        "done",
+        null,
+        "tasks.receipt_invalid",
+    ]);
+});
+Deno.test("the prompt states the receipt file, its thread and the role's outcomes", () => {
+    for (
+        const [role, outcomes] of [
+            ["implementer", "ready_for_review, blocked"],
+            ["reviewer", "approved, changes_requested, blocked"],
+            ["consult", "answered, blocked"],
         ]
     ) {
+        const input = turnInput(role);
+        const text = JSON.parse(
+            prepare({ operation_id: 15, node_id: 30, intent: input })
+                .send_json,
+        ).text;
+        assertEquals(text.includes("writing .git/orbit/receipt.json"), true);
         assertEquals(
-            JSON.parse(
-                finish({ ...result(), receipt: JSON.stringify(receipt) })
-                    .result_json,
-            ).receipt,
-            null,
+            text.includes("- thread is 14, the thread of this turn."),
+            true,
         );
+        assertEquals(text.includes(`- outcome is one of: ${outcomes}.`), true);
+        assertEquals(
+            text.includes("- question is required when outcome is blocked."),
+            true,
+        );
+        assertEquals(text.includes(".git/orbit/turn "), false);
+        const example = JSON.parse(text.split("\nExample: ")[1].split("\n")[0]);
+        assertEquals(checkReceipt(example, input).error, null);
     }
 });
 Deno.test("missing completion or failed cleanup produces a failed terminal result", () => {
@@ -166,31 +324,74 @@ Deno.test("private worker readers return fixed codes and never quote their input
     const path = dir + "/terminal.json";
     const turn = "operation-15";
     const write = (value: unknown) =>
-        Deno.writeTextFile(path, typeof value === "string" ? value : JSON.stringify(value));
-    await assertRejects(() => terminal({ path, turn }), Error, "tasks.pi_completion_unconfirmed");
+        Deno.writeTextFile(
+            path,
+            typeof value === "string" ? value : JSON.stringify(value),
+        );
+    await assertRejects(
+        () => terminal({ path, turn }),
+        Error,
+        "tasks.pi_completion_unconfirmed",
+    );
     await write("{private-pi-text");
     const invalid = await assertRejects(() => terminal({ path, turn }), Error);
     assertEquals(invalid.message, "tasks.pi_event_invalid");
     await write({ state: "done", turnId: "operation-14", usage: {} });
-    await assertRejects(() => terminal({ path, turn }), Error, "tasks.pi_completion_unconfirmed");
+    await assertRejects(
+        () => terminal({ path, turn }),
+        Error,
+        "tasks.pi_completion_unconfirmed",
+    );
     for (const usage of [{ total: -1 }, { total: "4" }, { total: true }, []]) {
         await write({ state: "done", turnId: turn, usage });
-        await assertRejects(() => terminal({ path, turn }), Error, "tasks.pi_usage_invalid");
+        await assertRejects(
+            () => terminal({ path, turn }),
+            Error,
+            "tasks.pi_usage_invalid",
+        );
     }
-    await write({ state: "failed", turnId: turn, usage: { total: 4, provider_key: "x" } });
+    await write({
+        state: "failed",
+        turnId: turn,
+        usage: { total: 4, provider_key: "x" },
+    });
     assertEquals(JSON.parse(await terminal({ path, turn })), {
         state: "failed",
         turnId: turn,
-        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 4, calls: 0, peakContext: 0 },
+        usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            total: 4,
+            calls: 0,
+            peakContext: 0,
+        },
     });
-    assertEquals(await receipt({ path: dir + "/missing.json" }), "null");
+    assertEquals(JSON.parse(await receipt({ path: dir + "/missing.json" })), {
+        receipt: null,
+        error: null,
+    });
+    const unreadable = { receipt: null, error: "tasks.receipt_invalid" };
     await Deno.symlink(path, dir + "/link.json");
-    await assertRejects(() => receipt({ path: dir + "/link.json" }), Error, "tasks.receipt_invalid");
+    assertEquals(
+        JSON.parse(await receipt({ path: dir + "/link.json" })),
+        unreadable,
+    );
     await Deno.writeTextFile(dir + "/big.json", " ".repeat(65537));
-    await assertRejects(() => receipt({ path: dir + "/big.json" }), Error, "tasks.receipt_invalid");
+    assertEquals(
+        JSON.parse(await receipt({ path: dir + "/big.json" })),
+        unreadable,
+    );
+    await Deno.writeTextFile(dir + "/text.json", "{private-receipt-text");
+    const text = await receipt({ path: dir + "/text.json" });
+    assertEquals(JSON.parse(text), unreadable);
+    assertEquals(text.includes("private-receipt-text"), false);
     await Deno.writeTextFile(dir + "/counts", "1\t2\ta\tb\0-\t-\tbinary\0");
     await Deno.writeTextFile(dir + "/patch", "token=private-patch-text\n");
-    const shaped = JSON.parse(await difference({ counts: dir + "/counts", patch: dir + "/patch" }));
+    const shaped = JSON.parse(
+        await difference({ counts: dir + "/counts", patch: dir + "/patch" }),
+    );
     assertEquals(shaped.files, [
         { path: "a\tb", insertions: 1, deletions: 2 },
         { path: "binary", insertions: 0, deletions: 0 },

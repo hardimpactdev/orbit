@@ -404,7 +404,7 @@ The Gateway admits the request and starts the native `operation-task-turn` workf
 
 Pi HTTP actions run as bounded native curl commands on the Swamp worker. curl reads the Pi token from its own environment, never from argv, and redirects fail. The worker needs only `sh`, `curl` and `awk`: `awk` keeps the first terminal event of the turn in the run's private worker directory, and a TypeScript step reads only its state and finite nonnegative usage.
 
-Receipt and diff files are downloaded to the same directory, and TypeScript readers redact them with the repository redaction rule before they enter native history. Parser errors can quote private input, so a failed step reports only one fixed code, such as `tasks.pi_event_invalid` or `tasks.receipt_invalid`.
+Receipt and diff files are downloaded to the same directory, and TypeScript readers redact them with the repository redaction rule before they enter native history. Parser errors can quote private input, so a failed step reports only one fixed code, such as `tasks.pi_event_invalid` or `tasks.difference_invalid`.
 
 The final `outcome` step uses a native assert over the typed turn result. A failed Pi turn fails the run while preserving its public result and failure code.
 
@@ -415,9 +415,9 @@ The final `outcome` step uses a native assert over the typed turn result. A fail
 | `check` | An [eligible checked candidate](#check-an-external-group) for this subtask, including hosted CI when required; otherwise 422 `tasks.commit_not_checked`. HEAD must equal its commit, or 409 `tasks.head_moved` |
 | `analysis` | Optional `{operation, plan_sha256}` under the [analysis-bound turn contract](#analysis-bound-turn-evidence); absent preserves ordinary behavior. Complete evidence and fresh first-send identity checks do not replace reviewer check/CI eligibility |
 
-Separate native steps capture workspace evidence, prepare the receipt helper, create or continue the Pi session, send the turn with key `operation-{id}`, and observe one Pi event stream. The session attaches to the subtask and appears on the board. Orbit supplies only its fixed instructions: no fetch or push by the agent, a read-only reviewer, the turn command, and the workspace MCP configuration. The orchestrator supplies the prompt. Orbit adds no rubric, reminder, or nudge.
+Separate native steps capture workspace evidence, create `.git/orbit` and remove an earlier `receipt.json` with pinned `@swamp/ssh exec` argv, create or continue the Pi session, send the turn with key `operation-{id}`, and observe one Pi event stream. The turn copies no file to the task VM. The session attaches to the subtask and appears on the board. Orbit supplies only its fixed instructions: no fetch or push by the agent, a read-only reviewer, the [turn receipt](#turn-receipt) schema, and the workspace MCP configuration. The orchestrator supplies the prompt. Orbit adds no rubric, reminder, or nudge.
 
-When the turn ends, Swamp returns its receipt and measurements. The Gateway projects thread state and metrics without acting on the receipt outcome. A `blocked` receipt starts no consult and creates no question or assistance. No receipt produces `receipt: null`. The result includes the receipt's outcome, summary, deliverable confirmations, question and cause; the thread ID and final state; HEAD and the full working-tree hash before and after the turn; and token metrics.
+When the turn ends, Swamp returns its receipt and measurements. The Gateway projects thread state and metrics without acting on the receipt outcome. A `blocked` receipt starts no consult and creates no question or assistance. No receipt produces `receipt: null` and `receipt_error: null`. A receipt that breaks the [schema](#turn-receipt) produces `receipt: null` and one fixed `receipt_error`; the turn itself still succeeds. The result includes the receipt's outcome, summary, deliverable confirmations, question and cause; the thread ID and final state; HEAD and the full working-tree hash before and after the turn; and token metrics.
 
 After a reviewer turn, Orbit records the checkout difference, resets to the check's commit, and removes untracked files. The result includes the removed difference and the state after reset. A consult is read-only but keeps the implementer's uncommitted tree: Orbit records its difference and never resets it.
 
@@ -621,14 +621,14 @@ The Orbit Project's [task policy skill](https://github.com/hardimpactdev/orbit/b
 
 ### Confirm deliverables
 
-The Gateway writes the subtask's deliverables into `$(git rev-parse --git-path orbit)/turn.json` before each turn. The agent confirms each one in its [turn receipt](#turn-receipt) with `--deliverable=ID=evidence`, where the evidence says where or how the deliverable is met.
+The turn prompt names the subtask's deliverables. The agent confirms each one in the `deliverables` map of its [turn receipt](#turn-receipt), `{"ID": "evidence"}`, where the evidence says where or how the deliverable is met.
 
 | Turn | Needs |
 | --- | --- |
 | Implementer `ready_for_review` | A confirmation for every deliverable |
 | Reviewer `approved` | A confirmation for every `review` deliverable. Other IDs are allowed |
 
-The turn command refuses a missing confirmation, an unknown ID, an ID given twice, empty evidence, and `--deliverable` with any other outcome. The Gateway stores the confirmations on the receipt's comment.
+The turn checks only that `deliverables` maps each ID to text. It does not compare the IDs with the subtask's deliverables. The Gateway stores the confirmations on the receipt's comment.
 
 ### Verify deliverables
 
@@ -1034,7 +1034,38 @@ A keyed turn fetches the default branch before it starts or sends agent work. Th
 
 ### Turn receipt
 
-The agent writes a structured receipt to the configured path in the task VM. The turn operation reads and validates it, stores the result and stops. A missing or invalid receipt is evidence for Swamp to handle.
+The agent ends its turn by writing `.git/orbit/receipt.json` in the workspace with its own file tools. No helper command exists. The turn prompt states the schema, the turn's thread and the outcomes its role may use:
+
+```json
+{"thread": 14, "outcome": "ready_for_review", "summary": "The export command works and tests/Feature/ExportTest.php covers it.", "deliverables": {"export-test": "tests/Feature/ExportTest.php"}}
+```
+
+| Field | Rule |
+| --- | --- |
+| `thread` | Required. The thread of this turn |
+| `outcome` | Required. One of the outcomes the role may use, listed below |
+| `summary` | Required, not blank |
+| `question` | Required when `outcome` is `blocked` |
+| `deliverables` | Optional map of deliverable ID to evidence text |
+| `cause`, `pull_request` | Optional, when the prompt asks for them |
+
+| Role | Outcomes |
+| --- | --- |
+| Implementer | `ready_for_review`, `blocked` |
+| Reviewer | `approved`, `changes_requested`, `blocked` |
+| Consult | `answered`, `blocked` |
+
+Before Pi starts, the turn creates `.git/orbit` and removes an earlier receipt. After the turn, it downloads the file and checks it in TypeScript. A receipt that breaks a rule is kept out of the result with one fixed code in `receipt_error`:
+
+| Code | Cause |
+| --- | --- |
+| `tasks.receipt_invalid` | Not a regular file, larger than 64 KiB, not JSON, or a field of the wrong type |
+| `tasks.receipt_thread_mismatch` | `thread` is missing or names another thread |
+| `tasks.receipt_outcome_invalid` | `outcome` is unknown or not allowed for the role |
+| `tasks.receipt_summary_missing` | `summary` is missing or blank |
+| `tasks.receipt_question_missing` | A `blocked` receipt has no question |
+
+A missing or invalid receipt is evidence for Swamp to handle.
 
 ### Questions
 
@@ -1517,4 +1548,4 @@ The native run is explicitly resumable: lost merge replies reconcile the same PR
 
 Swamp runs task turns on the Swamp role worker and reaches the task VM over SSH. The Gateway admits the group, current subtask, role, model and session, then starts `operation-task-turn`. It records the returned thread state, workspace identities and token metrics. It does not send Pi messages, wait for turns or acquire workspace execution leases. Swamp's native workflow owns placement, locking, cancellation and recovery.
 
-Pi writes and reviews code inside the VM. Swamp installs the local turn command, sends the admitted prompt with a stable Pi submission key and consumes the Pi event stream until the turn ends. A resumed step uses the same session and submission key. Git snapshots use a temporary index, include untracked files and leave the real index unchanged. The turn trusts the admitted workspace and analysis evidence. Reviewer changes are captured and the candidate is restored with Git reset and clean before the result returns. VM provision, readiness and enrollment belong to the task VM workflows.
+Pi writes and reviews code inside the VM. Swamp clears the old receipt, then sends the prompt and receipt schema with a stable Pi submission key and consumes the Pi event stream until the turn ends. A resumed step uses the same session and submission key. Git snapshots use a temporary index, include untracked files and leave the real index unchanged. The turn trusts the admitted workspace and analysis evidence. Reviewer changes are captured and the candidate is restored with Git reset and clean before the result returns. VM provision, readiness and enrollment belong to the task VM workflows.

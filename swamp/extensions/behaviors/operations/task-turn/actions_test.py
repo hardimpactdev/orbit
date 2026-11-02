@@ -1,8 +1,8 @@
 """Execute native workflow commands against Git and a Pi HTTP fixture."""
 
-import ast
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -16,7 +16,6 @@ from pathlib import Path
 
 import yaml
 
-SCRIPTS = Path(__file__).with_name("scripts")
 TURN = Path(__file__).resolve().parent.parent / "tasks/turn.ts"
 TOKEN = "synthetic-pi-test-token-with-at-least-32-characters"
 
@@ -135,20 +134,26 @@ class TurnActions(unittest.TestCase):
                 },
                 ok,
             )
-        remote = name == "receipt_prepare"
-        args = [sys.executable, "-B", str(SCRIPTS / (name + ".py"))]
-        env = {**os.environ, "ORBIT_TURN_INPUT": json.dumps(self.value)}
+        flow = yaml.safe_load(
+            (
+                Path(__file__).resolve().parents[4]
+                / "workflows/workflow-operation-task-turn.yaml"
+            ).read_text()
+        )
+        step = next(s for j in flow["jobs"] for s in j["steps"] if s["name"] == name)
+        env = dict(os.environ)
         terminal = Path(self.temp.name) / "local/terminal.json"
+        if step["task"]["behaviorType"] == "@swamp/ssh":
+            # Official SSH exec runs the pinned argv; only the checkout expression varies.
+            checkout = re.compile(
+                r'^\$\{\{ inputs\.intent\.checkout_path \+ "([^"]*)" \}\}$'
+            )
+            args = [
+                checkout.sub(lambda m: self.value["checkout_path"] + m.group(1), arg)
+                for arg in step["task"]["inputs"]["argv"]
+            ]
+            self.assertFalse([arg for arg in args if "${{" in arg], args)
         if name in {"session_create", "message_send", "interrupt", "observe"}:
-            flow = yaml.safe_load(
-                (
-                    Path(__file__).resolve().parents[4]
-                    / "workflows/workflow-operation-task-turn.yaml"
-                ).read_text()
-            )
-            step = next(
-                s for j in flow["jobs"] for s in j["steps"] if s["name"] == name
-            )
             # command/shell runs `sh -c`, without errexit or pipefail.
             args = ["sh", "-c", step["task"]["inputs"]["run"]]
             terminal.parent.mkdir(exist_ok=True)
@@ -166,7 +171,6 @@ class TurnActions(unittest.TestCase):
             }
         result = subprocess.run(
             args,
-            input=json.dumps(self.value) if remote else None,
             env={**env, **extra},
             text=True,
             capture_output=True,
@@ -227,27 +231,28 @@ class TurnActions(unittest.TestCase):
             "ORBIT_PI_URL": "http://127.0.0.1:" + str(server.server_port),
         }
 
-    def test_receipt_helper_collects_real_repository_agent_receipt(self):
+    def test_agent_written_receipt_is_read_from_a_prepared_workspace(self):
+        root = self.repo / ".git/orbit"
         self.run_step("receipt_prepare")
-        subprocess.run(
-            [
-                str(self.repo / ".git/orbit/turn"),
-                "--thread=14",
-                "--outcome=ready_for_review",
-                "--summary=Implemented",
-                "--deliverable=done=evidence",
-            ],
-            check=True,
-        )
+        self.assertEqual(root.stat().st_mode & 0o777, 0o700)
+        (root / "receipt.json").write_text('{"thread": 14, "outcome": "blocked"}')
+        self.run_step("receipt_prepare")
+        self.run_step("receipt_clear")
+        self.assertFalse((root / "receipt.json").exists())
         self.assertEqual(
-            self.run_step("receipt_read"),
-            {
-                "thread": 14,
-                "outcome": "ready_for_review",
-                "summary": "Implemented",
-                "deliverables": {"done": "evidence"},
-            },
+            self.run_step("receipt_read"), {"receipt": None, "error": None}
         )
+        receipt = {
+            "thread": 14,
+            "outcome": "ready_for_review",
+            "summary": "Implemented",
+            "deliverables": {"done": "evidence"},
+        }
+        (root / "receipt.json").write_text(json.dumps(receipt))
+        self.assertEqual(
+            self.run_step("receipt_read"), {"receipt": receipt, "error": None}
+        )
+        self.assertEqual(sorted(p.name for p in root.iterdir()), ["receipt.json"])
 
     def test_pi_actions_are_separate_and_stream_ignores_another_turn(self):
         server, env = self.pi_server()
@@ -306,19 +311,21 @@ class TurnActions(unittest.TestCase):
         (self.repo / ".git/orbit/receipt.json").write_text(
             json.dumps({"summary": text, "deliverables": {"key": text}})
         )
-        receipt = self.run_step("receipt_read")
+        receipt = self.run_step("receipt_read")["receipt"]
         for value in private:
             self.assertNotIn(value, json.dumps(receipt))
         self.assertIn("[REDACTED]", receipt["summary"])
         self.assertIn("key", receipt["deliverables"])
 
-    def test_receipt_symlink_cannot_escape_into_host_file(self):
+    def test_stale_receipt_link_is_removed_without_touching_its_target(self):
         root = self.repo / ".git/orbit"
         root.mkdir()
         destination = self.repo / "protected"
         destination.write_text("keep")
-        (root / "turn").symlink_to(destination)
-        self.run_step("receipt_prepare", ok=False)
+        (root / "receipt.json").symlink_to(destination)
+        self.run_step("receipt_prepare")
+        self.run_step("receipt_clear")
+        self.assertFalse((root / "receipt.json").is_symlink())
         self.assertEqual(destination.read_text(), "keep")
 
     def test_receipt_and_difference_sanitize_vm_credential_formats(self):
@@ -335,7 +342,7 @@ class TurnActions(unittest.TestCase):
                 }
             )
         )
-        receipt = self.run_step("receipt_read")
+        receipt = self.run_step("receipt_read")["receipt"]
         self.assertNotIn(credential, json.dumps(receipt))
         self.assertIn("[REDACTED]", receipt["summary"])
         (self.repo / "file").write_text("MODEL_KEY=" + credential + "\n")
@@ -418,18 +425,23 @@ class TurnActions(unittest.TestCase):
         root = self.repo / ".git/orbit"
         root.mkdir()
         (root / "receipt.json").write_text('{"summary": private-receipt-text}')
-        result = self.run_step("receipt_read", ok=False)
-        self.assertEqual(result.stderr, "tasks.receipt_invalid\n")
-        self.assertNotIn("private-receipt-text", result.stdout)
+        # The agent writes the file itself: a broken file is receipt evidence, not a failed step.
+        self.assertEqual(
+            self.run_step("receipt_read"),
+            {"receipt": None, "error": "tasks.receipt_invalid"},
+        )
         (root / "counts").write_text("private-count\t1\tfile\0")
         (root / "patch").write_text("")
         result = self.run_step("difference", ok=False)
         self.assertEqual(result.stderr, "tasks.difference_invalid\n")
         self.assertNotIn("private-count", result.stdout)
 
-    def test_every_shipped_action_compiles(self):
-        for path in SCRIPTS.glob("*.py"):
-            ast.parse(path.read_text(), filename=str(path))
+    def test_task_turn_ships_no_scripts(self):
+        here = Path(__file__).parent
+        self.assertFalse((here / "scripts").exists())
+        self.assertNotIn(
+            "additionalFiles", yaml.safe_load((here / "manifest.yaml").read_text())
+        )
 
 
 if __name__ == "__main__":

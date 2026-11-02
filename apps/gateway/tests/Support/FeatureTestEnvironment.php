@@ -12,7 +12,6 @@ use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\WorkerKnownHostsPublisher;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskReviewDiff;
-use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\TaskVms\TaskVmPackageCacheMount;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\AgentView\CacheAgentStateView;
@@ -54,7 +53,6 @@ final readonly class FeatureTestEnvironment
         app()->instance(NodeAgentRuntime::class, new FakeNodeAgentRuntime);
         app()->instance(RouterLanIngressReconciler::class, new FakeRouterLanIngressReconciler);
         app()->instance(ClusterRouterDnsSelectionReconciler::class, new FakeClusterRouterDnsSelectionReconciler);
-        app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts);
         app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
         app()->instance(TaskReviewDiff::class, new NullTaskReviewDiff);
         // A Node Caddy build runs local `sudo` on a Gateway Node; tests record build requests instead.

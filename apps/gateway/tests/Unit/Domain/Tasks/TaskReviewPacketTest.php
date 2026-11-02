@@ -116,9 +116,9 @@ it('renders a review packet with the group brief, subtask brief, deliverables, a
             '```',
         ]))
         ->and(packet_section($packet, 'Diff'))->toBe("diff --git a/packet.php b/packet.php\n+packet")
-        ->and($packet)->toContain('The approval must confirm each review deliverable (error-copy) with --deliverable=ID=evidence')
+        ->and($packet)->toContain('The approval must confirm each review deliverable (error-copy) in "deliverables": {"ID": "evidence"}')
         ->and($packet)->toContain('When the change adds or alters runtime behaviour, trace the main path and one ordinary failure path end to end (for example, a failed build and then a resume) before you analyse failure windows.')
-        ->and($packet)->not->toContain('--pr-summary');
+        ->and($packet)->not->toContain('"pull_request"');
 });
 
 it('cuts the packet group brief and subtask brief from the end and names the context file', function (): void {
@@ -343,7 +343,7 @@ it('keeps the whole review packet within 16000 characters', function (): void {
         ->and(strlen(strtok(packet_section($packet, 'Diff'), "\n")))->toBeLessThanOrEqual(TaskReviewPacket::DiffBytes)
         ->and(mb_strlen(packet_section($packet, 'Retrieval')))->toBeLessThanOrEqual(TaskReviewPacket::RetrievalLimit)
         ->and($packet)->toContain('|| true; done')
-        ->and($packet)->toContain('--pr-summary');
+        ->and($packet)->toContain('"pull_request": {"summary"');
 });
 
 it('gives characters spared by omitted packet sections to the diff on a continued turn', function (): void {
@@ -389,8 +389,8 @@ it('tells the packet reviewer not to re-run passed checks and to leave the works
         ->and($composer)->not->toContain('say why')
         ->and($composer)->toContain('give its file:line, the rule it meets, and what must change; for (a), also name the normal-operation trigger.')
         ->and($composer)->toContain('Leave the workspace tree as you found it')
-        ->and($composer)->toContain('--outcome=approved')
-        ->and($composer)->toContain('--outcome=changes_requested')
+        ->and($composer)->toContain('"outcome": "approved"')
+        ->and($composer)->toContain('"outcome": "changes_requested"')
         ->and($other)->toContain('The Project task check is `vp run check`.')
         ->and($other)->not->toContain('The Project task check is `composer check`.')
         ->and($none)->not->toContain('`composer check`')

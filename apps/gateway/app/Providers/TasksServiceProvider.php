@@ -32,7 +32,6 @@ use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskStartCommit;
 use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskTurnFetchNotice;
-use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceOperationRecovery;
@@ -55,7 +54,6 @@ use App\Infrastructure\Tasks\Pi\PiDriver;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\RemoteTaskReviewDiff;
 use App\Infrastructure\Tasks\RemoteTaskReviewReset;
-use App\Infrastructure\Tasks\RemoteTaskTurnReceipts;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceMcp;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceSigner;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceStateReader;
@@ -80,7 +78,6 @@ final class TasksServiceProvider extends ExtensionServiceProvider
         TaskReviewDiff::class => RemoteTaskReviewDiff::class,
         TaskReviewReset::class => RemoteTaskReviewReset::class,
         TaskWorkspaceStateReader::class => RemoteTaskWorkspaceStateReader::class,
-        TaskTurnReceipts::class => RemoteTaskTurnReceipts::class,
         TaskCheckRunner::class => RemoteTaskCheckRunner::class,
         DeliverablePathRepository::class => NativeDeliverablePathRepository::class,
         TaskBriefCoverage::class => LaravelAiTaskBriefCoverage::class,

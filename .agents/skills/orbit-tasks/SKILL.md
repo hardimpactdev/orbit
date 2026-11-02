@@ -5,7 +5,7 @@ description: Use when preparing, implementing, or reviewing an Orbit task group.
 
 # Orbit Tasks
 
-The Gateway Tasks engine is generic. This file is Orbit's repository policy for task groups. The [quality bar](../../../AGENTS.md#quality-bar) and the check policy in the root `AGENTS.md` apply to every subtask. The Gateway's prompts carry the turn command, the blocking rule, and the handoff mechanics, so this file does not repeat them.
+The Gateway Tasks engine is generic. This file is Orbit's repository policy for task groups. The [quality bar](../../../AGENTS.md#quality-bar) and the check policy in the root `AGENTS.md` apply to every subtask. The Gateway's prompts carry the turn receipt schema, the blocking rule, and the handoff mechanics, so this file does not repeat them.
 
 ## Plan a group
 
@@ -77,4 +77,4 @@ Create the group in Backlog with `tasks-create` for the Orbit Project, and its s
 
 Check the risk that the brief names first, then the quality bar. The review prompt's blocking rule decides what blocks.
 
-The reviewer whose approval opens the pull request puts any open follow-up that users must know about into `--pr-summary`. The operator decides which follow-ups become a later group.
+The reviewer whose approval opens the pull request puts any open follow-up that users must know about into the receipt's `pull_request.summary`. The operator decides which follow-ups become a later group.

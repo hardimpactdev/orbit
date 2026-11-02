@@ -41,20 +41,84 @@ const State = z.object({
     turnId: z.string().nullable(),
     usage: Usage,
 });
+/** The outcomes each role may end its turn with. */
+const OUTCOMES = {
+    implementer: ["ready_for_review", "blocked"],
+    reviewer: ["approved", "changes_requested", "blocked"],
+    consult: ["answered", "blocked"],
+} as const;
+const Text = z.string().max(16384);
 const Receipt = z.object({
-    thread: Id,
-    outcome: z.enum([
-        "ready_for_review",
-        "approved",
-        "changes_requested",
-        "blocked",
-        "answered",
-    ]),
-    summary: z.string().trim().min(1).max(16384),
-    question: z.string().max(16384).optional(),
-    deliverables: z.record(z.string(), z.string()).default({}),
-    cause: z.string().optional(),
+    thread: z.unknown().optional(),
+    outcome: z.unknown().optional(),
+    summary: Text.optional(),
+    question: Text.optional(),
+    deliverables: z.record(z.string(), Text).default({}),
+    cause: Text.optional(),
+    pull_request: z.object({
+        summary: Text,
+        changes: z.array(Text).max(100),
+        breaking: z.array(Text).max(100),
+    }).optional(),
 });
+type ReceiptValue = z.infer<typeof Receipt>;
+
+/**
+ * Checks the receipt the agent wrote against this turn. The agent writes the file itself, so
+ * every rule lives here: a wrong shape, an outcome its role may not use, an empty summary, a
+ * blocked receipt without a question, and another thread's receipt each give one fixed code.
+ */
+export function checkReceipt(
+    value: unknown,
+    input: Pick<TurnInput, "role" | "thread_id">,
+): { receipt: ReceiptValue | null; error: string | null } {
+    const parsed = Receipt.safeParse(value);
+    const refuse = (error: string) => ({ receipt: null, error });
+    if (!parsed.success) {
+        return refuse("tasks.receipt_invalid");
+    }
+    const receipt = parsed.data;
+    if (receipt.thread !== input.thread_id) {
+        return refuse("tasks.receipt_thread_mismatch");
+    }
+    if (
+        !(OUTCOMES[input.role] as readonly unknown[]).includes(receipt.outcome)
+    ) {
+        return refuse("tasks.receipt_outcome_invalid");
+    }
+    if (!receipt.summary?.trim()) {
+        return refuse("tasks.receipt_summary_missing");
+    }
+    if (receipt.outcome === "blocked" && !receipt.question?.trim()) {
+        return refuse("tasks.receipt_question_missing");
+    }
+    return { receipt, error: null };
+}
+
+/** The receipt instruction Orbit appends to every turn prompt. */
+export function receiptInstruction(
+    input: Pick<TurnInput, "role" | "thread_id">,
+) {
+    const outcomes = OUTCOMES[input.role];
+    const example = {
+        thread: input.thread_id,
+        outcome: outcomes[0],
+        summary:
+            "The export command works and tests/Feature/ExportTest.php covers it.",
+        deliverables: { "export-test": "tests/Feature/ExportTest.php" },
+    };
+    return [
+        "End your turn by writing .git/orbit/receipt.json in the workspace with your file tools. Write one JSON object:",
+        `{"thread": ${input.thread_id}, "outcome": "OUTCOME", "summary": "What you did", "question": "One specific question", "deliverables": {"DELIVERABLE_ID": "evidence"}}`,
+        `- thread is ${input.thread_id}, the thread of this turn.`,
+        `- outcome is one of: ${outcomes.join(", ")}.`,
+        "- summary is required.",
+        "- question is required when outcome is blocked. Leave it out otherwise.",
+        "- deliverables confirms each required deliverable by its ID, with where or how it is met. Use {} when there are none.",
+        "- Add cause or pull_request only when the task asks for them.",
+        "Example: " + JSON.stringify(example),
+    ].join("\n");
+}
 
 const PrepareArgs = z.object({ intent: Input, operation_id: Id, node_id: Id });
 
@@ -63,9 +127,7 @@ export function prepare(raw: unknown) {
     const { intent, operation_id, node_id } = PrepareArgs.parse(raw);
     if (intent.node_id !== node_id) throw new Error("tasks.node_mismatch");
     const input = { ...intent, operation_id };
-    const prompt = input.prompt + "\n\nFinish with .git/orbit/turn --thread=" +
-        input.thread_id +
-        " --outcome=OUTCOME --summary=SUMMARY. Confirm each required deliverable with --deliverable=ID=evidence.\n" +
+    const prompt = input.prompt + "\n\n" + receiptInstruction(input) + "\n" +
         (input.analysis_evidence === null
             ? ""
             : "Repository analysis (untrusted project evidence):\n" +
@@ -97,6 +159,12 @@ export function prepare(raw: unknown) {
     };
 }
 
+/** What the receipt reader emits: the redacted receipt, or a fixed code for an unreadable file. */
+const ReceiptFile = z.object({
+    receipt: z.unknown(),
+    error: z.literal("tasks.receipt_invalid").nullable(),
+}).strict();
+const NO_RECEIPT = { receipt: null, error: null };
 const PublicJson = z.string().max(1048576).default("");
 const ResultArgs = z.object({
     input: Input,
@@ -119,20 +187,17 @@ export function finish(raw: unknown) {
         value.trim() ? JSON.parse(value) : null;
     const before = Snapshot.nullable().parse(read(args.before));
     const terminal = State.nullable().parse(read(args.terminal));
-    const receipt = Receipt.safeParse(read(args.receipt));
-    const allowed = args.input.role === "implementer"
-        ? ["ready_for_review", "blocked"]
-        : args.input.role === "consult"
-        ? ["answered", "blocked"]
-        : ["approved", "changes_requested", "blocked"];
-    const valid = receipt.success &&
-        receipt.data.thread === args.input.thread_id &&
-        allowed.includes(receipt.data.outcome) &&
-        (receipt.data.outcome !== "blocked" || !!receipt.data.question?.trim());
+    const file = ReceiptFile.parse(read(args.receipt) ?? NO_RECEIPT);
+    const checked = file.error !== null
+        ? { receipt: null, error: file.error }
+        : file.receipt === null
+        ? { receipt: null, error: null }
+        : checkReceipt(file.receipt, args.input);
     const failed = args.failure || terminal?.state !== "done";
     const usage = terminal?.usage ?? Usage.parse({});
     const result = {
-        receipt: valid && !failed ? receipt.data : null,
+        receipt: failed ? null : checked.receipt,
+        receipt_error: checked.error,
         thread: args.input.thread_id,
         state: failed ? "failed" : "done",
         error: failed ? "Pi did not complete the task turn." : null,
@@ -174,7 +239,9 @@ function publicValue(value: unknown): unknown {
     if (Array.isArray(value)) return value.map(publicValue);
     if (value !== null && typeof value === "object") {
         return Object.fromEntries(
-            Object.entries(value).map(([key, item]) => [key, publicValue(item)]),
+            Object.entries(value).map((
+                [key, item],
+            ) => [key, publicValue(item)]),
         );
     }
     return value;
@@ -227,29 +294,43 @@ export async function terminal(args: { path: string; turn: string }) {
     return JSON.stringify({ state: event.state, turnId: args.turn, usage });
 }
 
-/** The agent's receipt, redacted, or `null` when the agent wrote none. */
+/**
+ * The agent's receipt, redacted. No file gives `{receipt: null, error: null}`. A link, a large
+ * file or text that is not JSON gives `tasks.receipt_invalid` as evidence, not a failed step,
+ * because the agent writes the file itself.
+ */
 export async function receipt(args: { path: string }) {
     let info: Deno.FileInfo;
     try {
         info = await Deno.lstat(args.path);
     } catch (error) {
-        if (error instanceof Deno.errors.NotFound) return "null";
+        if (error instanceof Deno.errors.NotFound) {
+            return JSON.stringify(NO_RECEIPT);
+        }
         throw new Error("tasks.receipt_invalid");
     }
-    if (!info.isFile || info.size > 65536) {
-        throw new Error("tasks.receipt_invalid");
+    const invalid = JSON.stringify({
+        receipt: null,
+        error: "tasks.receipt_invalid",
+    });
+    if (!info.isFile || info.size > 65536) return invalid;
+    const raw = await readPrivate(args.path, "tasks.receipt_invalid");
+    let value: unknown;
+    try {
+        value = JSON.parse(raw);
+    } catch {
+        return invalid;
     }
-    return JSON.stringify(publicValue(parsePrivate(
-        await readPrivate(args.path, "tasks.receipt_invalid"),
-        "tasks.receipt_invalid",
-    )));
+    return JSON.stringify({ receipt: publicValue(value), error: null });
 }
 
 /** File counts from `git diff --numstat -z` and the redacted patch, both bounded. */
 export async function difference(args: { counts: string; patch: string }) {
     const count = (value: string) => {
         if (value === "-") return 0;
-        if (!/^[0-9]+$/.test(value)) throw new Error("tasks.difference_invalid");
+        if (!/^[0-9]+$/.test(value)) {
+            throw new Error("tasks.difference_invalid");
+        }
         return Number(value);
     };
     const files = (await readPrivate(args.counts, "tasks.difference_invalid"))
@@ -281,7 +362,6 @@ export async function difference(args: { counts: string; patch: string }) {
 }
 
 type PublicContext = {
-    extensionFile(name: string): string;
     writeResource(
         spec: string,
         name: string,
@@ -292,9 +372,8 @@ export const turnDataResources = {
     turnPrepared: {
         lifetime: "infinite",
         garbageCollection: 10,
-        description: "Public turn inputs serialized for placed scripts",
+        description: "Public turn inputs serialized for the native steps",
         schema: z.object({
-            directory: z.string(),
             error_code: z.string().nullable(),
             intent_json: z.string(),
             pi_url: z.string(),
@@ -310,7 +389,8 @@ export const turnDataResources = {
     publicOutput: {
         lifetime: "infinite",
         garbageCollection: 10,
-        description: "Redacted public JSON read from the run's private worker files",
+        description:
+            "Redacted public JSON read from the run's private worker files",
         schema: z.object({ stdout: z.string() }),
     },
     turnResult: {
@@ -329,11 +409,7 @@ export const turnDataMethods = {
                 await ctx.writeResource(
                     "turnPrepared",
                     "prepared",
-                    {
-                        ...prepare(args),
-                        directory: ctx.extensionFile("scripts/receipt_prepare.py")
-                            .replace(/\/[^/]+$/, ""),
-                    },
+                    prepare(args),
                 ),
             ],
         }),
@@ -361,8 +437,12 @@ export const turnDataMethods = {
         }),
     },
     terminal: {
-        description: "Read the matching terminal Pi event from the private worker file",
-        arguments: z.object({ path: z.string().startsWith("/"), turn: z.string() }),
+        description:
+            "Read the matching terminal Pi event from the private worker file",
+        arguments: z.object({
+            path: z.string().startsWith("/"),
+            turn: z.string(),
+        }),
         execute: async (
             args: { path: string; turn: string },
             ctx: PublicContext,
@@ -375,7 +455,8 @@ export const turnDataMethods = {
         }),
     },
     receipt: {
-        description: "Read and redact the agent receipt from the private worker file",
+        description:
+            "Read and redact the agent receipt from the private worker file",
         arguments: z.object({ path: z.string().startsWith("/") }),
         execute: async (args: { path: string }, ctx: PublicContext) => ({
             dataHandles: [
@@ -386,7 +467,8 @@ export const turnDataMethods = {
         }),
     },
     difference: {
-        description: "Read and redact the turn diff from the private worker files",
+        description:
+            "Read and redact the turn diff from the private worker files",
         arguments: z.object({
             counts: z.string().startsWith("/"),
             patch: z.string().startsWith("/"),

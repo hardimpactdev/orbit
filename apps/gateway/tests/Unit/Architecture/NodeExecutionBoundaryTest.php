@@ -171,7 +171,6 @@ it('keeps Node execution inside the agent transports across core and extensions'
         'app/Infrastructure/Tasks/RemoteTaskCheckRunner.php',
         'app/Infrastructure/Tasks/RemoteTaskReviewDiff.php',
         'app/Infrastructure/Tasks/RemoteTaskReviewReset.php',
-        'app/Infrastructure/Tasks/RemoteTaskTurnReceipts.php',
         'app/Infrastructure/Tasks/RemoteTaskWorkspaceDiffReader.php',
         'app/Infrastructure/Tasks/RemoteTaskWorkspaceMcp.php',
         'app/Infrastructure/Tasks/RemoteTaskWorkspaceSigner.php',

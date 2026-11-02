@@ -1,7 +1,7 @@
 """Synthetic Pi HTTP server used only inside a disposable proof Node."""
 
 import json
-import subprocess
+import re
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -33,22 +33,21 @@ class Handler(BaseHTTPRequestHandler):
         calls.append(self.path)
         if self.path.endswith("/messages"):
             turn = body["key"]
-            metadata = json.loads((workspace / ".git/orbit/turn.json").read_text())
+            # Like an agent, read the thread and the first allowed outcome from the prompt's
+            # receipt instruction, then write the receipt file directly.
+            text = body["text"]
+            thread = int(re.search(r"- thread is ([0-9]+),", text).group(1))
+            outcome = re.search(r"- outcome is one of: ([a-z_]+)", text).group(1)
             (workspace / "file").write_text("MODEL_KEY=" + credential + "\n")
             (workspace / "untracked").write_text("proof addition\n")
-            outcome = {
-                "reviewer": "approved",
-                "consult": "answered",
-                "implementer": "ready_for_review",
-            }[metadata["role"]]
-            subprocess.run(
-                [
-                    str(workspace / ".git/orbit/turn"),
-                    "--thread=" + str(metadata["thread"]),
-                    "--outcome=" + outcome,
-                    "--summary=key " + credential,
-                ],
-                check=True,
+            (workspace / ".git/orbit/receipt.json").write_text(
+                json.dumps(
+                    {
+                        "thread": thread,
+                        "outcome": outcome,
+                        "summary": "key " + credential,
+                    }
+                )
             )
             (workspace / ".git/orbit/pi-calls.json").write_text(json.dumps(calls))
         self.send_response(200)

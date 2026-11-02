@@ -78,7 +78,7 @@ jobs:
         env:
           ORBIT_DIRECTORY: ${{ "/tmp/orbit-task-turn-local-" + run.id }}
       behaviorName: task-turn-prepare-local
-  - name: prepare_assets
+  - name: prepare_remote
     labels: {role: swamp}
     dependsOn:
     - step: prepare
@@ -87,10 +87,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-prepare-assets-" + string(inputs.node_id) }}
+      behaviorName: ${{ "task-turn-prepare-remote-" + string(inputs.node_id) }}
       methodName: exec
       globalArgs:
-        name: ${{ "task-turn-prepare-assets-" + string(inputs.node_id) }}
+        name: ${{ "task-turn-prepare-remote-" + string(inputs.node_id) }}
         transport: &id001
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -110,39 +110,14 @@ jobs:
         - -m
         - '0700'
         - -p
-        - ${{ "/tmp/orbit-task-turn-" + run.id + "/scripts" }}
+        - ${{ "/tmp/orbit-task-turn-" + run.id }}
         timeoutSec: 60
     guard: ${{ steps.prepare.outputs.error_code != null }}
     writes: true
-  - name: copy_assets
-    labels: {role: swamp}
-    dependsOn:
-    - step: prepare_assets
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("task-turn-copy-assets-" + string(inputs.node_id) + "-" + self.file).split(".").join("-") }}
-      methodName: copy
-      globalArgs:
-        name: ${{ ("task-turn-copy-assets-" + string(inputs.node_id) + "-" + self.file).split(".").join("-") }}
-        transport: *id001
-        hosts: *id002
-      inputs:
-        hosts: name:target
-        src: ${{ steps.prepare.outputs.directory + "/" + self.file }}
-        dst: ${{ "/tmp/orbit-task-turn-" + run.id + "/scripts/" }}
-        direction: to
-        timeoutSec: 60
-    writes: true
-    forEach:
-      item: file
-      in: ${{ ["receipt_prepare.py", "receipt_helper.py"] }}
   - name: snapshot_before_index
     labels: {role: swamp}
     dependsOn:
-    - step: copy_assets
+    - step: prepare_remote
       condition:
         type: succeeded
     task:
@@ -197,7 +172,7 @@ jobs:
   - name: snapshot_before_head
     labels: {role: swamp}
     dependsOn:
-    - step: copy_assets
+    - step: prepare_remote
       condition:
         type: succeeded
     task:
@@ -281,16 +256,45 @@ jobs:
       inputs:
         hosts: name:target
         argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-task-turn-" + run.id + "/scripts/receipt_prepare.py" }}
-        stdin: ${{ steps.prepare.outputs.intent_json }}
+        - timeout
+        - '60'
+        - mkdir
+        - -m
+        - '0700'
+        - -p
+        - ${{ inputs.intent.checkout_path + "/.git/orbit" }}
+        timeoutSec: 60
+    writes: true
+  - name: receipt_clear
+    labels: {role: swamp}
+    dependsOn:
+    - step: receipt_prepare
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-turn-receipt-clear-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "task-turn-receipt-clear-" + string(inputs.node_id) }}
+        transport: *id001
+        hosts: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '60'
+        - rm
+        - -f
+        - --
+        - ${{ inputs.intent.checkout_path + "/.git/orbit/receipt.json" }}
         timeoutSec: 60
     writes: true
   - name: session_create
     labels: {role: swamp}
     dependsOn:
-    - step: receipt_prepare
+    - step: receipt_clear
       condition:
         type: succeeded
     task:
@@ -316,7 +320,7 @@ jobs:
   - name: message_send
     labels: {role: swamp}
     dependsOn:
-    - step: receipt_prepare
+    - step: receipt_clear
       condition:
         type: succeeded
     - step: session_create

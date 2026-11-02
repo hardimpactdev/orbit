@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import unittest
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -32,15 +33,15 @@ class TurnHandler(PiHandler):
             )
             if self.server.omit_receipt:
                 return super().do_POST()
-            subprocess.run(
-                [
-                    str(self.server.workspace / ".git/orbit/turn"),
-                    "--thread=14",
-                    "--outcome=" + outcome,
-                    "--summary=" + self.server.agent_text,
-                ],
-                check=True,
-                capture_output=True,
+            # The agent writes its receipt itself; the prompt carries the schema.
+            self.server.workspace.joinpath(".git/orbit/receipt.json").write_text(
+                json.dumps(
+                    {
+                        "thread": self.server.thread,
+                        "outcome": outcome,
+                        "summary": self.server.agent_text,
+                    }
+                )
             )
         super().do_POST()
 
@@ -89,6 +90,7 @@ class NativeTurn(harness.NativeTestCase):
         self.server.calls, self.server.disconnect = [], False
         self.server.agent_text = "agent changed"
         self.server.omit_receipt = False
+        self.server.thread = 14
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
@@ -286,6 +288,37 @@ else:shutil.copyfile(src,dst/src.name if dst.is_dir() else dst)
         self.assertEqual(run["status"], "succeeded")
         self.assertIsNone(self.result(run)["receipt"])
 
+    def test_stale_receipt_is_cleared_before_the_turn(self):
+        self.server.omit_receipt = True
+        stale = self.workspace / ".git/orbit/receipt.json"
+        stale.parent.mkdir()
+        stale.write_text(
+            json.dumps({"thread": 14, "outcome": "ready_for_review", "summary": "Old"})
+        )
+        run = self.run_workflow()
+        self.assertEqual(run["status"], "succeeded")
+        result = self.result(run)
+        self.assertEqual([result["receipt"], result["receipt_error"]], [None, None])
+        self.assertFalse(stale.exists())
+
+    def test_receipt_of_another_thread_is_evidence_with_a_fixed_code(self):
+        self.server.thread = 99
+        run = self.run_workflow()
+        self.assertEqual(run["status"], "succeeded")
+        result = self.result(run)
+        self.assertIsNone(result["receipt"])
+        self.assertEqual(result["receipt_error"], "tasks.receipt_thread_mismatch")
+
+    def test_prompt_tells_the_agent_to_write_the_receipt_file(self):
+        self.run_workflow()
+        text = next(
+            body["text"]
+            for path, body in self.server.calls
+            if path.endswith("/messages")
+        )
+        self.assertIn("writing .git/orbit/receipt.json", text)
+        self.assertIn('"thread": 14', text)
+
     def test_failed_receipt_copy_fails_without_sending_another_pi_message(self):
         step = next(
             s for s in self.flow["jobs"][0]["steps"] if s["name"] == "receipt_copy"
@@ -359,7 +392,25 @@ else:shutil.copyfile(src,dst/src.name if dst.is_dir() else dst)
         )
 
 
-if __name__ == "__main__":
-    import unittest
+class ShippedFiles(unittest.TestCase):
+    """The turn copies nothing to the task VM: every workspace action is pinned argv."""
 
+    def test_no_step_copies_a_file_to_the_node(self):
+        flow = yaml.safe_load(
+            (ROOT / "workflows/workflow-operation-task-turn.yaml").read_text()
+        )
+        steps = [s for job in flow["jobs"] for s in job["steps"]]
+        uploads = [
+            s["name"]
+            for s in steps
+            if s["task"].get("methodName") == "copy"
+            and s["task"]["inputs"].get("direction") != "from"
+        ]
+        self.assertEqual(uploads, [])
+        text = yaml.safe_dump(flow)
+        for marker in ("/scripts", "python3", ".git/orbit/turn"):
+            self.assertNotIn(marker, text)
+
+
+if __name__ == "__main__":
     unittest.main()

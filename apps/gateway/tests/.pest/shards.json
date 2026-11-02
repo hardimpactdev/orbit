@@ -667,7 +667,6 @@
         "Tests\\Feature\\Tasks\\ReviewAndMergeApiTest": 1.2581,
         "Tests\\Feature\\Tasks\\ReviewAndMergeTest": 12.2652,
         "Tests\\Feature\\Tasks\\TaskWorkspaceRouteTest": 0.9832,
-        "Tests\\Feature\\Tasks\\TurnReceiptTest": 29.034,
         "Tests\\Feature\\Tasks\\WorkspaceLeaseStatusTest": 0.1149,
         "Tests\\Feature\\TestTemporaryDirectoryTest": 0.4075,
         "Tests\\Feature\\VitePortAllocatorTest": 0.2845,

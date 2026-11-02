@@ -3,7 +3,6 @@
 
 import base64
 import contextlib
-import hashlib
 import json
 import os
 import secrets
@@ -185,50 +184,18 @@ def perform(checkout, operation, payload):
                            pass_fds=(directory,), check=True)
             os.fchmod(directory, 0o711)
             return os.readlink(f'/proc/self/fd/{directory}')
-        if operation in {'check', 'snapshot', 'turn'}:
+        if operation in {'check', 'snapshot'}:
             orbit = metadata.orbit(create=True)
-            if operation in {'check', 'snapshot'}:
-                metadata.publish(orbit, 'check', base64.b64decode(payload['script'], validate=True), 0o755)
-                if operation == 'check':
-                    if 'composer' in payload:
-                        metadata.publish(orbit, 'composer.php', base64.b64decode(payload['composer'], validate=True))
-                    metadata.publish(orbit, 'setup.json', payload['setup'].encode())
-                    metadata.publish(orbit, 'check-command', payload['command'].encode())
-                    if payload['deliverables'] is None:
-                        metadata.unlink(orbit, 'deliverables.json')
-                    else:
-                        metadata.publish(orbit, 'deliverables.json', payload['deliverables'].encode())
-            else:
-                incoming = json.loads(payload['turn'])
-                delivery_key = incoming.get('delivery_key')
-                if delivery_key is not None:
-                    existing = metadata.read(orbit, 'turn.json')
-                    if existing is not None and json.loads(existing).get('delivery_key') == delivery_key:
-                        return ''
-                metadata.publish(orbit, 'turn', base64.b64decode(payload['script'], validate=True), 0o755)
-                if payload['context'] is not None:
-                    metadata.publish(orbit, 'context.md', payload['context'].encode())
-                for name in ('receipt.json', 'run', 'run.json'):
-                    metadata.unlink(orbit, name)
-                # Commit the delivery identity last, before any caller may send the turn.
-                metadata.publish(orbit, 'turn.json', payload['turn'].encode() + b'\n')
-            return ''
-        try:
-            orbit = metadata.orbit()
-        except FileNotFoundError:
-            return 'missing\n' if operation == 'legacy' else 'none\n' if operation == 'read' else ''
-        if operation == 'read':
-            receipt = metadata.read(orbit, 'receipt.json')
-            if receipt is None:
-                return 'none\n'
-            return 'receipt\n' + (metadata.read(orbit, 'turn.json') or b'').decode() + receipt.decode()
-        if operation == 'legacy':
-            turn = metadata.read(orbit, 'turn.json')
-            return 'missing\n' if turn is None else 'turn\n' + turn.decode()
-        if operation == 'clear':
-            receipt = metadata.read(orbit, 'receipt.json')
-            if receipt is not None and hashlib.sha256(receipt).hexdigest() == payload['hash']:
-                metadata.unlink(orbit, 'receipt.json')
+            metadata.publish(orbit, 'check', base64.b64decode(payload['script'], validate=True), 0o755)
+            if operation == 'check':
+                if 'composer' in payload:
+                    metadata.publish(orbit, 'composer.php', base64.b64decode(payload['composer'], validate=True))
+                metadata.publish(orbit, 'setup.json', payload['setup'].encode())
+                metadata.publish(orbit, 'check-command', payload['command'].encode())
+                if payload['deliverables'] is None:
+                    metadata.unlink(orbit, 'deliverables.json')
+                else:
+                    metadata.publish(orbit, 'deliverables.json', payload['deliverables'].encode())
             return ''
         raise ValueError('Unknown metadata operation.')
 

@@ -9,19 +9,23 @@ checks workspace ownership or repository-analysis provenance before sending Pi.
 Scratch indexes are removed after both trees are captured. A failed snapshot keeps
 its index so native resume can finish it with the same tracked-file set.
 
-## Remaining rule 22 gaps
+## Turn receipt
 
-This family is **not rule 22 complete**. Do not count the remaining Node assets as
-converted.
+The task VM gets no script. The agent writes `.git/orbit/receipt.json` itself with
+its own file tools, following the schema that `prepare` appends to every prompt:
+the turn's thread, the outcomes its role may use, a required summary, a question
+when blocked, and a deliverables map. Two pinned `@swamp/ssh exec` argv steps run
+before Pi: `receipt_prepare` (`mkdir -m 0700 -p <checkout>/.git/orbit`) and
+`receipt_clear` (`rm -f -- <checkout>/.git/orbit/receipt.json`). `rm` removes a
+planted link, not its target.
 
-- `receipt_helper.py` is the agent's local receipt tool. The audit places it in
-  the task VM image, once. `receipt_prepare.py` still installs it with public
-  `turn.json`; removing that step needs an image-owned tool. The image recipe is
-  orbit-agent Rust code (`apps/agent/src/commands/image_recipe`) with fixed phases
-  and digest verification, and no tool-file input. Baking the helper needs an agent
-  change that writes and verifies the file, an agent release, an image rebuild, and
-  a turn that runs on the new image. Until then these two files are the only copied
-  assets, and their copy step goes with them.
+`receipt_read` emits `{receipt, error}`. A link, a file over 64 KiB or text that is
+not JSON gives `tasks.receipt_invalid` as evidence, not a failed step. `finish`
+then checks the contract with one fixed code per rule in `receipt_error`:
+`tasks.receipt_invalid`, `tasks.receipt_thread_mismatch`,
+`tasks.receipt_outcome_invalid`, `tasks.receipt_summary_missing` or
+`tasks.receipt_question_missing`. A broken receipt gives `receipt: null`; the turn
+still succeeds.
 
 Pi API actions are inline curl commands on the Swamp worker. curl reads the Pi
 token from its own environment with `--variable %ORBIT_PI_TOKEN` and
@@ -46,21 +50,20 @@ Parser and file errors can quote private input, so every reader and `observe` fa
 with one fixed code only: `tasks.pi_event_too_large`,
 `tasks.pi_completion_unconfirmed`, `tasks.pi_usage_invalid`,
 `tasks.pi_event_invalid`, `tasks.receipt_invalid` or `tasks.difference_invalid`.
+The receipt reader reports `tasks.receipt_invalid` as data, as above.
 
 The `outcome` step is a native assert over the public shaper's typed success flag.
 It replaces `outcome.py`; the public result and failure codes stay the same.
 
 ## Verification status
 
-Ten pinned native tests, twelve action tests, nine data tests and four Gateway tests
-pass, including failed/interrupted turns, private receipt/diff text, the token outside
-curl argv, fixed codes for malformed Pi events, receipts and counts, and `observe`
-against the proof's Pi fixture with only the task VM image's tools.
-The native outcome conversion passes on shared minimal@9 at `f41a857e5b`:
-`~/swamp-execution/evidence/proof/tasks.turn/20261102T151441Z-minimal.json`,
-51.39 seconds against a 180-second budget and `queueTimeout: 60`.
-The proof uses real Gateway, vault, SSH and Git with a synthetic Pi server.
-The minimal@10 proof of `ac06c3561a` failed: its `observe` needed `jq`, which the
-task VM image lacks. The curl and awk actions have no live receipt yet.
-This is a partial conversion; the image-owned receipt tool remains. It is not a
-rule 22 completion claim.
+Fourteen pinned native tests, twelve action tests, twelve data tests and the
+Gateway receipt tests pass. They cover failed and interrupted turns, private
+receipt and diff text, the token outside curl argv, fixed codes for malformed Pi
+events, receipts and counts, each receipt rule, a stale receipt cleared before the
+turn, and a workflow that uploads no file. The extension ships no script.
+The receipt-file turn has no live proof receipt yet. The last proof, shared
+minimal@9 at `f41a857e5b`
+(`~/swamp-execution/evidence/proof/tasks.turn/20261102T151441Z-minimal.json`,
+51.39 seconds against a 180-second budget and `queueTimeout: 60`), still used the
+helper. The proof's synthetic Pi now writes the receipt file itself.

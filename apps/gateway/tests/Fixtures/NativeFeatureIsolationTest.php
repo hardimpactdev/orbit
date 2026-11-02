@@ -10,7 +10,6 @@ use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskReviewDiff;
-use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\TaskVms\TaskVmPackageCacheMount;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Processes\NativeProcessRunner;
@@ -27,7 +26,6 @@ use Tests\Support\FakeNodeAgentRuntime;
 use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\FakeRouterLanIngressReconciler;
 use Tests\Support\FakeTaskCheckRunner;
-use Tests\Support\FakeTaskTurnReceipts;
 use Tests\Support\FakeTaskVmPackageCacheMount;
 use Tests\Support\FakeVitePortRuntime;
 use Tests\Support\GuardsSudo;
@@ -55,7 +53,6 @@ final class NativeFeatureIsolationTest extends FeatureTestCase
             NodeAgentRuntime::class => FakeNodeAgentRuntime::class,
             RouterLanIngressReconciler::class => FakeRouterLanIngressReconciler::class,
             ClusterRouterDnsSelectionReconciler::class => FakeClusterRouterDnsSelectionReconciler::class,
-            TaskTurnReceipts::class => FakeTaskTurnReceipts::class,
             TaskCheckRunner::class => FakeTaskCheckRunner::class,
             TaskReviewDiff::class => NullTaskReviewDiff::class,
         ] as $contract => $fake) {

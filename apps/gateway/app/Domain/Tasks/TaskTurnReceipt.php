@@ -7,7 +7,7 @@ namespace App\Domain\Tasks;
 use JsonException;
 
 /**
- * The receipt an agent writes with `.git/orbit/turn` to end its turn. A receipt without a
+ * The receipt an agent writes to `.git/orbit/receipt.json` itself to end its turn. A receipt without a
  * known outcome and a summary is invalid and never advances a task. So is a `blocked`
  * receipt without a question for the operator. The receipt also carries the agent's
  * confirmation of each subtask deliverable (ADR 0133).

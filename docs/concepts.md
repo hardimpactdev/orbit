@@ -44,4 +44,4 @@ These are the terms every part of Orbit shares. Each domain page defines the ter
 - **Deliverable**: A checkable item that a subtask must produce, such as a file, a test, or a command that passes.
 - **Task check**: The command that a Project runs to verify every subtask handoff.
 - **Task workspace**: The Instance that Orbit provisions for a task, and its checkout on an `app-dev` Node.
-- **Turn receipt**: The file `.git/orbit/receipt.json` that the command `.git/orbit/turn` writes. See [Tasks](/reference/tasks#turn-receipt).
+- **Turn receipt**: The file `.git/orbit/receipt.json` that an agent writes itself to end its turn. See [Tasks](/reference/tasks#turn-receipt).
