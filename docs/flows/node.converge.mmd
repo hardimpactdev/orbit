@@ -85,17 +85,42 @@ sequenceDiagram
     %%> - no WireGuard tunnel restart
   end
   opt Node 12 has active roles
-    SW->>N: Re-apply role files<br/>node-converge-role-files
+    SW->>N: Install Caddy<br/>cfgmgmt fetch · exec floor
     %%> What it does:
-    %%> - runs one child workflow with the fleet recipe's agent-free role steps, only for parts whose digest changed
-    %%> Per role:
-    %%> - a Caddy role or Caddy sites: Caddy package floor, then the Caddyfile; validates it first and reloads Caddy gracefully
-    %%> - `app-dev`, `app-prod`: the managed PHP-FPM module; a graceful reload of valid running masters
+    %%> - downloads the pinned Caddy package with `@swamp/cfgmgmt/fetch`, checked against its SHA-256
+    %%> - installs it with `@swamp/cfgmgmt/exec`, unless the installed Caddy already meets the version floor
+    %%> - proves the floor with `dpkg --compare-versions`
+    %%> For:
+    %%> - a Caddy role or Caddy sites
+    %%> Every role part:
+    %%> - runs only when its digest changed or with `--force`
+    %%> - runs beside the other parts; one part's failure never stops another
+    SW->>N: Publish Caddy sites<br/>cfgmgmt file · validate · reload
+    %%> What it does:
+    %%> - writes the rendered Caddyfile as a candidate, validates it as the `caddy` user, publishes it with the Routes Caddy step, and removes the candidate
+    %%> - a Caddyfile Caddy refuses fails this part; the published Caddyfile stays
+    %%> - a Caddyfile the Gateway could not render is skipped and reported
+    SW->>N: Install private DNS<br/>cfgmgmt file · systemd · assert
+    %%> For:
+    %%> - a `vpn` Node that publishes private DNS
+    %%> What it does:
+    %%> - writes the listener release files, self-tests the release, then writes the socket and service units with `@swamp/cfgmgmt/systemd`
+    %%> - writes the dnsmasq records and the catalog, tests dnsmasq, restarts it and the listener
+    %%> - asserts that the listener loaded the new catalog
+    %%> No rollback:
+    %%> - a failed check leaves the new files; a rerun repairs them
+    SW->>N: Configure PHP-FPM<br/>per version · cfgmgmt · reload
+    %%> For:
+    %%> - `app-dev` and `app-prod`, once per PHP version; a version without PHP-FPM is skipped
+    %%> What it does:
+    %%> - writes Orbit's runtime settings, links them into PHP-FPM, sets the master's stop timeout, tests the configuration and reloads the running masters
+    SW->>N: Write the tmpfiles rule<br/>@swamp/cfgmgmt/file
+    %%> For:
     %%> - `app-dev`: the `/etc/tmpfiles.d/orbit.conf` rule for `/tmp/orbit-*` and `/dev/shm/orbit-*`; restarts nothing
-    %%> - `vpn`: the private DNS listener, records and catalog; restarts dnsmasq or the listener only for a change, and restores the last good copy when the new one fails its check
-    %%> - Route residue: removes the Caddy sites, PHP pools, certificates and LAN rules of removed Routes, best effort
-    %%> Checks:
-    %%> - each role step checks its own part: Caddy validates the Caddyfile, DNS answers, PHP-FPM masters reload
+    SW->>N: Clear Route residue<br/>best effort · Routes steps
+    %%> What it does:
+    %%> - removes the Caddy sites, PHP pools, certificates, LAN and ingress rules of removed Routes
+    %%> - a failure is reported and the part is retried on the next converge; it never fails the task
     %%> Not included:
     %%> - adding or removing a role, and Metrics exporters; those have their own commands
   end
@@ -125,17 +150,16 @@ sequenceDiagram
   else a part fails
     N--xSW: exit ≠ 0 or no match
     %%> When:
-    %%> - a download doesn't match its pin, the Node agent's key doesn't match, Caddy refuses the Caddyfile, or a check fails
+    %%> - a download doesn't match its pin, the Node agent's key doesn't match, Caddy or PHP-FPM refuse their configuration, or a check fails
     SW--xGW: Run failed<br/>error_code, failed part
     %%> The Gateway reads:
     %%> - which part failed and its error code, and which parts finished before it
     Note over GW: Record finished parts<br/>task failed · rerun retries rest
     %%> Result:
     %%> - the digests of the finished parts are recorded; the failed part keeps its old digest
-    %%> - when the role files step fails, every role part keeps its old digest
     %%> - task #5132 fails
     %%> On the Node:
-    %%> - finished parts stay; there is no rollback, except the DNS listener's restore of its last good copy
+    %%> - finished parts stay; there is no rollback
     %%> - the running Node agent keeps its key, so it keeps reporting
     %%> Retry:
     %%> - run the same command again after fixing the cause; it applies only the parts that are still different

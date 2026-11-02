@@ -114,28 +114,103 @@ jobs:
           "dns_server": inputs.intent.network.peer_dns.dns_server, "public_key": inputs.intent.network.peer_dns.public_key, "domains": inputs.intent.network.peer_dns.domains}
           }}'
         execution_secrets: {}
-    # Caddy, PHP-FPM, tmpfiles, the vpn DNS listener and Route residue: the fleet recipe's agent-free steps.
-  - name: 'Re-apply role files'
+    # Each role part runs beside the others; the Gateway reads each part's outcome from its step.
+  - name: 'Install Caddy'
     labels: {role: swamp}
+    writes: true
     dependsOn:
     - {step: 'Restart the Node agent', condition: {type: succeeded}}
     - {step: 'Apply private DNS policy', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    guard: '${{ !(["caddy-package", "caddy", "private-dns", "route-residue", "php-runtime", "tmpfiles"].exists(n, n in inputs.intent.payloads)) }}'
+    guard: '${{ inputs.intent.roles.caddy_package == null }}'
     task:
       type: workflow
-      workflowIdOrName: node-converge-role-files
+      workflowIdOrName: node-caddy-package
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.node_id }}'
+        kind: '${{ inputs.kind }}'
+        intent: '${{ {"ssh": inputs.intent.ssh, "package": inputs.intent.roles.caddy_package} }}'
+  - name: 'Publish Caddy sites'
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: 'Restart the Node agent', condition: {type: succeeded}}
+    - {step: 'Apply private DNS policy', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: 'Install Caddy', condition: {type: always}}
+    guard: '${{ inputs.intent.roles.caddy == null || steps["Install Caddy"].status == "failed" }}'
+    task:
+      type: workflow
+      workflowIdOrName: node-caddy-sites
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.node_id }}'
+        kind: '${{ inputs.kind }}'
+        intent: '${{ {"ssh": inputs.intent.ssh, "user": inputs.intent.roles.user, "caddy": inputs.intent.roles.caddy} }}'
+  - name: 'Install private DNS'
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: 'Restart the Node agent', condition: {type: succeeded}}
+    - {step: 'Apply private DNS policy', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    guard: '${{ inputs.intent.roles.dns == null }}'
+    task:
+      type: workflow
+      workflowIdOrName: node-private-dns
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.node_id }}'
+        kind: '${{ inputs.kind }}'
+        intent: '${{ {"ssh": inputs.intent.ssh, "dns": inputs.intent.roles.dns} }}'
+  - name: 'Configure PHP-FPM'
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: 'Restart the Node agent', condition: {type: succeeded}}
+    - {step: 'Apply private DNS policy', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    forEach: {item: version, in: '${{ inputs.intent.roles.php_versions }}'}
+    task:
+      type: workflow
+      workflowIdOrName: node-php-runtime
       inputs:
         operation_id: '${{ inputs.operation_id }}'
         node_id: '${{ inputs.node_id }}'
         kind: '${{ inputs.kind }}'
         intent:
           ssh: '${{ inputs.intent.ssh }}'
-          agent_sha256: '${{ inputs.intent.agent_sha256 }}'
-          automatic: false
-          daytime: true
-          recipe: {user: '${{ inputs.intent.user }}'}
-          footprint: {node_id: '${{ inputs.intent.node_id }}', agent_sha256: '${{ inputs.intent.agent_sha256 }}', refusal: '${{ inputs.intent.refusal }}',
-            artifacts: '${{ inputs.intent.artifacts }}', payloads: '${{ inputs.intent.payloads }}', network: '${{ inputs.intent.network }}'}
+          php: {version: '${{ self.version }}', runtime_ini: '${{ inputs.intent.roles.php[self.version] }}'}
+  - name: 'Write the tmpfiles rule'
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: 'Restart the Node agent', condition: {type: succeeded}}
+    - {step: 'Apply private DNS policy', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    guard: '${{ inputs.intent.roles.tmpfiles == null }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "node-converge-tmpfiles-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs: {path: /etc/tmpfiles.d/orbit.conf, ensure: present, content: '${{ inputs.intent.roles.tmpfiles == null ? "" : inputs.intent.roles.tmpfiles }}', owner: root, group: root, mode: '0644',
+        nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
+      inputs: {}
+    # Best effort: a failure is reported as skipped residue and retried on the next converge.
+  - name: 'Clear Route residue'
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    dependsOn:
+    - {step: 'Restart the Node agent', condition: {type: succeeded}}
+    - {step: 'Apply private DNS policy', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    guard: '${{ inputs.intent.roles.residue == null }}'
+    task:
+      type: workflow
+      workflowIdOrName: node-route-residue
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.node_id }}'
+        kind: '${{ inputs.kind }}'
+        intent: '${{ {"ssh": inputs.intent.ssh, "user": inputs.intent.roles.user, "home": inputs.intent.roles.home, "agent_sha256": inputs.intent.agent_sha256, "residue": inputs.intent.roles.residue} }}'
     # The agent is active on the pinned binary and its files hold their content.
     # The end check: the pinned binary and the key the Gateway recorded.
   - name: 'Check the footprint'
@@ -143,7 +218,6 @@ jobs:
     dependsOn:
     - {step: 'Restart the Node agent', condition: {type: succeeded}}
     - {step: 'Apply private DNS policy', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    - {step: 'Re-apply role files', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'

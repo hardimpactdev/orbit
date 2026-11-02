@@ -7,6 +7,7 @@ use App\Actions\Nodes\UpdateNodeSettingsAction;
 use App\Data\Nodes\NodeStorageAppsData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\NodeAgentRekeyProjection;
+use App\Domain\Nodes\NodeConvergeInput;
 use App\Domain\Nodes\NodeSettingsProjection;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsPatch;
@@ -15,6 +16,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Fleet\Footprint\AgentFootprintArtifact;
+use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Models\Operation;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeRoutePublicationSocket;
@@ -52,7 +54,27 @@ it('admits a full converge without a target worker, private material or Node cal
         ->and($inputs['intent']['ssh']['target']['host_keys'])->toBe([$this->node->ssh_host_key_type.' '.$this->node->ssh_host_key])
         ->and($inputs['intent']['verifier_hash'])->toBe(str_repeat('a', 64))
         ->and($op->lock_key)->toBe('node-converge:node:'.$this->node->id)
-        ->and(app(DirectOperation::class)->definition('node.converge'))->not->toHaveKeys(['private_material', 'secret_outputs']);
+        ->and(app(DirectOperation::class)->definition('node.converge'))->not->toHaveKeys(['private_material', 'secret_outputs'])
+        ->and($inputs['intent'])->not->toHaveKey('payloads')
+        ->and($inputs['intent']['roles'])->toMatchArray(['user' => $this->node->user, 'home' => '/home/'.$this->node->user])
+        ->and($inputs['intent']['roles']['php_versions'])->toBe(array_keys((array) $inputs['intent']['roles']['php']));
+});
+
+it('shapes the role parts for their cfgmgmt steps: the pinned Caddy package and a private DNS release under its folder', function (): void {
+    $roles = app(NodeConvergeInput::class)->roles($this->node, ['caddy-package' => [], 'private-dns' => [
+        'listener' => ['release_id' => 'abc', 'service' => 'service', 'socket' => 'socket',
+            'files' => [['path' => 'serve.php', 'contents' => '<?php', 'sha256' => 'x'], ['path' => 'app/Domain/AppDev/A.php', 'contents' => '<?php // a', 'sha256' => 'y']]],
+        'publication' => ['records' => 'records', 'catalog' => "{}\n"]], 'tmpfiles' => ['rule' => 'e /tmp/orbit-* - - - 1d']]);
+    $release = '/var/lib/orbit/private-dns/releases/abc';
+
+    expect($roles['caddy_package'])->toBe(AgentCaddyPackage::nativeInput())
+        ->and($roles['caddy_package']['sha256'])->toMatch('/\A[a-f0-9]{64}\z/')
+        ->and($roles['caddy'])->toBeNull()
+        ->and($roles['dns'])->toMatchArray(['release' => $release, 'directories' => [$release, $release.'/app/Domain/AppDev'],
+            'files' => [['path' => $release.'/serve.php', 'content' => '<?php'], ['path' => $release.'/app/Domain/AppDev/A.php', 'content' => '<?php // a']],
+            'address' => $this->node->wireguard_ip, 'catalog_sha256' => hash('sha256', "{}\n")])
+        ->and($roles['tmpfiles'])->toBe('e /tmp/orbit-* - - - 1d')
+        ->and($roles['residue'])->toBeNull();
 });
 
 it('prepares settings from a public SSH intent and stores them only at terminal success', function (): void {

@@ -1,7 +1,8 @@
-"""Legacy agent.install and agent.configure contract on the target (F9) and the projected footprint.
+"""Legacy agent.install and agent.configure contract on the target (F9), the role parts and the projected footprint.
 
 Argument: applied or refused. applied: the agent runs the pinned binary with its files, the key the Gateway
-recorded is unchanged, and the Operation proved the footprint. refused: a key that does not match the recorded
+recorded is unchanged, every admitted role part applied, Caddy meets its floor, the Caddyfile candidate is gone,
+the tmpfiles rule holds its content, and the Operation proved the footprint. refused: a key that does not match the recorded
 verifier fails the Operation, and the key is not rewritten.
 """
 import hashlib
@@ -32,6 +33,17 @@ if expected == 'applied':
     check(target('sha256sum', '/usr/local/bin/orbit-agent').split()[:1] == [intent['agent_sha256']], 'the binary is the pin')
     check(hashlib.sha256(secret.encode()).hexdigest() == intent['verifier_hash'], 'the recorded key is kept')
     check('ca.pem' in target('ls', '/etc/orbit/agent'), 'the CA file is written')
+    roles = intent['roles']
+    applied = {a['name'] for a in operation['result']['artifacts'] if a['status'] == 'applied'}
+    check({a['name'] for a in intent['artifacts'] if a['required']} <= applied, f'every required part applied: {sorted(applied)}')
+    if roles['caddy_package'] is not None:
+        version = target('dpkg-query', '-W', '-f=${Version}', 'caddy')
+        floor = subprocess.run(['dpkg', '--compare-versions', version, 'ge', roles['caddy_package']['minimum_version']], check=False).returncode
+        check(floor == 0, f'Caddy {version} meets the floor')
+    if roles['caddy'] is not None:
+        check(target('sh', '-c', 'ls /etc/caddy/.orbit-converge-* 2>/dev/null') == '', 'the Caddyfile candidate is removed')
+    if roles['tmpfiles'] is not None:
+        check(target('cat', '/etc/tmpfiles.d/orbit.conf') == roles['tmpfiles'].strip(), 'the tmpfiles rule holds its content')
 else:
     check(operation['status'] == 'failed', 'the Operation failed')
     check(secret == 'proof-mismatched-key', 'the mismatched key is not rewritten')

@@ -51,8 +51,7 @@ return ['node.worker_known_hosts' => [
     'workflow' => 'operation-node-converge-direct',
     'projection' => NodeConvergeProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'converge', 'step' => 'Prove the footprint', 'native' => true,
-        'captures' => ['role' => ['job' => 'converge', 'step' => 'Re-apply role files']]],
+    'terminal_result' => ['job' => 'converge', 'step' => 'Prove the footprint', 'native' => true],
 ], 'node.role_add' => [
     'workflow' => 'operation-node-role-add-direct',
     'projection' => NodeRoleDirectProjection::class,

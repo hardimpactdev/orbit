@@ -14,12 +14,11 @@ use Illuminate\Support\Facades\DB;
 /** Bounded state projection only; native DAG steps own execution and uncertainty. */
 final readonly class NodeConvergeProjection implements DirectOperationProjection
 {
-    private const array RoleParts = ['caddy-package', 'caddy', 'private-dns', 'route-residue', 'php-runtime', 'tmpfiles'];
-
     public function input(Operation $operation): array
     {
         $input = ValidatedData::object($operation->input['_converge'] ?? []);
-        unset($input['secret_hash']);
+        // The part steps read `roles`; the raw payloads stay for the footprint record.
+        unset($input['secret_hash'], $input['payloads']);
 
         return ['intent' => $input];
     }
@@ -47,7 +46,7 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
 
     /**
      * Each admitted part's outcome from Swamp's run data: the agent from its chart steps, the DNS policy from its child,
-     * the role parts from the role child's own result. A part that did not apply keeps its old digest.
+     * and each role part from its own step. A part that did not apply keeps its old digest.
      *
      * @param  array<string,mixed>  $snapshot
      * @param  array<string,mixed>  $data
@@ -58,20 +57,23 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
     {
         $steps = ValidatedData::object($native['steps']);
         $status = static fn (string $name): ?string => is_array($steps[$name] ?? null) && is_string($steps[$name]['status'] ?? null) ? $steps[$name]['status'] : null;
+        $roles = is_array($snapshot['roles'] ?? null) ? $snapshot['roles'] : [];
+        $versions = is_array($roles['php_versions'] ?? null) ? $roles['php_versions'] : [];
+        $payloads = is_array($snapshot['payloads'] ?? null) ? $snapshot['payloads'] : [];
         $role = [];
-        $roleOutputs = is_array($native['role'] ?? null) ? $native['role'] : [];
-        $roleStdout = is_array($roleOutputs['result'] ?? null) ? ($roleOutputs['result']['stdout'] ?? null) : null;
-        if ($status('Re-apply role files') === 'succeeded' && is_string($roleStdout)) {
-            $decoded = json_decode($roleStdout, true);
-            foreach (is_array($decoded) && is_array($decoded['artifacts'] ?? null) ? $decoded['artifacts'] : [] as $entry) {
-                if (is_array($entry) && is_string($entry['name'] ?? null) && in_array($entry['name'], self::RoleParts, true)) {
-                    $role[$entry['name']] = $entry;
-                }
-            }
+        if (is_array($payloads['caddy'] ?? null) && ($payloads['caddy']['error_code'] ?? null) === 'caddy.render_failed') {
+            $role['caddy'] = ['name' => 'caddy', 'status' => 'skipped', 'reason' => 'caddy_render_refused'];
         }
         $proven = [
             'agent' => $status('Restart the Node agent') === 'succeeded' && $status('Check the footprint') !== 'failed' && $status('Prove the footprint') !== 'failed',
             'peer-dns' => $status('Apply private DNS policy') === 'succeeded',
+            'caddy-package' => $status('Install Caddy') === 'succeeded',
+            'caddy' => $status('Publish Caddy sites') === 'succeeded',
+            'private-dns' => $status('Install private DNS') === 'succeeded',
+            'php-runtime' => $status('Restart the Node agent') === 'succeeded'
+                && array_all($versions, static fn (mixed $version): bool => is_string($version) && $status('Configure PHP-FPM-'.$version) === 'succeeded'),
+            'tmpfiles' => $status('Write the tmpfiles rule') === 'succeeded',
+            'route-residue' => $status('Clear Route residue') === 'succeeded',
         ];
         $artifacts = [];
         $failed = null;
@@ -83,7 +85,7 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
             if (($role[$name]['status'] ?? null) === 'skipped') {
                 $artifacts[] = $role[$name];
                 $caddyFirstVisit = $caddyFirstVisit || ($name === 'caddy' && ($snapshot['first_visit'] ?? false) === true && ($artifact['repair'] ?? false) !== true);
-            } elseif (! $required || ($proven[$name] ?? false) || ($role[$name]['status'] ?? null) === 'applied') {
+            } elseif (! $required || ($proven[$name] ?? false)) {
                 $artifacts[] = ['name' => $name, 'status' => $required ? 'applied' : 'unchanged'];
             } elseif ($name === 'route-residue') {
                 $artifacts[] = ['name' => $name, 'status' => 'skipped', 'reason' => 'route_residue_cleanup_failed'];

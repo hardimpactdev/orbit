@@ -2,7 +2,7 @@
 title: "Node provisioning"
 description: "How node:add bootstraps or converges a Node, how roles share and lock a Node, how the Orbit CLI and footprint reach it, and how node:remove hands it back."
 covers:
-  - swamp/extensions/behaviors/operations/node-scripts/assets.ts
+  - swamp/{workflows/workflow-node-{caddy-package,caddy-sites,private-dns,php-runtime,route-residue}.yaml,extensions/behaviors/operations/node-scripts/assets.ts}
   - apps/gateway/app/Actions/{Gateway/BootstrapGatewayAction.php,Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,RemoveNodeRoleAction,AssignRoleAction}.php}
   - apps/gateway/app/Infrastructure/{WireGuard/{NativeGatewayPeerProjectionManager,NativeGatewayVpnConverger}.php,Gateway/{NativeGatewayCaddyInstaller,NativeGatewaySelfAccessConverger}.php,Nodes/{Roles/{CiRunnerRoleBaseline,NativeNodeRoleFirewallManager},CiRunnerHostProgram,NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackage*,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
   - apps/gateway/app/Console/Commands/{ProvisionNodeCommand,ConvergeNodeRecipeCommand}.php
@@ -16,7 +16,7 @@ covers:
 
 `orbit node:add <name> [host]` adds a machine to the fleet. For a Node that already exists, the same command converges it again after you change its TLD, roles, or settings. `orbit node:remove <node>` removes the Node from Orbit and leaves the machine reachable over public SSH. [`node`](/cli/node) lists the options.
 
-Standalone `node.converge`, `node.ssh_access_converge`, `node.agent_rekey` and apps-root `node.settings` run on 209 through official SSH with the Node's stored host keys. They pass their complete public intent at admission and need no target worker. Settings, converge and SSH access use official `@swamp/cfgmgmt` behaviors; rekey runs one shipped key script. Converge then runs the fleet recipe's role steps; it calls no agent command and never rotates the secret. Neither operation installs a per-Node worker or accepts worker enrollment credentials.
+Standalone `node.converge`, `node.ssh_access_converge`, `node.agent_rekey` and apps-root `node.settings` run on 209 through official SSH with the Node's stored host keys. They pass their complete public intent at admission and need no target worker. Settings, converge and SSH access use official `@swamp/cfgmgmt` behaviors; rekey runs one shipped key script. Converge applies each role part in its own step; it calls no agent command and never rotates the secret. Neither operation installs a per-Node worker or accepts worker enrollment credentials.
 
 The Gateway projects the terminal result and records settings or completed footprint artifacts.
 
@@ -446,13 +446,15 @@ Footprint convergence never changes an Instance, a Process unit, or a role, and 
 | --- | --- | --- |
 | `agent` | Every managed Linux Node | The [agent converge](/reference/node-agent#install-and-upgrade). It restarts the agent only when a file changed |
 | `caddy-package` | A Node with a Caddy role or Caddy sites | The [Caddy package step](#package-sources). It installs Caddy only when it is missing or below the floor, so a running Caddy is not restarted |
-| `caddy` | A Node with a Caddy role or Caddy sites | The [Caddy build](/reference/caddy-configuration). It reloads Caddy gracefully, only when the Caddyfile changed |
+| `caddy` | A Node with a Caddy role or Caddy sites | The [Caddy build](/reference/caddy-configuration). Caddy validates a candidate first; a refused Caddyfile fails the part and the published one stays. It reloads Caddy gracefully, only when the Caddyfile changed |
 | `peer-dns` | Active managed Linux peers with roles, excluding the VPN holder and the Gateway | The [split private DNS policy](/reference/private-dns#resolver-selection), without a tunnel restart. Its digest includes the routing domains and selected DNS server |
-| `private-dns` | The `vpn` Node, when it is not the Gateway's | The [private-DNS](/reference/private-dns) listener release, units, records, and catalog. It restarts the listener or dnsmasq only for a change |
+| `private-dns` | The `vpn` Node, when it is not the Gateway's | The [private-DNS](/reference/private-dns) listener release, units, records, and catalog. It restarts dnsmasq and the listener, then asserts that the listener loaded the new catalog |
 | `route-residue` | A Node that an [offline Route removal](/reference/routes#remove-a-route-from-an-unreachable-node) skipped | Caddy and PHP-FPM without the removed Route, then its certificates and firewall rules. A failure is `skipped` and retried later |
 | `php-runtime` | Every Linux Node with an active `app-dev` or `app-prod` role | The [managed PHP-FPM module](/reference/php-runtime#request-and-upload-limits) for the profile and active Instances. A change gracefully reloads valid active masters; `local.conf` stays unchanged |
-| `tmpfiles` | Every Linux Node with an active `app-dev` role | `/etc/tmpfiles.d/orbit.conf`, through the agent's `node.publish-tmpfiles`. The daily `systemd-tmpfiles-clean` run empties each `/tmp/orbit-*` and `/dev/shm/orbit-*` directory a day after its contents last changed. It removes no other path and restarts nothing |
+| `tmpfiles` | Every Linux Node with an active `app-dev` role | `/etc/tmpfiles.d/orbit.conf`, written with `@swamp/cfgmgmt/file`. The daily `systemd-tmpfiles-clean` run empties each `/tmp/orbit-*` and `/dev/shm/orbit-*` directory a day after its contents last changed. It removes no other path and restarts nothing |
 | `ai-router` | The [AI router](/reference/ai-router) collector's Node | The collector script. A changed script restarts the collector, a Node-owned Process |
+
+Each role part runs in its own converge step, beside the others, so one part's failure never stops another. `Install Caddy`, `Publish Caddy sites`, `Install private DNS`, `Configure PHP-FPM` (once per PHP version) and `Clear Route residue` each call one child workflow of official `@swamp/cfgmgmt` steps. `Write the tmpfiles rule` is one `@swamp/cfgmgmt/file` step. The Gateway reads each part's outcome from its step in Swamp's run data. A failed residue cleanup is reported as `skipped` and never fails the task. No part rolls back.
 
 The native DAG installs the pinned agent, applies role-dependent footprint data, reconciles the admitted peer-DNS policy and refreshes the selected worker through the agent configuration action. Each mutating step targets the admitted `orbit-node-<id>` worker and the same Node label; there is no foreign fallback. Desired role assignments are unchanged. Full WireGuard enrollment and hub changes belong to their own Node operations.
 
@@ -464,7 +466,7 @@ The Caddy package digest covers the package program and the `CaddyRelease` floor
 
 The private-DNS digest covers the listener release, the publication code, and each private DNS record source that an extension contributes, with the classes it uses, such as the AI router state that decides the collector record. The other digests cover the inputs the agent unit renders from, the collector script, and the tmpfiles rule. The shared footprint boundary adds the agent pin to all of them.
 
-A user's sites and Routes do not change the code digests. The PHP runtime digest includes the versions selected by active Instances, so a version outside the Node's recipe profile also receives the module. This digest never reads live inventory. The agent skips absent FPM binaries, and recipe convergence publishes the module after installing PHP. The `peer-dns` digest includes the rendered private domains and server, so namespace changes also reach peers through convergence. Their own native operations publish and verify them.
+A user's sites and Routes do not change the code digests. The PHP runtime digest includes the versions selected by active Instances, so a version outside the Node's recipe profile also receives the module. This digest never reads live inventory. Converge skips a version whose FPM binary is absent, and recipe convergence publishes the module after installing PHP. The `peer-dns` digest includes the rendered private domains and server, so namespace changes also reach peers through convergence. Their own native operations publish and verify them.
 
 The `route-residue` digest also covers state: it covers the residues of offline Route removals, which are Orbit's own unfinished work, so the Node drifts until a converge removes them. The Gateway keeps the digests each Node last received, and a converge re-applies only the artifacts whose digest changed. Its native binary installers own their update locks; it starts no separate SSH lock holder.
 

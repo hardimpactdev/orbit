@@ -1,0 +1,84 @@
+id: 8d046126-3834-4176-a9a3-2006d475f92e
+name: node-caddy-package
+description: Install the pinned Caddy package with official cfgmgmt unless the Node already meets the version floor.
+vaults: []
+queueTimeout: 30
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string}
+    intent: {type: object}
+  required: [operation_id, node_id, kind, intent]
+  additionalProperties: false
+jobs:
+- name: caddy-package
+  labels: {role: swamp}
+  steps:
+    # Checked against the Gateway's SHA-256 pin of the signed release.
+  - name: 'Download Caddy'
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/fetch'
+      behaviorName: ${{ "node-caddy-fetch-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs: {url: '${{ inputs.intent.package.url }}', path: '${{ inputs.intent.package.path }}', checksum: '${{ "sha256:" + inputs.intent.package.sha256 }}',
+        owner: root, group: root, mode: '0644', nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
+      inputs: {}
+    # A Caddy at or above the floor is left alone; apt never downgrades it.
+  - name: 'Install Caddy'
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Download Caddy', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/exec'
+      behaviorName: ${{ "node-caddy-install-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs: {command: '${{ "DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l /usr/bin/apt-get --no-remove install --yes --no-install-recommends -o Dpkg::Options::=--force-confold " + inputs.intent.package.path }}',
+        notIf: '${{ "/usr/bin/dpkg --compare-versions \"$(/usr/bin/dpkg-query -W -f=\x27${Version}\x27 caddy 2>/dev/null)\" ge " + inputs.intent.package.minimum_version }}',
+        nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
+      inputs: {}
+  - name: 'Read the Caddy version'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Install Caddy', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "node-caddy-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: &ssh
+        name: ${{ "node-caddy-ssh-" + string(inputs.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh.target.user }}
+          port: ${{ inputs.intent.ssh.target.port }}
+          identityFile: ${{ inputs.intent.ssh.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '20', /usr/bin/dpkg-query, -W, '-f=${Version}', caddy]
+        timeoutSec: 40
+  - name: 'Prove the Caddy floor'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Read the Caddy version', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "node-caddy-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: '${{ ["timeout", "20", "/usr/bin/dpkg", "--compare-versions", steps["Read the Caddy version"].outputs.stdout.split("\n")[0], "ge", inputs.intent.package.minimum_version] }}'
+        timeoutSec: 40

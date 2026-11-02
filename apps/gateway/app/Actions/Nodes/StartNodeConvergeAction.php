@@ -10,6 +10,7 @@ use App\Domain\Nodes\NodeConvergeInput;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 
 /** Admits the same footprint kind used as a child by fleet rollout. */
 final readonly class StartNodeConvergeAction
@@ -28,6 +29,7 @@ final readonly class StartNodeConvergeAction
             throw new ResourceOperationException($snapshot['refusal'], 'A footprint part cannot be rendered for this Node.', 409);
         }
         $snapshot['verifier_hash'] = $node->agent_secret_hash;
+        $snapshot['roles'] = app(NodeConvergeInput::class)->roles($node, ValidatedData::object($snapshot['payloads']));
 
         return $this->operations->execute('node.converge', 'node', $node->id, $node->id,
             ['_converge' => $snapshot], 'operator', $requestId, lockKey: 'node-converge:node:'.$node->id);

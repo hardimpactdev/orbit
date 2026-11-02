@@ -22,6 +22,9 @@ final readonly class AgentCaddyPackage
     /** From `caddy_2.11.7_checksums.txt`, whose sigstore signature names Caddy's release workflow. */
     public const string AMD64_SHA512 = '47e8351c2317b427af14a103e763ca1118a3d2396a88b4c0669cdec9c4a68a957690194e2423a1633f53135741c33a41bdac2b55515b7d0f7adc8b733add50d9';
 
+    /** Of the same package, checked against AMD64_SHA512; `@swamp/cfgmgmt/fetch` verifies only SHA-256. */
+    public const string AMD64_SHA256 = 'a22b914ffd1958da42bc7ab13b7b62c6100634e0798ab594891d2d61d53ba749';
+
     public const string Changed = 'orbit-caddy-package-result=changed';
 
     public function __construct(private AgentCommandRunner $agents) {}
@@ -34,6 +37,15 @@ final readonly class AgentCaddyPackage
             'amd64_sha512' => self::AMD64_SHA512,
             'minimum_version' => CaddyRelease::MINIMUM,
         ];
+    }
+
+    /** @return array{url:string,path:string,sha256:string,minimum_version:string} */
+    public static function nativeInput(): array
+    {
+        $file = 'caddy_'.self::RELEASE.'_linux_amd64.deb';
+
+        return ['url' => 'https://github.com/caddyserver/caddy/releases/download/v'.self::RELEASE.'/'.$file,
+            'path' => '/var/cache/apt/archives/'.$file, 'sha256' => self::AMD64_SHA256, 'minimum_version' => CaddyRelease::MINIMUM];
     }
 
     public function install(Node $node): CommandResult

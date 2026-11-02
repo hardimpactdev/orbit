@@ -29,6 +29,24 @@
       "budget_seconds": 60
     },
     {
+      "name": "Install Caddy",
+      "job": "converge",
+      "step": "Install Caddy",
+      "budget_seconds": 120
+    },
+    {
+      "name": "Publish Caddy sites",
+      "job": "converge",
+      "step": "Publish Caddy sites",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Write the tmpfiles rule",
+      "job": "converge",
+      "step": "Write the tmpfiles rule",
+      "budget_seconds": 20
+    },
+    {
       "name": "Check the footprint",
       "job": "converge",
       "step": "Check the footprint",
