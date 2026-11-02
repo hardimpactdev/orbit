@@ -34,17 +34,14 @@ export const LifecycleArgs = z.object({
 }).strict();
 export const LifecycleAssets = z.object({
     unit: z.string(),
-    control_json: z.string(),
-    intent_json: z.string(),
     marker_directory: z.string(),
 
-    container_script: z.string(),
+    container_argv: z.array(z.string()),
 });
 
 /** Validate public rendered intent; account observation is public input, never an effect. */
 export async function lifecycleAssets(
     args: z.infer<typeof LifecycleArgs>,
-    _directory?: string,
 ) {
     const control = args.control;
     const expected = new RegExp(
@@ -149,12 +146,64 @@ export async function lifecycleAssets(
             !install.spec
         ) throw new Error("Invalid public container definition");
     }
+    const containerArgv: string[] = [];
+    if (install?.runtime === "docker" && install.definition) {
+        const definition = install.definition;
+        containerArgv.push(
+            "timeout",
+            "20",
+            "docker",
+            "container",
+            "create",
+            "--name",
+            control.name,
+            "--restart",
+            definition.restart,
+            "--label",
+            "orbit.managed=true",
+            "--label",
+            "orbit.container.kind=process",
+            "--label",
+            "orbit.process.id=" + control.process_id,
+            "--label",
+            "orbit.process.spec=" + install.spec,
+        );
+        if (definition.working_directory) {
+            containerArgv.push("--workdir", definition.working_directory);
+        }
+        if (install.has_environment) {
+            containerArgv.push(
+                "--env-file",
+                z.string().startsWith("/etc/orbit/processes/").parse(
+                    install.environment_path,
+                ),
+            );
+        }
+        for (const port of definition.ports) {
+            containerArgv.push("--publish", port);
+        }
+        for (const mount of definition.mounts) {
+            // Docker's --mount parser uses CSV, including quoted comma-bearing paths.
+            const fields = [
+                "type=" + (mount.source.startsWith("/") ? "bind" : "volume"),
+                "source=" + mount.source,
+                "target=" + mount.target,
+            ];
+            if (mount.read_only) fields.push("readonly");
+            containerArgv.push(
+                "--mount",
+                fields.map((field) =>
+                    /[",\n\r]/.test(field)
+                        ? '"' + field.replaceAll('"', '""') + '"'
+                        : field
+                ).join(","),
+            );
+        }
+        containerArgv.push(definition.image, ...definition.command);
+    }
     return {
         unit,
-        control_json: JSON.stringify(control),
-        intent_json: JSON.stringify({ installation: install }),
         marker_directory: args.marker.slice(0, args.marker.lastIndexOf("/")),
-
-        container_script: "",
+        container_argv: containerArgv,
     };
 }

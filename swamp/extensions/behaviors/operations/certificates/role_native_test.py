@@ -153,6 +153,29 @@ result=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)
         self.assertEqual(1, len(self.signs))
         self.assertEqual(key, (self.current / "metrics.key").read_bytes())
 
+    def test_websocket_publishes_and_reuses_the_caddy_reverb_pair(self):
+        self.current = self.target / "caddy/orbit-websocket-cert-current"
+        self.assertEqual("succeeded", self.run_role(scope="role-websocket")["status"])
+        self.assertEqual(
+            {"reverb.pem", "reverb.key", "root-ca.pem"},
+            {path.name for path in self.current.iterdir()},
+        )
+        pair = {path.name: path.read_bytes() for path in self.current.iterdir()}
+        self.openssl(
+            "verify",
+            "-CAfile",
+            self.current / "root-ca.pem",
+            self.current / "reverb.pem",
+        )
+        self.assertFalse(
+            (self.target / "role-keys/role-websocket" / self.leaf["version"]).exists()
+        )
+        self.assertEqual("succeeded", self.run_role(scope="role-websocket")["status"])
+        self.assertEqual(1, len(self.signs))
+        self.assertEqual(
+            pair, {path.name: path.read_bytes() for path in self.current.iterdir()}
+        )
+
     def test_actual_parent_composes_child_and_receives_flat_readiness(self):
         import subprocess
 

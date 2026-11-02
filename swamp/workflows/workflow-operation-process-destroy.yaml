@@ -74,7 +74,7 @@ jobs:
   - name: Remove env files
     labels: {role: swamp}
     dependsOn: [{step: Remove the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd") }}
+    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) }}
     writes: true
     task:
       type: behavior

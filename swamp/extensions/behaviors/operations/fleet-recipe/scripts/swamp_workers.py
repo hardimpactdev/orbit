@@ -80,20 +80,26 @@ def additional_files(commit):
     return files
 
 
+def added(before, after):
+    """Manifests whose additionalFiles at `after` list an entry that `before` did not."""
+    return sorted(p for p in after if set(after[p]) - set(before.get(p, [])))
+
+
 def release_restart(commit):
-    """Restart serve when the commit's manifest additionalFiles differ from those serve started with.
+    """Restart serve when the commit lists an additionalFiles entry that serve did not start with.
 
     Swamp's extension reload keeps each manifest's additionalFiles from serve's start, so a new shipped file reaches
-    workers only after a restart: https://swamp-club.com/lab/4282. Remove this mode when that is fixed. Serve's own
-    shutdown drain waits for runs in flight; the release waits for the new serve and loads again.
+    workers only after a restart: https://swamp-club.com/lab/4282. Remove this mode when that is fixed. A removed
+    entry needs no restart: serve fingerprints a listed file that is gone as missing and serves nothing for it. Each
+    restart also resets serve's hourly bookkeeping GC (https://swamp-club.com/lab/4287). Serve's own shutdown drain
+    waits for runs in flight; the release waits for the new serve and loads again.
     """
     started = subprocess.run(['/usr/bin/systemctl', 'show', 'orbit-swamp-serve.service', '-p', 'ExecMainStartTimestamp',
                               '--value'], capture_output=True, text=True, check=True).stdout.strip()
     # The checkout moves only in the release load, so its reflog names the commit serve started from.
     served = subprocess.run(['git', 'rev-parse', '--verify', 'HEAD@{' + started + '}'], capture_output=True, text=True,
                             check=True).stdout.strip()
-    before, after = additional_files(served), additional_files(commit)
-    changed = sorted(p for p in set(before) | set(after) if before.get(p) != after.get(p))
+    changed = added(additional_files(served), additional_files(commit))
     if not changed:
         done({})
     # Delayed, so this step reports first.

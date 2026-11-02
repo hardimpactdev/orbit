@@ -8,6 +8,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Swamp\NativeRunResult;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Operation;
@@ -30,7 +31,13 @@ final readonly class HorizonOperation implements DirectOperationProjection
     {
         return DB::transaction(function () use ($operation, $data): Operation {
             $terminal = $operation->refresh()->status->terminal();
-            $result = ValidatedData::object($data['result'] ?? []);
+            $native = ValidatedData::object($data['result'] ?? []);
+            $terminated = NativeRunResult::stepStatus($native, 'Hand off to new release') === 'succeeded';
+            $result = $data['status'] === OperationStatus::Succeeded->value
+                ? ['ready' => true, 'state' => $terminated ? 'unknown' : 'active',
+                    'outcome' => $terminated ? 'terminated' : ($operation->input['created'] ? 'created' : 'started'),
+                    'process_id' => $operation->input['process_id']]
+                : [];
             $projected = $this->direct->project($operation, $data, $result);
             if (! $terminal && $projected->status->terminal()) {
                 Process::query()->whereKey($operation->input['process_id'])->update([

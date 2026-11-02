@@ -260,7 +260,7 @@ class ProcessNative(ProcessFixture):
         self.run_kind("create", success=False)
         self.assertFalse(self.unit.exists())
 
-    def test_environment_uses_private_stdin_and_mode_0600(self):
+    def test_environment_uses_cfgmgmt_file_and_mode_0600(self):
         secret = "native-private-" + os.urandom(12).hex()
         content = '# Orbit Process 17\nTOKEN="' + secret + '"\n'
         logical = (
@@ -300,72 +300,12 @@ class ProcessNative(ProcessFixture):
                 self.assertNotIn(secret.encode(), f.read_bytes(), str(f))
 
     def test_docker_exact_argv_private_environment_update_and_lifecycle(self):
-        import http.server
-        import socketserver
-        import threading
-
-        state_path = self.state
-
-        class Engine(http.server.BaseHTTPRequestHandler):
-            def do_GET(handler):
-                state = json.loads(state_path.read_text())
-                value = state.get("container")
-                handler.send_response(200 if value else 404)
-                handler.end_headers()
-                handler.wfile.write(json.dumps(value or {"message": "absent"}).encode())
-
-            def do_POST(handler):
-                body = json.loads(
-                    handler.rfile.read(int(handler.headers["Content-Length"]))
-                )
-                state = json.loads(state_path.read_text())
-                state["container"] = {
-                    "Config": {
-                        "Image": body["Image"],
-                        "Labels": body["Labels"],
-                        "Env": body["Env"],
-                    },
-                    "State": {"Status": "created"},
-                    "Image": "sha256:fixture",
-                    "HostConfig": body["HostConfig"],
-                    "Mounts": [],
-                }
-                state["body"] = body
-                state["creates"] = state.get("creates", 0) + 1
-                state_path.write_text(json.dumps(state))
-                handler.send_response(201)
-                handler.end_headers()
-                handler.wfile.write(json.dumps({"Id": "a" * 64}).encode())
-
-            def do_DELETE(handler):
-                state = json.loads(state_path.read_text())
-                state.pop("container", None)
-                state_path.write_text(json.dumps(state))
-                handler.send_response(204)
-                handler.end_headers()
-
-            def log_message(*args):
-                pass
-
-        socket = self.repo / "docker.sock"
-        server = socketserver.UnixStreamServer(str(socket), Engine)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        self.addCleanup(server.server_close)
-        self.addCleanup(server.shutdown)
-        script = (
-            self.repo
-            / "extensions/behaviors/operations/process-commands/scripts/lifecycle_container.py"
-        )
-        script.write_text(
-            script.read_text().replace("/var/run/docker.sock", str(socket))
-        )
         docker = self.repo / "tools/docker"
         docker.write_text(
             "#!"
             + sys.executable
             + "\n"
-            + """import json,sys
+            + """import csv,json,sys
 from pathlib import Path
 p=Path(STATE);s=json.loads(p.read_text());args=sys.argv[1:]
 if args[:2]==['image','inspect']:
@@ -375,12 +315,28 @@ if args[:2]==['image','pull'] or args[:1]==['pull']:s['image']=True
 else:
  if args[0]=='container':args=args[1:]
  action=args[0];container=s.get('container')
- if action=='rm':s.pop('container',None)
+ if action=='ls':
+  if container:print('fixture '+container['Config']['Labels']['orbit.process.spec'])
+  sys.exit(0)
+ if action=='create':
+  options={};i=1
+  while args[i].startswith('--'):
+   options.setdefault(args[i],[]).append(args[i+1]);i+=2
+  environment=[]
+  for path in options.get('--env-file',[]):environment+=Path(path).read_text().splitlines()
+  labels=dict(value.split('=',1) for value in options.get('--label',[]))
+  mounts=[]
+  for value in options.get('--mount',[]):
+   fields=dict(field.split('=',1) if '=' in field else (field,'true') for field in next(csv.reader([value])))
+   mounts.append({'Type':fields['type'],'Source':fields['source'],'Target':fields['target'],'ReadOnly':fields.get('readonly')=='true'})
+  body={'Image':args[i],'Cmd':args[i+1:],'Env':environment,'WorkingDir':options.get('--workdir',[''])[0], 'Labels':labels,'HostConfig':{'Mounts':mounts}}
+  s['body']=body;s['creates']=s.get('creates',0)+1
+  s['container']={'Config':body,'State':{'Status':'created'},'Image':'sha256:fixture','HostConfig':body['HostConfig'],'Mounts':[]}
+ elif action=='rm':s.pop('container',None)
  elif not container:sys.exit(1)
  elif action=='inspect':
   print(container['State']['Status'] if '--format' in args else json.dumps([container]));sys.exit(0)
- elif action in ['start','restart','stop']:
-  container['State']['Status']='exited' if action=='stop' else 'running'
+ elif action in ['start','restart','stop']:container['State']['Status']='exited' if action=='stop' else 'running'
 p.write_text(json.dumps(s))
 """.replace("STATE", repr(str(self.state)))
         )
@@ -392,7 +348,7 @@ p.write_text(json.dumps(s))
             "put",
             "orbit-control-inputs",
             "process-create-operation-17",
-            input=json.dumps({"TOKEN": secret}),
+            input="TOKEN=" + secret + "\n",
         )
         control = self.inputs["intent"]["control"]
         control.update(runtime="docker", name="orbit-process-17-worker")
@@ -400,6 +356,7 @@ p.write_text(json.dumps(s))
             **control,
             "desired": "running",
             "has_environment": True,
+            "environment_path": "/etc/orbit/processes/17/" + "a" * 64 + ".env",
             "retired": None,
             "spec": "a" * 64,
             "definition": {
@@ -435,6 +392,14 @@ p.write_text(json.dumps(s))
         ]
         self.run_kind("update")
         self.assertEqual(json.loads(self.state.read_text())["creates"], 2)
+        self.inputs["intent"]["installation"]["spec"] = "c" * 64
+        original = docker.read_text()
+        docker.write_text(original.replace("if action=='create':", "if action=='create':\n  sys.exit(1)"))
+        self.run_kind("update", success=False)
+        env_file = self.host / "orbit/processes/17" / ("a" * 64 + ".env")
+        self.assertFalse(env_file.exists(), "Docker env file survived failed creation")
+        docker.write_text(original)
+        self.run_kind("update")
         self.inputs["intent"].pop("installation")
         self.inputs["intent"].pop("mounts")
         self.inputs["execution_secrets"] = {}

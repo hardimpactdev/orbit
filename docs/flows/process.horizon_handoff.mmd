@@ -33,53 +33,31 @@ sequenceDiagram
   %%> Inputs:
   %%> - Node 3's address and SSH host keys; the SSH identity comes from the `swamp` role
   %%> - the unit content, its hash, the command, directory and user
-  SW->>N: Inspect the unit<br/>unit hash · systemctl is-active
-  %%> How:
-  %%> - Swamp reaches Node 3 over `@swamp/ssh` from 209, with `command/shell` steps
+  SW->>N: Inspect the unit<br/>@swamp/cfgmgmt/systemd check
   %%> What it does:
-  %%> - reads the installed unit's hash and whether Horizon is active
-  %%> - changes nothing
-  N-->>SW: unit hash, active state
-  %%> Returns:
-  %%> - `content_matches`: whether the installed unit equals the rendered one
-  %%> - `active`: true or false
-  opt the unit content differs
-    SW->>N: Stage and verify unit<br/>systemd-analyze verify
+  %%> - observes current state and unit-file drift for the rerun guards
+  opt unit content or boot policy differs
+    SW->>N: Write and enable unit<br/>@swamp/cfgmgmt/systemd apply
     %%> What it does:
-    %%> - writes the new unit beside the old one and checks it with `systemd-analyze verify`
-    %%> Why:
-    %%> - a bad unit never replaces a working one
-    SW->>N: Publish, reload, enable<br/>@swamp/cfgmgmt file, systemd
-    %%> What it does:
-    %%> - moves the unit into place, runs `systemctl daemon-reload` and enables it
-    %%> How:
-    %%> - official `@swamp/cfgmgmt` file and systemd behaviors
+    %%> - writes the unit, reloads systemd and enables it without changing running state
   end
   alt Horizon is active
-    SW->>N: Hand off to new release<br/>php artisan horizon:terminate
-    %%> When:
-    %%> - only when `active` is true
+    SW->>N: Hand off to new release<br/>SSH exec · horizon:terminate
     %%> What it does:
-    %%> - asks Horizon to stop after its current jobs
-    %%> - systemd starts it again from the new release
-    %%> Why:
-    %%> - the gentle action: no job is cut off
-    %%> Fix:
-    %%> - this guard was inverted; one test covers this branch
+    %%> - asks Horizon to finish its jobs and exit; systemd brings it back
+    %%> Result:
+    %%> - termination accepted; the handoff does not wait for current jobs to finish
   else Horizon is not active
-    SW->>N: Start Horizon<br/>systemctl start
-    %%> When:
-    %%> - only when `active` is false, the normal case after the drain
+    SW->>N: Start Horizon<br/>@swamp/cfgmgmt/systemd apply
     %%> What it does:
-    %%> - starts the unit from the new release
-    %%> Fix:
-    %%> - this guard was inverted; one test covers this branch
+    %%> - converges the inactive unit to running
+    SW->>N: Check Horizon runs<br/>@swamp/cfgmgmt/systemd check
+    %%> Result:
+    %%> - the newly started unit is active and enabled
   end
-  SW->>N: Check Horizon runs<br/>systemctl is-active · ≤ 30 s
+  SW->>SW: Accept Horizon<br/>native assert
   %%> What it does:
-  %%> - waits up to 30 s until the unit is active from the new release
-  %%> Why:
-  %%> - the handoff only counts when Horizon runs again
+  %%> - accepts graceful termination or the checked started state
   alt Horizon is active
     N-->>SW: active
     %%> Returns:
@@ -94,7 +72,7 @@ sequenceDiagram
   else a step fails
     N--xSW: exit ≠ 0 or not active
     %%> When:
-    %%> - the unit does not verify, a command fails, or Horizon is not active after 30 s
+    %%> - the systemd action or handoff command fails, or the started Horizon unit is not active
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
     %%> - which step failed and its error code
@@ -103,7 +81,7 @@ sequenceDiagram
     %%> - Process 418 marked failed; task #5153 fails
     %%> - the release handoff reports the failure; the release failure rules apply
     %%> On the Node:
-    %%> - a published unit stays; the old unit is not restored
+    %%> - a published unit stays; a rerun converges
     %%> Retry:
     %%> - run the handoff again after a fix; an unchanged unit is skipped, and Horizon starts only when it is not active
   end

@@ -140,7 +140,16 @@ if ($argv[1] === 'fires') {
 $started = microtime(true);
 $server = ['REMOTE_ADDR' => $input['caller'], 'HTTPS' => 'on', 'HTTP_HOST' => 'gateway.orbit',
     'HTTP_ACCEPT' => 'application/json', 'CONTENT_TYPE' => 'application/json', 'HTTP_IDEMPOTENCY_KEY' => $input['key']];
-if (isset($input['artisan'])) {
+if (isset($input['horizon'])) {
+    // Horizon has no HTTP command: the release runner calls this production admission action.
+    config(['orbit.gateway_queue.connection' => 'proof-horizon']);
+    $submitted = app(App\Infrastructure\Gateway\GatewayHorizon::class)->converge(
+        Node::query()->findOrFail($input['horizon']['node']),
+        fn (): App\Models\Process => App\Models\Process::query()->findOrFail($input['horizon']['scheduler']),
+    );
+    $response = new Illuminate\Http\JsonResponse([], 202);
+    $body = ['data' => ['id' => $submitted['operation_id']]];
+} elseif (isset($input['artisan'])) {
     // An operator command on the Gateway host, such as orbit:node-agent-rekey; it names its Operation in its output.
     $code = Artisan::call($input['artisan'], $input['arguments'] ?? []);
     $named = preg_match('/Operation #([1-9][0-9]*)/', Artisan::output(), $match) === 1 ? (int) $match[1] : null;

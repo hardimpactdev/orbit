@@ -19,24 +19,16 @@ export const behavior = {
     methods: {
         lifecycle: {
             description:
-                "Resolve the account home and the named Docker creation gap",
+                "Resolve the account home and shape public Docker argv",
             arguments: LifecycleArgs,
             execute: async (args: z.infer<typeof LifecycleArgs>, ctx: {
-                extensionFile(name: string): string;
                 writeResource(
                     spec: string,
                     name: string,
                     value: unknown,
                 ): Promise<unknown>;
             }) => {
-                const result = {
-                    ...await lifecycleAssets(args),
-                    container_script: args.control.runtime === "docker"
-                        ? await Deno.readTextFile(
-                            ctx.extensionFile("scripts/lifecycle_container.py"),
-                        )
-                        : "",
-                };
+                const result = await lifecycleAssets(args);
                 await ctx.writeResource("lifecycle", "lifecycle", result);
                 return result;
             },

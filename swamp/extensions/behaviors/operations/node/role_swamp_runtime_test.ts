@@ -245,7 +245,7 @@ Deno.test("grants mode renders the Gateway manifest and serve's other grants fro
     }
 });
 
-Deno.test("the release restart compares manifest additionalFiles with the commit serve started from (Lab #4282)", async () => {
+Deno.test("the release restarts serve only for a shipped file serve did not start with (Lab #4282)", async () => {
     const repo = await Deno.makeTempDir();
     const git = async (...args: string[]) => {
         const result = await new Deno.Command("git", {
@@ -294,6 +294,9 @@ Deno.test("the release restart compares manifest additionalFiles with the commit
         const same = await commit();
         await manifest("a", ["scripts/one.py", "scripts/three.py"]);
         const changed = await commit();
+        // A removed entry needs no restart: serve serves a listed file that is gone as missing.
+        await manifest("b", []);
+        const removed = await commit();
         const program = SWAMP_WORKERS_PROGRAM.split(
             "if len(sys.argv) == 3 and sys.argv[1] == 'release-restart':",
         )[0];
@@ -301,11 +304,11 @@ Deno.test("the release restart compares manifest additionalFiles with the commit
             args: [
                 "-I",
                 "-c",
-                `${program}\nprint(json.dumps([sorted(p for p in set(b) | set(a) if b.get(p) != a.get(p))
-    for b, a in [(additional_files(sys.argv[1]), additional_files(c)) for c in sys.argv[2:]]]))`,
+                `${program}\nprint(json.dumps([added(additional_files(sys.argv[1]), additional_files(c)) for c in sys.argv[2:]]))`,
                 served,
                 same,
                 changed,
+                removed,
             ],
             cwd: repo,
         }).output();
@@ -314,9 +317,11 @@ Deno.test("the release restart compares manifest additionalFiles with the commit
             true,
             new TextDecoder().decode(result.stderr),
         );
-        assertEquals(JSON.parse(new TextDecoder().decode(result.stdout)), [[], [
-            "swamp/extensions/a/manifest.yaml",
-        ]]);
+        assertEquals(JSON.parse(new TextDecoder().decode(result.stdout)), [
+            [],
+            ["swamp/extensions/a/manifest.yaml"],
+            ["swamp/extensions/a/manifest.yaml"],
+        ]);
     } finally {
         await Deno.remove(repo, { recursive: true });
     }

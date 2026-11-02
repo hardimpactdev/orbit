@@ -51,10 +51,9 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "process-check-the-account-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
       methodName: exec
-      globalArgs: {name: '${{ "process-check-the-account-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}', transport: {kind: ssh, user: '${{
-            inputs.intent.ssh_execution.target.user }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file
-            }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys
-                }}'}}]}
+      globalArgs: {name: '${{ "process-check-the-account-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user
+            }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host
+              }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
       inputs: {hosts: [target], argv: [timeout, '20', getent, passwd, '${{ has(inputs.intent.installation.account_user) ? inputs.intent.installation.account_user : inputs.intent.ssh_execution.target.user
             }}'], sudo: true, timeoutSec: 25}
   - name: Prepare the definition
@@ -65,8 +64,8 @@ jobs:
       behaviorType: '@nckrtl/process-command-assets'
       behaviorName: ${{ "process-definition-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
       methodName: lifecycle
-      inputs: {control: '${{ inputs.intent.control }}', installation: '${{ inputs.intent.installation }}', account: '${{ inputs.intent.control.runtime == "systemd" ? steps["Check
-          the account"].outputs.stdout : "" }}'}
+      inputs: {control: '${{ inputs.intent.control }}', installation: '${{ inputs.intent.installation }}', account: '${{ inputs.intent.control.runtime == "systemd" ? steps["Check the
+          account"].outputs.stdout : "" }}'}
   - name: Check the release
     labels: {role: swamp}
     dependsOn: [{step: Prepare the definition, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
@@ -76,26 +75,23 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "process-check-the-release-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
       methodName: exec
-      globalArgs: {name: '${{ "process-check-the-release-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}', transport: {kind: ssh, user: '${{
-            inputs.intent.ssh_execution.target.user }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file
-            }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys
-                }}'}}]}
+      globalArgs: {name: '${{ "process-check-the-release-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user
+            }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host
+              }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
       inputs: {hosts: [target], argv: [timeout, '20', test, -d, '${{ has(inputs.intent.control.directory) ? inputs.intent.control.directory : "/" }}'], sudo: true, timeoutSec: 25}
   - name: Check required mounts
     labels: {role: swamp}
     dependsOn: [{step: Prepare the definition, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ inputs.intent.control.runtime != "systemd" || inputs.intent.installation.desired != "running" || !has(inputs.intent.mounts) || size(inputs.intent.mounts) ==
-      0 }}
+    guard: ${{ inputs.intent.control.runtime != "systemd" || inputs.intent.installation.desired != "running" || !has(inputs.intent.mounts) || size(inputs.intent.mounts) == 0 }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "process-mounts-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
       methodName: exec
       globalArgs: {name: '${{ "process-mounts-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user
-            }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{
-              inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
-      inputs: {hosts: [target], argv: '${{ ["timeout", "20", "stat", "--"] + (has(inputs.intent.mounts) ? inputs.intent.mounts.map(mount, mount.path) : []) }}', sudo: true,
-        timeoutSec: 25}
+            }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host
+              }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
+      inputs: {hosts: [target], argv: '${{ ["timeout", "20", "stat", "--"] + (has(inputs.intent.mounts) ? inputs.intent.mounts.map(mount, mount.path) : []) }}', sudo: true, timeoutSec: 25}
   - name: Remove the retired unit
     labels: {role: swamp}
     dependsOn: [{step: Prepare the definition, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check the release, condition: {type: or, conditions: [
@@ -122,25 +118,22 @@ jobs:
     labels: {role: swamp}
     dependsOn: [{step: Remove the retired unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check the release, condition: {type: or, conditions: [
             {type: succeeded}, {type: skipped}]}}, {step: Check required mounts, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd" || !inputs.intent.installation.has_environment)
-      }}
+    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (!inputs.intent.installation.has_environment) }}
     writes: true
     task:
       type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "process-write-the-environment-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
-      methodName: exec
-      globalArgs: {name: '${{ "process-write-the-environment-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}', transport: {kind: ssh, user: '${{
-            inputs.intent.ssh_execution.target.user }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file
-            }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys
-                }}'}}]}
-      inputs: {hosts: [target], argv: [timeout, '20', install, -D, -o, root, -g, root, -m, '0600', /dev/stdin, '${{ has(inputs.intent.installation.environment_path) ? inputs.intent.installation.environment_path
-            : "/unused" }}'], sudo: true, timeoutSec: 25, stdin: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}'}
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "process-environment-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
+      methodName: apply
+      globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
+          }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, path: '${{ inputs.intent.installation.environment_path }}', ensure: present, content: '${{
+          vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}', owner: root, group: root, mode: '0600'}
+      inputs: {}
   - name: Write the unit
     labels: {role: swamp}
     dependsOn: [{step: Remove the retired unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check the release, condition: {type: or, conditions: [
-            {type: succeeded}, {type: skipped}]}}, {step: Check required mounts, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Write the
-          environment, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+            {type: succeeded}, {type: skipped}]}}, {step: Check required mounts, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Write the environment,
+        condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd") }}
     writes: true
     task:
@@ -156,8 +149,8 @@ jobs:
     labels: {role: swamp}
     dependsOn: [{step: Write the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd" || !(size(data.latest("process-unit-" + string(inputs.node_id)
-      + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.changes) > 0 || (has(inputs.intent.installation.activation_pending)
-      && inputs.intent.installation.activation_pending))) }}
+      + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.changes) > 0 || (has(inputs.intent.installation.activation_pending) && inputs.intent.installation.activation_pending)))
+      }}
     writes: true
     task:
       type: behavior
@@ -165,13 +158,13 @@ jobs:
       behaviorName: ${{ "process-reload-systemd-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
       methodName: exec
       globalArgs: {name: '${{ "process-reload-systemd-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user
-            }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{
-              inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
+            }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host
+              }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
       inputs: {hosts: [target], argv: [timeout, '20', systemctl, daemon-reload], sudo: true, timeoutSec: 25}
   - name: Publish the dev route
     labels: {role: swamp}
-    dependsOn: [{step: Write the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Reload systemd, condition: {type: or, conditions: [
-            {type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: Write the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Reload systemd, condition: {type: or, conditions: [{type: succeeded},
+            {type: skipped}]}}]
     guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (!has(inputs.intent.vite_plan) || inputs.kind == "process.stop") }}
     writes: true
     task:
@@ -188,8 +181,8 @@ jobs:
         execution_secrets: {}
   - name: Apply the unit state
     labels: {role: swamp}
-    dependsOn: [{step: Write the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Reload systemd, condition: {type: or, conditions: [
-            {type: succeeded}, {type: skipped}]}}, {step: Publish the dev route, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: Write the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Reload systemd, condition: {type: or, conditions: [{type: succeeded},
+            {type: skipped}]}}, {step: Publish the dev route, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd") }}
     writes: true
     task:
@@ -204,8 +197,7 @@ jobs:
   - name: Stop the unit
     labels: {role: swamp}
     dependsOn: [{step: Apply the unit state, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd" || inputs.intent.installation.desired != "stopped")
-      }}
+    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd" || inputs.intent.installation.desired != "stopped") }}
     writes: true
     task:
       type: behavior
@@ -213,16 +205,16 @@ jobs:
       behaviorName: ${{ "process-stop-the-unit-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
       methodName: exec
       globalArgs: {name: '${{ "process-stop-the-unit-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user
-            }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{
-              inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
+            }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host
+              }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
       inputs: {hosts: [target], argv: [timeout, '20', systemctl, stop, '${{ inputs.intent.control.name }}'], sudo: true, timeoutSec: 25}
   - name: Restart if changed
     labels: {role: swamp}
     dependsOn: [{step: Apply the unit state, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd" || inputs.intent.installation.desired != "running"
-      || !(size(data.latest("process-unit-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.changes)
-      > 0 || (has(inputs.intent.installation.activation_pending) && inputs.intent.installation.activation_pending)) || data.latest("process-service-" + string(inputs.node_id)
-      + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.changes.exists(c, c == "start service")) }}
+    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd" || inputs.intent.installation.desired != "running" || !(size(data.latest("process-unit-"
+      + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.changes) > 0 || (has(inputs.intent.installation.activation_pending)
+      && inputs.intent.installation.activation_pending)) || data.latest("process-service-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.changes.exists(c,
+      c == "start service")) }}
     writes: true
     task:
       type: behavior
@@ -234,8 +226,8 @@ jobs:
       inputs: {}
   - name: Check the unit
     labels: {role: swamp}
-    dependsOn: [{step: Apply the unit state, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Stop the unit, condition: {type: or, conditions: [
-            {type: succeeded}, {type: skipped}]}}, {step: Restart if changed, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: Apply the unit state, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Stop the unit, condition: {type: or, conditions: [{type: succeeded},
+            {type: skipped}]}}, {step: Restart if changed, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     guard: ${{ inputs.intent.control.runtime != "systemd" }}
     task:
       type: behavior
@@ -261,44 +253,68 @@ jobs:
           }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, image: '${{ has(inputs.intent.installation.definition) ? inputs.intent.installation.definition.image
           : "unused" }}', ensure: present}
       inputs: {}
+  - name: Read container spec
+    labels: {role: swamp}
+    dependsOn: [{step: Pull the image, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    guard: ${{ inputs.intent.control.runtime != "docker" }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "process-container-spec-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
+      methodName: exec
+      globalArgs: {name: '${{ "process-container-spec-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user
+            }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host
+              }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
+      inputs: {hosts: [target], argv: [timeout, '20', docker, container, ls, --all, --filter, '${{ "name=^/" + inputs.intent.control.name + "$" }}', --format, '{{.ID}} {{.Label "orbit.process.spec"}}'],
+        sudo: true, timeoutSec: 25}
+  - name: Remove the old container
+    labels: {role: swamp}
+    dependsOn: [{step: Read container spec, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || inputs.intent.control.runtime != "docker" || steps["Read container spec"].outputs.stdout == ""
+      || steps["Read container spec"].outputs.stdout.endsWith(" " + inputs.intent.installation.spec + "\n") }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/docker_container'
+      behaviorName: ${{ "process-container-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
+      methodName: apply
+      globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
+          }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, name: '${{ inputs.intent.control.name }}', image: unused, ensure: absent}
+      inputs: {}
+    dataOutputOverrides: [{specName: state, vaultName: orbit-control-inputs}]
   - name: Create the container
     labels: {role: swamp}
-    dependsOn: [{step: Pull the image, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "docker" || !inputs.intent.installation.has_environment)
-      }}
+    dependsOn: [{step: Remove the old container, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Write the environment, condition: {type: or, conditions: [
+            {type: succeeded}, {type: skipped}]}}]
+    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || inputs.intent.control.runtime != "docker" || steps["Read container spec"].outputs.stdout.endsWith("
+      " + inputs.intent.installation.spec + "\n") }}
     writes: true
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "process-create-the-container-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
       methodName: exec
-      globalArgs: {name: '${{ "process-create-the-container-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}', transport: {kind: ssh, user: '${{
-            inputs.intent.ssh_execution.target.user }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file
-            }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys
-                }}'}}]}
-      inputs: {hosts: [target], argv: [timeout, '20', python3, -I, -c, '${{ steps["Prepare the definition"].outputs.container_script }}', '${{ steps["Prepare the definition"].outputs.intent_json
-            }}'], sudo: true, timeoutSec: 25, stdin: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}'}
-  - name: Create container, no env
+      globalArgs: {name: '${{ "process-create-the-container-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user
+            }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host
+              }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
+      inputs: {hosts: [target], argv: '${{ steps["Prepare the definition"].outputs.container_argv }}', sudo: true, timeoutSec: 25}
+  - name: Remove staged env file
     labels: {role: swamp}
-    dependsOn: [{step: Pull the image, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "docker" || inputs.intent.installation.has_environment)
-      }}
+    dependsOn: [{step: Create the container, condition: {type: completed}}]
+    guard: ${{ inputs.intent.control.runtime != "docker" || !inputs.intent.installation.has_environment }}
     writes: true
     task:
       type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "process-create-the-container-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
-      methodName: exec
-      globalArgs: {name: '${{ "process-create-the-container-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}', transport: {kind: ssh, user: '${{
-            inputs.intent.ssh_execution.target.user }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file
-            }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys
-                }}'}}]}
-      inputs: {hosts: [target], argv: [timeout, '20', python3, -I, -c, '${{ steps["Prepare the definition"].outputs.container_script }}', '${{ steps["Prepare the definition"].outputs.intent_json
-            }}'], sudo: true, timeoutSec: 25}
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "process-environment-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
+      methodName: apply
+      globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
+          }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, path: '${{ inputs.intent.installation.environment_path }}', ensure: absent}
+      inputs: {}
   - name: Apply the container state
     labels: {role: swamp}
-    dependsOn: [{step: Create the container, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: 'Create container, no env', condition: {type: or,
-          conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: Create the container, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Remove staged env file, condition: {type: or, conditions: [
+            {type: succeeded}, {type: skipped}]}}]
     guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "docker") }}
     writes: true
     task:
@@ -306,10 +322,9 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "process-apply-the-container-state-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
       methodName: exec
-      globalArgs: {name: '${{ "process-apply-the-container-state-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}', transport: {kind: ssh, user: '${{
-            inputs.intent.ssh_execution.target.user }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file
-            }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys
-                }}'}}]}
+      globalArgs: {name: '${{ "process-apply-the-container-state-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user
+            }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host
+              }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
       inputs: {hosts: [target], argv: [timeout, '20', docker, container, '${{ inputs.intent.installation.desired == "running" ? "start" : "stop" }}', '${{ inputs.intent.control.name
             }}'], sudo: true, timeoutSec: 25}
   - name: Check the container
@@ -322,13 +337,13 @@ jobs:
       behaviorName: ${{ "process-check-container-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
       methodName: exec
       globalArgs: {name: '${{ "process-check-container-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user
-            }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{
-              inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
+            }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host
+              }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
       inputs: {hosts: [target], argv: [timeout, '20', docker, container, inspect, --format, '{{.State.Status}}', '${{ inputs.intent.control.name }}'], sudo: true, timeoutSec: 25}
   - name: Check the listener
     labels: {role: swamp}
-    dependsOn: [{step: Check the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check the container, condition: {type: or, conditions: [
-            {type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: Check the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check the container, condition: {type: or, conditions: [{type: succeeded},
+            {type: skipped}]}}]
     guard: ${{ !has(inputs.intent.vite_plan) || inputs.intent.installation.desired != "running" }}
     task:
       type: behavior
@@ -336,16 +351,16 @@ jobs:
       behaviorName: ${{ "process-listener-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
       methodName: exec
       globalArgs: {name: '${{ "process-listener-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user
-            }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{
-              inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
-      inputs: {hosts: [target], argv: [timeout, '20', ss, -H, -ltn, '${{ "sport = :" + (has(inputs.intent.vite_plan) ? string(inputs.intent.vite_plan.listener.port) : "0")
-            }}'], sudo: true, timeoutSec: 25}
+            }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host
+              }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
+      inputs: {hosts: [target], argv: [timeout, '20', ss, -H, -ltn, '${{ "sport = :" + (has(inputs.intent.vite_plan) ? string(inputs.intent.vite_plan.listener.port) : "0") }}'], sudo: true,
+        timeoutSec: 25}
   - name: Mark it awake
     labels: {role: swamp}
-    dependsOn: [{step: Check the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check the container, condition: {type: or, conditions: [
-            {type: succeeded}, {type: skipped}]}}, {step: Check the listener, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (!has(inputs.intent.vite_plan) || inputs.intent.installation.desired != "running" || steps["Check
-      the listener"].outputs.stdout == "") }}
+    dependsOn: [{step: Check the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check the container, condition: {type: or, conditions: [{type: succeeded},
+            {type: skipped}]}}, {step: Check the listener, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (!has(inputs.intent.vite_plan) || inputs.intent.installation.desired != "running" || steps["Check the
+      listener"].outputs.stdout == "") }}
     writes: true
     task:
       type: behavior
@@ -353,22 +368,22 @@ jobs:
       behaviorName: ${{ "process-awake-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id) }}
       methodName: apply
       globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
-          }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, path: '${{ has(inputs.intent.vite_plan) ? inputs.intent.vite_plan.awake.marker
-          : "/unused" }}', ensure: present, owner: root, group: root, mode: '0644'}
+          }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, path: '${{ has(inputs.intent.vite_plan) ? inputs.intent.vite_plan.awake.marker : "/unused"
+          }}', ensure: present, owner: root, group: root, mode: '0644'}
       inputs: {}
   - name: Accept the Process
     labels: {role: swamp}
-    dependsOn: [{step: Check the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check the container, condition: {type: or, conditions: [
-            {type: succeeded}, {type: skipped}]}}, {step: Mark it awake, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check the listener,
-        condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: Check the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check the container, condition: {type: or, conditions: [{type: succeeded},
+            {type: skipped}]}}, {step: Mark it awake, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check the listener, condition: {type: or, conditions: [
+            {type: succeeded}, {type: skipped}]}}]
     task:
       type: assert
       expr: '(inputs.intent.control.runtime == "systemd" ? (data.latest("process-service-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.status
         == "compliant" && data.latest("process-service-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.current.loaded
         && data.latest("process-service-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.current.active
         == (inputs.intent.installation.desired == "running" ? "active" : "inactive")) : (inputs.intent.installation.desired == "running" ? steps["Check the container"].outputs.stdout
-        == "running\n" : steps["Check the container"].outputs.stdout in ["created\n", "exited\n"])) && (!has(inputs.intent.vite_plan) || inputs.intent.installation.desired
-        != "running" || steps["Check the listener"].outputs.stdout != "")'
+        == "running\n" : steps["Check the container"].outputs.stdout in ["created\n", "exited\n"])) && (!has(inputs.intent.vite_plan) || inputs.intent.installation.desired != "running"
+        || steps["Check the listener"].outputs.stdout != "")'
       message: The Process must have its admitted runtime and boot state.
       severity: high
     guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) }}
