@@ -1129,24 +1129,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/task-vms/image_reaper.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>",
-        "GET <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/image_reaper.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "/usr/bin/incus",
-        "/usr/bin/sudo"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/task-vms/image_ssh.ts",
       "rule": "agent-action",
       "count": 1,

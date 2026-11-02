@@ -9,7 +9,7 @@ covers:
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - bin/{php-build,git-build-watch}
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,config/package_cache.php,config/task_vms.php,resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - swamp/{workflows/workflow-operation-task-vm-image-build.yaml,extensions/behaviors/operations/task-vms/image_build_inputs.ts}
+  - swamp/{workflows/{workflow-operation-task-vm-image-build,workflow-task-vm-image-reaper}.yaml,extensions/behaviors/operations/task-vms/{image_build_inputs,image_reaper}.ts}
 ---
 
 # Compute drivers
@@ -759,6 +759,21 @@ A **stray Node** is a Node named `tvm-<number>` that has no task VM row that is 
 | `node.task_vm_stray_node` | drift | A stray Node |
 
 To clear a finding, delete the stray after you check it, or add an operator-owned guest to `operator_owned`. For a stray record, cancel or complete its group, or destroy the VM. For a stray Node, remove the Node with `orbit node:remove`.
+
+### Reap image builders
+
+The `task-vm-image-reaper` schedule runs every thirty minutes on Node209. It deletes a base image builder or smoke VM that a killed build leaves behind. `ImageReaper` publishes the schedule's inputs: each active configured host with a pinned SSH host key, its project, pool and `operator_owned` list, its pinned SSH target, and the build ids of its `task_vm.image_build` Operations that are `queued`, `running` or `waiting`. It publishes again when such an Operation starts or ends, and after each run. Steps never read the Gateway.
+
+For each host, one official `@swamp/ssh` `exec` lists the project's instances. A TypeScript step on Node209 picks each VM that matches all of these:
+
+- its name is `tvm-image-<build id>`, with an optional `-attempt-<n>` and an optional `-builder` or `-smoke`;
+- it is a `virtual-machine` in state `Running` or `Stopped`;
+- it has one root disk, on the host's pool;
+- it is older than two hours;
+- no entry of `operator_owned` names it or reserves the whole project;
+- its build id is not one of the host's published active builds.
+
+One `exec` per picked VM runs `incus delete --force`. One `exec` per host then lists the pool's storage volumes, and a last TypeScript step checks that no root volume or snapshot of a deleted VM remains. A host whose list fails, a failed delete, or a remaining volume fails the run; the other hosts and VMs continue. The run's own history records the deleted and failed names. The Gateway keeps no deletion record.
 
 ### States
 
