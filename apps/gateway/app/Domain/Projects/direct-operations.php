@@ -9,10 +9,15 @@ return [
         'terminal_result' => ['job' => 'observe', 'step' => 'Report the result'], 'projection' => ProjectMaintenanceProjection::class,
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^project-dependency-read-[1-9][0-9]*$'],
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^project-dependency-auth-[1-9][0-9]*$']]],
-    'project.detect' => ['workflow' => 'project-detect', 'workflow_inputs' => true,
-        'terminal_result' => ['job' => 'detect', 'step' => 'Report the result'], 'projection' => ProjectMaintenanceProjection::class,
-        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^project-dependency-read-[1-9][0-9]*$'],
-            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^project-dependency-auth-[1-9][0-9]*$']]],
+    // project:maintenance:inspect: the update steps run only when something changed or the check is due.
+    'project.detect' => ['workflow' => 'project-maintenance-inspect', 'workflow_inputs' => true,
+        'terminal_result' => ['job' => 'inspect', 'step' => 'Find the updates', 'alternatives' => ['Read the manifest SHAs'], 'native' => true, 'captures' => [
+            'manifests' => ['job' => 'inspect', 'step' => 'Read the manifest SHAs'],
+            'sources' => ['job' => 'inspect', 'step' => 'Read the changed files', 'field' => 'sources'],
+            'registries' => ['job' => 'inspect', 'step' => 'Check latest, advisories', 'field' => 'checked_at'],
+            'updates' => ['job' => 'inspect', 'step' => 'Find the updates'],
+        ]], 'projection' => ProjectMaintenanceProjection::class,
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^project-dependency-read-[1-9][0-9]*$']]],
     'project.routine' => ['workflow' => 'project-routine', 'workflow_inputs' => true,
         'terminal_result' => ['job' => 'routine', 'step' => 'Report the result'], 'projection' => ProjectMaintenanceProjection::class],
 ];

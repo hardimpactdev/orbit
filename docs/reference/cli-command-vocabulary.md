@@ -107,7 +107,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `node` | `converge`, `relocate` | The CLI re-applies a Node's [Gateway-rendered footprint](/reference/node-provisioning#converge-the-orbit-footprint), or moves a relocatable singleton role (`gateway`, `websocket`, or `metrics`) to another Node. |
 | `process` | `logs`, `restart`, `start`, `stop` | The CLI reads Process logs or changes Process runtime state. |
 | `profile` | `profile` | The CLI profiles one HTTP request from the operator machine. |
-| `project` | `archive`, `download`, `read`, `restore`, `restore-version`, `search`, `upload`, `versions`, `write` | The CLI manages [Project Documents](/reference/project-documents) and their file content. |
+| `project` | `archive`, `download`, `inspect`, `read`, `restore`, `restore-version`, `search`, `upload`, `versions`, `write` | The CLI manages [Project Documents](/reference/project-documents) and their file content, or [inspects](/cli/project/maintenance-inspect) a Project's dependencies. |
 | `realtime` | `tail` | The CLI streams decoded realtime Gateway events as they arrive. |
 | `schedule` | `logs`, `run` | The CLI reads Schedule logs or runs a Schedule once. |
 | `self-update` | `self-update` | [`self-update`](/cli/self-update) updates this machine to the Gateway's CLI release. |

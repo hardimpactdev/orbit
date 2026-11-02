@@ -149,7 +149,7 @@ final readonly class ScheduledProjectMaintenance implements ScheduledResultProje
                     $identity->key = 'native-maintenance:'.$key;
                     $identity->fingerprint = hash('sha256', json_encode([$projectId, $mode, $key, $snapshot], JSON_THROW_ON_ERROR));
                     try {
-                        $operation = app(ProjectMaintenanceIntent::class)->start($project, $mode);
+                        $operation = app(ProjectMaintenanceIntent::class)->start($project, $mode, open: true);
                     } finally {
                         [$identity->kind, $identity->key, $identity->fingerprint] = $prior;
                     }

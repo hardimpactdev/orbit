@@ -1,0 +1,102 @@
+id: c031ac7e-2e4f-471e-8d4f-22733dd014e0
+name: project-maintenance-inspect
+description: Inspect a Project's default branch for dependency updates and advisories, without a clone.
+queueTimeout: 30
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, enum: [209]}
+    kind: {type: string, const: project.detect}
+    # The admitted Project, the last stored inspection and whether the registry check is due: daily, or when the caller asked to open a group.
+    intent:
+      type: object
+      additionalProperties: false
+      required: [project, previous, check_due]
+      properties:
+        project: {type: object}
+        previous:
+          type: object
+          additionalProperties: false
+          required: [manifests, sources]
+          properties:
+            manifests: {type: object}
+            sources: {type: array}
+        check_due: {type: boolean}
+    execution_secrets:
+      type: object
+      additionalProperties: false
+      required: [github_token]
+      properties:
+        github_token:
+          type: object
+          additionalProperties: false
+          required: [vault, key]
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^project-dependency-read-[1-9][0-9]*$'}
+reports:
+  skip:
+  - '@swamp/workflow-summary'
+jobs:
+- name: inspect
+  labels: {role: swamp}
+  steps:
+    # One branch read and one Git tree request; only the blob SHAs of manifests and lockfiles are kept.
+  - name: 'Read the manifest SHAs'
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/project-maintenance-inspect'
+      behaviorName: ${{ "project-maintenance-inspect-" + string(inputs.intent.project.id) }}
+      methodName: manifests
+      inputs:
+        project: ${{ inputs.intent.project }}
+        previous: ${{ inputs.intent.previous.manifests }}
+        token: ${{ inputs.execution_secrets.github_token }}
+    # Only sources whose manifest SHAs changed are read again, by blob SHA, so they match the tree just read.
+  - name: 'Read the changed files'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Read the manifest SHAs', condition: {type: succeeded}}]
+    guard: '${{ size(steps["Read the manifest SHAs"].outputs.changed) == 0 }}'
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/project-maintenance-inspect'
+      behaviorName: ${{ "project-maintenance-inspect-" + string(inputs.intent.project.id) }}
+      methodName: packages
+      inputs:
+        project: ${{ inputs.intent.project }}
+        manifests: ${{ steps["Read the manifest SHAs"].outputs.manifests }}
+        changed: ${{ steps["Read the manifest SHAs"].outputs.changed }}
+        previous: ${{ inputs.intent.previous.sources }}
+        token: ${{ inputs.execution_secrets.github_token }}
+    # Daily, or when the package list changed: answers are cached per package across Projects for a day. Each
+    # Project's run uses its own instances, so runs of many Projects never wait on one lock.
+  - name: 'Check latest, advisories'
+    labels: {role: swamp}
+    # A skipped step also satisfies `or`, so the manifest read must have succeeded too.
+    dependsOn: [{step: 'Read the manifest SHAs', condition: {type: succeeded}}, {step: 'Read the changed files', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    guard: '${{ !inputs.intent.check_due && size(steps["Read the manifest SHAs"].outputs.changed) == 0 }}'
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/project-maintenance-inspect'
+      behaviorName: ${{ "project-maintenance-registry-" + string(inputs.intent.project.id) }}
+      methodName: registries
+      inputs:
+        sources: '${{ "Read the changed files" in steps && "outputs" in steps["Read the changed files"] && "sources" in steps["Read the changed files"].outputs ? steps["Read the changed files"].outputs.sources : inputs.intent.previous.sources }}'
+  - name: 'Find the updates'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Read the manifest SHAs', condition: {type: succeeded}}, {step: 'Check latest, advisories', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/project-maintenance-inspect'
+      behaviorName: ${{ "project-maintenance-registry-" + string(inputs.intent.project.id) }}
+      methodName: updates
+      inputs:
+        project: ${{ inputs.intent.project }}
+        commit: ${{ steps["Read the manifest SHAs"].outputs.commit }}
+        sources: '${{ "Read the changed files" in steps && "outputs" in steps["Read the changed files"] && "sources" in steps["Read the changed files"].outputs ? steps["Read the changed files"].outputs.sources : inputs.intent.previous.sources }}'

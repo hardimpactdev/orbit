@@ -1,0 +1,28 @@
+---
+title: "orbit project:maintenance:inspect"
+sidebarTitle: "project:maintenance:inspect"
+description: "Inspect a Project's default branch for dependency updates and advisories, without a clone."
+---
+
+Inspect the default branch of a Project with [dependency maintenance](/reference/projects#maintenance) on. Orbit reads the blob SHAs of its manifests and lockfiles, reads again only the files that changed, and compares the installed packages with Packagist, npm and their advisories. It stores what it found for the Project. Without `--open`, nothing is created; with `--open`, the Gateway also opens one update task group for every eligible major and advisory fix together. The hourly maintenance Schedule inspects each opted-in Project the same way, with `--open`.
+
+```bash
+orbit project:maintenance:inspect <project> [--open] [--idempotency-key=KEY] [--json]
+orbit project:maintenance:inspect 46
+orbit project:maintenance:inspect 46 --open
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `project` | yes | Numeric Project ID. |
+
+| Option | Meaning |
+| --- | --- |
+| `--open` | Open the update task group for the eligible updates. It also asks the registries at once instead of waiting for the daily check. |
+| `--idempotency-key=KEY` | Reuse a key to retry this operation start. |
+
+A Project with maintenance off returns `project.maintenance_disabled`. The task result names the inspected commit, how many sources changed, and how many targets and blocked findings the inspection holds. A failed step leaves the stored inspection as it was.
+
+## How it works
+
+<div className="flow-at" data-chart="project/maintenance-inspect"></div>

@@ -27,7 +27,7 @@ The retained shared native launcher uses Node 209's monorepo Swamp repository,
 local CLI repository argument and group discovery path. Retained worker-model callers use that repository. Project maintenance uses native workflow steps instead. The frozen `orbit-swamp`
 checkout is not a fallback.
 
-Project detection and routine entrypoints are shared: `project-detect` and
+Project inspection and routine entrypoints are shared: `project-maintenance-inspect` and
 `project-routine` take the full Gateway-selected Project snapshot as run inputs.
 Both run on Node209. Project extensions contain configuration only; they no
 longer publish a pair of workflows or a baked-in Project schedule. Producers

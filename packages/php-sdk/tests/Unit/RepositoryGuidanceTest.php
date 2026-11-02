@@ -73,6 +73,7 @@ use Orbit\Sdk\Requests\Nodes\SetNodeWireGuardKeyRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeMetricsRequest;
 use Orbit\Sdk\Requests\Nodes\UpdateNodeRequest;
 use Orbit\Sdk\Requests\Projects\AddProjectExcludedNodeRequest;
+use Orbit\Sdk\Requests\Projects\InspectProjectMaintenanceRequest;
 use Orbit\Sdk\Requests\Projects\ListProjectExcludedNodesRequest;
 use Orbit\Sdk\Requests\Projects\RemoveProjectExcludedNodeRequest;
 use Orbit\Sdk\Requests\Projects\ShowProjectDependenciesRequest;
@@ -350,6 +351,7 @@ describe('repository guidance bootstrap', function (): void {
             ListProjectLifecycleStepsRequest::class,
             SetupInstanceRequest::class,
             UpdateProjectLifecycleStepRequest::class,
+            InspectProjectMaintenanceRequest::class,
         ];
         $logRequests = [
             InstanceLogsRequest::class,

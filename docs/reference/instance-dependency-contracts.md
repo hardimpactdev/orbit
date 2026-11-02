@@ -37,7 +37,7 @@ PR and target links come from the captured maintenance intent and its exact nati
 
 Committed Project, group or Project-operation changes invalidate the published snapshot. A failed publication remains unaccepted. A terminal selection from a changed or unaccepted snapshot admits no work. The Gateway records admission slots with the published revision so replay cannot start a second operation for the same selection.
 
-`project-detect` records a running scan attempt and revokes the previous plan before acquiring source. Checkout, authentication or manifest failure therefore cannot leave old findings eligible for new work. Readers can still inspect the previous immutable source reports and their original observation times. A late failure from an older run cannot replace a newer plan.
+`project-maintenance-inspect` stores its result on the Gateway only when its run succeeds. A failed read leaves the last inspection as it was, and admits no group. Every stored part names the commit whose tree the run read, so a group's targets always come from one commit.
 
 `project-observe` receives the captured PR URLs and makes one bounded GitHub read per URL with the existing repository read credentials. It returns public PR identity, state and head evidence. The Gateway applies that evidence only while the captured group watch is still current. Missing or failed reads remain unknown evidence.
 

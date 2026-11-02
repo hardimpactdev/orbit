@@ -54,7 +54,7 @@ const projects = [
 ];
 import { scheduleKey } from "../../_lib/project_schedule.ts";
 
-const Snapshot = z.object({
+export const Snapshot = z.object({
     id: z.number().int().positive(),
     repository: z.string(),
     default_branch: z.string().min(1),
@@ -103,7 +103,7 @@ async function exported(
     return value as { projectId?: number } | undefined;
 }
 
-async function configuredProject(
+export async function configuredProject(
     snapshot: z.infer<typeof Snapshot>,
     ctx: Context,
 ) {

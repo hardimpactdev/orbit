@@ -10,7 +10,9 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Setting;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
@@ -77,6 +79,21 @@ it('admits the normal native Project Operation only on a terminal selection and 
         ->and(app(OperationIdempotency::class)->kind)->toBeNull();
     $starts = array_filter($this->socket->sent, static fn (array $sent): bool => $sent['type'] === 'workflow.run');
     expect($starts)->toHaveCount(1);
+});
+
+it('admits a scheduled inspection that opens its update group', function (): void {
+    GitHubTestSupport::storeApp();
+    Http::fake(['*/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response(['token' => 'scheduled-read', 'expires_at' => now()->addHour()->format('Y-m-d\\TH:i:s\\Z'),
+        'permissions' => ['contents' => 'read', 'metadata' => 'read'], 'repositories' => [['full_name' => 'example/project']]], 201),
+        '*/installation/repositories*' => Http::response(['total_count' => 1, 'repositories' => [['full_name' => 'example/project']]])]);
+    $reply = $this->socket->reply;
+    $this->socket->reply = static fn (array $sent): array => $sent['type'] === 'vault.put'
+        ? [['type' => 'vault.put', 'id' => $sent['id'], 'payload' => ['data' => ['vaultName' => $sent['payload']['vaultName'], 'secretKey' => $sent['payload']['key'], 'vaultType' => 'local_encryption']]]]
+        : $reply($sent);
+    $this->result['requests'] = [['project_id' => $this->project->id, 'mode' => 'detect', 'key' => $this->project->id.'-detect-2026-11-03T10:00']];
+    app(ScheduledProjectMaintenance::class)->applyScheduled(ScheduledProjectMaintenance::Workflow, $this->run, $this->result);
+    $operation = Operation::query()->sole();
+    expect($operation->kind)->toBe('project.detect')->and($operation->input['open'])->toBeTrue();
 });
 
 it('rejects stale, altered and failed selections without a downstream admission', function (string $cause): void {

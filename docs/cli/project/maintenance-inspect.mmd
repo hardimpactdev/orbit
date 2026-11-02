@@ -1,0 +1,125 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task (driver workflow), ADR 0239 orbit.dependencies.v1, Recall swamp-owns-dependencies + deps-one-group-per-project, R1-R3.
+  %% Tightened: flow-tighten 2026-11-02, rules 3, 9, 14, 15, 18 (no input read, no attempt records, head check folded into the read, no report or fail step).
+  %% Decided: Nick 2026-11-02, project:maintenance:detect becomes project:maintenance:inspect: per-Project opt-in, default branch only, blob-SHA short-circuit, changed files read through the GitHub App with no clone, daily registry and advisory check, no begin or finish notes, no orbit-gateway calls. The kind keeps its name until the code follows.
+  %% status: draft
+  %% command: project:maintenance:inspect
+  %% kind: project.detect
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane GH icon=server pill=target tone=purple
+  %% lane REG icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant GH as GitHub<br/>tree · blobs
+  participant REG as Registries<br/>Packagist · npm
+  CLI->>GW: maintenance:inspect 4<br/>--open
+  %%> Command:
+  %%> - `orbit project:maintenance:inspect 4 --open`
+  %%> - syntax: `project:maintenance:inspect <project> [--open] [--idempotency-key=KEY]`
+  %%> Input:
+  %%> - the Project
+  %%> - `--open`: open the update task group for the findings; without it, inspect shows the findings and creates nothing
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  %%> - the hourly `maintenance-projects` Schedule admits the same kind with `--open`, for each opted-in Project
+  Note over GW: Validate, mint read token<br/>task #5150 · vault key
+  %%> Requirements:
+  %%> - your Node has an access grant to the Gateway
+  %%> - maintenance is on for Project 4 (`project:maintenance:enable`); it is off by default, so customer repositories stay untouched
+  %%> - Project 4 reads its repository through the GitHub App and has a default branch; only that branch is inspected
+  %%> - no other `project.detect`, `project.routine` or `project.observe` task runs for Project 4
+  %%> What it does:
+  %%> - mints a GitHub App token with `contents: read` for this repository only
+  %%> - puts it in the `orbit-control-inputs` vault as `project-dependency-read-5150` (R3)
+  %%> Result:
+  %%> - task #5150 recorded with the full intent; no Node is a target
+  GW->>SW: Start run, full intent<br/>project-maintenance-inspect
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - the repository and its default branch
+  %%> - the blob SHAs of the last inspection and the stored package list
+  %%> - whether the registry check is due: once a day, or at once with `--open`
+  %%> - the vault key name of the token, never the token
+  GW-->>CLI: 202 Accepted<br/>task #5150
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the caller follows the task with `operation:show`
+  SW->>GH: Read the manifest SHAs<br/>Git tree · one request
+  %%> What it does:
+  %%> - reads the default branch head and its tree through the GitHub App, with the token from `vault.get`
+  %%> - picks the blob SHAs of `composer.json`, `composer.lock`, `package.json`, workspace `package.json` files and the JavaScript lockfile of each policy path
+  %%> Short-circuit:
+  %%> - SHAs equal to the last inspection: the next step is skipped by its `guard`
+  %%> Why no clone:
+  %%> - one tree request per opted-in Project each hour is cheap; a clone is not
+  opt a manifest SHA changed
+    SW->>GH: Read the changed files<br/>blobs by SHA · no clone
+    %%> What it does:
+    %%> - reads again only the sources whose SHAs changed, by blob SHA, so they match the tree just read; other sources keep their stored packages
+    %%> - lists the installed packages and their versions from the lockfiles
+    %%> Result:
+    %%> - the new package list, in the step's output
+  end
+  opt check due or a package list changed
+    SW->>REG: Check latest, advisories<br/>Packagist · npm · advisory DB
+    %%> What it does:
+    %%> - compares the package list with the latest Packagist and npm versions and with the advisory database
+    %%> Cache:
+    %%> - answers are cached per package across Projects, so a package that many Projects use is asked once a day
+    %%> Why daily:
+    %%> - new releases and advisories appear without any change in the repository
+  end
+  Note over SW: Find the updates<br/>policy · one package group
+  %%> What it does:
+  %%> - applies release-age policy, version constraints and the Project's exceptions
+  %%> - at most one package group: every eligible major and advisory fix together
+  %%> - skipped with the registry check when no file changed and no check was due
+  %%> Result:
+  %%> - the update targets, the blocked findings and the group request, in the step's output
+  %%> Not included:
+  %%> - no `orbit-gateway` behavior and no Gateway call
+  %%> - no begin or finish note: Swamp records each run, and the Gateway reads the terminal result
+  alt run succeeds
+    SW-->>GW: Run succeeded<br/>terminal event · findings
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Store the inspection<br/>SHAs · packages · findings
+    %%> Result:
+    %%> - the blob SHAs, the package list and the findings stored for Project 4
+    %%> - without `--open`: nothing is created; the result shows the findings
+    %%> - task #5150 succeeds
+    opt --open, updates eligible
+      Note over GW: Open the update group<br/>task group #812 · tasks.provision
+      %%> Result:
+      %%> - task group #812 with one package group, for one pull request
+      %%> - the Gateway admits `tasks.provision` for it; Pi turns then run in its task VM (driver `pi`)
+      %%> Not admitted:
+      %%> - a group while Project 4 has an open maintenance task group or unfinished work, from the Gateway's own records
+    end
+  else a step fails
+    GH--xSW: token refused or error
+    %%> When:
+    %%> - the token is refused, a read fails, or a registry does not answer
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code, for example `project.scan_failed`
+    Note over GW: Keep the last inspection<br/>task failed · rerun is safe
+    %%> Result:
+    %%> - task #5150 fails; the stored SHAs and package list stay, and no task group is created
+    %%> Retry:
+    %%> - run the command again with a new key, or wait for the next hourly Schedule fire
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5150
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the counts of targets and blocked findings and any opened group ID once the task has ended
+  end

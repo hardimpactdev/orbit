@@ -6,10 +6,10 @@ covers:
   - "apps/gateway/app/Domain/SourceControl/{GitRepositoryIdentity,GitRepositoryOrigin,ProjectRoot,RelativeWebRoot,RepositoryDefaultBranchResolver}.php"
   - "apps/gateway/app/Infrastructure/SourceControl/NativeRepositoryDefaultBranchResolver.php"
   - "apps/gateway/app/{Http/{Controllers/Api/ProjectsController.php,Requests/Projects/**},Data/Projects/**}"
-  - "apps/gateway/app/Models/{Project,ProjectUpdate}.php"
+  - "apps/gateway/app/Models/{Project,ProjectUpdate,ProjectInspection}.php"
   - "apps/gateway/app/{Domain,Infrastructure}/Instances/*ProductionRepository*.php"
   - "apps/cli/app/Commands/Projects/**"
-  - "apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php"
+  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_13_120000_add_maintenance_to_projects,2027_01_13_130000_create_project_inspections_table}.php"
 ---
 
 # Projects
@@ -240,7 +240,9 @@ orbit project:update 3 --repository=https://github.com/acme/site.git
 
 ## Maintenance
 
-Three Swamp workflows on Node 209 keep a Project's dependencies current. `project.detect` scans the lockfiles of the default branch, `project.routine` selects this week's routine group, and `project.observe` reads the pull requests that maintenance groups watch. The hourly `maintenance-projects` Schedule selects which of them a Project needs; the MCP tools `project-maintenance-detect` and `project-maintenance-routine` start one directly. Each run reads only its admitted intent, stamped with its UTC admission time, and GitHub; the Gateway admits any task group from the run's result. Their steps carry the names in [flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md), so task progress shows names such as `Scan the lockfiles`.
+Three Swamp workflows on Node 209 keep a Project's dependencies current. [`project:maintenance:inspect`](/cli/project/maintenance-inspect) (kind `project.detect`) reads the manifests and lockfiles of the default branch through the GitHub App without a clone and compares them with the registries, `project.routine` selects this week's routine group, and `project.observe` reads the pull requests that maintenance groups watch. The hourly `maintenance-projects` Schedule selects which of them a Project needs; the CLI, or the MCP tools `project-maintenance-inspect` and `project-maintenance-routine`, start one directly.
+
+Each run reads only its admitted intent, stamped with its UTC admission time, and GitHub; the Gateway admits any task group from the run's result. Their steps carry the names in [flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md), so task progress shows names such as `Read the manifest SHAs`. The Gateway keeps each Project's last inspection, so the next one reads again only the sources whose blob SHAs changed and asks the registries at most once a day, from a per-package cache shared across Projects.
 
 Maintenance is opt-in per Project and off by default. [`project:maintenance:enable`](/cli/project/maintenance-enable) turns it on for a Project that reads through the GitHub App and has a default branch and a task check; [`project:maintenance:disable`](/cli/project/maintenance-disable) turns it off. Only the default branch is inspected. The Schedule skips a Project with maintenance off, and a direct request for it fails with `project.maintenance_disabled` (409). Project responses carry the setting as `maintenance`.
 

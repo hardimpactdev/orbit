@@ -12,8 +12,11 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
+use App\Models\ProjectInspection;
 use App\Models\Task;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\FakeTaskStartCommit;
 
@@ -132,17 +135,6 @@ it('rechecks current Project work before admitting two different captured reques
         ->and($operations[1]->fresh()->result['admitted_group_ids'])->toBe([]);
 });
 
-it('keeps a failed native scan failed even when its typed result was published', function (): void {
-    $operation = Operation::query()->create(['kind' => 'project.detect', 'target_type' => 'project',
-        'target_id' => $this->project->id, 'node_id' => 209, 'status' => 'running',
-        'input' => [], 'state' => ['swamp_run_id' => '7bf9d0ac-cffd-4f8a-80d7-12b28ba31303']]);
-    $result = ['project_id' => $this->project->id, 'status' => 'failed', 'error_code' => 'source_acquisition_failed', 'requests' => []];
-    app(ProjectMaintenanceProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null, 'result' => $result]);
-    expect($operation->fresh()->status->value)->toBe('failed')
-        ->and($operation->fresh()->error_code)->toBe('source_acquisition_failed')
-        ->and(Task::topLevel()->count())->toBe(0);
-});
-
 it('does not admit work from a snapshot after the Project repository changes', function (): void {
     $id = $this->withHeader('Idempotency-Key', 'changed-project')->postJson('/api/v1/projects/'.$this->project->id.'/maintenance/routine', [])->assertAccepted()->json('data.id');
     $operation = Operation::findOrFail($id);
@@ -218,4 +210,83 @@ it('refuses to turn maintenance on without the GitHub App, a default branch or a
         ->assertJsonPath('error.code', 'validation.failed')->assertJsonPath('error.details.source_access.0', 'Dependency maintenance needs source access through the GitHub App.')
         ->assertJsonPath('error.details.task_check.0', 'Dependency maintenance needs a task check.')->assertJsonMissingPath('error.details.default_branch');
     expect($this->project->fresh()->maintenance)->toBeFalse();
+});
+
+describe('project:maintenance:inspect', function (): void {
+    beforeEach(function (): void {
+        GitHubTestSupport::storeApp();
+        Http::fake(['*/repos/nckrtl/launch/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response(['token' => 'private-read-sentinel',
+            'expires_at' => now()->addHour()->format('Y-m-d\TH:i:s\Z'), 'permissions' => ['contents' => 'read', 'metadata' => 'read'],
+            'repositories' => [['full_name' => 'nckrtl/launch']]], 201), '*/installation/repositories*' => Http::response(['total_count' => 1, 'repositories' => [['full_name' => 'nckrtl/launch']]])]);
+        $this->socket->reply = static fn (array $sent): array => $sent['type'] === 'vault.put'
+            ? [['type' => 'vault.put', 'id' => $sent['id'], 'payload' => ['data' => ['vaultName' => $sent['payload']['vaultName'], 'secretKey' => $sent['payload']['key'], 'vaultType' => 'local_encryption']]]]
+            : [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'project-maintenance-inspect', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+        $this->manifests = ['[".","composer","composer"]' => ['composer.json' => str_repeat('1', 40), 'composer.lock' => str_repeat('2', 40)]];
+        $this->sources = [['source' => ['path' => '.', 'ecosystem' => 'composer', 'package_manager' => 'composer'], 'packages' => [], 'declared' => ['php' => '^8.4']]];
+    });
+
+    it('starts a run with the last inspection and only a read token, and keeps the Operation small', function (bool $open, bool $due): void {
+        ProjectInspection::query()->create(['project_id' => $this->project->id, 'source_commit' => str_repeat('a', 40), 'manifests' => $this->manifests,
+            'sources' => $this->sources, 'targets' => [], 'blocked' => [], 'inspected_at' => now(), 'registry_checked_at' => now()->subHours(2)]);
+        $id = $this->withHeader('Idempotency-Key', 'inspect-'.(int) $open)->postJson('/api/v1/projects/'.$this->project->id.'/maintenance/inspect', ['open' => $open])
+            ->assertAccepted()->assertJsonPath('data.kind', 'project.detect')->json('data.id');
+        $start = json_decode(json_encode(collect($this->socket->sent)->firstWhere('type', 'workflow.run')['payload'], JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
+        expect($start['workflowIdOrName'])->toBe('project-maintenance-inspect')
+            ->and($start['inputs']['intent']['previous'])->toBe(['manifests' => $this->manifests, 'sources' => $this->sources])
+            ->and($start['inputs']['intent']['check_due'])->toBe($due)
+            ->and(array_keys($start['inputs']['execution_secrets']))->toBe(['github_token'])
+            ->and(json_encode($start))->not->toContain('private-read-sentinel')
+            ->and(Operation::findOrFail($id)->input['open'])->toBe($open)
+            ->and(json_encode(Operation::findOrFail($id)->input))->not->toContain('composer.lock');
+    })->with(['inspect only' => [false, false], 'open the group' => [true, true]]);
+
+    it('asks the registries again once the last check is a day old', function (): void {
+        ProjectInspection::query()->create(['project_id' => $this->project->id, 'source_commit' => str_repeat('a', 40), 'manifests' => $this->manifests,
+            'sources' => $this->sources, 'targets' => [], 'blocked' => [], 'inspected_at' => now(), 'registry_checked_at' => now()->subHours(25)]);
+        $this->withHeader('Idempotency-Key', 'inspect-due')->postJson('/api/v1/projects/'.$this->project->id.'/maintenance/inspect')->assertAccepted();
+        expect(collect($this->socket->sent)->firstWhere('type', 'workflow.run')['payload']['inputs']['intent']['check_due'])->toBeTrue();
+    });
+
+    it('stores what the run read and found, and admits the group only when asked to open', function (bool $open): void {
+        $operation = Operation::query()->create(['kind' => 'project.detect', 'target_type' => 'project', 'target_id' => $this->project->id, 'node_id' => 209,
+            'status' => 'running', 'sequence' => 1, 'state' => ['swamp_run_id' => 'inspect-run'], 'input' => ['project' => ['id' => $this->project->id,
+                'repository' => $this->project->repository_url, 'default_branch' => 'main', 'check' => 'composer check'], 'groups' => [], 'admitted_at' => now()->toIso8601ZuluString(), 'open' => $open]]);
+        $target = ['path' => '.', 'manager' => 'composer', 'package' => 'laravel/framework', 'version' => '13.0.0', 'purpose' => 'major', 'advisories' => [], 'advisoryUrls' => []];
+        $request = ['action' => 'create_group', 'project_id' => $this->project->id,
+            'maintenance' => ['mode' => 'package', 'project' => ['projectId' => $this->project->id, 'repository' => $this->project->repository_url], 'targets' => [$target]],
+            'input' => ['title' => 'Update', 'brief' => 'Swamp schedule: batch-fixture', 'tasks' => [['title' => 'Update', 'brief' => 'Update dependencies.', 'deliverables' => [['id' => 'review', 'type' => 'review', 'description' => 'Review the changes.']]]]]];
+        $result = ['steps' => [], 'manifests' => ['commit' => str_repeat('c', 40), 'manifests' => $this->manifests, 'changed' => ['[".","composer","composer"]']],
+            'sources' => $this->sources, 'registries' => '2026-11-03T10:00:00.000Z', 'updates' => ['targets' => [$target], 'blocked' => [], 'requests' => [$request]]];
+        app(ProjectMaintenanceProjection::class)->apply($operation, ['run_id' => 'inspect-run', 'status' => 'succeeded', 'started_at' => now()->toIso8601String(),
+            'finished_at' => now()->toIso8601String(), 'error_code' => null, 'result' => $result]);
+        $inspection = ProjectInspection::query()->where('project_id', $this->project->id)->sole();
+        expect($inspection->source_commit)->toBe(str_repeat('c', 40))->and($inspection->manifests)->toBe($this->manifests)
+            ->and($inspection->sources)->toBe($this->sources)->and($inspection->targets)->toBe([$target])
+            ->and($inspection->registry_checked_at?->toIso8601ZuluString())->toBe('2026-11-03T10:00:00Z')
+            ->and($operation->fresh()->status->value)->toBe('succeeded')
+            ->and($operation->fresh()->result)->toMatchArray(['source_commit' => str_repeat('c', 40), 'changed_sources' => 1, 'targets' => 1, 'blocked' => 0])
+            ->and(json_encode($operation->fresh()->result))->not->toContain('declared')
+            ->and(Task::topLevel()->count())->toBe($open ? 1 : 0);
+    })->with(['inspect only' => [false], 'open the group' => [true]]);
+
+    it('keeps the stored packages and findings when nothing changed and no check was due', function (): void {
+        ProjectInspection::query()->create(['project_id' => $this->project->id, 'source_commit' => str_repeat('a', 40), 'manifests' => $this->manifests,
+            'sources' => $this->sources, 'targets' => [['package' => 'kept']], 'blocked' => [], 'inspected_at' => now()->subHour(), 'registry_checked_at' => now()->subHours(2)]);
+        $operation = Operation::query()->create(['kind' => 'project.detect', 'target_type' => 'project', 'target_id' => $this->project->id, 'node_id' => 209,
+            'status' => 'running', 'sequence' => 1, 'state' => ['swamp_run_id' => 'quiet-run'], 'input' => ['project' => ['id' => $this->project->id,
+                'repository' => $this->project->repository_url, 'default_branch' => 'main', 'check' => 'composer check'], 'groups' => [], 'admitted_at' => now()->toIso8601ZuluString(), 'open' => true]]);
+        app(ProjectMaintenanceProjection::class)->apply($operation, ['run_id' => 'quiet-run', 'status' => 'succeeded', 'started_at' => now()->toIso8601String(),
+            'finished_at' => now()->toIso8601String(), 'error_code' => null, 'result' => ['steps' => [], 'manifests' => ['commit' => str_repeat('b', 40), 'manifests' => $this->manifests, 'changed' => []]]]);
+        $inspection = ProjectInspection::query()->sole();
+        expect($inspection->source_commit)->toBe(str_repeat('b', 40))->and($inspection->sources)->toBe($this->sources)
+            ->and($inspection->targets)->toBe([['package' => 'kept']])->and(Task::topLevel()->count())->toBe(0);
+    });
+
+    it('fails without changing the stored inspection when a step fails', function (): void {
+        $operation = Operation::query()->create(['kind' => 'project.detect', 'target_type' => 'project', 'target_id' => $this->project->id, 'node_id' => 209,
+            'status' => 'running', 'sequence' => 1, 'state' => ['swamp_run_id' => 'failed-run'], 'input' => ['project' => ['id' => $this->project->id], 'open' => false]]);
+        app(ProjectMaintenanceProjection::class)->apply($operation, ['run_id' => 'failed-run', 'status' => 'failed', 'started_at' => now()->toIso8601String(),
+            'finished_at' => now()->toIso8601String(), 'error_code' => 'swamp.step_failed', 'result' => []]);
+        expect($operation->fresh()->status->value)->toBe('failed')->and(ProjectInspection::query()->count())->toBe(0);
+    });
 });

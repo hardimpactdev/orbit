@@ -17,6 +17,7 @@
             "cli/project/review-and-merge-disable",
             "cli/project/maintenance-enable",
             "cli/project/maintenance-disable",
+            "cli/project/maintenance-inspect",
             "cli/project/destroy",
             "cli/project/dev-deploy-step-list",
             "cli/project/dev-deploy-step-create",

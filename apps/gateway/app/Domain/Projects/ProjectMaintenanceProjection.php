@@ -8,6 +8,7 @@ use App\Actions\Tasks\CreateTaskGroupAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Data\Tasks\CreateTaskGroupData;
 use App\Data\Tasks\TaskInputData;
+use App\Domain\GitHub\GitHubAccessToken;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitHubTokenGrant;
@@ -25,8 +26,10 @@ use App\Infrastructure\GitHub\HttpGitHubApi;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Operation;
 use App\Models\Project;
+use App\Models\ProjectInspection;
 use App\Models\Task;
 use App\Support\ValidatedData;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
@@ -35,26 +38,50 @@ final readonly class ProjectMaintenanceProjection implements DirectOperationProj
 {
     public function input(Operation $operation): array
     {
+        if ($operation->kind === 'project.detect') {
+            // The run gets the last inspection, so it reads again only what changed; the Operation keeps none of it.
+            $inspection = ProjectInspection::query()->where('project_id', $operation->target_id)->first();
+            $checked = $inspection?->registry_checked_at;
+
+            return ['intent' => ['project' => $operation->input['project'],
+                'previous' => ['manifests' => (object) ($inspection->manifests ?? []), 'sources' => $inspection->sources ?? []],
+                'check_due' => ($operation->input['open'] ?? false) === true || $checked === null || $checked->addDay()->isPast()],
+                'execution_secrets' => ['github_token' => $this->tokenCopy($operation, ['contents' => 'read'])]];
+        }
         $copies = [];
-        if (in_array($operation->kind, ['project.detect', 'project.observe'], true)) {
-            $project = ValidatedData::object($operation->input['project']);
-            $repository = GitHubRepository::fromOrigin(ValidatedData::string($project['repository']));
-            if ($repository === null) {
-                throw new ResourceOperationException('project.maintenance_unavailable', 'The admitted repository is unavailable.', 422);
-            }
-            $credentials = app(GitHubAppStore::class)->credentials();
-            if ($credentials === null) {
-                throw new ResourceOperationException('operation.github_token_unavailable', 'Repository installation unavailable.', 503);
-            }
-            $grant = GitHubTokenGrant::from(['repository' => $repository->owner.'/'.$repository->name,
-                'permissions' => ['contents' => 'read', 'pull_requests' => 'read']]);
-            $token = app(HttpGitHubApi::class)->scopedRepositoryToken($credentials, $grant);
+        if ($operation->kind === 'project.observe') {
+            $token = $this->token($operation, ['contents' => 'read', 'pull_requests' => 'read']);
             $copies['github_token'] = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'project-dependency-read-'.$operation->id, $token->reveal());
             $copies['git_authorization'] = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'project-dependency-auth-'.$operation->id,
                 'AUTHORIZATION: basic '.base64_encode('x-access-token:'.$token->reveal()));
         }
 
         return ['intent' => $operation->input, 'execution_secrets' => $copies];
+    }
+
+    /** @param  array<string, string>  $permissions */
+    private function token(Operation $operation, array $permissions): GitHubAccessToken
+    {
+        $project = ValidatedData::object($operation->input['project']);
+        $repository = GitHubRepository::fromOrigin(ValidatedData::string($project['repository']));
+        if ($repository === null) {
+            throw new ResourceOperationException('project.maintenance_unavailable', 'The admitted repository is unavailable.', 422);
+        }
+        $credentials = app(GitHubAppStore::class)->credentials();
+        if ($credentials === null) {
+            throw new ResourceOperationException('operation.github_token_unavailable', 'Repository installation unavailable.', 503);
+        }
+
+        return app(HttpGitHubApi::class)->scopedRepositoryToken($credentials, GitHubTokenGrant::from(['repository' => $repository->owner.'/'.$repository->name, 'permissions' => $permissions]));
+    }
+
+    /**
+     * @param  array<string, string>  $permissions
+     * @return array{vault: string, key: string}
+     */
+    private function tokenCopy(Operation $operation, array $permissions): array
+    {
+        return app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'project-dependency-read-'.$operation->id, $this->token($operation, $permissions)->reveal());
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -65,13 +92,13 @@ final readonly class ProjectMaintenanceProjection implements DirectOperationProj
                 return $operation;
             }
             $result = ValidatedData::object($data['result'] ?? []);
+            if ($operation->kind === 'project.detect') {
+                $result = $data['status'] === 'succeeded' ? $this->inspected($operation, $result) : ['error_code' => $data['error_code'] ?? 'project.scan_failed'];
+
+                return app(DirectOperation::class)->project($operation, $data, $this->admit($operation, $result, $data['status'] === 'succeeded'));
+            }
             if ($data['status'] === 'succeeded' && ($result['project_id'] ?? null) !== $operation->target_id) {
                 throw new ResourceOperationException('operation.result_invalid', 'Project result identity differs from the admitted input.', 422);
-            }
-            if ($operation->kind === 'project.detect' && $data['status'] === 'succeeded'
-                && ($result['status'] ?? null) !== 'succeeded') {
-                $data['status'] = 'failed';
-                $data['error_code'] = $result['error_code'] ?? 'project.scan_failed';
             }
             if ($operation->kind === 'project.observe' && $data['status'] === 'succeeded') {
                 $this->observe($operation, $result);
@@ -80,6 +107,39 @@ final readonly class ProjectMaintenanceProjection implements DirectOperationProj
 
             return app(DirectOperation::class)->project($operation, $data, $result);
         });
+    }
+
+    /**
+     * Stores what the inspection read and found. A source, registry check or update step that did not run
+     * leaves its stored part as it was. The Operation keeps a summary; only `--open` or the Schedule asks for a group.
+     *
+     * @param  array<string,mixed>  $result
+     * @return array<string,mixed>
+     */
+    private function inspected(Operation $operation, array $result): array
+    {
+        $read = ValidatedData::object($result['manifests'] ?? null);
+        $commit = ValidatedData::string($read['commit'] ?? null);
+        $inspection = ProjectInspection::query()->firstOrNew(['project_id' => $operation->target_id]);
+        $inspection->fill(['source_commit' => $commit, 'manifests' => ValidatedData::object($read['manifests'] ?? null), 'inspected_at' => now()]);
+        if (array_key_exists('sources', $result)) {
+            $inspection->sources = array_values(Arr::array($result, 'sources'));
+        }
+        if (array_key_exists('registries', $result)) {
+            $inspection->registry_checked_at = CarbonImmutable::parse(ValidatedData::string($result['registries']));
+        }
+        $updates = array_key_exists('updates', $result) ? ValidatedData::object($result['updates']) : null;
+        if ($updates !== null) {
+            $inspection->fill(['targets' => array_values(Arr::array($updates, 'targets')), 'blocked' => array_values(Arr::array($updates, 'blocked'))]);
+        }
+        $inspection->sources ??= [];
+        $inspection->targets ??= [];
+        $inspection->blocked ??= [];
+        $inspection->save();
+
+        return ['project_id' => $operation->target_id, 'source_commit' => $commit, 'changed_sources' => count(Arr::array($read, 'changed', [])),
+            'targets' => count($inspection->targets), 'blocked' => count($inspection->blocked),
+            'requests' => ($operation->input['open'] ?? false) === true && $updates !== null ? Arr::array($updates, 'requests', []) : []];
     }
 
     /** @param array<string,mixed> $result */

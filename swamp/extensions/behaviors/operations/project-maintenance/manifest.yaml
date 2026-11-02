@@ -1,8 +1,9 @@
 manifestVersion: 1
 name: '@nckrtl/project-maintenance-input'
-version: 2026.11.01.2
+version: 2026.11.03.1
 visibility: private
 license: MIT
-description: Public Project maintenance input and result metadata.
+description: Public Project maintenance input and result metadata, and the no-clone dependency inspection.
 behaviors:
 - operations/project-maintenance/metadata.ts
+- operations/project-maintenance/inspect.ts

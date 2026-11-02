@@ -10,7 +10,7 @@ import yaml
 
 REPO = Path(__file__).resolve().parents[1]
 CLI = os.environ.get('SWAMP_BIN', 'swamp')
-SHARED = ('project-detect', 'project-routine', 'project-observe', 'maintenance-projects', 'horizon-new-dawn-detect', 'dependency-package',
+SHARED = ('project-maintenance-inspect', 'project-routine', 'project-observe', 'maintenance-projects', 'horizon-new-dawn-detect', 'dependency-package',
           'dependency-routine', 'dependency-upgrade')
 
 
@@ -24,7 +24,7 @@ class HeavyWorkflowPlacementTest(unittest.TestCase):
     def test_heavy_methods_and_native_coordinators_select_workers(self):
         for path in placed_workflows():
             workflow = yaml.safe_load(path.read_text())
-            native = workflow['name'] in ('project-detect', 'project-routine', 'project-observe',
+            native = workflow['name'] in ('project-maintenance-inspect', 'project-routine', 'project-observe',
                                           'maintenance-projects', 'dependency-upgrade')
             if not native:
                 self.assertEqual(workflow['labels'], {'role': 'swamp'}, path.name)

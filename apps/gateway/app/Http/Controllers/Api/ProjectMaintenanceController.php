@@ -12,6 +12,7 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Operations\StartsOperation;
+use App\Http\Requests\Projects\InspectProjectMaintenanceRequest;
 use App\Http\Requests\Projects\ProjectMaintenanceRequest;
 use App\Models\Project;
 use Illuminate\Http\JsonResponse;
@@ -35,10 +36,10 @@ final class ProjectMaintenanceController extends Controller
         return $this->maintenance($request, $project, false);
     }
 
-    #[StartsOperation('project.detect', requiresKey: true)]
-    public function detect(ProjectMaintenanceRequest $request, Project $project, ProjectMaintenanceIntent $intent): JsonResponse
+    #[StartsOperation('project.detect')]
+    public function inspect(InspectProjectMaintenanceRequest $request, Project $project, ProjectMaintenanceIntent $intent): JsonResponse
     {
-        $operation = $intent->start($project, 'detect', $request->attributes->getString('orbit.request_id'));
+        $operation = $intent->start($project, 'detect', $request->attributes->getString('orbit.request_id'), $request->boolean('open'));
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202);
     }

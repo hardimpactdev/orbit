@@ -17,7 +17,8 @@ final readonly class ProjectMaintenanceIntent
 {
     public function __construct(private StartOperationAction $start, private OperationIdempotency $idempotency) {}
 
-    public function start(Project $project, string $mode, ?string $requestId = null): Operation
+    /** `open` asks an inspection to admit its update group; the Schedule always asks. */
+    public function start(Project $project, string $mode, ?string $requestId = null, bool $open = false): Operation
     {
         if (! in_array($mode, ['detect', 'routine', 'observe'], true)) {
             throw new ResourceOperationException('project.maintenance_invalid', 'Unknown Project maintenance request.', 422);
@@ -27,7 +28,7 @@ final readonly class ProjectMaintenanceIntent
             return $existing;
         }
 
-        return DB::transaction(function () use ($project, $kind, $requestId): Operation {
+        return DB::transaction(function () use ($project, $kind, $requestId, $open): Operation {
             $project = Project::query()->lockForUpdate()->findOrFail($project->id);
             if (ProjectMaintenanceRequirements::missing($project) !== []) {
                 throw new ResourceOperationException('project.maintenance_unavailable', 'Project maintenance requires its GitHub App repository and configured check.', 422);
@@ -42,7 +43,7 @@ final readonly class ProjectMaintenanceIntent
             return $this->start->execute($kind, 'project', $project->id, 209, [
                 'project' => ['id' => $project->id, 'repository' => $project->repository_url,
                     'default_branch' => $project->default_branch, 'check' => $project->task_check],
-                'groups' => $groups, 'admitted_at' => now()->toIso8601ZuluString(),
+                'groups' => $groups, 'admitted_at' => now()->toIso8601ZuluString(), ...($kind === 'project.detect' ? ['open' => $open] : []),
             ], 'project-maintenance', $requestId);
         });
     }
