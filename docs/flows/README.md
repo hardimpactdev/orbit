@@ -129,3 +129,9 @@ Report at most 80 words per kind:
 - what changed against the existing chart, if any;
 - the design choices you made by these rules;
 - anything that needs Nick (open points only), or "merge into X" or "remove".
+
+## Behavior names
+
+Name a step's behavior after its target, never its run. Use `<step-family>-<node_id>` or the step's SSH address, for example `route-ssh-publish-<node_id>`, and a fixed name when the step has one target, for example `gateway-swamp-load`. Never share one name such as `ssh-<node_id>` across step families: one behavior has one lock, and differing global arguments rewrite its definition.
+
+Swamp reuses a definition when a name repeats, so steps against one target run one at a time and different targets still run in parallel. A name made from `run.id` or `operation_id` is allowed only when the workflow deletes the behavior at the end. Each name that a run makes stays behind as an auto-definition, and serve scans them all on each lookup by id ([Lab #4280](https://swamp-club.com/lab/4280)). The Swamp shape job runs `bin/lint-behavior-names.ts`, which rejects a workflow that has more per-run names than at the comparison base.

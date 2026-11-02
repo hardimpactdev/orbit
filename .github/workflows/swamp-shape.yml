@@ -60,6 +60,7 @@ jobs:
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         run: |
           deno test --allow-env --allow-read --allow-run bin/check-swamp-shape_test.ts
+          deno test --allow-read --allow-run bin/lint-behavior-names_test.ts
           python3 tests/swamp_shape_gate_test.py
           python3 tests/swamp_validate_ci_test.py
           python3 tests/swamp_deno_shards_test.py
@@ -73,6 +74,7 @@ jobs:
           if [[ -z "$base" || "$base" =~ ^0+$ ]]; then base=$(git rev-parse HEAD^); fi
           deno run --allow-env --allow-read --allow-write="$RUNNER_TEMP/shape.json" --allow-run bin/check-swamp-shape.ts --base "$base" --report "$RUNNER_TEMP/shape.json"
           python3 bin/check-swamp-base-policy.py --base "$base"
+          deno run --allow-read --allow-run bin/lint-behavior-names.ts --base "$base"
       - name: Check frozen agent command references
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         run: '"$GITHUB_WORKSPACE/bin/check-frozen-agent-commands" --root "$GITHUB_WORKSPACE"'
