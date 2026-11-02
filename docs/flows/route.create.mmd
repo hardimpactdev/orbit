@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, DECISIONS R1-R4 + 2 (DNS hold), firewall.allow shape, Gateway signs CSRs (root-of-trust), single-swamp-node. docs/cli/route.mdx, docs/reference/routes.md.
+  %% Target design: ADR 0244 task, DECISIONS R1-R4, no DNS hold (Nick 2026-11-02), firewall.allow shape, Gateway signs CSRs (root-of-trust), single-swamp-node. docs/cli/route.mdx, docs/reference/routes.md.
   %% status: draft
   %% command: route:create
   autonumber
@@ -129,10 +129,6 @@ sequenceDiagram
   %%> - checks the loaded catalog and a DNS reply
   %%> Order:
   %%> - DNS goes last, so a name only resolves when its site serves
-  Note over V: open: Nick decides<br/>DNS hold · native-dns-takeover
-  %%> Open:
-  %%> - DNS publication is under the DNS hold; Nick decides (rule 9)
-  %%> - until then, the run skips this step and Route work stays same-Node work
   alt every step succeeds
     SW-->>GW: Run succeeded<br/>terminal event + outputs
     %%> How the Gateway learns it:
