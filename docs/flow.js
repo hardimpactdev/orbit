@@ -1,6 +1,6 @@
-// Attaches each operation kind's flow chart under its `orbit <command>` heading, with a step-detail panel.
+// Draws each chart a page places with <div className="flow-at" data-chart="<family>/<name>">, with a step-detail panel.
 // Mintlify loads every .js file in docs/ on every page. bin/docs-flows writes window.orbitFlows to
-// flows-data.js from docs/flows/*.mmd and the OpenAPI x-orbit-kinds of each command's route.
+// flows-data.js from the docs/cli/<family>/<name>.mmd charts that pages place.
 // renderFlow is the migration dashboard's renderer, unchanged; the panel ports its FlowPage.
 (() => {
   // Renders a Mermaid sequenceDiagram subset as a static lane chart in the pr-lens style.
@@ -152,18 +152,13 @@
     return root
   }
 
-  // Each `orbit <command>` heading gets the charts of the kinds its route starts, after its first paragraph.
   function mount() {
     const data = window.orbitFlows
     if (!data) return
-    for (const h of document.querySelectorAll('.mdx-content h2')) {
-      const command = h.textContent.replace(/[\u200b\s]+/g, ' ').trim().match(/^orbit (\S+)$/)?.[1]
-      const kinds = data.commands[command]
-      if (!kinds || (h.nextElementSibling && h.nextElementSibling.classList.contains('flow-doc'))) continue
-      let at = h
-      if (at.nextElementSibling && /^(P|SPAN)$/.test(at.nextElementSibling.tagName)) at = at.nextElementSibling
-      if (at.nextElementSibling?.classList.contains('flow-doc')) continue
-      for (const kind of [...kinds].reverse()) at.after(chart(kind, data.charts[kind]))
+    for (const at of document.querySelectorAll('.flow-at:not([data-done])')) {
+      const placed = data.charts[at.dataset.chart]
+      at.dataset.done = '1'
+      if (placed) at.append(chart(placed.kind, placed.src))
     }
   }
   new MutationObserver(mount).observe(document.documentElement, { childList: true, subtree: true })

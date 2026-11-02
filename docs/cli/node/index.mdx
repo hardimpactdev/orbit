@@ -39,6 +39,8 @@ A Node is a machine that the Gateway manages over SSH and reaches over WireGuard
 | [`node:excluded-project:add`](/cli/node/excluded-project-add) | Keep a Project off an `app-dev` Node. |
 | [`node:excluded-project:list`](/cli/node/excluded-project-list) | List the Projects that cannot use a Node. |
 | [`node:excluded-project:remove`](/cli/node/excluded-project-remove) | Let a Project use the Node again. |
+| [`node:network:converge`](/cli/node/network-converge) | Converge a Node's WireGuard peer and publish the current peer list on the VPN hub. |
+| [`node:wireguard-hub:converge`](/cli/node/wireguard-hub-converge) | Set the current peer list on the active VPN hub in one native Operation. |
 
 Every command accepts `--json`. `node:show`, `node:remove`, and `node:access:*` take a numeric Node ID. The other commands also accept a Node name.
 

@@ -80,7 +80,7 @@ Import, update, and synchronization use the Instance's recorded owning Node. A R
 
 ## Native environment synchronization
 
-`instance.sync_environment` records one Instance intent and starts one Swamp run on Node 209 ([flow](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/instance.sync_environment.mmd)). At admission the Gateway renders the files and records the key names and the sha256 of each file, never a value.
+`instance.sync_environment` records one Instance intent and starts one Swamp run on Node 209 ([flow](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/env/sync.mmd)). At admission the Gateway renders the files and records the key names and the sha256 of each file, never a value.
 
 When the run starts, it pushes the rendered files into the vault key `instance-environment-<operation>`. The steps reach the owning Node over official `@swamp/ssh`: they check for foreign keys, write `.env` and merge the managed `.env.testing` keys with the files from `vault.get` on stdin, and check each file's sha256. No step calls the Gateway, and no per-Node worker takes part. The Gateway records the result and the admitted key names from the terminal run. If the stored values change between admission and run start, the run does not start and the task fails with `env.configuration_changed`.
 

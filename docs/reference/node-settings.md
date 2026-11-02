@@ -16,7 +16,7 @@ covers:
 
 A Node has typed settings for its development apps root (`apps.path`) and its task VM host configuration (`task_vms`). Set them with `node:add` or `node:settings`. [`node`](/cli/node/settings) lists the commands. The operator owns task VM host configuration; an `app-dev` role alone never makes a Node a task VM host.
 
-A settings change that touches the apps root records a `node.settings` Operation and returns HTTP 202. A change to `task_vms` alone, or clearing `apps.path` on a Node without an active `app-dev` role, is stored at once and starts no run. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/node.settings.mmd) shows both paths.
+A settings change that touches the apps root records a `node.settings` Operation and returns HTTP 202. A change to `task_vms` alone, or clearing `apps.path` on a Node without an active `app-dev` role, is stored at once and starts no run. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/node/settings.mmd) shows both paths.
 
 The Gateway starts `operation-node-settings` on the `swamp` role's workers. Its inputs are the SSH target and the resolved apps folder with the managed user and group. Every step runs on Node 209 and reaches the Node over SSH with sudo.
 

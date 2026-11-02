@@ -1,10 +1,18 @@
-# Flow charts: one chart per Orbit operation kind
+# CLI pages and flow charts
 
-Each Orbit operation kind has one sequence chart in `docs/flows/<kind>.mmd`. The chart states the intent of the kind: how the command flows between the CLI or MCP, the Gateway, Swamp, the target Node, and other Nodes. The docs build shows it with a step-detail panel under each `orbit <command>` heading whose Gateway route starts the kind (`#[StartsOperation]`). A chart whose kind no CLI command starts, such as a child or internal kind, appears on no page.
+Each CLI family has a folder, `docs/cli/<family>/`. Its `index.mdx` gives the overview and lists the commands. Each command has its own page, `<command>.mdx`, such as `route/create.mdx` for `orbit route:create`. A page holds, in order: the title and description; the usage (syntax, arguments, options, examples, behavior); `## How it works` with the flow chart; and `## Errors`.
+
+Each Orbit operation kind has one sequence chart. The chart states the intent of the kind: how the command flows between the CLI or MCP, the Gateway, Swamp, the target Node, and other Nodes. The docs build draws it with a step-detail panel where its page places it.
 
 Read the kind's chart first. Any change to a command's flow starts by updating its chart to the ideal flow; the code follows the chart. A chart shows the **target design**, not old code where it differs. Name what differs in your report, not in the chart.
 
-Edit charts here, never in a copy. A chart-only change arrives as a pull request that touches only `docs/flows/`. A chart Nick approved carries `%% status: reviewed`.
+Edit charts here, never in a copy. A chart-only change arrives as a pull request that touches only charts, their placements, and `flows-pending.txt`. A chart Nick approved carries `%% status: reviewed`.
+
+## Where a chart lives
+
+A chart sits beside its command page, with the same name: `route/create.mmd` beside `route/create.mdx`. Its `%% kind: <kind>` line names the kind; the checks find a kind's chart by that line. The page places it under `## How it works` with `<div className="flow-at" data-chart="route/create"></div>`. A second kind of one command, or a kind that no command starts, gets a chart named after the kind's action, such as `database/write.mmd` or `instance/auto-deploy.mmd`. To add a chart, write it, place it, and remove its kind from `flows-pending.txt`.
+
+To find a kind's chart, run `grep -rl '%% kind: route.create' docs/cli`.
 
 ## Design rules
 
@@ -54,7 +62,7 @@ The migration's `DECISIONS.md` (on mini: `~/migration-dashboard/flows/DECISIONS.
 
 Read these sources; don't guess.
 
-- `docs/cli/*.mdx`, `docs/reference/*.md`, and the ADRs about the kind (start with 0238, 0243, 0244).
+- `docs/cli/<family>/*.mdx`, `docs/reference/*.md`, and the ADRs about the kind (start with 0238, 0243, 0244).
 - The kind's declaration: `apps/gateway/app/Domain/*/direct-operations.php`.
 - Its Gateway Action: `apps/gateway/app/Actions/**`.
 - Its Swamp workflow: `swamp/workflows/workflow-*.yaml`.
@@ -77,7 +85,7 @@ A small renderer parses this subset, so follow it exactly.
 
 ### Header and lanes
 
-The header lines come in this order: `sequenceDiagram`, a `%%` comment naming the design source, `%% status: draft`, `%% command: <cli command>`, and `autonumber`. The lane options follow.
+The header lines come in this order: `sequenceDiagram`, a `%%` comment naming the design source, `%% status: draft`, `%% command: <cli command>`, `%% kind: <kind>`, and `autonumber`. The lane options follow.
 
 Each lane is one `participant` line. A `%% lane <ID> icon=<terminal|gateway|workflow|server> pill=<caller|intent|executes|target|observer> tone=<gray|blue|green|amber|purple>` comment styles it. The default lanes are:
 
@@ -106,7 +114,7 @@ Every step has `%%>` lines directly under it, which the step-detail panel shows.
 
 ### Content
 
-Step 1 is the real CLI call from `docs/cli/*.mdx`. The command and its argument go on the main line, the flags on the detail line. Its explanation starts with a `Command:` block: one full example, then `syntax: …`. Never write a JSON-like `{node: 7}`.
+Step 1 is the real CLI call from the command page. The command and its argument go on the main line, the flags on the detail line. Its explanation starts with a `Command:` block: one full example, then `syntax: …`. Never write a JSON-like `{node: 7}`.
 
 Show the whole flow: the CLI request, the Gateway check, run start, the 202, every Swamp and Node step, the result, the main failure in one `alt`/`else`, and the `operation:show` polling loop when the kind is asynchronous. Never leave out common steps. Use 8–14 numbered steps.
 
@@ -114,12 +122,12 @@ Use the Orbit glossary in `docs/concepts.md`: access grant, Placement, Node agen
 
 ## Checks
 
-Run `bin/check-flows` from the repository root before you report. CI runs it in the Docs build. It checks the format above and two lists:
+Run `bin/check-flows` from the repository root before you report. CI runs it in the Docs build. It checks the format above, the `%% kind:` lines, the chart placements, and two lists:
 
-- `pending.txt` names operation kinds that have no chart yet. A pull request that adds a kind's chart removes its line. The list may only shrink.
-- `migrated.txt` names kinds whose Swamp workflow follows its chart. The labels of the Swamp lane's calls and notes must equal the workflow's step names.
+- `flows-pending.txt` names operation kinds that have no chart yet. A pull request that adds a kind's chart removes its line. The list may only shrink.
+- `flows-migrated.txt` names kinds whose Swamp workflow follows its chart. The labels of the Swamp lane's calls and notes must equal the workflow's step names.
 
-The workflow of a kind is the one that names the kind in its `kind` input. `bin/check-operation-kinds`, in Generated contracts, requires a chart or a `pending.txt` line for every kind in the Gateway registry.
+The workflow of a kind is the one that names the kind in its `kind` input. `bin/check-operation-kinds`, in Generated contracts, requires a chart or a `flows-pending.txt` line for every kind in the Gateway registry.
 
 ## Report
 

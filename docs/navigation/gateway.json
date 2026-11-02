@@ -21,6 +21,7 @@
             "cli/gateway/release-smoke",
             "cli/gateway/release-auto-status",
             "cli/gateway/release-auto-enable",
+            "cli/gateway/release-auto-disable",
             "cli/gateway/release-auto-resume"
           ]
         }

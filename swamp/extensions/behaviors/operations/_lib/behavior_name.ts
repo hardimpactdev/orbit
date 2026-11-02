@@ -1,4 +1,4 @@
-// A behavior is named after its target, never its run (docs/flows/README.md):
+// A behavior is named after its target, never its run (docs/cli/README.md):
 // `<family>-<SSH address or cfgmgmt nodeHost>`, the fan-out index when items share that target,
 // and a fixed `<family>` for a local step.
 /** Swamp names allow no dots, so an address becomes `10-44-0-2`. */

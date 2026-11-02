@@ -1,14 +1,25 @@
 #!/usr/bin/env node
-// Checks every docs/flows/*.mmd against the subset the renderer supports and the text limits,
-// keeps pending.txt shrinking, and holds the kinds in migrated.txt to their Swamp workflow step names.
-const { existsSync, readdirSync, readFileSync } = require('node:fs')
+// Checks every docs/cli/<family>/<name>.mmd against the subset the renderer supports and the text limits,
+// checks the `%% kind:` lines and the chart placements in the pages, keeps flows-pending.txt shrinking,
+// and holds the kinds in flows-migrated.txt to their Swamp workflow step names.
+const { readdirSync, readFileSync } = require('node:fs')
 const { execFileSync } = require('node:child_process')
-const root = `${__dirname}/..`, dir = `${root}/docs/flows`
+const root = `${__dirname}/..`, dir = `${root}/docs/cli`
 const list = (text) => text.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'))
 const ok = [/^sequenceDiagram$/, /^autonumber$/, /^%%/, /^participant \w+ as .+$/, /^(alt|loop|opt)\b/, /^else\b/, /^end$/,
   /^Note over [\w, ]+: .+$/, /^\w+\s*(-->>|->>|--x|-x)\s*\w+\s*:\s*.+$/]
+const files = readdirSync(dir, { recursive: true }).filter((n) => n.split('/').length === 2)
 let bad = 0
-for (const f of readdirSync(dir).filter((n) => n.endsWith('.mmd'))) {
+const fail = (msg) => { bad++; console.log(msg) }
+// Each chart names its operation kind once, and no two charts name the same kind.
+const charts = new Map()
+for (const f of files.filter((n) => n.endsWith('.mmd'))) {
+  const kinds = [...readFileSync(`${dir}/${f}`, 'utf8').matchAll(/^\s*%% kind: (\S+)\s*$/gm)].map((m) => m[1])
+  if (kinds.length !== 1) fail(`${f}: needs exactly one '%% kind: <kind>' line`)
+  else if (charts.has(kinds[0])) fail(`${f}: kind ${kinds[0]} already has chart ${charts.get(kinds[0])}`)
+  else charts.set(kinds[0], f)
+}
+for (const f of charts.values()) {
   const ids = new Set(), errs = []
   readFileSync(`${dir}/${f}`, 'utf8').split('\n').forEach((raw, i) => {
     const l = raw.trim(); if (!l) return
@@ -19,17 +30,36 @@ for (const f of readdirSync(dir).filter((n) => n.endsWith('.mmd'))) {
     const text = l.match(/^(?:Note over [\w, ]+|\w+\s*(?:-->>|->>|--x|-x)\s*\w+)\s*:\s*(.+)$/)?.[1]
     if (text) { const [a, b = ''] = text.split('<br/>'); if (a.length > 26 || b.length > 34) errs.push(`${i + 1}: text too long (${a.length}/${b.length})`) }
   })
-  if (errs.length) { bad++; console.log(`${f}\n  ${errs.join('\n  ')}`) }
+  if (errs.length) fail(`${f}\n  ${errs.join('\n  ')}`)
 }
 
-// pending.txt names kinds without a chart. A kind leaves it when its chart lands; no kind joins it.
-const pending = list(readFileSync(`${dir}/pending.txt`, 'utf8'))
-const fail = (msg) => { bad++; console.log(msg) }
-for (const kind of pending) if (existsSync(`${dir}/${kind}.mmd`)) fail(`pending.txt: ${kind} has a chart; remove the line`)
+// A page places a chart explicitly under `## How it works`, in the form bin/docs-flows reads. Each placement names
+// a chart, and a chart beside a page of its name is placed there.
+const placed = new Map()
+for (const page of files.filter((n) => n.endsWith('.mdx'))) {
+  const text = readFileSync(`${dir}/${page}`, 'utf8')
+  for (const m of text.matchAll(/^.*className="flow-at".*$/gm)) {
+    const name = m[0].match(/^<div className="flow-at" data-chart="([a-z0-9-]+\/[a-z0-9-]+)"><\/div>$/)?.[1]
+    const section = [...text.slice(0, m.index).matchAll(/^## (.+)$/gm)].at(-1)?.[1]
+    if (!name) fail(`${page}: write a placement as <div className="flow-at" data-chart="<family>/<name>"></div>`)
+    else if (section !== 'How it works') fail(`${page}: place ${name} under '## How it works'`)
+    else if (!files.includes(`${name}.mmd`)) fail(`${page}: places ${name}, which is no chart`)
+    else if (placed.has(name)) fail(`${page}: places ${name}, which ${placed.get(name)} places already`)
+    else placed.set(name, page)
+  }
+}
+for (const f of charts.values()) {
+  const name = f.slice(0, -4)
+  if (files.includes(`${name}.mdx`) && placed.get(name) !== `${name}.mdx`) fail(`${name}.mdx: place its chart under '## How it works'`)
+}
+
+// flows-pending.txt names kinds without a chart. A kind leaves it when its chart lands; no kind joins it.
+const pending = list(readFileSync(`${dir}/flows-pending.txt`, 'utf8'))
+for (const kind of pending) if (charts.has(kind)) fail(`flows-pending.txt: ${kind} has a chart; remove the line`)
 if (process.env.BASE) {
   let before = null
-  try { before = execFileSync('git', ['show', `${process.env.BASE}:docs/flows/pending.txt`], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) } catch {}
-  if (before !== null) for (const kind of pending) if (!list(before).includes(kind)) fail(`pending.txt: ${kind} is new; the list may only shrink, so add its chart instead`)
+  try { before = execFileSync('git', ['show', `${process.env.BASE}:docs/cli/flows-pending.txt`], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) } catch {}
+  if (before !== null) for (const kind of pending) if (!list(before).includes(kind)) fail(`flows-pending.txt: ${kind} is new; the list may only shrink, so add its chart instead`)
 }
 
 // For a migrated kind, the Swamp lane's calls and notes are the workflow's steps, by the same names.
@@ -47,10 +77,11 @@ const stepNames = (yaml) => {
   }
   return names
 }
-for (const kind of list(readFileSync(`${dir}/migrated.txt`, 'utf8'))) {
+for (const kind of list(readFileSync(`${dir}/flows-migrated.txt`, 'utf8'))) {
   const yaml = workflows.filter((w) => declares(w, kind))
-  if (yaml.length !== 1) { fail(`migrated.txt: ${kind} is declared by ${yaml.length} workflows, expected 1`); continue }
-  const src = readFileSync(`${dir}/${kind}.mmd`, 'utf8')
+  if (yaml.length !== 1) { fail(`flows-migrated.txt: ${kind} is declared by ${yaml.length} workflows, expected 1`); continue }
+  if (!charts.has(kind)) { fail(`flows-migrated.txt: ${kind} has no chart`); continue }
+  const src = readFileSync(`${dir}/${charts.get(kind)}`, 'utf8')
   const swamp = src.match(/^\s*participant (\w+) as Swamp\b/m)?.[1]
   const labels = [...src.matchAll(/^\s*(?:(\w+)\s*->>\s*\w+|Note over (\w+))\s*:\s*([^<\n]+)/gm)]
     .filter((m) => (m[1] ?? m[2]) === swamp).map((m) => m[3].trim())

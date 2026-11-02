@@ -7,10 +7,10 @@ use Symfony\Component\Process\Process;
 function docsNavFixture(): string
 {
     $root = sys_get_temp_dir().'/docs-nav-'.bin2hex(random_bytes(6));
-    foreach (['decisions', 'domains', 'solutions', 'reference'] as $folder) {
+    foreach (['cli', 'decisions', 'domains', 'solutions', 'reference'] as $folder) {
         mkdir($root.'/docs/'.$folder, 0777, true);
     }
-    foreach (['README', 'decisions/README', 'domains/README', 'solutions/README', 'index', 'reference/routes'] as $page) {
+    foreach (['README', 'cli/README', 'decisions/README', 'domains/README', 'solutions/README', 'index', 'reference/routes'] as $page) {
         file_put_contents($root.'/docs/'.$page.'.md', "# Page\n");
     }
     docsNavWriteNavigation($root, ['index', 'reference/routes']);

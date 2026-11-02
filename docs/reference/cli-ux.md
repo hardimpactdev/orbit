@@ -221,9 +221,9 @@ Subtask detail output adds a `Topology` property when the subtask declares workl
 
 ## Command reference
 
-Every visible product command has its own section in `docs/cli`, headed `## orbit <command>`. Two closely related commands can share one heading, such as `orbit gateway:release:auto:enable and disable`, when the section shows a usage line for each. The section names every argument as `` `name` `` or `<name>`, and every option as `--option`. `--json` is documented once per page.
+Every visible product command has its own page, `docs/cli/<family>/<command>.mdx`, titled `orbit <command>`. The page names every argument as `` `name` `` or `<name>`, and every option as `--option`. `--json` is documented once per page.
 
-`apps/cli/tests/Feature/CommandSurfaceTest.php` reads the registered commands and fails when a command has no section or its section misses an argument or option. CI runs that test on every pull request, including a pull request that changes only docs.
+`apps/cli/tests/Feature/CommandSurfaceTest.php` reads the registered commands and fails when a command has no page or its page misses an argument or option. CI runs that test on every pull request, including a pull request that changes only docs.
 
 ## Verification and adoption
 

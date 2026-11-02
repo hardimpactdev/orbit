@@ -65,7 +65,7 @@ When using analysis-bound turns, initial evidence feeds the docs author; edits i
 
 A person who contributes outside Orbit Tasks has no docs subtask. That person can still run the check to find the affected pages, as [What you can skip](/first-contribution#what-you-can-skip) explains.
 
-The impact checker maps each CLI family to `docs/cli/<family>.mdx`. Register a new family in `DocsImpact::CLI_FAMILIES` and add its reference page in the same change.
+The impact checker maps each CLI family to `docs/cli/<family>/index.mdx`. Register a new family in `DocsImpact::CLI_FAMILIES` and add its reference page in the same change.
 
 At every subtask handoff, Orbit's own task check runs the impact check against the candidate diff from the group's start commit. An impacted page missing from that diff fails with the list of pages.
 
@@ -80,7 +80,7 @@ composer docs-lint
 
 The context index, OpenAPI, MCP catalogue, web API types, and Mintlify configuration are build outputs. Git ignores `docs/generated/context.json`, `docs/openapi.json`, `apps/gateway/resources/mcp/tools.json`, `apps/web/src/api/schema.d.ts`, `docs/docs.json`, and `docs/flows-data.js`. Do not add them to a pull request.
 
-`bin/docs-flows` writes the [flow charts](https://github.com/hardimpactdev/orbit/tree/main/docs/flows) to `docs/flows-data.js`, and `docs/flow.js` shows each chart under its `orbit <command>` heading. A command's charts are the kinds its route starts, from `#[StartsOperation]` through `x-orbit-kinds` in `docs/openapi.json`, so run `bin/build-api` before `composer docs-build`. A Gateway Composer install builds OpenAPI and the MCP catalogue through `bin/build-api`, including the release preparation install. This needs PHP, Composer, Python 3, and the complete repository sources. The Gateway serves the built MCP manifest from its release directory. Web checks and builds generate their TypeScript types from that OpenAPI document.
+`bin/docs-flows` writes the [flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md) that command pages place to `docs/flows-data.js`, and `docs/flow.js` draws each one where its page places it. A Gateway Composer install builds OpenAPI and the MCP catalogue through `bin/build-api`, including the release preparation install. This needs PHP, Composer, Python 3, and the complete repository sources. The Gateway serves the built MCP manifest from its release directory. Web checks and builds generate their TypeScript types from that OpenAPI document.
 
 Run `bin/build-api` after API changes. Run `composer docs-build` before documentation checks. CI runs these generation steps before the checks that consume the outputs. A fresh local web checkout needs `composer install --working-dir=apps/gateway` before `bun run build` in `apps/web`.
 

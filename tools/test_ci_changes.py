@@ -67,7 +67,7 @@ class SelectionTest(unittest.TestCase):
             'apps/e2e/app/E2E/Value/TopologyRecipe.php': ('gateway',),
             'apps/e2e/app/E2E/IncusHost.php': ('gateway',),
             # CLI's command and guidance contract tests read maintained guides.
-            'docs/cli/node.mdx': ('cli',),
+            'docs/cli/node/index.mdx': ('cli',),
             'docs/reference/cli-command-vocabulary.md': ('cli',),
             'docs/reference/cli-ux.md': ('cli',),
             # Whole-repository tooling/vocabulary checks and fixture validation.

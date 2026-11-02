@@ -35,6 +35,12 @@ A task is one feature. A subtask is one ordered child of that task, and a subtas
 | [`tasks:question:close`](/cli/tasks/question-close) | Close an open or escalated question as answered or superseded. |
 | [`tasks:agents`](/cli/tasks/agents) | List a task's agent threads. |
 | [`tasks:agent:show`](/cli/tasks/agent-show) | Show one redacted read of an agent thread's conversation. |
+| [`tasks:provision`](/cli/tasks/provision) | Provision the VM and workspace of an external task group. |
+| [`tasks:turn`](/cli/tasks/turn) | Run one agent turn on an external task group. |
+| [`tasks:check`](/cli/tasks/check) | Run a baseline or handoff check in an external task workspace. |
+| [`tasks:analyze`](/cli/tasks/analyze) | Analyze repository documentation impact without starting an agent or approving work. |
+| [`tasks:publish`](/cli/tasks/publish) | Push a checked commit and optionally open or update its pull request. |
+| [`tasks:park`](/cli/tasks/park) | Park an external task group VM while its PR waits for review. |
 
 Every command accepts `--json`. JSON output is the Gateway record with `request_id` beside its fields. A list holds its records under `task_groups`, `comments`, `questions`, or `agents`. The [PHP SDK](/api/php-sdk) task responses return those same records, including `assistance_kind` and `assistance_question` on a task and a subtask.
 

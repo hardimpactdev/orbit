@@ -24,7 +24,7 @@ These callers admit `database.update` today.
 - CLI: `orbit database:update <slug>` (`apps/cli/app/Commands/Database/UpdateDatabaseConnectionCommand.php`), which follows the Operation.
 - PHP SDK: `UpdateDatabaseConnectionRequest` (PATCH).
 - MCP: the `database-update` tool, generated from the OpenAPI document.
-- Documentation: `docs/cli/database.mdx`, `docs/reference/database-connections.md`, `docs/reference/database-servers.md`, and the PostgreSQL repointing runbook in `docs/reference/postgresql-migration.md`.
+- Documentation: `docs/cli/database/`, `docs/reference/database-connections.md`, `docs/reference/database-servers.md`, and the PostgreSQL repointing runbook in `docs/reference/postgresql-migration.md`.
 
 The web app does not call it. No other Gateway code, workflow or policy admits it.
 

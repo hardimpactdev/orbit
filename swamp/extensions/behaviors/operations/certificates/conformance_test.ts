@@ -26,7 +26,7 @@ Deno.test("certificate control steps use exactly one selector and a signer named
                     name + "/" + step.name,
                 );
                 const task = step.task as Record<string, unknown>;
-                // Named by target, never by run (docs/flows/README.md).
+                // Named by target, never by run (docs/cli/README.md).
                 if (task.behaviorType === "command/shell") {
                     assert(
                         !String(task.behaviorName).includes("run.id"),
