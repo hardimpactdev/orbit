@@ -2,7 +2,7 @@ import { firewallIdentity } from "../fleet/firewall";
 import { processRuntimeIsActive } from "../fleet/fleet";
 import { applyRow } from "../realtime/apply";
 import { api } from "./client";
-import { instanceOperationsQuery, startDeploy, type Operation } from "./operations";
+import { awaitOperation, instanceOperationsQuery, startDeploy, type Operation } from "./operations";
 import { queryClient } from "./queryClient";
 import type {
     AnyRecord,
@@ -128,9 +128,18 @@ export function actionsFor(kind: Kind, row: AnyRecord): Action[] {
                     label: "doctor",
                     description: `Check node [${node.name}] for drift.`,
                     run: async () => {
-                        const report = await api<DoctorReport>("POST", "/api/v1/doctor", {
-                            node_id: node.id,
-                        });
+                        // Doctor starts an Operation; its report arrives as the result of the finished run.
+                        const operation = await awaitOperation(
+                            await api<Operation>("POST", "/api/v1/doctor", { node_id: node.id }),
+                        );
+                        const report = operation.result?.report as DoctorReport | undefined;
+
+                        if (operation.status !== "succeeded" || report === undefined) {
+                            throw new Error(
+                                `Doctor for node [${node.name}] ended ${operation.status}${operation.error_code === null ? "" : ` (${operation.error_code})`} without a report.`,
+                            );
+                        }
+
                         const drift = Number(report.summary?.drift ?? 0);
 
                         return drift === 0

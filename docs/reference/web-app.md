@@ -411,6 +411,10 @@ Its Deploy action starts an `instance.deploy` [operation](/reference/operations)
 
 The pane subscribes to `private-operation.{id}`, reads the operation, and reads it again with `after_sequence` for each newer event, as [Follow an operation over Reverb](/reference/operations#follow-an-operation-over-reverb) describes. Without realtime it reads every `poll_after_seconds`. While a deploy or a rollback of the Instance runs, the overview shows it, also when another client started it. The pane's title names the kind: Deploy or Rollback.
 
+## Run Doctor on a Node
+
+A Node's doctor action starts a `doctor.inspect` [operation](/reference/operations) with the same request as `doctor --node`. It reads the operation every `poll_after_seconds` until it ends, then reads the report from `result.report` and shows whether the Node has drift. An operation that fails, is cancelled, or ends without a report shows its status and error code instead.
+
 ## Database tables
 
 The database Tables panel starts a native `database.read` Operation and follows its result through the shared Operation channel. It shows loading until the read ends, table names after success, and an error after refusal, failure or cancellation. An empty list means the native read succeeded without tables. Swamp performs the inspection on the admitted Node.

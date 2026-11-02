@@ -862,13 +862,15 @@ export function createDemoGateway() {
                 ([query = ""]) => {
                     const params = new URLSearchParams(query);
                     const targetId = params.get("target_id");
+                    const targetType = params.get("target_type");
 
                     return ok(
                         [...operations]
                             .reverse()
                             .filter(
                                 (operation) =>
-                                    targetId === null || String(operation.target_id) === targetId,
+                                    (targetType === null || operation.target_type === targetType) &&
+                                    (targetId === null || String(operation.target_id) === targetId),
                             ),
                     );
                 },
@@ -1124,6 +1126,12 @@ export function createDemoGateway() {
                 },
             ],
             [
+                "POST",
+                /^\/api\/v1\/doctor$/,
+                (_, body) =>
+                    startDemoOperation("doctor.inspect", Number(body.node_id ?? 0), body, "node"),
+            ],
+            [
                 "DELETE",
                 /^\/api\/v1\/processes\/(\d+)$/,
                 ([id = ""]) => {
@@ -1183,16 +1191,19 @@ export function createDemoGateway() {
             ],
         ];
 
-    /** A demo deploy or rollback: each read advances its native status, so the page shows a run without a worker. */
+    /** A demo Operation such as a deploy: each read advances its native status, so the page shows a run without a worker. */
     function startDemoOperation(
         kind: string,
-        instanceId: number,
+        targetId: number,
         input: Record<string, unknown>,
+        targetType = "instance",
     ): Answer {
         if (
             operations.some(
                 (operation) =>
-                    operation.target_id === instanceId && !TERMINAL.includes(operation.status),
+                    operation.target_type === targetType &&
+                    operation.target_id === targetId &&
+                    !TERMINAL.includes(operation.status),
             )
         ) {
             return failure(
@@ -1205,8 +1216,8 @@ export function createDemoGateway() {
         const operation: Operation = {
             id: operations.length + 1,
             kind,
-            target_type: "instance",
-            target_id: instanceId,
+            target_type: targetType,
+            target_id: targetId,
             input,
             status: "queued",
             sequence: 1,
@@ -1263,7 +1274,10 @@ export function createDemoGateway() {
             status: "succeeded",
             finished_at: now,
             poll_after_seconds: null,
-            result: { deployment_id: null, release: null, selected_release: null, commit: null },
+            result:
+                operation.kind === "doctor.inspect"
+                    ? (byRoute.get("GET /api/v1/operations/{operation}#doctor") as Operation).result
+                    : { deployment_id: null, release: null, selected_release: null, commit: null },
             sequence,
         });
     }
