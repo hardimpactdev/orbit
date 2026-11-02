@@ -47,6 +47,8 @@ Before subscribing, the read connection requests each declared scheduled workflo
 
 Only verified terminal histories reach the family projector. The workflow UUID/name, selector and public rows must match. Each row carries `operation_id`, `node_id`, `kind`, `root_run_id`, `status` and `result`. Row status is `succeeded` or `failed` for the observation; it does not rewrite the original root. Separate provenance prevents older, duplicate or original-admission replay from replacing newer observations or reopening terminal Operations.
 
+A schedule that belongs to no Operation declares its workflow UUID, name and `terminal_result` in its domain's `scheduled-results.php`, with a `projection` that implements `ScheduledResultProjection`. The projection gets the run and the JSON its result step printed. A failed run passes that JSON too when the step printed one, and an empty result when it did not. `automatic-production-deploy` uses this: its result step prints the fire's events before a failures assert can fail the run, so the Gateway records them anyway.
+
 The shared Gateway cache stores the feed cursor and undelivered root IDs together, keyed by native address and declared workflow UUIDs. A new checkpoint begins at cursor zero; losing the cache replays the available feed. The feed resumes from its last saved cursor. A compacted or unavailable feed refuses discovery; it does not fall back to a family search or a timer. Projection errors remain separate from socket reconnection. The shared observer reads history again only after another native notice or an explicit one-shot recovery; it never retries history on a delivery timer.
 
 ### Event connection

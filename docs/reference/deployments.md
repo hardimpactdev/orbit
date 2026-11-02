@@ -8,6 +8,7 @@ covers:
   - apps/agent/src/commands/{production,production_tests,production_home,production_home_tests,deploy_step,dev_deploy,dev_deploy_tests}.rs
   - apps/gateway/app/Http/{Controllers/Api/{InstanceSmokeController,InstanceDeploymentsController,InstanceDeployStepsController,InstanceReleasesController,InstanceRollbacksController,ProjectDevelopmentDeployStepsController},Requests/Projects/*ProjectDevelopmentDeployStepRequest}.php
   - apps/gateway/{app/{Models/{InstanceDeployment,InstanceDeployStep,ProjectDevelopmentDeployStep},Data/Instances/InstanceDeploymentData}.php,database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_05_000000_add_caller_node_id_to_instance_deployments}.php}
+  - swamp/extensions/behaviors/automatic-deploy/**
   - packages/php-sdk/src/{Requests/Projects/*DevelopmentDeployStep*,Responses/{Projects/*DevelopmentDeployStep*,Deployments/InstanceDeploymentResponse}}.php
 ---
 
@@ -387,7 +388,7 @@ The [ADR 0238 trial](/decisions/0238-trial-two-swamp-slices-before-a-wider-move)
 | `GET /api/v1/instances/{instance}/deploy/automatic/receipt?request_key=<key>&commit=<sha>` | Exact keyed admission lookup, bound to caller, automatic command, Instance, and commit. Returns `request_key`, `found`, `operation`, and retained `deployment`, when available. Conflicting input returns `operation.idempotency_conflict`. |
 | `PUT /api/v1/instances/{instance}/auto-deploy/policy` | Publish the public policy projection with the observed `resumed_after`, `last_deployment_id`, and `history_version`. A changed cursor or history returns `instance.auto_deploy_observation_changed`. |
 
-The policy never posts its events. Each fire of `automatic-production-deploy` prints the events it raised in its terminal `result` step: the notable Activity entries and the alerts for a failed deploy, a pause and a stalled commit. The Gateway reads that result from the run and records each event once, as an Activity entry or a release alert. A fire whose Instance tick failed still prints its result, and its `failures` assert then ends the run failed.
+The policy never posts its events. Each fire of `automatic-production-deploy` prints the events it raised in its terminal `result` step: the notable Activity entries and the alerts for a failed deploy, a pause and a stalled commit. The Gateway reads that result from the run and records each event once, as an Activity entry or a release alert. A fire whose Instance tick failed still prints its result, with the failure's error code: a policy refusal keeps its own code, and any other error is `automatic.tick_failed`. Its `failures` assert then ends the run failed.
 
 The source listing contains at most 100 reachable commits, and the walk returns at most 20 first-parent candidates. `reached_base` says the walk reached `base`, including when the last candidate names it as its first parent. `truncated` says the candidate bound or a missing parent cut the walk short. Reaching the repository root without `base` returns both flags false. Swamp can fail closed on a truncated walk. Each returned candidate carries an exact ancestry comparison with `base`. The source reads accept full 40- or 64-character commit SHAs.
 
