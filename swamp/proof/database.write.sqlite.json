@@ -1,0 +1,60 @@
+{
+  "kind": "database.write",
+  "workflow": "operation-database-write",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "expect": {
+    "status": "succeeded"
+  },
+  "clean_target": [
+    [
+      "sh",
+      "-c",
+      "rm -f /home/orbit/proof-read.sqlite"
+    ]
+  ],
+  "before_target": [
+    [
+      "sh",
+      "-c",
+      "command -v sqlite3 >/dev/null || DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends sqlite3 >/dev/null; rm -f /home/orbit/proof-read.sqlite && runuser -u orbit -- python3 -c \"import sqlite3; d = sqlite3.connect('/home/orbit/proof-read.sqlite'); d.execute('CREATE TABLE proof (id INTEGER PRIMARY KEY, value TEXT)'); d.executemany('INSERT INTO proof (value) VALUES (?)', [('a',), ('b',), ('c',)]); d.commit()\""
+    ]
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "database-connections",
+      "body": {
+        "slug": "proof-sq-${proof.run}",
+        "driver": "sqlite",
+        "node_id": "${node.target}",
+        "path": "/home/orbit/proof-read.sqlite"
+      },
+      "bind": "connection"
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "database-connections/proof-sq-${proof.run}/query",
+    "body": {
+      "sql": "DELETE FROM proof WHERE id > 1",
+      "write": true
+    }
+  },
+  "phases": [
+    {
+      "name": "Run the statement",
+      "job": "write",
+      "step": "Run the statement",
+      "budget_seconds": 40
+    }
+  ],
+  "parity": [
+    "swamp/proof/database/write_parity.py",
+    "{\"backend\": \"active\", \"row_count\": 2, \"truncated\": false}",
+    "[\"runuser\", \"-u\", \"orbit\", \"--\", \"sqlite3\", \"/home/orbit/proof-read.sqlite\", \"SELECT count(*) FROM proof\"]",
+    "1"
+  ]
+}

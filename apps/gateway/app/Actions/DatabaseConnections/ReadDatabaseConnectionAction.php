@@ -31,6 +31,23 @@ final readonly class ReadDatabaseConnectionAction
         if ($mode === 'query') {
             DatabaseRead::assertReadable($connection->driver, $sql);
         }
+        [$nodeId, $target] = $this->placement($connection, $sql);
+
+        return $this->operations->execute('database.read', 'database_connection', $connection->id, $nodeId,
+            ['connection_id' => $connection->id, 'driver' => $connection->driver->value, 'connection_node_id' => $connection->node_id, 'mode' => $mode, 'table' => $table],
+            ['database-apply' => ['name' => 'database.read', 'input' => ['target' => $target, 'null' => Str::random(16),
+                'password' => $connection->driver === DatabaseDriver::Sqlite ? '' : ($connection->password ?? ''), 'sql' => $sql],
+                'protected' => ['password', 'sql']]]);
+    }
+
+    /**
+     * Where a statement runs: in the Database server's container, as the file's owner on the SQLite Node, or on 209 for
+     * a registered external database. Returns the Node and the client target.
+     *
+     * @return array{0: int, 1: array<string, int|string>}
+     */
+    public function placement(DatabaseConnection $connection, string $sql): array
+    {
         $server = $connection->server;
         if ($connection->driver === DatabaseDriver::Sqlite) {
             $input = app(DatabaseConnectionInput::class)->sqlite($connection, $sql);
@@ -48,10 +65,6 @@ final readonly class ReadDatabaseConnectionAction
             throw new ResourceOperationException('database.node_missing', 'The database execution Node is missing.', 422);
         }
 
-        return $this->operations->execute('database.read', 'database_connection', $connection->id, $nodeId,
-            ['connection_id' => $connection->id, 'driver' => $connection->driver->value, 'connection_node_id' => $connection->node_id, 'mode' => $mode, 'table' => $table],
-            ['database-apply' => ['name' => 'database.read', 'input' => ['target' => $target, 'null' => Str::random(16),
-                'password' => $connection->driver === DatabaseDriver::Sqlite ? '' : ($connection->password ?? ''), 'sql' => $sql],
-                'protected' => ['password', 'sql']]]);
+        return [$nodeId, $target];
     }
 }

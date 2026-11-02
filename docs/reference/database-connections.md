@@ -2,6 +2,7 @@
 title: "Database connections"
 description: "The Gateway-owned registry of mysql, pgsql, sqlite, and redis connections, the databases that Instances own, their test databases, and how an operator attaches a connection to an Instance."
 covers:
+  - swamp/workflows/workflow-operation-database-{read,write}.yaml
   - apps/gateway/app/Actions/DatabaseConnections/**
   - apps/gateway/app/Domain/DatabaseConnections/**
   - apps/gateway/app/Infrastructure/DatabaseConnections/**
@@ -208,13 +209,11 @@ SQL and credentials travel through the run-bound private-material callback and p
 
 ### Direct SQL writes
 
-`database:query --write` starts `operation-database-write` with the full public intent and vault key names. All steps select a Node 209 worker. Official `@swamp/ssh` exec steps run SQLite on its Node as its admitted owner, or PDO on the Gateway Node for MySQL and PostgreSQL. The existing approved worker key and recorded SSH host pins select the connection.
+`database:query --write` starts `operation-database-write`. A write runs where a [read](#inspect-a-registered-connection) runs, with the same client: in the Database server's container, on Node 209 for a registered external database, or with `sqlite3` on the SQLite file's Node as its owner. The client reads the password from the first stdin line and the statement after it, from one vault value. No step calls the Gateway or runs a shipped script.
 
-The shared Gateway helper copies SQL and connection credentials into the native execution vault. Each action reads that value through the official SSH tool-stdin input. No step reads intent or private material from the Gateway, invokes an agent action or requires an agent pin. The shared terminal subscriber records the public row count. Native result delivery resumes without repeating SQL.
+After the statement, the client prints the affected row count: `ROW_COUNT()` on MySQL, the command tag on PostgreSQL and `changes()` on SQLite. The shared terminal subscriber records it as `row_count`, with `truncated` when the output reached its 64 KiB bound. A failed or timed-out statement returns `database.query_failed`. Output the Gateway cannot read returns `database.write_outcome_unknown`.
 
-SQL writes are limited to 16,384 bytes. MySQL refuses multiple statements in one call. Actions retain bounded refusals as native outputs; a final native assertion marks a refusal failed. Missing output reports `database.write_outcome_unknown`. A normal resume uses the saved action outcome instead of submitting SQL again. Read-only inspection uses its own native database.read Operation. Nodes 1 and 18 use the same official SSH steps; no target Node needs a Swamp binary or worker token.
-
-SQLite writes have an engine attachment limit of zero. `ATTACH` and `VACUUM INTO` cannot create another database file, including through an SQL expression. The same limit refuses ordinary `VACUUM`, which needs an internal attachment. These refusals return `database.query_failed` and leave the registered file unchanged.
+SQL writes are limited to 16,384 bytes and one statement, which admission checks. SQLite runs `sqlite3 -safe`: `ATTACH`, `VACUUM INTO` and ordinary `VACUUM`, which needs an internal attachment, fail with `database.query_failed` and leave the registered file unchanged. The same mode refuses file functions and shell commands.
 
 ### Instance-owned removal
 

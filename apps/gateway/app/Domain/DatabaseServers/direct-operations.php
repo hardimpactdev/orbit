@@ -51,7 +51,10 @@ return ['database.update' => [
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-write-intent-[1-9][0-9]*$']],
     'projection' => DatabaseWriteProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'write', 'step' => 'result'],
+    // The native result cuts stdout short, so the client output comes as one capture.
+    'terminal_result' => ['job' => 'write', 'step' => 'Run the statement', 'alternatives' => ['Run the statement on 209'], 'native' => true,
+        'captures' => ['output' => ['job' => 'write', 'step' => 'Run the statement', 'field' => 'stdout'],
+            'local_output' => ['job' => 'write', 'step' => 'Run the statement on 209', 'field' => 'stdout']]],
 ], 'database_server.close' => [
     'workflow' => 'operation-database-server-close',
     'projection' => DatabaseServerCloseProjection::class,

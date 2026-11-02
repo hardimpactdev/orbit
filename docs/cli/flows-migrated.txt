@@ -3,6 +3,7 @@ database.create
 database.destroy
 database.update
 database.read
+database.write
 database_user.create
 database_server.create
 database_server.destroy

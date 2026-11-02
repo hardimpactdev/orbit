@@ -33,8 +33,7 @@ class DenoShards(unittest.TestCase):
             root = Path(scratch)
             files = root / "extensions/behaviors/operations"
             files.mkdir(parents=True)
-            groups = ((".", 9), ("database", 9), ("process-commands", 9),
-                      ("database/write-effects", 3))
+            groups = ((".", 9), ("database", 9), ("process-commands", 9))
             identifier = 0
             for path, count in groups:
                 directory = files / path

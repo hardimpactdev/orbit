@@ -10,8 +10,8 @@ use App\Support\ValidatedData;
 use XMLReader;
 
 /**
- * One bounded read: the Gateway checks the statement, builds the client argv and its stdin, and shapes the client's
- * output into rows. The client runs over official SSH; no script ships to the host.
+ * One bounded read or write: the Gateway checks a read, builds the client argv and its stdin, and shapes the client's
+ * output into rows or an affected row count. The client runs over official SSH or on 209; no script ships to the host.
  */
 final readonly class DatabaseRead
 {
@@ -94,15 +94,16 @@ final readonly class DatabaseRead
      * @param  array<string, mixed>  $target  container, user and database; or owner and path
      * @return list<string>
      */
-    public static function argv(DatabaseDriver $driver, array $target, string $null): array
+    public static function argv(DatabaseDriver $driver, array $target, string $null, bool $write = false): array
     {
         $text = static fn (string $key): string => ValidatedData::nullableString($target[$key] ?? null) ?? '';
         if ($driver === DatabaseDriver::Sqlite) {
             return ['sudo', '-n', '-u', $text('owner'), '--', 'timeout', '30', 'sh', '-c',
-                'set -o pipefail; sqlite3 -readonly -safe -bail -csv -header -nullvalue "$2" "$1" | head -c '.self::OUTPUT_LIMIT, 'sh', $text('path'), $null];
+                'set -o pipefail; sqlite3 '.($write ? '' : '-readonly ').'-safe -bail -csv -header -nullvalue "$2" "$1" | head -c '.self::OUTPUT_LIMIT,
+                'sh', $text('path'), $null];
         }
 
-        return ['timeout', '30', 'sudo', '-n', 'docker', 'exec', '-i', $text('container'), 'sh', '-c', self::client($driver),
+        return ['timeout', '30', 'sudo', '-n', 'docker', 'exec', '-i', $text('container'), 'sh', '-c', self::client($driver, $write),
             'sh', $text('user'), $text('database'), '127.0.0.1', $driver === DatabaseDriver::Pgsql ? '5432' : '3306', $null];
     }
 
@@ -110,12 +111,54 @@ final readonly class DatabaseRead
      * The client body for `sh -c`, with the user, database, host, port and NULL marker as $1 to $5. Run in a container,
      * or on 209 for a registered external database.
      */
-    public static function client(DatabaseDriver $driver): string
+    public static function client(DatabaseDriver $driver, bool $write = false): string
     {
+        // A write keeps psql's command tag, such as UPDATE 2: it is the affected row count.
         return 'set -o pipefail; '.($driver === DatabaseDriver::Pgsql
-            ? 'IFS= read -r PGPASSWORD && export PGPASSWORD && psql --no-psqlrc --host="$3" --port="$4" --username="$1" --dbname="$2" --quiet --set=ON_ERROR_STOP=1 --csv --pset=null="$5"'
+            ? 'IFS= read -r PGPASSWORD && export PGPASSWORD && psql --no-psqlrc --host="$3" --port="$4" --username="$1" --dbname="$2"'.($write ? '' : ' --quiet').' --set=ON_ERROR_STOP=1 --csv --pset=null="$5"'
             : 'IFS= read -r MYSQL_PWD && export MYSQL_PWD && mysql --protocol=TCP --host="$3" --port="$4" --user="$1" --database="$2" --xml')
             .' | head -c '.self::OUTPUT_LIMIT;
+    }
+
+    /** The statements after the password line for a write: the statement, then its affected row count. */
+    public static function writeStatements(DatabaseDriver $driver, string $sql): string
+    {
+        $statement = rtrim(rtrim($sql), ';');
+
+        return match ($driver) {
+            DatabaseDriver::Mysql => "SET SESSION max_execution_time = 30000;\n{$statement};\nSELECT ROW_COUNT() AS row_count;\n",
+            DatabaseDriver::Pgsql => "SET statement_timeout = '30s';\n{$statement};\n",
+            default => ".timeout 10000\n{$statement};\nSELECT changes() AS row_count;\n",
+        };
+    }
+
+    /**
+     * A write's result: the affected row count from the client's last line, and whether the output reached its bound.
+     *
+     * @return array{backend: string, row_count: int, truncated: bool}
+     */
+    public static function written(DatabaseDriver $driver, string $output, string $null): array
+    {
+        $truncated = strlen($output) >= self::OUTPUT_LIMIT;
+        // The count is the client's last output: psql's command tag, the last XML row, or sqlite3's last line. Rows the
+        // statement itself returned come before it, each result set with its own header.
+        $lines = preg_split('/\R/', trim($output)) ?: [];
+        $last = (string) end($lines);
+        if ($driver === DatabaseDriver::Pgsql) {
+            $count = preg_match('/\A(?:INSERT [0-9]+|UPDATE|DELETE|MERGE|SELECT|COPY|MOVE|FETCH) ([0-9]+)\z/D', $last, $match) === 1 ? (int) $match[1] : 0;
+        } else {
+            if ($driver === DatabaseDriver::Mysql) {
+                [, $records] = self::xml($output);
+                $row = end($records);
+                $last = is_array($row) ? (string) ($row['row_count'] ?? '') : '';
+            }
+            if ($truncated || preg_match('/\A-?[0-9]+\z/D', $last) !== 1) {
+                self::failed();
+            }
+            $count = (int) $last;
+        }
+
+        return ['backend' => 'active', 'row_count' => max(0, $count), 'truncated' => $truncated];
     }
 
     /**

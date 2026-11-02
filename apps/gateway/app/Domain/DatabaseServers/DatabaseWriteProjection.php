@@ -4,67 +4,75 @@ declare(strict_types=1);
 
 namespace App\Domain\DatabaseServers;
 
+use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
+/** One write with the read's client and placement; the result is the affected row count, never rows. */
 final readonly class DatabaseWriteProjection implements DirectOperationProjection
 {
     public function input(Operation $operation): array
     {
-        $id = app(DatabaseIntentSource::class)->ownerId($operation);
-        $intent = $id === null ? null : DatabaseExecutionIntent::recorded($id);
-        $input = $intent?->payload['commands']['database-apply']['input'] ?? [];
-        $driver = $operation->input['driver'] ?? null;
-        if ($operation->kind !== 'database.write' || $operation->target_type !== 'database_connection' || $intent === null
-            || ! in_array($driver, ['mysql', 'pgsql', 'sqlite'], true)) {
-            $this->invalid();
+        $intent = $this->intent($operation);
+        $command = $intent->payload['commands']['database-apply']['input'];
+        $driver = DatabaseDriver::from(ValidatedData::string($operation->input['driver']));
+        $statements = DatabaseRead::writeStatements($driver, ValidatedData::string($command['sql']));
+        $secret = ['vault' => 'orbit-control-inputs', 'key' => 'database-write-intent-'.$intent->id];
+        if (! $operation->status->terminal()) {
+            // MySQL and PostgreSQL read the password from the first stdin line; the statement follows (Q-DBAUTH).
+            $secret = app(SwampCommandStep::class)->executionCopy($secret['vault'], $secret['key'],
+                ($driver === DatabaseDriver::Sqlite ? '' : ValidatedData::string($command['password'])."\n").$statements);
         }
-        $node = Node::query()->findOrFail($operation->node_id);
-        $public = ['connection_id' => $operation->input['connection_id'], 'driver' => $driver,
-            'ssh' => ['host' => $node->wireguard_ip, 'user' => $node->user,
-                'host_keys' => is_string($node->ssh_host_key_type) && is_string($node->ssh_host_key)
-                    ? [$node->ssh_host_key_type.' '.$node->ssh_host_key] : []]];
-        if ($driver === 'sqlite') {
-            $public += ['owner' => ValidatedData::string($input['owner']), 'path' => ValidatedData::string($input['path'])];
-        }
-        $material = array_intersect_key($input, array_flip(['password', 'sql', 'dsn', 'username']));
+        $target = ValidatedData::object($command['target']);
+        $null = ValidatedData::string($command['null']);
+        // A registered external database is written on 209 itself; every other write runs over official SSH.
+        $external = array_key_exists('host', $target);
+        $text = static fn (string $key): string => ! $external ? '' : (is_int($target[$key] ?? null) ? (string) $target[$key] : ValidatedData::string($target[$key] ?? ''));
 
-        return [
-            'intent' => $public,
-            'execution_secrets' => ['database_write' => app(SwampCommandStep::class)->executionCopy(
-                'orbit-control-inputs', 'database-write-intent-'.$intent->id, json_encode($material, JSON_THROW_ON_ERROR),
-            )],
-        ];
+        return ['intent' => ['argv' => $external ? [] : DatabaseRead::argv($driver, $target, $null, write: true),
+            'local' => ['client' => $external ? DatabaseRead::client($driver, write: true) : '', 'user' => $text('user'), 'database' => $text('database'),
+                'host' => $text('host'), 'port' => $text('port'), 'marker' => $external ? $null : ''],
+            'ssh_execution' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($operation->node_id))],
+            'execution_secrets' => ['write' => $secret]];
     }
 
+    /** The native result decides: a failed client is database.query_failed; its last line is the affected row count. */
     public function apply(Operation $operation, array $data): Operation
     {
-        $raw = ValidatedData::object($data['result'] ?? []);
-        $result = [];
-        if (in_array($raw['backend'] ?? null, ['active', 'absent'], true)) {
-            $result['backend'] = $raw['backend'];
-        }
-        if (is_string($raw['error_code'] ?? null) && preg_match('/\A[a-z0-9_.-]{1,100}\z/D', $raw['error_code']) === 1) {
-            $result['error_code'] = $raw['error_code'];
-        }
-        if (is_int($raw['row_count'] ?? null) && $raw['row_count'] >= 0) {
-            $result['row_count'] = $raw['row_count'];
-        }
-        if (is_bool($raw['truncated'] ?? null)) {
-            $result['truncated'] = $raw['truncated'];
+        $result = ['error_code' => 'database.query_failed'];
+        if (($data['status'] ?? null) === 'failed') {
+            $data = [...$data, 'error_code' => 'database.query_failed'];
+        } elseif (($data['status'] ?? null) === 'succeeded') {
+            $command = $this->intent($operation)->payload['commands']['database-apply']['input'];
+            $captured = ValidatedData::object($data['result'] ?? []);
+            $output = ValidatedData::nullableString($captured['output'] ?? $captured['local_output'] ?? null) ?? '';
+            try {
+                $result = DatabaseRead::written(DatabaseDriver::from(ValidatedData::string($operation->input['driver'])), $output,
+                    ValidatedData::string($command['null']));
+            } catch (ResourceOperationException) {
+                $data = [...$data, 'status' => 'failed', 'error_code' => 'database.write_outcome_unknown',
+                    'failure' => ['failed_step' => 'Run the statement', 'stderr_recorded' => true]];
+                $result = ['error_code' => 'database.write_outcome_unknown'];
+            }
         }
 
         return app(DirectOperation::class)->project($operation, $data, $result);
     }
 
-    private function invalid(): never
+    private function intent(Operation $operation): DatabaseExecutionIntent
     {
-        throw new ResourceOperationException('database.write_intent_invalid', 'The write does not match its admitted Connection and Node.', 422);
+        $id = app(DatabaseIntentSource::class)->ownerId($operation);
+        if ($operation->kind !== 'database.write' || $operation->target_type !== 'database_connection' || $id === null) {
+            throw new ResourceOperationException('database.write_intent_invalid', 'The write does not match its admitted Connection and Node.', 422);
+        }
+
+        return DatabaseExecutionIntent::recorded($id);
     }
 }

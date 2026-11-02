@@ -96,3 +96,26 @@ it('allows only listed read verbs and functions on MySQL and PostgreSQL', functi
     [DatabaseDriver::Mysql, 'SELECT LOAD_FILE(\'/etc/passwd\')', false],
     [DatabaseDriver::Mysql, 'SELECT `insert` FROM t', true],
 ]);
+
+it('reads the affected row count each client prints after a write', function (DatabaseDriver $driver, string $output, int $count): void {
+    expect(DatabaseRead::written($driver, $output, 'N7'))->toBe(['backend' => 'active', 'row_count' => $count, 'truncated' => false]);
+})->with([
+    // The outputs mysql 8.4, psql 18 and sqlite3 print for the write statements.
+    [DatabaseDriver::Mysql, "<?xml version=\"1.0\"?>\n\n<resultset statement=\"SELECT ROW_COUNT() AS row_count\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n  <row>\n\t<field name=\"row_count\">2</field>\n  </row>\n</resultset>\n", 2],
+    [DatabaseDriver::Pgsql, "SET\nUPDATE 2\n", 2],
+    [DatabaseDriver::Pgsql, "SET\nid\n7\nINSERT 0 1\n", 1],
+    [DatabaseDriver::Pgsql, "SET\nCREATE TABLE\n", 0],
+    [DatabaseDriver::Sqlite, "row_count\n2\n", 2],
+    [DatabaseDriver::Mysql, "<?xml version=\"1.0\"?>\n<resultset statement=\"SELECT ROW_COUNT() AS row_count\"><row><field name=\"row_count\">-1</field></row></resultset>\n", 0],
+]);
+
+it('refuses a write whose row count it cannot read', function (): void {
+    DatabaseRead::written(DatabaseDriver::Sqlite, '', 'N7');
+})->throws(ResourceOperationException::class);
+
+it('writes without the read-only flags', function (): void {
+    expect(implode(' ', DatabaseRead::argv(DatabaseDriver::Sqlite, ['owner' => 'app', 'path' => '/srv/app/db.sqlite'], 'N7', write: true)))
+        ->toContain('sqlite3 -safe')->not->toContain('-readonly')
+        ->and(DatabaseRead::client(DatabaseDriver::Pgsql, write: true))->not->toContain('--quiet')
+        ->and(DatabaseRead::writeStatements(DatabaseDriver::Sqlite, 'DELETE FROM t;'))->toBe(".timeout 10000\nDELETE FROM t;\nSELECT changes() AS row_count;\n");
+});

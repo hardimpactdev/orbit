@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: coordinator 2026-11-02. Every effect runs in Swamp; same path as database.read. The step on 209 connects to the Database server over WireGuard with the credential from the vault; no SSH hop back to the Gateway Node. SQLite is Node work over @swamp/ssh (R4).
+  %% Target design: coordinator 2026-11-02. Every effect runs in Swamp; same path as database.read. Decided 2026-11-02 (orchestrator, database.read): a Database server's connection runs in its container (Q-DBAUTH), an external connection from 209 with the swamp role's clients, SQLite with sqlite3 on its Node (R4). No shipped script.
   %% status: draft
   %% command: database:query
   %% kind: database.write
@@ -29,7 +29,7 @@ sequenceDiagram
   %%> - the driver is mysql, pgsql or sqlite; redis has no SQL
   %%> - for sqlite: the connection has a Node, or the Gateway refuses with `database.sqlite_node_required`
   %%> Where the credential lives:
-  %%> - the Gateway stores the connection's password encrypted, and keeps its execution copy in the Swamp vault under the connection's key, `database-connection-shop` (R3)
+  %%> - the Gateway stores the connection's password encrypted; at start it copies the password line and the statement into the Swamp vault as one value, `database-write-intent-5171` (R3)
   %%> - SQLite has no credential
   %%> Result:
   %%> - the idempotency receipt is recorded before anything is sent
@@ -38,30 +38,28 @@ sequenceDiagram
   %%> What it does:
   %%> - starts one Swamp run on serve (Node 209)
   %%> Inputs:
-  %%> - the statement, the driver, and the server's WireGuard address and port
-  %%> - the vault key name of the credential, never the value
-  %%> - for sqlite: the file path, its owner, and Node 12's address and SSH host keys
+  %%> - the client argv the Gateway built for the driver, and the host's address and SSH host keys
+  %%> - the vault key name of the password and statement, never the value
   GW-->>CLI: 202 Accepted<br/>task #5171
   %%> What you get:
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI waits with progress, as for other tasks; a write is a short run, usually a few seconds
-  alt mysql or pgsql
-    SW->>N: Run the statement<br/>SQL client over WireGuard · 30 s
-    %%> Who can reach the server:
-    %%> - a Database server binds only Node 12's WireGuard and LAN addresses; 209 is a WireGuard peer, so the step reaches the port directly
+  alt a Database server or SQLite
+    SW->>N: Run the statement<br/>@swamp/ssh · one client
     %%> How:
-    %%> - the step on 209 reads the credential with `vault.get` and opens the connection's own login, never the server's root login
-    %%> - multiple statements are off in the driver, and the statement has a 30 s timeout
-    %%> Not included:
-    %%> - no SSH hop: the old run went from 209 back to the Gateway Node to run the statement there
-  else sqlite
-    SW->>N: Run the statement<br/>@swamp/ssh · sqlite3
+    %%> - Swamp reaches the host over SSH from 209 with the official `@swamp/ssh` behavior; the SSH identity comes from the `swamp` role
+    %%> - stdin is one vault value: the password as the first line, then the statement (Q-DBAUTH); SQLite has no password line
+    %%> Where it runs:
+    %%> - on a Database server: one `docker exec -i` into its container on Node 12, as the connection's own user, never root
+    %%> - on SQLite: `sqlite3 -safe` on the file's Node, as the file's owner; it cannot attach, write other files or run shell commands
+  else a registered external database
+    SW->>N: Run the statement on 209<br/>mysql or psql client
     %%> How:
-    %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior; the SSH identity comes from the `swamp` role
-    %%> What it does:
-    %%> - runs the one statement as the file's owner and returns the changed row count
+    %%> - the `mysql` or `psql` client on 209, which the `swamp` role installs; 209 reaches the host directly, with no SSH hop
   end
+  %%> Both:
+  %%> - a 30 s limit; the client prints the affected row count after the statement, and its output stops at 64 KiB
   alt the statement succeeds
     N-->>SW: affected row count
     %%> Returns:
