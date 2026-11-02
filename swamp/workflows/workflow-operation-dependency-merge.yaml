@@ -173,7 +173,7 @@ jobs:
       behaviorName: ${{ "dependency-merge-files" }}
       methodName: execute
       inputs:
-        run: timeout 60 gh api --paginate --slurp "$ORBIT_PATH" >"$ORBIT_DIRECTORY/files.json" 2>/dev/null
+        run: timeout 60 gh api --paginate "$ORBIT_PATH" >"$ORBIT_DIRECTORY/files.json" 2>/dev/null
         env:
           GH_TOKEN: ${{ vault.get(inputs.execution_secrets.read_token.vault, inputs.execution_secrets.read_token.key) }}
           GH_CONFIG_DIR: ${{ "/tmp/orbit-dependency-merge-" + run.id + "-gh" }}
@@ -242,7 +242,7 @@ jobs:
       behaviorName: ${{ "dependency-merge-checks" }}
       methodName: execute
       inputs:
-        run: timeout 60 gh api --paginate --slurp "$ORBIT_PATH" >"$ORBIT_DIRECTORY/checks.json" 2>/dev/null
+        run: timeout 60 gh api --paginate "$ORBIT_PATH" >"$ORBIT_DIRECTORY/checks.json" 2>/dev/null
         env:
           GH_TOKEN: ${{ vault.get(inputs.execution_secrets.read_token.vault, inputs.execution_secrets.read_token.key) }}
           GH_CONFIG_DIR: ${{ "/tmp/orbit-dependency-merge-" + run.id + "-gh" }}

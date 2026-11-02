@@ -1,5 +1,13 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { Input, inspect, merged, plan, registry, validate } from "./mod.ts";
+import {
+    Input,
+    inspect,
+    merged,
+    parsePages,
+    plan,
+    registry,
+    validate,
+} from "./mod.ts";
 import {
     fixtureInput,
     head,
@@ -40,14 +48,16 @@ Deno.test("native private evidence is shaped without tokens, HTTP or callbacks",
                 `/actions/runs?head_sha=${head}&event=pull_request&per_page=100`
             ],
         );
-        await write("files", [
+        await write(
+            "files",
             observations[root + "/pulls/3/files?per_page=100&page=1"],
-        ]);
-        await write("checks", [
+        );
+        await write(
+            "checks",
             observations[
                 root + `/commits/${head}/check-runs?per_page=100&page=1`
             ],
-        ]);
+        );
         const planned = await plan(args);
         for (const request of planned.requests) {
             await write(
@@ -73,5 +83,19 @@ Deno.test("native private evidence is shaped without tokens, HTTP or callbacks",
         );
     } finally {
         await Deno.remove(directory, { recursive: true });
+    }
+});
+
+Deno.test("paginated native replies retain page boundaries and reject truncated evidence", async () => {
+    const page = [{ value: 'brackets ][ }{ and a quote " and a slash \\' }];
+    assertEquals(
+        parsePages(
+            JSON.stringify(page, null, 2) + "\n" +
+                JSON.stringify({ rows: page }),
+        ),
+        [page, { rows: page }],
+    );
+    for (const text of ["", "[]garbage", "[{", '[{"value":"unterminated}']) {
+        await assertRejects(async () => parsePages(text));
     }
 });

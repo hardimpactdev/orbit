@@ -53,7 +53,10 @@ if method=='PUT':
     print(json.dumps({'merged':True,'sha':'c'*40}))
 else:
     assert os.environ['GH_TOKEN']==os.environ['FIXTURE_READ']
-    print(json.dumps(data['rows'][endpoint]))
+    assert '--slurp' not in args
+    if '--paginate' in args:
+        for page in data['rows'][endpoint]:print(json.dumps(page))
+    else:print(json.dumps(data['rows'][endpoint]))
 ''')
         gh.chmod(0o755)
         self.native_env.update({'PATH': str(tools) + ':' + os.environ['PATH'], 'FIXTURE_STATE': str(self.state), 'FIXTURE_READ': secrets.token_urlsafe(32), 'FIXTURE_WRITE': secrets.token_urlsafe(32)})

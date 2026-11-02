@@ -29,15 +29,44 @@ type Context = {
 const save = async (ctx: Context, value: unknown) => ({
     dataHandles: [await ctx.writeResource("public", "output", value)],
 });
+/** gh --paginate emits separate JSON documents, including pretty-printed pages. */
+export function parsePages(text: string): unknown[] {
+    const pages: unknown[] = [];
+    let start = -1, depth = 0, quoted = false, escaped = false;
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        if (start < 0) {
+            if (/\s/.test(char)) continue;
+            if (char !== "[" && char !== "{") throw new Error("Invalid page");
+            start = i;
+        }
+        if (quoted) {
+            if (escaped) escaped = false;
+            else if (char === "\\") escaped = true;
+            else if (char === '"') quoted = false;
+        } else if (char === '"') quoted = true;
+        else if (char === "[" || char === "{") depth++;
+        else if (char === "]" || char === "}") {
+            if (--depth === 0) {
+                pages.push(JSON.parse(text.slice(start, i + 1)));
+                start = -1;
+            }
+        }
+    }
+    if (start >= 0 || !pages.length) throw new Error("Incomplete pages");
+    return pages;
+}
 async function read(
     directory: string,
     name: string,
     code = "dependency_merge.contents_unreadable",
+    paginated = false,
 ): Promise<unknown> {
     try {
         const path = `${directory}/${name}.json`;
         if ((await Deno.stat(path)).size > 8 * 1024 * 1024) throw new Error();
-        return JSON.parse(await Deno.readTextFile(path));
+        const text = await Deno.readTextFile(path);
+        return paginated ? parsePages(text) : JSON.parse(text);
     } catch {
         throw new Error(code);
     }
@@ -92,6 +121,7 @@ export async function plan(args: Args) {
         args.directory,
         "files",
         "dependency_merge.files_unreadable",
+        true,
     );
     requirePolicy(
         Array.isArray(files) && files.length <= 30,
@@ -120,6 +150,7 @@ export async function plan(args: Args) {
         args.directory,
         "checks",
         "dependency_merge.checks_unreadable",
+        true,
     );
     requirePolicy(
         Array.isArray(checks) && checks.length <= 30,
@@ -269,7 +300,7 @@ export async function merged(args: Args & { exit_code: number }) {
 /** Typed private observations and policy only. Native steps own all HTTP and cleanup. */
 export const behavior = {
     type: "@nckrtl/dependency-merge-data",
-    version: "2026.11.02.2",
+    version: "2026.11.02.3",
     resources: {
         public: {
             description: "Public merge plans and receipt",

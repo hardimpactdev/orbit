@@ -63,7 +63,9 @@ sequenceDiagram
   %%> What it does:
   %%> - reads every allowed changed file at base and head, and its root manifest, in parallel
   Note over SW: Plan registry reads
-  SW->>GH: Read registry records
+  Note over SW: Read registry records
+  %%> What it does:
+  %%> - reads public Packagist metadata with bounded curl commands; no GitHub token reaches the registry
   Note over SW: Check the dependency diff
   %%> Refuses:
   %%> - changes outside existing dependency versions, breaking root ranges, untrusted lock sources or unreachable packages
