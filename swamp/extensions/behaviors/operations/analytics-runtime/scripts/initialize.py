@@ -55,7 +55,10 @@ def initialize(phase, definition, environment, run_id):
 if __name__ == "__main__":
     try:
         result = initialize(
-            sys.argv[1], json.loads(sys.argv[2]), json.load(sys.stdin), sys.argv[3]
+            sys.argv[1],
+            json.loads(sys.argv[2]),
+            dict(line.split("=", 1) for line in sys.stdin.read().splitlines()),
+            sys.argv[3],
         )
     except (ValueError, TypeError, KeyError, IndexError, OSError, RuntimeError):
         print('{"error_code":"analytics.initialization_failed"}')

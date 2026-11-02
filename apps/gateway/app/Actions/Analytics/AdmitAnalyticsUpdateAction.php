@@ -9,6 +9,7 @@ use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\PlausibleProcess;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Processes\ProcessLifecycleInput;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
@@ -50,6 +51,7 @@ final readonly class AdmitAnalyticsUpdateAction
         $target = $this->targets->forInstallation($process);
         $environment = ValidatedData::stringMap($process->runtime_config['environment'] ?? []);
         ksort($environment);
+        $environmentContent = app(ProcessLifecycleInput::class)->dockerEnvironment($environment);
         $before = $this->docker->containerInput($process, $target);
         unset($before['environment']);
         $before += ['process_id' => $process->id, 'container' => $this->docker->containerName($process),
@@ -63,7 +65,7 @@ final readonly class AdmitAnalyticsUpdateAction
         $after = $this->docker->containerInput($changed, $target);
         unset($after['environment']);
 
-        return DB::transaction(function () use ($version, $assignment, $node, $process, $before, $after, $changed, $target, $environment): Operation {
+        return DB::transaction(function () use ($version, $assignment, $node, $process, $before, $after, $changed, $target, $environmentContent): Operation {
             $operation = $this->operations->execute('analytics.update', 'node', $node->id, $node->id,
                 ['version' => $version, 'assignment_id' => $assignment->id, 'process_id' => $process->id,
                     'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($target->node),
@@ -72,7 +74,7 @@ final readonly class AdmitAnalyticsUpdateAction
                     'previous_version' => $this->settings->version($node)],
                 'operator', request()->attributes->getString('orbit.request_id'));
             if ($operation->wasRecentlyCreated) {
-                $reference = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'process-create-operation-'.$operation->id, json_encode($environment, JSON_THROW_ON_ERROR));
+                $reference = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'process-create-operation-'.$operation->id, $environmentContent);
                 $operation->update(['input' => [...$operation->input, 'execution_secrets' => ['environment' => $reference]]]);
             }
 

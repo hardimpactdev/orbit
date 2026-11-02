@@ -46,12 +46,18 @@ async function execute(
         if (["health", "restore"].includes(state.mode)) {
             fail("fixture.health_failed");
         }
+    } else if (argv.includes("ls")) {
+        stdout = state.present ? `fixture ${state.spec}\n` : "";
     } else if (argv.includes("--format")) {
         stdout = argv.includes("{{.State.Status}}")
             ? `${state.state}\n`
             : `true\nprocess\n9\n${state.spec}\n${state.state}\n`;
-    } else if (argv.includes("-c")) {
-        const install = JSON.parse(argv.at(-1)!).installation;
+    } else if (argv.includes("create")) {
+        const install = {
+            spec: argv.find((value) =>
+                value.startsWith("orbit.process.spec=")
+            )!.split("=")[1],
+        };
         const tag = install.spec[0];
         state.calls.push("create:" + tag);
         if (
@@ -63,7 +69,10 @@ async function execute(
         state.state = "created";
     } else if (argv.includes("start")) state.state = "running";
     else if (argv.includes("stop")) state.state = "exited";
-    else if (ctx.globalArgs.ensure === "absent") {
+    else if (
+        ctx.globalArgs.ensure === "absent" &&
+        typeof ctx.globalArgs.name === "string"
+    ) {
         if (method === "apply" && state.present) {
             state.calls.push("remove");
             state.present = false;

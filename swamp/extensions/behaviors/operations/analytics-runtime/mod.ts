@@ -46,6 +46,8 @@ export function plan(raw: unknown, directory: string) {
             spec: d.spec,
             retired: null,
             has_environment: true,
+            environment_path:
+                `/etc/orbit/processes/${i.process_id}/${d.spec}.env`,
             definition: {
                 image: d.image,
                 command: d.command,
