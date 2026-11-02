@@ -10,7 +10,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: '${{ "task-vm-image-build" }}'
+      behaviorName: '${{ "task-vm-image-build-" + string(inputs.node_id) }}'
       methodName: admit
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -29,7 +29,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: '${{ "task-vm-image-build" }}'
+      behaviorName: '${{ "task-vm-image-build-" + string(inputs.node_id) }}'
       methodName: step
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -42,7 +42,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: '${{ "task-vm-image-build" }}'
+      behaviorName: '${{ "task-vm-image-build-" + string(inputs.node_id) }}'
       methodName: step
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -59,7 +59,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: '${{ "task-vm-image-build" }}'
+      behaviorName: '${{ "task-vm-image-build-" + string(inputs.node_id) }}'
       methodName: step
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -76,7 +76,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: '${{ "task-vm-image-build" }}'
+      behaviorName: '${{ "task-vm-image-build-" + string(inputs.node_id) }}'
       methodName: step
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -93,7 +93,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: '${{ "task-vm-image-build" }}'
+      behaviorName: '${{ "task-vm-image-build-" + string(inputs.node_id) }}'
       methodName: step
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -110,7 +110,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: '${{ "task-vm-image-build" }}'
+      behaviorName: '${{ "task-vm-image-build-" + string(inputs.node_id) }}'
       methodName: step
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -127,7 +127,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: '${{ "task-vm-image-build" }}'
+      behaviorName: '${{ "task-vm-image-build-" + string(inputs.node_id) }}'
       methodName: step
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -144,7 +144,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: '${{ "task-vm-image-build" }}'
+      behaviorName: '${{ "task-vm-image-build-" + string(inputs.node_id) }}'
       methodName: step
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -161,7 +161,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: '${{ "task-vm-image-build" }}'
+      behaviorName: '${{ "task-vm-image-build-" + string(inputs.node_id) }}'
       methodName: step
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -178,7 +178,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: '${{ "task-vm-image-build" }}'
+      behaviorName: '${{ "task-vm-image-build-" + string(inputs.node_id) }}'
       methodName: step
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -240,7 +240,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: '${{ "task-vm-image-build" }}'
+      behaviorName: '${{ "task-vm-image-build-" + string(inputs.node_id) }}'
       methodName: step
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -257,7 +257,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: '${{ "task-vm-image-build" }}'
+      behaviorName: '${{ "task-vm-image-build-" + string(inputs.node_id) }}'
       methodName: step
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -274,7 +274,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: '${{ "task-vm-image-build" }}'
+      behaviorName: '${{ "task-vm-image-build-" + string(inputs.node_id) }}'
       methodName: step
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -324,7 +324,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: '${{ "task-vm-image-build" }}'
+      behaviorName: '${{ "task-vm-image-build-" + string(inputs.node_id) }}'
       methodName: step
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -341,7 +341,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: '${{ "task-vm-image-build" }}'
+      behaviorName: '${{ "task-vm-image-build-" + string(inputs.node_id) }}'
       methodName: step
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -358,7 +358,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: '${{ "task-vm-image-build" }}'
+      behaviorName: '${{ "task-vm-image-build-" + string(inputs.node_id) }}'
       methodName: step
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -375,7 +375,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: '${{ "task-vm-image-build" }}'
+      behaviorName: '${{ "task-vm-image-build-" + string(inputs.node_id) }}'
       methodName: step
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -392,7 +392,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: '${{ "task-vm-image-build" }}'
+      behaviorName: '${{ "task-vm-image-build-" + string(inputs.node_id) }}'
       methodName: step
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -409,7 +409,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: '${{ "task-vm-image-build" }}'
+      behaviorName: '${{ "task-vm-image-build-" + string(inputs.node_id) }}'
       methodName: step
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -436,7 +436,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-image-build'
-      behaviorName: '${{ "task-vm-image-build" }}'
+      behaviorName: '${{ "task-vm-image-build-" + string(inputs.node_id) }}'
       methodName: cleanup
       inputs:
         operation_id: ${{ inputs.operation_id }}
