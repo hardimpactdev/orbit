@@ -1,5 +1,5 @@
 import { z } from "npm:zod@4.4.3";
-import { redactText } from "../task-repository/program.ts";
+import { redactText } from "../../_lib/public_output.ts";
 
 const Id = z.number().int().positive();
 const Sha = z.string().regex(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/);
@@ -163,11 +163,10 @@ const USAGE_KEYS = [
     "calls",
     "peakContext",
 ] as const;
-const HEX_CREDENTIAL = /(?<![A-Za-z0-9])[a-fA-F0-9]{64}(?![A-Za-z0-9])/g;
 
 /** The repository redaction rule, plus the task VM's 32-byte hex Pi and router credentials. */
 export function redactTurnText(raw: string): string {
-    return redactText(raw.replace(HEX_CREDENTIAL, "[REDACTED]"));
+    return redactText(raw);
 }
 
 function publicValue(value: unknown): unknown {

@@ -59,9 +59,7 @@ class NativeTurn(harness.NativeTestCase):
         # turn.ts and the repository redaction rule it imports, with that rule's imports.
         for name in [
             "operations/tasks/turn.ts",
-            "operations/task-repository/program.ts",
-            "operations/task-repository/input.ts",
-            "_lib/repository_analysis.ts",
+            "_lib/public_output.ts",
         ]:
             module = self.repo / "extensions/behaviors" / name
             module.parent.mkdir(parents=True, exist_ok=True)
