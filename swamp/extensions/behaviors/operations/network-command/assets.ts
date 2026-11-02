@@ -11,37 +11,11 @@ const Policy = PeerDnsInput.extend({
     public_key: PublicKey,
     domains: Domains,
 });
-const Peer = z.object({
-    server_public_key: PublicKey,
-    endpoint: z.string().regex(/^[A-Za-z0-9.[\]:-]+:[0-9]+$/),
-    address: z.cidrv4(),
-    subnet: z.cidrv4(),
-    dns_server: z.ipv4(),
-    domains: Domains,
-    operator_dns: z.ipv4().nullable(),
-    retain: z.boolean(),
-}).strict();
-const Actions = {
-    prepare_key: z.object({ existing_key: PublicKey.nullable() }).strict(),
-    hub_peer: z.object({
-        existing_key: PublicKey.nullable(),
-        public_key: PublicKey,
-        address: z.cidrv4(),
-    }).strict(),
-    peer_config: z.object({ public_key: PublicKey, peer: Peer }).strict(),
-    apply_peer: z.object({}).strict(),
-    dns_inspect: z.object({ server: z.ipv4() }).strict(),
-    dns_persist: Policy,
-};
-const Action = z.enum(
-    Object.keys(Actions) as [keyof typeof Actions, ...(keyof typeof Actions)[]],
-);
 const Observation = Inspection.extend({
     old_link: z.string().regex(/^[A-Za-z0-9_.:-]+$/),
     public_key: PublicKey,
 }).strict();
 type Context = {
-    extensionFile(name: string): string;
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
 };
 async function save(ctx: Context, spec: string, value: unknown) {
@@ -52,20 +26,67 @@ export function publicKey(
     existing: string | null,
     other: string[],
 ) {
-    const key =
-        z.object({ public_key: PublicKey }).strict().parse(JSON.parse(stdout))
-            .public_key;
+    const key = PublicKey.parse(stdout.trim());
     if ((existing !== null && key !== existing) || other.includes(key)) {
         throw new Error("vpn.peer_key_mismatch");
     }
     return key;
+}
+/** The read step prints six sections: public key, all resolver servers, orbit domains, orbit default route, the DNS marker, the hook. */
+export const INSPECT = [
+    "wg show orbit public-key",
+    "resolvectl dns",
+    "resolvectl domain orbit",
+    "resolvectl default-route orbit",
+    "{ cat /etc/wireguard/orbit.dns-link 2>/dev/null || true; }",
+    '{ grep -E "^PostUp[[:space:]]*=[[:space:]]*resolvectl dns %i " /etc/wireguard/orbit.conf || true; }',
+].join(" && echo @@ && ");
+const ip = (raw: string) => {
+    const value = raw.split(/[%#]/)[0];
+    return z.ipv4().safeParse(value).success ||
+            z.ipv6().safeParse(value).success
+        ? value
+        : null;
+};
+const local = (value: string) => /^(127\.|0\.0\.0\.0$|::1?$)/.test(value);
+export function inspection(stdout: string, server: string) {
+    const parts = stdout.split(/^@@$/m).map((part) => part.trim());
+    if (parts.length !== 6) {
+        throw new Error("wireguard.peer_dns_state_unsupported");
+    }
+    const [key, servers, domains, route, state, hooks] = parts;
+    const fields = state.split("\n");
+    const link = state ? fields[0] : "orbit";
+    if (!/^[A-Za-z0-9_.:-]+$/.test(link)) {
+        throw new Error("wireguard.peer_dns_state_unsupported");
+    }
+    const lines = servers.split("\n");
+    const uplink = lines.some((line) =>
+        /^(Global|Link [0-9]+ \([^)]+\)):/.test(line) &&
+        !/^Link [0-9]+ \(orbit\):/.test(line) &&
+        line.slice(line.indexOf(":") + 1).trim().split(/\s+/).some((raw) => {
+            const value = ip(raw);
+            return value !== null && !local(value) &&
+                ![server, fields[1] ?? ""].includes(value);
+        })
+    );
+    return Observation.parse({
+        state,
+        hooks,
+        dns: lines.find((line) => /^Link [0-9]+ \(orbit\):/.test(line)) ?? "",
+        domains,
+        default_route: route,
+        uplink,
+        old_link: link,
+        public_key: key,
+    });
 }
 export function dnsDecision(
     stdout: string,
     policy: z.infer<typeof Policy>,
     requireUplink = true,
 ) {
-    const observed = Observation.parse(JSON.parse(stdout));
+    const observed = inspection(stdout, policy.server);
     if (observed.public_key !== policy.public_key) {
         throw new Error("vpn.peer_key_mismatch");
     }
@@ -82,7 +103,7 @@ export function dnsResult(
     policy: z.infer<typeof Policy>,
     requireUplink = true,
 ) {
-    const observed = Observation.parse(JSON.parse(stdout));
+    const observed = inspection(stdout, policy.server);
     if (
         observed.public_key !== policy.public_key ||
         (requireUplink && !observed.uplink) ||
@@ -90,17 +111,13 @@ export function dnsResult(
     ) {
         throw new Error("vpn.peer_dns_reconcile_failed");
     }
-    return Inspection.parse(observed);
+    const { old_link: _link, public_key: _key, ...result } = observed;
+    return Inspection.parse(result);
 }
 export const behavior = {
     type: "@nckrtl/network-command",
-    version: "2026.11.01.1",
+    version: "2026.11.02.1",
     resources: {
-        assets: {
-            schema: z.object({ script_body: z.string() }).strict(),
-            lifetime: "1d",
-            garbageCollection: 10,
-        },
         key: {
             schema: z.object({ public_key: PublicKey }).strict(),
             lifetime: "1d",
@@ -120,35 +137,6 @@ export const behavior = {
         },
     },
     methods: {
-        read: {
-            description:
-                "Bind public input to one shipped host action; no command or transport execution",
-            arguments: z.object({
-                action: Action,
-                input: z.record(z.string(), z.unknown()),
-            }).strict(),
-            execute: async (
-                args: { action: keyof typeof Actions; input: unknown },
-                ctx: Context,
-            ) => {
-                const input = Actions[args.action].parse(args.input);
-                const common = await Deno.readTextFile(
-                    ctx.extensionFile("scripts/common.py"),
-                );
-                const source = await Deno.readTextFile(
-                    ctx.extensionFile("scripts/" + args.action + ".py"),
-                );
-                const body = common + "\n" +
-                    source.replace(/^from common import .*\n/m, "");
-                return await save(ctx, "assets", {
-                    script_body: body.replace(
-                        "NETWORK_INPUT = None",
-                        "NETWORK_INPUT = json.loads(" +
-                            JSON.stringify(JSON.stringify(input)) + ")",
-                    ),
-                });
-            },
-        },
         key: {
             description:
                 "Validate the public prepared key before hub publication",

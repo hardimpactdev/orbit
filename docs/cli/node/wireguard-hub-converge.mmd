@@ -51,12 +51,18 @@ sequenceDiagram
   SW->>N: Write the hub config<br/>@swamp/cfgmgmt/file · orbit.conf
   %%> What it does:
   %%> - writes the Gateway-rendered wg-quick file (0600, root); its `PostUp` reads the key file, so the file holds no secret
-  SW->>N: Write the peer list<br/>@swamp/cfgmgmt/file · orbit-peers
+  %%> - it holds no peer: a second `PostUp` loads every file in `/etc/wireguard/orbit-peers.d` when the tunnel starts
+  SW->>N: Write the peer files<br/>@swamp/cfgmgmt/file · one per Node
   %%> What it does:
-  %%> - writes only the `[Peer]` sections, in the plain `wg` format; runs beside the hub config
-  SW->>N: Load the peers<br/>wg syncconf · key composed on Node
+  %%> - writes one `[Peer]` file per Node, `orbit-peers.d/<node id>.conf`, beside the hub config
+  %%> Why one file per peer:
+  %%> - a run that adds one Node writes only that Node's file, so runs that overlap never drop each other's peers
+  SW->>N: Remove stale peer files<br/>find -delete
   %%> What it does:
-  %%> - one command composes the `syncconf` input on the Node at apply time: `PrivateKey` from `orbit.key`, the port, then the peers file
+  %%> - deletes peer files of Nodes that are gone; a Node still provisioning keeps its file, because its own run may be adding it
+  SW->>N: Apply the peers<br/>wg syncconf · key composed on Node
+  %%> What it does:
+  %%> - one command composes the `syncconf` input on the Node at apply time: `PrivateKey` from `orbit.key`, the port, then every peer file
   %%> - new peers are added and stale ones removed; unchanged peers keep their sessions, and the interface keeps its key
   %%> Why the key is composed in:
   %%> - `wg syncconf` drops the interface key when its input has none (proved on the topology, 2026-11-02)
@@ -65,12 +71,12 @@ sequenceDiagram
   SW->>N: Check the hub service<br/>@swamp/cfgmgmt/systemd check
   %%> What it does:
   %%> - checks `wg-quick@orbit` is running and enabled
-  SW->>N: Read the live peers<br/>wg show orbit peers
+  SW->>N: Read the peers again<br/>wg show orbit peers
   %%> What it does:
   %%> - reads the live peer list for the end check
   Note over SW: Confirm the hub<br/>native assert
   %%> What it does:
-  %%> - fails the run unless the service check is compliant and the live peers are exactly the admitted ones
+  %%> - fails the run unless the service check is compliant and every admitted peer is live
   %%> No rollback:
   %%> - a failed step leaves the hub as it is; a rerun writes and loads the same files again
   alt the hub took the peer list

@@ -36,7 +36,7 @@ return ['node.worker_known_hosts' => [
     'workflow' => 'operation-node-network-converge',
     'projection' => NodeNetworkProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'network', 'step' => 'result'],
+    'terminal_result' => ['job' => 'network', 'step' => 'Check the network'],
 ], 'node.agent_rekey' => [
     'workflow' => 'operation-node-agent-rekey',
     'projection' => NodeAgentRekeyProjection::class,

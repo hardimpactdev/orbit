@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS and R1-R4, agent-observer-swamp-acts, single-swamp-node. docs/reference/private-dns.md#resolver-selection.
+  %% Tightened: flow-tighten 2026-11-02, rules 6, 20, 22 (persist and set the policy in one step; the read's match acts as a guard).
   %% status: draft
   %% command: none · routing domains change
   %% kind: fleet.peer_dns
@@ -29,32 +30,38 @@ sequenceDiagram
   %%> Inputs:
   %%> - the routing domains, such as `~orbit`, and the DNS server's WireGuard address
   %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
-  SW->>N: Read the DNS policy<br/>resolvectl status orbit
+  SW->>N: Read the DNS policy<br/>wg show · resolvectl
   %%> How:
-  %%> - Swamp reaches Node 12 over SSH from 209, with `@swamp/ssh`
+  %%> - Swamp reaches the Node over SSH from 209, with `@swamp/ssh`
   %%> What it does:
-  %%> - reads the DNS server, routing domains and default route of the `orbit` link, and which link held the policy before
-  %%> When it matches:
-  %%> - the next steps are skipped and the task succeeds without a change
-  SW->>N: Save the policy<br/>networkd drop-in for orbit
+  %%> - one read command prints the public key, resolver servers, `orbit` domains and default route, the DNS marker and the hook line
+  Note over SW: Decide the DNS change<br/>typed check
   %%> What it does:
-  %%> - writes the policy to the `orbit` link's configuration, so it survives a reboot
-  %%> - no tunnel restart
-  SW->>N: Set the DNS policy<br/>resolvectl dns · domain
+  %%> - compares the read with the admitted policy; a match skips the DNS writes below
+  %%> - refuses a live key that is not the prepared one
+  SW->>N: Keep the DNS hook<br/>@swamp/cfgmgmt/line
   %%> What it does:
-  %%> - sets the DNS server and routing domains on the `orbit` link, with `default-route no`, so only private domains go to Orbit's DNS
+  %%> - keeps the Gateway-rendered `PostUp = resolvectl …` line in `orbit.conf`, so the policy returns when the tunnel starts
+  %%> - leaves every other line of the file as it is
+  SW->>N: Write the DNS marker<br/>@swamp/cfgmgmt/file · 0600
+  %%> What it does:
+  %%> - records the link, server and domains in `/etc/wireguard/orbit.dns-link`
+  SW->>N: Set the DNS policy<br/>resolvectl dns · domain · route
+  %%> What it does:
+  %%> - one command sets the server and routing domains on `orbit` with `default-route no`; only Orbit names go to VPN DNS
   opt policy was on another link
-    SW->>N: Clear the old link<br/>dns · domains · uplink route
+    SW->>N: Clear the old link<br/>dns · domains · networkctl
     %%> When:
     %%> - only when an earlier release put the policy on another link
     %%> What it does:
-    %%> - removes the old DNS server and domains there, and gives the uplink back its default route
+    %%> - one command clears the old server and domains there, gives the uplink its default route back and reconfigures it
   end
-  SW->>N: Check resolution<br/>resolve a private name
+  SW->>N: Read the DNS policy again<br/>wg show · resolvectl
   %%> What it does:
-  %%> - resolves a private name through the `orbit` link and a public name through the uplink
-  %%> Why:
-  %%> - the policy only counts as applied when Node 12 resolves both
+  %%> - the same read as before, for the end check
+  Note over SW: Check the DNS policy<br/>typed check
+  %%> What it does:
+  %%> - requires the admitted policy on `orbit` and a usable uplink
   alt both names resolve
     N-->>SW: private + public ok
     %%> Returns:
@@ -70,9 +77,6 @@ sequenceDiagram
     N--xSW: exit ≠ 0 or no answer
     %%> When:
     %%> - `resolvectl` refuses, SSH fails, or a name does not resolve
-    SW->>N: Put the policy back<br/>captured link state
-    %%> What it does:
-    %%> - restores the policy captured in the first step, so Node 12 keeps resolving names
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
     %%> - which step failed and its error code
