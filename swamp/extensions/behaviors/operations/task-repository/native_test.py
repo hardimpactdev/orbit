@@ -18,6 +18,11 @@ harness = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(harness)
 
 
+def runtime(*parts):
+    """Join a synthetic credential at run time; no source or bytecode holds it whole."""
+    return "".join(parts)
+
+
 class NativeRepository(harness.NativeTestCase):
     native_timeout = 90
 
@@ -30,7 +35,8 @@ class NativeRepository(harness.NativeTestCase):
             shutil.copy(ROOT / "extensions/behaviors/operations/tasks" / name, tasks)
         library = self.repo / "extensions/behaviors/_lib"
         library.mkdir(parents=True, exist_ok=True)
-        shutil.copy(ROOT / "extensions/behaviors/_lib/repository_analysis.ts", library)
+        for name in ("repository_analysis.ts", "public_output.ts"):
+            shutil.copy(ROOT / "extensions/behaviors/_lib" / name, library)
         # Setup and teardown argv expand @orbit/ci-caches with the shared program.
         runtime = self.repo / "extensions/behaviors/operations/instance-deploy"
         runtime.mkdir(parents=True, exist_ok=True)
@@ -60,6 +66,20 @@ class NativeRepository(harness.NativeTestCase):
             + '\nimport shlex,subprocess,sys\nargs=sys.argv[1:]\nif "-M" in args or "-O" in args:raise SystemExit(0)\nargv=shlex.split(args[-1])\nr=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)\nsys.stdout.buffer.write(r.stdout);sys.stderr.buffer.write(r.stderr)\nraise SystemExit(r.returncode)\n'
         )
         ssh.chmod(0o755)
+        # Official SSH copy downloads with scp; the stand-in copies locally.
+        scp = tools / "scp"
+        scp.write_text(
+            "#!"
+            + sys.executable
+            + "\n"
+            + """import shutil,sys
+from pathlib import Path
+src=Path(sys.argv[-2].split(':',1)[-1]);dst=Path(sys.argv[-1].split(':',1)[-1])
+if src.is_dir():shutil.copytree(src,dst/src.name,dirs_exist_ok=True)
+else:shutil.copyfile(src,dst/src.name if dst.is_dir() else dst)
+"""
+        )
+        scp.chmod(0o755)
         self.native_env["PATH"] = str(tools) + ":" + os.environ["PATH"]
         self.inputs = {
             "operation_id": 91001,
@@ -196,6 +216,30 @@ class NativeRepository(harness.NativeTestCase):
         self.assertFalse(result["output_truncated"])
         self.assertTrue(result["changed"])
 
+    def test_script_output_is_redacted_on_the_worker_before_history(self):
+        # The script builds its credentials at run time, so only its output
+        # holds them; the scan covers history, data and logs of the run.
+        self.secrets = runtime("ghp_", "S" * 36), runtime("a1" * 16, "a1" * 16), runtime("synthetic-script-", "password")
+        self.install(
+            '#!/usr/bin/python3\nimport sys\nprint("ghp_" + "S" * 36)\nprint("a1" * 32)\n'
+            'print("DB_PASSWORD=synthetic-" + "script-password", file=sys.stderr)\nprint("visible")\n'
+        )
+        self.inputs["intent"].update(script="scripts/run", args=[])
+        self.workflow("script")
+        run = self.run_workflow()
+        self.assertEqual(run["status"], "succeeded")
+        steps = self.steps(run)
+        self.assertEqual(steps["execute"]["outputs"]["stdout"], "")
+        result = self.result(run)
+        self.assertEqual(result["exit_code"], 0)
+        self.assertIn("visible", result["output"])
+        self.assertIn("DB_PASSWORD=[REDACTED]", result["output"])
+        self.assertEqual(result["output"].count("[REDACTED]"), 3)
+        # Neither the VM nor the worker keeps the output file.
+        run_id = run["id"]
+        self.assertFalse(Path(f"/tmp/orbit-task-repository-{run_id}").exists())
+        self.assertFalse(Path(f"/tmp/orbit-task-repository-{run_id}-local").exists())
+
     def test_untracked_or_non_executable_script_refuses_without_running(self):
         self.install("#!/bin/sh\ntouch invoked\n")
         self.git("update-index", "--chmod=-x", "scripts/run")
@@ -307,6 +351,23 @@ class NativeRepository(harness.NativeTestCase):
         raw = result["artifact"]["content"].encode()
         self.assertEqual(result["artifact"]["sha256"], hashlib.sha256(raw).hexdigest())
         self.assertEqual(result["artifact"]["bytes"], len(raw))
+
+    def test_analyzer_stderr_and_private_report_never_reach_history(self):
+        self.secrets = runtime("synthetic-analysis-", "stderr-value"), runtime("synthetic-analysis-", "report-value")
+        self.install(
+            '#!/usr/bin/python3\nimport json,sys\nprint("SECRET=synthetic-analysis-" + "stderr-value", file=sys.stderr)\n'
+            'print(json.dumps({"API_KEY": "synthetic-analysis-" + "report-value"}))\n',
+            "bin/task-analyze",
+        )
+        self.analysis_intent()
+        self.workflow("analyze")
+        run = self.run_workflow(success=False)
+        steps = self.steps(run)
+        self.assertEqual(steps["execute"]["outputs"]["stdout"], "")
+        self.assertEqual(
+            json.loads(steps["result"]["outputs"]["stdout"]),
+            {"error_code": "tasks.analysis_report_invalid"},
+        )
 
     def test_moved_candidate_refuses_as_stale_without_running_the_analyzer(self):
         self.install("#!/bin/sh\ntouch invoked\n", "bin/task-analyze")

@@ -39,6 +39,7 @@ sequenceDiagram
     SW->>N: Run setup in order<br/>setup-0, setup-1, …
     %%> How:
     %%> - each is `env -C <checkout> … /bin/bash -lc <command>` with its own timeout; `@orbit/ci-caches` expands to the shared program
+    %%> - every command writes its output to `<run>/output/<step>` on the VM, never to the SSH session, so native history keeps only its exit code
     %%> - a failed step skips the rest and the Project check
   end
   SW->>N: Snapshot the workspace<br/>snapshot-before-* · own index
@@ -46,7 +47,7 @@ sequenceDiagram
   %%> - `git read-tree HEAD`, `git add --all`, `git write-tree` on the run's index file, and `git rev-parse HEAD`; the real index is untouched
   SW->>N: Run the Project check<br/>project · bash -lc
   %%> How:
-  %%> - one argv in the checkout; output stays in native history on 209, the result keeps a redacted 16 KiB tail
+  %%> - one argv in the checkout; its output goes to its file on the VM, not to native history
   opt handoff with deliverables
     SW->>N: Run each deliverable<br/>diff · base-N · deliverable-N
     %%> How:
@@ -58,6 +59,11 @@ sequenceDiagram
   SW->>N: Snapshot the checked tree<br/>snapshot-after-* · changed
   %%> What it does:
   %%> - a moved tree makes the check `changed`; a failed command or unmet deliverable makes it `failed`
+  N-->>SW: Download command output<br/>output_copy · private dir
+  %%> How:
+  %%> - one official `@swamp/ssh copy` of `<run>/output` into a private (`0700`) worker directory on 209
+  %%> - `local` reads each file, redacts it with the shared rule (`_lib/public_output.ts`), keeps a 16 KiB tail and deletes the file; only that tail reaches history
+  %%> - cleanup steps remove both run directories
   opt passed handoff
     SW->>N: Commit the candidate<br/>git commit · check-operations ref
     %%> How:

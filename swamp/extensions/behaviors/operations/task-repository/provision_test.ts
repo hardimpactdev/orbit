@@ -238,7 +238,7 @@ Deno.test("profile refuses a checkout that is not on the admitted start commit",
   );
 });
 
-Deno.test("each setup and teardown command runs as one SSH exec argv in the checkout with empty seeds", () => {
+Deno.test("each setup and teardown command runs as one SSH exec argv in the checkout with empty seeds, its output in a file", () => {
   const setup = (command: string) => ({
     ...intent,
     workspace: {
@@ -251,7 +251,13 @@ Deno.test("each setup and teardown command runs as one SSH exec argv in the chec
       }],
     },
   });
-  const argv = (command: string) => [
+  const argv = (directory: string, name: string, command: string) => [
+    "/bin/bash",
+    "-c",
+    'mkdir -p -m 0700 -- "$1" && exec >"$1/$2" 2>&1 && shift 2 && exec "$@"',
+    "orbit-output",
+    directory,
+    name,
     "env",
     "-C",
     "/home/orbit/apps/project/workspace",
@@ -264,12 +270,12 @@ Deno.test("each setup and teardown command runs as one SSH exec argv in the chec
     "-lc",
     command,
   ];
-  assertEquals(setupArgv(setup("composer install")), [
-    argv("composer install"),
+  assertEquals(setupArgv(setup("composer install"), "/tmp/run"), [
+    argv("/tmp/run/output", "setup-0", "composer install"),
   ]);
   // The Gateway-owned step expands to the shared CI cache program, never a literal command.
-  assertEquals(setupArgv(setup("@orbit/ci-caches")), [
-    argv(ciCacheImportProgram),
+  assertEquals(setupArgv(setup("@orbit/ci-caches"), "/tmp/run"), [
+    argv("/tmp/run/output", "setup-0", ciCacheImportProgram),
   ]);
   assertEquals(
     teardownArgv({
@@ -283,8 +289,8 @@ Deno.test("each setup and teardown command runs as one SSH exec argv in the chec
         }),
         timeout_seconds: 30,
       }],
-    }),
-    { teardown: [argv("rm -f db.sqlite")] },
+    }, "/tmp/teardown"),
+    { teardown: [argv("/tmp/teardown", "teardown-0", "rm -f db.sqlite")] },
   );
 });
 

@@ -6,7 +6,7 @@ import sys
 import unittest
 
 import yaml
-from native_test import ROOT, NativeRepository
+from native_test import ROOT, NativeRepository, runtime
 
 
 class NativeCheck(NativeRepository):
@@ -170,6 +170,36 @@ class NativeCheck(NativeRepository):
         self.assertEqual((self.workspace / ".git/index").read_bytes(), index)
         self.assertEqual(result["tree_before"], result["tree"])
         # The run directory with the snapshot index is removed.
+        self.assertFalse(list(self.repo.glob("check-*")))
+
+    def test_command_output_is_redacted_on_the_worker_before_history(self):
+        # Every command builds its credential at run time, so only its output
+        # holds it; the scan covers history, data and logs of the run.
+        self.secrets = runtime("ghp_", "C" * 36), runtime("c2" * 16, "c2" * 16)
+        emit = 'python3 -c \'print("ghp_" + "C" * 36); print("c2" * 32)\''
+        self.inputs["intent"].update(
+            phase="handoff",
+            setup=[{"name": "first", "command": emit, "timeout_seconds": 30}],
+            command=emit + " && test -f code",
+            deliverables=[
+                {
+                    "id": "test",
+                    "type": "command",
+                    "command": emit + " >&2; test -f code",
+                    "directory": ".",
+                    "fails_on_base": True,
+                    "paths": [],
+                },
+            ],
+        )
+        history, result = self.execute_check()
+        steps = {step["name"]: step for step in history["jobs"][0]["steps"]}
+        for name in ("setup-0", "project", "base-0", "deliverable-0"):
+            self.assertEqual(steps[name]["outputs"]["stdout"], "", name)
+        self.assertEqual(result["output"].count("[REDACTED]"), 4)
+        command = result["evidence"]["commands"]["test"]
+        self.assertEqual(command["output"].count("[REDACTED]"), 2)
+        self.assertEqual(command["base_output"].count("[REDACTED]"), 2)
         self.assertFalse(list(self.repo.glob("check-*")))
 
     def test_setup_failure_skips_later_setup_and_project(self):

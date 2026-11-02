@@ -31,4 +31,5 @@ check(provenance['entrypoint_sha256'] == hashlib.sha256(target('cat', f'{workspa
 check(provenance['before'] == provenance['after'], 'the analyzer changed nothing')
 check(target('runuser', '-u', 'orbit', '--', 'git', '-C', workspace, 'status', '--porcelain') == b'', 'the checkout is clean')
 check(target('sh', '-c', 'ls /tmp/orbit-task-index-* 2>/dev/null') == b'', 'the temporary snapshot index is removed')
+check(target('sh', '-c', 'ls -d /tmp/orbit-task-repository-* 2>/dev/null') == b'', 'the program output directory is removed')
 print('parity: tasks.analyze ready, provenance and clean checkout')

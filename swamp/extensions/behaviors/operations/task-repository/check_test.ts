@@ -163,6 +163,14 @@ const snapshots = (tree = commit) => ({
     "snapshot-after-head": ran(0, commit + "\n"),
 });
 const valid = { valid: true, error_code: "" };
+/** A private worker directory holding the downloaded output file of each named step. */
+const outputs = (files: Record<string, string> = {}) => {
+    const directory = Deno.makeTempDirSync();
+    for (const [name, text] of Object.entries(files)) {
+        Deno.writeTextFileSync(`${directory}/${name}`, text);
+    }
+    return directory;
+};
 const commandDeliverable = {
     id: "project-check",
     type: "command" as const,
@@ -174,8 +182,8 @@ const commandDeliverable = {
     paths: [],
 };
 
-Deno.test("a failed Project check retains failed evidence when command deliverables are skipped", () => {
-    const value = localResult(
+Deno.test("a failed Project check retains failed evidence when command deliverables are skipped", async () => {
+    const value = await localResult(
         {
             ...input,
             phase: "handoff",
@@ -185,11 +193,12 @@ Deno.test("a failed Project check retains failed evidence when command deliverab
         valid,
         {
             ...snapshots(),
-            project: ran(23, "project check ", "failed"),
+            project: ran(23),
             "deliverable-0": { status: "skipped" },
             diff: ran(0, ""),
             changed: ran(0, ""),
         },
+        outputs({ project: "project check failed" }),
     );
     if (!("outcome" in value)) {
         throw new Error("Expected public local check evidence");
@@ -202,22 +211,37 @@ Deno.test("a failed Project check retains failed evidence when command deliverab
     assertEquals(value.commit, null);
 });
 
-Deno.test("command output is a redacted tail of stdout then stderr", () => {
-    const value = localResult({ ...input, command: "true" }, valid, {
-        ...snapshots(),
-        project: ran(0, "API_KEY=synthetic-private-value\n", "done\n"),
+Deno.test("command output is the redacted tail of its downloaded file, which is deleted", async () => {
+    const directory = outputs({
+        project: "API_KEY=synthetic-private-value\n" + "f0".repeat(32) +
+            "\ndone\n",
     });
+    const value = await localResult({ ...input, command: "true" }, valid, {
+        ...snapshots(),
+        project: ran(0),
+    }, directory);
     if (!("output" in value)) throw new Error("Expected local evidence");
-    assertEquals(value.output, "API_KEY=[REDACTED]\ndone\n");
+    assertEquals(value.output, "API_KEY=[REDACTED]\n[REDACTED]\ndone\n");
+    assertEquals([...Deno.readDirSync(directory)], []);
 });
 
-Deno.test("the checked diff and changed paths come from NUL-separated diff-tree rows", () => {
+Deno.test("a command that ran without a downloaded output file refuses the check", async () => {
+    assertEquals(
+        await localResult({ ...input, command: "true" }, valid, {
+            ...snapshots(),
+            project: ran(0),
+        }, outputs()),
+        { error_code: "tasks.repository_execution_unknown", check_id: 5 },
+    );
+});
+
+Deno.test("the checked diff and changed paths come from NUL-separated diff-tree rows", async () => {
     assertEquals(diffRows(ran(0, "A\0added\0M\0a b\tc\0").outputs), [
         { status: "A", path: "added" },
         { status: "M", path: "a b\tc" },
     ]);
     assertEquals(diffRows({}), null);
-    const value = localResult(
+    const value = await localResult(
         { ...input, deliverables: [{ ...commandDeliverable, type: "file" }] },
         valid,
         {
@@ -226,41 +250,44 @@ Deno.test("the checked diff and changed paths come from NUL-separated diff-tree 
             diff: ran(0, "M\0code\0"),
             changed: ran(0, "A\0new\0"),
         },
+        outputs({ project: "" }),
     );
     if (!("changed_paths" in value)) throw new Error("Expected evidence");
     assertEquals(value.changed_paths, ["new"]);
     assertEquals(value.evidence?.diff, [{ status: "M", path: "code" }]);
 });
 
-Deno.test("start-commit preparation failures refuse the check", () => {
+Deno.test("start-commit preparation failures refuse the check", async () => {
     const base = { ...commandDeliverable, fails_on_base: true, paths: ["t"] };
     const intent = { ...input, deliverables: [base] };
     assertEquals(
-        localResult(intent, valid, {
+        (await localResult(intent, valid, {
             ...snapshots(),
             "base_archive-0": { status: "failed" },
-        }).error_code,
+        }, outputs())).error_code,
         "tasks.repository_execution_unknown",
     );
     for (const name of ["base_overlay-0", "base_directory-0"]) {
         assertEquals(
-            localResult(intent, valid, { ...snapshots(), [name]: ran(1) })
-                .error_code,
+            (await localResult(intent, valid, {
+                ...snapshots(),
+                [name]: ran(1),
+            }, outputs())).error_code,
             "tasks.deliverable_invalid",
         );
     }
     assertEquals(
-        localResult(intent, {
+        await localResult(intent, {
             valid: false,
             error_code: "tasks.deliverable_invalid",
-        }, {}),
+        }, {}, outputs()),
         { error_code: "tasks.deliverable_invalid", check_id: 5 },
     );
 });
 
-Deno.test("a fails_on_base command records its start-commit run", () => {
+Deno.test("a fails_on_base command records its start-commit run", async () => {
     const base = { ...commandDeliverable, fails_on_base: true, paths: ["t"] };
-    const value = localResult(
+    const value = await localResult(
         { ...input, command: "true", deliverables: [base] },
         valid,
         {
@@ -268,11 +295,16 @@ Deno.test("a fails_on_base command records its start-commit run", () => {
             project: ran(0),
             "base_overlay-0": ran(0),
             "base_directory-0": ran(0),
-            "base-0": ran(1, "", "fails on base"),
+            "base-0": ran(1),
             "deliverable-0": ran(0),
             diff: ran(0, ""),
             changed: ran(0, ""),
         },
+        outputs({
+            project: "",
+            "base-0": "fails on base",
+            "deliverable-0": "",
+        }),
     );
     if (!("evidence" in value)) throw new Error("Expected evidence");
     assertEquals(value.evidence?.commands["project-check"], {
@@ -312,7 +344,13 @@ const environment = [
     "INERTIA_SSR_PORT=5173",
     "INERTIA_SSR_URL=http://127.0.0.1:5173",
 ];
-const argv = (directory: string, command: string) => [
+const argv = (name: string, directory: string, command: string) => [
+    "/bin/bash",
+    "-c",
+    'mkdir -p -m 0700 -- "$1" && exec >"$1/$2" 2>&1 && shift 2 && exec "$@"',
+    "orbit-output",
+    "/tmp/run/output",
+    name,
     "env",
     "-C",
     directory,
@@ -322,15 +360,17 @@ const argv = (directory: string, command: string) => [
     command,
 ];
 
-Deno.test("every check command is one SSH exec argv in its directory", () => {
+Deno.test("every check command is one SSH exec argv in its directory, its output in a file", () => {
     const steps = prepare(intent, 3, "/tmp/run");
     assertEquals(steps.valid, true);
     // The Gateway-owned setup step expands to the shared provision program.
-    assertEquals(steps.setup, [argv("/srv/check", ciCacheImportProgram)]);
-    assertEquals(steps.project, argv("/srv/check", "composer test"));
+    assertEquals(steps.setup, [
+        argv("setup-0", "/srv/check", ciCacheImportProgram),
+    ]);
+    assertEquals(steps.project, argv("project", "/srv/check", "composer test"));
     assertEquals(steps.deliverables, [
-        argv("/srv/check/apps/web", "touch never"),
-        argv("/srv/check", "touch never"),
+        argv("deliverable-0", "/srv/check/apps/web", "touch never"),
+        argv("deliverable-1", "/srv/check", "touch never"),
     ]);
     assertEquals(steps.bases[1], {
         archive: [
@@ -387,7 +427,7 @@ Deno.test("every check command is one SSH exec argv in its directory", () => {
             "tests/b.php",
         ],
         directory: ["test", "-d", "/tmp/run/base-1"],
-        run: argv("/tmp/run/base-1", "touch never"),
+        run: argv("base-1", "/tmp/run/base-1", "touch never"),
     });
     assertEquals(steps.bases[0].overlay, ["true"]);
 });

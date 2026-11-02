@@ -110,6 +110,12 @@
       "budget_seconds": 15
     },
     {
+      "name": "output_copy",
+      "job": "check",
+      "step": "output_copy",
+      "budget_seconds": 15
+    },
+    {
       "name": "local",
       "job": "check",
       "step": "local",

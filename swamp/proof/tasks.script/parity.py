@@ -28,4 +28,5 @@ check(result.get('output') == '$(touch never)\n spaces \n', f'the output is {res
 check(result.get('changed') is False, 'the script changed nothing')
 check(target('sh', '-c', f'test -e {workspace}/never && echo present') == b'', 'no shell expanded an argument')
 check(target('sh', '-c', 'ls /tmp/orbit-task-index-* 2>/dev/null') == b'', 'the temporary snapshot index is removed')
+check(target('sh', '-c', 'ls -d /tmp/orbit-task-repository-* 2>/dev/null') == b'', 'the program output directory is removed')
 print('parity: tasks.script passed with literal arguments')

@@ -23,6 +23,8 @@ class NativeEnding(fixture.NativeRepository):
     test_untracked_or_non_executable_script_refuses_without_running = None
     test_moved_candidate_refuses_as_stale_without_running_the_analyzer = None
     test_private_analysis_is_refused_in_the_terminal_result = None
+    test_script_output_is_redacted_on_the_worker_before_history = None
+    test_analyzer_stderr_and_private_report_never_reach_history = None
     native_timeout = 150
 
     def setUp(self):
@@ -197,6 +199,34 @@ export const behavior={type:"@fixture/destroy",version:"2026.11.01.1",resources:
         run = self.run_workflow()
         self.assertEqual((self.workspace / "teardown-complete").read_text(), "complete")
         self.assertTrue(self.receipt(run)["cleanup_complete"])
+
+    def test_teardown_output_is_redacted_on_the_worker_before_history(self):
+        # The command builds its credentials at run time, so only its output
+        # holds them; the scan covers history, data and logs of every run.
+        self.secrets = fixture.runtime("ghp_", "T" * 36), fixture.runtime("e4" * 16, "e4" * 16)
+        self.inputs["intent"]["teardown"] = [
+            {
+                "timeout_seconds": 30,
+                "input_json": json.dumps(
+                    {
+                        "name": "teardown",
+                        "command": 'python3 -c \'print("ghp_" + "T" * 36); print("e4" * 32)\'; echo visible >&2',
+                        "timeout_seconds": 30,
+                    }
+                ),
+            }
+        ]
+        run = self.run_workflow()
+        self.assertTrue(self.receipt(run)["cleanup_complete"])
+        history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
+        teardown = next(
+            s for s in history["jobs"][0]["steps"] if s["name"] == "teardown"
+        )["outputs"]
+        self.assertEqual(teardown["teardown-0"]["stdout"], "")
+        self.assertEqual(
+            teardown["output"]["teardown"]["teardown-0"],
+            {"output": "[REDACTED]\n[REDACTED]\nvisible\n", "truncated": False},
+        )
 
     def test_stopped_provider_skips_guest_teardown_and_still_destroys(self):
         self.inputs["intent"]["provider_input"]["fixture_running"] = False

@@ -58,6 +58,7 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
+        root: ${{ "/tmp/orbit-task-teardown-" + run.id }}
       behaviorName: '${{ "task-repository-assets-task-repository-assets" }}'
   - name: teardown-${{ self._index }}
     labels: {role: swamp}
@@ -68,12 +69,12 @@ jobs:
       methodName: exec
       globalArgs:
         name: '${{ ("task-teardown-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
-        transport:
+        transport: &transport
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
           port: ${{ inputs.intent.ssh_execution.target.port }}
           identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
+        hosts: &hosts
         - name: target
           address: ${{ inputs.intent.ssh_execution.target.host }}
           transport:
@@ -90,3 +91,105 @@ jobs:
       item: item
       in: ${{ inputs.intent.teardown }}
     concurrency: 1
+  - name: output_local
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "task-teardown-output_local" }}'
+      methodName: execute
+      inputs:
+        run: |
+          umask 077
+          mkdir -p -- "$ORBIT_OUTPUT"
+        env:
+          ORBIT_OUTPUT: ${{ "/tmp/orbit-task-teardown-" + run.id + "-output" }}
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
+    allowFailure: true
+  - name: output_copy
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-teardown-output-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: copy
+      globalArgs:
+        name: '${{ ("task-teardown-output-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+        transport: *transport
+        hosts: *hosts
+      inputs:
+        hosts: name:target
+        direction: from
+        recursive: true
+        src: ${{ "/tmp/orbit-task-teardown-" + run.id }}
+        dst: ${{ "/tmp/orbit-task-teardown-" + run.id + "-output/" }}
+        timeoutSec: 60
+    dependsOn:
+    - step: teardown-${{ self._index }}
+      condition:
+        type: always
+    - step: output_local
+      condition:
+        type: succeeded
+    guard: ${{ size(inputs.intent.teardown) == 0 }}
+    allowFailure: true
+  - name: output
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-repository-assets'
+      methodName: output
+      inputs:
+        intent: ${{ inputs.intent }}
+        directory: ${{ "/tmp/orbit-task-teardown-" + run.id + "-output/orbit-task-teardown-" + run.id }}
+      behaviorName: '${{ "task-repository-assets-task-repository-assets" }}'
+    dependsOn:
+    - step: output_copy
+      condition:
+        type: succeeded
+    allowFailure: true
+  - name: cleanup_remote
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-teardown-output-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ ("task-teardown-output-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+        transport: *transport
+        hosts: *hosts
+      inputs:
+        hosts: name:target
+        argv:
+        - rm
+        - -rf
+        - --
+        - ${{ "/tmp/orbit-task-teardown-" + run.id }}
+        timeoutSec: 60
+    dependsOn:
+    - step: output_copy
+      condition:
+        type: always
+    guard: ${{ size(inputs.intent.teardown) == 0 }}
+    allowFailure: true
+  - name: cleanup_local
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "task-teardown-cleanup_local" }}'
+      methodName: execute
+      inputs:
+        run: |
+          rm -rf -- "$ORBIT_OUTPUT"
+        env:
+          ORBIT_OUTPUT: ${{ "/tmp/orbit-task-teardown-" + run.id + "-output" }}
+    dependsOn:
+    - step: output
+      condition:
+        type: always
+    allowFailure: true

@@ -86,7 +86,27 @@ jobs:
         argv:
         - mkdir
         - -p
-        - ${{ "/tmp/orbit-task-check-" + run.id }}
+        - -m
+        - '0700'
+        - --
+        - ${{ "/tmp/orbit-task-check-" + run.id + "/output" }}
+    dependsOn:
+    - step: prepare
+      condition:
+        type: succeeded
+  - name: output_local
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "task-check-output_local" }}'
+      methodName: execute
+      inputs:
+        run: |
+          umask 077
+          mkdir -p -- "$ORBIT_OUTPUT"
+        env:
+          ORBIT_OUTPUT: ${{ "/tmp/orbit-task-check-" + run.id + "-output" }}
     dependsOn:
     - step: prepare
       condition:
@@ -608,6 +628,28 @@ jobs:
     - step: after
       condition:
         type: succeeded
+  - name: output_copy
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: copy
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        direction: from
+        recursive: true
+        src: ${{ "/tmp/orbit-task-check-" + run.id + "/output" }}
+        dst: ${{ "/tmp/orbit-task-check-" + run.id + "-output/" }}
+        timeoutSec: 60
+    dependsOn:
+    - step: changed
+      condition:
+        type: succeeded
+    - step: output_local
+      condition:
+        type: succeeded
   - name: local
     labels: {role: swamp}
     task:
@@ -619,8 +661,12 @@ jobs:
         intent: ${{ inputs.intent }}
         prepared: ${{ steps.prepare.outputs }}
         steps: ${{ steps }}
+        outputs: ${{ "/tmp/orbit-task-check-" + run.id + "-output/output" }}
     dependsOn:
     - step: changed
+      condition:
+        type: succeeded
+    - step: output_copy
       condition:
         type: succeeded
   - name: commit_add
@@ -1070,11 +1116,12 @@ jobs:
       behaviorName: '${{ "task-check-cleanup_local" }}'
       methodName: execute
       inputs:
-        run: 'rm -rf -- "$ORBIT_PUBLICATION_ROOT"
+        run: 'rm -rf -- "$ORBIT_PUBLICATION_ROOT" "$ORBIT_OUTPUT"
 
           '
         env:
           ORBIT_PUBLICATION_ROOT: ${{ "/tmp/orbit-task-check-" + run.id + "-control" }}
+          ORBIT_OUTPUT: ${{ "/tmp/orbit-task-check-" + run.id + "-output" }}
     dependsOn:
     - step: outcome
       condition:

@@ -4,6 +4,11 @@ import {
   ProvisioningRefusal,
 } from "../instance-lifecycle/source_profile.ts";
 import { WorkspaceInput } from "../task-vm-workspace/input.ts";
+import {
+  capturedArgv,
+  type PublicTail,
+  readPublicTail,
+} from "../../_lib/public_output.ts";
 import { lifecycleArgv } from "./lifecycle.ts";
 
 const Id = z.number().int().positive();
@@ -105,12 +110,46 @@ const Source = z.object({
 const Observation = z.object({ source: Source, analysis_base: Sha.nullable() });
 const COMPOSER_BYTES = 1048576;
 
-/** The SSH exec argv of each admitted setup command, in order. */
-export function setupArgv(raw: unknown): string[][] {
+/**
+ * The SSH exec argv of each admitted setup command, in order. Each writes its
+ * output to `<root>/output/setup-<index>` on the VM instead of the SSH session.
+ */
+export function setupArgv(raw: unknown, root: string): string[][] {
   const workspace = Intent.parse(raw).workspace;
-  return workspace.setup.map((item) =>
-    lifecycleArgv(workspace.checkout_path, workspace.user, item.command)
+  return workspace.setup.map((item, index) =>
+    capturedArgv(
+      `${root}/output`,
+      `setup-${index}`,
+      lifecycleArgv(
+        workspace.checkout_path,
+        workspace.user,
+        item.command,
+      ),
+    )
   );
+}
+
+const SETUP_OUTPUT_BYTES = 4096;
+
+/**
+ * The redacted tail of each setup command's downloaded output file in
+ * `directory`, by step name; each file is deleted after it is read. A setup
+ * that did not run has no entry.
+ */
+export async function setupOutput(
+  raw: unknown,
+  directory: string,
+): Promise<Record<string, PublicTail>> {
+  const outputs: Record<string, PublicTail> = {};
+  for (const index of Intent.parse(raw).workspace.setup.keys()) {
+    const name = `setup-${index}`;
+    const tail = await readPublicTail(
+      `${directory}/${name}`,
+      SETUP_OUTPUT_BYTES,
+    );
+    if (tail !== null) outputs[name] = tail;
+  }
+  return outputs;
 }
 
 /**
@@ -273,7 +312,7 @@ export function result(
 }
 export const behavior = {
   type: "@nckrtl/task-provision-data",
-  version: "2026.11.02.3",
+  version: "2026.11.02.4",
   resources: {
     public: {
       schema: z.record(z.string(), z.unknown()),
@@ -311,9 +350,23 @@ export const behavior = {
     prepare: {
       description:
         "Validate public workspace intent and build each setup command's SSH exec argv",
-      arguments: z.object({ intent: Intent }),
-      execute: (args: { intent: z.infer<typeof Intent> }, ctx: Context) =>
-        data(ctx, { setup: setupArgv(args.intent) }),
+      arguments: z.object({ intent: Intent, root: Path }),
+      execute: (
+        args: { intent: z.infer<typeof Intent>; root: string },
+        ctx: Context,
+      ) => data(ctx, { setup: setupArgv(args.intent, args.root) }),
+    },
+    setup_output: {
+      description:
+        "Read, redact and delete each downloaded setup output file; return its bounded tail",
+      arguments: z.object({ intent: Intent, directory: Path }),
+      execute: async (
+        args: { intent: z.infer<typeof Intent>; directory: string },
+        ctx: Context,
+      ) =>
+        data(ctx, {
+          setup: await setupOutput(args.intent, args.directory),
+        }),
     },
     guest: {
       description:

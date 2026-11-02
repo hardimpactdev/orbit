@@ -76,6 +76,8 @@ sequenceDiagram
     SW->>VM: Run teardown steps<br/>Project teardown · own timeouts
     %%> When:
     %%> - a `guard` on the provider's power state: only while VM 88 runs; a stopped VM skips guest teardown
+    %%> How:
+    %%> - each command writes its output to a file on the VM; `output_copy` downloads them and `output` keeps a redacted 4 KiB tail of each, so raw output never reaches native history
   end
   SW->>H: Destroy the task VM<br/>delete VM · revoke model key
   %%> What it does:

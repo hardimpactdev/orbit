@@ -23,6 +23,8 @@ class NativeProvision(fixture.NativeRepository):
     test_untracked_or_non_executable_script_refuses_without_running = None
     test_moved_candidate_refuses_as_stale_without_running_the_analyzer = None
     test_private_analysis_is_refused_in_the_terminal_result = None
+    test_script_output_is_redacted_on_the_worker_before_history = None
+    test_analyzer_stderr_and_private_report_never_reach_history = None
     native_timeout = 150
 
     def setUp(self):
@@ -98,7 +100,7 @@ class NativeProvision(fixture.NativeRepository):
         scp.write_text(
             "#!"
             + sys.executable
-            + '\nimport shutil,sys\nfrom pathlib import Path\nsrc=Path(sys.argv[-2]);dst=Path(sys.argv[-1].split(":",1)[1])\nif src.is_dir():shutil.copytree(src,dst/src.name,dirs_exist_ok=True)\nelse:shutil.copy2(src,dst)\n'
+            + '\nimport shutil,sys\nfrom pathlib import Path\nsrc=Path(sys.argv[-2].split(":",1)[-1]);dst=Path(sys.argv[-1].split(":",1)[-1])\nif src.is_dir():shutil.copytree(src,dst/src.name,dirs_exist_ok=True)\nelse:shutil.copy2(src,dst)\n'
         )
         fixture = self.repo / "extensions/models/receipt.ts"
         fixture.parent.mkdir(exist_ok=True)
@@ -391,6 +393,27 @@ raise SystemExit(r.returncode)
         self.assertEqual(result["failed_step"], "profile")
         self.assertTrue(result["ready"])
         self.assertNotIn("source", result)
+
+    def test_setup_output_is_redacted_on_the_worker_before_history(self):
+        # The command builds its credentials at run time, so only its output
+        # holds them; the scan covers history, data and logs of every run.
+        self.secrets = fixture.runtime("ghp_", "P" * 36), fixture.runtime("d3" * 16, "d3" * 16)
+        self.setup_commands(
+            [
+                'python3 -c \'print("ghp_" + "P" * 36); print("d3" * 32)\'; echo visible >&2',
+                "exit 7",
+            ]
+        )
+        history, steps = self.execute_provision(success=False)
+        self.assertEqual(history["status"], "failed")
+        source = steps["source"]["outputs"]
+        self.assertEqual(source["setup-0"]["stdout"], "")
+        self.assertEqual(
+            source["setup_output"]["setup"]["setup-0"],
+            {"output": "[REDACTED]\n[REDACTED]\nvisible\n", "truncated": False},
+        )
+        self.assertFalse(list(self.repo.glob("assets-*")))
+        self.assertFalse(list(self.repo.glob("control/*")))
 
     def test_setup_failure_keeps_vm_receipt_without_source_success_or_later_setup(self):
         self.setup_commands(["exit 23", "touch never"])

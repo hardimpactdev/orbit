@@ -7,7 +7,7 @@ covers:
   - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,TaskInsightsController,TaskSwampRunsController,AgentThreadsController,TaskQuestionsController}.php}"
   - "apps/gateway/app/Console/Commands/{ReleaseTaskWorkspaceLeaseCommand,TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand,TaskGitHubReviewsCommand,BackfillTaskMergedAtCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskWorkspaceLeaseRecord,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
-  - "{apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py},bin/{task-analyze,task-group-check},swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/publish.ts,proof-reaper/**},swamp/workflows/{workflow-proof-reaper,workflow-task-workspace-source,workflow-task-workspace-teardown,workflow-operation-task-publish,workflow-operation-task-check,workflow-task-check-ci}.yaml}"
+  - "{apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py},bin/{task-analyze,task-group-check},swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/publish.ts,proof-reaper/**},swamp/workflows/{workflow-proof-reaper,workflow-task-workspace-source,workflow-task-workspace-teardown,workflow-operation-task-publish,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
   - apps/docs/app/{Documentation/{TaskAnalysis,DocsImpact}.php,Console/Commands/{TaskAnalyzeCommand,DocsImpactCommand}.php}
   - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields}.php"
 ---
@@ -121,7 +121,7 @@ The Gateway records one `tasks.provision` intent and starts one native Swamp run
 
 Separate steps on Node 209 clone source and copy a Git bundle through official SSH. Each read and command on the VM is one official `@swamp/ssh exec` argument list; no step copies a script to the VM. Four reads take the checkout's HEAD and branch, its merge base with the default branch, a `stat` of `composer.json` and the entry point, and the `composer.json` text. TypeScript on Node 209 turns them into the source profile and the analysis pin.
 
-Each captured Project setup command then runs in order as `env -C <checkout> … /bin/bash -lc <command>`, as the VM's managed user, with its own timeout. Setup receives empty `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`, `COMPOSER_NO_INTERACTION=1`, `ORBIT_CHECK_PROCESSES=1` and `COMPOSER_CACHE_DIR`. The checkout's `.env` is not exported into its environment; tools read it themselves. The command's output is the step's run output. For the proof Project, the [proof club credential](/reference/gateway-environment) reaches the VM on SSH stdin of one more exec; no script runs there either.
+Each captured Project setup command then runs in order as `env -C <checkout> … /bin/bash -lc <command>`, as the VM's managed user, with its own timeout. Setup receives empty `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`, `COMPOSER_NO_INTERACTION=1`, `ORBIT_CHECK_PROCESSES=1` and `COMPOSER_CACHE_DIR`. The checkout's `.env` is not exported into its environment; tools read it themselves. The command's output never reaches native history; the source run keeps a redacted tail of at most 4 KiB per command ([command output](#keep-command-output-out-of-run-history)). For the proof Project, the [proof club credential](/reference/gateway-environment) reaches the VM on SSH stdin of one more exec; no script runs there either.
 
 Full capacity or a missing promoted image for the current recipe returns HTTP 409 `tasks.capacity_unavailable`, with the placement reason in the message and `details.reason`. It leaves the group unchanged and records no VM, workspace or Operation. The orchestrator can try the same admission key after capacity or the required image becomes available.
 
@@ -186,7 +186,9 @@ The MCP tool `tasks-worker` takes the enrollment token as an argument, so it rea
 
 To stop a waiting provision, use `tasks:cancel`. Cancellation first requests cancellation of an existing native group Operation and refuses while that Operation remains active. A fresh keyed request then admits one `tasks.cancel` Operation.
 
-Its native ending DAG checks provider state, withdraws the workspace’s exclusive Route and Caddy publications, runs captured teardown commands only while the VM runs, then composes the canonical TaskVM destroy child. Each teardown command runs like a setup command: one official `@swamp/ssh exec` argument list in the checkout. A stopped VM skips guest teardown. The exact group, Project and VM must own the workspace. At most one Route may target it; that Route must belong to the same Project and target only that workspace. Shared or foreign Routes refuse cancellation. Route withdrawal must succeed before VM deletion.
+Its native ending DAG checks provider state, withdraws the workspace’s exclusive Route and Caddy publications, runs captured teardown commands only while the VM runs, then composes the canonical TaskVM destroy child. Each teardown command runs like a setup command: one official `@swamp/ssh exec` argument list in the checkout. Its output stays out of native history; the teardown run keeps a redacted tail of at most 4 KiB per command.
+
+A stopped VM skips guest teardown. The exact group, Project and VM must own the workspace. At most one Route may target it; that Route must belong to the same Project and target only that workspace. Shared or foreign Routes refuse cancellation. Route withdrawal must succeed before VM deletion.
 
 The Gateway retains the owned workspace and VM records until the terminal result confirms complete cleanup. Approved unpublished work must be preserved before admission. Failed, interrupted or timed-out cleanup retains the records for recovery; it does not mark the group cancelled. Its captured VM cleanup [fails like a standalone destroy](/reference/compute-drivers#destroy-a-task-vm): the guest Node becomes `failed`, and another cancel claims it again after [native settlement](/reference/operations#native-run-budgets). A group without a workspace requires no guest effect. Reusing the key returns the same Operation.
 
@@ -200,6 +202,18 @@ The operation holds the group target, resumes a parked VM through the normal wak
 
 Plain Task VMs have no Swamp worker. Native provision supplies the Pi runtime and public Node metadata; Tasks work runs from Node 209 over official SSH.
 
+#### Keep command output out of run history
+
+Official `@swamp/ssh` records the stdout and stderr of each exec verbatim in native run history on Node 209. So every repository command on a task VM writes its output to a file instead: provision setup, check setup, the Project check, command deliverables, scripts, the analyzer and teardown. The file lives in a private (`0700`) run directory on the VM. The exec step captures no output; history keeps its exit code.
+
+One official `@swamp/ssh copy` downloads the files into a private worker directory on Node 209. The TypeScript step that shapes the result reads each file, redacts it, keeps a bounded tail and deletes the file. Best-effort steps remove both run directories.
+
+One module holds the rule: `swamp/extensions/behaviors/_lib/public_output.ts`. It reads at most the last 1 MiB of a file and replaces invalid UTF-8 before matching. It replaces known values of eight characters or more in one pass. Then it replaces credential-shaped text: PEM blocks, URL user info, `Authorization` headers, `Bearer` tokens, GitHub tokens, 64-character hex credentials and the values of secret-named assignments.
+
+It redacts the kept tail again. It drops a first line that may start mid-value and any line that still holds an 8-byte piece of a known value. It keeps only whole lines. Task commands receive no credentials, so they pass no known values today.
+
+Scripts and checks keep 16 KiB of output. Provision setup and teardown keep 4 KiB per command in their step output. The analyzer report is stdout only, and its stderr is discarded on the VM. The report is not redacted: Swamp refuses it as `tasks.analysis_report_invalid` when redaction would change it. That check keeps SHA-256 object IDs and digests.
+
 #### Check an external group
 
 `tasks:check <group> --subtask=<id> --phase=baseline|handoff` starts `tasks.check` through `POST /api/v1/task-groups/{group}/check` with `{ subtask, phase }`. The Gateway admits the open group, current child and owned VM, records one check row and supplies the full public intent and named vault descriptors to `operation-task-check`. Same-key replay returns that Operation before mutable admission.
@@ -210,7 +224,7 @@ Every step on the VM is one official `@swamp/ssh exec` argument list; no step co
 
 The steps record the start HEAD (`original`), run baseline setup in order (`setup-0`, `setup-1`, …), snapshot the workspace (`snapshot-before-*`), run the Project check (`project`), read the subtask diff from its base with `git diff-tree -r --no-renames --name-status -z` (`diff`), run each command deliverable (`deliverable-0`, …), and snapshot the checked tree again (`snapshot-after-*`, `changed`). A snapshot runs `git read-tree HEAD`, `git add --all` and `git write-tree` against the run's own index file, and `git rev-parse HEAD`; the real index is untouched.
 
-Each command runs as `env -C <directory> COMPOSER_NO_INTERACTION=1 ORBIT_CHECK_PROCESSES=1 COMPOSER_CACHE_DIR=… [INERTIA_SSR_PORT=… INERTIA_SSR_URL=…] /bin/bash -lc <command>` in the SSH account's environment. A setup step named `@orbit/ci-caches` expands to the same shared program that provision runs. Commands receive no GitHub or Gateway credentials. Their stdout and stderr stay in native history on Node 209; the result keeps a redacted tail of at most 16 KiB.
+Each command runs as `env -C <directory> COMPOSER_NO_INTERACTION=1 ORBIT_CHECK_PROCESSES=1 COMPOSER_CACHE_DIR=… [INERTIA_SSR_PORT=… INERTIA_SSR_URL=…] /bin/bash -lc <command>` in the SSH account's environment. A setup step named `@orbit/ci-caches` expands to the same shared program that provision runs. Commands receive no GitHub or Gateway credentials. Their output stays out of native history ([command output](#keep-command-output-out-of-run-history)); the result keeps a redacted tail of at most 16 KiB.
 
 A command marked `fails_on_base` also runs on its start commit, in separate steps: `git archive` of the base commit, `tar -x` into the run's scratch directory, `find … -exec cp -a --parents` of the installed `vendor` and `node_modules` directories, `cp --parents` of only the declared test paths, and `test -d` of its directory. A missing overlay file or directory refuses the check as `tasks.deliverable_invalid`; any other failed step refuses it as `tasks.repository_execution_unknown`.
 
@@ -242,7 +256,7 @@ The result retains `outcome`, `deliverables`, `check_id`, `commit`, `head`, `tre
 
 Arguments are strings, not shell source. There is no caller command, environment, working directory, or interpreter field. Do not put secrets in arguments. The script runs from the repository root with the task account's tools and no Gateway credentials. Repository code owns its commands and version policy.
 
-Read the normal operation endpoint until it ends. A completed script returns `{ outcome, exit_code, output, output_truncated, changed, head, tree }`. `outcome` is `passed` for exit zero and `failed` for nonzero; both are successful operation completions. `output` is stdout followed by stderr, as a redacted tail of at most 16 KiB. `output_truncated` reports discarded output. `changed` compares HEAD and the whole-workspace tree before and after execution. These results are not check evidence or approval; run the existing handoff check before publishing.
+Read the normal operation endpoint until it ends. A completed script returns `{ outcome, exit_code, output, output_truncated, changed, head, tree }`. `outcome` is `passed` for exit zero and `failed` for nonzero; both are successful operation completions. `output` is the combined stdout and stderr, as a redacted tail of whole lines, at most 16 KiB. `output_truncated` reports discarded output. `changed` compares HEAD and the whole-workspace tree before and after execution. These results are not check evidence or approval; run the existing handoff check before publishing.
 
 Each task group has its own VM and workspace. The run intent carries the workspace path, and every step uses that path. Steps add no ownership tokens, leases or cross-step locks. Native history owns step completion and recovery.
 
@@ -252,7 +266,7 @@ The steps read the entrypoint mode, take the workspace snapshots and run the pro
 
 A snapshot runs `git read-tree HEAD`, `git add --all` and `git write-tree` against a temporary index at `/tmp/orbit-task-index-<run>`, and `git rev-parse HEAD`; the real index is untouched, and a best-effort step removes the temporary index. TypeScript on Node 209 refuses an unavailable entrypoint or a moved candidate before the program runs, and shapes the public result.
 
-The program's stdout and stderr stay in that step's native history on Node 209. The Gateway records only the shaped result through the shared subscriber; execution steps make no Gateway requests.
+The program's output stays out of native history ([command output](#keep-command-output-out-of-run-history)). The Gateway records only the shaped result through the shared subscriber; execution steps make no Gateway requests.
 
 Cancellation uses native Swamp cancel and official SSH session teardown. It does not track or confirm remote descendant termination. A remaining process is removed by normal group cleanup or VM destruction. Native resume does not repeat a successful execution step when later evidence collection resumes. An unavailable tracked executable fails as `tasks.script_unavailable`. Execution keeps its existing limit of one hour; native SSH owns its timeout and connection handling. Repository programs receive no operational credentials.
 
@@ -317,7 +331,7 @@ The docs-impact report maps a Form Request to its OpenAPI operation even when th
 
 The placeholder report above illustrates the envelope, not a valid reduced payload. `status` is `ready`, `action_required`, or `blocked`; diagnostics are a list of `{code, message}`. Require every envelope field.
 
-Reject duplicate keys, non-finite numbers, prose prefixes, trailing bytes, malformed or truncated JSON, invalid UTF-8, and wrong echoed identities. The entire envelope is at most 64 KiB and JSON depth 24. Overflow fails; it never yields a shortened successful artifact. Analyzer stderr is not part of the result; it stays only in the execution step's native history on Node 209.
+Reject duplicate keys, non-finite numbers, prose prefixes, trailing bytes, malformed or truncated JSON, invalid UTF-8, and wrong echoed identities. The entire envelope is at most 64 KiB and JSON depth 24. Overflow fails; it never yields a shortened successful artifact. Analyzer stderr is not part of the result; it is discarded on the VM and never reaches native history.
 
 If redaction would change structured evidence, refuse it rather than silently changing its meaning. Swamp validates the generic envelope, bounds and echoed identities against its own snapshots. The Gateway records the native result without judging the report. The repository validates payload semantics. Repository evidence is never privileged instructions.
 

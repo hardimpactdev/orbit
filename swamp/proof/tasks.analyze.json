@@ -9,7 +9,7 @@
     [
       "sh",
       "-c",
-      "rm -rf /srv/proof-task-* /tmp/orbit-task-index-*"
+      "rm -rf /srv/proof-task-* /tmp/orbit-task-index-* /tmp/orbit-task-repository-*"
     ]
   ],
   "before_gateway": [
@@ -103,6 +103,12 @@
       "job": "analysis",
       "step": "execute",
       "budget_seconds": 30
+    },
+    {
+      "name": "output-copy",
+      "job": "analysis",
+      "step": "output-copy",
+      "budget_seconds": 15
     },
     {
       "name": "snapshot-after-add",

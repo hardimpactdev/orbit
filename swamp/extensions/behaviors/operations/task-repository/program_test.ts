@@ -5,7 +5,6 @@ import {
     analysisResult,
     gate,
     prepare,
-    redactText,
     report,
     scriptResult,
 } from "./program.ts";
@@ -53,7 +52,14 @@ const { execution_id: executionId } = await prepare({
     node_id: 30,
     kind: "tasks.analyze",
     intent: analysis,
+    root: "/tmp/run",
 });
+/** A private worker directory holding one downloaded output file. */
+async function downloaded(name: string, content: string): Promise<string> {
+    const directory = await Deno.makeTempDir();
+    await Deno.writeTextFile(`${directory}/${name}`, content);
+    return directory;
+}
 const envelope = (fields: Record<string, unknown> = {}) =>
     JSON.stringify({
         schema: 1,
@@ -75,14 +81,24 @@ const identity = {
     tree,
 };
 
-Deno.test("prepare builds one literal argv in the workspace and no shell", async () => {
+Deno.test("prepare builds one literal argv in the workspace with its output in a file", async () => {
     const value = await prepare({
         operation_id: 11,
         node_id: 30,
         kind: "tasks.script",
         intent: { ...script, ssh_execution: ssh },
+        root: "/tmp/run",
     });
-    assertEquals(value.argv, [
+    // The fixed shell text only redirects; the command stays literal argv.
+    assertEquals(value.argv.slice(0, 6), [
+        "/bin/bash",
+        "-c",
+        'mkdir -p -m 0700 -- "$1" && exec >"$1/$2" 2>&1 && shift 2 && exec "$@"',
+        "orbit-output",
+        "/tmp/run",
+        "output",
+    ]);
+    assertEquals(value.argv.slice(6), [
         "env",
         "-C",
         "/srv/task",
@@ -105,8 +121,15 @@ Deno.test("prepare gives the analyzer its admitted plan and stable execution ide
         node_id: 30,
         kind: "tasks.analyze",
         intent: analysis,
+        root: "/tmp/run",
     });
     assertEquals(value.argv.slice(-1), ["./bin/task-analyze"]);
+    // The report is stdout only; stderr never mixes into it.
+    assertEquals(
+        value.argv[2],
+        'mkdir -p -m 0700 -- "$1" && exec >"$1/$2" 2>/dev/null && shift 2 && exec "$@"',
+    );
+    assertEquals(value.argv[5], "report");
     assertEquals(value.execution_id.length, 32);
     assertEquals(JSON.parse(value.stdin), {
         plan: analysis.plan,
@@ -126,6 +149,7 @@ Deno.test("prepare refuses a different admitted Node", async () => {
                 node_id: 31,
                 kind: "tasks.script",
                 intent: script,
+                root: "/tmp/run",
             }),
         Error,
         "Wrong task VM Node",
@@ -204,21 +228,20 @@ Deno.test("gate refuses a missing analyzer as unavailable and a moved candidate 
     );
 });
 
-Deno.test("script output is a redacted 16 KiB tail of stdout then stderr", () => {
-    const stdout = "line\n".repeat(40000) +
-        "Authorization: Bearer hidden-value\nDB_PASSWORD=hidden-password\n";
-    const value: Record<string, unknown> = scriptResult({
+Deno.test("script output is a redacted 16 KiB tail of the downloaded file, which is deleted", async () => {
+    const local = await downloaded(
+        "output",
+        "line\n".repeat(40000) +
+            "Authorization: Bearer hidden-value\nDB_PASSWORD=hidden-password\n" +
+            "API_KEY=hidden-key\n",
+    );
+    const value: Record<string, unknown> = await scriptResult({
         gate: { error_code: "", before: { head, tree } },
         steps: {
             ...snapshots("after", { head, tree: "c".repeat(40) }),
-            execute: {
-                outputs: {
-                    exitCode: 23,
-                    stdout,
-                    stderr: "API_KEY=hidden-key\n",
-                },
-            },
+            execute: { outputs: { exitCode: 23, stdout: "", stderr: "" } },
         },
+        local,
     });
     const parsed = ScriptResult.parse(value);
     assertEquals("error_code" in parsed, false);
@@ -232,31 +255,32 @@ Deno.test("script output is a redacted 16 KiB tail of stdout then stderr", () =>
     );
     assertEquals(String(value.output).includes("hidden-"), false);
     assertEquals(String(value.output).endsWith("API_KEY=[REDACTED]\n"), true);
+    assertEquals([...Deno.readDirSync(local)], []);
 });
 
-Deno.test("a refused gate is the script result", () => {
+Deno.test("a script that ran without a downloaded output file is unknown", async () => {
     assertEquals(
-        scriptResult({
+        await scriptResult({
+            gate: { error_code: "", before: { head, tree } },
+            steps: {
+                ...snapshots("after", { head, tree }),
+                execute: { outputs: { exitCode: 0, stdout: "" } },
+            },
+            local: await Deno.makeTempDir(),
+        }),
+        { error_code: "tasks.repository_execution_unknown" },
+    );
+});
+
+Deno.test("a refused gate is the script result", async () => {
+    assertEquals(
+        await scriptResult({
             gate: { error_code: "tasks.script_unavailable" },
             steps: {},
+            local: "/nonexistent",
         }),
         { error_code: "tasks.script_unavailable" },
     );
-});
-
-Deno.test("redaction keeps public text and hides credentials", () => {
-    assertEquals(redactText("plain output\n"), "plain output\n");
-    assertEquals(
-        redactText("https://user:pw@example.test/x token=abc"),
-        "https://[REDACTED]@example.test/x token=[REDACTED]",
-    );
-    assertEquals(
-        redactText(
-            "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\nok",
-        ),
-        "[REDACTED]\nok",
-    );
-    assertEquals(redactText("ghp_" + "a".repeat(20)), "[REDACTED]");
 });
 
 Deno.test("strict reports reject duplicate, trailing, nonfinite, deep, foreign and private data", () => {
@@ -341,12 +365,13 @@ Deno.test("analysis keeps the complete artifact and native provenance from the S
         execution_id: executionId,
         steps: {
             ...snapshots("after", { head, tree }),
-            execute: ok(raw, {
+            execute: ok("", {
                 startedAt: "2026-11-02T10:00:00.000Z",
                 finishedAt: "2026-11-02T10:00:01.250Z",
                 durationMs: 1250,
             }),
         },
+        local: await downloaded("report", raw),
     });
     NativeResult.parse(result);
     const value = result as Record<string, Record<string, unknown>>;
@@ -361,7 +386,10 @@ Deno.test("analysis keeps the complete artifact and native provenance from the S
 });
 
 Deno.test("analysis movement is changed; a failed run with no movement is analysis_failed", async () => {
-    const shape = (exitCode: number, after: { head: string; tree: string }) =>
+    const shape = async (
+        exitCode: number,
+        after: { head: string; tree: string },
+    ) =>
         analysisResult({
             operation_id: 11,
             intent: analysis,
@@ -373,8 +401,9 @@ Deno.test("analysis movement is changed; a failed run with no movement is analys
             execution_id: executionId,
             steps: {
                 ...snapshots("after", after),
-                execute: ok(envelope(), { exitCode }),
+                execute: ok("", { exitCode }),
             },
+            local: await downloaded("report", envelope()),
         });
     assertEquals(
         ((await shape(0, { head, tree: "c".repeat(40) })) as {
@@ -397,11 +426,37 @@ Deno.test("analysis movement is changed; a failed run with no movement is analys
             execution_id: executionId,
             steps: {
                 ...snapshots("after", { head, tree }),
-                execute: ok('{"API_KEY":"x"}'),
+                execute: ok(""),
             },
+            local: await downloaded("report", '{"API_KEY":"x"}'),
         }),
         { error_code: "tasks.analysis_report_invalid" },
     );
+});
+
+Deno.test("an oversized downloaded report is refused as too large", async () => {
+    const result = await analysisResult({
+        operation_id: 11,
+        intent: analysis,
+        gate: {
+            error_code: "",
+            entrypoint_sha256: "d".repeat(64),
+            before: { head, tree },
+        },
+        execution_id: executionId,
+        steps: { ...snapshots("after", { head, tree }), execute: ok("") },
+        local: await downloaded("report", "x".repeat(70000)),
+    });
+    assertEquals(
+        (result as { error_code: string }).error_code,
+        "tasks.analysis_report_too_large",
+    );
+});
+
+Deno.test("a report keeps its SHA-256 identities: the 64-hex credential rule does not refuse it", () => {
+    const sha256 = { ...identity, head: "e".repeat(64), tree: "f".repeat(64) };
+    const raw = JSON.stringify({ ...JSON.parse(envelope()), ...sha256 });
+    assertEquals(report(raw, sha256, 0).status, "ready");
 });
 
 Deno.test("teardown assets record one SSH exec argv per teardown command", async () => {
@@ -419,6 +474,7 @@ Deno.test("teardown assets record one SSH exec argv per teardown command", async
                 timeout_seconds: 30,
             }],
         },
+        root: "/tmp/teardown",
     }, {
         writeResource: (_spec, _name, record) => {
             value = record as Record<string, unknown>;
@@ -427,6 +483,12 @@ Deno.test("teardown assets record one SSH exec argv per teardown command", async
     });
     assertEquals(value, {
         teardown: [[
+            "/bin/bash",
+            "-c",
+            'mkdir -p -m 0700 -- "$1" && exec >"$1/$2" 2>&1 && shift 2 && exec "$@"',
+            "orbit-output",
+            "/tmp/teardown",
+            "teardown-0",
             "env",
             "-C",
             "/home/orbit/apps/proof/workspace",

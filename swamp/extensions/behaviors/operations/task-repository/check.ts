@@ -12,16 +12,22 @@ import {
     type Run,
     run,
 } from "../tasks/publish.ts";
+import { capturedArgv, readPublicTail } from "../../_lib/public_output.ts";
 import { lifecycleArgv } from "./lifecycle.ts";
-import { programOutput, snapshot } from "./program.ts";
+import { snapshot } from "./program.ts";
 
 /*
  * Typed data for tasks.check and its scheduled CI observations. Every task VM
  * step is one official `@swamp/ssh exec` argv; this module builds those argv
  * lists on Node 209 and shapes their public outputs. It runs nothing.
+ * Repository commands write their output to `<root>/output/<step>` on the VM;
+ * one official SSH copy downloads that directory to a private worker
+ * directory, and `local` reads, redacts and deletes each file, so raw command
+ * output never enters native history.
  */
 
 const ObjectValue = z.record(z.string(), z.unknown());
+const OUTPUT_BYTES = 16384;
 const Sha = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 const Account = z.object({
     ssh_execution: z.object({
@@ -54,8 +60,9 @@ const within = (root: string, directory: string) =>
 
 /**
  * The argv lists of every check step, from the admitted intent. `root` is the
- * run's scratch directory on the VM; it holds the snapshot index and the
- * start-commit trees. Invalid deliverable paths refuse before any command.
+ * run's scratch directory on the VM; it holds the snapshot index, the
+ * start-commit trees and each command's output file under `output/`, named
+ * after its step. Invalid deliverable paths refuse before any command.
  */
 export function prepare(raw: unknown, nodeId: number, root: string) {
     const input = CheckInput.parse(raw);
@@ -68,8 +75,12 @@ export function prepare(raw: unknown, nodeId: number, root: string) {
         "INERTIA_SSR_PORT=" + input.ssr_port,
         "INERTIA_SSR_URL=http://127.0.0.1:" + input.ssr_port,
     ];
-    const command = (directory: string, source: string) =>
-        lifecycleArgv(directory, user, source, environment);
+    const command = (name: string, directory: string, source: string) =>
+        capturedArgv(
+            `${root}/output`,
+            name,
+            lifecycleArgv(directory, user, source, environment),
+        );
     const commands = input.deliverables.filter((item) =>
         item.type === "command"
     );
@@ -81,11 +92,17 @@ export function prepare(raw: unknown, nodeId: number, root: string) {
     return {
         valid,
         error_code: valid ? "" : "tasks.deliverable_invalid",
-        setup: input.setup.map((step) => command(workspace, step.command)),
+        setup: input.setup.map((step, index) =>
+            command(`setup-${index}`, workspace, step.command)
+        ),
         // Skipped by its guard when the Project has no check command.
-        project: command(workspace, input.command ?? "true"),
-        deliverables: commands.map((item) =>
-            command(within(workspace, item.directory), item.command)
+        project: command("project", workspace, input.command ?? "true"),
+        deliverables: commands.map((item, index) =>
+            command(
+                `deliverable-${index}`,
+                within(workspace, item.directory),
+                item.command,
+            )
         ),
         // The start-commit run of a `fails_on_base` command: an extracted
         // archive of the base commit, the installed `vendor` and
@@ -148,18 +165,36 @@ export function prepare(raw: unknown, nodeId: number, root: string) {
                     ]
                     : ["true"],
                 directory: ["test", "-d", within(tree, item.directory)],
-                run: command(within(tree, item.directory), item.command),
+                run: command(
+                    `base-${index}`,
+                    within(tree, item.directory),
+                    item.command,
+                ),
             };
         }),
     };
 }
 
-/** One command step's exit code and redacted output, or nothing when it did not run. */
-function commandResult(item: Run): { exit_code?: number; output?: string } {
-    return typeof item.exitCode === "number"
-        ? { exit_code: item.exitCode, output: programOutput(item) }
-        : {};
+type Command = { exit_code?: number; output?: string };
+
+/**
+ * One command step's exit code and the redacted tail of its downloaded output
+ * file in `local`, or nothing when it did not run. A ran command whose output
+ * file is missing refuses the check.
+ */
+async function commandResult(
+    steps: Steps,
+    name: string,
+    local: string,
+): Promise<Command> {
+    const item = run(steps, name);
+    if (typeof item.exitCode !== "number") return {};
+    const output = await readPublicTail(`${local}/${name}`, OUTPUT_BYTES);
+    if (output === null) throw new MissingOutput(name);
+    return { exit_code: item.exitCode, output: output.output };
 }
+
+class MissingOutput extends Error {}
 
 /** `git diff-tree -r --no-renames --name-status -z` rows, or null when the diff did not run. */
 export function diffRows(item: Run) {
@@ -175,19 +210,16 @@ export function diffRows(item: Run) {
     return rows;
 }
 
+/** Whether ordered setup passed, from exit codes only; output is read once in `local`. */
 export function setupResult(input: Input, steps: Steps) {
-    const observations = input.setup.map((item, index) => ({
+    const failed = input.setup.map((item, index) => ({
         name: item.name,
-        ...commandResult(run(steps, "setup-" + index)),
-    }));
-    const failed = observations.find((item) => item.exit_code !== 0);
+        exit_code: run(steps, "setup-" + index).exitCode,
+    })).find((item) => item.exit_code !== 0);
     return {
         passed: !failed,
         exit_code: failed ? (failed.exit_code ?? 255) : 0,
         failed_step: failed?.name ?? null,
-        output: observations.map((item) => item.output ?? "").join("").slice(
-            -16384,
-        ),
     };
 }
 
@@ -215,10 +247,15 @@ function stepRefusal(input: Input, steps: Steps): string | null {
         : null;
 }
 
-export function localResult(
+/**
+ * The local check evidence. `outputs` is the private worker directory that
+ * holds the downloaded command output files; each is deleted after it is read.
+ */
+export async function localResult(
     input: Input,
     prepared: Record<string, unknown>,
     steps: Steps,
+    outputs: string,
 ) {
     if (prepared.error_code) {
         return {
@@ -231,17 +268,35 @@ export function localResult(
     const before = snapshot(steps, "before"),
         after = snapshot(steps, "after"),
         setup = setupResult(input, steps);
-    const project: { exit_code?: number; output?: string } =
-        input.command && setup.passed
-            ? commandResult(run(steps, "project"))
-            : { exit_code: setup.exit_code, output: "" };
+    const read = (name: string) => commandResult(steps, name, outputs);
     const commandItems = input.deliverables.filter((item) =>
         item.type === "command"
     );
+    let setupOutput = "", project: Command;
+    const pairs: [typeof commandItems[number], Command, Command][] = [];
+    try {
+        for (const index of input.setup.keys()) {
+            setupOutput += (await read("setup-" + index)).output ?? "";
+        }
+        project = input.command && setup.passed
+            ? await read("project")
+            : { exit_code: setup.exit_code, output: "" };
+        for (const [index, item] of commandItems.entries()) {
+            pairs.push([
+                item,
+                await read("deliverable-" + index),
+                await read("base-" + index),
+            ]);
+        }
+    } catch (error) {
+        if (!(error instanceof MissingOutput)) throw error;
+        return {
+            error_code: "tasks.repository_execution_unknown",
+            check_id: input.check_id,
+        };
+    }
     const commands = Object.fromEntries(
-        commandItems.flatMap((item, index) => {
-            const current = commandResult(run(steps, "deliverable-" + index)),
-                base = commandResult(run(steps, "base-" + index));
+        pairs.flatMap(([item, current, base]) => {
             if (current.exit_code === undefined) return [];
             return [[item.id, {
                 ...current,
@@ -263,7 +318,8 @@ export function localResult(
             ? "passed"
             : "failed",
         exit_code: project.exit_code,
-        output: (setup.output + (project.output ?? "")).slice(-16384),
+        output: (setupOutput.slice(-OUTPUT_BYTES) + (project.output ?? ""))
+            .slice(-OUTPUT_BYTES),
         head_before: before.head,
         tree_before: before.tree,
         head: after.head,
@@ -537,7 +593,7 @@ export function finish(args: Record<string, unknown>) {
 /** Public check data on Node 209; commands, Git and HTTP are placed steps. */
 export const behavior = {
     type: "@nckrtl/task-check-data",
-    version: "2026.11.02.2",
+    version: "2026.11.02.3",
     resources: {
         public: {
             description: "Public check observations",
@@ -638,18 +694,19 @@ export const behavior = {
                             passed: false,
                             exit_code: 255,
                             failed_step: "validation",
-                            output: "",
                         },
                 ),
         },
         local: {
-            description: "Shape local check and deliverable evidence",
+            description:
+                "Read, redact and delete the downloaded command output and shape local check and deliverable evidence",
             arguments: ObjectValue,
-            execute: (args: Record<string, unknown>, ctx: Context) => {
-                const result = localResult(
+            execute: async (args: Record<string, unknown>, ctx: Context) => {
+                const result = await localResult(
                     CheckInput.parse(args.intent),
                     ObjectValue.parse(args.prepared),
                     ObjectValue.parse(args.steps),
+                    z.string().startsWith("/").parse(args.outputs),
                 );
                 return output(ctx, {
                     result,

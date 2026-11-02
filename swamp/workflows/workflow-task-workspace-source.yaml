@@ -54,6 +54,7 @@ jobs:
       methodName: prepare
       inputs:
         intent: ${{ inputs.intent }}
+        root: ${{ "/tmp/orbit-task-provision-"+run.id }}
     dependsOn: []
   - name: directory
     labels: {role: swamp}
@@ -78,7 +79,9 @@ jobs:
       behaviorName: '${{ "tp-control" }}'
       methodName: execute
       inputs:
-        run: 'mkdir -p -- "$ORBIT_ROOT"
+        run: 'umask 077
+
+          mkdir -p -- "$ORBIT_ROOT"
 
           '
         env:
@@ -196,8 +199,10 @@ jobs:
         argv:
         - /usr/bin/mkdir
         - -p
+        - -m
+        - '0700'
         - --
-        - ${{ "/tmp/orbit-task-provision-"+run.id }}
+        - ${{ "/tmp/orbit-task-provision-"+run.id+"/output" }}
     dependsOn:
     - step: directory
       condition:
@@ -533,6 +538,58 @@ jobs:
     guard: ${{ has(steps.profile.outputs.error_code) || (self._index > 0 && (!("setup-"+string(self._index-1)
       in steps) || steps["setup-"+string(self._index-1)].status != "succeeded")) }}
     allowFailure: true
+  - name: setup_copy
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: copy
+      globalArgs:
+        hosts:
+        - address: ${{ inputs.workspace.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
+        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+        transport:
+          identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ inputs.workspace.ssh_execution.target.port }}
+          user: ${{ inputs.workspace.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        direction: from
+        recursive: true
+        src: ${{ "/tmp/orbit-task-provision-"+run.id+"/output" }}
+        dst: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id+"/" }}
+        timeoutSec: 60
+    dependsOn:
+    - step: prepare_remote
+      condition:
+        type: succeeded
+    - step: control
+      condition:
+        type: succeeded
+    - step: setup-${{ self._index }}
+      condition:
+        type: always
+    allowFailure: true
+  - name: setup_output
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-provision-data'
+      behaviorName: '${{ "tp-data-setup-output" }}'
+      methodName: setup_output
+      inputs:
+        intent: ${{ inputs.intent }}
+        directory: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id+"/output" }}
+    dependsOn:
+    - step: setup_copy
+      condition:
+        type: succeeded
+    allowFailure: true
   - name: result
     labels: {role: swamp}
     task:
@@ -593,6 +650,9 @@ jobs:
       condition:
         type: always
     - step: setup-${{ self._index }}
+      condition:
+        type: always
+    - step: setup_output
       condition:
         type: always
   - name: cleanup

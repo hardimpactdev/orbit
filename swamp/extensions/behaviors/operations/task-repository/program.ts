@@ -1,4 +1,10 @@
 import { z } from "npm:zod@4.4.3";
+import {
+    capturedArgv,
+    readCapture,
+    readPublicTail,
+    redactText,
+} from "../../_lib/public_output.ts";
 import { REPORT_BYTES, strictJson } from "../../_lib/repository_analysis.ts";
 import { AnalysisInput, ScriptInput } from "./input.ts";
 
@@ -6,14 +12,17 @@ import { AnalysisInput, ScriptInput } from "./input.ts";
  * Typed data for tasks.script and tasks.analyze. The task VM work is one
  * official `@swamp/ssh exec` argv per step; this module only builds those
  * argv lists on Node 209 and shapes their public outputs. It runs nothing.
+ * The program writes its output to a file on the VM; official SSH copy
+ * downloads it to a private worker directory, and `result` reads, redacts
+ * and deletes it, so raw program output never enters native history.
  */
 
 const ObjectValue = z.record(z.string(), z.unknown());
 const Kind = z.enum(["tasks.script", "tasks.analyze"]);
 const OUTPUT_BYTES = 16384;
-const OUTPUT_WINDOW = 102400;
+/** The file on the VM, and its downloaded copy, that holds the program output. */
+export const OUTPUT_FILE = { "tasks.script": "output", "tasks.analyze": "report" };
 const encoder = new TextEncoder();
-const decoder = new TextDecoder();
 
 type Context = {
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
@@ -40,12 +49,16 @@ async function sha256Hex(value: string): Promise<string> {
     ).join("");
 }
 
-/** The argv lists and stdin that the SSH steps run in the workspace. */
+/**
+ * The argv list and stdin that the execute step runs in the workspace. `root`
+ * is the run's private output directory on the VM.
+ */
 export async function prepare(args: {
     operation_id: number;
     node_id: number;
     kind: z.infer<typeof Kind>;
     intent: unknown;
+    root: string;
 }) {
     const { kind, input } = parseIntent(args.kind, args.intent);
     if (input.node_id !== args.node_id) throw new Error("Wrong task VM Node");
@@ -68,7 +81,8 @@ export async function prepare(args: {
     return {
         entrypoint,
         execution_id,
-        argv: [
+        // A script keeps stdout and stderr; the analyzer report is stdout only.
+        argv: capturedArgv(args.root, OUTPUT_FILE[kind], [
             "env",
             "-C",
             input.checkout_path,
@@ -77,7 +91,7 @@ export async function prepare(args: {
             ...(kind === "tasks.script"
                 ? (input as z.infer<typeof ScriptInput>).args
                 : []),
-        ],
+        ], kind === "tasks.script" ? "merge" : "discard"),
         // The analyzer reads its admitted plan and candidate on stdin.
         stdin: analysis === null ? "" : JSON.stringify({
             plan: analysis.plan,
@@ -163,79 +177,30 @@ export function gate(args: {
     return { error_code, entrypoint_sha256: entrypoint_sha256 ?? "", before };
 }
 
-/** The public redaction rule for repository program output. */
-export function redactText(raw: string): string {
-    // Terminal escape sequences carry no evidence.
-    // deno-lint-ignore no-control-regex
-    let text = raw.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
-    text = text.replace(
-        /-----BEGIN [A-Z0-9 ]+-----[\s\S]*?(?:-----END [A-Z0-9 ]+-----|$)/g,
-        "[REDACTED]",
-    );
-    if (text.includes("-----END ")) {
-        const tail = text.slice(text.lastIndexOf("-----END ") + 9);
-        const close = tail.indexOf("-----");
-        text = close < 0 ? tail : tail.slice(close + 5);
-    }
-    text = text.replace(
-        /(\b[a-z][a-z0-9+.-]*:\/\/)[^/@\s]+@/gi,
-        "$1[REDACTED]@",
-    );
-    text = text.replace(
-        /(?:Proxy-)?Authorization\s*:[^\r\n]*/gi,
-        "Authorization: [REDACTED]",
-    );
-    text = text.replace(
-        /\bBearer\s+[A-Za-z0-9._+/=-]+/gi,
-        "Bearer [REDACTED]",
-    );
-    text = text.replace(
-        /(?<![A-Za-z0-9])(?:gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{20,})/g,
-        "[REDACTED]",
-    );
-    return text.replace(
-        /(["']?)([A-Za-z][A-Za-z0-9_-]{0,255})\1(\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,}&{\[\]]+)/g,
-        (match, quote: string, name: string, separator: string) =>
-            /TOKEN|SECRET|PASSWORD|PASSWD|PASSPHRASE|CREDENTIAL|APIKEY|APPKEY|PRIVATEKEY|KEYS?/i
-                    .test(name)
-                ? quote + name + quote + separator + "[REDACTED]"
-                : match,
-    );
-}
-
-/** Keep the last bytes of a UTF-8 string without a broken first character. */
-function tailBytes(value: string, limit: number): string {
-    const bytes = encoder.encode(value);
-    if (bytes.length <= limit) return value;
-    let start = bytes.length - limit;
-    while (start < bytes.length && (bytes[start] & 0xc0) === 0x80) start++;
-    return decoder.decode(bytes.subarray(start));
-}
-
-/** stdout followed by stderr, as a redacted tail of at most 16 KiB. */
-export function programOutput(
-    execution: { stdout?: string; stderr?: string },
-): string {
-    const raw = (execution.stdout ?? "") + (execution.stderr ?? "");
-    return tailBytes(redactText(tailBytes(raw, OUTPUT_WINDOW)), OUTPUT_BYTES);
-}
-
-/** tasks.script: a redacted 16 KiB tail of stdout and stderr, and the snapshot change. */
-export function scriptResult(args: { gate: unknown; steps: Steps }) {
+/**
+ * tasks.script: a redacted 16 KiB tail of stdout and stderr, read from the
+ * downloaded output file in `local`, and the snapshot change.
+ */
+export async function scriptResult(
+    args: { gate: unknown; steps: Steps; local: string },
+) {
     const checked = ObjectValue.parse(args.gate);
     if (checked.error_code) return { error_code: String(checked.error_code) };
     const before = checked.before as Snapshot;
     const after = snapshot(args.steps, "after");
     const execution = run(args.steps, "execute");
-    if (typeof execution.exitCode !== "number") {
+    const output = await readPublicTail(
+        `${args.local}/${OUTPUT_FILE["tasks.script"]}`,
+        OUTPUT_BYTES,
+    );
+    if (typeof execution.exitCode !== "number" || output === null) {
         return { error_code: "tasks.repository_execution_unknown" };
     }
-    const raw = (execution.stdout ?? "") + (execution.stderr ?? "");
     return {
         outcome: execution.exitCode === 0 ? "passed" : "failed",
         exit_code: execution.exitCode,
-        output: programOutput(execution),
-        output_truncated: encoder.encode(raw).length > OUTPUT_BYTES,
+        output: output.output,
+        output_truncated: output.truncated,
         changed: before.head !== after.head || before.tree !== after.tree,
         ...after,
     };
@@ -253,22 +218,19 @@ function fields(value: unknown, names: string[]): Record<string, unknown> {
 const isInteger = (value: unknown): value is number =>
     typeof value === "number" && Number.isSafeInteger(value);
 
+const tooLarge = () => ({
+    error_code: "tasks.analysis_report_too_large",
+    schema: 1,
+    error: { code: "tasks.analysis_report_too_large", required_bytes: null },
+});
+
 /** Validate the bounded analyzer stdout; a closed failure object returns its code. */
 export function report(
     raw: string,
     identity: Record<string, string>,
     code: number,
 ): Record<string, unknown> {
-    if (encoder.encode(raw).length > REPORT_BYTES) {
-        return {
-            error_code: "tasks.analysis_report_too_large",
-            schema: 1,
-            error: {
-                code: "tasks.analysis_report_too_large",
-                required_bytes: null,
-            },
-        };
-    }
+    if (encoder.encode(raw).length > REPORT_BYTES) return tooLarge();
     const value = strictJson(raw, REPORT_BYTES);
     if (
         code !== 0 && value !== null && typeof value === "object" &&
@@ -326,20 +288,27 @@ export function report(
         !ObjectValue.safeParse(data.data).success || Array.isArray(data.data)
     ) throw new Error("Invalid repository report");
     // Structured evidence is refused, never silently changed by redaction.
+    // It keeps its SHA-256 identities and digests, so the free-text 64-hex
+    // credential rule does not apply.
     const serialized = JSON.stringify(envelope);
-    if (redactText(raw) !== raw || redactText(serialized) !== serialized) {
+    const redact = (text: string) => redactText(text, { credentialHex: false });
+    if (redact(raw) !== raw || redact(serialized) !== serialized) {
         throw new Error("Private report data");
     }
     return envelope;
 }
 
-/** tasks.analyze: the complete artifact and native provenance, or a refusal code. */
+/**
+ * tasks.analyze: the complete artifact, read from the downloaded report file
+ * in `local`, and native provenance, or a refusal code.
+ */
 export async function analysisResult(args: {
     operation_id: number;
     intent: unknown;
     gate: unknown;
     execution_id: string;
     steps: Steps;
+    local: string;
 }) {
     const input = AnalysisInput.parse(args.intent);
     const checked = ObjectValue.parse(args.gate);
@@ -347,11 +316,16 @@ export async function analysisResult(args: {
     const before = checked.before as Snapshot;
     const after = snapshot(args.steps, "after");
     const execution = run(args.steps, "execute");
-    if (
-        typeof execution.exitCode !== "number" ||
-        typeof execution.stdout !== "string"
-    ) return { error_code: "tasks.repository_execution_unknown" };
-    const raw = execution.stdout;
+    // One byte over the bound is enough to refuse an oversized report.
+    const read = await readCapture(
+        `${args.local}/${OUTPUT_FILE["tasks.analyze"]}`,
+        REPORT_BYTES + 1,
+    );
+    if (typeof execution.exitCode !== "number" || read === null) {
+        return { error_code: "tasks.repository_execution_unknown" };
+    }
+    if (read.size > REPORT_BYTES) return tooLarge();
+    const raw = new TextDecoder().decode(read.bytes);
     let parsed: Record<string, unknown>;
     try {
         parsed = report(raw, {
@@ -407,7 +381,7 @@ export async function analysisResult(args: {
 /** Public data for the tasks.script and tasks.analyze steps; no execution or HTTP. */
 export const behavior = {
     type: "@nckrtl/task-repository-program",
-    version: "2026.11.02.2",
+    version: "2026.11.02.3",
     resources: {
         public: {
             description: "Public program argv and evidence",
@@ -425,6 +399,7 @@ export const behavior = {
                 node_id: z.number().int().positive(),
                 kind: Kind,
                 intent: ObjectValue,
+                root: z.string().startsWith("/"),
             }),
             execute: async (
                 args: Parameters<typeof prepare>[0],
@@ -444,7 +419,8 @@ export const behavior = {
                 output(ctx, gate(args)),
         },
         result: {
-            description: "Shape the public script or analysis result",
+            description:
+                "Read, redact and delete the downloaded program output and shape the public result",
             arguments: z.object({
                 operation_id: z.number().int().positive(),
                 kind: Kind,
@@ -452,6 +428,7 @@ export const behavior = {
                 gate: ObjectValue,
                 execution_id: z.string(),
                 steps: ObjectValue,
+                local: z.string().startsWith("/"),
             }),
             execute: async (
                 args: {
@@ -461,11 +438,12 @@ export const behavior = {
                     gate: unknown;
                     execution_id: string;
                     steps: Steps;
+                    local: string;
                 },
                 ctx: Context,
             ) => {
                 const result = args.kind === "tasks.script"
-                    ? scriptResult(args)
+                    ? await scriptResult(args)
                     : await analysisResult(args);
                 return output(ctx, {
                     result_json: JSON.stringify(result),

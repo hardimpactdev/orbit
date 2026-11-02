@@ -77,6 +77,7 @@ sequenceDiagram
   %%> - reads the checkout with one `@swamp/ssh exec` argv each: `identity` (HEAD and branch), `analysis_base` (merge base with the default branch), `inspect` (`stat` of `composer.json` and the entry point) and `composer` (its text)
   %%> - `profile` on 209 refuses a checkout on another commit, classifies the source and keeps the start commit's merge base as the fixed analysis base
   %%> - runs the Project setup steps in order as `setup-0`, `setup-1`, …: each is one `@swamp/ssh exec` argv, `env -C <checkout> … /bin/bash -lc <command>`, with its own timeout
+  %%> - each setup command writes its output to a file on the VM, never to the SSH session; `setup_copy` downloads the files into a private worker directory and `setup_output` keeps a redacted 4 KiB tail of each and deletes the files
   %%> - no step copies a script to the VM
   Note over GW: Board follows the run<br/>step events → group, subtasks
   %%> How:
@@ -176,6 +177,7 @@ sequenceDiagram
     %%> - only while VM 88 runs; a parked VM skips guest teardown
     %%> What it does:
     %%> - runs each Project teardown step in order as `teardown-0`, `teardown-1`, …: one `@swamp/ssh exec` argv in the checkout, with its own timeout; no script reaches the VM
+    %%> - each writes its output to a file on the VM; `output_copy` downloads them and `output` keeps a redacted 4 KiB tail of each, so raw output never reaches native history
   end
   SW->>H: Destroy the task VM<br/>delete VM · revoke model key
   %%> What it does:

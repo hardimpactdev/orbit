@@ -83,6 +83,7 @@ class NativePublicationFixture(harness.NativeTestCase):
         # The check data builds command argv with the shared lifecycle and program rules.
         for name in (
             "_lib/repository_analysis.ts",
+            "_lib/public_output.ts",
             "operations/instance-deploy/app_step_runtime.ts",
         ):
             path = self.repo / "extensions/behaviors" / name
