@@ -39,3 +39,4 @@ node.remove
 node.role_remove
 route.create
 tasks.cancel
+vault.teardown

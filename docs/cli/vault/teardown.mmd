@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R1 (--keep-items is record-only), R2-R4, swamp-vault-design. Same shape as tool.remove. docs/reference/vaultwarden.md.
-  %% Tightened: flow-tighten 2026-11-02, rule 16 (the collection read only picks the items, so it folds into the delete step).
+  %% Tightened: flow-tighten 2026-11-02, rule 22 (plain pinned CLI primitives, native fan-out, vault-backed credentials and native end check).
   %% status: draft
   %% command: vault:teardown
   %% kind: vault.teardown
@@ -45,19 +45,29 @@ sequenceDiagram
     %%> - the task number, at once
     %%> Next:
     %%> - the CLI follows the task with `operation:show`
-    SW->>VW: Log in and unlock<br/>bw login · unlock · sync
-    %%> How:
-    %%> - the official Bitwarden CLI on 209, in a scratch home, trusting only the Orbit root CA
-    SW->>VW: Delete the items<br/>bw list · bw delete --permanent
-    %%> What it does:
-    %%> - lists the collection, picks the items whose ID and decrypted `orbit.source` still match the ledger, and deletes each permanently
-    %%> Refuses:
-    %%> - before any deletion, when a matching item also belongs to another visible collection: `vault.item_shared`
-    %%> Leaves:
-    %%> - unrecorded copies and items whose source differs from the ledger
-    SW->>VW: Log out<br/>bw logout · remove scratch home
-    %%> What it does:
-    %%> - logs out and deletes the scratch home, on success and on failure
+    Note over SW: Prepare public data
+    Note over SW: Create CLI session
+    Note over SW: Prepare session file
+    SW->>VW: Configure the server
+    SW->>VW: Log in
+    SW->>VW: Unlock the vault
+    Note over SW: Resolve the session
+    SW->>VW: Sync the vault
+    SW->>VW: Read organizations
+    Note over SW: Select the organization
+    SW->>VW: Read private inventory
+    Note over SW: inventory
+    SW->>VW: Read private trash
+    Note over SW: trash
+    Note over SW: Select published items
+    SW->>VW: Delete the items
+    SW->>VW: Log out
+    Note over SW: Remove CLI session
+    Note over SW: Confirm teardown
+    %% Organization membership and collection inventory run in parallel.
+    %% Each CLI step is one bounded command; typed methods only shape private data.
+    %% Delete the items fans out over the admitted ledger and skips non-matching IDs and sources.
+    %% All shared-item refusals precede deletion; cleanup also follows skipped dependencies.
     alt every item deleted
       VW-->>SW: 14 items deleted
       %%> Returns:

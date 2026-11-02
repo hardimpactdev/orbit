@@ -173,7 +173,10 @@ def main():
     from fixtures.vaultwarden_account import provision
 
     configuration = provision(url, secrets.token_urlsafe(32), ca)
-    if len(sys.argv) > 1 and sys.argv[1] == "sync":
+    if len(sys.argv) > 1 and sys.argv[1] in ("sync", "teardown", "keep"):
+        if sys.argv[1] != "sync":
+            with (folder / "account.json").open("x", opener=lambda path, flags: os.open(path, flags, 0o600)) as account:
+                json.dump(configuration, account)
         # An external connection record needs no Database server in this topology.
         # Its private test credential enters PHP only through stdin.
         run(

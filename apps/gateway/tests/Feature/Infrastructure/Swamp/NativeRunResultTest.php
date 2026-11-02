@@ -17,6 +17,17 @@ function nativeRunResultTerminal(array $run, array $selector): array
     return (new ReflectionMethod(SwampCommandStep::class, 'terminalOutput'))->invoke(app(SwampCommandStep::class), $run, $selector);
 }
 
+it('keeps every fan-out status and failure after the output capture limit', function (): void {
+    $steps = array_map(static fn (int $index): array => ['name' => 'Delete the items-'.$index, 'status' => 'succeeded', 'outputs' => ['stdout' => 'deleted', 'exitCode' => 0]], range(0, 299));
+    $steps[] = ['name' => 'Delete the items-300', 'status' => 'failed'];
+    $result = app(NativeRunResult::class)->fromRun(nativeRunResultFixture('failed', $steps));
+
+    expect(NativeRunResult::stepStatus($result, 'Delete the items-299'))->toBe('succeeded')
+        ->and($result['steps']['Delete the items-299'])->toBe(['status' => 'succeeded'])
+        ->and($result['summary']['succeeded'])->toBe(300)
+        ->and($result['summary']['failed_steps'])->toBe(['Delete the items-300']);
+});
+
 it('keys Swamp run data by step name, with the summary of the workflow-summary report', function (): void {
     $result = app(NativeRunResult::class)->fromRun(nativeRunResultFixture('failed', [
         ['name' => 'Create the apps folder', 'status' => 'succeeded', 'outputs' => ['stdout' => str_repeat('x', 5000), 'exitCode' => 0, 'stderr' => 'private']],

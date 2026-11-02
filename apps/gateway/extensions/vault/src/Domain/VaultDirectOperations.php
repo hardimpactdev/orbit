@@ -22,8 +22,9 @@ final readonly class VaultDirectOperations implements DirectOperationContributio
                 'workflow_inputs' => true, 'terminal_result' => ['job' => 'setup', 'step' => 'Verify the account'],
             ],
             'vault.teardown' => [
-                'workflow' => 'operation-vault-direct', 'projection' => DirectOperationResultProjection::class, 'result_hook' => VaultDirectResult::class,
-                'private_material' => ['configuration' => 'vault.credentials'],
+                'workflow' => 'operation-vault-teardown', 'projection' => VaultTeardownResultProjection::class, 'result_hook' => VaultDirectResult::class,
+                'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^vault-teardown-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$'], self::CliSecrets],
+                'workflow_inputs' => true, 'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm teardown', 'native' => true],
             ]];
     }
 }

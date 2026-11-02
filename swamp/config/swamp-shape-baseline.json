@@ -1259,32 +1259,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/vault/collection.ts",
-      "rule": "inline-script",
-      "count": 297,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/vault/mod.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/vault/mod.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/vault/mod.ts",
-      "rule": "secret-argv",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/orbit_gateway.ts",
       "rule": "gateway-http",
       "count": 1,

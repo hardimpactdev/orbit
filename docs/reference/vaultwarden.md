@@ -114,7 +114,7 @@ A failed change fails the native run. The publishing ledger stays unchanged, and
 
 [`vault:teardown`](/cli/vault/teardown) permanently deletes published items whose recorded ID and decrypted `orbit.source` still match in the configured organization and collection, then deletes the stored configuration and publishing ledger. It preserves unrecorded copies, including copies with an `orbit.source` field, and items whose source differs from the ledger.
 
-Teardown refuses before deletion if a matching published item also belongs to another collection, because Vaultwarden deletes the whole item. It needs Vaultwarden to answer. With `--keep-items`, it leaves the items in Vaultwarden and does not contact it. After a later setup on the same collection, sync can adopt items for wanted sources and preserves the remaining unrecorded items. If Vaultwarden cannot delete an item, teardown fails and keeps the setup and the items it did not delete, so it can run again.
+Teardown refuses before deletion if a matching published item also belongs to another collection, because Vaultwarden deletes the whole item. It needs Vaultwarden to answer. With `--keep-items`, the Gateway records a completed Operation, clears its setup and ledger, and starts no Swamp run or Vaultwarden request. After a later setup on the same collection, sync can adopt items for wanted sources and preserves the remaining unrecorded items. If Vaultwarden cannot delete an item, teardown fails and keeps the setup and the items it did not delete, so it can run again.
 
 Vaultwarden's `collectionIds` response lists only collections visible to the account. The sharing check detects those memberships; an absent ID does not prove that the item has no membership in a collection hidden from the account. Sync uses the same check before deleting a recorded item.
 
@@ -183,11 +183,11 @@ Setup and sync delegate key derivation to the official CLI. Setup reads its cach
 
 ### Sync uses the official CLI
 
-Sync uses the official Bitwarden CLI package @bitwarden/cli 2026.6.0 through native command steps. The CLI owns authentication, SDK cryptography and its encrypted cache. Each item mutation is a separate step. Setup uses the same CLI primitives; teardown retains its existing collection implementation.
+Sync uses the official Bitwarden CLI package @bitwarden/cli 2026.6.0 through native command steps. The CLI owns authentication, SDK cryptography and its encrypted cache. Each item mutation is a separate step. Setup and teardown use the same CLI primitives.
 
 ### TLS verifies the server
 
-Admission accepts only HTTPS `.orbit` origins. Sync uses the official CLI's default trust store plus the public Orbit root through `NODE_EXTRA_CA_CERTS`; it never disables certificate verification. Setup uses the same CLI trust configuration; teardown retains its existing Orbit-root-only TLS context and request deadlines.
+Admission accepts only HTTPS `.orbit` origins. Sync uses the official CLI's default trust store plus the public Orbit root through `NODE_EXTRA_CA_CERTS`; it never disables certificate verification. Setup and teardown use the same CLI trust configuration and bounded commands.
 
 ### Removed credentials are deleted
 
@@ -195,9 +195,9 @@ When a credential is removed, its item is deleted permanently instead of moved t
 
 ## Operation execution
 
-Setup, synchronization, and teardown record an Operation and return HTTP 202. Sync uses the native CLI workflow described below. Setup uses the native account workflow described below. Teardown still runs its existing collection program on the recorded Gateway Node, with the shared run-bound private-material endpoint and protected stdin. Terminal completion deletes the encrypted snapshot.
+Setup, synchronization, and teardown record an Operation and return HTTP 202. Sync uses the native CLI workflow described below. Setup uses the native account workflow described below. Teardown uses `operation-vault-teardown` with vault-backed credentials and full public intent. Only setup keeps an encrypted admission snapshot until its terminal configuration projection.
 
-A retry reconciles the collection by `orbit.source` before it creates an item. It adopts a wanted marker only when that source has no ledger entry. A missing recorded cipher creates a replacement and preserves unrecorded copies. Only recorded orphans are eligible for deletion. A failed teardown keeps its configuration and ledger for retry. Scheduled synchronization records intent; it does no network work in PHP.
+A retry reconciles the collection by `orbit.source` before it creates an item. It adopts a wanted marker only when that source has no ledger entry. A missing recorded cipher creates a replacement and preserves unrecorded copies. Only recorded orphans are eligible for deletion. A failed teardown keeps its configuration and removes only the ledger entries whose native deletion steps succeeded. Scheduled synchronization records intent; it does no network work in PHP.
 
 Direct setup, sync, and teardown results carry only collection identifiers and ledger metadata. Each ledger list contains at most 4,096 entries; each entry string is at most 1 KiB, and the whole result is at most 256 KiB. The Gateway refuses an oversized result before projecting its ledger and stores no partial result.
 
@@ -209,7 +209,9 @@ Only the successful terminal result stores the setup; a failure preserves the pr
 
 The pinned CLI caches the account KDF as public disk-state metadata. Setup reads that metadata to preserve the PBKDF2-SHA256 constraint and iteration limit, without a second HTTP client or cryptography implementation.
 
-`vault.teardown` retains `operation-vault-direct`. Its credentials stay in the effect callback and protected stdin. Only bounded public metadata reaches its result. Terminal replay does not read deleted credentials or project the ledger twice.
+`vault.teardown` uses the same pinned CLI and typed private-data methods as setup and sync. It plans all deletions before changing anything, refusing shared items first. Each admitted ledger entry has a native deletion step, guarded by its exact ID and source match. After work fails or is skipped, cleanup logs out and removes the private cache. A native assertion checks the terminal state.
+
+The Gateway reads that terminal result once, clears its setup only on success, and records completed deletions on failure. Terminal replay does not alter a later setup. It has no private-material request, result callback, shipped script or custom Vaultwarden client.
 
 ### Native sync with the official Bitwarden CLI
 

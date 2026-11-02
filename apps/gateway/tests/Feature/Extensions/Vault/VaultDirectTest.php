@@ -76,24 +76,6 @@ it('starts setup directly and projects encrypted settings only after proven safe
     Http::assertNothingSent();
 });
 
-it('tears down directly and clears settings and ledger only after proven removal', function (): void {
-    admitDirectVault($this, 'teardown');
-    VaultItem::query()->create(['source' => 'database:7', 'cipher_id' => 'cipher', 'revision_date' => 'revision', 'fingerprint' => 'fingerprint']);
-    expect(app(DirectOperation::class)->writer('vault.teardown'))->toBe('direct');
-    expect(app(OperationKinds::class)->definition('vault.teardown'))->not->toHaveKeys(['runs', 'completion', 'completion_contract']);
-    expect($this->socket->sent[0]['payload']['inputs'])->toBe(['operation_id' => $this->operation->id, 'kind' => 'vault.teardown', 'node_id' => $this->gateway->id]);
-    $this->getJson($this->path.'/private-material?run_id='.$this->run)->assertOk()->assertJsonPath('data.configuration.client_secret', 'private-vault-client');
-    $this->postJson($this->path.'/result', directVaultProjection($this, ['outcome' => 'succeeded', 'data' => ['backend' => 'synced']]))->assertConflict();
-    expect(app(VaultSettings::class)->configuration())->not->toBeNull();
-    $this->assertDatabaseCount('vault_items', 1);
-    $this->postJson($this->path.'/result', directVaultProjection($this, ['outcome' => 'succeeded', 'data' => ['backend' => 'absent']]))->assertOk();
-    expect(app(VaultSettings::class)->configuration())->toBeNull();
-    $this->assertDatabaseCount('vault_items', 0);
-    expect(Setting::query()->where('key', 'vault.operation.'.$this->operation->id)->exists())->toBeFalse();
-    expect(json_encode([$this->operation->fresh()->toArray(), Activity::query()->get()->toArray()]))->not->toContain('private-vault-client')->not->toContain('private-vault-master');
-    Http::assertNothingSent();
-});
-
 it('fails setup without projecting successful verification when native cleanup fails', function (): void {
     app(VaultSettings::class)->put(new VaultConfiguration(new VaultCredentials('https://vault.orbit', 'old-client', 'old-secret', 'old-password', 'old-device'), 'old@example.test', 'old-org', 'Old', 'old-collection', 'Old'));
     admitDirectVault($this, 'setup');
@@ -136,48 +118,75 @@ it('projects a setup refusal from a typed failure or one native CLI step without
     ['Clear the session', 'Command exited with code 1', 'operation.native_failed'],
 ]);
 
-it('preserves settings and ledger after a failed direct teardown and forgets its snapshot', function (): void {
+function vaultTeardownReceipt(object $test, string $status, array $steps): void
+{
+    $run = ['id' => $test->run, 'workflowName' => 'operation-vault-teardown', 'status' => $status,
+        'inputs' => [...$test->operation->input, 'operation_id' => $test->operation->id, 'node_id' => $test->gateway->id, 'kind' => 'vault.teardown'],
+        'startedAt' => now()->toIso8601String(), 'completedAt' => now()->toIso8601String(), 'jobs' => [['name' => 'cleanup', 'steps' => $steps]]];
+    $test->socket->reply = static fn (array $request): array => [['id' => $request['id'], 'type' => 'workflow.history.get', 'payload' => ['data' => $run]]];
+    app(SwampCommandStep::class)->projectTerminal($test->operation, $run, ['job' => 'cleanup', 'step' => 'Confirm teardown', 'native' => true]);
+}
+
+it('keeps items with a completed record and no Swamp or vault call', function (): void {
+    app(VaultSettings::class)->put(new VaultConfiguration(new VaultCredentials('https://vault.orbit', 'client', 'secret', 'password', 'device'), 'test@example.test', 'org', 'Orbit', 'collection', 'Test'));
+    VaultItem::query()->create(['source' => 'database-user:7', 'cipher_id' => 'published', 'revision_date' => 'revision', 'fingerprint' => 'fingerprint']);
+    $this->deleteJson('/api/v1/vault', ['keep_items' => true])->assertAccepted()->assertJsonPath('data.status', 'succeeded')->assertJsonPath('data.result.data.backend', 'absent');
+    expect($this->socket->sent)->toBe([]);
+    expect(app(VaultSettings::class)->configuration())->toBeNull();
+    $this->assertDatabaseCount('vault_items', 0);
+    expect(Operation::query()->sole()->state['swamp_run_id'] ?? null)->toBeNull();
+});
+
+it('starts teardown with public intent and vault names and projects one native terminal result', function (): void {
+    VaultItem::query()->create(['source' => 'database-user:7', 'cipher_id' => 'published', 'revision_date' => 'revision', 'fingerprint' => 'fingerprint']);
     admitDirectVault($this, 'teardown');
-    VaultItem::query()->create(['source' => 'database:7', 'cipher_id' => 'cipher', 'revision_date' => 'revision', 'fingerprint' => 'fingerprint']);
-    $projection = directVaultProjection($this, ['error_code' => 'vault.unreachable']);
-    $projection['status'] = 'failed';
-    $projection['error_code'] = 'vault.unreachable';
-    $this->postJson($this->path.'/result', $projection)->assertOk();
+    $start = current(array_filter($this->socket->sent, static fn (array $frame): bool => $frame['type'] === 'workflow.run'));
+    expect($start['payload']['inputs']['intent']['ledger'][0]['cipher_id'])->toBe('published');
+    expect($start['payload']['inputs']['execution_secrets']['configuration']['key'])->toStartWith('vault-teardown-');
+    expect(json_encode($start))->not->toContain('private-vault-client')->not->toContain('private-vault-master');
+    expect(Setting::query()->where('key', 'vault.operation.'.$this->operation->id)->exists())->toBeFalse();
+    vaultTeardownReceipt($this, 'succeeded', [['name' => 'Delete the items-0', 'status' => 'succeeded'], ['name' => 'Confirm teardown', 'status' => 'succeeded']]);
+    expect($this->operation->fresh()->result)->toBe(['outcome' => 'succeeded', 'data' => ['backend' => 'absent']]);
+    expect(app(VaultSettings::class)->configuration())->toBeNull();
+    $this->assertDatabaseCount('vault_items', 0);
+    expect(array_count_values(array_column($this->socket->sent, 'type'))['workflow.history.get'])->toBe(1);
+});
+
+it('records all completed deletions after a later failure, including beyond 256 steps', function (): void {
+    VaultItem::query()->insert(array_map(static fn (int $index): array => ['source' => 'database-user:'.$index, 'cipher_id' => 'cipher-'.$index, 'revision_date' => 'revision', 'fingerprint' => 'fingerprint'], range(0, 300)));
+    admitDirectVault($this, 'teardown');
+    $steps = array_map(static fn (int $index): array => ['name' => 'Delete the items-'.$index, 'status' => 'succeeded'], range(0, 299));
+    $steps[] = ['name' => 'Delete the items-300', 'status' => 'failed', 'error' => 'Command exited with code 1'];
+    $steps[] = ['name' => 'Remove CLI session', 'status' => 'succeeded'];
+    $steps[] = ['name' => 'Confirm teardown', 'status' => 'failed', 'error' => 'Vault teardown or CLI session cleanup failed.'];
+    vaultTeardownReceipt($this, 'failed', $steps);
+    expect($this->operation->fresh()->error_code)->toBe('vault.unreachable');
+    expect(app(VaultSettings::class)->configuration())->not->toBeNull();
+    expect(VaultItem::query()->sole()->cipher_id)->toBe('cipher-300');
+});
+
+it('refuses a shared item before deletion and preserves the setup and ledger', function (): void {
+    VaultItem::query()->create(['source' => 'database-user:7', 'cipher_id' => 'published', 'revision_date' => 'revision', 'fingerprint' => 'fingerprint']);
+    admitDirectVault($this, 'teardown');
+    vaultTeardownReceipt($this, 'failed', [['name' => 'Select published items', 'status' => 'failed', 'error' => 'vault.item_shared'], ['name' => 'Delete the items-0', 'status' => 'skipped'], ['name' => 'Confirm teardown', 'status' => 'failed', 'error' => 'Vault teardown or CLI session cleanup failed.']]);
+    expect($this->operation->fresh()->error_code)->toBe('vault.item_shared');
     expect(app(VaultSettings::class)->configuration())->not->toBeNull();
     $this->assertDatabaseCount('vault_items', 1);
-    expect(Setting::query()->where('key', 'vault.operation.'.$this->operation->id)->exists())->toBeFalse();
-    $this->getJson($this->path.'/private-material?run_id='.$this->run)->assertConflict();
-    Http::assertNothingSent();
 });
 
-it('records and replays a native dispatch failure without private snapshot resolution', function (): void {
+it('keeps a later setup when a native teardown terminal event is replayed', function (): void {
     admitDirectVault($this, 'teardown');
-    $projection = directVaultProjection($this, ['error_code' => 'operation.native_dispatch_failed']);
-    $projection['status'] = 'failed';
-    $projection['error_code'] = 'operation.native_dispatch_failed';
-    $this->postJson($this->path.'/result', $projection)->assertOk();
-    expect(Setting::query()->where('key', 'vault.operation.'.$this->operation->id)->exists())->toBeFalse();
-
-    $this->postJson($this->path.'/result', $projection)->assertOk();
-
-    expect($this->operation->fresh()->status->value)->toBe('failed');
-    expect(app(VaultSettings::class)->configuration())->not->toBeNull();
-    Http::assertNothingSent();
+    $steps = [['name' => 'Confirm teardown', 'status' => 'succeeded']];
+    vaultTeardownReceipt($this, 'succeeded', $steps);
+    app(VaultSettings::class)->put(new VaultConfiguration(new VaultCredentials('https://vault.orbit', 'new-client', 'new-private-client', 'new-private-master', 'new-device'), 'new@example.test', 'new-org', 'New', 'new-collection', 'New'));
+    vaultTeardownReceipt($this, 'succeeded', $steps);
+    expect(app(VaultSettings::class)->configuration()?->collectionId)->toBe('new-collection');
 });
 
-it('preserves a later Vault configuration when a terminal setup or teardown result is replayed', function (string $action): void {
-    admitDirectVault($this, $action);
-    $result = $action === 'setup'
-        ? ['backend' => 'configured', 'email' => 'fixture@example.test', 'organization_id' => 'org', 'organization_name' => 'Orbit', 'collection_id' => 'collection', 'collection_name' => 'Test']
-        : ['backend' => 'absent'];
-    $projection = directVaultProjection($this, ['outcome' => 'succeeded', 'data' => $result]);
-    $this->postJson($this->path.'/result', $projection)->assertOk();
-    app(VaultSettings::class)->put(new VaultConfiguration(new VaultCredentials('https://vault.orbit', 'new-client', 'new-private-client', 'new-private-master', 'new-device'),
-        'new@example.test', 'new-org', 'New Organization', 'new-collection', 'New Collection'));
-
-    $this->postJson($this->path.'/result', $projection)->assertOk();
-
-    expect(app(VaultSettings::class)->configuration()?->collectionId)->toBe('new-collection');
-    expect(app(VaultSettings::class)->configuration()?->credentials->clientSecret)->toBe('new-private-client');
-    Http::assertNothingSent();
-})->with(['teardown']);
+it('refuses record-only retention while a sync holds the Vault lock', function (): void {
+    admitDirectVault($this, 'sync');
+    $sent = count($this->socket->sent);
+    $this->deleteJson('/api/v1/vault', ['keep_items' => true])->assertConflict()->assertJsonPath('error.code', 'vault.sync_busy');
+    expect(app(VaultSettings::class)->configuration())->not->toBeNull();
+    expect(count($this->socket->sent))->toBe($sent);
+});

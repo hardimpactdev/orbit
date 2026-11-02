@@ -16,12 +16,12 @@ final readonly class VaultDirectResult implements DirectOperationResultHook
 {
     public function input(Operation $operation): array
     {
-        return $operation->kind !== 'vault.teardown' ? Arr::only($operation->input, ['intent', 'execution_secrets']) : ['action' => 'teardown'];
+        return Arr::only($operation->input, ['intent', 'execution_secrets']);
     }
 
     public function validate(Operation $operation, array $result, OperationStatus $status): array
     {
-        $known = $operation->kind === 'vault.sync' || $operation->status->terminal() ? [] : app(VaultOperationSecrets::class)->resolve($operation, $operation->target_id, '', '')->strings();
+        $known = $operation->kind !== 'vault.setup' || $operation->status->terminal() ? [] : app(VaultOperationSecrets::class)->resolve($operation, $operation->target_id, '', '')->strings();
         if ($this->publicResult($result, $known) !== $result) {
             throw new ResourceOperationException('operation.result_invalid', 'Only safe Vault metadata is accepted.', 422);
         }

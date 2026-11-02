@@ -45,8 +45,10 @@ Missing, mismatched or unreadable history leaves the Operation unchanged and rai
 
 Flow-tighten rule 14 removes the step that reports a result. A kind without one declares `terminal_result` with `native => true`; `job` and `step` name its real end check, for example `['job' => 'settings', 'step' => 'Check owner and mode', 'native' => true]`. The same single history read then gives the family projector:
 
-- `steps`: each step of the run, keyed by its name. An entry holds `status`, trimmed `stdout` up to 4 KiB, and `exit_code`. Stderr is left out.
+- `steps`: every step by name and status, with `stdout` up to 4 KiB and `exit_code` for the first 256 entries.
 - `summary`: the run status, the step counts by status, and `failed_steps`.
+
+Status and summary counts cover the full fan-out. Stderr is excluded. This lets a family record completed effects after a later failure.
 
 When one action runs as one of several guarded steps, such as one per placement, `alternatives` lists the other steps beside `step`. The step that ran is the end check: when the run succeeds, it must have succeeded. Only native declarations take `alternatives`. `database.read` uses it for its SSH read and its read on 209.
 

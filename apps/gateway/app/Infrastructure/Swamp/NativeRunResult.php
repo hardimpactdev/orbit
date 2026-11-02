@@ -12,7 +12,7 @@ namespace App\Infrastructure\Swamp;
  */
 final readonly class NativeRunResult
 {
-    public const int MaximumSteps = 256;
+    public const int MaximumOutputSteps = 256;
 
     public const int MaximumStdoutBytes = 4096;
 
@@ -38,15 +38,15 @@ final readonly class NativeRunResult
         $failed = [];
         foreach (is_array($run['jobs'] ?? null) ? $run['jobs'] : [] as $job) {
             foreach (is_array($job) && is_array($job['steps'] ?? null) ? $job['steps'] : [] as $step) {
-                if (! is_array($step) || ! is_string($step['name'] ?? null) || ! is_string($step['status'] ?? null) || count($steps) >= self::MaximumSteps) {
+                if (! is_array($step) || ! is_string($step['name'] ?? null) || ! is_string($step['status'] ?? null)) {
                     continue;
                 }
                 $entry = ['status' => $step['status']];
                 $outputs = is_array($step['outputs'] ?? null) ? $step['outputs'] : [];
-                if (is_string($outputs['stdout'] ?? null)) {
+                if (count($steps) < self::MaximumOutputSteps && is_string($outputs['stdout'] ?? null)) {
                     $entry['stdout'] = substr($outputs['stdout'], 0, self::MaximumStdoutBytes);
                 }
-                if (is_int($outputs['exitCode'] ?? null)) {
+                if (count($steps) < self::MaximumOutputSteps && is_int($outputs['exitCode'] ?? null)) {
                     $entry['exit_code'] = $outputs['exitCode'];
                 }
                 $steps[$step['name']] = $entry;

@@ -7,6 +7,9 @@ namespace Orbit\Extensions\Vault\Actions;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Integrations\IntegrationAvailability;
 use App\Domain\Nodes\NodeAccessAuthorizer;
+use App\Domain\Operations\OperationOutcome;
+use App\Domain\Operations\OperationStore;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -15,6 +18,7 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Orbit\Extensions\Vault\Domain\VaultException;
+use Orbit\Extensions\Vault\Domain\VaultOperationCompletion;
 use Orbit\Extensions\Vault\Domain\VaultOperationSecrets;
 use SensitiveParameter;
 
@@ -30,30 +34,46 @@ final readonly class StartVaultOperationAction
 
         IntegrationAvailability::assertKind('vault.'.$action);
 
-        return DB::transaction(function () use ($nodeId, $action, $configuration, $trigger): Operation {
-            $operation = $this->operations->execute('vault.'.$action, 'vault', $nodeId, $nodeId,
-                (match ($action) {
-                    'sync' => $this->syncInput($configuration),
-                    'setup' => $this->setupInput($configuration),
-                    default => ['configuration' => ['$secret' => 'vault.credentials', 'id' => $nodeId]],
-                }), $trigger, null);
-            if ($operation->wasRecentlyCreated) {
-                if ($action !== 'teardown') {
+        try {
+            return DB::transaction(function () use ($nodeId, $action, $configuration, $trigger): Operation {
+                if ($action === 'teardown' && ($configuration['keep_items'] ?? false) === true) {
+                    $result = ['outcome' => 'succeeded', 'data' => ['backend' => 'absent']];
+                    $operation = $this->operations->record('vault.teardown', 'vault', $nodeId, $nodeId,
+                        ['intent' => ['keep_items' => true]], $result, $trigger, null, OperationStore::lockKey('vault', $nodeId));
+                    if ($operation->wasRecentlyCreated) {
+                        app(VaultOperationCompletion::class)->complete($operation, OperationOutcome::succeeded($result));
+                    }
+
+                    return $operation;
+                }
+                $operation = $this->operations->execute('vault.'.$action, 'vault', $nodeId, $nodeId,
+                    (match ($action) {
+                        'sync' => $this->syncInput($configuration),
+                        'setup' => $this->setupInput($configuration),
+                        'teardown' => $this->teardownInput($configuration),
+                        default => throw new VaultException('vault.action_invalid', 'Unknown Vault action.', 422),
+                    }), $trigger, null, lockKey: OperationStore::lockKey('vault', $nodeId));
+                if ($operation->wasRecentlyCreated) {
                     $reference = ValidatedData::object(ValidatedData::object($operation->input['execution_secrets'])['configuration']);
                     app(SwampCommandStep::class)->executionCopy(ValidatedData::string($reference['vault']),
                         ValidatedData::string($reference['key']), json_encode($configuration, JSON_THROW_ON_ERROR));
+                    if ($action === 'setup') {
+                        $this->secrets->store($operation, [...$configuration, 'ca_file' => rtrim(Config::string('orbit.home'), '/').'/ca/root.pem']);
+                    }
                 }
-                if ($action !== 'sync') {
-                    $this->secrets->store($operation, [...$configuration, 'ca_file' => rtrim(Config::string('orbit.home'), '/').'/ca/root.pem']);
-                }
-            }
 
-            return $operation;
-        });
+                return $operation;
+            });
+        } catch (ResourceOperationException $exception) {
+            if ($exception->errorCode !== 'operation.target_busy') {
+                throw $exception;
+            }
+            throw new VaultException('vault.sync_busy', 'Another setup, sync or teardown is running.', 409);
+        }
     }
 
     /** @param array<string,mixed> $configuration
-     * @return array<string,mixed>
+     * @return array{intent: array<string,mixed>, execution_secrets: array{configuration: array{vault: string, key: string}}}
      */
     private function setupInput(#[SensitiveParameter] array $configuration): array
     {
@@ -67,7 +87,7 @@ final readonly class StartVaultOperationAction
     }
 
     /** @param array<string,mixed> $configuration
-     * @return array<string,mixed>
+     * @return array{intent: array<string,mixed>, execution_secrets: array{configuration: array{vault: string, key: string}}}
      */
     private function syncInput(#[SensitiveParameter] array $configuration): array
     {
@@ -77,5 +97,16 @@ final readonly class StartVaultOperationAction
             is_array($configuration['wanted'] ?? null) ? $configuration['wanted'] : []);
 
         return ['intent' => $intent, 'execution_secrets' => ['configuration' => ['vault' => 'orbit-control-inputs', 'key' => 'vault-sync-'.Str::uuid()]]];
+    }
+
+    /** @param array<string,mixed> $configuration
+     * @return array{intent: array<string,mixed>, execution_secrets: array{configuration: array{vault: string, key: string}}}
+     */
+    private function teardownInput(#[SensitiveParameter] array $configuration): array
+    {
+        $input = $this->syncInput([...$configuration, 'wanted' => []]);
+        $input['execution_secrets']['configuration']['key'] = 'vault-teardown-'.Str::uuid();
+
+        return $input;
     }
 }

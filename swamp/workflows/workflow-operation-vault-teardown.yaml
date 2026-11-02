@@ -1,0 +1,563 @@
+id: 6247e94c-f8c1-471c-b19f-74e7f37e381d
+name: operation-vault-teardown
+description: Delete exact ledger matches with the official CLI; Gateway-only retention
+  starts no run.
+tags: {}
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind: {type: string, enum: [vault.teardown]}
+    intent:
+      type: object
+      properties:
+        url:
+          type: string
+        client_id:
+          type: string
+        organization_id:
+          type: string
+        collection_id:
+          type: string
+        ca_file:
+          type: string
+        wanted:
+          type: array
+          items:
+            type: object
+            properties:
+              source:
+                type: string
+              fingerprint:
+                type: string
+            required:
+            - source
+            - fingerprint
+            additionalProperties: false
+          maxItems: 0
+        ledger:
+          type: array
+          items:
+            type: object
+            properties:
+              source:
+                type: string
+              cipher_id:
+                type: string
+              revision_date:
+                type: string
+              fingerprint:
+                type: string
+            required:
+            - source
+            - cipher_id
+            - revision_date
+            - fingerprint
+            additionalProperties: false
+      required:
+      - url
+      - client_id
+      - organization_id
+      - collection_id
+      - ca_file
+      - wanted
+      - ledger
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      properties:
+        configuration:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^vault-teardown-[a-f0-9-]{36}$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      required:
+      - configuration
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: prepare
+  steps:
+  - name: Prepare public data
+    task:
+      type: behavior
+      methodName: prepare
+      inputs:
+        intent: ${{ inputs.intent }}
+        env:
+          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
+            inputs.execution_secrets.configuration.key) }}
+      behaviorName: vault-teardown-inputs
+      behaviorType: '@nckrtl/vault-sync-plan'
+    dependsOn: []
+    weight: 0
+    allowFailure: false
+    labels:
+      role: swamp
+  - name: Create CLI session
+    task:
+      type: behavior
+      methodName: execute
+      inputs:
+        run: timeout 30 mktemp -d -t orbit-vault-teardown.XXXXXX
+      behaviorName: ${{ "vault-teardown-workspace" }}
+      behaviorType: command/shell
+    dependsOn:
+    - step: Prepare public data
+      condition:
+        type: succeeded
+    weight: 0
+    allowFailure: false
+    labels:
+      role: swamp
+    writes: true
+  - name: Prepare session file
+    task:
+      type: behavior
+      methodName: execute
+      inputs:
+        run: timeout 30 install -m 0600 /dev/null "$BITWARDENCLI_APPDATA_DIR/session"
+        env:
+          BITWARDENCLI_APPDATA_DIR: ${{ steps["Create CLI session"].outputs.stdout.trim()
+            }}
+      behaviorName: vault-teardown-session-file
+      behaviorType: command/shell
+    dependsOn:
+    - step: Create CLI session
+      condition:
+        type: succeeded
+    weight: 0
+    allowFailure: false
+    labels:
+      role: swamp
+    writes: true
+  - name: Configure the server
+    task:
+      type: behavior
+      methodName: execute
+      inputs:
+        run: timeout 60 npx --yes --package=@bitwarden/cli@2026.6.0 bw config server
+          "$ORBIT_VAULT_URL" >/dev/null 2>/dev/null
+        env:
+          BITWARDENCLI_APPDATA_DIR: ${{ steps["Create CLI session"].outputs.stdout.trim()
+            }}
+          BW_NOINTERACTION: 'true'
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+          ORBIT_VAULT_URL: ${{ inputs.intent.url }}
+        timeout: 60000
+      behaviorName: ${{ "vault-teardown-configure" }}
+      behaviorType: command/shell
+    dependsOn:
+    - step: Prepare session file
+      condition:
+        type: succeeded
+    weight: 0
+    allowFailure: false
+    labels:
+      role: swamp
+    writes: true
+  - name: Log in
+    task:
+      type: behavior
+      methodName: execute
+      inputs:
+        run: timeout 60 npx --yes --package=@bitwarden/cli@2026.6.0 bw login --apikey
+          >/dev/null 2>/dev/null
+        env:
+          BITWARDENCLI_APPDATA_DIR: ${{ steps["Create CLI session"].outputs.stdout.trim()
+            }}
+          BW_NOINTERACTION: 'true'
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+          BW_CLIENTID: ${{ inputs.intent.client_id }}
+          BW_CLIENTSECRET: ${{ vault.get("orbit-control-inputs", steps["Prepare public
+            data"].outputs.client_secret_key) }}
+        timeout: 60000
+      behaviorName: ${{ "vault-teardown-login" }}
+      behaviorType: command/shell
+    dependsOn:
+    - step: Configure the server
+      condition:
+        type: succeeded
+    weight: 0
+    allowFailure: false
+    labels:
+      role: swamp
+    writes: true
+  - name: Unlock the vault
+    task:
+      type: behavior
+      methodName: execute
+      inputs:
+        run: timeout 60 npx --yes --package=@bitwarden/cli@2026.6.0 bw unlock --passwordenv
+          BW_PASSWORD --raw >"$BITWARDENCLI_APPDATA_DIR/session" 2>/dev/null
+        env:
+          BITWARDENCLI_APPDATA_DIR: ${{ steps["Create CLI session"].outputs.stdout.trim()
+            }}
+          BW_NOINTERACTION: 'true'
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+          BW_PASSWORD: ${{ vault.get("orbit-control-inputs", steps["Prepare public
+            data"].outputs.master_password_key) }}
+        timeout: 60000
+      behaviorName: ${{ "vault-teardown-unlock" }}
+      behaviorType: command/shell
+    dependsOn:
+    - step: Log in
+      condition:
+        type: succeeded
+    weight: 0
+    allowFailure: false
+    labels:
+      role: swamp
+    writes: true
+  - name: Resolve the session
+    task:
+      type: behavior
+      methodName: session
+      inputs:
+        directory: ${{ steps["Create CLI session"].outputs.stdout.trim() }}
+      behaviorName: vault-teardown-session
+      behaviorType: '@nckrtl/vault-sync-plan'
+    dependsOn:
+    - step: Unlock the vault
+      condition:
+        type: succeeded
+    weight: 0
+    allowFailure: false
+    labels:
+      role: swamp
+  - name: Sync the vault
+    task:
+      type: behavior
+      methodName: execute
+      inputs:
+        run: timeout 60 npx --yes --package=@bitwarden/cli@2026.6.0 bw sync >/dev/null
+          2>/dev/null
+        env:
+          BITWARDENCLI_APPDATA_DIR: ${{ steps["Create CLI session"].outputs.stdout.trim()
+            }}
+          BW_NOINTERACTION: 'true'
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+          BW_SESSION: ${{ vault.get("orbit-control-inputs", steps["Resolve the session"].outputs.session_key)
+            }}
+        timeout: 60000
+      behaviorName: ${{ "vault-teardown-sync" }}
+      behaviorType: command/shell
+    dependsOn:
+    - step: Resolve the session
+      condition:
+        type: succeeded
+    weight: 0
+    allowFailure: false
+    labels:
+      role: swamp
+    writes: true
+  - name: Read private inventory
+    task:
+      type: behavior
+      methodName: execute
+      inputs:
+        run: timeout 60 npx --yes --package=@bitwarden/cli@2026.6.0 bw list items
+          --organizationid "$ORBIT_ORGANIZATION" --collectionid "$ORBIT_COLLECTION"
+          >"$ORBIT_OUTPUT" 2>/dev/null
+        env:
+          BITWARDENCLI_APPDATA_DIR: ${{ steps["Create CLI session"].outputs.stdout.trim()
+            }}
+          BW_NOINTERACTION: 'true'
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+          BW_SESSION: ${{ vault.get("orbit-control-inputs", steps["Resolve the session"].outputs.session_key)
+            }}
+          ORBIT_ORGANIZATION: ${{ inputs.intent.organization_id }}
+          ORBIT_COLLECTION: ${{ inputs.intent.collection_id }}
+          ORBIT_OUTPUT: ${{ steps["Create CLI session"].outputs.stdout.trim() + "/inventory"
+            }}
+        timeout: 60000
+      behaviorName: vault-teardown-read-inventory
+      behaviorType: command/shell
+    dependsOn:
+    - step: Sync the vault
+      condition:
+        type: succeeded
+    weight: 0
+    allowFailure: false
+    labels:
+      role: swamp
+    writes: true
+  - name: inventory
+    task:
+      type: behavior
+      methodName: inventory
+      inputs:
+        directory: ${{ steps["Create CLI session"].outputs.stdout.trim() }}
+        file: inventory
+        intent: ${{ inputs.intent }}
+      behaviorName: vault-teardown-public-inventory
+      behaviorType: '@nckrtl/vault-sync-plan'
+    dependsOn:
+    - step: Read private inventory
+      condition:
+        type: succeeded
+    weight: 0
+    allowFailure: false
+    labels:
+      role: swamp
+  - name: Read private trash
+    task:
+      type: behavior
+      methodName: execute
+      inputs:
+        run: timeout 60 npx --yes --package=@bitwarden/cli@2026.6.0 bw list items
+          --trash --organizationid "$ORBIT_ORGANIZATION" --collectionid "$ORBIT_COLLECTION"
+          >"$ORBIT_OUTPUT" 2>/dev/null
+        env:
+          BITWARDENCLI_APPDATA_DIR: ${{ steps["Create CLI session"].outputs.stdout.trim()
+            }}
+          BW_NOINTERACTION: 'true'
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+          BW_SESSION: ${{ vault.get("orbit-control-inputs", steps["Resolve the session"].outputs.session_key)
+            }}
+          ORBIT_ORGANIZATION: ${{ inputs.intent.organization_id }}
+          ORBIT_COLLECTION: ${{ inputs.intent.collection_id }}
+          ORBIT_OUTPUT: ${{ steps["Create CLI session"].outputs.stdout.trim() + "/trash"
+            }}
+        timeout: 60000
+      behaviorName: vault-teardown-read-trash
+      behaviorType: command/shell
+    dependsOn:
+    - step: inventory
+      condition:
+        type: succeeded
+    weight: 0
+    allowFailure: false
+    labels:
+      role: swamp
+    writes: true
+  - name: trash
+    task:
+      type: behavior
+      methodName: inventory
+      inputs:
+        directory: ${{ steps["Create CLI session"].outputs.stdout.trim() }}
+        file: trash
+        intent: ${{ inputs.intent }}
+      behaviorName: vault-teardown-public-trash
+      behaviorType: '@nckrtl/vault-sync-plan'
+    dependsOn:
+    - step: Read private trash
+      condition:
+        type: succeeded
+    weight: 0
+    allowFailure: false
+    labels:
+      role: swamp
+  - name: Select published items
+    task:
+      type: behavior
+      methodName: plan
+      inputs:
+        intent: ${{ inputs.intent }}
+        inventory: ${{ steps.inventory.outputs.stdout }}
+        trash: ${{ steps.trash.outputs.stdout }}
+      behaviorName: ${{ "vault-teardown-plan" }}
+      behaviorType: '@nckrtl/vault-sync-plan'
+    dependsOn:
+    - step: trash
+      condition:
+        type: succeeded
+    - step: Select the organization
+      condition:
+        type: succeeded
+    weight: 0
+    allowFailure: false
+    labels:
+      role: swamp
+  - name: Read organizations
+    task:
+      type: behavior
+      methodName: execute
+      inputs:
+        run: timeout 60 npx --yes --package=@bitwarden/cli@2026.6.0 bw list organizations
+          >"$ORBIT_OUTPUT" 2>/dev/null
+        env:
+          BITWARDENCLI_APPDATA_DIR: ${{ steps["Create CLI session"].outputs.stdout.trim()
+            }}
+          BW_NOINTERACTION: 'true'
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+          BW_SESSION: ${{ vault.get("orbit-control-inputs", steps["Resolve the session"].outputs.session_key)
+            }}
+          ORBIT_OUTPUT: ${{ steps["Create CLI session"].outputs.stdout.trim() + "/organizations"
+            }}
+        timeout: 60000
+      behaviorName: vault-teardown-read-organizations
+      behaviorType: command/shell
+    dependsOn:
+    - step: Sync the vault
+      condition:
+        type: succeeded
+    weight: 0
+    allowFailure: false
+    labels:
+      role: swamp
+    writes: true
+  - name: Select the organization
+    task:
+      type: behavior
+      methodName: organization
+      inputs:
+        directory: ${{ steps["Create CLI session"].outputs.stdout.trim() }}
+        intent: '${{ {"organization": inputs.intent.organization_id} }}'
+        env:
+          ORBIT_CLIENT_SECRET: ${{ vault.get("orbit-control-inputs", steps["Prepare
+            public data"].outputs.client_secret_key) }}
+          ORBIT_MASTER_PASSWORD: ${{ vault.get("orbit-control-inputs", steps["Prepare
+            public data"].outputs.master_password_key) }}
+      behaviorName: vault-teardown-select-the-organization
+      behaviorType: '@nckrtl/vault-sync-plan'
+    dependsOn:
+    - step: Read organizations
+      condition:
+        type: succeeded
+    weight: 0
+    allowFailure: false
+    labels:
+      role: swamp
+  dependsOn: []
+  weight: 0
+- name: deletions
+  steps:
+  - name: Delete the items
+    task:
+      type: behavior
+      methodName: execute
+      inputs:
+        run: timeout 60 npx --yes --package=@bitwarden/cli@2026.6.0 bw delete item
+          "$ORBIT_CIPHER_ID" --permanent >/dev/null 2>/dev/null
+        env:
+          BITWARDENCLI_APPDATA_DIR: ${{ steps["Create CLI session"].outputs.stdout.trim()
+            }}
+          BW_NOINTERACTION: 'true'
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+          BW_SESSION: ${{ vault.get("orbit-control-inputs", steps["Resolve the session"].outputs.session_key)
+            }}
+          ORBIT_CIPHER_ID: ${{ self.item.cipher_id }}
+        timeout: 60000
+      behaviorName: ${{ "vault-teardown-delete-" + string(self._index) }}
+      behaviorType: command/shell
+    forEach:
+      item: item
+      in: ${{ inputs.intent.ledger }}
+    dependsOn: []
+    weight: 0
+    concurrency: 1
+    allowFailure: false
+    labels:
+      role: swamp
+    guard: ${{ !steps["Select published items"].outputs.deletes.exists(row, row.id
+      == self.item.cipher_id && row.source == self.item.source) }}
+    writes: true
+  dependsOn:
+  - job: prepare
+    condition:
+      type: succeeded
+  weight: 0
+- name: cleanup
+  steps:
+  - name: Log out
+    task:
+      type: behavior
+      methodName: execute
+      inputs:
+        run: timeout 60 npx --yes --package=@bitwarden/cli@2026.6.0 bw logout >/dev/null
+          2>/dev/null
+        env:
+          BITWARDENCLI_APPDATA_DIR: ${{ steps["Create CLI session"].outputs.stdout.trim()
+            }}
+          BW_NOINTERACTION: 'true'
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+        timeout: 60000
+      behaviorName: ${{ "vault-teardown-logout" }}
+      behaviorType: command/shell
+    dependsOn: []
+    weight: 0
+    allowFailure: true
+    labels:
+      role: swamp
+    guard: ${{ !("Create CLI session" in steps) || !("stdout" in steps["Create CLI
+      session"].outputs) }}
+    writes: true
+  - name: Remove CLI session
+    task:
+      type: behavior
+      methodName: execute
+      inputs:
+        run: timeout 30 rm -rf -- "$ORBIT_VAULT_DIRECTORY"
+        env:
+          ORBIT_VAULT_DIRECTORY: ${{ steps["Create CLI session"].outputs.stdout.trim()
+            }}
+      behaviorName: ${{ "vault-teardown-remove-cache" }}
+      behaviorType: command/shell
+    dependsOn:
+    - step: Log out
+      condition:
+        type: or
+        conditions:
+        - type: completed
+        - type: skipped
+    weight: 0
+    allowFailure: false
+    labels:
+      role: swamp
+    guard: ${{ !("Create CLI session" in steps) || !("stdout" in steps["Create CLI
+      session"].outputs) }}
+    writes: true
+  - name: Confirm teardown
+    task:
+      type: assert
+      expr: '"Select published items" in steps && steps["Select published items"].status
+        == "succeeded" && steps["Remove CLI session"].status == "succeeded" && steps.filter(name,
+        name.startsWith("Delete the items-")).all(name, steps[name].status in ["succeeded",
+        "skipped"])'
+      message: Vault teardown or CLI session cleanup failed.
+      severity: high
+    dependsOn:
+    - step: Remove CLI session
+      condition:
+        type: or
+        conditions:
+        - type: completed
+        - type: skipped
+    weight: 0
+    allowFailure: false
+    labels:
+      role: swamp
+  dependsOn:
+  - job: deletions
+    condition:
+      type: or
+      conditions:
+      - type: completed
+      - type: skipped
+  weight: 0
+version: 1
+queueTimeout: 30
+vaults:
+- orbit-control-inputs

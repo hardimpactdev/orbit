@@ -13,7 +13,7 @@ state_path = Path(os.environ["ORBIT_BW_FIXTURE_STATE"])
 state = json.loads(state_path.read_text())
 state.setdefault("commands", []).append(args)
 assert "ORBIT_VAULT_CONFIGURATION" not in os.environ
-if state.get("fail_command") == args[0]:
+if state.get("fail_command") == args[0] or (args[0] == "delete" and args[2] == state.get("fail_delete")):
     state_path.write_text(json.dumps(state))
     print(os.environ["FIXTURE_ITEM_SECRET"], file=sys.stderr)
     sys.exit(1)
@@ -34,8 +34,8 @@ elif args[0] == "sync" or args[0] == "logout":
 else:
     assert os.environ["BW_SESSION"] == os.environ["FIXTURE_SESSION"]
     if args[0] == "list":
-        output = []
-        for row in state["ciphers"]:
+        output = ([{"id": os.environ["FIXTURE_ORGANIZATION"], "name": "Orbit"}] if args[1] == "organizations" else [])
+        for row in ([] if args[1] == "organizations" else state["ciphers"]):
             if row["deleted"] != ("--trash" in args):
                 continue
             output.append(
