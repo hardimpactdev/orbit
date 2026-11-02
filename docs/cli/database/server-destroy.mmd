@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, single-swamp-node, DECISIONS R1 (record-only change starts no run), R2, R4, flow-tighten rule 22 (one docker command per step as exec argv; cfgmgmt docker_container stores its env as sensitive output the swamp role cannot write). Same shape as tool.remove.
+  %% Tightened: flow-tighten 2026-11-02, rules 6, 14, 17, 22 (remove with one docker rm --force; inspect end check; no report or assert step).
   %% status: draft
   %% command: database:server:destroy
   %% kind: database_server.destroy
@@ -53,25 +54,21 @@ sequenceDiagram
     %%> - the task number, at once
     %%> Next:
     %%> - the CLI follows the task with `operation:show`
-    SW->>N: Stop the container<br/>@swamp/ssh · docker stop --time 60
+    SW->>N: Remove the container<br/>@swamp/ssh exec · docker rm
     %%> How:
-    %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior, one command as argv
+    %%> - Swamp reaches Node 12 over SSH from 209 with `@swamp/ssh` and the `swamp` role's SSH identity; one `docker rm --force` argv
+    %%> - `@swamp/cfgmgmt/docker_container` would store the container env as sensitive output in a vault the `swamp` role cannot write
     %%> What it does:
-    %%> - stops the server's container gently; one that is already gone counts as stopped
-    SW->>N: Remove the container<br/>@swamp/ssh · docker rm
-    %%> What it does:
-    %%> - removes the stopped container; one that is already gone counts as removed
+    %%> - removes the server's container; one that is already gone counts as removed
+    %%> - the database recovers from its volume on a later start, as after a crash
     %%> Not removed:
     %%> - the volume `orbit-app-mysql-data`, so the data survives
-    SW->>N: Check it is gone<br/>@swamp/ssh · docker inspect
+    SW->>N: Check it is gone<br/>docker container inspect
     %%> What it does:
-    %%> - `docker container inspect` must report the container missing; that is the end check
-    Note over SW: Report the result<br/>backend · failed_step · error_code
-    %%> What it does:
-    %%> - maps the first failed step to its error code, for example `database.server_remove_failed`
-    Note over SW: Fail on an error<br/>assert · exit code 0
-    %%> What it does:
-    %%> - fails the run when the report holds an `error_code`, so the task fails with that code
+    %%> - `docker container inspect` must exit 1, no such container; that is the end check
+    %%> - the behavior's own `check` reports drift but cannot fail a run, so a plain inspect does it
+    %%> Not included:
+    %%> - no report or assert step: a failed step ends the run with its own exit code, mapped to `database.server_remove_failed`
     alt containers are gone
       N-->>SW: no container left
       %%> Returns:

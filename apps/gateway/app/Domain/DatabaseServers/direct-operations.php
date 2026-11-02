@@ -39,7 +39,7 @@ return ['database.update' => [
     'workflow' => 'operation-database-server-destroy',
     'projection' => DatabaseServerDestroyProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'server', 'step' => 'Report the result'],
+    'terminal_result' => ['job' => 'server', 'step' => 'Check it is gone', 'native' => true],
 ], 'database_server.create' => [
     'workflow' => 'operation-database-server-create',
     'projection' => DatabaseServerCreateProjection::class,

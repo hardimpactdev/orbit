@@ -120,12 +120,12 @@ it('refuses a stale active server model before an Instance reservation after rem
     $this->assertDatabaseCount('database_connections', 0);
 });
 
-it('records the failed step and error code of a failed removal on the server', function (): void {
-    $this->postJson($this->path.'/result', [...$this->finished, 'status' => 'failed', 'error_code' => 'database.server_remove_failed',
-        'result' => ['failed_step' => 'Stop and remove them', 'error_code' => 'database.server_remove_failed']])->assertOk();
-    expect([$this->server->fresh()->status->value, $this->server->fresh()->failed_step])->toBe(['failed', 'Stop and remove them']);
+it('maps the failed step of the native result to the server error code', function (string $step, string $code): void {
+    $this->postJson($this->path.'/result', [...$this->finished, 'status' => 'failed', 'error_code' => 'swamp.step_failed',
+        'result' => ['steps' => [$step => ['status' => 'failed']], 'summary' => ['status' => 'failed', 'succeeded' => 0, 'failed' => 1, 'skipped' => 0, 'failed_steps' => [$step]]]])->assertOk();
+    expect([$this->server->fresh()->status->value, $this->server->fresh()->failed_step, $this->server->fresh()->error_code])->toBe(['failed', $step, $code]);
     $this->assertDatabaseHas('processes', ['id' => $this->server->process_id]);
-});
+})->with([['Remove the container', 'database.server_remove_failed'], ['Check it is gone', 'database.server_remove_incomplete']]);
 
 it('passes full public removal inputs and projects only bounded fields', function (): void {
     $sent = array_last($this->socket->sent);

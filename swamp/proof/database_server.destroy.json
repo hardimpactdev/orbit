@@ -26,12 +26,6 @@
   },
   "phases": [
     {
-      "name": "Stop the container",
-      "job": "server",
-      "step": "Stop the container",
-      "budget_seconds": 90
-    },
-    {
       "name": "Remove the container",
       "job": "server",
       "step": "Remove the container",
@@ -41,12 +35,6 @@
       "name": "Check it is gone",
       "job": "server",
       "step": "Check it is gone",
-      "budget_seconds": 30
-    },
-    {
-      "name": "Report the result",
-      "job": "server",
-      "step": "Report the result",
       "budget_seconds": 30
     }
   ],

@@ -280,13 +280,9 @@ On a Valkey server, `database:destroy` deletes the connection's ACL user with `A
 
 ## Remove a server
 
-`database:server:destroy <slug>` refuses with `database.server_in_use` (409) while a connection points to the server. A server without a Process has nothing on its Node, so the Gateway deletes the record at once and returns a succeeded Operation with no run (R1). Otherwise admission marks the server as removing, so new database creation refuses it, and starts `operation-database-server-destroy`. Three official SSH steps run one docker command each: stop the container gently, remove it, and check that `docker container inspect` reports it missing. The volume stays, so the data survives. Remove the volume on the Node by hand when its data must go.
+`database:server:destroy <slug>` refuses with `database.server_in_use` (409) while a connection points to the server. A server without a Process has nothing on its Node, so the Gateway deletes the record at once and returns a succeeded Operation with no run (R1). Otherwise admission marks the server as removing, so new database creation refuses it, and starts `operation-database-server-destroy`. One `docker rm --force` over official SSH removes the container, and one `docker container inspect` must find it missing; that is the end check. The volume stays, so the data survives. Remove the volume on the Node by hand when its data must go.
 
-`database:server:destroy` starts `operation-database-server-destroy` with the public Process identity and target SSH metadata. All steps select Node 209 with one placement selector and reach the server Node through official SSH. Native fan-out inspects every container slot before any stop or removal. Each slot inspection uses its own SSH model, named by the native run and iteration, so model locks do not serialize independent observations. One shared native child stops and removes each present owned container through the shared Process scripts. The named data volume stays intact.
-
-The shared terminal subscriber deletes the Server and Process records only after native success. A failed step marks the server failed with that step and its error code, and keeps both records; run the command again. Steps make no Gateway calls and need no database credentials.
-
-After correcting a failed action, an authorized operator can use native `swamp workflow resume operation-database-server-destroy --run <run-id> --from prepared` to inspect all slots again before continuing. Already absent containers stay absent. Resuming only terminal delivery preserves completed effects.
+The shared terminal subscriber deletes the Server and Process records only after native success. The run has no report step: a failed step marks the server failed with that step and its error code, and keeps both records; run the command again. Steps make no Gateway calls and need no database credentials.
 
 A new Valkey server with the slug of a removed one finds the old volume. It writes a new ACL file there, so the old users are gone, but the old keys stay.
 

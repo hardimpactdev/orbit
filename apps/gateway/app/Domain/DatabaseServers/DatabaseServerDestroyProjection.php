@@ -34,13 +34,13 @@ final readonly class DatabaseServerDestroyProjection implements DirectOperationP
 
     public function apply(Operation $operation, array $data): Operation
     {
-        $raw = ValidatedData::object($data['result'] ?? []);
-        $result = ($raw['backend'] ?? null) === 'absent' ? ['backend' => 'absent'] : [];
-        if (is_string($raw['error_code'] ?? null) && preg_match('/\A[a-z0-9_.-]{1,100}\z/D', $raw['error_code']) === 1) {
-            $result['error_code'] = $raw['error_code'];
-        }
-        $failedStep = is_string($raw['failed_step'] ?? null) ? $raw['failed_step'] : null;
+        // Native result (no report step): the failed step names the error code.
         $status = ValidatedData::string($data['status']);
+        $failed = ValidatedData::stringList(ValidatedData::object(ValidatedData::object($data['result'] ?? [])['summary'] ?? [])['failed_steps'] ?? []);
+        $failedStep = $failed[0] ?? null;
+        $result = $status === 'succeeded' ? ['backend' => 'absent']
+            : ($failedStep === null ? [] : ['error_code' => $failedStep === 'Check it is gone' ? 'database.server_remove_incomplete' : 'database.server_remove_failed']);
+        $data = [...$data, 'error_code' => $result['error_code'] ?? $data['error_code'] ?? null];
 
         return DB::transaction(function () use ($operation, $data, $result, $status, $failedStep): Operation {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
