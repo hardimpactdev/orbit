@@ -4,7 +4,7 @@ import os
 import subprocess
 import sys
 
-operation = json.loads(os.environ['PROOF_OPERATION'])
+operation = json.load(open(os.environ['PROOF_OPERATION_FILE']))
 mode = sys.argv[1]
 # peer is intentionally roleless in minimal; this fixture gives it only the role under test.
 node = os.environ['PROOF_TARGET'] if mode == 'role' else 'metrics' if mode == 'ci' else 'peer'
