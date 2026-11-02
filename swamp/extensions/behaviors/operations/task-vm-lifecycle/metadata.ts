@@ -27,17 +27,11 @@ export const behavior = {
             lifetime: "infinite",
             garbageCollection: 10,
         },
-        ssh_assets: {
-            schema: z.object({ script_body: z.string() }),
-            lifetime: "1d",
-            garbageCollection: 10,
-        },
         input: {
             schema: z.object({
                 input_json: z.string(),
                 script: z.string(),
                 observe_argv: z.array(z.string()),
-                start_script: z.string(),
                 action_argv: z.array(z.string()),
             }),
             lifetime: "infinite",
@@ -108,21 +102,6 @@ export const behavior = {
                 };
             },
         },
-        ssh_firewall: {
-            description: "Resolve the fixed TaskVM SSH firewall script",
-            arguments: z.object({}).strict(),
-            async execute(_args: Record<string, never>, ctx: Context) {
-                return {
-                    dataHandles: [
-                        await ctx.writeResource("ssh_assets", "ssh_assets", {
-                            script_body: await Deno.readTextFile(
-                                ctx.extensionFile("scripts/ssh_firewall.py"),
-                            ),
-                        }),
-                    ],
-                };
-            },
-        },
         read: {
             description: "Validate full public provider intent",
             arguments: Args,
@@ -149,11 +128,6 @@ export const behavior = {
                         await ctx.writeResource("input", "input", {
                             input_json: JSON.stringify({ ...intent, action }),
                             script: ctx.extensionFile("scripts/upcloud.py"),
-                            start_script: await Deno.readTextFile(
-                                ctx.extensionFile(
-                                    "scripts/incus_start_wait.py",
-                                ),
-                            ),
                             observe_argv: [
                                 ...prefix,
                                 "list",

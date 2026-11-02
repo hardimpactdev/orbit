@@ -124,6 +124,10 @@ else:print('{"ready":true}')
         self.assertIn('"wg", "addconf", "orbit", "/etc/wireguard/orbit-peers.d/142.conf"', calls)
         self.assertNotIn("PrivateKey =", self.intent["peer_files"]["config"])
         guest = [json.loads(line)["argv"] for line in calls.splitlines() if line.startswith('{"argv"')]
+        # One firewall command: only 209 reaches TCP 22, its allow ahead of the deny; no script reaches the guest.
+        firewall = next(argv[-1] for argv in guest if argv[-1].startswith("ufw --force delete"))
+        self.assertLess(firewall.index("prepend deny in proto tcp to any port 22"), firewall.index("prepend allow in on orbit proto tcp from 10.44.0.15"))
+        self.assertTrue(firewall.endswith("ufw --force enable"))
         written = {argv[-3].rsplit("> ", 1)[-1]: argv[-1] for argv in guest if len(argv) > 3 and "printf %s" in argv[-3]}
         self.assertEqual(written["/etc/wireguard/orbit.conf"], self.intent["peer_files"]["config"])
         self.assertEqual(written["/etc/wireguard/orbit.dns-link"], self.intent["peer_files"]["dns_marker"])

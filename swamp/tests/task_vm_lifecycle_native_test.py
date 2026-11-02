@@ -25,14 +25,10 @@ class TaskVmLifecycleFixture(NativeTestCase):
         (self.guest / ".local/bin").mkdir(parents=True)
         (self.guest / ".local/bin/pi-server").write_bytes(b"fixture-pi")
         fake = self.repo / "ssh"
-        poll_runner = self.repo / "poll-runner.py"
-        poll_runner.write_text("import runpy,subprocess,sys,shlex\n" +
-            "actual_check_output=subprocess.check_output\n" +
-            "def read_host(argv,**kwargs):\n" +
-            "    assert argv[:4]==['/usr/bin/sudo','-n','--','/usr/bin/incus']\n" +
-            "    return actual_check_output([" + repr(str(fake)) + ",shlex.join(argv)],**kwargs)\n" +
-            "subprocess.check_output=read_host\n" +
-            "source=sys.argv.pop(1)\nrunpy.run_path(source,run_name='__main__')\n")
+        poll_runner = self.repo / "sudo-shim"
+        poll_runner.write_text("#!" + sys.executable + "\nimport shlex,subprocess,sys\n" +
+            "raise SystemExit(subprocess.call([" + repr(str(fake)) + ",shlex.join(['/usr/bin/sudo',*sys.argv[1:]])]))\n")
+        poll_runner.chmod(0o755)
         fake.write_text("#!" + sys.executable + "\n" + '''import json,shlex,subprocess,sys
 from pathlib import Path
 args=shlex.split(sys.argv[-1]);body=sys.stdin.buffer.read()
@@ -67,9 +63,9 @@ if '/usr/bin/incus' in args:
             state.write_text(json.dumps(value))
         if Path(LOST).exists():raise SystemExit(255)
     raise SystemExit(0)
-if args[0]=='timeout':
-    Path(POLL_SCRIPT).write_text(args[5])
-    args=[*args[:4],POLL_RUNNER,POLL_SCRIPT,*args[6:]]
+if args[0]=='timeout' and args[2]=='/bin/sh':
+    # The bounded start wait reads the host through sudo; route those reads back through this fake.
+    args[4]=args[4].replace('/usr/bin/sudo',POLL_RUNNER)
 if args[0]=='/usr/bin/python3':
     if 'urllib.request' in args[-1]:print('{"pi_ready":true}');raise SystemExit(0)
     args[-1]=args[-1].replace('/home/orbit',GUEST)
@@ -79,7 +75,7 @@ raise SystemExit(result.returncode)
 '''.replace("STATE", repr(str(self.state))).replace("CALLS", repr(str(self.calls)))
                         .replace("BLOCK", repr(str(self.block))).replace("PENDING", repr(str(self.pending)))
                         .replace("LOST", repr(str(self.lost))).replace("GUEST", repr(str(self.guest)))
-                        .replace("POLL_SCRIPT", repr(str(self.repo / "incus-poll.py"))).replace("POLL_RUNNER", repr(str(poll_runner))))
+                        .replace("POLL_RUNNER", repr(str(poll_runner))))
         fake.chmod(0o755)
         for filename in ("workflow-task-vm-provider-power.yaml", "workflow-operation-task-vm-resume.yaml", "workflow-operation-task-park.yaml", "workflow-task-vm-ssh-prepare.yaml"):
             workflow = yaml.safe_load((ROOT / "workflows" / filename).read_text())

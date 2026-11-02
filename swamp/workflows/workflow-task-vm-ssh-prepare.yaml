@@ -128,18 +128,6 @@ jobs:
     - step: authorize-assets
       condition:
         type: succeeded
-  - name: firewall-assets
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-vm-lifecycle-input'
-      behaviorName: '${{ "vm-ssh-input" }}'
-      methodName: ssh_firewall
-      inputs: {}
-    dependsOn:
-    - step: authorize
-      condition:
-        type: succeeded
   - name: firewall
     labels: {role: swamp}
     task:
@@ -151,13 +139,14 @@ jobs:
       inputs:
         hosts: name:target
         argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.provider_input.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
-          + ["/usr/bin/python3","-B","-c",steps["firewall-assets"].outputs.script_body]
-          : ["/usr/bin/python3","-B","-c",steps["firewall-assets"].outputs.script_body]
+          + ["/bin/sh","-c","ufw --force delete allow in on orbit proto tcp from 10.44.0.15 to any port 22 comment orbit:task-vm-ssh-209 && ufw --force delete deny in proto tcp to any port 22 comment orbit:task-vm-ssh-only && ufw prepend deny in proto tcp to any port 22 comment orbit:task-vm-ssh-only && ufw prepend allow in on orbit proto tcp from 10.44.0.15 to any port 22 comment orbit:task-vm-ssh-209 && ufw --force enable"]
+          : ["/bin/sh","-c","ufw --force delete allow in on orbit proto tcp from 10.44.0.15 to any port 22 comment orbit:task-vm-ssh-209 && ufw --force delete deny in proto tcp to any port 22 comment orbit:task-vm-ssh-only && ufw prepend deny in proto tcp to any port 22 comment orbit:task-vm-ssh-only && ufw prepend allow in on orbit proto tcp from 10.44.0.15 to any port 22 comment orbit:task-vm-ssh-209 && ufw --force enable"]
           }}'
         sudo: ${{ inputs.intent.provider != "incus" }}
         timeoutSec: 180
+    # Only Node 209 reaches the guest on TCP 22: its allow goes first, then the deny, ahead of the WireGuard allow.
     dependsOn:
-    - step: firewall-assets
+    - step: authorize
       condition:
         type: succeeded
   - name: sshd
