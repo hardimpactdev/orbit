@@ -111,11 +111,16 @@ Swamp serve on Node 209 reads `swamp/` from a Git checkout of the Orbit reposito
 
 1. it fetches the commit and checks it out in the serve checkout, fast-forward only;
 2. it renders the swamp role's Gateway grants from `swamp/config/gateway-workflow-grants.json` into `swamp/grants/orbit-gateway.yaml`;
-3. it asks serve to reload, as hot reload would, and waits for the acknowledgement;
-4. it runs `swamp access reload`, so serve creates, revokes or keeps grants to match the file;
-5. it compares the workflows serve lists with the workflows on disk, leaving out the `schedule-<uuid>` workflows that [Schedules](/reference/schedules) write into serve at any time.
+3. if an extension manifest's `additionalFiles` differ from those of the commit serve started from, it schedules a serve restart, as described below, and ends;
+4. otherwise it asks serve to reload, as hot reload would, and waits for the acknowledgement;
+5. it runs `swamp access reload`, so serve creates, revokes or keeps grants to match the file;
+6. it compares the workflows serve lists with the workflows on disk, leaving out the `schedule-<uuid>` workflows that [Schedules](/reference/schedules) write into serve at any time.
 
-The step prints the commit, the previous commit, and the workflow count. Any failure, or no terminal within the wait, pauses the release with `gateway.release_swamp_load_failed`, and the old release stays live. The record names the Operation. A failed load can leave the checkout on the new commit; fix forward and resume. The step never restarts serve or a worker.
+The step prints the commit, the previous commit, and the workflow count. Any failure, or no terminal within the wait, pauses the release with `gateway.release_swamp_load_failed`, and the old release stays live. The record names the Operation. A failed load can leave the checkout on the new commit; fix forward and resume.
+
+Serve's extension reload keeps each manifest's `additionalFiles` list from serve's start ([Lab #4282](https://swamp-club.com/lab/4282)), so a new shipped script reaches workers only after a restart. Only the release load moves the checkout, so its HEAD reflog at serve's start time names the commit serve started from. The step compares the lists of that commit with the release commit's. When they differ, it schedules a serve restart 5 seconds later and reports the commit serve started from and the changed manifests.
+
+Serve runs with `--shutdown-drain-timeout 5m`. On stop it takes no new work and waits up to 5 minutes for runs in flight; a run still in flight then is interrupted. The release reads serve's instance id from `https://swamp.orbit/ready` before the load. After a restart report it waits up to 420 seconds for a new instance, then records a second load, which reloads, applies the grants and compares the workflows. The release record keeps the restart report, the first Operation, the new instance and the wait beside the second Operation. This restart goes when Swamp fixes #4282. The step never restarts a worker.
 
 A new workflow needs no grant. The Gateway principal `user:orbit-gateway` has one `run` and `read` grant on every workflow (`workflow:*`), so serve accepts its start as soon as the load step has loaded the workflow.
 

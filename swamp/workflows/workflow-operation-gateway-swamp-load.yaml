@@ -31,7 +31,9 @@ jobs:
           inputs:
             env:
               RELEASE_SHA: '${{ inputs.intent.sha }}'
-            # Fast-forward the serve checkout, render the swamp role's grants, let serve reload both, and compare the served workflows with the commit.
+            # Fast-forward the serve checkout and render the swamp role's grants. Manifest additionalFiles that differ from
+            # serve's start restart serve, which drains first (https://swamp-club.com/lab/4282); the release then loads
+            # again. Otherwise serve reloads both, and the served workflows are compared with the commit.
             run: |
               set -eu
               export HOME=/home/orbit SWAMP_HOME=/home/orbit/.swamp SWAMP_CONFIG_DIR=/home/orbit/.config/swamp
@@ -42,7 +44,14 @@ jobs:
               git merge-base --is-ancestor "$previous" "$RELEASE_SHA"
               git checkout --quiet --detach "$RELEASE_SHA"
               test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
-              python3 -I swamp/extensions/behaviors/operations/fleet-recipe/scripts/swamp_workers.py grants swamp
+              role=swamp/extensions/behaviors/operations/fleet-recipe/scripts/swamp_workers.py
+              python3 -I "$role" grants swamp
+              restart=$(python3 -I "$role" release-restart "$RELEASE_SHA")
+              if [ "$restart" != '{}' ]; then
+                jq -cn --arg sha "$RELEASE_SHA" --arg previous "$previous" --argjson restart "$restart" \
+                  '{sha: $sha, previous: $previous} + $restart'
+                exit 0
+              fi
               timeout 120 /home/orbit/.local/bin/swamp serve reload --server ws://127.0.0.1:9418 \
                 --token-file /home/orbit/.config/swamp/serve-driver-token --json \
                 | jq -e '.success == true and ((.errors // []) | length) == 0' >/dev/null

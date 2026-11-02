@@ -1,10 +1,11 @@
 """The swamp role's runtime: serve, its workers and the Gateway's grants.
 
-Operators place each worker's tokens; this never mints, reads or moves them. It never restarts a running serve:
-a changed serve unit waits for an operator restart in a quiet window.
+Operators place each worker's tokens; this never mints, reads or moves them. Convergence never restarts a running
+serve: a changed serve unit waits for an operator restart in a quiet window.
 
-`python3 -I swamp_workers.py grants <repo>` renders the grants only; the release Swamp load step runs it as the
-serve account after each checkout, then reloads the policy.
+The release Swamp load step runs two modes as the serve account after each checkout:
+`grants <repo>` renders the Gateway's grants, and `release-restart <previous> <commit> <run-id>` restarts serve
+after draining when the commit changes a manifest's additionalFiles (https://swamp-club.com/lab/4282).
 """
 
 import json
@@ -107,8 +108,9 @@ def serve_unit(data, home):
         'ExecStart=' + home + '/.local/bin/swamp serve --repo-dir ' + repo + ' --port ' + str(PORT) + ' --host 127.0.0.1'
         ' --auth-mode token --admins user:nckrtl --club-api-key-file ' + config + '/api-key'
         ' --trusted-hosts swamp.orbit --trust-proxy --dispatch-env-allow=,'
-        ' --max-concurrent-scheduled-runs ' + str(data['scheduled_runs']) + ' --remote-only --hot-reload\n'
-        'Restart=on-failure\nRestartSec=2\n\n'
+        ' --max-concurrent-scheduled-runs ' + str(data['scheduled_runs']) + ' --shutdown-drain-timeout 5m'
+        ' --remote-only --hot-reload\n'
+        'Restart=on-failure\nRestartSec=2\nTimeoutStopSec=360\n\n'
         '[Install]\nWantedBy=multi-user.target\n'
     ).encode()
 
@@ -197,6 +199,44 @@ def remove(data):
     done({'completed': True, 'changed': True})
 
 
+def additional_files(commit):
+    """Every local extension manifest's additionalFiles at a commit, by manifest path."""
+    import yaml
+    listed = subprocess.run(['git', 'ls-tree', '-r', '--name-only', commit, '--', 'swamp/extensions'],
+                            capture_output=True, text=True, check=True).stdout.split()
+    files = {}
+    for path in (p for p in listed if p.endswith('/manifest.yaml')):
+        shown = subprocess.run(['git', 'show', commit + ':' + path], capture_output=True, text=True, check=True).stdout
+        files[path] = sorted((yaml.safe_load(shown) or {}).get('additionalFiles') or [])
+    return files
+
+
+def release_restart(commit):
+    """Restart serve when the commit's manifest additionalFiles differ from those serve started with.
+
+    Swamp's extension reload keeps each manifest's additionalFiles from serve's start, so a new shipped file reaches
+    workers only after a restart: https://swamp-club.com/lab/4282. Remove this mode when that is fixed. Serve's own
+    shutdown drain waits for runs in flight; the release waits for the new serve and loads again.
+    """
+    started = subprocess.run(['/usr/bin/systemctl', 'show', 'orbit-swamp-serve.service', '-p', 'ExecMainStartTimestamp',
+                              '--value'], capture_output=True, text=True, check=True).stdout.strip()
+    # The checkout moves only in the release load, so its reflog names the commit serve started from.
+    served = subprocess.run(['git', 'rev-parse', '--verify', 'HEAD@{' + started + '}'], capture_output=True, text=True,
+                            check=True).stdout.strip()
+    before, after = additional_files(served), additional_files(commit)
+    changed = sorted(p for p in set(before) | set(after) if before.get(p) != after.get(p))
+    if not changed:
+        done({})
+    # Delayed, so this step reports first.
+    subprocess.run(['/usr/bin/sudo', '-n', '/usr/bin/systemd-run', '--no-block', '--on-active=5s',
+                    '--unit=orbit-swamp-serve-release-' + commit[:12], '/usr/bin/systemctl', 'restart',
+                    'orbit-swamp-serve.service'], capture_output=True, check=True)
+    done({'restart': {'reason': 'additional_files', 'served': served, 'manifests': changed,
+                      'issue': 'https://swamp-club.com/lab/4282'}})
+
+
+if len(sys.argv) == 3 and sys.argv[1] == 'release-restart':
+    release_restart(sys.argv[2])
 if len(sys.argv) == 3 and sys.argv[1] == 'grants':
     publish(os.path.join(sys.argv[2], GRANTS_FILE), grants(sys.argv[2]), 0o640, os.getgid(), os.getuid())
     sys.exit(0)

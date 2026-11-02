@@ -1,11 +1,10 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
 
-const workflow = parse(
-  await Deno.readTextFile(
-    new URL("../workflows/workflow-operation-gateway-swamp-load.yaml", import.meta.url),
-  ),
-) as { jobs: { steps: { task: { inputs: { run: string } } }[] }[] };
+const source = await Deno.readTextFile(
+  new URL("../workflows/workflow-operation-gateway-swamp-load.yaml", import.meta.url),
+);
+const workflow = parse(source) as { jobs: { steps: { task: { inputs: { run: string } } }[] }[] };
 const run = workflow.jobs[0].steps[0].task.inputs.run;
 
 Deno.test("the release load compares only the commit's workflows, never a Schedule's", async () => {
@@ -29,4 +28,14 @@ Deno.test("the release load compares only the commit's workflows, never a Schedu
     ["b", "operation-route-create"],
   ]);
   assertEquals(run.includes('jq -ec "$tracked"'), true);
+});
+
+Deno.test("the release load restarts serve before its reload only when shipped files change (Lab #4282)", () => {
+  const restart = run.indexOf('release-restart "$RELEASE_SHA"');
+  const checkout = run.indexOf("git checkout");
+  const reload = run.indexOf("serve reload");
+  assertEquals(checkout >= 0 && restart > checkout, true);
+  assertEquals(reload === -1 || reload > restart, true);
+  assertEquals(/if \[ "\$restart" != '\{\}' \]; then[\s\S]*?exit 0\s*fi/.test(run), true);
+  assertEquals(source.includes("https://swamp-club.com/lab/4282"), true);
 });

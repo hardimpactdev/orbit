@@ -8,7 +8,7 @@ namespace App\Domain\GatewayReleases;
 interface GatewayReleaseSwampLoad
 {
     /**
-     * @return array{outcome:'loaded',operation_id:int}
+     * @return array{outcome:'loaded',operation_id:int,restart?:array<string,mixed>}
      *
      * @throws GatewayReleaseException when Swamp does not serve the commit
      */

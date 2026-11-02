@@ -61,11 +61,12 @@ Deno.test("the program renders loopback workers that share the role label", () =
   ) assertEquals(SWAMP_WORKERS_PROGRAM.includes(part), true, part);
 });
 
-Deno.test("the program runs serve with the role's scheduled-run limit and never restarts it", () => {
+Deno.test("converge runs serve with the role's limits and a 5 minute drain, and never restarts it", () => {
   for (
     const part of [
       "orbit-swamp-serve.service",
-      "--max-concurrent-scheduled-runs ' + str(data['scheduled_runs'])",
+      "--max-concurrent-scheduled-runs ' + str(data['scheduled_runs']) + ' --shutdown-drain-timeout 5m'",
+      "TimeoutStopSec=360",
       "elif not serving() and not systemctl('enable', '--now', 'orbit-swamp-serve.service')",
     ]
   ) assertEquals(SWAMP_WORKERS_PROGRAM.includes(part), true, part);
@@ -97,6 +98,55 @@ Deno.test("grants mode renders every manifest grant for the Gateway principal", 
   } finally {
     await Deno.remove(repo, { recursive: true });
   }
+});
+
+Deno.test("the release restart compares manifest additionalFiles with the commit serve started from (Lab #4282)", async () => {
+  const repo = await Deno.makeTempDir();
+  const git = async (...args: string[]) => {
+    const result = await new Deno.Command("git", { args, cwd: repo, stdout: "piped", stderr: "piped" }).output();
+    assertEquals(result.success, true, new TextDecoder().decode(result.stderr));
+    return new TextDecoder().decode(result.stdout).trim();
+  };
+  const manifest = async (dir: string, files: string[]) => {
+    await Deno.mkdir(`${repo}/swamp/extensions/${dir}`, { recursive: true });
+    await Deno.writeTextFile(
+      `${repo}/swamp/extensions/${dir}/manifest.yaml`,
+      `name: ${dir}\nadditionalFiles:\n${files.map((f) => `  - ${f}\n`).join("")}`,
+    );
+  };
+  const commit = async () => {
+    await git("add", "-A");
+    await git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "c");
+    return await git("rev-parse", "HEAD");
+  };
+  try {
+    await git("init", "-q");
+    await manifest("a", ["scripts/one.py"]);
+    await manifest("b", ["scripts/two.py"]);
+    const served = await commit();
+    await Deno.writeTextFile(`${repo}/swamp/extensions/b/other.ts`, "");
+    const same = await commit();
+    await manifest("a", ["scripts/one.py", "scripts/three.py"]);
+    const changed = await commit();
+    const program = SWAMP_WORKERS_PROGRAM.split("if len(sys.argv) == 3 and sys.argv[1] == 'release-restart':")[0];
+    const result = await new Deno.Command("python3", {
+      args: ["-I", "-c", `${program}\nprint(json.dumps([sorted(p for p in set(b) | set(a) if b.get(p) != a.get(p))
+    for b, a in [(additional_files(sys.argv[1]), additional_files(c)) for c in sys.argv[2:]]]))`, served, same, changed],
+      cwd: repo,
+    }).output();
+    assertEquals(result.success, true, new TextDecoder().decode(result.stderr));
+    assertEquals(JSON.parse(new TextDecoder().decode(result.stdout)), [[], ["swamp/extensions/a/manifest.yaml"]]);
+  } finally {
+    await Deno.remove(repo, { recursive: true });
+  }
+  for (
+    const part of [
+      "'HEAD@{' + started + '}'",
+      "'ExecMainStartTimestamp'",
+      "'--on-active=5s'",
+      "https://swamp-club.com/lab/4282",
+    ]
+  ) assertEquals(SWAMP_WORKERS_PROGRAM.includes(part), true, part);
 });
 
 Deno.test("a refusal keeps its public code and an unreadable result is uncertain", async () => {

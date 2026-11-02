@@ -76,3 +76,50 @@ it('stops the release when Swamp refuses the start', function (): void {
     expect(fn () => swamp_load(OperationStatus::Succeeded)->load($this->sha))
         ->toThrow(GatewayReleaseException::class, 'did not start the load');
 });
+
+it('waits for a new serve instance and loads again when the load restarted serve', function (): void {
+    $now = 0.0;
+    $instances = ['old', 'old', null, 'new'];
+    $restart = ['reason' => 'additional_files', 'served' => str_repeat('b', 40),
+        'manifests' => ['swamp/extensions/behaviors/operations/x/manifest.yaml'], 'issue' => 'https://swamp-club.com/lab/4282'];
+    $load = new NativeGatewayReleaseSwampLoad(app(StartOperationAction::class), 600,
+        sleep: static function (int $microseconds) use (&$now, $restart): void {
+            $now += $microseconds * 1_000;
+            $running = Operation::query()->where('status', OperationStatus::Running)->orWhere('status', OperationStatus::Queued)->get();
+            foreach ($running as $operation) {
+                $first = Operation::query()->count() === 1;
+                $operation->update(['status' => OperationStatus::Succeeded, 'result' => $first ? ['restart' => $restart] : ['workflows' => 3]]);
+            }
+        },
+        clock: static function () use (&$now): float {
+            return $now;
+        },
+        instance: static function () use (&$instances): ?string {
+            return array_shift($instances);
+        });
+
+    $loaded = $load->load($this->sha);
+    [$first, $second] = Operation::query()->orderBy('id')->get()->all();
+
+    expect($loaded)->toBe(['outcome' => 'loaded', 'operation_id' => $second->id,
+        'restart' => [...$restart, 'operation_id' => $first->id, 'instance' => 'new', 'waited_seconds' => 2]])
+        ->and($this->socket->sent)->toHaveCount(2)
+        ->and($instances)->toBe([]);
+});
+
+it('stops the release when serve does not come back after the restart', function (): void {
+    $now = 0.0;
+    $load = new NativeGatewayReleaseSwampLoad(app(StartOperationAction::class), 600,
+        sleep: static function (int $microseconds) use (&$now): void {
+            $now += $microseconds * 1_000;
+            Operation::query()->whereIn('status', [OperationStatus::Running, OperationStatus::Queued])
+                ->update(['status' => OperationStatus::Succeeded, 'result' => ['restart' => ['reason' => 'additional_files']]]);
+        },
+        clock: static function () use (&$now): float {
+            return $now;
+        },
+        instance: static fn (): string => 'old');
+
+    expect(fn () => $load->load($this->sha))->toThrow(GatewayReleaseException::class, 'did not come back after the restart');
+    expect(Operation::query()->count())->toBe(1);
+});
