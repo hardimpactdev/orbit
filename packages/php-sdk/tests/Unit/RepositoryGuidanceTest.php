@@ -81,6 +81,7 @@ use Orbit\Sdk\Requests\Projects\UpdateProjectRequest;
 use Orbit\Sdk\Requests\Schedules\CompleteScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\CreateScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\DestroyScheduleRequest;
+use Orbit\Sdk\Requests\Schedules\DisableScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\EnableScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\ListSchedulesRequest;
 use Orbit\Sdk\Requests\Schedules\RunScheduleRequest;
@@ -236,6 +237,7 @@ describe('repository guidance bootstrap', function (): void {
             CompleteScheduleRequest::class,
             DestroyScheduleRequest::class,
             EnableScheduleRequest::class,
+            DisableScheduleRequest::class,
         ];
         $databaseRequests = [
             ListDatabaseConnectionsRequest::class,
@@ -598,7 +600,7 @@ describe('repository guidance bootstrap', function (): void {
                 '- Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.',
             )
             ->toContain('- Doctor: run the complete typed Gateway report.')
-            ->toContain('- Schedule: list, add, show, run, logs, complete, remove, and activate.')
+            ->toContain('- Schedule: list, add, show, run, logs, complete, remove, activate, and deactivate.')
             ->toContain('- Database connection: list, show, add, update, remove, attach, detach, query, tables, schema, describe, user create, and user list.')
             ->toContain('- GitHub App: install, show, and destroy.')
             ->toContain('- Gateway releases: list, show, deploy, rollback, and automatic release status, enable, disable, and resume.')
@@ -664,7 +666,7 @@ describe('repository guidance bootstrap', function (): void {
                 'The SDK exposes typed status, setup, sync, and teardown requests for publishing database credentials to Vaultwarden.',
                 'The SDK exposes typed list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create requests for Gateway-owned database connection records.',
                 'The SDK exposes typed list, create, show, update, and destroy requests for Project process and Schedule definitions.',
-                'The SDK exposes typed list, add, show, run, logs, complete, remove, and activate requests for Node and Instance Schedules.',
+                'The SDK exposes typed list, add, show, run, logs, complete, remove, activate, and deactivate requests for Node and Instance Schedules.',
                 'Doctor accepts the current Gateway family set, including Schedule and Database connection.',
                 "Create and update requests send the caller's exact JSON document to the Gateway.",
                 'The SDK exposes typed deploy-step, deploy, rollback, and retained-release operations.',

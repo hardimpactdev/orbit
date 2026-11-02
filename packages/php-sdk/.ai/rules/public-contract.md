@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 245 concrete public Gateway API operations:
+The SDK models exactly 246 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -15,7 +15,7 @@ The SDK models exactly 245 concrete public Gateway API operations:
 - Route: list, show, create, update, target set, target clear, and remove.
 - Process: list, add, start, stop, restart, logs, and remove.
 - Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.
-- Schedule: list, add, show, run, logs, complete, remove, and activate.
+- Schedule: list, add, show, run, logs, complete, remove, activate, and deactivate.
 - Firewall: list, allow, deny, remove, and native inspection refresh.
 - Tool: manager list, inventory scan, tool list, show, install, adopt, update, and remove.
 - Doctor: run the complete typed Gateway report.
