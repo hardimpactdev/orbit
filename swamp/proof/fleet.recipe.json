@@ -40,5 +40,15 @@
       "budget_seconds": 1800
     }
   ],
-  "parity": "swamp/proof/fleet.recipe/parity.py"
+  "parity": "swamp/proof/fleet.recipe/parity.py",
+  "before_gateway": [
+    [
+      "runuser",
+      "-u",
+      "orbit",
+      "--",
+      "php",
+      "swamp/proof/fleet.recipe/prepare.php"
+    ]
+  ]
 }
