@@ -15,7 +15,6 @@ node.macos_inspect
 node.prepare_php_packages
 node.role_relocate
 node.worker_known_hosts
-observation.maintain
 process.install_instance_definitions
 process.restart_instance
 route.caddy_converge

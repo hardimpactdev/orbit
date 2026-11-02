@@ -226,7 +226,6 @@ it('declares node access scope on every active-peer API route', function (): voi
         'node:show' => ServingNode::Target,
         'node:wireguard-key' => ServingNode::Target,
         'observation:inspect' => ServingNode::Gateway,
-        'observation:maintain' => ServingNode::Gateway,
         'observation:observe' => ServingNode::Gateway,
         'observation:plan' => ServingNode::Gateway,
         'observation:signals' => ServingNode::Gateway,
