@@ -140,4 +140,4 @@ Swamp accepts only names that match `^[a-z0-9][a-z0-9_-]*$`, and refuses others 
 
 The Swamp shape job runs `bin/lint-behavior-names.ts`. It rejects a workflow that has more per-run names than at the comparison base, and any name that Swamp would refuse.
 
-To design a new command or tighten a chart, use the [`flow-tighten` skill](../../.claude/skills/flow-tighten/SKILL.md). It holds the rules for a short, efficient flow.
+To design a new command or tighten a chart, use the [`flow-tighten` skill](../../.agents/skills/flow-tighten/SKILL.md). It holds the rules for a short, efficient flow.
