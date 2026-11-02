@@ -82,7 +82,7 @@ if ($argv[1] === 'seed') {
     if (Node::query()->exists()) {
         throw new RuntimeException('proof.seed_database_not_empty');
     }
-    // Only the targets are reached over SSH; the other two need a well-formed key and no host.
+    // Only the targets and this VM are reached over SSH. node() records a well-formed key, which the seed then clears for the operator.
     $unused = base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).random_bytes(32));
     // Records first, then one known-hosts publication with the complete pin snapshot, as after enrollment.
     [$gateway, $operator, $targets] = Node::withoutEvents(fn (): array => [
@@ -92,6 +92,9 @@ if ($argv[1] === 'seed') {
         array_map(static fn (array $target): Node => node($target['key'], $target['address'], $target['host_key'],
             $target['roles'] ?? [], settings: $target['settings'] ?? []), $input['targets']),
     ]);
+    // The operator is a caller-only peer: an active WireGuard address with access, but no SSH identity, so nothing
+    // treats it as a managed Node or reaches it over SSH (version 12).
+    $operator->forceFill(['ssh_host_key_type' => null, 'ssh_host_key' => null, 'ssh_host_fingerprint' => null])->saveQuietly();
     // The verifier of the agent key up.py wrote on each target, as after enrollment.
     // No WireGuard in this topology: no target is a private DNS peer.
     foreach ($targets as $index => $target) {
