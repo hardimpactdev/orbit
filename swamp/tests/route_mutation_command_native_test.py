@@ -15,6 +15,116 @@ from tests.route_ssh_fixture import PIN, install_ssh
 ROOT = Path(__file__).resolve().parents[1]
 
 
+class RouteMutationFixture(NativeTestCase):
+    def setUp(self):
+        super().setUp()
+        self.copy_behaviors("operations/routes/mutation-command")
+        dependency = (
+            self.repo
+            / "extensions/behaviors/operations/routes/publication-command/sections.ts"
+        )
+        dependency.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(
+            ROOT
+            / "extensions/behaviors/operations/routes/publication-command/sections.ts",
+            dependency,
+        )
+        self.audit = self.repo / "audit"
+        self.native_env["FIXTURE_AUDIT"] = str(self.audit)
+        self.native_env["FIXTURE_FAIL"] = ""
+        self.plan = {
+            "routes": [
+                {
+                    "route_id": 31,
+                    "domain": "app.test",
+                    "node_ids": [9, 10],
+                    "certificate_scopes": [{"node_id": 9, "scope": "route-31-router"}],
+                }
+            ],
+            "prepare_certificates": [{"node_id": 9, "scope": "route-31-router"}, {"node_id": 10, "scope": "route-31-router"}, {"node_id": 9, "scope": "route-32-router"}],
+            "certificates": [{"node_id": 9, "scope": "route-31-router"}],
+            "cleanup": [{"node_id": 9}],
+            "url_writes": [{"node_id": 9, "secret_field": "route_material_0"}],
+            "lan": [{"node_id": 9}],
+            "retire_lan": [{"node_id": 9}],
+            "ingress": [],
+            "retire_ingress": [],
+            "publications": [
+                {
+                    "node_id": node,
+                    "user": "orbit",
+                    "control_node_id": 209,
+                    "connection": {},
+                    "host_keys": [PIN],
+                    "serves_routes": True,
+                    **{
+                        side: {"caddy": 0, "php": 0, "dns": index}
+                        for index, side in enumerate(("before", "prepared", "withdrawn", "after"))
+                    },
+                }
+                for node in (9, 10)
+            ],
+        }
+        self.input = {
+            "operation_id": 7,
+            "node_id": 14,
+            "kind": "node.add",
+            "execution_secrets": {
+                "route_material_0": {"vault": "orbit-control-inputs", "key": "fixture"}
+            },
+            "intent": {"route_mutations": {"schema_version": 2, "artifacts": {"caddy": [{}], "php": [{}], "dns": [{"digest": side} for side in ("before", "prepared", "withdrawn", "after")]}, "forward": self.plan, "restore": self.plan}},
+        }
+        script = """import json,os
+from pathlib import Path
+audit=Path(os.environ['FIXTURE_AUDIT'])
+action=os.environ['FIXTURE_ACTION']
+with audit.open('a') as output:output.write(json.dumps({'action':action,'kind':os.environ['FIXTURE_KIND'],'operation_id':int(os.environ['FIXTURE_OP']),'node_id':int(os.environ['FIXTURE_NODE']),'scopes':os.environ['FIXTURE_LEAVES'].split(',') if os.environ['FIXTURE_LEAVES'] else []})+'\\n')
+marker=audit.with_suffix('.failed')
+if os.environ.get('FIXTURE_FAIL')==action and not marker.exists():marker.touch();raise SystemExit(1)
+print('{"ready":true}')
+"""
+        for index, name in enumerate(
+            (
+                "route-certificate-publish",
+                "route-certificate-remove",
+                "route-environment-write",
+                "route-lan-apply",
+                "route-dns-publish",
+                "route-dns-grace",
+                "route-ingress-apply",
+                "operation-route-caddy-delta",
+                "operation-route-php-delta",
+            )
+        ):
+            task = {
+                "type": "behavior",
+                "behaviorType": "command/shell",
+                "behaviorName": "fixture-" + name,
+                "methodName": "execute",
+                "inputs": {
+                    "run": "python3 - <<'PYTHON'\n" + script + "PYTHON",
+                    "env": {
+                        "FIXTURE_ACTION": name,
+                        "FIXTURE_KIND": "${{ inputs.kind }}",
+                        "FIXTURE_OP": "${{ string(inputs.operation_id) }}",
+                        "FIXTURE_NODE": "${{ string(inputs.node_id) }}",
+                        "FIXTURE_LEAVES": '${{ has(inputs.intent.leaves) ? inputs.intent.leaves.map(leaf,leaf.scope).join(",") : "" }}',
+                    },
+                },
+            }
+            workflow = {
+                "id": f"3ec8473a-4c45-4a54-a2c6-{index:012d}",
+                "name": name,
+                "inputs": {"type": "object"},
+                "jobs": [
+                    {"name": "effect", "steps": [{"name": "apply", "task": task}]}
+                ],
+            }
+            (self.repo / f"workflows/workflow-{name}.yaml").write_text(
+                yaml.safe_dump(workflow, sort_keys=False)
+            )
+
+
 class RouteEnvironmentNative(NativeTestCase):
     def test_every_environment_ancestor_declares_its_nested_child_vault(self):
         workflows = {value["name"]: value for path in (ROOT / "workflows").glob("*.yaml")
