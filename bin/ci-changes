@@ -69,6 +69,8 @@ RULES = [
     ('apps/*/phpunit.*', {'docs', 'e2e', 'api-reference'}),
     ('apps/*/AGENTS.md', {'docs', 'e2e', 'api-reference'}),
     ('docs/*', {'docs'}),
+    # Docs pages cover Swamp behaviors whose error codes they own, such as automatic-deploy.
+    ('swamp/*', {'docs'}),
     ('docs/api/*', {'api-reference'}),
     # CLI CommandSurfaceTest/BoostGuidanceTest read these maintained command contracts.
     ('docs/cli/*', {'cli'}),
