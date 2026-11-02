@@ -142,7 +142,7 @@ jobs:
       inputs:
         hosts: name:target
         sudo: true
-        argv: [sh, -c, 'install -m 0644 -o root -g root /dev/stdin /usr/local/share/ca-certificates/orbit-root.crt && timeout 45 update-ca-certificates']
+        argv: [sh, -c, 'install -D -m 0644 -o root -g root /dev/stdin /usr/local/share/ca-certificates/orbit-root.crt && timeout 45 update-ca-certificates']
         stdin: ${{ inputs.intent.certificate }}
     dependsOn:
     - step: Install the Pi server

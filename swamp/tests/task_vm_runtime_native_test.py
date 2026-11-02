@@ -75,6 +75,8 @@ if '/capabilities' in ' '.join(argv) and os.environ['FIXTURE_FAIL']=='true':rais
         self.assertTrue(any("/home/orbit/.pi/agent/models.json" in line and "0600" in line for line in joined))
         self.assertTrue(any(line.endswith("/dev/stdin /home/orbit/.pi/agent/orbit-token") for line in joined))
         self.assertTrue(any("sha256sum -c" in line and "/home/orbit/.local/bin/pi-server" in line for line in joined))
+        # The trust directory may not exist on the image yet.
+        self.assertTrue(any("install -D -m 0644 -o root -g root /dev/stdin /usr/local/share/ca-certificates/orbit-root.crt" in line for line in joined))
         self.assertTrue(any("update-ca-certificates" in line for line in joined))
         self.assertTrue(any(line.endswith("/etc/systemd/system/orbit-process-33.service") for line in joined))
         self.assertTrue(any(call["argv"][-1] == "http://10.44.0.142:3774" for call in commands))
