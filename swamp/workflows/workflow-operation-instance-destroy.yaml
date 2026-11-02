@@ -10,7 +10,7 @@ inputs:
     node_id: {type: integer, minimum: 1}
     kind: {type: string, const: instance.destroy}
     intent: {type: object}
-    # Names only: git_read, plus the Route material keys the Route withdrawal reads.
+    # Names only: git_credential, plus the Route material keys the Route withdrawal reads and the database server copies.
     execution_secrets:
       type: object
       additionalProperties:
@@ -24,117 +24,265 @@ inputs:
   additionalProperties: false
 jobs:
 - name: destroy
-  labels: {role: swamp}
+  labels:
+    role: swamp
   steps:
-  - name: 'Read the scripts'
-    labels: {role: swamp}
+  - name: Write the git credential
+    labels:
+      role: swamp
+    writes: true
+    guard: ${{ size(inputs.intent.push_check_paths) == 0 }}
     task:
       type: behavior
-      behaviorType: '@nckrtl/instance-dev-command'
-      behaviorName: instance-destroy-assets
-      methodName: destroy_assets
-      inputs:
-        intent:
-          force: '${{ inputs.intent.force }}'
-          repository: '${{ inputs.intent.repository }}'
-          removal_id: '${{ inputs.intent.removal_id }}'
-          protected_source_roots: '${{ inputs.intent.protected_source_roots }}'
-          node_user: '${{ inputs.intent.direct_destroy.node_user }}'
-          members: '${{ inputs.intent.members }}'
-          source_capture: '${{ inputs.intent.source_capture }}'
-          processes: '${{ inputs.intent.native_runtime.processes }}'
-        teardown: {steps: '${{ inputs.intent.teardown_steps }}'}
-    # Refusals before the first write: owner, path, origin, branch and inode of each member.
-  - name: 'Verify the source'
-    labels: {role: swamp}
-    dependsOn: [{step: 'Read the scripts', condition: {type: succeeded}}]
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "instance-destroy-credential-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs:
+        path: ${{ "/tmp/orbit-git-credential-" + run.id }}
+        ensure: present
+        mode: '0600'
+        content: ${{ vault.get(inputs.execution_secrets.git_credential.vault, inputs.execution_secrets.git_credential.key) }}
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+      inputs: {}
+  - name: Check work is pushed
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Write the git credential
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ size(inputs.intent.push_check_paths) == 0 || steps.exists(k, steps[k].status == "failed") }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "instance-destroy-ssh-" + string(inputs.node_id) }}
       methodName: exec
-      globalArgs: &ssh
+      globalArgs: &id003
         name: ${{ "instance-destroy-ssh-" + string(inputs.node_id) }}
-        transport:
+        transport: &id001
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
           port: ${{ inputs.intent.ssh_execution.target.port }}
           identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
+        hosts: &id002
         - name: target
           address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv: [timeout, '60', python3, -I, -c, '${{ steps["Read the scripts"].outputs.verify }}', '${{ steps["Read the scripts"].outputs.intent_json }}']
-        okExitCodes: [0, 1]
-        timeoutSec: 70
-    # A normal removal fetches origin with the read token the Gateway pushed and refuses unpushed work.
-  - name: 'Check work is pushed'
-    labels: {role: swamp}
-    dependsOn: [{step: 'Verify the source', condition: {type: succeeded}}]
-    guard: ${{ steps["Verify the source"].outputs.exitCode != 0 || inputs.intent.force || inputs.intent.members.all(m, m.failed_creation) }}
+        timeoutSec: 160
+        argv: '${{ ["/usr/bin/timeout", "150", "/bin/sh", "-c", "c=\"$1\"; shift; for p; do GIT_TERMINAL_PROMPT=0 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git -c core.hooksPath=/dev/null
+          -c core.fsmonitor=false -c credential.helper= -c \"credential.helper=store --file=$c\" -c http.followRedirects=false -c url.https://github.com/.insteadOf=git@github.com: -c
+          url.https://github.com/.insteadOf=ssh://git@github.com/ -C \"$p\" fetch --quiet --no-tags origin || { echo instance.remove_refused >&2; exit 3; }; [ -z \"$(/usr/bin/git -c
+          core.hooksPath=/dev/null -c core.fsmonitor=false -C \"$p\" status --porcelain)\" ] && [ -n \"$(/usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C \"$p\" branch
+          -r --contains HEAD)\" ] || { echo \"instance.remove_refused: $p has work that is not pushed\" >&2; exit 3; }; done", "sh"] + ["/tmp/orbit-git-credential-" + run.id] + inputs.intent.push_check_paths
+          }}'
+  - name: Remove the git credential
+    labels:
+      role: swamp
+    writes: true
+    guard: ${{ size(inputs.intent.push_check_paths) == 0 }}
     task:
       type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-destroy-ssh-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs: *ssh
-      inputs:
-        hosts: name:target
-        argv: [timeout, '150', python3, -I, -c, '${{ steps["Read the scripts"].outputs.pushed }}', '${{ steps["Read the scripts"].outputs.intent_json }}',
-          '${{ steps["Verify the source"].outputs.stdout }}']
-        stdin: ${{ vault.get(inputs.execution_secrets.git_read.vault, inputs.execution_secrets.git_read.key) }}
-        okExitCodes: [0, 1]
-        timeoutSec: 160
-  - name: 'Stop, remove Processes'
-    labels: {role: swamp}
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "instance-destroy-credential-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs:
+        path: ${{ "/tmp/orbit-git-credential-" + run.id }}
+        ensure: absent
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+      inputs: {}
     dependsOn:
-    - {step: 'Verify the source', condition: {type: succeeded}}
-    - {step: 'Check work is pushed', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    guard: '${{ steps["Verify the source"].outputs.exitCode != 0 || ("Check work is pushed" in steps && steps["Check work is pushed"].status == "succeeded" && steps["Check work is pushed"].outputs.exitCode != 0) }}'
-    forEach: {item: process, in: '${{ inputs.intent.native_runtime.processes }}'}
+    - step: Check work is pushed
+      condition:
+        type: always
+  - name: Withdraw the Route
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Write the git credential
+      condition:
+        type: always
+    - step: Check work is pushed
+      condition:
+        type: always
+    - step: Remove the git credential
+      condition:
+        type: always
+    guard: ${{ steps.exists(k, steps[k].status == "failed") }}
+    task:
+      type: workflow
+      workflowIdOrName: route-mutation-forward
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        parent_run_id: ${{ run.id }}
+  - name: Remove DNS records
+    labels:
+      role: swamp
+    writes: true
+    dependsOn:
+    - step: Withdraw the Route
+      condition:
+        type: succeeded
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.forward.publications.filter(p, p.after.dns != null) }}
+    task:
+      type: workflow
+      workflowIdOrName: route-dns-publish
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          node_id: ${{ self.part.node_id }}
+          control_node_id: ${{ self.part.control_node_id }}
+          connection: ${{ self.part.connection }}
+          host_keys: ${{ self.part.host_keys }}
+          before: ${{ inputs.intent.route_mutations.artifacts.dns[self.part.before.dns] }}
+          after: ${{ inputs.intent.route_mutations.artifacts.dns[self.part.after.dns] }}
+          alternatives: ${{ [inputs.intent.route_mutations.artifacts.dns[self.part.before.dns], inputs.intent.route_mutations.artifacts.dns[self.part.prepared.dns], inputs.intent.route_mutations.artifacts.dns[self.part.withdrawn.dns],
+            inputs.intent.route_mutations.artifacts.dns[self.part.after.dns]] }}
+        execution_secrets: {}
+    guard: ${{ steps.exists(k, steps[k].status == "failed") }}
+  - name: Stop, remove Processes
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Write the git credential
+      condition:
+        type: always
+    - step: Check work is pushed
+      condition:
+        type: always
+    - step: Remove the git credential
+      condition:
+        type: always
+    - step: Withdraw the Route
+      condition:
+        type: always
+    - step: Remove DNS records
+      condition:
+        type: always
+    guard: ${{ steps.exists(k, steps[k].status == "failed") }}
+    forEach:
+      item: process
+      in: ${{ inputs.intent.native_runtime.processes }}
     task:
       type: workflow
       workflowIdOrName: operation-process-destroy
       inputs:
-        operation_id: '${{ inputs.operation_id }}'
-        node_id: '${{ inputs.node_id }}'
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
         kind: process.destroy
-        intent: {control: '${{ self.process }}', ssh_execution: '${{ inputs.intent.ssh_execution }}'}
+        intent:
+          control: ${{ self.process }}
+          ssh_execution: ${{ inputs.intent.ssh_execution }}
         execution_secrets: {}
-    # The Project teardown list in each checkout, as the Node account, with create's runner; the first failure stops it.
-  - name: 'Run teardown steps'
-    labels: {role: swamp}
+  - name: Run teardown steps
+    labels:
+      role: swamp
     writes: true
-    dependsOn:
-    - {step: 'Verify the source', condition: {type: succeeded}}
-    - {step: 'Check work is pushed', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    - {step: 'Stop, remove Processes', condition: {type: always}}
-    guard: '${{ size(inputs.intent.teardown_steps) == 0 || steps["Verify the source"].outputs.exitCode != 0 || ("Check work is pushed" in steps && steps["Check work is pushed"].status == "succeeded" && steps["Check work is pushed"].outputs.exitCode != 0) || steps.exists(k, k.startsWith("Stop, remove Processes") && steps[k].status == "failed") }}'
+    forEach:
+      item: step
+      in: ${{ inputs.intent.teardown_steps }}
+    concurrency: 1
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-destroy-ssh-" + string(inputs.node_id) }}
+      behaviorName: ${{ "instance-destroy-teardown-" + string(inputs.node_id) + "-" + string(self._index) }}
       methodName: exec
-      globalArgs: *ssh
+      globalArgs:
+        name: ${{ "instance-destroy-teardown-" + string(inputs.node_id) + "-" + string(self._index) }}
+        transport: *id001
+        hosts: *id002
       inputs:
         hosts: name:target
-        argv: [timeout, '540', python3, -I, -c, '${{ steps["Read the scripts"].outputs.setup }}', '${{ steps["Read the scripts"].outputs.runner }}']
-        stdin: ${{ steps["Read the scripts"].outputs.teardown_json }}
-        okExitCodes: any
-        timeoutSec: 545
-  - name: 'Remove SQLite files'
-    labels: {role: swamp}
+        argv:
+        - /usr/bin/sudo
+        - -n
+        - --user
+        - ${{ inputs.intent.direct_destroy.node_user }}
+        - --
+        - /usr/bin/timeout
+        - ${{ string(self.step.timeout_seconds) }}
+        - /usr/bin/env
+        - -C
+        - ${{ self.step.directory }}
+        - ${{ "ORBIT_INSTANCE_ID=" + string(self.step.instance_id) }}
+        - ${{ "ORBIT_INSTANCE_NAME=" + self.step.instance_name }}
+        - ORBIT_SEED_PATH=
+        - ORBIT_SEED_COMMIT=
+        - /bin/sh
+        - -c
+        - exec /bin/bash -eu -c "$1" >/dev/null
+        - sh
+        - ${{ self.step.command }}
+        timeoutSec: ${{ self.step.timeout_seconds + 5 }}
     dependsOn:
-    - {step: 'Verify the source', condition: {type: succeeded}}
-    - {step: 'Check work is pushed', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    - {step: 'Stop, remove Processes', condition: {type: always}}
-    - {step: 'Run teardown steps', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    guard: '${{ steps["Verify the source"].outputs.exitCode != 0 || ("Check work is pushed" in steps && steps["Check work is pushed"].status == "succeeded" && steps["Check work is pushed"].outputs.exitCode != 0) || ("Run teardown steps" in steps && steps["Run teardown steps"].status == "succeeded" && steps["Run teardown steps"].outputs.exitCode != 0) || steps.exists(k, k.startsWith("Stop, remove Processes") && steps[k].status == "failed") }}'
+    - step: Write the git credential
+      condition:
+        type: always
+    - step: Check work is pushed
+      condition:
+        type: always
+    - step: Remove the git credential
+      condition:
+        type: always
+    - step: Withdraw the Route
+      condition:
+        type: always
+    - step: Remove DNS records
+      condition:
+        type: always
+    - step: Stop, remove Processes
+      condition:
+        type: always
+    guard: ${{ steps.exists(k, steps[k].status == "failed") }}
+  - name: Remove SQLite files
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Write the git credential
+      condition:
+        type: always
+    - step: Check work is pushed
+      condition:
+        type: always
+    - step: Remove the git credential
+      condition:
+        type: always
+    - step: Withdraw the Route
+      condition:
+        type: always
+    - step: Remove DNS records
+      condition:
+        type: always
+    - step: Stop, remove Processes
+      condition:
+        type: always
+    - step: Run teardown steps
+      condition:
+        type: always
+    guard: ${{ steps.exists(k, steps[k].status == "failed") }}
     writes: true
-    forEach: {item: database, in: '${{ inputs.intent.direct_destroy.database.sqlite }}'}
-    # The Gateway admitted each path inside its Instance checkout; the Node account removes it, never root.
+    forEach:
+      item: database
+      in: ${{ inputs.intent.direct_destroy.database.sqlite }}
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
@@ -149,206 +297,109 @@ jobs:
         nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
         become: false
       inputs: {}
-    # One database:destroy child per Database server; each drops the databases and users this Instance owns there.
-  - name: 'Drop owned databases'
-    labels: {role: swamp}
+  - name: Drop owned databases
+    labels:
+      role: swamp
     dependsOn:
-    - {step: 'Verify the source', condition: {type: succeeded}}
-    - {step: 'Check work is pushed', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    - {step: 'Stop, remove Processes', condition: {type: always}}
-    - {step: 'Run teardown steps', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    - {step: 'Remove SQLite files', condition: {type: always}}
-    guard: '${{ steps["Verify the source"].outputs.exitCode != 0 || ("Check work is pushed" in steps && steps["Check work is pushed"].status == "succeeded" && steps["Check work is pushed"].outputs.exitCode != 0) || ("Run teardown steps" in steps && steps["Run teardown steps"].status == "succeeded" && steps["Run teardown steps"].outputs.exitCode != 0) || steps.exists(k, k.startsWith("Stop, remove Processes") && steps[k].status == "failed") || steps.exists(k, k.startsWith("Remove SQLite files") && steps[k].status == "failed") }}'
-    forEach: {item: server, in: '${{ inputs.intent.direct_destroy.database.servers }}'}
+    - step: Write the git credential
+      condition:
+        type: always
+    - step: Check work is pushed
+      condition:
+        type: always
+    - step: Remove the git credential
+      condition:
+        type: always
+    - step: Withdraw the Route
+      condition:
+        type: always
+    - step: Remove DNS records
+      condition:
+        type: always
+    - step: Stop, remove Processes
+      condition:
+        type: always
+    - step: Run teardown steps
+      condition:
+        type: always
+    - step: Remove SQLite files
+      condition:
+        type: always
+    guard: ${{ steps.exists(k, steps[k].status == "failed") }}
+    forEach:
+      item: server
+      in: ${{ inputs.intent.direct_destroy.database.servers }}
     task:
       type: workflow
       workflowIdOrName: operation-database-destroy
       inputs:
-        operation_id: '${{ inputs.operation_id }}'
-        node_id: '${{ self.server.node_id }}'
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ self.server.node_id }}
         kind: database.destroy
-        intent: '${{ self.server.intent }}'
+        intent: ${{ self.server.intent }}
         execution_secrets:
-          fence: '${{ inputs.execution_secrets["server_" + string(self.server.server_id) + "_fence"] }}'
-          drop: '${{ inputs.execution_secrets["server_" + string(self.server.server_id) + "_drop"] }}'
-          gone: '${{ inputs.execution_secrets["server_" + string(self.server.server_id) + "_gone"] }}'
-          restore: '${{ inputs.execution_secrets["server_" + string(self.server.server_id) + "_restore"] }}'
-  - name: 'Withdraw the Route'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'Verify the source', condition: {type: succeeded}}
-    - {step: 'Check work is pushed', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    - {step: 'Stop, remove Processes', condition: {type: always}}
-    - {step: 'Run teardown steps', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    - {step: 'Remove SQLite files', condition: {type: always}}
-    - {step: 'Drop owned databases', condition: {type: always}}
-    guard: '${{ steps["Verify the source"].outputs.exitCode != 0 || ("Check work is pushed" in steps && steps["Check work is pushed"].status == "succeeded" && steps["Check work is pushed"].outputs.exitCode != 0) || ("Run teardown steps" in steps && steps["Run teardown steps"].status == "succeeded" && steps["Run teardown steps"].outputs.exitCode != 0) || steps.exists(k, k.startsWith("Stop, remove Processes") && steps[k].status == "failed") || steps.exists(k, k.startsWith("Remove SQLite files") && steps[k].status == "failed") || steps.exists(k, k.startsWith("Drop owned databases") && steps[k].status == "failed") }}'
-    task:
-      type: workflow
-      workflowIdOrName: route-mutation-forward
-      inputs:
-        operation_id: '${{ inputs.operation_id }}'
-        node_id: '${{ inputs.node_id }}'
-        kind: '${{ inputs.kind }}'
-        intent: '${{ inputs.intent }}'
-        execution_secrets: '${{ inputs.execution_secrets }}'
-        parent_run_id: '${{ run.id }}'
-    # The final private DNS state on the VPN Node: no record for the removed Routes. A domain inside the Cluster TLD
-    # has no DNS publication, so the step makes no item and is skipped.
-  - name: 'Remove DNS records'
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: 'Withdraw the Route', condition: {type: succeeded}}]
-    forEach: {item: part, in: '${{ inputs.intent.route_mutations.forward.publications.filter(p, p.after.dns != null) }}'}
-    task:
-      type: workflow
-      workflowIdOrName: route-dns-publish
-      inputs:
-        operation_id: '${{ inputs.operation_id }}'
-        node_id: '${{ inputs.node_id }}'
-        kind: '${{ inputs.kind }}'
-        intent:
-          node_id: '${{ self.part.node_id }}'
-          control_node_id: '${{ self.part.control_node_id }}'
-          connection: '${{ self.part.connection }}'
-          host_keys: '${{ self.part.host_keys }}'
-          before: '${{ inputs.intent.route_mutations.artifacts.dns[self.part.before.dns] }}'
-          after: '${{ inputs.intent.route_mutations.artifacts.dns[self.part.after.dns] }}'
-          alternatives: '${{ [inputs.intent.route_mutations.artifacts.dns[self.part.before.dns], inputs.intent.route_mutations.artifacts.dns[self.part.prepared.dns], inputs.intent.route_mutations.artifacts.dns[self.part.withdrawn.dns], inputs.intent.route_mutations.artifacts.dns[self.part.after.dns]] }}'
-        execution_secrets: {}
-  - name: 'Remove the source'
-    labels: {role: swamp}
+          fence: ${{ inputs.execution_secrets["server_" + string(self.server.server_id) + "_fence"] }}
+          drop: ${{ inputs.execution_secrets["server_" + string(self.server.server_id) + "_drop"] }}
+          gone: ${{ inputs.execution_secrets["server_" + string(self.server.server_id) + "_gone"] }}
+          restore: ${{ inputs.execution_secrets["server_" + string(self.server.server_id) + "_restore"] }}
+  - name: Remove the source
+    labels:
+      role: swamp
     writes: true
     dependsOn:
-    - {step: 'Withdraw the Route', condition: {type: succeeded}}
-    - {step: 'Remove DNS records', condition: {type: always}}
-    guard: '${{ steps.exists(k, k.startsWith("Remove DNS records") && steps[k].status == "failed") }}'
+    - step: Write the git credential
+      condition:
+        type: always
+    - step: Check work is pushed
+      condition:
+        type: always
+    - step: Remove the git credential
+      condition:
+        type: always
+    - step: Withdraw the Route
+      condition:
+        type: always
+    - step: Remove DNS records
+      condition:
+        type: always
+    - step: Stop, remove Processes
+      condition:
+        type: always
+    - step: Run teardown steps
+      condition:
+        type: always
+    - step: Remove SQLite files
+      condition:
+        type: always
+    - step: Drop owned databases
+      condition:
+        type: always
+    guard: ${{ steps.exists(k, steps[k].status == "failed") }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "instance-destroy-ssh-" + string(inputs.node_id) }}
       methodName: exec
-      globalArgs: *ssh
+      globalArgs: *id003
       inputs:
         hosts: name:target
-        argv: [timeout, '300', python3, -I, -c, '${{ steps["Read the scripts"].outputs.remove }}', '${{ steps["Read the scripts"].outputs.intent_json }}',
-          '${{ steps["Verify the source"].outputs.stdout }}']
-        okExitCodes: [0, 1]
         timeoutSec: 310
-  - name: 'Check it is gone'
-    labels: {role: swamp}
-    dependsOn: [{step: 'Remove the source', condition: {type: succeeded}}]
-    guard: ${{ steps["Remove the source"].outputs.exitCode != 0 }}
+        argv: ${{ ["/usr/bin/timeout", "300", "/bin/sh", "-c", "for p; do if [ -f \"$p/.git\" ]; then /usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C \"$p\" worktree
+          remove --force \"$p\" 2>/dev/null || rm -rf -- \"$p\"; else rm -rf -- \"$p\"; fi; done", "sh"] + inputs.intent.source_paths }}
+  - name: Check it is gone
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Remove the source
+      condition:
+        type: succeeded
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "instance-destroy-ssh-" + string(inputs.node_id) }}
       methodName: exec
-      globalArgs: *ssh
+      globalArgs: *id003
       inputs:
         hosts: name:target
-        sudo: true
-        argv: [timeout, '60', python3, -I, -c, '${{ steps["Read the scripts"].outputs.gone }}', '${{ steps["Read the scripts"].outputs.intent_json }}']
-        okExitCodes: [0, 1]
         timeoutSec: 70
-  - name: 'Report the result'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'Read the scripts', condition: {type: always}}
-    - {step: 'Verify the source', condition: {type: always}}
-    - {step: 'Check work is pushed', condition: {type: always}}
-    - {step: 'Stop, remove Processes', condition: {type: always}}
-    - {step: 'Run teardown steps', condition: {type: always}}
-    - {step: 'Remove SQLite files', condition: {type: always}}
-    - {step: 'Drop owned databases', condition: {type: always}}
-    - {step: 'Withdraw the Route', condition: {type: always}}
-    - {step: 'Remove DNS records', condition: {type: always}}
-    - {step: 'Remove the source', condition: {type: always}}
-    - {step: 'Check it is gone', condition: {type: always}}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: instance-destroy-result
-      methodName: execute
-      inputs:
-        run: |
-          python3 -I - <<'PY'
-          import json
-          import os
-          import sys
-
-
-          def step(name):
-              status, exit_code, stdout = (os.environ[name + suffix] for suffix in ('_STATUS', '_EXIT', '_STDOUT'))
-              try:
-                  value = json.loads(stdout) if stdout else {}
-              except ValueError:
-                  value = {}
-              return status, exit_code, value if isinstance(value, dict) else {}
-
-          result, inspection = {}, None
-          status, exit_code, verified = step('VERIFIED')
-          if status == 'succeeded' and exit_code == '0':
-              inspection = verified.get('source_inspection')
-          # Script phases report their own error code; child workflows and the teardown runner map to the legacy codes.
-          phases = [('READ', 'Read the scripts', 'instance.removal_incomplete'), ('VERIFIED', 'Verify the source', 'instance.source_identity_invalid'), ('PUSHED', 'Check work is pushed', 'instance.remove_refused'),
-                    ('PROCESSES', 'Stop, remove Processes', 'instance.removal_incomplete'), ('TEARDOWN', 'Run teardown steps', 'instance.teardown_step_failed'),
-                    ('SQLITE', 'Remove SQLite files', 'instance.removal_incomplete'),
-                    ('SERVERS', 'Drop owned databases', 'instance.removal_incomplete'), ('ROUTE', 'Withdraw the Route', 'instance.removal_incomplete'),
-                    ('DNS', 'Remove DNS records', 'instance.removal_incomplete'),
-                    ('REMOVED', 'Remove the source', 'instance.remove_refused'), ('GONE', 'Check it is gone', 'instance.removal_incomplete')]
-          for name, label, fallback in phases:
-              status, exit_code, value = step(name)
-              if status == 'failed' or (status == 'succeeded' and exit_code not in ('', '0')):
-                  code = value.get('error_code') if isinstance(value.get('error_code'), str) else fallback
-                  if name == 'TEARDOWN':
-                      code = {'instance.setup_step_unavailable': 'instance.teardown_step_unavailable', 'operation.timed_out': 'command.deadline_exceeded'}.get(code, 'instance.teardown_step_failed')
-                  result = {'removed': False, 'failed_step': label, 'error_code': code}
-                  break
-          else:
-              done = {name: step(name)[0] for name in ('VERIFIED', 'REMOVED', 'GONE')}
-              result = {'removed': True} if all(state == 'succeeded' for state in done.values()) else {'removed': False, 'failed_step': None, 'error_code': 'instance.removal_incomplete'}
-          if inspection is not None:
-              result['source_inspection'] = inspection
-          print(json.dumps(result))
-          sys.exit(0 if result['removed'] else 1)
-          PY
-        env:
-          READ_STATUS: '${{ "Read the scripts" in steps ? steps["Read the scripts"].status : "skipped" }}'
-          READ_EXIT: ''
-          READ_STDOUT: ''
-          VERIFIED_STATUS: '${{ "Verify the source" in steps ? steps["Verify the source"].status : "skipped" }}'
-          VERIFIED_EXIT: '${{ "Verify the source" in steps && steps["Verify the source"].status == "succeeded" ? string(steps["Verify the source"].outputs.exitCode) : "" }}'
-          VERIFIED_STDOUT: '${{ "Verify the source" in steps && steps["Verify the source"].status == "succeeded" ? steps["Verify the source"].outputs.stdout : "" }}'
-          PUSHED_STATUS: '${{ "Check work is pushed" in steps ? steps["Check work is pushed"].status : "skipped" }}'
-          PUSHED_EXIT: '${{ "Check work is pushed" in steps && steps["Check work is pushed"].status == "succeeded" ? string(steps["Check work is pushed"].outputs.exitCode) : "" }}'
-          PUSHED_STDOUT: '${{ "Check work is pushed" in steps && steps["Check work is pushed"].status == "succeeded" ? steps["Check work is pushed"].outputs.stdout : "" }}'
-          PROCESSES_STATUS: '${{ steps.exists(k, k.startsWith("Stop, remove Processes") && steps[k].status == "failed") ? "failed" : "succeeded" }}'
-          PROCESSES_EXIT: ''
-          PROCESSES_STDOUT: ''
-          TEARDOWN_STATUS: '${{ "Run teardown steps" in steps ? steps["Run teardown steps"].status : "skipped" }}'
-          TEARDOWN_EXIT: '${{ "Run teardown steps" in steps && steps["Run teardown steps"].status == "succeeded" ? string(steps["Run teardown steps"].outputs.exitCode) : "" }}'
-          TEARDOWN_STDOUT: '${{ "Run teardown steps" in steps && steps["Run teardown steps"].status == "succeeded" ? steps["Run teardown steps"].outputs.stdout : "" }}'
-          SQLITE_STATUS: '${{ steps.exists(k, k.startsWith("Remove SQLite files") && steps[k].status == "failed") ? "failed" : "succeeded" }}'
-          SQLITE_EXIT: ''
-          SQLITE_STDOUT: ''
-          SERVERS_STATUS: '${{ steps.exists(k, k.startsWith("Drop owned databases") && steps[k].status == "failed") ? "failed" : "succeeded" }}'
-          SERVERS_EXIT: ''
-          SERVERS_STDOUT: ''
-          ROUTE_STATUS: '${{ "Withdraw the Route" in steps ? steps["Withdraw the Route"].status : "skipped" }}'
-          ROUTE_EXIT: ''
-          ROUTE_STDOUT: ''
-          DNS_STATUS: '${{ steps.exists(k, k.startsWith("Remove DNS records") && steps[k].status == "failed") ? "failed" : "succeeded" }}'
-          DNS_EXIT: ''
-          DNS_STDOUT: ''
-          REMOVED_STATUS: '${{ "Remove the source" in steps ? steps["Remove the source"].status : "skipped" }}'
-          REMOVED_EXIT: '${{ "Remove the source" in steps && steps["Remove the source"].status == "succeeded" ? string(steps["Remove the source"].outputs.exitCode) : "" }}'
-          REMOVED_STDOUT: '${{ "Remove the source" in steps && steps["Remove the source"].status == "succeeded" ? steps["Remove the source"].outputs.stdout : "" }}'
-          GONE_STATUS: '${{ "Check it is gone" in steps ? steps["Check it is gone"].status : "skipped" }}'
-          GONE_EXIT: '${{ "Check it is gone" in steps && steps["Check it is gone"].status == "succeeded" ? string(steps["Check it is gone"].outputs.exitCode) : "" }}'
-          GONE_STDOUT: '${{ "Check it is gone" in steps && steps["Check it is gone"].status == "succeeded" ? steps["Check it is gone"].outputs.stdout : "" }}'
-        ignoreExitCode: true
-  - name: 'Fail on an error'
-    labels: {role: swamp}
-    dependsOn: [{step: 'Report the result', condition: {type: succeeded}}]
-    task: {type: assert, expr: 'steps["Report the result"].outputs.exitCode == 0', severity: high, message: The development Instance destroy did not complete.}
+        argv: ${{ ["/usr/bin/timeout", "60", "/bin/sh", "-c", "for p; do [ ! -e \"$p\" ] || { echo \"$p still exists\" >&2; exit 1; }; done", "sh"] + inputs.intent.source_paths }}

@@ -25,7 +25,7 @@
       "operation": false,
       "body": {
         "name": "marker",
-        "command": "printf proof-private-setup-output; touch .git/orbit-proof-setup",
+        "command": "printf 'proof-private-%s-output' setup; touch .git/orbit-proof-setup",
         "timeout_seconds": 10
       }
     },
@@ -85,14 +85,14 @@
     {
       "name": "setup",
       "job": "create",
-      "step": "setup",
+      "step": "setup-0",
       "budget_seconds": 15
     },
     {
       "name": "processes",
       "job": "create",
       "step": "processes-0",
-      "budget_seconds": 30
+      "budget_seconds": 90
     },
     {
       "name": "finish",

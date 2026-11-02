@@ -3,6 +3,7 @@ import { serviceToolPolicy } from "../../_lib/maintenance/tool_policy.ts";
 import { satisfies } from "npm:semver@7.7.2";
 import {
   assertChangedReleaseAge,
+  assertFreshTarget,
   batchPlaces,
   BatchPlanSchema,
   type Candidate,
@@ -173,7 +174,7 @@ async function sdk(
     await Deno.remove(temp, { recursive: true });
   }
 }
-/** One registry snapshot per plan, isolated by configured path and never shared across runs. */
+/** One registry snapshot per plan/batch, isolated by configured path and never shared across runs. */
 function metadata(signal?: AbortSignal) {
   const catalogs = new Map<string, Promise<Record<string, string>>>();
   const packages = new Map<string, ReturnType<typeof releases>>();
@@ -253,8 +254,9 @@ async function apply(
   args: CommonArgs,
   targets: UpdateTarget[],
   registry: Metadata,
-  signal: AbortSignal | undefined,
-  choices: UpdateTarget[][],
+  signal?: AbortSignal,
+  planning = false,
+  choices?: UpdateTarget[][],
 ) {
   const p = await places({ ...args, cwd: root }, "package.json");
   const selected: UpdateTarget[] = [];
@@ -281,14 +283,19 @@ async function apply(
         }
       }
     }
+    const declarations = planning ? js.manifest : select(js.manifest, chosen);
     await writeJson(
       `${place.dir}/package.json`,
-      select(js.manifest, chosen, choices),
+      select(js.manifest, chosen, choices ?? chosen.map((t) => [t])),
     );
     await run(js, js.manager, [
       "install",
-      js.manager === "npm" ? "--package-lock-only" : "--lockfile-only",
-      "--ignore-scripts",
+      ...(planning
+        ? [
+          js.manager === "npm" ? "--package-lock-only" : "--lockfile-only",
+          "--ignore-scripts",
+        ]
+        : []),
     ], signal);
     const installed = await workspace(place), locked = await lock(installed);
     for (const t of chosen) {
@@ -301,13 +308,37 @@ async function apply(
         ? String(row[0]).slice(t.package.length + 1)
         : null;
       if (
-        !choices.find((o) => key(o[0]) === key(t))?.some((o) =>
-          o.version === version
-        )
+        choices
+          ? !choices.find((o) => key(o[0]) === key(t))?.some((o) =>
+            o.version === version
+          )
+          : version !== t.version
       ) {
         throw new MaintenanceFailure(
           `Resolver did not lock ${t.package} at ${t.version}`,
         );
+      }
+    }
+    if (!planning) {
+      if (JSON.stringify(declarations) !== JSON.stringify(installed.manifest)) {
+        const solved = await versions(installed);
+        await writeJson(`${place.dir}/package.json`, declarations);
+        await run(js, js.manager, [
+          "install",
+          js.manager === "npm" ? "--package-lock-only" : "--lockfile-only",
+          "--ignore-scripts",
+        ], signal);
+        const synchronized = await versions(await workspace(place));
+        if (
+          Object.keys(solved).length !== Object.keys(synchronized).length ||
+          Object.entries(solved).some(([name, version]) =>
+            synchronized[name] !== version
+          )
+        ) {
+          throw new MaintenanceFailure(
+            "Lockfile synchronization changed resolved versions",
+          );
+        }
       }
     }
     const after = await versions(installed);
@@ -335,8 +366,15 @@ async function apply(
       version: installedVersion(installed, after, t.package)!,
     }));
     selected.push(...resolved);
-    const findings = await audit({ ...installed, vitePlus: false }, signal);
-    for (const t of resolved.filter((t) => t.purpose === "security")) {
+    const findings = await audit({
+      ...installed,
+      vitePlus: planning ? false : installed.vitePlus,
+    }, signal);
+    for (
+      const t of (planning ? resolved : chosen).filter((t) =>
+        t.purpose === "security"
+      )
+    ) {
       if (findings[t.package]?.length) {
         throw new MaintenanceFailure(
           `Selected advisory fix remains affected: ${t.package}`,
@@ -428,6 +466,7 @@ export async function plan(
             expanded,
             registry,
             signal,
+            true,
             matrix,
           );
           return { targets };
@@ -443,4 +482,42 @@ export async function plan(
   } finally {
     await temp.close();
   }
+}
+export async function batch(
+  args: CommonArgs,
+  targets: UpdateTarget[],
+  signal?: AbortSignal,
+) {
+  const p = await places(args, "package.json"), registry = metadata(signal);
+  for (const t of targets) {
+    const place = p.places.find((p) => p.path === t.path);
+    if (!place) throw new MaintenanceFailure("Unknown batch path");
+    const r = (await registry.releases(t, place)).find((r) =>
+      r.version === t.version
+    );
+    const time = Date.parse(r?.publishedAt ?? "");
+    if (
+      !Number.isFinite(time) ||
+      Date.now() - time <
+        (args.policy[t.path]?.minimumReleaseAgeDays ?? 0) * 86400000
+    ) {
+      throw new MaintenanceFailure(
+        `Target does not satisfy release-age policy: ${t.package}`,
+      );
+    }
+  }
+  for (const place of batchPlaces(targets, p.places, "js")) {
+    const js = await workspace(place),
+      current = await versions(js),
+      findings = await audit({ ...js, vitePlus: false }, signal);
+    select(js.manifest, place.targets);
+    for (const t of place.targets) {
+      assertFreshTarget(
+        t,
+        installedVersion(js, current, t.package),
+        findings[t.package] ?? [],
+      );
+    }
+  }
+  await apply(args.cwd, args, targets, registry, signal);
 }

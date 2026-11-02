@@ -9,6 +9,7 @@ covers:
   - apps/gateway/app/Models/{InstanceRemoval,InstanceRemovalMember}.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/cli/app/Commands/Instances/DestroyInstanceCommand.php
+  - swamp/workflows/workflow-operation-instance-destroy.yaml
 ---
 
 # Instance removal
@@ -23,17 +24,17 @@ The CLI requires consent. `--yes` confirms without a prompt and is required for 
 
 ## Native order
 
-The run follows the [destroy flow](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/destroy.mmd), one shipped script per Node phase. Admission already removed the Instance's native Schedules. `Verify the source` captures source ownership, repository identity, branch and the complete linked-worktree inventory before removing anything. A normal removal then fetches origin with the read token and refuses unpushed work (`Check work is pushed`).
+The run follows the [destroy flow](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/destroy.mmd). Each Node action is one `@swamp/ssh exec` command or an official `@swamp/cfgmgmt/file` step; nothing is copied to the Node. Admission already removed the Instance's native Schedules. A normal removal first writes the read token as a 0600 credential file, fetches origin in each checkout and refuses dirty or unpushed work (`Check work is pushed`); the next step removes the credential file.
 
-The run stops and removes each Process through the canonical Process child, and runs the Project teardown commands, passed as run inputs, as the managed account. It removes owned SQLite files with the official `@swamp/cfgmgmt/file` behavior, drops owned databases and users on each Database server through the `operation-database-destroy` workflow that `database:destroy` uses, and withdraws the captured Route publications through the shared Route mutation. It finalizes linked worktrees before their owning checkout, then checks that the checkout and the Process units are gone. The Gateway deletes owned records only after native success.
+The run then withdraws the captured Route publications through the shared Route mutation, so the site goes down first. It stops and removes each Process through the canonical Process child, and runs the Project teardown commands, passed as run inputs, one command per step as the managed account. It removes owned SQLite files with the file behavior and drops owned databases and users on each Database server through the `operation-database-destroy` workflow that `database:destroy` uses. It removes each checkout, a linked worktree through `git worktree remove`, then checks that every checkout is gone. The Gateway deletes owned records only after native success.
 
 Publication captures include the full site catalogs so unrelated Routes, PHP pools and DNS records remain present. Each native action has its own run and iteration identity. The Gateway does not supply an execution lock or recapture publication intent during the run.
 
 ## Retry and ownership
 
-A failed or cancelled run retains its removal intent, public source capture and local removal receipts. Start a fresh normal `instance:destroy` Operation with a new idempotency key to converge the same admitted removal. Repeating the old key returns the old Operation. This workflow does not depend on `workflow resume`: pinned e459 loses inline official SSH global arguments when resuming a failed run.
+A failed or cancelled run retains its removal intent. Start a fresh normal `instance:destroy` Operation with a new idempotency key to converge the same admitted removal. Repeating the old key returns the old Operation. This workflow does not depend on `workflow resume`: pinned e459 loses inline official SSH global arguments when resuming a failed run.
 
-A fresh retry keeps the original source digest and inode even after the checkout moves to quarantine. Verification accepts a missing original path only when its exact admitted receipt matches. It refuses symlink replacements and foreign receipts. An originally absent source is an explicit observation, not a backend success claim inferred from a missing result.
+A retry repeats every step; each converges, and a checkout that is already gone counts as removed. If a step fails after the Route withdrawal, the site stays down until a rerun finishes the removal.
 
 The Gateway records the member set as Removing in the same admission transaction that captures database ownership. Database saves refuse additions, ownership changes and attachments involving a Removing owner. An owned database targeted by another Instance refuses removal. Only owned resources go with an Instance; unrelated checkouts and database targets remain untouched. Registered external databases lose their records without a backend absence claim.
 

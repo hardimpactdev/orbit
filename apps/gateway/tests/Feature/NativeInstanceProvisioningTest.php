@@ -195,13 +195,11 @@ it('captures checkout scope and admitted seed values in the one private setup li
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'synthetic-token']);
     $public = app(NativeDevelopmentInstanceInput::class)->create($operation);
-    $setup = json_decode($socket->sent[2]['payload']['value'], true, flags: JSON_THROW_ON_ERROR);
-    expect($socket->sent[2]['payload']['key'])->toBe('instance-create-'.$operation->id)
-        ->and($public['execution_secrets']['setup'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'instance-create-'.$operation->id])
-        ->and($setup['steps'])->toHaveCount(1)
-        ->and($setup['steps'][0])->toMatchArray(['name' => 'prepare', 'command' => 'printf private-command', 'sha256' => hash('sha256', 'printf private-command'),
-            'timeout_seconds' => 30, 'directory' => $plan['checkout'], 'seed_path' => '/captured/default', 'seed_commit' => str_repeat('a', 40)])
-        ->and(json_encode($public))->not->toContain('private-command');
+    // Setup commands travel in the run intent, as instance.run_steps passes them; one exec runs each.
+    expect($public['execution_secrets'])->not->toHaveKey('setup')
+        ->and($public['intent']['setup_steps'])->toHaveCount(1)
+        ->and($public['intent']['setup_steps'][0])->toMatchArray(['index' => 0, 'name' => 'prepare', 'command' => 'printf private-command', 'sha256' => hash('sha256', 'printf private-command'),
+            'timeout_seconds' => 30, 'directory' => $plan['checkout'], 'seed_path' => '/captured/default', 'seed_commit' => str_repeat('a', 40)]);
 });
 
 it('renders .env at admission from the Project template and pushes exactly that file at run start', function (): void {
@@ -226,12 +224,10 @@ it('renders .env at admission from the Project template and pushes exactly that 
 
     $public = app(NativeDevelopmentInstanceInput::class)->create($operation);
 
-    $file = json_decode($socket->sent[1]['payload']['value'], true, flags: JSON_THROW_ON_ERROR);
-    expect($socket->sent[1]['payload']['key'])->toBe('instance-create-environment-input-'.$operation->id)
-        ->and($file['directory'])->toBe($this->instance->checkout_path.'/apps/site')
-        ->and($file['checkout'])->toBe($this->instance->checkout_path)
-        ->and($file['content'])->toBe(app(DevelopmentCreateEnvironment::class)->content($this->instance))
-        ->and($file['content'])->toContain('TEMPLATE="from template"')
+    $file = collect($socket->sent)->firstWhere('payload.key', 'instance-create-environment-input-'.$operation->id)['payload']['value'];
+    expect($public['intent']['environment_directory'])->toBe($this->instance->checkout_path.'/apps/site')
+        ->and($file)->toBe(app(DevelopmentCreateEnvironment::class)->content($this->instance))
+        ->and($file)->toContain('TEMPLATE="from template"')
         ->and(json_encode($public))->not->toContain($stored['APP_KEY'])
         ->and(json_encode($public))->not->toContain('from template');
 });

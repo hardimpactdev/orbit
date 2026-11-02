@@ -551,14 +551,14 @@ it('projects native failure with its exact failed phase and retries the complete
     $operation = Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance',
         'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'running',
         'input' => $intent, 'state' => ['instance_destroy_writer' => 'direct', 'swamp_run_id' => $run]]);
-    $result = ['removed' => false, 'error_code' => 'instance.removal_incomplete', 'failed_step' => 'Remove SQLite files'];
+    $run_result = ['steps' => ['Remove SQLite files-0' => ['status' => 'failed']], 'summary' => ['failed_steps' => ['Remove SQLite files-0']]];
 
     app(DevelopmentInstanceDestroyProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'failed',
         'started_at' => '2026-10-31T04:00:00.000Z', 'finished_at' => '2026-10-31T04:00:01.000Z',
-        'result' => $result, 'error_code' => 'instance.removal_incomplete']);
+        'result' => $run_result, 'error_code' => 'operation.native_failed']);
 
     expect($operation->refresh()->status->value)->toBe('failed');
-    expect($operation->result)->toBe($result);
+    expect($operation->result)->toBe(['removed' => false, 'failed_step' => 'Remove SQLite files', 'error_code' => 'instance.removal_incomplete']);
     expect(InstanceRemoval::query()->sole()->failed_step->value)->toBe('runtime_cleanup');
     $snapshot = app(StartInstanceDestroyAction::class)->snapshot($this->instance->refresh(), true);
     expect(app(DirectInstanceDestroyIntent::class)->record($snapshot))->toEqual($intent);

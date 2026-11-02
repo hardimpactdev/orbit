@@ -1,5 +1,11 @@
+import { write } from "../../_lib/maintenance/context.ts";
+import { type Context } from "../../_lib/maintenance/context.ts";
 import { z } from "npm:zod@4";
-import { dueExceptions } from "../../_lib/maintenance/exceptions.ts";
+import {
+  dueExceptions,
+  ExceptionsSchema,
+  recordException,
+} from "../../_lib/maintenance/exceptions.ts";
 import {
   type CommonArgs,
   MaintenanceFailure,
@@ -13,7 +19,7 @@ export const StaleSchema = z.strictObject({
   recorded_on: z.iso.date(),
   remove_on: z.iso.date(),
 });
-// Read release-age exclusions only from [install].
+// Work only inside [install]; preserve other TOML settings and comments verbatim.
 async function bunfig(place: Place) {
   const text = await optionalText(`${place.dir}/bunfig.toml`);
   if (text === null) return null;
@@ -46,7 +52,51 @@ async function bunfig(place: Place) {
       );
     }
   }
-  return { excludes };
+  return {
+    text,
+    section,
+    age,
+    line,
+    excludes,
+    days: Math.ceil(+age[1] / 86400),
+  };
+}
+export async function allowSecurity(
+  place: Place,
+  name: string,
+  policy: CommonArgs["policy"],
+  document: CommonArgs["exceptions"],
+  ctx: Context,
+) {
+  const current = await bunfig(place);
+  if (current === null) return;
+  if (policy[place.path]?.minimumReleaseAgeDays !== current.days) {
+    throw new MaintenanceFailure(
+      `Input policy for ${place.path} must match bunfig.toml minimumReleaseAge in days`,
+      64,
+    );
+  }
+  await write(
+    ctx,
+    "exceptions",
+    ExceptionsSchema,
+    recordException(document, place, "js", name, current.days),
+  );
+  if (!current.excludes.includes(name)) {
+    const rendered = `minimumReleaseAgeExcludes = ${
+      JSON.stringify([...current.excludes, name])
+    }`;
+    const section = current.line
+      ? current.section[0].replace(current.line[0], () => rendered)
+      : current.section[0].replace(
+        current.age[0],
+        () => `${current.age[0]}\n${rendered}`,
+      );
+    await Deno.writeTextFile(
+      `${place.dir}/bunfig.toml`,
+      current.text.replace(current.section[0], () => section),
+    );
+  }
 }
 export async function staleExceptions(
   document: CommonArgs["exceptions"],

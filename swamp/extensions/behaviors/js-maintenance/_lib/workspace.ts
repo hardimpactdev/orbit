@@ -117,19 +117,63 @@ export function coupled(name: string) {
     /^(expo-|@expo\/|react-native-|@react-native\/|@react-native-community\/)/
       .test(name);
 }
+export async function executable(binary: string) {
+  const candidates = binary.includes("/")
+    ? [binary]
+    : (Deno.env.get("PATH") ?? "").split(":").filter(Boolean).map((p) =>
+      `${p}/${binary}`
+    );
+  for (const file of candidates) {
+    const stat = await exists(file);
+    if (stat?.isFile && ((stat.mode ?? 0) & 0o111)) return;
+  }
+  throw new MaintenanceFailure(
+    `Missing executable ${binary}${
+      binary.includes("/")
+        ? "; install the repository dependencies first."
+        : " on PATH."
+    }`,
+    127,
+  );
+}
 export async function run(
   js: Place,
   binary: string,
   args: string[],
   signal?: AbortSignal,
+  extraEnv: Record<string, string> = {},
+  bootstrap = false,
 ) {
-  const result = await command(js.dir, binary, args, signal);
+  const result = await command(js.dir, binary, args, signal, extraEnv);
+  if (bootstrap) {
+    await Deno.stderr.write(
+      new TextEncoder().encode(result.stdout + result.stderr),
+    );
+  }
   if (result.code !== 0) {
     throw new MaintenanceFailure(
       `${binary} ${args.join(" ")} failed:\n${result.stderr}\n${result.stdout}`,
       result.code,
     );
   }
+}
+export async function prepare(js: Workspace, signal?: AbortSignal) {
+  if (serviceToolPolicy()) return;
+  if (!js.vitePlus) return await executable(js.manager);
+  if (!(await exists(`${js.dir}/node_modules`))?.isDirectory) {
+    await executable(js.manager);
+    await run(
+      js,
+      js.manager,
+      js.manager === "npm"
+        ? ["ci", "--ignore-scripts"]
+        : ["install", "--frozen-lockfile", "--ignore-scripts"],
+      signal,
+      {},
+      true,
+    );
+  }
+  await executable(`${js.dir}/node_modules/.bin/vp`);
 }
 export function cli(js: Workspace) {
   return js.vitePlus ? "./node_modules/.bin/vp" : js.manager;

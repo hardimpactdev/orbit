@@ -64,7 +64,7 @@
     {
       "name": "setup",
       "job": "create",
-      "step": "setup",
+      "step": "setup-0",
       "budget_seconds": 15
     },
     {

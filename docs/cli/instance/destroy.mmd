@@ -1,5 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, R1-R4, single-swamp-node (@swamp/ssh from 209), DECISIONS 1 (token minted at admission, vault.get), Schedules native (Nick 2026-11-02). docs/reference/instance-removal.md.
+  %% Tightened: flow-tighten 2026-11-02, rules 3, 8, 14, 17, 22 (Route first, DNS only outside the TLD, cfgmgmt absent applies, no script read, source capture, report or assert step).
+  %% Decided: Nick 2026-11-02, the Route is withdrawn first, before teardown; a failed teardown leaves the site down and a rerun completes.
   %% status: draft
   %% command: instance:destroy
   %% kind: instance.destroy
@@ -66,82 +68,85 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  Note over SW: Read the scripts<br/>instance-dev-command assets
-  %%> What it does:
-  %%> - reads the shipped destroy phase scripts and the teardown runner on 209, to send them over SSH in argv
-  SW->>N: Verify the source<br/>@swamp/ssh · owner, origin, inode
-  %%> What it does:
-  %%> - checks that the checkout and its linked worktrees are the ones captured at admission
-  %%> - same path, owner, origin and filesystem identity
-  %%> Refuses:
-  %%> - another checkout, owner or Node, also with `--force`
-  %%> - a symlink in place of the checkout
   opt not forced
-    SW->>N: Check work is pushed<br/>vault.get token · fetch, compare
+    SW->>N: Write the git credential<br/>@swamp/cfgmgmt/file · 0600
     %%> What it does:
-    %%> - fetches origin with the vault token and compares
+    %%> - writes the vault token as a 0600 credential file, so the token never enters argv
+    SW->>N: Check work is pushed<br/>@swamp/ssh exec · git fetch
+    %%> What it does:
+    %%> - for each checkout, fetches origin with that credential file, then compares with `git status --porcelain` and `git branch -r --contains HEAD`
     %%> Refuses:
     %%> - dirty source
     %%> - a `HEAD` that no origin branch or tag contains
     %%> - linked worktrees on the checkout
     %%> Result of a refusal:
     %%> - the run stops here and nothing changes
+    %%> Why first:
+    %%> - a fact that can change after admission, and every later step depends on it
+    SW->>N: Remove the git credential<br/>@swamp/cfgmgmt/file absent
+    %%> When:
+    %%> - always after the check, also when it refused
   end
-  SW->>N: Stop, remove Processes<br/>systemd units · containers
+  SW->>N: Withdraw the Route<br/>@swamp/cfgmgmt/file absent
   %%> What it does:
-  %%> - stops each Process of Instance 42 and removes its unit or container
+  %%> - removes the Caddy site of Instance 42, its PHP pool and its certificate, then reloads Caddy; no restart
+  %%> - one step, the mirror of `route:create`, which installs the certificate and publishes the site in one step
+  %%> How:
+  %%> - Swamp reaches Node 12 over SSH from 209 with `@swamp/ssh` and `@swamp/cfgmgmt/file` (`ensure: absent`) plus `@swamp/cfgmgmt/systemd` reload; nothing is copied to the Node
+  %%> Why first:
+  %%> - unpublish before removing, so no request reaches a half-removed Instance
+  %%> - accepted: a failed teardown leaves Instance 42 without its site until a rerun completes the removal
+  %%> Keeps:
+  %%> - every other site, pool and certificate on Node 12
+  opt domain outside the TLD
+    Note over SW: Remove DNS records<br/>Node 1 over @swamp/ssh
+    %%> When:
+    %%> - only for a Route domain outside the Cluster or Node TLD; private DNS answers the whole TLD, so a domain inside it has no record
+    %%> What it does:
+    %%> - removes the private DNS records of Instance 42's Routes, then waits the 31-second grace
+    %%> How:
+    %%> - over SSH from 209 to the VPN Node (Node 1), with the `swamp` role's key
+  end
+  SW->>N: Stop, remove Processes<br/>@swamp/cfgmgmt/systemd absent
+  %%> What it does:
+  %%> - removes each Process of Instance 42 as a `forEach`: `@swamp/cfgmgmt/systemd` or `docker_container` with `ensure: absent`, as `process:destroy` does
   %%> Why before teardown:
   %%> - nothing still writes to the application while teardown runs
   %%> Not included:
   %%> - Processes of other Instances on Node 12
-  SW->>N: Run teardown steps<br/>@swamp/ssh · own timeout each
+  SW->>N: Run teardown steps<br/>@swamp/ssh exec · in order
   %%> What it does:
-  %%> - runs the Project's teardown steps in order, as the Node's managed user, from the repository root
+  %%> - runs the Project's teardown steps in order, as the Node's managed user, from the repository root, one `@swamp/ssh exec` each
   %%> Limits:
   %%> - each step has its own timeout
   %%> Failure:
-  %%> - a failed step fails the run; the next `instance:destroy` runs the whole list again
-  SW->>N: Remove SQLite files<br/>owned files only
+  %%> - a failed step ends the run with its own exit code; the next `instance:destroy` runs the whole list again
+  opt SQLite files recorded
+    SW->>N: Remove SQLite files<br/>@swamp/cfgmgmt/file absent
+    %%> What it does:
+    %%> - deletes the SQLite files that Instance 42 owns, by their recorded paths
+    %%> - runs beside the database step; neither needs the other
+  end
+  opt owned databases
+    SW->>N: Drop owned databases<br/>docker exec -i · SQL on stdin
+    %%> What it does:
+    %%> - drops each database and user that Instance 42 owns on a Database server, one `docker exec -i` per statement with the SQL on stdin
+    %%> How:
+    %%> - the admin login comes from the server's own vault key, as a 0600 option file for MySQL, local trust for Postgres, `AUTH` on stdin for Valkey
+    %%> Not included:
+    %%> - registered external databases; their records go with the Instance, nothing on their host changes
+  end
+  SW->>N: Remove the source<br/>@swamp/ssh exec · worktree, rm
   %%> What it does:
-  %%> - deletes the SQLite files that Instance 42 owns
-  %%> Not included:
-  %%> - databases on a Database server; the next step drops them
-  SW->>N: Drop owned databases<br/>Database server · SQL
-  %%> What it does:
-  %%> - drops each database and user that Instance 42 owns on a Database server, one canonical server child per server
-  %%> How:
-  %%> - the server child reads each server's admitted password from the vault; the Gateway copies it at run start
-  %%> Not included:
-  %%> - registered external databases; their records go with the Instance, nothing on their host changes
-  SW->>N: Withdraw the Route<br/>Caddy site, PHP pool, cert
-  %%> What it does:
-  %%> - removes the Caddy site of Instance 42 and reloads Caddy; no restart
-  %%> - removes its PHP pool and its certificate
-  %%> Keeps:
-  %%> - every other site, pool and certificate on Node 12
-  Note over SW: Remove DNS records<br/>Node 1 over @swamp/ssh
-  %%> What it does:
-  %%> - removes the private DNS records of Instance 42's Routes, then waits the 31-second grace
-  %%> How:
-  %%> - over SSH from 209 to the VPN Node (Node 1), with the `swamp` role's key
-  SW->>N: Remove the source<br/>worktrees first, checkout last
-  %%> What it does:
-  %%> - removes linked worktrees, then the checkout itself
-  %%> - deletes only the paths whose identity it verified
+  %%> - `git worktree remove --force` per linked worktree, then `rm -rf` of the checkout
+  %%> - the paths come from the Gateway's records; a rerun converges
   %%> Runs as:
   %%> - the Node's own user, not root
-  SW->>N: Check it is gone<br/>path, units, containers absent
+  SW->>N: Check it is gone<br/>@swamp/cfgmgmt check absent
   %%> What it does:
-  %%> - checks that the checkout, its removal quarantine, the Process units and containers are absent
-  %%> - the Route's own steps already confirmed its Caddy site is gone
+  %%> - the `check` of the directory, file, systemd and `docker_container` behaviors with `ensure: absent`: checkout, units and containers are gone
   %%> Why:
-  %%> - Instance 42 only counts as removed when the Node shows it
-  Note over SW: Report the result<br/>removed · failed_step · error_code
-  %%> What it does:
-  %%> - maps the first failed step to its error code and keeps the source capture for a rerun
-  Note over SW: Fail on an error<br/>assert · exit code 0
-  %%> What it does:
-  %%> - fails the run when the report holds an `error_code`, so the task fails with that code
+  %%> - Instance 42 only counts as removed when the Node shows it; this is the one end check
   alt all steps pass
     N-->>SW: Instance 42 absent
     %%> Returns:
@@ -158,16 +163,19 @@ sequenceDiagram
   else a step fails
     N--xSW: exit ≠ 0 or refusal
     %%> When:
-    %%> - a source check refuses, a teardown step fails, or something is still there
+    %%> - the pushed check refuses, a teardown step fails, or something is still there
+    %%> How:
+    %%> - the failing step ends the run with its own exit code; there is no report step
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
-    %%> - which step failed and its error code
+    %%> - which step failed and its exit code, mapped to `error_code`
     Note over GW: Keep Instance, mark failed<br/>rerun the same destroy
     %%> Result:
     %%> - Instance 42 and its records stay, marked removal failed
     %%> - task #5132 fails
     %%> On the Node:
     %%> - what was already removed stays removed; no rollback
+    %%> - the Route is already withdrawn, so the site stays down; a rerun of the same destroy completes the removal
     %%> - the Schedule triggers stay removed
     %%> Retry:
     %%> - run `instance:destroy 42` again; it is a new task and converges the same captured set

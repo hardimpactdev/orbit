@@ -27,7 +27,7 @@ return [
     'instance.create' => ['workflow' => 'operation-instance-create', 'workflow_inputs' => true,
         'projection' => DevelopmentInstanceCreateProjection::class,
         'terminal_result' => ['job' => 'create', 'step' => 'finish'],
-        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(?:instance-git-(?:operation|credential)-[1-9][0-9]*|instance-create-environment-input-[1-9][0-9]*|instance-create-[1-9][0-9]*)$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$']]],
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(?:instance-git-(?:operation|credential)-[1-9][0-9]*|instance-create-environment-input-[1-9][0-9]*)$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$']]],
     'instance.sync_environment' => ['workflow' => 'operation-instance-environment', 'workflow_inputs' => true,
         'terminal_result' => ['job' => 'environment', 'step' => 'Check the written file', 'native' => true],
         'projection' => NativeInstanceEnvironmentProjection::class,
@@ -35,7 +35,7 @@ return [
     'instance.register' => ['workflow' => 'operation-instance-register', 'workflow_inputs' => true, 'terminal_result' => ['job' => 'source', 'step' => 'result'], 'projection' => InstanceRegisterResult::class],
     'instance.destroy' => ['workflow' => 'operation-instance-destroy', 'workflow_inputs' => true,
         'projection' => DevelopmentInstanceDestroyProjection::class,
-        'terminal_result' => ['job' => 'destroy', 'step' => 'Report the result'],
+        'terminal_result' => ['job' => 'destroy', 'step' => 'Check it is gone', 'native' => true],
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-git-(?:operation|credential)-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$'], DatabaseDestroyRun::OWNED_EXECUTION_COPY]],
     'instance.rename' => ['workflow' => 'operation-instance-rename', 'workflow_inputs' => true, 'terminal_result' => ['job' => 'source', 'step' => 'result'], 'projection' => InstanceRenameResult::class],
     'instance.deploy' => [
@@ -48,5 +48,5 @@ return [
             'environment_material' => 'instance.deployment', 'definitions_material' => 'instance.deployment'],
     ],
     'instance.run_steps' => ['workflow' => 'operation-instance-setup-direct', 'workflow_inputs' => true,
-        'terminal_result' => ['job' => 'setup', 'step' => 'Report the result'], 'projection' => InstanceSetupProjection::class],
+        'terminal_result' => ['job' => 'setup', 'step' => 'Check every step passed', 'native' => true], 'projection' => InstanceSetupProjection::class],
 ];

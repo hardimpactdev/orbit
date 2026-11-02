@@ -59,15 +59,13 @@ it('refuses a moved target and changed release or setup after admission', functi
     expect(fn () => app(InstanceSetupProjection::class)->input($this->operation->fresh()))->toThrow(ResourceOperationException::class);
 })->with(['node', 'release', 'command']);
 
-it('projects bounded success and refuses a secret-bearing result', function (): void {
+it('projects bounded success from the native run and keeps its step output out of the result', function (): void {
     $projection = app(InstanceSetupProjection::class);
     $data = ['run_id' => $this->operation->state['swamp_run_id'], 'status' => 'succeeded', 'started_at' => '2026-10-30T18:00:00.000Z', 'finished_at' => '2026-10-30T18:00:01.000Z',
-        'result' => ['instance_id' => $this->instance->id, 'outcome' => 'succeeded', 'no_op' => false], 'error_code' => null];
-    $bad = $data;
-    $bad['result']['program'] = 'private setup program';
-    expect(fn () => $projection->apply($this->operation, $bad))->toThrow(ResourceOperationException::class);
+        'result' => ['steps' => ['Run the setup steps-0' => ['status' => 'succeeded', 'stdout' => 'private setup program']]], 'error_code' => null];
     $this->instance->update(['first_setup_pending' => true, 'failed_step' => 'setup', 'error_code' => 'old.setup_error']);
     expect($projection->apply($this->operation, $data)->status)->toBe(OperationStatus::Succeeded)
+        ->and($this->operation->fresh()->result)->toBe(['instance_id' => $this->instance->id, 'outcome' => 'succeeded', 'no_op' => false])
         ->and($this->instance->fresh()->first_setup_pending)->toBeFalse()
         ->and($this->instance->fresh()->failed_step)->toBeNull()->and($this->instance->fresh()->error_code)->toBeNull();
     $this->instance->refresh()->update(['first_setup_pending' => true, 'error_code' => 'newer.setup_error']);
@@ -79,9 +77,12 @@ it('projects an app setup failure to the Instance', function (): void {
     $this->instance->update(['first_setup_pending' => true]);
     app(InstanceSetupProjection::class)->apply($this->operation, [
         'run_id' => $this->operation->state['swamp_run_id'], 'status' => 'failed', 'started_at' => now()->subSecond()->toISOString(), 'finished_at' => now()->toISOString(),
-        'result' => ['instance_id' => $this->instance->id, 'outcome' => 'failed', 'error_code' => 'instance.setup_step_failed', 'failed_step' => 'setup.install'], 'error_code' => 'instance.setup_step_failed',
+        'result' => ['steps' => ['Run the setup steps-0' => ['status' => 'failed', 'exit_code' => 2]]], 'error_code' => 'operation.native_failed',
     ]);
-    expect($this->instance->fresh()->first_setup_pending)->toBeTrue()->and($this->instance->fresh()->failed_step)->toBe('setup')->and($this->instance->fresh()->error_code)->toBe('instance.setup_step_failed');
+    $name = $this->operation->input['steps'][0]['name'];
+    expect($this->operation->fresh()->result)->toBe(['instance_id' => $this->instance->id, 'outcome' => 'failed', 'error_code' => 'instance.setup_step_failed',
+        'failed_step' => 'setup.'.$name, 'exit_code' => 2])
+        ->and($this->instance->fresh()->first_setup_pending)->toBeTrue()->and($this->instance->fresh()->failed_step)->toBe('setup')->and($this->instance->fresh()->error_code)->toBe('instance.setup_step_failed');
 });
 
 it('passes the teardown list with the Node account', function (): void {
@@ -107,7 +108,7 @@ it('keeps a changed checkout state when an older list result settles', function 
     $this->instance->update(['checkout_path' => '/srv/new-checkout', 'first_setup_pending' => true, 'error_code' => 'newer.setup_error']);
     app(InstanceSetupProjection::class)->apply($this->operation, ['run_id' => $this->operation->state['swamp_run_id'], 'status' => 'succeeded',
         'started_at' => '2026-10-30T18:00:00.000Z', 'finished_at' => '2026-10-30T18:00:01.000Z',
-        'result' => ['instance_id' => $this->instance->id, 'outcome' => 'succeeded', 'no_op' => false], 'error_code' => null]);
+        'result' => ['steps' => []], 'error_code' => null]);
     expect($this->instance->fresh()->first_setup_pending)->toBeTrue()->and($this->instance->fresh()->error_code)->toBe('newer.setup_error');
 });
 
@@ -115,3 +116,10 @@ it('refuses a development admission whose environment changes before execution',
     $this->instance->node->roles()->where('role', RoleName::AppDev)->update(['role' => RoleName::AppProd]);
     expect(fn () => app(InstanceSetupProjection::class)->input($this->operation->fresh()))->toThrow(ResourceOperationException::class);
 });
+
+it('names the deadline and a missing command from the failed step exit code', function (int $exit, string $outcome, string $code): void {
+    app(InstanceSetupProjection::class)->apply($this->operation, ['run_id' => $this->operation->state['swamp_run_id'], 'status' => 'failed',
+        'started_at' => now()->subSecond()->toISOString(), 'finished_at' => now()->toISOString(),
+        'result' => ['steps' => ['Run the setup steps-0' => ['status' => 'failed', 'exit_code' => $exit]]], 'error_code' => 'operation.native_failed']);
+    expect($this->operation->fresh()->error_code)->toBe($code)->and($this->operation->fresh()->result['outcome'])->toBe($outcome);
+})->with([[124, 'deadline', 'command.deadline_exceeded'], [127, 'missing', 'instance.setup_step_unavailable']]);

@@ -28,7 +28,7 @@ final readonly class NativeDevelopmentInstanceInput
         foreach (InstanceLifecycleInput::members(['members' => $programs['steps']]) as $raw) {
             $step = ValidatedData::object($raw);
             $command = ValidatedData::string($step['command']);
-            $steps[] = ['name' => $step['name'], 'command' => $command, 'sha256' => hash('sha256', $command),
+            $steps[] = ['index' => count($steps), 'name' => $step['name'], 'command' => $command, 'sha256' => hash('sha256', $command),
                 'timeout_seconds' => $step['timeout_seconds'], 'directory' => $plan['checkout'],
                 'instance_id' => $instance->id, 'instance_name' => $instance->name,
                 'seed_path' => $seeded ? ($input['seed_path'] ?? '') : '', 'seed_commit' => $seeded ? ($input['seed_commit'] ?? '') : ''];
@@ -43,15 +43,15 @@ final readonly class NativeDevelopmentInstanceInput
             }
         }
 
+        // Minting writes the read token's credential line into the vault; the fetch reads it as a 0600 file.
+        app(InstanceGitHubReadTokens::class)->start($operation);
+
         return ['intent' => [...$plan, 'ssh_execution' => $input['ssh_execution'],
             'instance_name' => $instance->name, 'name_converted_from' => $input['name_converted_from'] ?? null,
-            'processes' => $processes],
+            'processes' => $processes, 'setup_steps' => $steps, 'environment_directory' => $environment->directory($instance)],
             'execution_secrets' => [...$copies,
-                'git_read' => app(InstanceGitHubReadTokens::class)->start($operation),
-                'environment' => $vault->executionCopy('orbit-control-inputs', 'instance-create-environment-input-'.$operation->id, json_encode([
-                    'directory' => $environment->directory($instance), 'checkout' => $instance->checkout_path, 'content' => $environment->content($instance),
-                ], JSON_THROW_ON_ERROR)),
-                'setup' => $vault->executionCopy('orbit-control-inputs', 'instance-create-'.$operation->id, json_encode(['steps' => $steps], JSON_THROW_ON_ERROR)),
+                'git_credential' => InstanceGitHubReadTokens::credentialReference($operation),
+                'environment' => $vault->executionCopy('orbit-control-inputs', 'instance-create-environment-input-'.$operation->id, $environment->content($instance)),
             ]];
     }
 }

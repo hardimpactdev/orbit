@@ -39,9 +39,7 @@ class InstanceVpNative(NativeTestCase):
   requirements=self.repo/'extensions/behaviors/operations/instance-vp-command/requirements.ts'
   requirements.write_text(requirements.read_text().replace('"/opt/orbit/vite-plus"',json.dumps(str(scope))))
   # The machine store probe looks only at the disposable fixture scope.
-  graph_text=graph.stdout.replace('/opt/orbit/vite-plus',str(scope)).replace('"/opt/orbit"',json.dumps(str(self.host/'orbit'))).replace('"/opt"',json.dumps(str(self.host)))
-  # A root-only sibling, like /opt/containerd on a Node: the store probe must not read it.
-  locked=self.host/'locked';locked.mkdir();(locked/'inner').mkdir();locked.chmod(0);self.addCleanup(locked.chmod,0o700)
+  graph_text=graph.stdout.replace('"/opt/orbit/vite-plus/bin/vp"',json.dumps(str(scope/'bin/vp'))).replace('"/opt"',json.dumps(str(self.host)))
   jobs=[{'name':'before','steps':[{'name':'ready','task':{'type':'assert','expr':'true','message':'Fixture ready'}}]}]+json.loads(graph_text)
   for job in jobs:
    job.pop('target',None); job.pop('labels',None)

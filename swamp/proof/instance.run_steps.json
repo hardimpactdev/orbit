@@ -2,6 +2,7 @@
   "kind": "instance.run_steps",
   "workflow": "operation-instance-setup-direct",
   "topology": "minimal",
+  "clean": true,
   "budget_seconds": 90,
   "queue_timeout_seconds": 30,
   "prepare": [
@@ -49,28 +50,16 @@
   },
   "phases": [
     {
-      "name": "Read the scripts",
-      "job": "setup",
-      "step": "Read the scripts",
-      "budget_seconds": 15
-    },
-    {
-      "name": "Check the checkout",
-      "job": "setup",
-      "step": "Check the checkout",
-      "budget_seconds": 20
-    },
-    {
       "name": "Run the setup steps",
       "job": "setup",
-      "step": "Run the setup steps",
+      "step": "Run the setup steps-0",
       "budget_seconds": 30
     },
     {
-      "name": "Report the result",
+      "name": "Check every step passed",
       "job": "setup",
-      "step": "Report the result",
-      "budget_seconds": 15
+      "step": "Check every step passed",
+      "budget_seconds": 10
     }
   ],
   "parity": "swamp/proof/instance.run_steps/parity.py"

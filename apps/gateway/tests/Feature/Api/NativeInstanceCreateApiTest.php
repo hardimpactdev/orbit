@@ -60,8 +60,8 @@ it('records one native root with source environment and setup steps before any N
         ->and($operation->input['direct_provisioning'])->not->toHaveKey('agent_sha256')
         ->and($operation->input['run_budget_seconds'])->toBe(90)
         ->and(array_column(array_column($this->socket->sent, 'payload'), 'key'))->toBe(['instance-git-operation-'.$operation->id,
-            'instance-git-credential-'.$operation->id, 'instance-create-environment-input-'.$operation->id, 'instance-create-'.$operation->id])
-        ->and($this->socket->sent[4]['payload']['workflowIdOrName'])->toBe('operation-instance-create')
+            'instance-git-credential-'.$operation->id, 'instance-create-environment-input-'.$operation->id])
+        ->and($this->socket->sent[3]['payload']['workflowIdOrName'])->toBe('operation-instance-create')
         ->and(Route::query()->count())->toBe(0);
     Queue::assertNothingPushed();
 });

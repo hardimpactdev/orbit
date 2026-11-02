@@ -2,14 +2,14 @@
 title: "Instance setup and teardown"
 description: "How a Project stores named setup and teardown commands, and when Orbit runs them for a development Instance."
 covers:
-  - apps/gateway/app/Domain/{Projects/{LifecyclePhase,LifecycleStep,ProjectLifecycleRunner,ProjectLifecycleStepStore,GatewaySetupSteps}.php,Instances/StepLists/**}
+  - apps/gateway/app/Domain/{Projects/{LifecyclePhase,LifecycleStep,ProjectLifecycleRunner,ProjectLifecycleStepStore,GatewaySetupSteps}.php,Instances/{StepLists/**,InstanceSourceProfileGuard.php,DependencyCopy/InstanceDependencyCopier.php}}
   - apps/gateway/app/Actions/*/{Create*InstanceAction,CopyInstanceDependenciesAction,RegisterInstanceAction,RunInstanceSetupAction,StartInstanceStepListAction}.php
   - apps/gateway/app/Infrastructure/{Instances/{RemoteDevelopmentInstanceConfigurator,RemoteInstanceDestinationGuard,RemoteInstanceDependencyCopier},AppDev/DevelopmentSshExecutor,AppProd/ProductionSshExecutor}.php
-  - apps/gateway/app/Domain/Instances/{InstanceSourceProfileGuard,DependencyCopy/InstanceDependencyCopier}.php
   - apps/gateway/app/Http/Controllers/Api/ProjectLifecycleStepsController.php
   - apps/gateway/{app/Models/ProjectLifecycleStep.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - apps/agent/src/commands/{ci_caches.sh,dev_source.rs,dev_source_tests.rs}
   - apps/cli/app/Commands/Instances/{SetupInstanceCommand,*SetupStepCommand,*TeardownStepCommand}.php
+  - swamp/workflows/workflow-operation-instance-{setup-direct,create}.yaml
 ---
 
 # Instance setup and teardown
@@ -18,11 +18,9 @@ A Project stores two ordered lists of named commands: setup steps and teardown s
 
 Native create passes stored environment values as a JSON object, including `{}` when the Instance has no stored configuration. Environment capture can seed the template and reach setup without requiring a previous environment import.
 
-Native create expands Gateway-owned setup commands such as `@orbit/ci-caches` through the same supplier as explicit setup. Each setup action keeps its exit code and a stderr tail for failure diagnosis. Command stdout is never kept.
+Native create expands Gateway-owned setup commands such as `@orbit/ci-caches` through the same supplier as explicit setup. Each command runs as one `@swamp/ssh exec` step, `bash -eu -c <command>` in the checkout as the account, and keeps its exit code and stderr for failure diagnosis. Command stdout is discarded on the Node.
 
-It reads `.env` values the way phpdotenv does, including multi-line quoted values, escapes and inline comments. The runner first normalizes invalid UTF-8, so dropped bytes can never join pieces into a secret. It then redacts every known secret value in one pass across the whole captured stderr. Known secrets are stored environment values and secret-named variables.
-
-It then keeps the last 4 KiB and redacts that tail again. It drops a first line that may start mid-value, and drops any line that still holds an 8-byte fragment of a secret. It keeps only whole lines, at most 4 KiB in total. A nonzero exit still fails create.
+Stderr stays in Swamp's native run history on Node 209. When the Gateway reads a failure, it redacts the Instance's stored environment values and credential-shaped values before it keeps a tail of at most 4 KiB. A nonzero exit still fails create.
 
 Production Instances run neither list. They use [deploy steps](/reference/deployments#deploy-steps). A Project's [development deploy steps](/reference/deployments#development-deploy-steps) are a third, independent list. Setup and teardown do not run that list.
 
@@ -94,7 +92,7 @@ The checkout's `.git/config` is not trusted. The operator writes it, and so does
 
 ## Run setup
 
-Swamp executes explicit Project setup as an `instance.run_steps` Operation ([flow](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/setup.mmd)). The Gateway keeps list configuration and validates its immutable digest and target. When the run starts, it passes every command in order, the account and the checkout as run inputs. The run reaches the Node over official `@swamp/ssh` from the swamp role's workers, runs the list as the account with `sudo -u` through the same runner as `instance:create`, and returns only the outcome, the failed step and its redacted stderr tail. No step reads the Gateway.
+Swamp executes explicit Project setup as an `instance.run_steps` Operation ([flow](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/setup.mmd)). The Gateway keeps list configuration and validates its immutable digest and target. When the run starts, it passes every command in order, the account and the checkout as run inputs. The run reaches the Node over official `@swamp/ssh` from the swamp role's workers, runs each command as one `@swamp/ssh exec` step as the account with `sudo -u`, in order, and stops at the first failure. The Gateway reads the outcome and the failed step from the run; an end check, `Check every step passed`, holds the result. No step reads the Gateway.
 
 `instance:setup` admits the setup list through `POST /api/v1/instances/{instance}/setup`, which returns `202` and an Operation. Its optional `Idempotency-Key` replays the same admission. The CLI follows that Operation; `--json` returns its final record. An empty list completes with a proven no-op receipt. An explicit setup failure keeps the Instance. Creation and removal keep their native lifecycle runner and rollback policy.
 
@@ -102,9 +100,11 @@ Client migration: older MCP, SDK and CLI clients expect a synchronous setup resu
 
 A native create failure retains its reserved Instance and owned checkout with a bounded failure code. After its root is terminal, submit a fresh normal create Operation with a new idempotency key, or use [Instance removal](/reference/instance-removal). Create does not start a rollback or cleanup child. A fresh run may repeat earlier setup commands; configure them to converge. Failed-run `workflow resume` is not required because pinned e459 loses inline official SSH global arguments on resume.
 
-The development `instance:create` root runs from control Node209 through official SSH with its complete admitted input and stored host pins. It keeps the legacy phases, one shipped script per phase: prepare, source, environment and setup, then the Process step and finish.
+The development `instance:create` root runs from control Node209 through official SSH with its complete admitted input and stored host pins. Each Node action is one `@swamp/ssh exec` command or an official `@swamp/cfgmgmt/file` step; nothing is copied to the Node.
 
-Prepare refuses before the first write (account, destination, a branch in use, ownership). Source checks out the admitted branch and prints only its commit. Environment writes the `.env` the Gateway rendered at admission from the Project environment template; the Gateway pushes it to the vault after the admission commits. Setup runs the whole list in one step, then one step creates and starts the development Processes through the shared Process create workflow. Nothing about `.env` comes back from the Node. The Gateway mints the GitHub read token when the run starts, as the legacy Gateway did before its source call.
+Prepare refuses a branch that another worktree of the seed repository holds, then makes the checkout and its origin. When a fetch is needed, the GitHub read token is written as a 0600 credential file, Git fetches with it, and the next step removes the file. Source checks out the admitted branch and prints only its commit.
+
+Environment writes the `.env` the Gateway rendered at admission from the Project environment template, with mode 0600; the Gateway pushes it to the vault after the admission commits. Setup runs one step per command, then one step creates and starts the development Processes through the shared Process create workflow. Nothing about `.env` comes back from the Node. The Gateway mints the GitHub read token when the run starts.
 
 Admission stores the rendered environment values. The terminal result carries only the checked-out commit; from it the Gateway records the source identity, the managed keys and activation.
 
@@ -159,9 +159,9 @@ A step cut short by the list budget, or with no time left to start, ends the Ope
 
 Teardown may delete ignored files. It must keep the checkout, its Git identity, and its worktrees. When teardown changes tracked files, normal removal refuses. Retry with `--force` to discard them.
 
-The first teardown command that exits non-zero or times out stops the removal. The Route, source, and record stay, and the command returns `instance.teardown_step_failed` with the step name. A missing or non-executable command (exit 127 or 126) returns `instance.teardown_step_unavailable` instead, with `outcome: missing`. The message names the step and its Node and says the command was not found or is not executable. Setup uses the same distinction with `instance.setup_step_unavailable`.
+The first teardown command that exits non-zero or times out stops the removal. The Route is already withdrawn; the source and record stay, and the command returns `instance.teardown_step_failed`. A missing command (exit 127) returns `instance.teardown_step_unavailable` instead. Setup uses the same distinction with `instance.setup_step_unavailable`.
 
-A failed native run exposes a bounded, redacted stderr tail or native step error in the Operation’s `error.detail`, with its `failed_step`. Known target environment secrets and credential-shaped values are redacted before the 4 KiB tail is taken and again afterward. Stdout is never failure evidence. Fix or destroy the step, then run `instance:destroy` again.
+A failed native run exposes a bounded, redacted stderr tail or native step error in the Operation’s `error.detail`, with its `failed_step`. The Gateway redacts known target environment secrets and credential-shaped values before it keeps the 4 KiB tail. Stdout is never failure evidence. Fix or destroy the step, then run `instance:destroy` again.
 
 ## Bootstrap the Orbit repository
 

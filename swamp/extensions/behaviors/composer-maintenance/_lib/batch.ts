@@ -1,5 +1,6 @@
 import {
   assertChangedReleaseAge,
+  assertFreshTarget,
   batchPlaces,
   BatchPlanSchema,
   type Candidate,
@@ -82,8 +83,9 @@ async function apply(
   root: string,
   args: CommonArgs,
   targets: UpdateTarget[],
-  signal: AbortSignal | undefined,
-  choices: UpdateTarget[][],
+  signal?: AbortSignal,
+  planning = false,
+  choices?: UpdateTarget[][],
 ) {
   const p = await places({ ...args, cwd: root });
   const selected: UpdateTarget[] = [];
@@ -102,23 +104,23 @@ async function apply(
       ) => [
         "--with",
         `${t.package}:${
-          choices.find((o) => key(o[0]) === key(t))?.map((t) => t.version)
+          choices?.find((o) => key(o[0]) === key(t))?.map((t) => t.version)
             .join(" || ") ?? t.version
         }`,
       ]),
       "--with-dependencies",
       "--no-interaction",
-      "--no-install",
-      "--no-scripts",
-      "--no-plugins",
+      ...(planning ? ["--no-install", "--no-scripts", "--no-plugins"] : []),
     ];
     await run(place.dir, cmd, signal);
     const locked = versions(await optionalText(`${place.dir}/composer.lock`));
     for (const t of place.targets) {
       if (
-        !choices.find((o) => key(o[0]) === key(t))?.some((o) =>
-          o.version === locked[t.package]
-        )
+        choices
+          ? !choices.find((o) => key(o[0]) === key(t))?.some((o) =>
+            o.version === locked[t.package]
+          )
+          : locked[t.package] !== t.version
       ) {
         throw new MaintenanceFailure(
           `Resolver did not lock ${t.package} at ${t.version}`,
@@ -136,7 +138,11 @@ async function apply(
     ).map((t) => ({ ...t, version: locked[t.package] }));
     selected.push(...resolved);
     const findings = await audit(place.dir, signal);
-    for (const t of resolved.filter((t) => t.purpose === "security")) {
+    for (
+      const t of (planning ? resolved : place.targets).filter((t) =>
+        t.purpose === "security"
+      )
+    ) {
       if (findings[t.package]?.length) {
         throw new MaintenanceFailure(
           `Selected advisory fix remains affected: ${t.package}`,
@@ -208,6 +214,7 @@ export async function plan(
           args,
           choices.map((o) => o[0]),
           signal,
+          true,
           choices,
         );
         return { targets };
@@ -223,4 +230,36 @@ export async function plan(
   } finally {
     await temp.close();
   }
+}
+export async function batch(
+  args: CommonArgs,
+  targets: UpdateTarget[],
+  signal?: AbortSignal,
+) {
+  // Revalidate release dates immediately before changing the real checkout. No age bypass.
+  for (const t of targets) {
+    const release = (await releases(t, signal)).find((r) =>
+      r.version === t.version
+    );
+    const time = Date.parse(release?.publishedAt ?? "");
+    if (
+      !Number.isFinite(time) ||
+      Date.now() - time <
+        (args.policy[t.path]?.minimumReleaseAgeDays ?? 0) * 86400000
+    ) {
+      throw new MaintenanceFailure(
+        `Target does not satisfy release-age policy: ${t.package}`,
+      );
+    }
+  }
+  const project = await places(args);
+  for (const place of batchPlaces(targets, project.places, "composer")) {
+    const current = versions(await optionalText(`${place.dir}/composer.lock`)),
+      findings = await audit(place.dir, signal);
+    select(await readJson(`${place.dir}/composer.json`), place.targets);
+    for (const t of place.targets) {
+      assertFreshTarget(t, current[t.package], findings[t.package] ?? []);
+    }
+  }
+  await apply(args.cwd, args, targets, signal);
 }

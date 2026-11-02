@@ -1,18 +1,8 @@
 manifestVersion: 1
 name: "@nckrtl/instance-dev-command"
-version: 2026.11.02.1
+version: 2026.11.02.2
 visibility: private
 license: MIT
 description: Public development Instance metadata and separately placed native actions.
 behaviors:
   - operations/instance-dev-command/assets.ts
-additionalFiles:
-  - scripts/write_environment.py
-  - scripts/run_project_step.py
-  - create/prepare.py
-  - create/source.py
-  - create/setup.py
-  - destroy/verify.py
-  - destroy/pushed.py
-  - destroy/remove.py
-  - destroy/gone.py

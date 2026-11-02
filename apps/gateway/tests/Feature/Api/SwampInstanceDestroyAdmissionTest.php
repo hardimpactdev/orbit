@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
-use App\Domain\Instances\InstanceDestroySourceInspection;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
@@ -65,11 +64,10 @@ it('admits stored source intent and one native root without Gateway source or ac
         ->and($operation->input['source_pending'])->toBeTrue()
         ->and($operation->input['members'][0]['origin'])->toBeNull()
         ->and($operation->input['members'][0]['worktree_inventory'])->toBeNull()
-        // A source fetch mints the read token, which also writes its credential line; a forced destroy fetches nothing.
-        ->and(array_column($this->socket->sent, 'type'))->toBe($force ? ['vault.put', 'workflow.run'] : ['vault.put', 'vault.put', 'workflow.run'])
-        ->and($this->socket->sent[0]['payload']['key'])->toBe('instance-git-operation-'.$id)
+        // A normal removal mints the read token for its pushed check, as a credential line; a forced destroy fetches nothing.
+        ->and(array_column($this->socket->sent, 'type'))->toBe($force ? ['workflow.run'] : ['vault.put', 'vault.put', 'workflow.run'])
         ->and(collect($this->socket->sent)->last()['payload']['workflowIdOrName'])->toBe('operation-instance-destroy')
-        ->and(collect($this->socket->sent)->last()['payload']['inputs']['execution_secrets']['git_read']['key'])->toBe('instance-git-operation-'.$id)
+        ->and(data_get(collect($this->socket->sent)->last(), 'payload.inputs.execution_secrets.git_credential.key'))->toBe($force ? null : 'instance-git-credential-'.$id)
         ->and($this->instance->refresh()->status)->toBe(InstanceState::Removing)
         ->and(InstanceRemoval::query()->count())->toBe(1);
     Queue::assertNothingPushed();
@@ -128,11 +126,11 @@ it('records native source refusals after admission without deleting the Instance
     app(DevelopmentInstanceDestroyProjection::class)->apply($operation, [
         'run_id' => $operation->state['swamp_run_id'], 'status' => 'failed',
         'started_at' => '2026-10-31T04:00:00Z', 'finished_at' => '2026-10-31T04:00:01Z',
-        'result' => ['error_code' => 'instance.source_branch_mismatch', 'failed_step' => 'capture_sources'],
-        'error_code' => 'instance.source_branch_mismatch']);
+        'result' => ['steps' => ['Check work is pushed' => ['status' => 'failed']], 'summary' => ['failed_steps' => ['Check work is pushed']]],
+        'error_code' => 'operation.native_failed']);
 
     expect($operation->refresh()->status->value)->toBe('failed')
-        ->and($operation->error_code)->toBe('instance.source_branch_mismatch')
+        ->and($operation->error_code)->toBe('instance.remove_refused')
         ->and($this->instance->refresh()->status)->toBe(InstanceState::Removing)
         ->and(InstanceRemoval::query()->sole()->native_sources)->toBeNull();
     Queue::assertNothingPushed();
@@ -216,15 +214,6 @@ it('admits a new native retry after terminal failure using the same immutable so
     $id = $this->deleteJson($this->path, ['force' => true])->assertAccepted()->json('data.id');
     $first = Operation::query()->findOrFail($id);
     $saved = $first->input;
-    $captured = ['members' => [['instance_id' => $this->instance->id, 'user' => 'orbit', 'group' => 'apps',
-        'source_root' => '/srv/apps', 'source_digest' => str_repeat('c', 64), 'source_commit' => str_repeat('b', 40),
-        'common_repository_path' => $this->instance->checkout_path, 'source_identity' => '42:73',
-        'linked_worktree_paths' => [$this->instance->checkout_path],
-        'worktree_inventory' => base64_encode('worktree '.$this->instance->checkout_path."\0\0"),
-        'origin' => $this->instance->project->repository_url]], 'inventory_digest' => str_repeat('d', 64)];
-    app(DevelopmentInstanceDestroyProjection::class)->apply($first, [
-        'run_id' => $first->state['swamp_run_id'], 'status' => 'running', 'started_at' => '2026-10-31T04:00:00Z',
-        'result' => ['source_inspection' => $captured], 'error_code' => null]);
     app(DevelopmentInstanceDestroyProjection::class)->apply($first, [
         'run_id' => $first->state['swamp_run_id'], 'status' => 'failed', 'started_at' => '2026-10-31T04:00:00Z',
         'finished_at' => '2026-10-31T04:00:01Z', 'result' => ['error_code' => 'instance.destroy_failed', 'failed_step' => 'databases'],
@@ -239,13 +228,9 @@ it('admits a new native retry after terminal failure using the same immutable so
     expect($retried->input)->toBe($saved)
         ->and($retried->state['swamp_run_id'])->not->toBe($first->state['swamp_run_id'])
         ->and($retried->input['direct_destroy']['database']['sqlite'][0]['connection_id'])->toBe($database->id)
-        ->and(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'workflow.run', 'vault.put', 'workflow.run']);
+        // A forced removal pushes no read token; each run starts once.
+        ->and(array_column($this->socket->sent, 'type'))->toBe(['workflow.run', 'workflow.run']);
     expect(Operation::query()->count())->toBe(2);
-    $executable = app(InstanceDestroySourceInspection::class)->executable(Operation::query()->findOrFail($next)->input);
-    expect($executable['source_pending'])->toBeFalse()
-        ->and($executable['members'][0]['origin'])->toBe($captured['members'][0]['origin'])
-        ->and($executable['members'][0]['source_identity'])->toBe('42:73')
-        ->and(InstanceRemoval::query()->sole()->native_sources)->toBe($captured);
     expect(InstanceRemoval::query()->count())->toBe(1);
     expect($this->instance->refresh()->status)->toBe(InstanceState::Removing);
 });

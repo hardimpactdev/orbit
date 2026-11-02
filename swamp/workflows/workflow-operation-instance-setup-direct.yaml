@@ -2,7 +2,7 @@ id: dea5d024-3c16-4eb7-a576-2fda63a93872
 name: operation-instance-setup-direct
 description: Run an Instance's admitted Project setup or teardown list in order over official SSH from 209, as the Instance account.
 vaults: []
-# The list totals at most 540 s; the run budget adds the check and report steps.
+# The list totals at most 540 s.
 queueTimeout: 30
 inputs:
   type: object
@@ -29,24 +29,21 @@ jobs:
 - name: setup
   labels: {role: swamp}
   steps:
-  - name: 'Read the scripts'
+    # One command per step, in order, as the Instance account in the checkout; the first failure stops the list.
+    # Command stdout is discarded; stderr stays in native history, and the Gateway redacts the Instance values when it reads it.
+  - name: 'Run the setup steps'
     labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/instance-dev-command'
-      behaviorName: instance-steps-assets
-      methodName: create_assets
-      inputs: {intent: {steps: '${{ inputs.intent.steps }}'}}
-  - name: 'Check the checkout'
-    labels: {role: swamp}
-    dependsOn: [{step: 'Read the scripts', condition: {type: succeeded}}]
+    writes: true
+    forEach: {item: step, in: '${{ inputs.intent.steps }}'}
+    concurrency: 1
+    guard: '${{ steps.exists(k, k.startsWith("Run the setup steps") && steps[k].status == "failed") }}'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-steps-ssh-" + string(inputs.node_id) }}
+      behaviorName: ${{ "instance-steps-" + string(inputs.node_id) + "-" + string(self._index) }}
       methodName: exec
-      globalArgs: &ssh
-        name: ${{ "instance-steps-ssh-" + string(inputs.node_id) }}
+      globalArgs:
+        name: ${{ "instance-steps-" + string(inputs.node_id) + "-" + string(self._index) }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -58,83 +55,14 @@ jobs:
           transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}
       inputs:
         hosts: name:target
-        # The checkout is a real directory the Instance account owns.
-        argv: [/usr/bin/sudo, -n, --user, '${{ inputs.intent.user }}', --, /usr/bin/test, -d, '${{ inputs.intent.directory }}', -a, '!', -L, '${{ inputs.intent.directory }}',
-          -a, -O, '${{ inputs.intent.directory }}']
-        timeoutSec: 30
-  - name: 'Run the setup steps'
+        argv: ['/usr/bin/sudo', '-n', '--user', '${{ inputs.intent.user }}', '--', '/usr/bin/timeout', '${{ string(self.step.timeout_seconds) }}',
+          '/usr/bin/env', '-C', '${{ self.step.directory }}', '${{ "ORBIT_INSTANCE_ID=" + string(self.step.instance_id) }}',
+          '${{ "ORBIT_INSTANCE_NAME=" + self.step.instance_name }}', '${{ "ORBIT_SEED_PATH=" + (self.step.seed_path == null ? "" : self.step.seed_path) }}',
+          '${{ "ORBIT_SEED_COMMIT=" + (self.step.seed_commit == null ? "" : self.step.seed_commit) }}', '/bin/sh', '-c', 'exec /bin/bash -eu -c "$1" >/dev/null', 'sh', '${{ self.step.command }}']
+        timeoutSec: ${{ self.step.timeout_seconds + 5 }}
+    # The end check: the run's terminal result reads this step.
+  - name: 'Check every step passed'
     labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: 'Check the checkout', condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-steps-ssh-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs: *ssh
-      inputs:
-        hosts: name:target
-        # setup.py runs each command with run_project_step.py in order and stops at the first failure;
-        # only exit codes and redacted stderr tails come back.
-        argv: [/usr/bin/sudo, -n, --user, '${{ inputs.intent.user }}', --, timeout, '540', python3, -I, -c, '${{ steps["Read the scripts"].outputs.setup }}',
-          '${{ steps["Read the scripts"].outputs.runner }}']
-        stdin: ${{ steps["Read the scripts"].outputs.intent_json }}
-        okExitCodes: any
-        timeoutSec: 545
-  - name: 'Report the result'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'Check the checkout', condition: {type: always}}
-    - {step: 'Run the setup steps', condition: {type: always}}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: instance-steps-result
-      methodName: execute
-      inputs:
-        run: |
-          python3 -I - <<'PY'
-          import json
-          import os
-          import sys
-
-          instance, phase = int(os.environ['INSTANCE_ID']), os.environ['LIST']
-          base = {'instance_id': instance}
-          ran = os.environ['RAN_STATUS'] == 'succeeded'
-          exit_code = int(os.environ['RAN_EXIT']) if ran and os.environ['RAN_EXIT'] else None
-          try:
-              outcome = json.loads(os.environ['RAN_STDOUT']) if exit_code in (0, 1) else None
-          except ValueError:
-              outcome = None
-          if os.environ['CHECKED_STATUS'] != 'succeeded':
-              result = {**base, 'outcome': 'unconfirmed', 'error_code': 'instance.step_execution_unconfirmed', 'failed_step': None}
-          elif not isinstance(outcome, dict):
-              code = 'command.deadline_exceeded' if exit_code == 124 else 'instance.step_execution_unconfirmed'
-              result = {**base, 'outcome': 'deadline' if code == 'command.deadline_exceeded' else 'unconfirmed', 'error_code': code, 'failed_step': None}
-          elif outcome.get('ready') is True:
-              print(json.dumps({**base, 'outcome': 'succeeded', 'no_op': int(os.environ['COUNT']) == 0}))
-              sys.exit(0)
-          else:
-              kind = {'instance.setup_step_failed': 'failed', 'instance.setup_step_unavailable': 'missing',
-                      'operation.timed_out': 'deadline'}.get(outcome.get('error_code'), 'unconfirmed')
-              code = {'failed': f'instance.{phase}_step_failed', 'missing': f'instance.{phase}_step_unavailable',
-                      'deadline': 'command.deadline_exceeded'}.get(kind, 'instance.step_execution_unconfirmed')
-              step = outcome.get('failed_command')
-              result = {**base, 'outcome': kind, 'error_code': code, 'failed_step': f'{phase}.{step}' if isinstance(step, str) else None,
-                        **({'exit_code': outcome['exitCode'], 'stderr': outcome.get('stderr', '')} if isinstance(outcome.get('exitCode'), int) else {})}
-          print(json.dumps(result))
-          sys.exit(1)
-          PY
-        env:
-          INSTANCE_ID: ${{ string(inputs.intent.instance_id) }}
-          LIST: ${{ inputs.intent.list }}
-          COUNT: ${{ string(size(inputs.intent.steps)) }}
-          CHECKED_STATUS: '${{ "Check the checkout" in steps ? steps["Check the checkout"].status : "skipped" }}'
-          RAN_STATUS: '${{ "Run the setup steps" in steps ? steps["Run the setup steps"].status : "skipped" }}'
-          RAN_EXIT: '${{ "Run the setup steps" in steps && steps["Run the setup steps"].status == "succeeded" ? string(steps["Run the setup steps"].outputs.exitCode) : "" }}'
-          RAN_STDOUT: '${{ "Run the setup steps" in steps && steps["Run the setup steps"].status == "succeeded" ? steps["Run the setup steps"].outputs.stdout : "" }}'
-        ignoreExitCode: true
-  - name: 'Fail on an error'
-    labels: {role: swamp}
-    dependsOn: [{step: 'Report the result', condition: {type: succeeded}}]
-    task: {type: assert, expr: 'steps["Report the result"].outputs.exitCode == 0', severity: high, message: The Instance step list did not complete.}
+    dependsOn: [{step: 'Run the setup steps', condition: {type: always}}]
+    task: {type: assert, severity: high, message: A setup step failed.,
+      expr: '!steps.exists(k, k.startsWith("Run the setup steps") && steps[k].status == "failed")'}

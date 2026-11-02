@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, R2-R4 (process.stop shape: 209, @swamp/ssh, full intent as inputs), DECISIONS instance.run_steps (commands as inputs, sudo -u intent account, terminal projection, no API reads). docs/reference/instance-setup.md.
+  %% Tightened: flow-tighten 2026-11-02, rules 5, 14, 15, 22 (no script read, no checkout check, no report or assert step).
   %% status: draft
   %% command: instance:setup
   %% kind: instance.run_steps
@@ -47,20 +48,14 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  Note over SW: Read the scripts<br/>instance-dev-command assets
-  %%> What it does:
-  %%> - reads the shipped `setup.py` and `run_project_step.py` on 209, the same runner `instance:create` uses
-  SW->>N: Check the checkout<br/>@swamp/ssh · sudo -u · test -O
+  SW->>N: Run the setup steps<br/>@swamp/ssh exec · in order
   %%> How:
-  %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior
-  %%> What it does:
-  %%> - checks, as the Instance account, that the checkout of Instance 42 is a real directory the account owns
-  %%> Why:
-  %%> - the commands run only in the checkout the intent names
-  SW->>N: Run the setup steps<br/>sudo -u · timeout · bash -eu
+  %%> - Swamp reaches Node 12 over SSH from 209 with `@swamp/ssh`; nothing is copied to the Node
+  %%> - one `@swamp/ssh exec` per setup step: `sudo -u <account> timeout <s> env -C <checkout> bash -euc <command>`, the same runner `instance:create` uses
+  %%> - the checkout path comes from the Gateway's records; no step checks it first
   %%> What it does:
   %%> - runs each step's command in order with `bash -eu` from the repository root of the checkout, and stops at the first failure
-  %%> - with `VP_HOME`, `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT` set
+  %%> - with `ORBIT_INSTANCE_ID`, `ORBIT_INSTANCE_NAME`, `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT` set
   %%> Typical steps:
   %%> - `composer install`
   %%> - `vp install`
@@ -70,15 +65,14 @@ sequenceDiagram
   %%> Limits:
   %%> - `timeout` stops the step's whole process group at its own timeout, so no command keeps running after it
   %%> Progress:
-  %%> - one native step for the whole list; the result names the failed step
+  %%> - one item per setup step, in order; the first failure stops the run with that step's exit code
   %%> Not kept:
   %%> - command text and stdout; only the exit code and a redacted stderr tail
-  Note over SW: Report the result<br/>outcome · failed_step · error_code
+  Note over SW: Check every step passed<br/>assert · end check
   %%> What it does:
-  %%> - maps the runner's result to the public outcome: succeeded, failed, missing, deadline or unconfirmed
-  Note over SW: Fail on an error<br/>assert · exit code 0
-  %%> What it does:
-  %%> - fails the run when the report holds an `error_code`, so the task fails with that code
+  %%> - fails when any setup step failed; the Gateway reads the run's result from this step
+  %%> Why:
+  %%> - each step is one forEach item, so the run needs one named step that holds the outcome
   alt every step exits 0
     N-->>SW: exit 0 for each step
     %%> Returns:
@@ -100,6 +94,7 @@ sequenceDiagram
     SW--xGW: Run failed<br/>failed_step, error_code
     %%> The Gateway reads:
     %%> - the failed step, its exit code and the redacted stderr tail
+    %%> - the Gateway maps the exit code to the outcome: 127 or 126 is `missing`, a timeout is `deadline`, others are `failed`
     Note over GW: Keep Instance, mark failed<br/>task failed · rerun from start
     %%> Result:
     %%> - Instance 42 stays active; its setup is marked failed with the step name

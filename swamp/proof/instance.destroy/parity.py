@@ -23,7 +23,7 @@ def check(condition, message):
 
 
 check('proof-private-teardown-output' not in outputs, 'teardown stdout reached native history')
-check(result['removed'] is True and result['source_inspection']['members'][0]['instance_id'] == member['instance_id'], 'the removal receipt with its source capture')
+check(result == {'removed': True}, 'the removal receipt')
 check(target('test', '-e', checkout).returncode != 0, 'the checkout is gone')
 check(target('test', '-f', str(Path(checkout).parent / ('teardown-ran-' + os.environ['PROOF_RUN']))).returncode == 0, 'teardown ran in the checkout')
 for process in operation['input']['native_destroy']['native_runtime']['processes']:

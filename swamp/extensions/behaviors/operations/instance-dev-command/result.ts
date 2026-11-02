@@ -4,25 +4,16 @@ export const Step = z.object({ status: z.string(), outputs: Public.optional() })
     .passthrough();
 type Phase = z.infer<typeof Step> | null | undefined;
 type Phases = {
-    prepare: Phase;
+    prepare: string;
+    fetch: string;
     source: Phase;
-    environment: Phase;
-    setup: Phase;
+    environment: string;
+    setup: string[];
     processes: string[];
 };
 
-/** The public JSON a script step printed, or null when the step did not finish its script. */
-function printed(step: Phase): Record<string, unknown> | null {
-    if (step?.status !== "succeeded" || step.outputs === undefined) return null;
-    try {
-        return Public.parse(JSON.parse(String(step.outputs.stdout)));
-    } catch {
-        return null;
-    }
-}
-
 /**
- * Map the phase steps to the terminal receipt: the checked-out commit, or the first phase that did not finish.
+ * Map the step statuses to the terminal receipt: the checked-out commit, or the first phase that did not finish.
  * The Gateway already holds the rendered environment, the branch and the Project's profile.
  */
 export function createResult(intent: Record<string, unknown>, phases: Phases) {
@@ -34,30 +25,40 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
         };
         return { ready: true, stdout: JSON.stringify(result) };
     }
-    const source = printed(phases.source);
-    const outcomes: [string, Record<string, unknown> | null][] = [
-        ["prepare", printed(phases.prepare)],
-        ["source", source],
-        ["environment", printed(phases.environment)],
-        ["setup", printed(phases.setup)],
-        ["processes", {
-            ready: phases.processes.every((status) => status === "succeeded"),
-        }],
+    const commit = phases.source?.status === "succeeded"
+        ? String(phases.source.outputs?.stdout ?? "").trim()
+        : null;
+    const steps = z.array(z.object({ name: z.string() }).passthrough()).parse(
+        intent.setup_steps,
+    );
+    const failedSetup = phases.setup.findIndex((status) =>
+        status !== "succeeded"
+    );
+    const outcomes: [string, boolean][] = [
+        ["prepare", phases.prepare === "succeeded"],
+        ["source", phases.fetch !== "failed" && commit !== null],
+        ["environment", phases.environment === "succeeded"],
+        ["setup", failedSetup < 0],
+        [
+            "processes",
+            phases.processes.every((status) => status === "succeeded"),
+        ],
     ];
-    const failed = outcomes.find(([, outcome]) => outcome?.ready !== true);
+    const failed = outcomes.find(([, ready]) => !ready);
     const result = {
         instance_id: intent.instance_id,
         ready: failed === undefined,
         name_converted_from: intent.name_converted_from ?? null,
-        ...(source?.ready === true ? { commit: source.commit } : {}),
+        ...(commit ? { commit } : {}),
         ...(failed
             ? {
                 failed_step: failed[0],
-                error_code: typeof failed[1]?.error_code === "string"
-                    ? failed[1].error_code
+                // A setup command keeps the public step-list code; other phases name themselves.
+                error_code: failed[0] === "setup"
+                    ? "instance.setup_step_failed"
                     : "instance.create_" + failed[0] + "_failed",
-                ...(typeof failed[1]?.failed_command === "string"
-                    ? { failed_command: failed[1].failed_command }
+                ...(failed[0] === "setup" && failedSetup >= 0
+                    ? { failed_command: steps[failedSetup].name }
                     : {}),
             }
             : {}),

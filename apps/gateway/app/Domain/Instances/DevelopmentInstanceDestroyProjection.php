@@ -8,8 +8,6 @@ use App\Actions\Instances\ProjectDirectInstanceDestroyAction;
 use App\Domain\DatabaseServers\DatabaseOwnedRemoval;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
-use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Operation;
@@ -48,12 +46,18 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
         }
         $members = InstanceLifecycleInput::members($input);
         $fetches = $input['force'] !== true && array_filter($members, static fn (array $member): bool => ($member['failed_creation'] ?? false) !== true) !== [];
-        $reference = InstanceGitHubReadTokens::reference($operation);
-        $git = $fetches ? app(InstanceGitHubReadTokens::class)->start($operation)
-            : app(SwampCommandStep::class)->executionCopy($reference['vault'], $reference['key'], '{"github_token":null}');
+        // A normal removal checks each checkout's work is pushed with a fresh read token, read as a 0600 credential file.
+        $git = [];
+        if ($fetches) {
+            app(InstanceGitHubReadTokens::class)->start($operation);
+            $git = ['git_credential' => InstanceGitHubReadTokens::credentialReference($operation)];
+        }
+        $checked = $input['force'] === true ? [] : array_values(array_filter($members, static fn (array $member): bool => ($member['failed_creation'] ?? false) !== true));
 
-        return ['intent' => [...$public, ...$native, 'source_capture' => $sourceCapture, 'teardown_steps' => $teardown],
-            'execution_secrets' => [...$secrets, ...$serverCopies, 'git_read' => $git]];
+        return ['intent' => [...$public, ...$native, 'source_capture' => $sourceCapture, 'teardown_steps' => $teardown,
+            'push_check_paths' => array_map(static fn (array $member): string => ValidatedData::string($member['checkout_path']), $checked),
+            'source_paths' => array_map(static fn (array $member): string => ValidatedData::string($member['checkout_path']), $members)],
+            'execution_secrets' => [...$secrets, ...$serverCopies, ...$git]];
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -61,15 +65,10 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
         return DB::transaction(function () use ($operation, $data): Operation {
             $operation->refresh();
             $this->direct->assertRun($operation, ValidatedData::string($data['run_id']));
-            $result = ValidatedData::object($data['result'] ?? []);
+            [$code, $result] = $this->outcome($data);
+            $data = [...$data, 'error_code' => $code];
             if (! $operation->status->terminal()) {
-                if (isset($result['source_inspection'])) {
-                    app(InstanceDestroySourceInspection::class)->capture($operation, ValidatedData::object($result['source_inspection']));
-                }
                 if ($data['status'] === 'succeeded') {
-                    if (($result['removed'] ?? false) !== true) {
-                        throw new ResourceOperationException('instance.result_invalid', 'Native removal did not prove its terminal result.');
-                    }
                     app(ProjectDirectInstanceDestroyAction::class)->execute(app(InstanceDestroySourceInspection::class)->executable($operation->input), $result);
                 } elseif (in_array($data['status'], ['failed', 'cancelled'], true)) {
                     InstanceRemoval::query()->whereKey($operation->input['removal_id'])->update(['status' => InstanceRemovalStatus::Failed,
@@ -79,6 +78,38 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
 
             return $this->direct->project($operation, $data, $result);
         });
+    }
+
+    /** The public result from Swamp's run data: the first failed step names the phase; a forEach item's index suffix is dropped.
+     * @param  array<string,mixed>  $data
+     * @return array{0:?string,1:array<string,mixed>}
+     */
+    private function outcome(array $data): array
+    {
+        if (($data['status'] ?? null) === 'succeeded') {
+            return [null, ['removed' => true]];
+        }
+        if (! in_array($data['status'] ?? null, ['failed', 'interrupted'], true)) {
+            return [ValidatedData::nullableString($data['error_code'] ?? null), []];
+        }
+        $run = ValidatedData::object($data['result'] ?? []);
+        $summary = is_array($run['summary'] ?? null) ? $run['summary'] : [];
+        $first = is_array($summary['failed_steps'] ?? null) && is_string($summary['failed_steps'][0] ?? null) ? $summary['failed_steps'][0] : null;
+        $label = $first === null ? null : preg_replace('/-[0-9]+\z/', '', $first);
+        $steps = is_array($run['steps'] ?? null) ? $run['steps'] : [];
+        $failed = $first !== null && is_array($steps[$first] ?? null) ? $steps[$first] : [];
+        $exit = is_int($failed['exit_code'] ?? null) ? $failed['exit_code'] : null;
+        $code = match ($label) {
+            'Check work is pushed', 'Remove the source' => 'instance.remove_refused',
+            'Run teardown steps' => match ($exit) {
+                124 => 'command.deadline_exceeded',
+                127 => 'instance.teardown_step_unavailable',
+                default => 'instance.teardown_step_failed',
+            },
+            default => 'instance.removal_incomplete',
+        };
+
+        return [$code, ['removed' => false, 'failed_step' => $label, 'error_code' => $code]];
     }
 
     /** @param array<string,mixed> $result */

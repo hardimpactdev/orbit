@@ -1,4 +1,5 @@
 import { z } from "npm:zod@4";
+import { type Place } from "./io.ts";
 export const ExceptionSchema = z.looseObject({
   path: z.string(),
   manager: z.enum(["composer", "js"]),
@@ -35,6 +36,25 @@ export function mergeExceptions(...documents: unknown[]): Exceptions {
     };
   }
   return merged;
+}
+
+export function recordException(
+  document: Exceptions,
+  place: Place,
+  manager: "composer" | "js",
+  name: string,
+  days: number,
+): Exceptions {
+  return mergeExceptions(document, {
+    schema: 1,
+    exceptions: [{
+      path: place.path,
+      manager,
+      package: name,
+      recorded_on: new Date().toISOString().slice(0, 10),
+      days,
+    }],
+  });
 }
 
 /** Report elapsed exclusions without changing the policy or exception records. */

@@ -1,4 +1,10 @@
-import { dueExceptions } from "../../_lib/maintenance/exceptions.ts";
+import { write } from "../../_lib/maintenance/context.ts";
+import { type Context } from "../../_lib/maintenance/context.ts";
+import {
+  dueExceptions,
+  ExceptionsSchema,
+  recordException,
+} from "../../_lib/maintenance/exceptions.ts";
 import { z } from "npm:zod@4";
 import {
   type CommonArgs,
@@ -6,6 +12,7 @@ import {
   MaintenanceFailure,
   optionalText,
   type Place,
+  writeJson,
 } from "./io.ts";
 
 export const StaleSchema = z.strictObject({
@@ -32,7 +39,38 @@ async function vet(place: Place) {
       "vet.json minimum-release-age-exclude must be a list",
     );
   }
-  return { excludes: excludes as string[] };
+  return {
+    data,
+    age: age as number | undefined,
+    excludes: excludes as string[],
+  };
+}
+
+export async function allowSecurity(
+  place: Place,
+  name: string,
+  policy: CommonArgs["policy"],
+  document: CommonArgs["exceptions"],
+  ctx: Context,
+): Promise<void> {
+  const current = await vet(place);
+  if (current === null || current.age === undefined) return;
+  if (policy[place.path]?.minimumReleaseAgeDays !== current.age) {
+    throw new MaintenanceFailure(
+      `Input policy for ${place.path} must match vet.json minimum-release-age`,
+      64,
+    );
+  }
+  await write(
+    ctx,
+    "exceptions",
+    ExceptionsSchema,
+    recordException(document, place, "composer", name, current.age),
+  );
+  if (!current.excludes.includes(name)) {
+    current.data["minimum-release-age-exclude"] = [...current.excludes, name];
+    await writeJson(`${place.dir}/vet.json`, current.data);
+  }
 }
 
 export async function staleExceptions(

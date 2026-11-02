@@ -6,7 +6,7 @@ namespace App\Domain\Instances\StepLists;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
-use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Operations\OperationStatus;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
@@ -23,40 +23,8 @@ final readonly class InstanceSetupProjection implements DirectOperationProjectio
 
     public function apply(Operation $operation, array $data): Operation
     {
-        $status = $data['status'] ?? null;
-        $result = ValidatedData::object($data['result'] ?? []);
-        $code = ValidatedData::nullableString($data['error_code'] ?? null);
-        $phase = ValidatedData::string($operation->input['list'] ?? null);
-        $failed = $result['failed_step'] ?? null;
-        $steps = $operation->input['steps'] ?? [];
-        if (! is_array($steps) || ! array_is_list($steps)) {
-            throw new ResourceOperationException('operation.result_invalid', 'The admitted step list is invalid.', 422);
-        }
-        $names = [];
-        foreach ($steps as $step) {
-            $row = ValidatedData::object($step);
-            $names[] = $phase.'.'.ValidatedData::string($row['name'] ?? null);
-        }
-        $valid = match ($status) {
-            'succeeded' => $code === null && $result === ['instance_id' => $operation->target_id, 'outcome' => 'succeeded', 'no_op' => ($names === [])],
-            'failed' => is_string($code) && preg_match('/\A[a-z0-9_.-]{1,100}\z/D', $code) === 1
-                && array_diff(array_keys($result), ['instance_id', 'outcome', 'error_code', 'failed_step', 'exit_code', 'stderr']) === []
-                && ($result['instance_id'] ?? null) === $operation->target_id && ($result['error_code'] ?? null) === $code
-                && match ($result['outcome'] ?? null) {
-                    'failed' => $code === 'instance.'.$phase.'_step_failed',
-                    'missing' => $code === 'instance.'.$phase.'_step_unavailable',
-                    'busy' => $code === 'instance.lifecycle_busy',
-                    'deadline' => $code === 'command.deadline_exceeded',
-                    'unconfirmed' => true,
-                    default => false,
-                }
-            && array_key_exists('failed_step', $result) && ($failed === null || in_array($failed, $names, true)),
-            'running', 'cancelled' => $code === null && $result === [],
-            default => false,
-        };
-        if (! $valid) {
-            throw new ResourceOperationException('operation.result_invalid', 'The step-list result does not match its admitted outcome.', 422);
-        }
+        [$code, $result] = $this->outcome($operation, $data);
+        $data = [...$data, 'error_code' => $code];
 
         return DB::transaction(function () use ($operation, $data, $result, $code): Operation {
             $terminal = $operation->refresh()->status->terminal();
@@ -67,5 +35,43 @@ final readonly class InstanceSetupProjection implements DirectOperationProjectio
 
             return $projected;
         });
+    }
+
+    /** The public outcome from Swamp's run data: the first failed command names the step; exit 124 is its deadline, 127 a missing command.
+     * @param  array<string,mixed>  $data
+     * @return array{0:?string,1:array<string,mixed>}
+     */
+    private function outcome(Operation $operation, array $data): array
+    {
+        $phase = ValidatedData::string($operation->input['list'] ?? null);
+        $names = array_map(static fn (mixed $step): string => ValidatedData::string(ValidatedData::object($step)['name'] ?? null),
+            array_values(is_array($operation->input['steps'] ?? null) ? $operation->input['steps'] : []));
+        $base = ['instance_id' => $operation->target_id];
+        $status = $data['status'] ?? null;
+        if ($status === OperationStatus::Succeeded->value) {
+            return [null, [...$base, 'outcome' => 'succeeded', 'no_op' => $names === []]];
+        }
+        if (! in_array($status, [OperationStatus::Failed->value, OperationStatus::Interrupted->value], true)) {
+            return [null, []];
+        }
+        $run = ValidatedData::object($data['result'] ?? []);
+        $steps = is_array($run['steps'] ?? null) ? $run['steps'] : [];
+        foreach ($names as $index => $name) {
+            $step = $steps['Run the setup steps-'.$index] ?? null;
+            if (! is_array($step) || ($step['status'] ?? null) !== 'failed') {
+                continue;
+            }
+            $exit = is_int($step['exit_code'] ?? null) ? $step['exit_code'] : null;
+            [$outcome, $code] = match ($exit) {
+                124 => ['deadline', 'command.deadline_exceeded'],
+                127 => ['missing', 'instance.'.$phase.'_step_unavailable'],
+                default => ['failed', 'instance.'.$phase.'_step_failed'],
+            };
+
+            return [$code, [...$base, 'outcome' => $outcome, 'error_code' => $code, 'failed_step' => $phase.'.'.$name,
+                ...($exit === null ? [] : ['exit_code' => $exit])]];
+        }
+
+        return ['instance.step_execution_unconfirmed', [...$base, 'outcome' => 'unconfirmed', 'error_code' => 'instance.step_execution_unconfirmed', 'failed_step' => null]];
     }
 }

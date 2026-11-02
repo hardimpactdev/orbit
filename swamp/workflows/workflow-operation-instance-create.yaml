@@ -1,6 +1,6 @@
 id: c2c6c4a5-a667-4a81-9f5a-fae18fdf5d4a
 name: operation-instance-create
-description: Development Instance create from 209 in the legacy phases, one shipped script per phase through official SSH.
+description: Development Instance create from 209 over official SSH; one command per step, files through the official file behavior.
 vaults: [orbit-control-inputs]
 queueTimeout: 10
 labels: {role: swamp}
@@ -11,14 +11,14 @@ inputs:
     node_id: {type: integer, minimum: 1}
     kind: {type: string, const: instance.create}
     intent: {type: object}
-    # Names only: git_read, environment and setup, plus member_<Process id> for each development Process environment.
+    # Names only: git_credential and environment, plus member_<Process id> for each development Process environment.
     execution_secrets:
       type: object
       additionalProperties:
         type: object
         properties:
           vault: {type: string, enum: [orbit-control-inputs]}
-          key: {type: string, pattern: '^(?:instance-(?:git-operation-|create-environment-input-|create-)[1-9][0-9]*|process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*)$'}
+          key: {type: string, pattern: '^(?:instance-(?:git-(?:operation|credential)-|create-environment-input-)[1-9][0-9]*|process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*)$'}
         required: [vault, key]
         additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
@@ -26,18 +26,10 @@ inputs:
 jobs:
   - name: create
     steps:
-      - name: assets
-        labels: {role: swamp}
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-dev-command'
-          behaviorName: '${{ "ic-assets" }}'
-          methodName: create_assets
-          inputs: {intent: '${{ inputs.intent }}'}
-      # Prepare: refusals before the first write (account, destination, branch in use, origin, ownership marker).
+      # Prepare: refuse a branch another worktree holds, then make the checkout (a seed worktree or a fresh repository) and its origin.
       - name: prepare
         labels: {role: swamp}
-        dependsOn: [{step: assets, condition: {type: succeeded}}]
+        writes: true
         guard: '${{ inputs.intent.already_active }}'
         task:
           type: behavior
@@ -45,7 +37,7 @@ jobs:
           behaviorName: '${{ ("ic-prepare-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: &ssh
-            name: '${{ ("ic-prepare-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+            name: '${{ ("ic-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
             transport:
               kind: ssh
               user: '${{ inputs.intent.ssh_execution.target.user }}'
@@ -55,14 +47,76 @@ jobs:
             hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}'}]
           inputs:
             hosts: name:target
-            okExitCodes: any
-            timeoutSec: 15
-            argv: [timeout, '10', python3, -I, -c, '${{ steps.assets.outputs.prepare }}', '${{ steps.assets.outputs.intent_json }}']
-      # Source: worktree or fresh checkout, fetch, the admitted branch; prints only the checked-out commit.
+            timeoutSec: 70
+            argv: [/usr/bin/timeout, '60', /bin/sh, -c, 'set -e; t="$1"; seed="$2"; commit="$3"; branch="$4"; if [ -n "$seed" ] && [ -z "$6" ] && /usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$seed" worktree list --porcelain | awk -v b="branch refs/heads/$branch" -v w="worktree $t" ''/^worktree /{c=$0} $0==b && c!=w{f=1} END{exit !f}''; then echo instance.branch_in_use >&2; exit 3; fi; if [ -e "$t" ]; then :; elif [ -n "$seed" ]; then mkdir -p -- "$(dirname -- "$t")"; /usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$seed" worktree add --no-checkout --detach -- "$t" "$commit"; else mkdir -p -- "$t"; /usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$t" init --quiet; fi; /usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$t" config --get remote.origin.url >/dev/null || /usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$t" remote add origin "$5"', sh, '${{ inputs.intent.source.checkout }}',
+              '${{ inputs.intent.source.seed_repository == null ? "" : inputs.intent.source.seed_repository }}',
+              '${{ inputs.intent.resolve.seed_commit == null ? "" : inputs.intent.resolve.seed_commit }}', '${{ inputs.intent.resolve.branch }}',
+              '${{ inputs.intent.source.repository }}', '${{ inputs.intent.retained_source == null ? "" : "retained" }}']
+      # The read token as a 0600 credential file that Git reads; the step after the fetch removes it.
+      - name: credential
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: prepare, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+        guard: '${{ inputs.intent.already_active || !inputs.intent.resolve.network || inputs.intent.retained_source != null || steps.exists(k, steps[k].status == "failed") }}'
+        task:
+          type: behavior
+          behaviorType: '@swamp/cfgmgmt/file'
+          behaviorName: '${{ ("ic-credential-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+          methodName: apply
+          globalArgs:
+            path: '${{ "/tmp/orbit-git-credential-" + run.id }}'
+            ensure: present
+            mode: '0600'
+            content: '${{ vault.get(inputs.execution_secrets.git_credential.vault, inputs.execution_secrets.git_credential.key) }}'
+            nodeHost: '${{ inputs.intent.ssh_execution.target.host }}'
+            nodeUser: '${{ inputs.intent.ssh_execution.target.user }}'
+            nodePort: '${{ inputs.intent.ssh_execution.target.port }}'
+            nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}'
+          inputs: {}
+      - name: fetch
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: credential, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+        guard: '${{ inputs.intent.already_active || !inputs.intent.resolve.network || inputs.intent.retained_source != null || steps.exists(k, steps[k].status == "failed") }}'
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ ("ic-fetch-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+          methodName: exec
+          globalArgs: *ssh
+          inputs:
+            hosts: name:target
+            timeoutSec: 310
+            argv: [/usr/bin/timeout, '300', /usr/bin/env, GIT_TERMINAL_PROMPT=0, GIT_CONFIG_NOSYSTEM=1, GIT_CONFIG_GLOBAL=/dev/null, /usr/bin/git,
+              -c, core.hooksPath=/dev/null, -c, core.fsmonitor=false, -c, credential.helper=, -c, '${{ "credential.helper=store --file=/tmp/orbit-git-credential-" + run.id }}',
+              -c, protocol.allow=never, -c, http.followRedirects=false, -c, 'url.https://github.com/.insteadOf=git@github.com:',
+              -c, 'url.https://github.com/.insteadOf=ssh://git@github.com/', -c, '${{ "protocol." + inputs.intent.resolve.protocols[0] + ".allow=always" }}',
+              -C, '${{ inputs.intent.source.checkout }}', fetch, --quiet, --no-tags, --prune, --, '${{ inputs.intent.source.repository }}',
+              '+refs/heads/*:refs/remotes/origin/*']
+      - name: credential-remove
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: fetch, condition: {type: always}}]
+        guard: '${{ inputs.intent.already_active || !inputs.intent.resolve.network || inputs.intent.retained_source != null || !("credential" in steps) || steps.credential.status == "skipped" }}'
+        task:
+          type: behavior
+          behaviorType: '@swamp/cfgmgmt/file'
+          behaviorName: '${{ ("ic-credential-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+          methodName: apply
+          globalArgs:
+            path: '${{ "/tmp/orbit-git-credential-" + run.id }}'
+            ensure: absent
+            nodeHost: '${{ inputs.intent.ssh_execution.target.host }}'
+            nodeUser: '${{ inputs.intent.ssh_execution.target.user }}'
+            nodePort: '${{ inputs.intent.ssh_execution.target.port }}'
+            nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}'
+          inputs: {}
+      # Source: check out the admitted branch (or keep a retained one) and print its commit.
       - name: source
         labels: {role: swamp}
-        dependsOn: [{step: prepare, condition: {type: succeeded}}]
-        guard: '${{ steps.prepare.outputs.exitCode != 0 }}'
+        writes: true
+        dependsOn: [{step: credential-remove, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+        guard: '${{ inputs.intent.already_active || steps.exists(k, steps[k].status == "failed") }}'
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
@@ -71,50 +125,68 @@ jobs:
           globalArgs: *ssh
           inputs:
             hosts: name:target
-            okExitCodes: any
-            timeoutSec: 25
-            argv: [timeout, '20', python3, -I, -c, '${{ steps.assets.outputs.source }}', '${{ steps.assets.outputs.intent_json }}']
-            stdin: '${{ vault.get(inputs.execution_secrets.git_read.vault, inputs.execution_secrets.git_read.key) }}'
-      # Environment: write the .env the Gateway rendered at admission, in the application directory.
+            timeoutSec: 70
+            argv: [/usr/bin/timeout, '60', /bin/sh, -c, 'set -e; g() { /usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$t" "$@"; }; t="$1"; b="$2"; commit="$3"; def="$4"; retained="$5"; if [ -n "$retained" ]; then [ "$(g rev-parse --abbrev-ref HEAD)" = "$b" ] && [ "$(g rev-parse HEAD)" = "$retained" ] || { echo instance.source_identity_changed >&2; exit 3; }; else if [ -n "$commit" ]; then ref="$commit"; elif g rev-parse -q --verify "refs/remotes/origin/$b" >/dev/null; then ref="refs/remotes/origin/$b"; elif g rev-parse -q --verify "refs/heads/$b" >/dev/null; then ref="refs/heads/$b"; else ref="refs/remotes/origin/$def"; fi; g checkout --quiet --no-track -B "$b" "$ref"; [ -z "$commit" ] || g update-ref refs/worktree/orbit/ci-baseline "$commit"; fi; g rev-parse --verify "HEAD^{commit}"', sh, '${{ inputs.intent.source.checkout }}', '${{ inputs.intent.resolve.branch }}',
+              '${{ inputs.intent.resolve.seed_commit == null ? "" : inputs.intent.resolve.seed_commit }}', '${{ inputs.intent.resolve.default_branch }}',
+              '${{ inputs.intent.retained_source == null ? "" : inputs.intent.retained_source.commit }}']
+      # Environment: the .env the Gateway rendered at admission, in the application directory.
       - name: environment
         labels: {role: swamp}
-        dependsOn: [{step: source, condition: {type: succeeded}}]
-        guard: '${{ steps.source.outputs.exitCode != 0 }}'
+        writes: true
+        dependsOn: [{step: source, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+        guard: '${{ inputs.intent.already_active || steps.exists(k, steps[k].status == "failed") }}'
         task:
           type: behavior
-          behaviorType: '@swamp/ssh'
+          behaviorType: '@swamp/cfgmgmt/file'
           behaviorName: '${{ ("ic-environment-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs: *ssh
-          inputs:
-            hosts: name:target
-            okExitCodes: any
-            timeoutSec: 15
-            argv: [timeout, '10', python3, -I, -c, '${{ steps.assets.outputs.environment }}']
-            stdin: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}'
-      # Setup: the ordered Project setup list at the checkout root, each command within its admitted timeout
-      # (the list totals at most 540 s); the first failed command stops it.
+          methodName: apply
+          globalArgs:
+            path: '${{ inputs.intent.environment_directory + "/.env" }}'
+            ensure: present
+            mode: '0600'
+            content: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}'
+            nodeHost: '${{ inputs.intent.ssh_execution.target.host }}'
+            nodeUser: '${{ inputs.intent.ssh_execution.target.user }}'
+            nodePort: '${{ inputs.intent.ssh_execution.target.port }}'
+            nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}'
+          inputs: {}
+      # Setup: the Project setup list in order, one command per item as the account; the first failure stops it.
       - name: setup
         labels: {role: swamp}
-        dependsOn: [{step: environment, condition: {type: succeeded}}]
-        guard: '${{ steps.environment.outputs.exitCode != 0 }}'
+        writes: true
+        dependsOn: [{step: environment, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+        guard: '${{ inputs.intent.already_active || steps.exists(k, steps[k].status == "failed") }}'
+        forEach: {item: step, in: '${{ inputs.intent.setup_steps }}'}
+        concurrency: 1
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("ic-setup-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+          behaviorName: '${{ ("ic-setup-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
           methodName: exec
-          globalArgs: *ssh
+          globalArgs:
+            name: '${{ ("ic-setup-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
+            transport:
+              kind: ssh
+              user: '${{ inputs.intent.ssh_execution.target.user }}'
+              port: '${{ inputs.intent.ssh_execution.target.port }}'
+              identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'
+              hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'
+            hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}'}]
           inputs:
             hosts: name:target
-            okExitCodes: any
-            timeoutSec: 545
-            argv: [timeout, '540', python3, -I, -c, '${{ steps.assets.outputs.setup }}', '${{ steps.assets.outputs.runner }}']
-            stdin: '${{ vault.get(inputs.execution_secrets.setup.vault, inputs.execution_secrets.setup.key) }}'
+            argv: ['/usr/bin/timeout', '${{ string(self.step.timeout_seconds) }}', '/usr/bin/env', '-C', '${{ self.step.directory }}',
+              '${{ "ORBIT_INSTANCE_ID=" + string(self.step.instance_id) }}', '${{ "ORBIT_INSTANCE_NAME=" + self.step.instance_name }}',
+              '${{ "ORBIT_SEED_PATH=" + self.step.seed_path }}', '${{ "ORBIT_SEED_COMMIT=" + self.step.seed_commit }}',
+              /bin/sh, -c, 'exec /bin/bash -eu -c "$1" >/dev/null', sh, '${{ self.step.command }}']
+            timeoutSec: '${{ self.step.timeout_seconds + 5 }}'
       # Processes: create and start the development Processes through the shared Process create workflow.
       - name: processes
         labels: {role: swamp}
-        dependsOn: [{step: setup, condition: {type: succeeded}}]
-        guard: '${{ steps.setup.outputs.exitCode != 0 }}'
+        # A dependency on a forEach over an empty list resolves at once, so Processes also wait on the .env write.
+        dependsOn:
+          - {step: environment, condition: {type: always}}
+          - {step: setup, condition: {type: always}}
+        guard: '${{ inputs.intent.already_active || steps.exists(k, steps[k].status == "failed") }}'
         forEach: {item: member, in: '${{ inputs.intent.processes }}'}
         task:
           type: workflow
@@ -129,8 +201,8 @@ jobs:
       - name: finish
         labels: {role: swamp}
         dependsOn:
-          - {step: assets, condition: {type: always}}
           - {step: prepare, condition: {type: always}}
+          - {step: credential-remove, condition: {type: always}}
           - {step: source, condition: {type: always}}
           - {step: environment, condition: {type: always}}
           - {step: setup, condition: {type: always}}
@@ -142,10 +214,11 @@ jobs:
           methodName: create_result
           inputs:
             intent: '${{ inputs.intent }}'
-            prepare: '${{ "prepare" in steps ? steps.prepare : null }}'
+            prepare: '${{ "prepare" in steps ? steps.prepare.status : "skipped" }}'
+            fetch: '${{ "fetch" in steps ? steps.fetch.status : "skipped" }}'
             source: '${{ "source" in steps ? steps.source : null }}'
-            environment: '${{ "environment" in steps ? steps.environment : null }}'
-            setup: '${{ "setup" in steps ? steps.setup : null }}'
+            environment: '${{ "environment" in steps ? steps.environment.status : "skipped" }}'
+            setup: '${{ inputs.intent.setup_steps.map(p, ("setup-" + string(p.index)) in steps ? steps["setup-" + string(p.index)].status : "skipped") }}'
             processes: '${{ inputs.intent.processes.map(p, ("processes-" + string(p.index)) in steps ? steps["processes-" + string(p.index)].status : "skipped") }}'
       - name: accepted
         labels: {role: swamp}

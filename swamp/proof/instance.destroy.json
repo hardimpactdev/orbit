@@ -85,16 +85,10 @@
   },
   "phases": [
     {
-      "name": "Read the scripts",
+      "name": "Write the git credential",
       "job": "destroy",
-      "step": "Read the scripts",
+      "step": "Write the git credential",
       "budget_seconds": 15
-    },
-    {
-      "name": "Verify the source",
-      "job": "destroy",
-      "step": "Verify the source",
-      "budget_seconds": 20
     },
     {
       "name": "Check work is pushed",
@@ -103,9 +97,15 @@
       "budget_seconds": 40
     },
     {
+      "name": "Remove the git credential",
+      "job": "destroy",
+      "step": "Remove the git credential",
+      "budget_seconds": 15
+    },
+    {
       "name": "Run teardown steps",
       "job": "destroy",
-      "step": "Run teardown steps",
+      "step": "Run teardown steps-0",
       "budget_seconds": 20
     },
     {
@@ -119,12 +119,6 @@
       "job": "destroy",
       "step": "Check it is gone",
       "budget_seconds": 20
-    },
-    {
-      "name": "Report the result",
-      "job": "destroy",
-      "step": "Report the result",
-      "budget_seconds": 15
     }
   ],
   "parity": "swamp/proof/instance.destroy/parity.py"

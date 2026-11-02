@@ -4,7 +4,7 @@ description: "Preserve source, state, and keys through a Gateway update, recover
 covers:
   - apps/gateway/app/{Domain,Infrastructure}/Releases/**
   - apps/gateway/config/{app,logging,retention}.php
-  - apps/gateway/app/{Infrastructure/Logging/**,Infrastructure/Database/**,Providers/Domains/DatabaseServiceProvider.php}
+  - apps/gateway/app/Infrastructure/Logging/**
   - apps/gateway/{app/Domain/Gateway/GatewayCacheStore.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,resources/sigstore/trusted_root.json}
   - "{apps/gateway/app/Infrastructure/Gateway/GatewayCheckoutAccessConverger.php,swamp/extensions/behaviors/operations/fleet-recipe/scripts/swamp_workers.py,apps/gateway/app/Actions/Fleet/*Rollout*.php,apps/gateway/app/Actions/Fleet/*Recipe*.php,apps/gateway/app/Actions/Fleet/AdmitFleetCliAction.php}"
   - apps/gateway/app/**/GatewayReleases/**
@@ -23,8 +23,6 @@ The manual `orbit:gateway-web` command returns `gateway.web_unavailable` before 
 The Gateway logs an exception at `ERROR` when its response status is 500 or higher. A lower status is a client refusal. The Gateway does not log it, because [Activity](/cli/activity) already records the failed request.
 
 Every log entry written during an HTTP request carries that request's `request_id`. When the request creates an Activity row, its `activity_log.request_id` has the same value. Search the Gateway logs for the Activity row's request ID to find all related request log entries.
-
-A transaction holds the SQLite write lock from its start, because Gateway transactions begin `IMMEDIATE`. Another writer waits up to the 5-second busy timeout, then fails with `database is locked`. That error names only the writer that waited. The holder is logged as `Long SQLite write transaction` once it ends, with `held_ms` and the `origin` file and line that opened it, when it held the lock 2 seconds or longer.
 
 Gateway log files rotate daily and keep 14 days. `LOG_DAILY_DAYS` changes the count.
 

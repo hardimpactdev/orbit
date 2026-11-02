@@ -1,109 +1,54 @@
-import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.19";
+import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { createResult } from "./result.ts";
 import { vpInstallSteps } from "../instance-vp-command/steps.ts";
-const done = (outputs: Record<string, unknown> = {}) => ({
-    status: "succeeded",
-    outputs,
-});
-const printed = (value: Record<string, unknown>) =>
-    done({ exitCode: value.ready ? 0 : 1, stdout: JSON.stringify(value) });
-type Phase = { status: string; outputs?: Record<string, unknown> } | null;
-const phases: {
-    prepare: Phase;
-    source: Phase;
-    environment: Phase;
-    setup: Phase;
-    processes: string[];
-} = {
-    prepare: printed({ ready: true }),
-    source: printed({ ready: true, commit: "a".repeat(40) }),
-    environment: printed({ ready: true }),
-    setup: printed({ ready: true, completed: [] }),
+const intent = {
+    instance_id: 7,
+    setup_steps: [{ index: 0, name: "install" }, { index: 1, name: "migrate" }],
+};
+const phases = {
+    prepare: "succeeded",
+    fetch: "succeeded",
+    source: { status: "succeeded", outputs: { stdout: "a".repeat(40) + "\n" } },
+    environment: "succeeded",
+    setup: ["succeeded", "succeeded"],
     processes: ["succeeded"],
 };
-Deno.test("create returns only the commit when every phase finished", () => {
-    assertEquals(JSON.parse(createResult({ instance_id: 7 }, phases).stdout), {
+Deno.test("create returns only the commit when every step finished", () => {
+    assertEquals(JSON.parse(createResult(intent, phases).stdout), {
         instance_id: 7,
         ready: true,
         name_converted_from: null,
         commit: "a".repeat(40),
     });
-    assertEquals(
-        createResult({ instance_id: 7 }, { ...phases, processes: [] }).ready,
-        true,
-    );
 });
-Deno.test("create names the first unfinished phase and keeps its public error code", () => {
-    const cases: [Partial<typeof phases>, string, string][] = [
-        [
-            {
-                prepare: printed({
-                    ready: false,
-                    error_code: "instance.branch_in_use",
-                }),
-                source: null,
-            },
-            "prepare",
-            "instance.branch_in_use",
-        ],
-        [
-            { source: { status: "failed" } },
-            "source",
-            "instance.create_source_failed",
-        ],
-        [
-            { environment: { status: "skipped" } },
-            "environment",
-            "instance.create_environment_failed",
-        ],
-        [
-            {
-                setup: printed({
-                    ready: false,
-                    error_code: "instance.setup_step_failed",
-                    failed_command: "migrate",
-                }),
-            },
-            "setup",
-            "instance.setup_step_failed",
-        ],
-        [
-            { processes: ["succeeded", "failed"] },
-            "processes",
-            "instance.create_processes_failed",
-        ],
-        [
-            { processes: ["skipped"] },
-            "processes",
-            "instance.create_processes_failed",
-        ],
-    ];
-    for (const [change, step, code] of cases) {
-        const result = JSON.parse(
-            createResult({ instance_id: 7 }, { ...phases, ...change }).stdout,
-        );
-        assertEquals([result.ready, result.failed_step, result.error_code], [
-            false,
-            step,
-            code,
-        ]);
-    }
-});
-Deno.test("an already active create reports ready without phase evidence", () => {
-    const empty = {
-        prepare: null,
-        source: null,
-        environment: null,
-        setup: null,
-        processes: [],
-    };
+Deno.test("create names the first unfinished phase and the failed setup command", () => {
+    const failed = (changes: Partial<typeof phases>) =>
+        JSON.parse(createResult(intent, { ...phases, ...changes }).stdout);
+    assertEquals(failed({ prepare: "failed" }).failed_step, "prepare");
+    assertEquals(failed({ fetch: "failed" }).failed_step, "source");
     assertEquals(
-        JSON.parse(
-            createResult({ instance_id: 7, already_active: true }, empty)
-                .stdout,
-        ),
-        { ready: true, instance_id: 7, already_active: true },
+        failed({ source: { status: "failed", outputs: { stdout: "" } } }).failed_step,
+        "source",
     );
+    assertEquals(failed({ environment: "skipped" }).failed_step, "environment");
+    const setup = failed({ setup: ["succeeded", "failed"] });
+    assertEquals([setup.failed_step, setup.error_code, setup.failed_command], [
+        "setup",
+        "instance.setup_step_failed",
+        "migrate",
+    ]);
+    assertEquals(failed({ processes: ["failed"] }).failed_step, "processes");
+});
+Deno.test("an already active create reports ready without step evidence", () => {
+    const result = createResult({ instance_id: 7, already_active: true }, {
+        ...phases,
+        prepare: "skipped",
+    });
+    assertEquals(JSON.parse(result.stdout), {
+        ready: true,
+        instance_id: 7,
+        already_active: true,
+    });
 });
 Deno.test("VP preparation uses stock CLI environment installation and discrete official SSH effects", () => {
     const steps = vpInstallSteps("vp", "inputs.intent");
@@ -116,5 +61,10 @@ Deno.test("VP preparation uses stock CLI environment installation and discrete o
     assertEquals(task.behaviorType, "@swamp/ssh");
     assertEquals(task.methodName, "exec");
     assertEquals(task.inputs.argv.slice(3, 5), ["env", "install"]);
-    assertEquals(steps.every((step) => (step.labels as { role?: unknown } | undefined)?.role === "swamp"), true);
+    assertEquals(
+        steps.every((step) =>
+            (step.labels as { role?: unknown } | undefined)?.role === "swamp"
+        ),
+        true,
+    );
 });
