@@ -8,10 +8,6 @@ import os
 import subprocess
 import sys
 
-operation = json.load(open(os.environ['PROOF_OPERATION_FILE']))
-expected, *detail = (argument.replace('${proof.run}', os.environ['PROOF_RUN']) for argument in sys.argv[1:])
-schedule = operation['input']['id']
-workflow = 'schedule-' + schedule
 STATE = '/home/orbit/.orbit/swamp-proof'
 
 
@@ -33,6 +29,19 @@ def check(condition, message):
         sys.exit(f'parity: {message} ({workflow})')
 
 
+if sys.argv[1] == 'predelete':
+    workflow = 'schedule-' + sys.argv[2]
+    for command in [('workflow', 'get'), ('workflow', 'trigger', 'remove'), ('workflow', 'delete')]:
+        code, _ = native(*command, workflow)
+        check(code == 0, 'the fixture removes the admitted workflow and trigger')
+    sys.exit(0)
+
+
+operation = json.load(open(os.environ['PROOF_OPERATION_FILE']))
+expected, *detail = (argument.replace('${proof.run}', os.environ['PROOF_RUN']) for argument in sys.argv[1:])
+schedule = operation['input']['id']
+workflow = 'schedule-' + schedule
+
 check(operation['status'] == 'succeeded', 'the Operation succeeded')
 units = target('sh', '-c', f'ls /etc/systemd/system | grep -c {schedule} || true').stdout.strip()
 check(units == '0', 'no unit is installed on the target')
@@ -40,6 +49,10 @@ code, out = native('workflow', 'trigger', 'get', workflow)
 if expected == 'absent':
     found, _ = native('workflow', 'get', workflow)
     check(found != 0, 'the workflow is gone')
+    listed, keys = native('vault', 'list-keys', 'orbit-control-inputs')
+    check(listed == 0, 'command key metadata can be read')
+    names = json.JSONDecoder().raw_decode(keys[keys.index('{'):])[0]['secretKeys']
+    check('schedule-command-' + schedule not in names, 'the command key is gone')
     print(f'parity: {operation["kind"]} leaves no workflow and no trigger for {workflow}')
     sys.exit(0)
 check(code == 0, 'the trigger can be read')

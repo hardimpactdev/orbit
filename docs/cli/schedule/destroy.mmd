@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 native Swamp schedules, one Swamp workflow per Schedule (Nick 2026-11-02), nothing installed on Nodes; R1-R3.
-  %% status: draft
+  %% status: migrated
   %% command: schedule:destroy
   %% kind: schedule.destroy
   autonumber
@@ -40,6 +40,9 @@ sequenceDiagram
   %%> What it does:
   %%> - deletes the Schedule's own workflow from serve
   %%> - a fire that already started keeps running from its own copy
+  GW->>SW: Delete the command key<br/>vault.delete
+  %%> What it does:
+  %%> - deletes the Schedule command key after its trigger and workflow
   alt Swamp confirms
     SW-->>GW: trigger and workflow gone
     %%> Returns:
@@ -51,7 +54,7 @@ sequenceDiagram
     %%> - task #5141 is recorded as succeeded at once (R1)
     %%> Vault key:
     %%> - the command's vault key is deleted; a fire that already started read it when it began
-    GW-->>CLI: Schedule destroyed<br/>204 No Content
+    GW-->>CLI: Schedule destroyed<br/>202 Accepted · task succeeded
     %%> What you get:
     %%> - the result at once; there is nothing to follow
   else Swamp refuses or is down
