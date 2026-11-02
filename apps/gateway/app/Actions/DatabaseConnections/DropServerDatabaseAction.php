@@ -7,6 +7,7 @@ namespace App\Actions\DatabaseConnections;
 use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseDestroySafety;
+use App\Domain\DatabaseServers\DatabaseStatements;
 use App\Domain\DatabaseServers\PostgresTestDatabases;
 use App\Domain\DatabaseServers\PreparedDatabaseOperation;
 use App\Domain\Shared\ResourceOperationException;
@@ -17,6 +18,7 @@ use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Admission records identities only. Swamp owns every probe, statement and effect. */
@@ -46,8 +48,11 @@ final readonly class DropServerDatabaseAction
         foreach ($this->snapshots($connections, $ownerInstanceId) as $snapshot) {
             app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($snapshot['node_id']));
             // The run reads the admin password from the server's own vault key (R3), so the intent records none.
+            $input = $snapshot['input'];
+            $input['statements'] = app(DatabaseStatements::class)->destroy(DatabaseDriver::from(ValidatedData::string($input['driver'])),
+                ValidatedData::stringList($input['databases']), ValidatedData::stringList($input['users']), ValidatedData::stringList($input['test_prefixes']));
             $prepared[] = $this->operations->prepare('database.destroy', 'database_server', $snapshot['server_id'], $snapshot['node_id'],
-                ['connection_ids' => $snapshot['connection_ids'], ...$snapshot['input']], [], ['delete_connections' => $snapshot['connection_ids']]);
+                ['connection_ids' => $snapshot['connection_ids'], ...$input], [], ['delete_connections' => $snapshot['connection_ids']]);
         }
 
         return $prepared;

@@ -61,5 +61,5 @@ it('accepts native only as true in a family declaration', function (): void {
         ->toBe(['job' => 'settings', 'step' => 'Check owner and mode', 'native' => true])
         ->and($normalize->invoke(null, ['job' => 'settings', 'step' => 'result']))->toBe(['job' => 'settings', 'step' => 'result']);
     expect(fn () => $normalize->invoke(null, ['job' => 'settings', 'step' => 'result', 'native' => false]))->toThrow(LogicException::class)
-        ->and(fn () => $normalize->invoke(null, ['job' => 'settings', 'step' => 'result', 'native' => true, 'outputs' => false]))->toThrow(LogicException::class);
+        ->and(fn () => $normalize->invoke(null, ['job' => 'settings', 'step' => 'result', 'outputs' => false]))->toThrow(LogicException::class);
 });

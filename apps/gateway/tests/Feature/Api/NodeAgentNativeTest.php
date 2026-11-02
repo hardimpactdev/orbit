@@ -60,9 +60,9 @@ it('prepares settings from a public SSH intent and stores them only at terminal 
     expect($op)->toBeInstanceOf(Operation::class)
         ->and($this->node->fresh()->settings['apps']['path'] ?? null)->not->toBe('/srv/new')
         ->and($this->socket->sent[0]['payload']['inputs']['intent']['ssh']['control_node_id'])->toBe(209)
-        ->and($this->socket->sent[0]['payload']['inputs']['intent']['storage'])->toBe(['root' => '/srv/new', 'user' => $this->node->user, 'create_missing' => true])
+        ->and($this->socket->sent[0]['payload']['inputs']['intent']['storage'])->toBe(['root' => '/srv/new', 'user' => $this->node->user, 'group' => $this->node->user])
         ->and($this->agents->calls)->toBe([]);
-    app(NodeSettingsProjection::class)->apply($op, ['run_id' => $this->run, 'status' => 'succeeded', 'result' => ['prepared' => true],
+    app(NodeSettingsProjection::class)->apply($op, ['run_id' => $this->run, 'status' => 'succeeded', 'result' => ['steps' => ['Prove the apps folder' => ['status' => 'succeeded']]],
         'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null]);
     expect($this->node->fresh()->settings['apps']['path'])->toBe('/srv/new');
 });

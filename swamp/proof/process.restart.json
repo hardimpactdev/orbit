@@ -44,15 +44,9 @@
       "budget_seconds": 20
     },
     {
-      "name": "Control the Process",
+      "name": "Accept the Process",
       "job": "runtime",
-      "step": "Control the Process",
-      "budget_seconds": 20
-    },
-    {
-      "name": "Verify the state",
-      "job": "runtime",
-      "step": "Verify the state",
+      "step": "Accept the Process",
       "budget_seconds": 20
     }
   ],

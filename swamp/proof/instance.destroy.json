@@ -2,6 +2,7 @@
   "kind": "instance.destroy",
   "workflow": "operation-instance-destroy",
   "topology": "minimal",
+  "clean": true,
   "budget_seconds": 120,
   "queue_timeout_seconds": 30,
   "prepare": [

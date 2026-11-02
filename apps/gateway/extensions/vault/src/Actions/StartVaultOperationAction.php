@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Orbit\Extensions\Vault\Domain\VaultException;
 use Orbit\Extensions\Vault\Domain\VaultOperationSecrets;
+use Orbit\Extensions\Vault\Domain\VaultSetupResultProjection;
 use SensitiveParameter;
 
 /** Records public intent and the shared native credential descriptor. */
@@ -32,19 +33,39 @@ final readonly class StartVaultOperationAction
 
         return DB::transaction(function () use ($nodeId, $action, $configuration, $trigger): Operation {
             $operation = $this->operations->execute('vault.'.$action, 'vault', $nodeId, $nodeId,
-                ($action === 'sync' ? $this->syncInput($configuration) : ['configuration' => ['$secret' => 'vault.credentials', 'id' => $nodeId]]), $trigger, null);
+                (match ($action) {
+                    'sync' => $this->syncInput($configuration),
+                    'setup' => $this->setupInput($configuration),
+                    default => ['configuration' => ['$secret' => 'vault.credentials', 'id' => $nodeId]],
+                }), $trigger, null);
             if ($operation->wasRecentlyCreated) {
-                if ($action === 'sync') {
+                if ($action !== 'teardown') {
                     $reference = ValidatedData::object(ValidatedData::object($operation->input['execution_secrets'])['configuration']);
                     app(SwampCommandStep::class)->executionCopy(ValidatedData::string($reference['vault']),
                         ValidatedData::string($reference['key']), json_encode($configuration, JSON_THROW_ON_ERROR));
-                } else {
+                }
+                if ($action !== 'sync') {
                     $this->secrets->store($operation, [...$configuration, 'ca_file' => rtrim(Config::string('orbit.home'), '/').'/ca/root.pem']);
                 }
             }
 
             return $operation;
         });
+    }
+
+    /** @param array<string,mixed> $configuration
+     * @return array<string,mixed>
+     */
+    private function setupInput(#[SensitiveParameter] array $configuration): array
+    {
+        $intent = Arr::only($configuration, ['url', 'client_id', 'organization', 'collection', 'published']);
+        if (is_array($configuration['previous'] ?? null)) {
+            $intent['previous'] = $configuration['previous'];
+        }
+        $intent['ca_file'] = '/usr/local/share/ca-certificates/orbit-root.crt';
+        $intent['refusal_exit_codes'] = VaultSetupResultProjection::ExitCodes;
+
+        return ['intent' => $intent, 'execution_secrets' => ['configuration' => ['vault' => 'orbit-control-inputs', 'key' => 'vault-setup-'.Str::uuid()]]];
     }
 
     /** @param array<string,mixed> $configuration

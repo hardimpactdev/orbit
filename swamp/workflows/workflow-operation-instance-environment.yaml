@@ -88,6 +88,7 @@ jobs:
         timeoutSec: 40
   - name: 'Write .env, .env.testing'
     labels: {role: swamp}
+    writes: true
     dependsOn: [{step: 'Check for foreign keys', condition: {type: succeeded}}]
     guard: ${{ steps["Check for foreign keys"].outputs.exitCode != 0 }}
     task:
@@ -123,6 +124,7 @@ jobs:
     # Every production sync refreshes the runtime, also when .env did not change.
   - name: 'Refresh the runtime'
     labels: {role: swamp}
+    writes: true
     dependsOn: [{step: 'Check the written file', condition: {type: succeeded}}]
     guard: ${{ inputs.intent.environment.environment != "production" || steps["Check the written file"].outputs.exitCode != 0 }}
     task:

@@ -43,9 +43,9 @@
       "budget_seconds": 20
     },
     {
-      "name": "Verify it runs",
+      "name": "Accept the Process",
       "job": "process",
-      "step": "Verify it runs",
+      "step": "Accept the Process",
       "budget_seconds": 20
     }
   ],

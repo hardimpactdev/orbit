@@ -6,7 +6,7 @@ covers:
   - apps/gateway/config/{app,logging,retention}.php
   - apps/gateway/app/Infrastructure/Logging/**
   - apps/gateway/{app/Domain/Gateway/GatewayCacheStore.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,resources/sigstore/trusted_root.json}
-  - apps/gateway/app/Infrastructure/Gateway/GatewayCheckoutAccessConverger.php
+  - "{apps/gateway/app/Infrastructure/Gateway/GatewayCheckoutAccessConverger.php,swamp/extensions/behaviors/operations/fleet-recipe/scripts/swamp_workers.py}"
   - apps/gateway/app/**/GatewayReleases/**
   - apps/gateway/app/**/*GatewayRelease*.php
   - apps/gateway/{app/Domain/Nodes/NodeUpdat*.php,app/Data/Nodes/NodeUpdatingData.php,app/Domain/Fleet/**,app/Infrastructure/Fleet/**,app/Actions/Fleet/**,app/Data/Fleet/**,app/Models/FleetRollout*.php,app/Console/Commands/FleetConvergeCommand.php,app/Http/Controllers/Api/FleetRolloutsController.php,config/fleet.php}
@@ -110,7 +110,7 @@ The Gateway reports its version in `gateway:status`. When `APP_VERSION` is unset
 Swamp serve on Node 209 reads `swamp/` from a Git checkout of the Orbit repository at `/home/orbit/apps/orbit-monorepo-staging/checkout`, and runs with `--hot-reload`. A release loads Swamp in one step, after the migration and before the switch. The release runner records one `gateway.swamp_load` intent with the release commit and waits up to 600 seconds for its native terminal. The `operation-gateway-swamp-load` workflow runs one `command/shell` step on 209:
 
 1. it fetches the commit and checks it out in the serve checkout, fast-forward only;
-2. it renders the swamp role's grants from `swamp/config/gateway-workflow-grants.json` and `swamp/config/serve-grants.json` into `swamp/grants/`;
+2. it renders serve's grants from `swamp/config/gateway-workflow-grants.json` and `swamp/config/serve-grants.json` into `swamp/grants/`;
 3. if an extension manifest's `additionalFiles` differ from those of the commit serve started from, it schedules a serve restart, as described below, and ends;
 4. otherwise it asks serve to reload, as hot reload would, and waits for the acknowledgement;
 5. it runs `swamp access reload`, so serve creates, revokes or keeps grants to match the file;

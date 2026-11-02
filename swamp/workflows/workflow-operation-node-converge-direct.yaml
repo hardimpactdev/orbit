@@ -1,6 +1,6 @@
 id: daace7ba-223f-47b6-9452-7c0da7cf384e
 name: operation-node-converge-direct
-description: Re-apply Orbit's own footprint on a Node from 209 over official SSH, in the chart's steps.
+description: Re-apply Orbit's own footprint on a Node with official cfgmgmt from 209, in the chart's steps.
 vaults: []
 queueTimeout: 30
 inputs:
@@ -17,26 +17,67 @@ jobs:
 - name: converge
   labels: {role: swamp}
   steps:
-  - name: 'Read the scripts'
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/node-scripts'
-      behaviorName: node-converge-scripts
-      methodName: read
-      inputs:
-        script: agent
-        input:
-          refusal: '${{ inputs.intent.refusal }}'
-          url: '${{ "agent" in inputs.intent.payloads ? inputs.intent.payloads.agent.url : "" }}'
-          sha256: '${{ inputs.intent.agent_sha256 }}'
-          user: '${{ inputs.intent.user }}'
-          configuration: '${{ "agent" in inputs.intent.payloads ? inputs.intent.payloads.agent : {} }}'
-          verifier_hash: '${{ inputs.intent.verifier_hash }}'
-    # An admission refusal stops here with its code. The pinned binary; a match changes nothing, otherwise the old one stays as orbit-agent.previous.
+    # The pinned release; a binary with the pinned SHA-256 is left alone.
   - name: 'Install the Node agent'
     labels: {role: swamp}
-    dependsOn: [{step: 'Read the scripts', condition: {type: succeeded}}]
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/fetch'
+      behaviorName: ${{ "node-converge-binary-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs: {url: '${{ inputs.intent.agent.url }}', path: /usr/local/bin/orbit-agent, checksum: '${{ "sha256:" + inputs.intent.agent_sha256 }}',
+        owner: root, group: root, mode: '0755', nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
+      inputs: {}
+    # config.toml and ca.pem; the key is never written here.
+  - name: 'Configure the Node agent'
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Install the Node agent', condition: {type: succeeded}}]
+    forEach: {item: file, in: '${{ inputs.intent.agent.files }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "node-converge-file-" + string(inputs.node_id) + "-" + string(self._index) }}
+      methodName: apply
+      globalArgs: {path: '${{ self.file.path }}', ensure: present, content: '${{ self.file.content }}', owner: root, group: root, mode: '0644',
+        nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
+      inputs: {}
+    # The unit, enabled and running.
+  - name: 'Start the Node agent'
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Configure the Node agent', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/systemd'
+      behaviorName: ${{ "node-converge-agent-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs: {service: orbit-agent.service, unitFile: '${{ inputs.intent.agent.unit }}', enabled: true, ensure: running, nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
+      inputs: {}
+    # The agent reads its files only when it starts; this part only runs when it changed.
+  - name: 'Restart the Node agent'
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Start the Node agent', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/systemd'
+      behaviorName: ${{ "node-converge-agent-" + string(inputs.node_id) }}
+      methodName: restart
+      globalArgs: {service: orbit-agent.service, unitFile: '${{ inputs.intent.agent.unit }}', enabled: true, ensure: running, nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
+      inputs: {}
+    # Best effort, as before: an Instance .env loses its world bits.
+  - name: 'Close Instance .env files'
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    dependsOn: [{step: 'Restart the Node agent', condition: {type: succeeded}}]
+    guard: '${{ size(inputs.intent.agent.checkouts) == 0 }}'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -56,27 +97,11 @@ jobs:
       inputs:
         hosts: name:target
         sudo: true
-        argv: [timeout, '240', python3, -I, -c, '${{ steps["Read the scripts"].outputs.body }}', install, '${{ steps["Read the scripts"].outputs.input }}']
-        timeoutSec: 250
-    # Files with the same key: a missing or mismatched key fails here; orbit:node-agent-rekey makes a new one.
-  - name: 'Configure the Node agent'
-    labels: {role: swamp}
-    dependsOn: [{step: 'Install the Node agent', condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "node-converge-ssh-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs: *ssh
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv: [timeout, '120', python3, -I, -c, '${{ steps["Read the scripts"].outputs.body }}', configure, '${{ steps["Read the scripts"].outputs.input }}',
-          '${{ string(steps["Install the Node agent"].outputs.stdout.contains("\"changed\": true")) }}']
-        timeoutSec: 130
+        argv: '${{ ["timeout", "60", "/usr/bin/find"] + inputs.intent.agent.checkouts + ["-maxdepth", "1", "-name", ".env", "-type", "f", "-perm", "/o=rwx", "-exec", "chmod", "o-rwx", "{}", "+"] }}'
+        timeoutSec: 70
   - name: 'Apply private DNS policy'
     labels: {role: swamp}
-    dependsOn: [{step: 'Configure the Node agent', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Restart the Node agent', condition: {type: succeeded}}]
     guard: ${{ inputs.intent.network == null }}
     task:
       type: workflow
@@ -93,7 +118,7 @@ jobs:
   - name: 'Re-apply role files'
     labels: {role: swamp}
     dependsOn:
-    - {step: 'Configure the Node agent', condition: {type: succeeded}}
+    - {step: 'Restart the Node agent', condition: {type: succeeded}}
     - {step: 'Apply private DNS policy', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     guard: '${{ !(["caddy-package", "caddy", "private-dns", "route-residue", "php-runtime", "tmpfiles"].exists(n, n in inputs.intent.payloads)) }}'
     task:
@@ -112,10 +137,11 @@ jobs:
           footprint: {node_id: '${{ inputs.intent.node_id }}', agent_sha256: '${{ inputs.intent.agent_sha256 }}', refusal: '${{ inputs.intent.refusal }}',
             artifacts: '${{ inputs.intent.artifacts }}', payloads: '${{ inputs.intent.payloads }}', network: '${{ inputs.intent.network }}'}
     # The agent is active on the pinned binary and its files hold their content.
+    # The end check: the pinned binary and the key the Gateway recorded.
   - name: 'Check the footprint'
     labels: {role: swamp}
     dependsOn:
-    - {step: 'Configure the Node agent', condition: {type: succeeded}}
+    - {step: 'Restart the Node agent', condition: {type: succeeded}}
     - {step: 'Apply private DNS policy', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     - {step: 'Re-apply role files', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     task:
@@ -127,22 +153,10 @@ jobs:
       inputs:
         hosts: name:target
         sudo: true
-        argv: [timeout, '30', python3, -I, -c, '${{ steps["Read the scripts"].outputs.body }}', check, '${{ steps["Read the scripts"].outputs.input }}']
+        argv: [timeout, '30', /usr/bin/sha256sum, /usr/local/bin/orbit-agent, /etc/orbit/agent/secret]
         timeoutSec: 40
-- name: result
-  labels: {role: swamp}
-  dependsOn: [{job: converge, condition: {type: always}}]
-  steps:
-  - name: 'Report the result'
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/node-scripts'
-      behaviorName: node-converge-result
-      methodName: converge_result
-      inputs: {intent: '${{ inputs.intent }}', steps: '${{ steps }}'}
-    # A part that did not apply fails the run; the result above stays the terminal result.
   - name: 'Prove the footprint'
     labels: {role: swamp}
-    dependsOn: [{step: 'Report the result', condition: {type: succeeded}}]
-    task: {type: assert, expr: '!steps["Report the result"].outputs.stdout.contains("error_code")', severity: high, message: A footprint part did not apply.}
+    dependsOn: [{step: 'Check the footprint', condition: {type: succeeded}}]
+    task: {type: assert, severity: high, message: The agent does not run the pinned binary with the recorded key.,
+      expr: 'steps["Check the footprint"].outputs.stdout in [inputs.intent.agent_sha256 + "  /usr/local/bin/orbit-agent\n" + inputs.intent.verifier_hash + "  /etc/orbit/agent/secret", inputs.intent.agent_sha256 + "  /usr/local/bin/orbit-agent\n" + inputs.intent.verifier_hash + "  /etc/orbit/agent/secret\n"]'}

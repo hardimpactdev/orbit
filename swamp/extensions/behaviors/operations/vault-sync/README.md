@@ -1,0 +1,7 @@
+# Vaultwarden CLI integration
+
+Official `@swamp/cfgmgmt` behaviors manage Node resources. Official vault extensions resolve secrets from supported stores. Neither covers Vaultwarden account verification, encrypted collection items, or the Bitwarden CLI's login and session lifecycle. The shipped Python files cover that gap by invoking the pinned official Bitwarden CLI; they add no HTTP or cryptography client. They run on a Swamp role worker and are never copied to a target Node.
+
+Setup checks supplied credentials on every new request. It cannot skip verification using an earlier successful setup: an API key or collection grant may have been revoked. Native resume retains completed steps. Its cleanup guard avoids reading missing asset outputs, and its `completed` dependency removes the disposable session after success or failure. Fixed behavior names are separate for assets, verification, and cleanup, so cleanup never waits on the verification behavior's lock.
+
+The Gateway supplies setup's public refusal-to-exit-code map in the immutable intent. Verification fails with its own exit code and writes no failure JSON to stdout. On pinned e459 failed command steps retain no outputs; the family projector maps the native failure's exit code back to the public refusal code. The native assert checks a successful verification and cleanup without another login.

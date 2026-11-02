@@ -65,4 +65,4 @@ it('requires execution copy key intent from core and loaded extension declaratio
 
     expect(fn () => (new GatewayWorkflowGrantCheck)->execute($definitions, $policy))
         ->toThrow(LogicException::class, 'Execution copy vault intent');
-})->with(['database.write', 'vault.sync', 'conn.pairing_revoke', 'node.ssh_access_converge', 'schedule.run', 'tasks.turn', 'tasks.publish']);
+})->with(['database.write', 'vault.sync', 'conn.pairing_revoke', 'node.bootstrap_probe', 'schedule.run', 'tasks.turn', 'tasks.publish']);

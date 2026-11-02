@@ -60,6 +60,8 @@ const EffectArgs = RoleArgs;
 const StepArgs = EffectArgs.extend({
     admission: Admission,
     stage: BaselineStage,
+    // The swamp role's native runtime steps run before the runtime stage; "" when none failed.
+    swamp_failure: z.string().regex(/^(|swamp\.[a-z_]+)$/).optional(),
 });
 const FootprintArgs = EffectArgs.extend({
     admission: Admission,
@@ -349,21 +351,18 @@ export function nodeRoleAdd(
                                     args.admission.snapshot.runtime.role ===
                                         "metrics"
                                 ? { ok: true }
+                                : args.admission.snapshot.runtime.role ===
+                                        "swamp"
+                                ? args.swamp_failure
+                                    ? {
+                                        ok: false,
+                                        error_code: args.swamp_failure,
+                                    }
+                                    : { ok: true }
                                 : await installRoleRuntime(
                                     args.admission.snapshot.runtime,
                                     gateway(args, ctx),
                                     ctx.signal,
-                                    undefined,
-                                    undefined,
-                                    undefined,
-                                    args.admission.snapshot.runtime.role ===
-                                            "swamp"
-                                        ? await Deno.readTextFile(
-                                            ctx.extensionFile(
-                                                "scripts/swamp_workers.py",
-                                            ),
-                                        )
-                                        : undefined,
                                 ).then(async (result) => {
                                     if ("error_code" in result) {
                                         return {

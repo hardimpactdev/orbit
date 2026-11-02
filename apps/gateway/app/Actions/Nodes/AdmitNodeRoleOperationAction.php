@@ -154,6 +154,11 @@ final readonly class AdmitNodeRoleOperationAction
         return DB::transaction(function () use ($node, $role, $purgeData, $offline, $deleted, $requestId): Operation {
             $node = Node::query()->lockForUpdate()->findOrFail($node->id);
             $this->guardMutable($node, $role);
+            if ($role === RoleName::Swamp) {
+                throw new NodeRoleValidationException("Role [{$role->value}] runs this removal's Swamp run, so it can't remove itself.", [
+                    'reason' => 'swamp_self_removal', 'role' => $role->value,
+                ]);
+            }
             if (! app(ManagedNodeEligibility::class)->allows($node) || ! app(NodeRolePlacement::class)->allows($node)) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'Role removal requires its exact managed Node worker.', 422);
             }

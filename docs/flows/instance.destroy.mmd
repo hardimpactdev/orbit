@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, R1-R4, single-swamp-node (@swamp/ssh from 209), DECISIONS 1 (token minted at admission, vault.get), 2 (DNS held), Schedules native (Nick 2026-11-02). docs/reference/instance-removal.md.
+  %% Target design: ADR 0244 task, R1-R4, single-swamp-node (@swamp/ssh from 209), DECISIONS 1 (token minted at admission, vault.get), Schedules native (Nick 2026-11-02). docs/reference/instance-removal.md.
   %% status: draft
   %% command: instance:destroy
   autonumber
@@ -118,10 +118,11 @@ sequenceDiagram
   %%> - removes its PHP pool and its certificate
   %%> Keeps:
   %%> - every other site, pool and certificate on Node 12
-  Note over GW: DNS withdrawal held<br/>open: Nick decides
-  %%> Open:
-  %%> - DNS publication for Routes is on hold (`native-dns-takeover-held`)
-  %%> - until Nick decides, the run removes no DNS record
+  Note over SW: Remove DNS records<br/>Node 1 over @swamp/ssh
+  %%> What it does:
+  %%> - removes the private DNS records of Instance 42's Routes, then waits the 31-second grace
+  %%> How:
+  %%> - over SSH from 209 to the VPN Node (Node 1), with the `swamp` role's key
   SW->>N: Remove the source<br/>worktrees first, checkout last
   %%> What it does:
   %%> - removes linked worktrees, then the checkout itself

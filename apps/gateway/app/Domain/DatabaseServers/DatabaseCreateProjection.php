@@ -8,6 +8,7 @@ use App\Actions\DatabaseConnections\AttachDatabaseConnectionAction;
 use App\Data\DatabaseConnections\DatabaseConnectionData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
@@ -32,20 +33,46 @@ final readonly class DatabaseCreateProjection implements DirectOperationProjecti
             throw new ResourceOperationException('database.create_intent_invalid', 'The create belongs to another resource or Node.', 422);
         }
         $intent = DatabaseExecutionIntent::recorded($id);
-        $input = $intent->payload['commands']['database-apply']['input'];
-        $safe = array_intersect_key($input, array_flip(['repair', 'driver', 'username', 'databases', 'test_prefix', 'locale', 'host', 'port', 'container', 'index', 'patterns', 'allow']));
-
-        $safe['stage'] = '/run/orbit-database-create-'.$operation->id;
-        $safe['ssh_execution'] = app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($operation->node_id));
-        $secrets = ['admin' => ['vault' => 'orbit-control-inputs', 'key' => "database-server-{$operation->target_id}-admin"],
-            'owner' => ['vault' => 'orbit-control-inputs', 'key' => 'database-create-intent-'.$intent->id]];
+        $input = ValidatedData::object($intent->payload['commands']['database-apply']['input']);
+        $payload = ValidatedData::object($input['payload']);
+        $driver = DatabaseDriver::from(ValidatedData::string($input['driver']));
+        $user = ValidatedData::string($input['username']);
+        $databases = ValidatedData::stringList($input['databases']);
+        $statements = app(DatabaseStatements::class)->create(['driver' => $driver->value, 'username' => $user, 'databases' => $databases,
+            'test_prefix' => ValidatedData::nullableString($input['test_prefix']), 'locale' => ValidatedData::nullableString($input['locale']),
+            'index' => is_int($input['index'] ?? null) ? $input['index'] : null,
+            'patterns' => ValidatedData::stringList($input['patterns']), 'allow' => ValidatedData::stringList($input['allow'])],
+            ValidatedData::string($payload['password']), ValidatedData::string($payload['salt']));
+        $container = ValidatedData::string($input['container']);
+        $login = "/run/orbit-database-create-{$operation->id}.env";
+        $ownerLogin = "/run/orbit-database-create-{$operation->id}-owner.env";
+        $secrets = ['statement' => ['vault' => 'orbit-control-inputs', 'key' => "database-create-intent-{$id}"],
+            'owner_env' => ['vault' => 'orbit-control-inputs', 'key' => "database-create-owner-{$id}"]];
+        if ($driver !== DatabaseDriver::Pgsql) {
+            $secrets['client_env'] = ['vault' => 'orbit-control-inputs', 'key' => "database-server-{$operation->target_id}-client-env"];
+        }
         if (! $operation->status->terminal()) {
-            // The server's own admin key (R3); the owner key holds only the new owner's password and salt.
-            $secrets['admin'] = DatabaseServerAdminSecret::copy(DatabaseServer::query()->findOrFail($operation->target_id));
-            $secrets['owner'] = app(SwampCommandStep::class)->executionCopy($secrets['owner']['vault'], $secrets['owner']['key'], json_encode($input['payload'], JSON_THROW_ON_ERROR));
+            // The create statement carries the owner's password, so it goes Gateway → vault → stdin (Q-DBAUTH).
+            $copy = app(SwampCommandStep::class);
+            $secrets['statement'] = $copy->executionCopy('orbit-control-inputs', "database-create-intent-{$id}", $statements['create']);
+            $secrets['owner_env'] = $copy->executionCopy('orbit-control-inputs', "database-create-owner-{$id}", $statements['owner_env']);
+            if ($driver !== DatabaseDriver::Pgsql) {
+                $secrets['client_env'] = DatabaseServerAdminSecret::clientEnvCopy($this->server($operation));
+            }
         }
 
-        return ['intent' => $safe, 'execution_secrets' => $secrets];
+        return ['intent' => ['driver' => $driver->value, 'username' => $user, 'container' => $container, 'login' => $login, 'owner_login' => $ownerLogin,
+            'index' => is_int($input['index'] ?? null) ? $input['index'] : null,
+            'client' => DatabaseStatements::client($driver, $container, $login),
+            'owner_client' => DatabaseStatements::ownerClient($driver, $container, $ownerLogin, $user, $databases[0] ?? 'postgres'),
+            'statements' => ['probe' => $statements['probe'], 'login' => $statements['login']],
+            'ssh_execution' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($operation->node_id))],
+            'execution_secrets' => $secrets];
+    }
+
+    private function server(Operation $operation): DatabaseServer
+    {
+        return DatabaseServer::query()->findOrFail($operation->target_id);
     }
 
     public function apply(Operation $operation, array $data): Operation

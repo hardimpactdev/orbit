@@ -100,7 +100,7 @@ Orbit CI runs builds and static checks. Swamp changes also run the Operation Den
 
 Swamp source lives under `swamp/`. Swamp-only changes select the Swamp checks and skip PHP and Gateway builds. Changing `swamp/config/gateway-workflow-grants.json` also selects Generated contracts. That job checks the intended policy against the loaded Gateway declarations. Every main commit builds and uploads Web and becomes a Gateway release, Swamp-only ones too, because the release [loads Swamp](/reference/gateway-recovery#load-swamp).
 
-Swamp checks validate every workflow with the runtime pinned in `swamp/.swamp.yaml` and enforce the Swamp-shape baseline. Operation Deno tests run in parallel shards with four workers per job: four general shards, one per database effect directory, and one for process commands. A shard's directory leaves the matrix when its tests go. `Required checks` remains the single aggregate for all selected jobs.
+Swamp checks validate every workflow with the runtime pinned in `swamp/.swamp.yaml` and enforce the Swamp-shape baseline. Operation Deno tests run in parallel shards with four workers per job: four general shards, one per database effect directory (local SQL, read and write), and one for process commands. A shard's directory leaves the matrix when its tests go. `Required checks` remains the single aggregate for all selected jobs.
 
 Two checks guard the flow charts. Generated contracts requires a chart or a `docs/flows/pending.txt` line for every kind. Docs build runs `bin/check-flows`. Changing `swamp/workflows/` also selects Docs, and changing `docs/flows/` also selects Generated contracts. So both checks see every change they depend on.
 

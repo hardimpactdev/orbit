@@ -13,7 +13,7 @@ def check(condition, message):
         sys.exit('parity: ' + message)
 
 
-project = operation['input']['project']['id']
+project = operation['input']['project']['id']  # Launch, id 32: the Project with a source-owned maintenance configuration
 check(result['project_id'] == project, 'the result names the admitted Project')
 check(result['key'].startswith(f'{project}-routine-'), 'the routine key is this Project and week')
 check(len(result['requests']) == 1 and result['requests'][0]['maintenance']['mode'] == 'routine', 'one routine group request')

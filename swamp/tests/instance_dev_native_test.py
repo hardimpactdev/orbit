@@ -249,6 +249,35 @@ class InstanceDestroyNative(InstanceNativeFixture):
         run,second = self.destroy()
         self.assertEqual(run['status'],'succeeded'); self.assertEqual(second['source_inspection'],first['source_inspection'])
 
+    def dns_publication(self, exit_code):
+        """One VPN DNS publication, served by a stub route-dns-publish child that logs each call and exits with exit_code."""
+        log = self.host/'dns-calls'
+        stub = {'id': '4f1e6d2a-0d55-4c1e-9a3b-7d1c2b8e6a51', 'name': 'route-dns-publish', 'queueTimeout': 30, 'inputs': {'type': 'object'}, 'jobs': [{'name': 'publish', 'steps': [{'name': 'write',
+                'task': {'type': 'behavior', 'behaviorType': 'command/shell', 'behaviorName': 'stub-dns', 'methodName': 'execute',
+                         'inputs': {'run': f'printf x >> {log}; exit {exit_code}'}}}]}]}
+        (self.repo/'workflows/workflow-route-dns-publish.yaml').write_text(yaml.safe_dump(stub, sort_keys=False))
+        artifact = {'node_id': 1, 'records': '# Managed by Orbit.\n', 'catalog': '{}\n', 'digest': 'd'*64}
+        part = {'index': 0, 'node_id': 1, 'user': 'orbit', 'serves_routes': False, 'control_node_id': 209, 'host_keys': [], 'connection': {},
+                'prepared': {'caddy': None, 'php': None, 'dns': 0}, 'withdrawn': {'caddy': None, 'php': None, 'dns': 0},
+                'after': {'caddy': None, 'php': None, 'dns': 0}, 'before': {'caddy': None, 'php': None, 'dns': 0}, 'direction': 'forward'}
+        mutations = self.input['intent']['route_mutations']
+        mutations['forward']['publications'] = [part]
+        mutations['artifacts']['dns'] = [artifact]
+        return log
+
+    def test_a_dns_publication_removes_the_records_on_the_vpn_node_before_the_source(self):
+        log = self.dns_publication(0)
+        run, result = self.destroy()
+        self.assertEqual(run['status'], 'succeeded'); self.assertTrue(result['removed'])
+        self.assertEqual(self.steps['Remove DNS records-0']['status'], 'succeeded')
+        self.assertGreaterEqual(len(log.read_text()), 1)
+        self.assertFalse(self.application.exists())
+
+    def test_no_dns_publication_skips_the_dns_step(self):
+        run, result = self.destroy()
+        self.assertEqual(run['status'], 'succeeded')
+        self.assertFalse(any(name.startswith('Remove DNS records') for name in self.steps))
+
     def test_destroy_composes_real_owned_sqlite_child_before_source_removal(self):
         import sqlite3
         from contextlib import closing

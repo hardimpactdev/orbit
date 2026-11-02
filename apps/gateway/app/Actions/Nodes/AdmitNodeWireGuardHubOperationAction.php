@@ -9,13 +9,17 @@ use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\WireGuard\Ipv4Subnet;
+use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Operation;
 
-/** Records the hub's public peer list as full intent. The hub keeps its own key; the run sets only its peers. */
+/** Renders the hub's wg-quick file and its peer sections as public intent. The hub's private key never leaves the Node. */
 final readonly class AdmitNodeWireGuardHubOperationAction
 {
+    public const string KeyFile = '/etc/wireguard/orbit.key';
+
     public function __construct(private StartOperationAction $operations) {}
 
     public function execute(Node $node, ?string $requestId = null): Operation
@@ -27,10 +31,19 @@ final readonly class AdmitNodeWireGuardHubOperationAction
         }
         $peers = Node::query()->whereKeyNot($node->id)->whereNotNull('wireguard_public_key')->whereNotNull('wireguard_ip')
             ->where('status', '!=', LifecycleStatus::Removing)->orderBy('id')->get();
-        // The run passes peer_args straight to one `wg set orbit` argv; peer_keys picks stale peers and checks the result.
+        $settings = app(VpnSettings::class);
+        $port = filter_var($settings->port(), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 65_535]]);
+        if (! is_int($port) || ! is_string($node->wireguard_ip)) {
+            throw new ResourceOperationException('node.network_unsupported', 'The hub needs its WireGuard address and a valid port.', 422);
+        }
+        $sections = $peers->map(static fn (Node $peer): string => "\n[Peer]\n# {$peer->name}\nPublicKey = {$peer->wireguard_public_key}\nAllowedIPs = {$peer->wireguard_ip}/32\n")->implode('');
+        // The hub's private key never leaves the Node: orbit.conf reads its key file, and the apply step composes the key
+        // with the peers file on the Node at apply time. Neither file, the intent nor the run holds it.
         $intent = ['hub_id' => $node->id, 'ssh' => app(SwampSshExecutionInput::class)->forNode($node),
-            'peer_keys' => $peers->pluck('wireguard_public_key')->values()->all(),
-            'peer_args' => $peers->flatMap(static fn (Node $peer): array => ['peer', (string) $peer->wireguard_public_key, 'allowed-ips', $peer->wireguard_ip.'/32'])->values()->all()];
+            'config' => "[Interface]\nAddress = {$node->wireguard_ip}/".Ipv4Subnet::from($settings->subnet())->prefixLength()
+                ."\nListenPort = {$port}\nPostUp = wg set %i private-key ".self::KeyFile."\n".$sections,
+            'peers' => $sections, 'port' => $port,
+            'peer_keys' => $peers->pluck('wireguard_public_key')->values()->all()];
 
         return $this->operations->execute('node.wireguard_hub_converge', 'node', $node->id, $node->id,
             ['intent' => $intent, 'participant_node_ids' => [$node->id]], 'operator', $requestId);

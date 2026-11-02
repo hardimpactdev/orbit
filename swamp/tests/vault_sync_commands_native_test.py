@@ -342,7 +342,7 @@ class VaultSyncNative(VaultSyncFixture):
         self.assertEqual(state["deletes"], ["published", "second"])
         self.assertEqual([row["id"] for row in state["ciphers"]], ["copy"])
         for index in range(2):
-            self.cli("model", "get", f"vault-sync-7-delete-{index}")
+            self.cli("model", "get", f"vault-sync-delete-{index}")
 
     def test_early_failures_clean_cache_and_emit_failure(self):
         for command in ("config", "login", "unlock"):
