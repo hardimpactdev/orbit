@@ -29,6 +29,8 @@ Vaultwarden must run behind an Orbit Route, such as `https://vault.orbit`. Setup
 
 Then run [`vault:setup`](/cli/vault/setup) with the Vaultwarden origin, the API key, the master password, and the organization and collection, each by name or ID. The Gateway records the encrypted setup intent. Its Swamp worker logs in, unlocks the account, and checks that it can write to the collection. The Gateway stores the configuration only after Swamp returns proven safe metadata. Setup can run again, for example with a new API key or master password. It refuses another organization or collection with `vault.items_published` while items are published, because they would stay behind in the old one. Run [`vault:teardown`](#tear-down) first.
 
+The setup run resolves its worker-cached CLI assets, verifies the account, clears its disposable session, and checks the result. Cleanup runs after verification succeeds or fails. A new setup checks the supplied credentials again; a native resume keeps completed verification. The final check does not log in again.
+
 No response or Activity entry returns the API key or the master password. The MCP `vault-setup` tool takes them as arguments, so they reach the agent's transcript. Run setup with the CLI, which reads them from files, when that matters.
 
 ### Who can redirect the credentials
