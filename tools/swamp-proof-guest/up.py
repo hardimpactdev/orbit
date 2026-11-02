@@ -105,6 +105,8 @@ def target():
         IDENTITY.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'swamp-proof-worker', '-f', str(IDENTITY)])
         run(['chown', '-R', 'orbit:orbit', str(IDENTITY.parent)])
+    # The swamp role's worker key path, which every migrated step's SSH uses (ADR 0243).
+    run(['install', '-D', '-o', 'orbit', '-g', 'orbit', '-m', '0400', str(IDENTITY), '/etc/orbit/swamp-role-worker/ssh-identity'])
     public = IDENTITY.with_suffix('.pub').read_text().split()
     run(['incus', 'exec', node['key'], '--', 'bash', '/root/prepare-node.sh', 'gateway-authorize', ' '.join(public[:2])])
     # Unmanaged SSH allowance and an active backend: the state an enrolled Node has.

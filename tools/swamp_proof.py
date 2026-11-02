@@ -153,7 +153,9 @@ def up(gateway):
     with tempfile.TemporaryDirectory() as folder:
         bundle = Path(folder) / 'source.bundle'
         subprocess.run(['git', '-C', str(ROOT), 'bundle', 'create', str(bundle), 'HEAD'], check=True, capture_output=True)
-        stage = 'rm -rf /home/orbit/swamp-proof && install -d -o orbit -g orbit /home/orbit/swamp-proof && cat > /home/orbit/swamp-proof/source.bundle'
+        # A held VM's serve writes into the staged tree; stop it before the tree is replaced.
+        stage = ('systemctl stop orbit-node-worker orbit-swamp-serve 2>/dev/null; rm -rf /home/orbit/swamp-proof'
+                 ' && install -d -o orbit -g orbit /home/orbit/swamp-proof && cat > /home/orbit/swamp-proof/source.bundle')
         guest.call(['sh', '-c', stage], input=bundle.read_bytes(), timeout=300)
     guest.call(['runuser', '-u', 'orbit', '--', 'git', 'clone', '-q', '--no-checkout', '/home/orbit/swamp-proof/source.bundle', SOURCE])
     guest.call(['runuser', '-u', 'orbit', '--', 'git', '-C', SOURCE, 'checkout', '-q', '--detach', commit])
