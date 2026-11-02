@@ -21,13 +21,21 @@ class RecipeNative(NativeTestCase):
         for job in workflow['jobs']:
             for step in job['steps']:
                 step.pop('target',None)
+                step.pop('labels',None)
                 task=step.get('task',{})
                 if task.get('behaviorType')=='@swamp/ssh':
                     task['behaviorType']='@fixture/recipe-ssh'
                     task.pop('globalArgs',None)
+                elif task.get('behaviorType', '').startswith('@swamp/cfgmgmt/'):
+                    task['behaviorType']='@fixture/recipe-config'
+                    # Pinned CLI resume drops explicit globalArgs (serve passes them).
+                    # Route fake resource arguments by schema to exercise DAG resume.
+                    task['inputs']={key:value for key,value in task.pop('globalArgs').items() if key in ('nodeHost','path')}
                 # No actual identity value or credential transport is needed by this fake.
-                if 'vault.get' in str(task):
-                    task['inputs']['stdin']='synthetic-observer-reference'
+                if 'vault.get' in str(task) and 'inputs' in task:
+                    task['inputs']['identity']['expected']='a'*64
+                if task.get('type') == 'assert':
+                    task['expr'] = task['expr'].replace('vault.get(inputs.execution_secrets.observer.vault,inputs.execution_secrets.observer.key)', '\"synthetic-observer-reference\"')
         self.workflow=workflow
         self.path=self.repo/'workflows/workflow-operation-fleet-recipe-direct.yaml'
         self.path.write_text(yaml.safe_dump(workflow,sort_keys=False))
@@ -121,7 +129,7 @@ class RecipeNative(NativeTestCase):
         root=self.start(success=False)
         history=self.history(root)
         steps={s['name']:s for job in history['jobs'] for s in job['steps']}
-        self.assertEqual(steps['dns_records_command-0']['status'],'skipped')
+        self.assertEqual(steps['dns_records-0']['status'],'skipped')
         self.assertNotIn('node.private-dns-restore',self.calls())
 
     def test_private_dns_failed_catalog_proof_stops_delivery(self):

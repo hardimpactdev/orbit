@@ -1,6 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 const Args = z.object({
     hosts: z.string().optional(),
+    timeoutSec: z.number().optional(),
     sudo: z.boolean().optional(),
     interpreter: z.string().optional(),
     argv: z.array(z.string()).optional(),
@@ -24,7 +25,7 @@ const execute = async (
             ? "account-group"
             : source.includes("orbit-agent") && source.includes("sha256")
             ? "observer-install"
-            : source.includes("SECRET = Path")
+            : args.argv?.includes("/usr/bin/sha256sum") || source.includes("SECRET = Path")
             ? "observer-identity"
             : args.script
             ? "file"
@@ -79,7 +80,7 @@ const execute = async (
     } else if (source.includes("def install(data)")) {
         result = { installed: null, configured: false };
     }
-    const data = { stdout: JSON.stringify(result) };
+    const data = { stdout: command === "observer-identity" ? "a".repeat(64) + "  /etc/orbit/agent/secret\n" : JSON.stringify(result) };
     await ctx.writeResource("output", "output", data);
     return data;
 };

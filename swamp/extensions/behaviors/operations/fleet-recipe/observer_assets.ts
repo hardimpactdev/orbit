@@ -2,24 +2,6 @@ import { CliInstallInput, CliInstallResult } from "../fleet/cli_install.ts";
 import { NETWORK_PROGRAM } from "../node/network_native_program.ts";
 import { z } from "npm:zod@4.4.3";
 const Path = z.string().startsWith("/").max(4096);
-const Inputs = {
-    observer_identity: z.object({}).strict(),
-    observer_checkout: z.object({ checkout: Path }).strict(),
-    file: z.object({
-        path: Path,
-        mode: z.string().regex(/^[0-7]{3,4}$/),
-        owner: z.string().regex(
-            /^[a-zA-Z0-9_][a-zA-Z0-9_.-]*:[a-zA-Z0-9_][a-zA-Z0-9_.-]*$/,
-        ),
-        content: z.string(),
-        marker: z.string().nullable(),
-    }).strict(),
-};
-const Args = z.object({
-    action: z.enum(["file", "observer_identity", "observer_checkout"]),
-    input: z.record(z.string(), z.unknown()),
-}).strict();
-export type RoleBaselineAction = keyof typeof Inputs;
 const Assets = z.object({ script_body: z.string() }).strict();
 const ObserverFilesInput = z.object({
     configuration: z.string(),
@@ -188,26 +170,6 @@ export const behavior = {
                     files,
                 );
                 return files;
-            },
-        },
-        read: {
-            description: "Read one public role baseline action",
-            arguments: Args,
-            execute: async (raw: z.infer<typeof Args>, ctx: Context) => {
-                const args = Args.parse(raw);
-                const input = Inputs[args.action].parse(args.input);
-                const source = await Deno.readTextFile(
-                    ctx.extensionFile("scripts/" + args.action + ".py"),
-                );
-                const result = Assets.parse({
-                    script_body: source.replace(
-                        "ROLE_INPUT = None",
-                        "ROLE_INPUT = json.loads(" +
-                            JSON.stringify(JSON.stringify(input)) + ")",
-                    ),
-                });
-                await ctx.writeResource("assets", "assets", result);
-                return result;
             },
         },
         decode: {

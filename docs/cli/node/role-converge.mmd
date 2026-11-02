@@ -100,6 +100,42 @@ sequenceDiagram
     %%> What it does:
     %%> - validates it with `promtool`, publishes it, and reloads Prometheus while it runs
   end
+  opt observer configuration is required
+    SW->>N: observer_identity_command
+    %%> What it does:
+    %%> - reads only the existing agent key's SHA-256 with one bounded argv
+    SW->>SW: observer_files
+    %%> What it does:
+    %%> - renders the public files and compares the digest with the vault value, without returning that value
+    SW->>SW: observer_identity
+    %%> What it checks:
+    %%> - native assert stops publication on a digest mismatch
+    SW->>N: observer_configuration
+    %%> What it does:
+    %%> - one forEach publishes config.toml, ca.pem and orbit-agent.service through official cfgmgmt file
+    opt recorded checkouts exist
+      SW->>N: observer_checkout
+      %%> What it does:
+      %%> - one bounded find argv removes world access from existing .env files
+    end
+    SW->>N: observer_reload
+    %%> What it does:
+    %%> - reloads systemd's unit definitions
+    SW->>N: observer_enable
+    %%> What it does:
+    %%> - enables and starts orbit-agent.service
+    opt binary or configuration changed
+      SW->>N: observer_restart
+      %%> What it does:
+      %%> - restarts the observer to load the new binary or files
+    end
+    SW->>N: observer_verify
+    %%> What it does:
+    %%> - checks orbit-agent.service is active
+    SW->>SW: observer
+    %%> What it checks:
+    %%> - native assert confirms the observer actions succeeded
+  end
   SW->>N: Check the role<br/>@swamp/cfgmgmt check
   %%> What it does:
   %%> - checks the role's services are active and answer, such as Caddy, PHP-FPM or Reverb
