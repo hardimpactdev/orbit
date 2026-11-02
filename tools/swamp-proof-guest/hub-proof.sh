@@ -28,8 +28,9 @@ printf '{"roles":{"%s":["vpn"]},"wireguard_keys":{"%s":"%s","%s":"AgICAgICAgICAg
 } | incus exec target -- sh -c 'umask 077; cat > /etc/wireguard/orbit.conf; ufw allow 51820/udp comment proof-hub >/dev/null; systemctl enable wg-quick@orbit >/dev/null 2>&1; systemctl restart wg-quick@orbit'
 
 ip link add wgproof type wireguard
-wg set wgproof private-key "$state/peer.key" listen-port 51821 \
-  peer "$hub_public" endpoint 10.231.0.10:51820 allowed-ips 10.99.0.1/32 persistent-keepalive 2
+# AppArmor confines wg to /etc/wireguard and stdin; this VM keeps its own /etc/wireguard untouched.
+wg set wgproof private-key /dev/stdin listen-port 51821 \
+  peer "$hub_public" endpoint 10.231.0.10:51820 allowed-ips 10.99.0.1/32 persistent-keepalive 2 < "$state/peer.key"
 ip link set wgproof up
 handshake() { incus exec target -- wg show orbit latest-handshakes | awk -v k="$peer_public" '$1==k {print $2}'; }
 deadline=$((SECONDS + 60))
