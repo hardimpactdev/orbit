@@ -12,7 +12,7 @@ import yaml
 
 from native_harness import ROOT, NativeTestCase
 
-FLOWS = ('operation-task-vm-sweep', 'task-vm-sweep-incus', 'task-vm-sweep-cloud')
+FLOWS = ('operation-task-vm-sweep',)
 
 
 def tool(path, source):
@@ -36,10 +36,13 @@ class TaskVmSweepNative(NativeTestCase):
             'volumes': [['tasks', 'tvm-6-topology-seed'], ['tasks', 'tvm-7-topology-seed']]}))
         tools = self.repo / 'tools'
         tools.mkdir()
-        tool(tools / 'incus', '''import json,sys
+        # Removals run in parallel: the fixture serializes its read-modify-write of the state file.
+        tool(tools / 'incus', '''import fcntl,json,sys
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
-args=sys.argv[1:];state=Path(STATE);data=json.loads(state.read_text())
+args=sys.argv[1:];state=Path(STATE)
+lock=open(STATE+'.lock','w');fcntl.flock(lock,fcntl.LOCK_EX)
+data=json.loads(state.read_text())
 def url(base,row):return base+row[1]+('' if row[0]=='default' else '?project='+row[0])
 if args[0]=='query':
     parsed=urlsplit(args[1]);query=parse_qs(parsed.query);project=query.get('project',['default'])[0]
@@ -89,8 +92,17 @@ raise SystemExit(r.returncode)
         print('SWEEP-NATIVE-DURATION ' + json.dumps({'provider': self.inputs['intent']['provider'], 'status': run['status'], 'started_at': run.get('startedAt'), 'completed_at': run.get('completedAt'), 'duration': run.get('duration')}), flush=True)
         return run, history
 
+    def steps(self, history):
+        return {step['name']: step for job in history['jobs'] for step in job['steps']}
+
     def result(self, history):
-        return json.loads(next(s for s in history['jobs'][0]['steps'] if s['name'] == 'result')['outputs']['stdout'])
+        """What the Gateway reads: the plan step's names once the provider's end check passed."""
+        steps = self.steps(history)
+        plan, check = (('Plan the cloud removals', 'Check the cloud removals') if self.inputs['intent']['provider'] == 'upcloud'
+                       else ('Plan the removals', 'Check the VMs are gone'))
+        if steps[check]['status'] != 'succeeded':
+            return {'ready': False, 'failed_steps': [name for name, step in steps.items() if step['status'] == 'failed']}
+        return {'ready': True, 'observed_names': steps[plan]['outputs']['observed_names'], 'deleted_names': steps[plan]['outputs']['deleted_names']}
 
     def remote(self):
         return [json.loads(line) for line in self.calls.read_text().splitlines()] if self.calls.exists() else []
@@ -110,16 +122,32 @@ raise SystemExit(r.returncode)
             ['timeout', '180', 'incus', 'delete', '--force', '--project', 'tasks', '--', 'tvm-image-16'],
             ['timeout', '180', 'incus', 'storage', 'volume', 'delete', '--project', 'tasks', '--', 'tasks', 'tvm-6-topology-seed']]))
         self.assertEqual(writes[-1][3:5], ['storage', 'volume'])
+        steps = self.steps(history)
+        for name in ('List servers, templates', 'Plan the cloud removals', 'List again', 'Check the cloud removals'):
+            self.assertEqual(steps[name]['status'], 'skipped', name)
+        self.assertFalse({'format', 'result', 'accepted', 'incus', 'cloud'} & set(steps))
         _, again = self.run_sweep()
         self.assertEqual(self.result(again)['deleted_names'], [])
+
+    def test_a_removed_vm_still_listed_fails_the_end_check(self):
+        incus = self.tools / 'incus'
+        # A delete that reports success but leaves the VM in place.
+        incus.write_text(incus.read_text().replace("data[key].remove([project,name]);state.write_text(json.dumps(data))", "pass"))
+        run, history = self.run_sweep(False)
+        self.assertEqual(run['status'], 'failed')
+        steps = self.steps(history)
+        self.assertEqual({name: step['status'] for name, step in steps.items() if name.startswith('Remove orphaned VMs-')},
+                         {'Remove orphaned VMs-tvm-6': 'succeeded', 'Remove orphaned VMs-tvm-image-16': 'succeeded'})
+        self.assertEqual(steps['Check the VMs are gone']['status'], 'failed')
 
     def test_ssh_failure_skips_cleanup_and_keeps_native_failure(self):
         self.block.touch()
         run, history = self.run_sweep(False)
         self.assertEqual(run['status'], 'failed')
         self.assertEqual(self.remote(), [])
-        self.assertEqual(history['jobs'][0]['steps'][-1]['status'], 'failed')
-        self.assertEqual(self.result(history), {'ready': False, 'error_code': 'task_vm.host_command_failed', 'failed_step': 'incus'})
+        result = self.result(history)
+        self.assertFalse(result['ready'])
+        self.assertEqual(sorted(result['failed_steps']), ['Read the inventory-images', 'Read the inventory-instances', 'Read the inventory-volumes'])
 
     def test_missing_project_fails_the_host_without_a_change(self):
         self.inputs['intent']['scope']['project'] = 'gone'

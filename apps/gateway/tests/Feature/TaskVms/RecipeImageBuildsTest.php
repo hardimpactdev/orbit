@@ -373,7 +373,7 @@ it('starts a fresh image attempt after a successful sweep proves claimed cleanup
     expect($build->fresh()->cleanup_started_at)->not->toBeNull();
     app(TaskVmSweepProjection::class)->apply($sweep, [
         'run_id' => $sweep->state['swamp_run_id'], 'status' => 'succeeded', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(),
-        'result' => ['ready' => true, 'observed_names' => [], 'deleted_names' => [$build->builder_vm_name]],
+        'result' => ['incus' => ['observed_names' => [], 'deleted_names' => [$build->builder_vm_name]]],
     ]);
 
     $retried = match ($path) {

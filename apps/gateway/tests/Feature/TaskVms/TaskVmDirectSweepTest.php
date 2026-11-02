@@ -16,6 +16,7 @@ use App\Domain\TaskVms\TaskVmSweepProjection;
 use App\Domain\TaskVms\TaskVmUpCloud;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\TaskVms\UpCloudApi;
 use App\Models\Node;
 use App\Models\Operation;
@@ -62,7 +63,7 @@ function directSweepProject(Operation $operation, array $names = []): void
 {
     app(TaskVmSweepProjection::class)->apply($operation, [
         'run_id' => $operation->fresh()->state['swamp_run_id'], 'status' => 'succeeded', 'started_at' => '2026-10-31T00:00:00.000Z',
-        'finished_at' => '2026-10-31T00:00:01.000Z', 'result' => ['ready' => true, 'observed_names' => $names, 'deleted_names' => []],
+        'finished_at' => '2026-10-31T00:00:01.000Z', 'result' => ['incus' => ['observed_names' => $names, 'deleted_names' => []]],
     ]);
 }
 
@@ -141,6 +142,47 @@ it('retires only expired nonrunning build intent before native dispatch', functi
     expect($operation->input['scope']['retired_build_ids'])->toBe([$old->id])->and($old->fresh()->cleanup_started_at)->not->toBeNull()
         ->and($running->fresh()->cleanup_started_at)->toBeNull()->and($recent->fresh()->cleanup_started_at)->toBeNull();
     expect(app(DirectOperation::class)->workflowInputs($operation)['intent']['scope']['protected_build_ids'])->toBe([$running->id, $recent->id]);
+});
+
+it('projects the admitted provider plan from the native run once its end check passed', function (): void {
+    $vm = directSweepVm('ready', '10.44.0.129');
+    $operation = directSweepAdmit();
+    $inputs = app(DirectOperation::class)->workflowInputs($operation);
+    $step = static fn (string $name, string $status, array $outputs = []): array => ['name' => $name, 'status' => $status, 'outputs' => $outputs];
+    $history = ['id' => $this->run, 'workflowName' => 'operation-task-vm-sweep', 'status' => 'succeeded', 'inputs' => $inputs,
+        'startedAt' => '2026-11-02T00:00:00Z', 'completedAt' => '2026-11-02T00:00:01Z', 'jobs' => [
+            ['name' => 'inventory', 'steps' => [$step('Read the inventory', 'succeeded'),
+                $step('Plan the removals', 'succeeded', ['instances' => ['tvm-6'], 'volumes' => [], 'observed_names' => [], 'deleted_names' => ['tvm-6']]),
+                $step('List servers, templates', 'skipped')]],
+            ['name' => 'check', 'steps' => [$step('Read the project again', 'succeeded', ['stdout' => '[]', 'exitCode' => 0]),
+                $step('Check the VMs are gone', 'succeeded'), $step('List again', 'skipped'), $step('Check the cloud removals', 'skipped')]],
+        ]];
+    config(['swamp.read_token' => 'fixture.read']);
+    $this->socket->reply = static fn (array $sent): array => [['type' => 'workflow.history.get', 'id' => $sent['id'], 'payload' => ['data' => $history]]];
+    $selector = app(DirectOperation::class)->definition('task_vm.sweep_host')['terminal_result'];
+
+    $projected = app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $this->run, 'status' => 'succeeded'], $selector);
+
+    expect($projected->status)->toBe(OperationStatus::Succeeded)
+        ->and($projected->result)->toBe(['ready' => true, 'observed_names' => [], 'deleted_names' => ['tvm-6']])
+        ->and($vm->fresh()->state)->toBe(TaskVmState::Ready);
+});
+
+it('fails a native sweep run with the host command code and no observation', function (): void {
+    $vm = directSweepVm('ready', '10.44.0.129');
+    $operation = directSweepAdmit();
+    $inputs = app(DirectOperation::class)->workflowInputs($operation);
+    $history = ['id' => $this->run, 'workflowName' => 'operation-task-vm-sweep', 'status' => 'failed', 'inputs' => $inputs,
+        'startedAt' => '2026-11-02T00:00:00Z', 'completedAt' => '2026-11-02T00:00:01Z', 'jobs' => [
+            ['name' => 'inventory', 'steps' => [['name' => 'Read the inventory-instances', 'status' => 'failed', 'outputs' => []]]]]];
+    config(['swamp.read_token' => 'fixture.read']);
+    $this->socket->reply = static fn (array $sent): array => [['type' => 'workflow.history.get', 'id' => $sent['id'], 'payload' => ['data' => $history]]];
+    $selector = app(DirectOperation::class)->definition('task_vm.sweep_host')['terminal_result'];
+
+    $projected = app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $this->run, 'status' => 'failed'], $selector);
+
+    expect($projected->status)->toBe(OperationStatus::Failed)->and($projected->error_code)->toBe('task_vm.host_command_failed')
+        ->and($projected->result)->toBe(['error_code' => 'task_vm.host_command_failed'])->and($vm->fresh()->state)->toBe(TaskVmState::Ready);
 });
 
 it('refuses late and malformed observations without changing VM projection', function (): void {

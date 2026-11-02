@@ -79,15 +79,18 @@ export function selectIncusOrphans(
     };
     const observed = projectNames(scope, instanceRows);
     const instances = observed.filter(orphanInstance);
+    const volumes = projectNames(scope, volumeRows).filter((name) => {
+        const match = /^(tvm-[0-9]+)-topology-seed$/.exec(name);
+        return match !== null && !operatorOwns(name) &&
+            orphanVm(match[1]) &&
+            (!observed.includes(match[1]) || instances.includes(match[1]));
+    });
     return {
-        observed_names: observed,
         instances,
-        volumes: projectNames(scope, volumeRows).filter((name) => {
-            const match = /^(tvm-[0-9]+)-topology-seed$/.exec(name);
-            return match !== null && !operatorOwns(name) &&
-                orphanVm(match[1]) &&
-                (!observed.includes(match[1]) || instances.includes(match[1]));
-        }),
+        volumes,
+        // The run's end check proves the removed names are gone, so the rest is what the host keeps.
+        observed_names: observed.filter((name) => !instances.includes(name)),
+        deleted_names: [...instances, ...volumes],
     };
 }
 
@@ -128,20 +131,6 @@ export function incusStrays(
                         seed !== null &&
                             fingerprints.some((fp) => fp.startsWith(seed[1]))));
         }).map((row) => ({ ...row, pool: scope.pool })),
-    };
-}
-
-/** The deleted instances that the final observation still lists; the end check fails on any. */
-export function incusRemaining(
-    raw: unknown,
-    deleted: string[],
-    stdout: string,
-) {
-    const scope = IncusOwnership.parse(raw);
-    const observed = projectNames(scope, incusRows(stdout, instancePrefix));
-    return {
-        observed_names: observed,
-        remaining: deleted.filter((name) => observed.includes(name)),
     };
 }
 
@@ -248,24 +237,25 @@ export function cloudPlan(intent: CloudIntent, stdout: string) {
             ? [{ name: row.title, uuid: row.uuid }]
             : [];
     });
+    const deleted = [...servers, ...templates].map((row) => row.name);
     return {
-        servers,
         stops: servers.filter((row) => row.state === "started"),
-        templates,
-        observed_names: cloudObserved(rows),
-    };
-}
-
-/** The deleted servers and templates that the final inventory still lists; the end check fails on any. */
-export function cloudRemaining(deleted: { uuid: string }[], stdout: string) {
-    const rows = CloudInventory.parse(JSON.parse(stdout));
-    const present = new Set([
-        ...rows.vms.servers.server.map((row) => row.uuid),
-        ...rows.images.servers.server.map((row) => row.uuid),
-        ...rows.templates.storages.storage.map((row) => row.uuid),
-    ]);
-    return {
-        observed_names: cloudObserved(rows),
-        remaining: deleted.filter((row) => present.has(row.uuid)),
+        // One delete per server with its storage and per unverified template.
+        deletes: [
+            ...servers.map((row) => ({
+                name: row.name,
+                uuid: row.uuid,
+                path: `server/${row.uuid}?storages=1&backups=delete`,
+            })),
+            ...templates.map((row) => ({
+                ...row,
+                path: `storage/${row.uuid}`,
+            })),
+        ],
+        // The run's end check proves the deleted servers are gone, so the rest is what the provider keeps.
+        observed_names: cloudObserved(rows).filter((name) =>
+            !deleted.includes(name)
+        ),
+        deleted_names: [...new Set(deleted)],
     };
 }

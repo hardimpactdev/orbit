@@ -53,7 +53,9 @@ return ['task_vm.hub_converge' => [
     'workflow' => 'operation-task-vm-sweep',
     'projection' => TaskVmSweepProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'sweep', 'step' => 'result'],
+    // No result step: the projector reads the admitted provider's plan; its native assert is the end check.
+    'terminal_result' => ['job' => 'check', 'step' => TaskVmSweepProjection::IncusCheck, 'alternatives' => [TaskVmSweepProjection::CloudCheck], 'native' => true,
+        'captures' => TaskVmSweepProjection::captures()],
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-upcloud-token$']],
 ], 'task_vm.upcloud_image_build' => [
     'workflow' => 'operation-task-vm-upcloud-image-build',

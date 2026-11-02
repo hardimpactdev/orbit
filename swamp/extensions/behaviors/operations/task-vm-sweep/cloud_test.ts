@@ -1,5 +1,5 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.14";
-import { cloudPlan, cloudRemaining } from "./policy.ts";
+import { cloudPlan } from "./policy.ts";
 const intent = {
     scope: { live_names: ["tvm-7"], max_task_vm_id: 10 },
     image_cutoff: Date.parse("2025-01-01T00:00:00Z") / 1000,
@@ -64,20 +64,34 @@ Deno.test("cloud sweep only selects admitted orphan IDs and inactive old image s
             }],
         ),
     );
-    assertEquals(plan.servers.map((r) => r.name), [
-        "tvm-6",
-        "tvm-image-20240101000000",
+    assertEquals(plan.deletes, [
+        {
+            name: "tvm-6",
+            uuid: id(6),
+            path: `server/${id(6)}?storages=1&backups=delete`,
+        },
+        {
+            name: "tvm-image-20240101000000",
+            uuid: id(20),
+            path: `server/${id(20)}?storages=1&backups=delete`,
+        },
+        {
+            name: "orbit-task-base-20240101000000-unverified",
+            uuid: id(30),
+            path: `storage/${id(30)}`,
+        },
     ]);
     assertEquals(plan.stops, [{
         name: "tvm-6",
         uuid: id(6),
         state: "started",
     }]);
-    assertEquals(plan.templates, [{
-        name: "orbit-task-base-20240101000000-unverified",
-        uuid: id(30),
-    }]);
-    assertEquals(plan.observed_names, ["tvm-6", "tvm-7", "tvm-11"]);
+    assertEquals(plan.observed_names, ["tvm-7", "tvm-11"]);
+    assertEquals(plan.deleted_names, [
+        "tvm-6",
+        "tvm-image-20240101000000",
+        "orbit-task-base-20240101000000-unverified",
+    ]);
 });
 
 Deno.test("cloud sweep rejects malformed labels and does not select invalid date stamps", () => {
@@ -95,24 +109,8 @@ Deno.test("cloud sweep rejects malformed labels and does not select invalid date
                     "20240231000000",
                 ),
             ]),
-        ).servers,
+        ).deletes,
         [],
     );
     assertThrows(() => cloudPlan(intent, '{"servers":{"server":[]}}'));
-});
-
-Deno.test("the cloud end check lists deleted servers and templates that remain", () => {
-    const after = inventory(
-        [server(7, "tvm-7", "orbit-task-vm", "7")],
-        [],
-        [{
-            uuid: id(30),
-            title: "orbit-task-base-20240101000000-unverified",
-            access: "private",
-        }],
-    );
-    assertEquals(
-        cloudRemaining([{ uuid: id(6) }, { uuid: id(30) }], after),
-        { observed_names: ["tvm-7"], remaining: [{ uuid: id(30) }] },
-    );
 });

@@ -54,3 +54,4 @@ cluster.router_unset
 tasks.publish
 metrics.exporter_disable
 metrics.exporter_enable
+task_vm.sweep_host

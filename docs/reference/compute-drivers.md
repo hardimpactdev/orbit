@@ -9,7 +9,7 @@ covers:
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - bin/{php-build,git-build-watch}
   - apps/gateway/{app/Models/PackageCache*.php,app/Console/Commands/PackageCacheUsageCommand.php,config/package_cache.php,config/task_vms.php,resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - swamp/{workflows/{workflow-operation-task-vm-image-build,workflow-task-vm-image-reaper}.yaml,extensions/behaviors/operations/task-vms/{image_build_inputs,image_reaper}.ts}
+  - swamp/{workflows/{workflow-operation-task-vm-image-build,workflow-task-vm-image-reaper,workflow-operation-task-vm-sweep}.yaml,extensions/behaviors/operations/{task-vms/{image_build_inputs,image_reaper}.ts,task-vm-sweep/**}}
 ---
 
 # Compute drivers
@@ -707,11 +707,15 @@ Parking retains the disk, workspace and sessions. It releases CPU and memory. It
 
 The Gateway scheduler queues `SweepTaskVmHosts` every thirty minutes. It runs while task VMs are enabled or the [UpCloud](#sweep-upcloud) token file is set. While task VMs are enabled, the sweep admits an Operation for each active configured host. `task_vm.sweep_host` runs on Node209 and reaches each Incus host through official pinned SSH. The Gateway supplies complete public ownership intent and vault descriptors before dispatch. Swamp reads provider inventory, selects only the admitted cleanup scope and returns its final observation; executing steps do not read Gateway state. 
 
-Swamp runs one host sweep at a time (`concurrency: 1`), so background sweeps never fill Node209's worker ahead of user work. A waiting sweep may queue for up to 600 seconds.
+One workflow serves both providers. A `guard` on each provider's first step skips the other provider, and its later steps skip with it. The run reads the inventory, plans in TypeScript on Node209, removes the plan with parallel `forEach` steps, reads the inventory again and ends with a native `assert` that no planned name is still listed.
 
-Provider children isolate SSH and vault inputs. Each child reads the inventory, plans in TypeScript on Node209, removes the plan with one `forEach` step per resource kind, and reads the inventory again as its end check; the root publishes one result. No step ships a script: each Incus command is one official `@swamp/ssh` `exec` argument list with `sudo`, and each UpCloud request is one inline `curl` on Node209. A provider or SSH failure never supplies a missing-VM observation. Cancellation remains terminal; an interrupted run projects failed. The generic Operation lock serializes admissions per host and releases on terminal projection. 
+No step ships a script: each Incus command is one official pinned `@swamp/ssh` `exec` argument list with `sudo` and a literal `timeout`, and each UpCloud request is one inline `curl` on Node209 that takes the token through `--variable`, never argv.
 
-Each sweep workflow has a 60-second worker queue timeout. Its execution budget is 300 seconds, allowing for the existing 180-second Incus deletion timeout; the shared start path does not yet pass that budget to Swamp.
+The workflow has no format or result step: the Gateway reads the plan step's names once the provider's end check succeeded.
+
+A provider or SSH failure never supplies a missing-VM observation and projects `task_vm.host_command_failed`. Cancellation remains terminal; an interrupted run projects failed. The generic Operation lock serializes admissions per host and releases on terminal projection. 
+
+The sweep workflow has a 60-second worker queue timeout. Its run budget is 600 seconds, allowing for the 180-second Incus deletion timeout.
 
 The native run reads the images of the host's Incus project with `incus query /1.0/images?project=<project>`, which fails for a project that does not exist. Incus lists the instances of a missing project as empty, so this read makes a missing project fail the host, and the job changes nothing there. The run then compares the instance names with the task VM rows:
 

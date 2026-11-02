@@ -19,6 +19,18 @@ use Illuminate\Support\Facades\DB;
 /** Safe current ownership reads and projection of native host observations; no host/provider calls. */
 final readonly class TaskVmSweepProjection implements DirectOperationProjection
 {
+    public const string IncusCheck = 'Check the VMs are gone';
+
+    public const string CloudCheck = 'Check the cloud removals';
+
+    /** The admitted provider's plan step: the names it deletes and the names that stay once its end check passes.
+     * @return array<string,array{job:string,step:string}>
+     */
+    public static function captures(): array
+    {
+        return ['incus' => ['job' => 'inventory', 'step' => 'Plan the removals'], 'upcloud' => ['job' => 'inventory', 'step' => 'Plan the cloud removals']];
+    }
+
     public function input(Operation $operation): array
     {
         $input = $operation->input;
@@ -38,13 +50,13 @@ final readonly class TaskVmSweepProjection implements DirectOperationProjection
             $data['status'] = OperationStatus::Failed->value;
         }
         $status = OperationStatus::from(ValidatedData::string($data['status']));
-        $result = ValidatedData::object($data['result'] ?? []);
         $observe = $status === OperationStatus::Succeeded;
-        if ($observe && (($result['ready'] ?? null) !== true || ! isset($result['observed_names'], $result['deleted_names']))) {
+        $plan = ValidatedData::object($data['result'] ?? [])[ValidatedData::string($operation->input['provider'])] ?? null;
+        if ($observe && (! is_array($plan) || ! isset($plan['observed_names'], $plan['deleted_names']))) {
             $this->refuse();
         }
-        $names = $observe ? ValidatedData::stringList($result['observed_names']) : [];
-        $deleted = $observe ? ValidatedData::stringList($result['deleted_names']) : [];
+        $names = $observe ? ValidatedData::stringList($plan['observed_names']) : [];
+        $deleted = $observe ? ValidatedData::stringList($plan['deleted_names']) : [];
         foreach ([$names, $deleted] as $list) {
             if (count($list) > 4096 || count(array_unique($list)) !== count($list)
                 || array_any($list, static fn (string $name): bool => preg_match('/\A[A-Za-z0-9][A-Za-z0-9._-]{0,253}\z/D', $name) !== 1)) {
@@ -52,10 +64,13 @@ final readonly class TaskVmSweepProjection implements DirectOperationProjection
             }
         }
 
-        return DB::transaction(function () use ($operation, $data, $result, $observe, $names): Operation {
+        $code = $status === OperationStatus::Failed ? TaskVmError::HostCommandFailed->value : null;
+        $result = $observe ? ['ready' => true, 'observed_names' => $names, 'deleted_names' => $deleted] : ($code !== null ? ['error_code' => $code] : []);
+
+        return DB::transaction(function () use ($operation, $data, $code, $result, $observe, $names): Operation {
             $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $terminal = $operation->status->terminal();
-            $projected = app(DirectOperation::class)->project($operation, $data, $result);
+            $projected = app(DirectOperation::class)->project($operation, [...$data, 'error_code' => $code], $result);
             if ($observe && ! $terminal) {
                 $query = TaskVm::query()->live()->where('provider', $operation->input['provider'])
                     ->whereIn('name', ValidatedData::stringList(ValidatedData::object($operation->input['scope'])['live_names']));

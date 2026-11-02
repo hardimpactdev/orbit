@@ -1,7 +1,6 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.14";
 import {
     imagePrefix,
-    incusRemaining,
     incusRows,
     incusStrays,
     instancePrefix,
@@ -75,7 +74,7 @@ Deno.test("sweep changes only the host's project", () => {
         rows(["tvm-6-topology-seed"], "other"),
     );
     assertEquals(plan.instances, ["tvm-5"]);
-    assertEquals(plan.observed_names, ["tvm-5"]);
+    assertEquals(plan.observed_names, []);
     assertEquals(plan.volumes, []);
 });
 
@@ -161,15 +160,14 @@ Deno.test("strays are foreign instances and sweep-pool volumes, never task VMs o
     );
 });
 
-Deno.test("the end check lists deleted instances that are still present", () => {
-    const stdout = JSON.stringify([
-        "/1.0/instances/tvm-7?project=tasks",
-        "/1.0/instances/tvm-6?project=tasks",
-    ]);
-    assertEquals(incusRemaining(scope, ["tvm-6", "tvm-image-16"], stdout), {
-        observed_names: ["tvm-7", "tvm-6"],
-        remaining: ["tvm-6"],
-    });
+Deno.test("the plan names what it deletes and what the host keeps after the removals", () => {
+    const plan = selectIncusOrphans(
+        scope,
+        rows(["tvm-6", "tvm-7", "tvm-image-18"]),
+        rows(["tvm-6-topology-seed", "tvm-7-topology-seed"]),
+    );
+    assertEquals(plan.observed_names, ["tvm-7", "tvm-image-18"]);
+    assertEquals(plan.deleted_names, ["tvm-6", "tvm-6-topology-seed"]);
 });
 
 Deno.test("sweep refuses malformed scope before returning any deletion plan", () => {
