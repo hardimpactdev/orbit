@@ -18,7 +18,8 @@ use App\Domain\Instances\StepLists\InstanceSetupProjection;
 return [
     'instance.transfer' => ['workflow' => 'operation-instance-transfer', 'workflow_inputs' => true,
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(forward|restore)-route_material_[0-9]+$'],
-            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*$']],
+            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*$'],
+            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-transfer-environment-[1-9][0-9]*$']],
         // Retire ends a moved transfer and Discard a restored one; the Route children's results say which happened.
         'terminal_result' => ['job' => 'transfer', 'step' => 'Retire the source', 'alternatives' => ['Discard the destination'], 'native' => true,
             'captures' => ['forward' => ['job' => 'transfer', 'step' => 'Publish the Route', 'field' => 'result'],

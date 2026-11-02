@@ -39,6 +39,14 @@
       }
     },
     {
+      "method": "PUT",
+      "path": "instances/${instance.id}/environment/PROOF_MOVED",
+      "operation": false,
+      "body": {
+        "value": "proof-moved-${proof.run}"
+      }
+    },
+    {
       "method": "POST",
       "path": "routes",
       "body": {
@@ -71,16 +79,22 @@
       "budget_seconds": 30
     },
     {
-      "name": "Protect the .env file",
+      "name": "Write .env",
       "job": "transfer",
-      "step": "Protect the .env file",
-      "budget_seconds": 10
+      "step": "Write .env",
+      "budget_seconds": 15
     },
     {
       "name": "Publish the Route",
       "job": "transfer",
       "step": "Publish the Route",
       "budget_seconds": 120
+    },
+    {
+      "name": "Check the destination",
+      "job": "transfer",
+      "step": "Check the destination",
+      "budget_seconds": 40
     },
     {
       "name": "Retire the source",

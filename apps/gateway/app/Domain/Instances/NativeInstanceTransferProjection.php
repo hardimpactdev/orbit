@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
+use App\Domain\Instances\Environment\InstanceEnvironmentContext;
+use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
+use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\Transfer\InstanceTransferStatus;
 use App\Domain\Instances\Transfer\InstanceTransferStep;
 use App\Domain\Operations\DirectOperation;
@@ -14,9 +17,12 @@ use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\ProcessInstallationBatch;
 use App\Domain\Routes\NativeRouteTransferPlan;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
@@ -67,8 +73,25 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
             $copies = [...$copies, ...$batch['execution_secrets']];
         }
 
-        return ['intent' => [...$plan, 'route_mutations' => $publication['route_mutations'], 'workloads' => $publication['workloads'], 'processes' => $processes],
-            'execution_secrets' => [...ValidatedData::object($publication['execution_secrets']), ...$copies]];
+        $instance->loadMissing('project');
+        $destination = ValidatedData::object($plan['destination']);
+        // The Gateway renders the destination .env from stored configuration for Node 15's placement; it travels only
+        // through the vault, never in the archive.
+        $environment = app(InstanceEnvironmentRenderer::class)->render(new InstanceEnvironmentContext(
+            instanceId: $instance->id, projectId: $instance->project_id, nodeId: ValidatedData::integer($plan['destination_node_id']), environment: 'development',
+            path: ValidatedData::string($destination['application']), executionUser: ValidatedData::string($destination['user']),
+            laravel: $instance->source_is_laravel === true, routeId: null,
+            routeDomain: ValidatedData::nullableString($operation->input['destination_domain'] ?? null),
+            nodeStatus: LifecycleStatus::Active->value, node: Node::query()->findOrFail(ValidatedData::integer($plan['destination_node_id'])),
+        ), app(InstanceEnvironmentStore::class)->values($instance));
+        $setup = array_map(static fn (array $step): array => [...$step, 'directory' => ValidatedData::string($destination['destination']),
+            'instance_id' => $instance->id, 'instance_name' => ValidatedData::string($operation->input['destination_name'])],
+            app(NativeInstanceTransferIntent::class)->setupSteps($instance, InstanceLifecycleInput::members(['members' => $plan['setup'] ?? []])));
+
+        return ['intent' => [...$plan, 'route_mutations' => $publication['route_mutations'], 'workloads' => $publication['workloads'], 'processes' => $processes,
+            'setup_steps' => $setup],
+            'execution_secrets' => [...ValidatedData::object($publication['execution_secrets']), ...$copies,
+                'environment' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'instance-transfer-environment-'.$operation->id, $environment)]];
     }
 
     public function apply(Operation $operation, array $data): Operation

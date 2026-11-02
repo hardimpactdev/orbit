@@ -3,7 +3,7 @@ sequenceDiagram
   %% Tightened: flow-tighten 2026-11-02, rules 5, 17, 22 (destination preflight from recorded state; cfgmgmt file/systemd, Route publish as in route:create).
   %% Decided: Nick 2026-11-02, .env.testing only for an owned MySQL/PostgreSQL database, written by the same file step.
   %% status: draft
-  %% Interim: the run copies the checkout with its .env, has no setup steps or destination check yet, and signs inside the Route child; Schedules and SQLite copies stay refused. The Swamp steps below are the real workflow steps.
+  %% Interim: the run signs inside the Route child, and Schedules and SQLite copies stay refused. The Swamp steps below are the real workflow steps.
   %% command: instance:transfer
   %% kind: instance.transfer
   autonumber
@@ -75,8 +75,8 @@ sequenceDiagram
   %%> What it does:
   %%> - reads the Git directories, then packs the Git history, branch, origin, index, unstaged edits and untracked files
   %%> - refuses a shared common repository or alternates (`instance.transfer_source_shared`, `instance.transfer_source_invalid`)
-  %%> Interim:
-  %%> - the archive still carries `.env`; later the Gateway renders it for Node 15
+  %%> Not included:
+  %%> - `.env`; the Gateway renders a new one for Node 15
   SW->>S: Copy the archive to 209<br/>@swamp/ssh copy · from
   SW->>D: Copy it to the destination<br/>@swamp/ssh copy · to
   %%> How:
@@ -88,20 +88,28 @@ sequenceDiagram
   SW->>D: Drop the worktree config<br/>git config --unset-all
   %%> Why:
   %%> - a linked worktree becomes an independent checkout on Node 15
-  SW->>D: Protect the .env file<br/>@swamp/ssh exec · o-rwx
+  SW->>D: Write .env<br/>@swamp/cfgmgmt/file · 0600
+  %%> What it does:
+  %%> - writes the `.env` the Gateway rendered from Instance 42's stored configuration for Node 15, from `vault.get`
+  %%> Requires:
+  %%> - stored configuration; admission refuses an Instance without it (`env.configuration_missing`)
+  SW->>D: Run Project setup steps<br/>@swamp/ssh exec · in order
+  %%> What it does:
+  %%> - runs the Project's setup steps as in `instance:create`, so dependencies match Node 15; the first failure restores the source
   SW->>D: Prepare Route workloads<br/>route workload child
   SW->>D: Create, start Processes<br/>process child · forEach
   %%> What it does:
   %%> - creates the Instance's Processes on Node 15 and starts them; stopped ones stay stopped
-  %%> Later:
-  %%> - Run Project setup steps comes before this step
   SW->>D: Publish the Route<br/>route-mutation-forward
   %%> What it does:
   %%> - signs the CSR through the Gateway primitive, installs the certificate and site on Node 15, and reloads Caddy
   %%> Cutover:
   %%> - a ready result makes Node 15 authoritative
-  %%> Later:
-  %%> - Check the destination (systemd check and one curl) follows this step
+  SW->>D: Check the destination<br/>@swamp/ssh exec · curl
+  %%> What it does:
+  %%> - one `curl` with the Route's domain as SNI: the site answers; a Project without a Route skips it
+  %%> Why:
+  %%> - the end check before the source is retired; a failure keeps the source for repair
   alt destination published
     SW->>S: Remove source Processes<br/>process child · forEach
     SW->>S: Retire the source<br/>@swamp/ssh exec · rm -rf

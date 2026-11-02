@@ -15,7 +15,21 @@ class InstanceTransferNative(NativeTestCase):
 
     def setUp(self):
         super().setUp()
-        self.cli("extension", "pull", "@swamp/ssh@2026.10.23.1")
+        inventory = json.loads((ROOT / "extensions/models/upstream_extensions.json").read_text())
+        for package in ["@swamp/ssh", "@swamp/cfgmgmt"]:
+            self.cli("extension", "pull", f"{package}@{inventory[package]['version']}")
+        # The official file behavior runs ssh, scp, chown and chgrp from PATH; these fakes act locally.
+        tools = self.repo / "tools"
+        tools.mkdir()
+        (tools / "ssh").write_text("#!" + sys.executable + "\nimport subprocess,sys\nif '-M' in sys.argv or '-O' in sys.argv: sys.exit(0)\nsys.exit(subprocess.call(['/bin/sh','-c',sys.argv[-1]]))\n")
+        (tools / "scp").write_text("#!" + sys.executable + "\nimport shutil,sys\nshutil.copyfile(sys.argv[-2],sys.argv[-1].split(':',1)[1])\n")
+        for tool in ("chown", "chgrp"):
+            (tools / tool).write_text("#!/bin/sh\nexit 0\n")
+        for tool in ("ssh", "scp", "chown", "chgrp"):
+            (tools / tool).chmod(0o755)
+        self.native_env["PATH"] = str(tools) + ":" + os.environ["PATH"]
+        self.cli("vault", "create", "local_encryption", "orbit-control-inputs")
+        self.cli("vault", "put", "orbit-control-inputs", "environment", "RENDERED_SENTINEL=from-gateway\n")
         self.copy_behaviors("operations/instance-source-command", "operations/instance-lifecycle", "operations/tools",
                             "operations/routes/mutation-command", "operations/routes/publication-command", "operations/routes/update-command")
         fake = self.repo / "ssh"
@@ -67,16 +81,16 @@ else:shutil.copyfile(source,destination)
             return {"identity_file": "/fixture/identity", "target": {"host": host, "port": 22, "user": "orbit", "host_keys": ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG"]}}
         stage = {"publications": [], "prepare_certificates": [], "certificates": [], "cleanup": [], "lan": [], "retire_lan": [], "url_writes": [], "routes": [], "ingress": [], "retire_ingress": []}
         self.intent = {"instance_id": 8, "transfer_id": "15427c8e-0a63-431a-84c7-835bf2730818", "source_node_id": 9, "destination_node_id": 13,
-                       "source": {"source": str(self.source), "repository_identity": "github.com/example/project", "ssh_execution": ssh("192.0.2.9")},
-                       "destination": {"destination": str(self.destination), "root": str(self.repo), "application": str(self.destination), "environment": str(self.destination / ".env"), "ssh_execution": ssh("192.0.2.13")},
-                       "processes": {"source": [], "destination": []}, "workloads": [], "route_mutations": {"forward": stage, "restore": stage}}
+                       "source": {"source": str(self.source), "repository_identity": "github.com/example/project", "environment_relative": ".env", "ssh_execution": ssh("192.0.2.9")},
+                       "destination": {"destination": str(self.destination), "root": str(self.repo), "application": str(self.destination), "environment": str(self.destination / ".env"), "domain": "", "ssh_execution": ssh("192.0.2.13")},
+                       "processes": {"source": [], "destination": []}, "setup_steps": [], "workloads": [], "route_mutations": {"forward": stage, "restore": stage}}
 
     def git(self, path, *args):
         return subprocess.run(["git", "-C", str(path), *args], capture_output=True, check=True).stdout.decode().strip()
 
     def transfer_arguments(self):
         argv = ["workflow", "run", "operation-instance-transfer"]
-        for key, value in {"operation_id": 7003, "node_id": 9, "kind": "instance.transfer", "intent": self.intent, "execution_secrets": {}}.items():
+        for key, value in {"operation_id": 7003, "node_id": 9, "kind": "instance.transfer", "intent": self.intent, "execution_secrets": {"environment": {"vault": "orbit-control-inputs", "key": "environment"}}}.items():
             argv += ["--input", key + "=" + (value if isinstance(value, str) else json.dumps(value))]
         return argv
 
@@ -95,11 +109,28 @@ else:shutil.copyfile(source,destination)
         self.assertEqual(run["status"], "succeeded")
         self.assertFalse(self.source.exists())
         self.assertTrue((self.destination / ".git").is_dir())
-        self.assertEqual((self.destination / ".env").read_text(), "PRIVATE_SENTINEL=retained\n")
-        self.assertEqual((self.destination / ".env").stat().st_mode & 0o777, 0o640)
+        # The Gateway-rendered file, never the source's: the archive leaves the source .env out.
+        self.assertEqual((self.destination / ".env").read_text(), "RENDERED_SENTINEL=from-gateway\n")
+        self.assertEqual((self.destination / ".env").stat().st_mode & 0o777, 0o600)
         self.assertNotIn("PRIVATE_SENTINEL", json.dumps(history))
+        self.assertNotIn("from-gateway", json.dumps(history))
         self.assertTrue(self.moved(history, "Publish the Route"))
         self.assertFalse(self.moved(history, "Restore the Route"))
+
+    def test_setup_steps_run_in_the_destination_and_a_failure_restores_the_source(self):
+        self.intent["setup_steps"] = [{"index": 0, "name": "mark", "command": "touch setup-ran", "timeout_seconds": 30,
+                                       "directory": str(self.destination), "instance_id": 8, "instance_name": "moved"},
+                                      {"index": 1, "name": "fail", "command": "exit 7", "timeout_seconds": 30,
+                                       "directory": str(self.destination), "instance_id": 8, "instance_name": "moved"}]
+        run, history = self.run_transfer(success=False)
+        steps = {s["name"]: s for s in history["jobs"][0]["steps"]}
+        self.assertEqual(run["status"], "failed")
+        self.assertEqual(steps["Run Project setup steps-0"]["status"], "succeeded")
+        self.assertEqual(steps["Run Project setup steps-1"]["status"], "failed")
+        self.assertEqual(steps["Publish the Route"]["status"], "skipped")
+        self.assertTrue(self.moved(history, "Restore the Route"))
+        self.assertTrue(self.source.exists())
+        self.assertFalse(self.destination.exists())
 
     def test_retirement_failure_retains_physical_cutover_result_and_source_residue(self):
         for step in self.child["jobs"][0]["steps"]:
@@ -162,7 +193,7 @@ else:shutil.copyfile(source,destination)
                 "methodName": "execute", "inputs": {"run": 'python3 "$HOLD" "$BARRIER"', "env": {"HOLD": str(hold), "BARRIER": str(barrier)}}}})
         receipt["dependsOn"] = [{"step": "cancel-barrier", "condition": {"type": "always"}}]
         self.workflow_path.write_text(yaml.safe_dump(self.child, sort_keys=False))
-        env = dict(os.environ, SWAMP_NO_UPDATE_CHECK="1", SWAMP_NO_TELEMETRY="1")
+        env = dict(os.environ, SWAMP_NO_UPDATE_CHECK="1", SWAMP_NO_TELEMETRY="1", **self.native_env)
         for key in ("SWAMP_SERVER_URL", "SWAMP_SERVE_URL", "SWAMP_SERVER_TOKEN", "SWAMP_SERVER_TOKEN_FILE", "SWAMP_REPO_DIR", "SWAMP_CA_CERT", "SWAMP_EXTENSIONS_DIR"):
             env.pop(key, None)
         process = subprocess.Popen([os.environ.get("SWAMP_BIN", "swamp"), *self.transfer_arguments(), "--json"],

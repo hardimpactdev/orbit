@@ -46,6 +46,7 @@ beforeEach(function (): void {
     $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $project = Project::query()->create(['name' => 'Native', 'slug' => 'native', 'repository_url' => 'https://example.test/native.git', 'root' => 'public']);
     $this->instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'name' => 'native', 'checkout_path' => '/srv/native', 'branch' => 'main', 'source_is_laravel' => false, 'status' => InstanceState::SourceResolved]);
+    $this->instance->environmentValues()->create(['env_key' => 'TRANSFER_SECRET', 'env_value' => 'transfer-stored-value']);
     $this->route = Route::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'domain' => 'native.test', 'provenance' => 'explicit', 'publication' => RoutePublication::Private, 'status' => RouteStatus::Pending]);
     $this->route->targets()->create(['instance_id' => $this->instance->id, 'position' => 0]);
     $this->manifest = tempnam(sys_get_temp_dir(), 'native-route-agent-');
@@ -209,14 +210,24 @@ function native_transfer_process($test): Process
         'desired_state' => 'running', 'restart_policy' => 'always', 'status' => 'active']);
 }
 
+it('refuses a transfer without stored environment configuration before reserving anything', function (): void {
+    $this->instance->environmentValues()->delete();
+    $instance = $this->instance->fresh(['project', 'node']);
+    expect(fn () => app(NativeInstanceTransferIntent::class)->assertSupported($instance, null))
+        ->toThrow(ResourceOperationException::class, 'Import or store environment configuration');
+});
+
 it('captures both native Process placements and commits paths only from terminal cutover', function (): void {
     $process = native_transfer_process($this);
     $operation = native_transfer_operation($this);
     $input = app(NativeInstanceTransferProjection::class)->workflowInput($operation);
-    expect(json_encode($input))->not->toContain('transfer-private-value');
+    expect(json_encode($input))->not->toContain('transfer-private-value')->not->toContain('transfer-stored-value');
     expect($input['intent']['processes']['source'][0]['id'])->toBe($process->id)
         ->and($input['intent']['processes']['destination'][0]['intent']['ssh_execution']['target']['host'])->toBe($this->destination->wireguard_ip)
-        ->and($input['execution_secrets'])->toHaveCount(2);
+        ->and($input['execution_secrets'])->toHaveCount(3)
+        ->and($input['execution_secrets']['environment'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'instance-transfer-environment-'.$operation->id])
+        ->and($input['intent']['source']['environment_relative'])->toBe('.env')
+        ->and($input['intent']['setup_steps'])->toBe([]);
     app(NativeInstanceTransferProjection::class)->apply($operation, native_transfer_result('cutover', 'failed'));
     expect($process->fresh()->working_directory)->toBe('/srv/new-native/app')
         ->and($process->fresh()->runtime_config['environment_file'])->toBe('/srv/new-native/app/.env')
