@@ -35,12 +35,24 @@ if changed:
     pending=p.with_suffix('.'+str(os.getpid())); pending.write_text(json.dumps(state)); pending.replace(p)
 sys.exit(code)
 '''
+WORKER = r'''
+import json, os, sys
+from pathlib import Path
+state=json.loads(Path(STATE).read_text())
+key=Path(os.environ['ORBIT_KEY_FILE'])
+if Path(sys.argv[0]).name == 'curl':
+    key.parent.mkdir(parents=True,exist_ok=True); key.with_suffix('.asc').write_text('fixture key')
+elif '--show-keys' in sys.argv:
+    print('pub:::::::::\nfpr:::::::::'+('B'*40 if state.get('bad_key') else 'A'*40)+':')
+else: key.with_suffix('.gpg').write_bytes(b'\x99fixture binary key')
+'''
 CONFIG = '''import { z } from "npm:zod@4.4.3";
 export const behavior = {
  type:"@fixture/config", version:"2026.11.02.1", globalArguments:z.record(z.string(),z.unknown()),
  resources:{state:{schema:z.record(z.string(),z.unknown()),lifetime:"1d",garbageCollection:10}},
  methods:Object.fromEntries(["check","apply"].map(method=>[method,{description:"Transport fixture",arguments:z.object({}),execute:async(_,ctx)=>{
  const g=ctx.globalArgs, s=JSON.parse(Deno.readTextFileSync(STATE));
+ Deno.writeTextFileSync(AUDIT,JSON.stringify(["cfgmgmt",g.path ?? "package"])+"\\n",{append:true});
  const installed=Boolean(s.installed), compliant=g.ensure==="absent" ? !installed : installed;
  const value={status:compliant?"compliant":"non_compliant",packages:g.packages ? [{name:g.packages[0],installed,version:s.installed}] : []};
  return {dataHandles:[await ctx.writeResource("state",g.nodeHost,value)]}; }}]))
@@ -58,7 +70,14 @@ class ToolNative(NativeTestCase):
         fixture = self.repo / 'fixture-ssh'
         fixture.write_text('#!' + sys.executable + '\n' + TRANSPORT.replace('STATE', repr(str(self.state))).replace('AUDIT', repr(str(self.audit))))
         fixture.chmod(0o700)
-        (self.repo / 'extensions/behaviors/fixture.ts').write_text(CONFIG.replace('STATE', json.dumps(str(self.state))))
+        worker = self.repo / 'worker-bin'
+        worker.mkdir()
+        for name in ('curl', 'gpg'):
+            command = worker / name
+            command.write_text('#!' + sys.executable + '\n' + WORKER.replace('STATE', repr(str(self.state))))
+            command.chmod(0o700)
+        self.native_env['PATH'] = str(worker) + ':' + __import__('os').environ['PATH']
+        (self.repo / 'extensions/behaviors/fixture.ts').write_text(CONFIG.replace('STATE', json.dumps(str(self.state))).replace('AUDIT', json.dumps(str(self.audit))))
         for name in ('write-209', 'remove-209'):
             path = f'workflows/workflow-operation-tool-{name}.yaml'
             workflow = yaml.safe_load((ROOT / path).read_text())
@@ -138,6 +157,8 @@ class ToolNative(NativeTestCase):
         self.assertEqual(result['error_code'], 'tool.repository_key_mismatch')
         self.assertIsNone(json.loads(self.state.read_text())['installed'])
         self.assertEqual(next(s for s in run['jobs'][0]['steps'] if s['name']=='Publish the signing key')['status'], 'skipped')
+        self.assertFalse(self.audit.exists(), 'A mismatched key must not contact the Node, even for cleanup or manager setup')
+        self.assertFalse(list((self.repo / '.swamp/tool-keys').glob('*')), 'Local staged keys must be cleaned after refusal')
 
 
 if __name__ == '__main__': unittest.main()
