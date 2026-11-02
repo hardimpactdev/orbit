@@ -159,11 +159,41 @@ export function footprintWorkflow(
     if (isBaseline && stage === "runtime" && swamp) {
       inputs.swamp_failure = expression(swamp.failure);
     }
+    const native = ["private-dns", "route-residue", "php-runtime", "tmpfiles"].includes(stage);
+    const nativeName = "native_" + name;
+    if (native) {
+      const snapshot = prepared ? "steps.prepare_footprint.outputs.snapshot" : "steps.admit.outputs.snapshot";
+      const required = `${snapshot}.footprint.artifacts.exists(a, a.name == ${JSON.stringify(stage)} && a.required)`;
+      const globals = {
+        nodeHost: expression(snapshot + ".ssh.target.host"), nodeUser: expression(snapshot + ".ssh.target.user"),
+        nodePort: expression(snapshot + ".ssh.target.port"), nodeIdentityFile: expression(snapshot + ".ssh.identity_file"), become: true,
+      };
+      const child = stage === "private-dns" ? "node-private-dns" : stage === "route-residue" ? "node-route-residue" : "node-php-runtime";
+      const intent: Fields = { ssh: expression(snapshot + ".ssh") };
+      if (stage === "private-dns") intent.dns = expression(snapshot + ".role_files.dns");
+      if (stage === "route-residue") Object.assign(intent, {
+        user: expression(snapshot + ".user"), home: expression(snapshot + ".role_files.home"),
+        agent_sha256: expression(snapshot + ".agent_sha256"), residue: expression(snapshot + ".role_files.residue"),
+      });
+      if (stage === "php-runtime") intent.php = { version: expression("self.version"), runtime_ini: expression(snapshot + ".role_files.php[self.version]") };
+      steps.push({
+        name: nativeName, labels: { role: "swamp" }, writes: true, allowFailure: true,
+        guard: expression(`!steps.admit.outputs.ready || !(${required})`),
+        ...(stage === "php-runtime" ? { forEach: { item: "version", in: expression(`steps.admit.outputs.ready && (${required}) ? ${snapshot}.role_files.php_versions : []`) } } : {}),
+        task: stage === "tmpfiles" ? {
+          type: "behavior", behaviorType: "@swamp/cfgmgmt/file", behaviorName: expression('"role-tmpfiles-" + string(inputs.node_id)'), methodName: "apply",
+          globalArgs: { ...globals, path: "/etc/tmpfiles.d/orbit.conf", content: expression(snapshot + ".role_files.tmpfiles"), owner: "root", group: "root", mode: "0644", ensure: "present" }, inputs: {},
+        } : { type: "workflow", workflowIdOrName: child, inputs: { ...root, intent } },
+      });
+      inputs.native_ok = expression(`!(${required}) || (` + (stage === "php-runtime"
+        ? `size(${snapshot}.role_files.php_versions) == size(steps.filter(k, k.startsWith("${nativeName}-"))) && steps.filter(k, k.startsWith("${nativeName}-")).all(k, steps[k].status == "succeeded")`
+        : `has(steps.${nativeName}) && steps.${nativeName}.status == "succeeded"`) + ")");
+    }
     steps.push({
       name,
       writes: true,
       guard: inactive,
-      ...(!role
+      ...(native ? { labels: { role: "swamp" }, dependsOn: [{ step: nativeName, condition: { type: "always" } }] } : !role
         ? {
           dependsOn: [{
             step: cancellation,
@@ -172,11 +202,12 @@ export function footprintWorkflow(
         }
         : {}),
       task: task(
-        isBaseline ? "baseline" : role ? "footprint" : "stage",
+        native ? "nativeFootprint" : isBaseline ? "baseline" : role ? "footprint" : "stage",
         inputs,
       ),
     }, {
       name: `${name}_proven`,
+      ...(native ? { labels: { role: "swamp" } } : {}),
       guard: inactive,
       dependsOn: [{ step: name, condition: { type: "succeeded" } }],
       task: {

@@ -27,6 +27,9 @@ it('captures a public role snapshot without account probes effects or private by
 
     expect($input['node_id'])->toBe($node->id)->and($input['role'])->toBe($role->value)
         ->and($input['footprint']['node_id'])->toBe($node->id)
+        ->and($input['ssh']['target']['host'])->toBe($node->wireguard_ip)
+        ->and($input['role_files']['home'])->toBe('/home/'.$node->user)
+        ->and($input['role_files']['php_versions'])->toBe([])
         ->and($input['footprint'])->not->toHaveKey('secret_hash')
         ->and($input['prerequisites'])->not->toHaveKeys(['user', 'group', 'home'])
         ->and(json_encode($input, JSON_THROW_ON_ERROR))->not->toContain(str_repeat('e', 64));

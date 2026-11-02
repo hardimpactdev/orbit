@@ -25,12 +25,6 @@ const RenderRefusal = z.object({
     error_code: z.literal("caddy.render_failed"),
     stage: z.literal("render"),
 }).strict();
-const Runtime = z.object({
-    version: z.string().regex(/^[0-9]+\.[0-9]+$/),
-    runtime_ini: z.string().max(65536),
-    release: z.object({ id: z.string(), codenames: z.array(z.string()) })
-        .strict(),
-}).strict();
 export type LocalDependencies = {
     system?: SystemTransport;
     action: FootprintAction;
@@ -40,14 +34,6 @@ export type LocalDependencies = {
         signal?: AbortSignal,
     ) => Promise<{ changed: boolean; error_code?: string }>;
     account: (user: string) => Promise<{ home: string; group: string }>;
-    dns: (
-        input: Record<string, unknown>,
-        signal?: AbortSignal,
-    ) => Promise<Record<string, unknown>>;
-    residue: (
-        snapshot: Snapshot,
-        signal?: AbortSignal,
-    ) => Promise<Record<string, unknown>>;
     network: (
         input: NonNullable<Snapshot["network"]>,
         signal?: AbortSignal,
@@ -179,58 +165,8 @@ export function footprintActions(deps: LocalDependencies) {
                     .result === "published",
             );
         }
-        if (stage === "php-runtime") {
-            const input = z.object({ configurations: z.array(Runtime).max(16) })
-                .strict().parse(payload);
-            let changed = false;
-            for (const configuration of input.configurations) {
-                const result = await call(
-                    "php.configure-runtime",
-                    configuration,
-                );
-                if (result.error_code) return refused(result.error_code);
-                changed = Changed.parse(result).changed || changed;
-            }
-            return entry(changed);
-        }
-        if (stage === "private-dns") {
-            const input = z.object({
-                listener: ObjectInput,
-                publication: ObjectInput,
-            }).strict().parse(payload);
-            const listener = await call(
-                "node.install-private-dns-listener",
-                input.listener,
-            );
-            if (listener.error_code) return refused(listener.error_code);
-            const installed = z.object({
-                installed: z.literal(true),
-                changed: z.boolean(),
-            }).parse(listener);
-            const publication = await deps.dns(input.publication, signal);
-            if (publication.error_code) return refused(publication.error_code);
-            z.object({ ready: z.literal(true) }).parse(publication);
-            return entry(installed.changed || publication.changed !== false);
-        }
-        if (stage === "route-residue") {
-            const result = await deps.residue(snapshot, signal);
-            if (result.error_code) {
-                return {
-                    stage,
-                    ok: true,
-                    entry: {
-                        name: "route-residue",
-                        status: "skipped",
-                        reason: "route_residue_cleanup_failed",
-                    },
-                };
-            }
-            return entry(Changed.parse(result).changed);
-        }
-        const command = stage === "caddy-package"
-            ? "caddy.install-package"
-            : "node.publish-tmpfiles";
-        const result = await call(command, ObjectInput.parse(payload));
+        if (stage !== "caddy-package") throw new Error("This footprint stage belongs to its native workflow");
+        const result = await call("caddy.install-package", ObjectInput.parse(payload));
         return result.error_code
             ? refused(result.error_code)
             : entry(Changed.parse(result).changed);
@@ -244,9 +180,8 @@ export function convergeFootprintStage(
     gateway: GatewayOperation,
     binaryChanged: boolean,
     signal?: AbortSignal,
-    scripts?: { php: string; footprint: string },
 ) {
-    return footprintActions(convergeDependencies(scripts))(
+    return footprintActions(convergeDependencies())(
         stage,
         snapshot,
         gateway,

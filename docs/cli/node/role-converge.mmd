@@ -63,7 +63,7 @@ sequenceDiagram
   %%> - Caddy roles (`gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, `analytics`, `swamp`): Caddy package floor, the reload kernel setting, then the Caddyfile; validates it first and reloads Caddy gracefully
   %%> - `app-dev`, `app-prod`: the managed PHP-FPM module; validates each running master and reloads the valid ones gracefully
   %%> - `app-dev`: the `/etc/tmpfiles.d/orbit.conf` rule for `/tmp/orbit-*` and `/dev/shm/orbit-*`; restarts nothing
-  %%> - `vpn`, through `node:converge`: the private DNS listener, records and catalog; restarts dnsmasq or the listener only for a change, and restores the last good copy when the new one fails its check
+  %%> - `vpn`, through `node:converge`: the private DNS listener, records and catalog; restarts dnsmasq or the listener only for a change, and checks the loaded catalog
   %%> - `websocket`: the Reverb service
   %%> - `metrics`: the same steps as `metrics:enable`; a Prometheus config change is a reload
   %%> - `swamp`: Orbit's Caddy and the 2 worker services `orbit-swamp-worker@a` and `@b`
@@ -136,6 +136,26 @@ sequenceDiagram
     %%> What it checks:
     %%> - native assert confirms the observer actions succeeded
   end
+  opt private DNS footprint is required
+    SW->>N: native_private_dns
+    %%> What it does:
+    %%> - the shared node-private-dns workflow applies listener files, units, records and catalog, then checks the loaded catalog
+  end
+  opt PHP runtime footprint is required
+    SW->>N: native_php_runtime
+    %%> What it does:
+    %%> - one forEach runs node-php-runtime for each admitted PHP version, with official file and link resources, validation and reload
+  end
+  opt tmpfiles footprint is required
+    SW->>N: native_tmpfiles
+    %%> What it does:
+    %%> - official cfgmgmt file applies /etc/tmpfiles.d/orbit.conf
+  end
+  opt removed Routes left residue
+    SW->>N: native_route_residue
+    %%> What it does:
+    %%> - the shared node-route-residue workflow removes each admitted leftover; its failed cleanup is recorded as skipped
+  end
   SW->>N: Check the role<br/>@swamp/cfgmgmt check
   %%> What it does:
   %%> - checks the role's services are active and answer, such as Caddy, PHP-FPM or Reverb
@@ -166,7 +186,7 @@ sequenceDiagram
     %%> - the role is marked failed at `converge:STEP`, with the step's own error code
     %%> - task #5171 fails
     %%> On the Node:
-    %%> - finished steps stay; there is no rollback, except the DNS listener's restore of its last good copy
+    %%> - finished steps stay; there is no rollback, including DNS
     %%> - running services keep their last valid configuration, because nothing reloads with one that fails validation
     %%> Retry:
     %%> - run the same command again after fixing the cause; it is a new task

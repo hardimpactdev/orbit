@@ -73,6 +73,8 @@ export const RoleSnapshot = z.object({
   prerequisites: Prerequisites,
   firewall: Firewall.nullable(),
   footprint: Footprint,
+  role_files: z.record(z.string(), z.unknown()).optional(),
+  ssh: z.record(z.string(), z.unknown()).optional(),
   cli: CliPlan,
   runtime: RoleRuntime.nullable().optional(),
   javascript: z.record(z.string(), z.unknown()).nullable().optional(),

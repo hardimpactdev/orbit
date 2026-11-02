@@ -16,6 +16,7 @@ use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\ToolPin;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
+use App\Support\ValidatedData;
 
 /** Desired records only. Native recipe checkpoints own every host inspection and effect. */
 final readonly class RecipeDirectInput
@@ -59,7 +60,7 @@ final readonly class RecipeDirectInput
             'automatic' => $automatic, 'daytime' => $node->roles->isNotEmpty() && $node->roles->every(static fn ($role): bool => $role->role->value === 'app-dev'),
             'recipe' => NodeRecipeProgram::payload($node, $recipe, array_diff_key($tools, array_flip($phpNames))), 'php' => $php,
             'incus_hold' => $automatic ? array_map(static fn (ToolPin $pin): string => $pin->version, $incus) : [],
-            'footprint' => $footprint, 'cli' => $this->cli->input($node),
+            'footprint' => $footprint, 'role_files' => $this->footprint->roles($node, ValidatedData::object($footprint['payloads'])), 'cli' => $this->cli->input($node),
             'ssh' => app(SwampSshExecutionInput::class)->forNode($node),
         ];
     }

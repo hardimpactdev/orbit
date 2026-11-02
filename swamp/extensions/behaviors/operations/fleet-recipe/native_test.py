@@ -40,8 +40,10 @@ class RecipeNative(NativeTestCase):
         self.path=self.repo/'workflows/workflow-operation-fleet-recipe-direct.yaml'
         self.path.write_text(yaml.safe_dump(workflow,sort_keys=False))
         # The unselected native children still need static identities for validation.
-        for number,name in enumerate(['operation-route-caddy','operation-fleet-peer-dns','route-certificate-remove','route-lan-apply','node-caddy-package']):
+        for number,name in enumerate(['operation-route-caddy','operation-fleet-peer-dns','route-certificate-remove','route-lan-apply','node-caddy-package','node-private-dns','node-php-runtime','node-route-residue']):
             child={'id':f'c9d03e50-2fe8-4ab8-83bf-{number:012d}','name':name,'inputs':yaml.safe_load((ROOT/f'workflows/workflow-{name}.yaml').read_text())['inputs'],'jobs':[{'name':'fake','steps':[{'name':'apply','task':{'type':'assert','expr':'true','message':'Fixture child succeeded'}}]}]}
+            if name.startswith('node-'):
+                child['jobs'][0]['steps'][0]['task']={'type':'behavior','behaviorType':'@fixture/recipe-ssh','behaviorName':name,'methodName':'exec','inputs':{'argv':['native-child',name]}}
             (self.repo/f'workflows/workflow-{name}.yaml').write_text(yaml.safe_dump(child))
         self.intent={'node_id':9,'identity':'sha256:'+'b'*64,'snapshot':'20261031T000000Z','agent_sha256':'a'*64,'cli_version':'0.12.0','automatic':False,'daytime':False,'recipe':{'user':'orbit','snapshot':'20261031T000000Z','tools':{}},'php':None,'incus_hold':[],
             'footprint':{'schema_version':1,'node_id':9,'agent_sha256':'a'*64,'force_artifacts':True,'first_visit':False,'refusal':None,'network':None,'artifacts':[{'name':name,'digest':'c'*64,'required':True,'repair':False} for name in ('agent','tmpfiles')],'payloads':{'agent':{'configuration':'public-config','certificate':'public-ca','unit':'[Service]\nProtectHome=yes\n','apps_root':None,'checkouts':[],'url':'https://delivery.test/observer'},'tmpfiles':{'rule':'e /tmp/orbit-* - - - 1d'}}},
@@ -57,6 +59,9 @@ class RecipeNative(NativeTestCase):
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
     def start(self,success=True):
+        payloads=self.intent['footprint']['payloads']
+        php={part['version']:part.get('runtime_ini','public ini') for part in payloads.get('php-runtime',{}).get('configurations',[])}
+        self.intent['role_files']={'user':'orbit','home':'/home/orbit','php':php,'php_versions':list(php),'dns':payloads.get('private-dns'),'tmpfiles':payloads.get('tmpfiles',{}).get('rule'),'residue':payloads.get('route-residue')}
         self.cli('workflow','validate','operation-fleet-recipe-direct')
         result=self.cli('workflow','run','operation-fleet-recipe-direct','--input',json.dumps({'operation_id':7,'node_id':self.intent['node_id'],'kind':'fleet.recipe','intent':self.intent,'execution_secrets':{'observer':{'vault':'orbit-control-inputs','key':'recipe-operation-7-observer'}}}),success=success)
         return json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]['id']
@@ -116,11 +121,11 @@ class RecipeNative(NativeTestCase):
         root=self.start()
         history=self.history(root)
         names={s['name']:s['status'] for j in history['jobs'] for s in j['steps']}
-        for name in ('php_plan-0','php_build-0','php_runtime-0','php_runtime-1','caddy-0','listener-0','dns-0','residue_php-0','residue_cert-route-1','residue_lan-0'):
+        for name in ('php_plan-0','php_build-0','php_runtime-0','php_runtime-1','caddy-0','dns-0','residue_proven'):
             self.assertEqual(names[name],'succeeded',name)
-        self.assertEqual(self.calls().count('php.configure-runtime'),2)
-        calls=self.calls()
-        self.assertLess(calls.index('/usr/bin/systemctl restart orbit-private-dns.service'),calls.index('node.private-dns-health'))
+        self.assertEqual(self.calls().count('native-child node-php-runtime'),2)
+        self.assertIn('native-child node-private-dns',self.calls())
+        self.assertIn('native-child node-route-residue',self.calls())
 
     def test_private_dns_validation_refusal_keeps_live_files_untouched(self):
         self.save(dnsValidationInvalid=True)
@@ -129,7 +134,7 @@ class RecipeNative(NativeTestCase):
         root=self.start(success=False)
         history=self.history(root)
         steps={s['name']:s for job in history['jobs'] for s in job['steps']}
-        self.assertEqual(steps['dns_records-0']['status'],'skipped')
+        self.assertEqual(steps['dns-0']['status'],'failed')
         self.assertNotIn('node.private-dns-restore',self.calls())
 
     def test_private_dns_failed_catalog_proof_stops_delivery(self):
@@ -137,11 +142,9 @@ class RecipeNative(NativeTestCase):
         self.intent['footprint']['artifacts'].append({'name':'private-dns','digest':'c'*64,'required':True,'repair':False})
         self.intent['footprint']['payloads']['private-dns']={'listener':{},'publication':{'records':'public records','catalog':'{}'}}
         self.start(success=False)
-        self.assertIn('node.private-dns-health',self.calls())
+        self.assertIn('native-child node-private-dns',self.calls())
         self.assertNotIn('delivery',self.calls())
-        self.assertIn('node.private-dns-restore',self.calls())
-        self.assertIn('/usr/bin/systemctl stop orbit-private-dns.service',self.calls())
-        self.assertIn('/usr/bin/systemctl disable orbit-private-dns.socket',self.calls())
+        self.assertNotIn('node.private-dns-restore',self.calls())
 
     def test_refusal_before_first_host_effect(self):
         self.intent['footprint']['refusal']='node.footprint_failed'

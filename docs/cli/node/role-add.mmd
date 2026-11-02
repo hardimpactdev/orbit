@@ -111,6 +111,26 @@ sequenceDiagram
     %%> - validates the new Prometheus configuration with `promtool`, publishes it, and reloads Prometheus while it runs
     %%> - no restart, so collection from other Nodes continues
   end
+  opt private DNS footprint is required
+    SW->>N: native_private_dns
+    %%> What it does:
+    %%> - the shared node-private-dns workflow applies listener files, units, records and catalog, then checks the loaded catalog
+  end
+  opt PHP runtime footprint is required
+    SW->>N: native_php_runtime
+    %%> What it does:
+    %%> - one forEach runs node-php-runtime for each admitted PHP version, with official file and link resources, validation and reload
+  end
+  opt tmpfiles footprint is required
+    SW->>N: native_tmpfiles
+    %%> What it does:
+    %%> - official cfgmgmt file applies /etc/tmpfiles.d/orbit.conf
+  end
+  opt removed Routes left residue
+    SW->>N: native_route_residue
+    %%> What it does:
+    %%> - the shared node-route-residue workflow removes each admitted leftover; its failed cleanup is recorded as skipped
+  end
   SW->>N: Check the role<br/>@swamp/cfgmgmt check
   %%> What it does:
   %%> - checks the role's services are active and answer, such as Caddy, PHP-FPM or Reverb

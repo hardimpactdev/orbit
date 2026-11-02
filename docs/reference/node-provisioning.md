@@ -201,7 +201,7 @@ The `ci-runner` role selects its recipe tool set through the same role union as 
 
 `--dry-run` prints desired pins and stored managed Tool intent without contacting the Node. Each selected tool has `installed: null`, `changed: false` and `status: unobserved`. It does not inspect package origins, fetch indexes or simulate an installation. Native preflight performs those host checks after admission. Ubuntu packages use the [version floor and origin checks](/reference/compute-drivers#recipe-schema); Sury PHP builds stay exact.
 
-Native steps reuse the canonical Node footprint and CLI convergence actions within the same root.
+Recipe and role roots use the shared native PHP runtime, private DNS and Route residue workflows. Tmpfiles uses one official file resource. CLI convergence stays in the same root.
 
 Observer configuration and public role files use official cfgmgmt file resources. Observer identity proof reads only the existing key digest with a bounded SSH command; a native assertion stops file publication if it differs from the vault digest. Checkout permission cleanup uses a bounded find command and changes only existing regular .env files. The package and publication tools keep their existing resource locks. The package transaction repairs only the exact snapshot source file written by earlier Orbit convergence, restoring stock Ubuntu archive, updates, backports and security sources. It preserves other source content.
 

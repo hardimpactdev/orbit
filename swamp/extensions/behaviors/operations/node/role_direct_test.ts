@@ -191,3 +191,16 @@ Deno.test("CLI uses the canonical admitted public plan and pin", async () => {
     agent_sha256: admission.snapshot.agent_sha256,
   }]);
 });
+
+Deno.test("native footprint failure cannot become a successful required part", async () => {
+  for (const stage of ["php-runtime", "route-residue"] as const) {
+    const f = fixture();
+    f.operation.input.footprint.artifacts.push({ name: stage, digest: "c".repeat(64), required: true, repair: false });
+    const admission = await admitted(f);
+    const outcome = await f.root.methods.nativeFootprint.execute({ ...args, admission, stage, binary_changed: false, native_ok: false }, f.ctx);
+    assertEquals(outcome.ok, stage === "route-residue");
+    const part = f.writes.find((write) => write.name === stage)!.value as Record<string, unknown>;
+    assertEquals(stage === "route-residue" ? (part.entry as Record<string, unknown>).status : part.failed_artifact, stage === "route-residue" ? "skipped" : stage);
+    assertEquals(f.effects(), 0);
+  }
+});

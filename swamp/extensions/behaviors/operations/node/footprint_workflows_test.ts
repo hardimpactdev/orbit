@@ -42,7 +42,7 @@ Deno.test("shared chain installs the admitted agent before role effects and foot
         const jobs = workflow.jobs as Job[];
         const stages = jobs.flatMap((job) => job.steps)
             .filter((step) =>
-                ["stage", "footprint", "baseline"].includes(
+                ["stage", "footprint", "nativeFootprint", "baseline"].includes(
                     step.task.methodName ?? "",
                 ) && step.task.inputs?.stage !== undefined
             );
@@ -98,8 +98,9 @@ Deno.test("shared chain installs the admitted agent before role effects and foot
         const children = jobs.flatMap((job) => job.steps).filter((step) =>
             step.task.type === "workflow"
         );
-        assertEquals(children.length, 1);
-        for (const child of children) {
+        assertEquals(children.length, 4);
+        assertEquals(children.map((child) => (child.task as Record<string, unknown>).workflowIdOrName).filter((name) => name !== "node-role-certificate-publish").sort(), ["node-php-runtime", "node-private-dns", "node-route-residue"]);
+        for (const child of children.filter((child) => (child.task as Record<string, unknown>).workflowIdOrName === "node-role-certificate-publish")) {
             assertEquals(
                 (child.task as Record<string, unknown>).workflowIdOrName,
                 "node-role-certificate-publish",

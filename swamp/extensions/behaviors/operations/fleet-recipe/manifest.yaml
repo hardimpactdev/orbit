@@ -11,6 +11,4 @@ behaviors:
   - operations/fleet-recipe/fleet_release.ts
 additionalFiles:
   - scripts/recipe.py
-  - scripts/php_runtime.py
-  - scripts/footprint.py
   - scripts/cli.py

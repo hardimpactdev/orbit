@@ -460,6 +460,20 @@ export function nodeRoleAdd(
                     return { ok: outcome.ok };
                 },
             },
+            nativeFootprint: {
+                description: "Shape the outcome of the official footprint resources",
+                arguments: FootprintArgs.extend({ native_ok: z.boolean() }),
+                execute: async (args: z.infer<typeof FootprintArgs> & { native_ok: boolean }, ctx: Context) => {
+                    const artifact = args.admission.snapshot.footprint.artifacts.find((a) => a.name === args.stage);
+                    const outcome = FootprintOutcome.parse(!artifact ? { stage: args.stage, ok: true }
+                        : !artifact.required ? { stage: args.stage, ok: true, entry: { name: args.stage, status: "unchanged" } }
+                        : args.native_ok ? { stage: args.stage, ok: true, entry: { name: args.stage, status: "applied" } }
+                        : args.stage === "route-residue" ? { stage: args.stage, ok: true, entry: { name: args.stage, status: "skipped", reason: "route_residue_cleanup_failed" } }
+                        : { stage: args.stage, ok: false, error_code: "node.footprint_failed", failed_artifact: args.stage });
+                    await ctx.writeResource("footprint_outcome", args.stage, outcome);
+                    return { ok: outcome.ok };
+                },
+            },
             footprint: {
                 description:
                     "Compose a canonical footprint action in the role root on its exact Node",
@@ -503,20 +517,6 @@ export function nodeRoleAdd(
                                 gateway(args, ctx),
                                 args.binary_changed,
                                 ctx.signal,
-                                footprint === convergeFootprintStage
-                                    ? {
-                                        php: await Deno.readTextFile(
-                                            ctx.extensionFile(
-                                                "scripts/php_runtime.py",
-                                            ),
-                                        ),
-                                        footprint: await Deno.readTextFile(
-                                            ctx.extensionFile(
-                                                "scripts/footprint.py",
-                                            ),
-                                        ),
-                                    }
-                                    : undefined,
                             ),
                     );
                     if (

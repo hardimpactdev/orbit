@@ -749,15 +749,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/node/footprint_system.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "/usr/bin/python3",
-        "/usr/bin/sudo"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/node/gateway_role_system.ts",
       "rule": "custom-control",
       "count": 18,

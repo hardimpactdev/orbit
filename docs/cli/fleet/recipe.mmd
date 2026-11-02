@@ -100,6 +100,26 @@ sequenceDiagram
     %%> What it checks:
     %%> - native assert confirms the observer actions succeeded
   end
+  opt private DNS footprint is required
+    SW->>N: dns
+    %%> What it does:
+    %%> - node-private-dns applies the listener, units, records and catalog through official resources, then proves the loaded catalog
+  end
+  opt PHP runtime footprint is required
+    SW->>N: php_runtime
+    %%> What it does:
+    %%> - one forEach calls node-php-runtime for each admitted PHP version
+  end
+  opt tmpfiles footprint is required
+    SW->>N: tmpfiles
+    %%> What it does:
+    %%> - official cfgmgmt file applies /etc/tmpfiles.d/orbit.conf
+  end
+  opt removed Routes left residue
+    SW->>N: residue_proven
+    %%> What it does:
+    %%> - node-route-residue removes the admitted leftovers, best effort
+  end
   SW->>N: Check the recipe<br/>versions · service health
   %%> What it does:
   %%> - checks every pinned version and the health of each affected service
