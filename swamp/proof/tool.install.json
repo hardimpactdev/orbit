@@ -5,6 +5,7 @@
   "budget_seconds": 300,
   "queue_timeout_seconds": 60,
   "clean_target": [
+    ["timeout", "120", "apt-get", "update"],
     ["sh", "-c", "dpkg --purge rex >/dev/null 2>&1; true"]
   ],
   "request": {"method": "POST", "path": "tools", "body": {"node_id": "${node.target}", "manager": "apt", "package": "rex", "repository": {"name": "rex", "uris": ["https://pkgs.superlogical.com/rex/apt"], "suites": ["preview"], "components": ["main"], "signing_key": {"url": "https://pkgs.superlogical.com/rex/keys/rex-archive-keyring.gpg", "fingerprint": "E28636AC71905C6DDE40C1EDFAA6B80F641307A7"}}}},
