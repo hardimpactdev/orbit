@@ -135,10 +135,14 @@ it('refuses a baseline after the implementer started', function (): void {
 it('supplies names-only vault credentials and full check intent without a private reader', function (): void {
     [$group, $task] = native_check_group();
     $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
+    $task->update(['deliverables' => [['id' => 'tests', 'type' => 'command', 'description' => 'Tests pass.', 'command' => 'composer test', 'directory' => '.', 'fails_on_base' => false, 'paths' => []]]]);
     $operation = native_check_start($group, $task, 'handoff');
     $public = app(TaskCheckProjection::class)->input($operation);
+    // Swamp reads the command deliverables and the setup list as they are; no serialized copies.
     expect($public['intent']['ssh_execution']['target']['host'])->toBe('10.44.0.91')
-        ->and($public['intent']['project_command_json'])->toBe(json_encode(['command' => $operation->input['command']], JSON_THROW_ON_ERROR))
+        ->and($public['intent'])->not->toHaveKeys(['setup_steps', 'project_command_json'])
+        ->and($public['intent']['command_deliverables'])->toHaveCount(1)
+        ->and($public['intent']['command_deliverables'][0])->not->toHaveKey('input_json')
         ->and($public['execution_secrets']['checks_token']['vault'])->toBe('orbit-control-inputs')
         ->and(json_encode($public))->not->toContain('synthetic-check-read')->not->toContain('synthetic-check-write')
         ->and(app(DirectOperation::class)->definition('tasks.check'))->not->toHaveKey('private_material')

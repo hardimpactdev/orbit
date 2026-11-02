@@ -37,18 +37,12 @@ class NativeCheck(NativeRepository):
 
     def execute_check(self, success=True, has_result=True):
         intent = self.inputs["intent"]
-        intent["setup_steps"] = [
-            {**x, "input_json": json.dumps(x)} for x in intent["setup"]
-        ]
         intent["command_deliverables"] = [
-            {**x, "input_json": json.dumps(x)}
-            for x in intent["deliverables"]
-            if x["type"] == "command"
+            x for x in intent["deliverables"] if x["type"] == "command"
         ]
         intent["execution_references_json"] = json.dumps(
             self.inputs["execution_secrets"]
         )
-        intent["project_command_json"] = json.dumps({"command": intent["command"]})
         flow = yaml.safe_load(
             (ROOT / "workflows/workflow-operation-task-check.yaml").read_text()
         )

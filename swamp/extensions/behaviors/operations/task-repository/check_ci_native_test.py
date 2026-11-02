@@ -27,9 +27,7 @@ class NativeCheckCI(NativePublicationFixture):
             ssr_port=None,
             admitted_at=datetime.datetime.now(datetime.UTC).isoformat(),
         )
-        intent["setup_steps"] = []
         intent["command_deliverables"] = []
-        intent["project_command_json"] = json.dumps({"command": intent["command"]})
         self.inputs["execution_secrets"] = {}
         for name, level in [("github_token", "write"), ("checks_token", "read")]:
             key = "task-check-" + level + "-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"

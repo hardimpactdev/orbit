@@ -19,11 +19,8 @@ final readonly class TaskCheckProjection implements DirectOperationProjection
     public function input(Operation $operation): array
     {
         $intent = array_diff_key($operation->input, ['execution_secrets' => true]);
-        $serialize = static fn (array $step): array => [...$step, 'input_json' => json_encode($step, JSON_THROW_ON_ERROR)];
-        $intent['setup_steps'] = array_map($serialize, array_map(ValidatedData::object(...), is_array($intent['setup']) ? $intent['setup'] : []));
-        $intent['command_deliverables'] = array_map($serialize, array_values(array_filter(array_map(ValidatedData::object(...), is_array($intent['deliverables']) ? $intent['deliverables'] : []), static fn (array $item): bool => $item['type'] === 'command')));
+        $intent['command_deliverables'] = array_values(array_filter(array_map(ValidatedData::object(...), is_array($intent['deliverables']) ? $intent['deliverables'] : []), static fn (array $item): bool => $item['type'] === 'command'));
         $intent['execution_references_json'] = json_encode($operation->input['execution_secrets'] === [] ? (object) [] : $operation->input['execution_secrets'], JSON_THROW_ON_ERROR);
-        $intent['project_command_json'] = json_encode(['command' => $intent['command']], JSON_THROW_ON_ERROR);
 
         return ['intent' => $intent, 'execution_secrets' => $operation->input['execution_secrets']];
     }
