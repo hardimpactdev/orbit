@@ -436,8 +436,10 @@ def realtime(ids):
             continue
         request(f'nodes/{ids[node["key"]]}/converge', {})
         if delivery.is_file():
+            # A running binary cannot be replaced in place ("text file busy"), so the agent stops first.
+            run(['incus', 'exec', node['key'], '--', 'systemctl', 'stop', 'orbit-agent'])
             run(['incus', 'file', 'push', '--mode', '0755', str(delivery), f'{node["key"]}/usr/local/bin/orbit-agent'])
-            run(['incus', 'exec', node['key'], '--', 'systemctl', 'restart', 'orbit-agent'])
+            run(['incus', 'exec', node['key'], '--', 'systemctl', 'start', 'orbit-agent'])
         run(['incus', 'exec', node['key'], '--', 'systemctl', 'is-active', '--quiet', 'orbit-agent'])
 
 
