@@ -76,8 +76,7 @@ export const behavior = {
   }},
 };
 ''')
-            for name in ('orbit_group_runs', 'orbit_stage'):
-                shutil.copy(REPO / f'extensions/behaviors/{name}.ts', ext / f'{name}.ts')
+            shutil.copy(REPO / 'extensions/behaviors/orbit_group_runs.ts', ext / 'orbit_group_runs.ts')
             # Real project refresh and factory status, without GitHub or task effects.
             project = json.loads((REPO / 'tests/fixtures/project-extensions/nckrtl-com.json').read_text())
             (ext / 'fixture_project.ts').write_text('import { projectConfig } from "./_lib/project_extension.ts";\nexport const behavior = projectConfig("@nckrtl/project-native-proof", ' + json.dumps(project) + ');')
@@ -86,14 +85,6 @@ export const behavior = {
             model = root / 'models/@swamp/software-factory/dependency-package.yaml'
             model.parent.mkdir(parents=True)
             shutil.copy(REPO / 'models/@swamp/software-factory/dependency-package.yaml', model)
-            (ext / 'fixture_factory.ts').write_text('''import { z } from "npm:zod@4";
-export const behavior = {
- type: "@fixture/stage-factory", version: "2026.10.31.1", globalArguments: z.object({}),
- resources: { proof: { schema: z.object({ workItem: z.string(), name: z.string(), payload: z.record(z.string(), z.unknown()) }), lifetime: "1h", garbageCollection: 1 } },
- methods: { record_evidence: { description: "Retain stage evidence in scratch only", arguments: z.object({ workItem: z.string(), name: z.string(), payload: z.record(z.string(), z.unknown()) }),
- execute: async (args: Record<string, unknown>, ctx: { writeResource: (s: string, n: string, v: unknown) => Promise<unknown> }) => ({ dataHandles: [await ctx.writeResource("proof", "proof", args)] }) } }
-};
-''')
             for name in ('scanner', 'leaf', 'refusal'):
                 shutil.copy(REPO / f'tests/fixtures/native-host/{name}.ts', ext / f'{name}.ts')
             env = {**os.environ, 'SWAMP_NO_UPDATE_CHECK': '1', 'SWAMP_NO_TELEMETRY': '1',
@@ -114,7 +105,6 @@ export const behavior = {
                 self.assertEqual(result.returncode, 0, 'Native command failed: ' + ' '.join(args[:3]) + result.stderr[-1000:])
                 return reply(result.stdout)
 
-            cli('behavior', 'create', '@fixture/stage-factory', 'stage-factory')
             cli('behavior', 'run', '@nckrtl/project-native-proof', 'configuration', 'project-native-proof')
             cli('behavior', 'run', 'dependency-package', 'status')
             workflow = cli('workflow', 'create', 'native-host-proof')
@@ -123,11 +113,7 @@ export const behavior = {
                 'jobs': [{'name': 'proof', 'steps': [
                     {'name': 'remote', 'task': {'type': 'model_method', 'modelType': '@fixture/remote-refusal', 'modelName': 'refusal', 'methodName': 'probe'}},
                     {'name': 'coordinator', 'dependsOn': [{'step': 'remote', 'condition': {'type': 'succeeded'}}],
-                     'task': {'type': 'model_method', 'modelType': '@fixture/native-coordinator', 'modelName': 'coordinator', 'methodName': 'probe'}},
-                    {'name': 'stage', 'dependsOn': [{'step': 'coordinator', 'condition': {'type': 'succeeded'}}],
-                     'task': {'type': 'model_method', 'modelType': '@nckrtl/orbit-stage', 'modelName': 'stage-proof', 'methodName': 'report',
-                              'globalArgs': {'factory': 'stage-factory'},
-                              'inputs': {'workItem': 'native-proof', 'stage': 'review', 'key': 'native-proof.review.c1', 'runId': 'review-proof', 'worktree': '/unused', 'subProject': '.', 'planCommit': 'a'*40}}}]}]}))
+                     'task': {'type': 'model_method', 'modelType': '@fixture/native-coordinator', 'modelName': 'coordinator', 'methodName': 'probe'}}]}]}))
             for name in ('groups-driver', 'group-fanout', 'group-run'):
                 shutil.copy(REPO / f'workflows/workflow-{name}.yaml', root / f'workflows/workflow-{name}.yaml')
             definition = cli('behavior', 'create', '@nckrtl/orbit-group-runs', 'orbit-group-runs')
@@ -175,10 +161,6 @@ export const behavior = {
                     self.assertTrue(nested[0]['nested'])
                     self.assertNotIn(nested[0]['pid'], (serve.pid, worker.pid))
                     self.assertEqual(nested[0]['runId'], 'coordinator-proof')
-                    evidence = cli('data', 'query', 'modelName == "stage-factory" && name == "proof"', '--select', 'attributes', *flags)['results']
-                    self.assertEqual(len(evidence), 1)
-                    self.assertEqual(evidence[0]['name'], 'review-run')
-                    self.assertEqual(evidence[0]['payload']['runId'], 'review-proof')
                     # Real shipped coordinator: the former unplaced step is refused;
                     # the shipped placed step runs on the worker with its native scratch context.
                     driver = root / 'workflows/workflow-groups-driver.yaml'

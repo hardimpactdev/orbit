@@ -2,60 +2,6 @@
   "schema": 1,
   "entries": [
     {
-      "file": "bin/effects/consult.sh",
-      "rule": "shellcheck.SC1091",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "bin/effects/fake.sh",
-      "rule": "shellcheck.SC1091",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "bin/effects/fake.sh",
-      "rule": "shellcheck.SC2012",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "bin/effects/fake.sh",
-      "rule": "shellcheck.SC2153",
-      "count": 2,
-      "evidence": []
-    },
-    {
-      "file": "bin/effects/handoff.sh",
-      "rule": "shellcheck.SC1091",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "bin/effects/handoff.sh",
-      "rule": "shellcheck.SC2012",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "bin/effects/implement.sh",
-      "rule": "shellcheck.SC1091",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "bin/effects/mechanical.sh",
-      "rule": "shellcheck.SC1091",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "bin/effects/review.sh",
-      "rule": "shellcheck.SC1091",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "bin/native-host-start.py",
       "rule": "ruff.I001",
       "count": 1,
@@ -1607,14 +1553,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/orbit_subtask.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": [
-        "lock"
-      ]
-    },
-    {
       "file": "extensions/behaviors/production-smoke/failure.ts",
       "rule": "gateway-http",
       "count": 1,
@@ -1732,12 +1670,6 @@
     {
       "file": "workflows/workflow-production-smoke.yaml",
       "rule": "unknown-workflow",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-stage-implement.yaml",
-      "rule": "vault-placement",
       "count": 1,
       "evidence": []
     },

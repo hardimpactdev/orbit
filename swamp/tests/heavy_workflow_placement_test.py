@@ -42,7 +42,7 @@ class HeavyWorkflowPlacementTest(unittest.TestCase):
         horizon = yaml.safe_load((REPO / 'workflows/workflow-horizon-new-dawn-detect.yaml').read_text())
         self.assertEqual(horizon['jobs'][1]['target'], '${{ inputs.worker }}')
         self.assertEqual(horizon['jobs'][1]['labels'], {})
-        for name in ('subtasks-driver', 'dependency-results-prune'):
+        for name in ('dependency-results-prune',):
             path = REPO / f'workflows/workflow-{name}.yaml'
             workflow = yaml.safe_load(path.read_text())
             self.assertEqual(workflow['labels'], {'pool': 'migration', 'node': '209'}, name)
