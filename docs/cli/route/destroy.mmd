@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R1-R4 + round 2 (route.destroy cleanup runs in the workflow; the Gateway deletes the record on the terminal result), single-swamp-node. docs/cli/route.mdx, docs/reference/routes.md (Remove a Route).
+  %% Tightened: flow-tighten 2026-11-02, rules 3, 17, 22 (DNS and its grace only outside the TLD; site and certificate withdrawn in one step, the mirror of route:create; LAN rules in the mirrored opt; cfgmgmt file/firewall).
   %% status: draft
   %% command: route:destroy
   %% kind: route.destroy
@@ -62,7 +63,10 @@ sequenceDiagram
     %%> - a Node that does not answer is skipped by every later step
     %%> - a Node that answers keeps every step; a failure on it still stops the removal
   end
+  opt domain outside the TLD
   SW->>V: Remove private DNS<br/>records + catalog, then reload
+  %%> When:
+  %%> - only for a domain outside the Cluster or Node TLD; private DNS answers the whole TLD, so `shop.test` inside it has no record
   %%> What it does:
   %%> - removes `shop.test` from the private DNS records
   %%> - checks the loaded catalog and a DNS reply
@@ -71,14 +75,19 @@ sequenceDiagram
   Note over SW: Wait the DNS grace<br/>31 s: TTL 30 s + 1 s
   %%> Why:
   %%> - resolvers that honor the TTL stop asking for the name before its site leaves
-  SW->>N: Withdraw the Caddy site<br/>caddy validate, then reload
+  end
+  SW->>N: Withdraw site, remove cert<br/>@swamp/cfgmgmt/file absent
   %%> How:
   %%> - Swamp reaches every captured Node over `@swamp/ssh` from 209
   %%> What it does:
   %%> - removes Route 14's site blocks on the workload, the Router and the Ingress
   %%> - validates the Caddyfile, then reloads Caddy; never a restart (rule 7)
+  %%> - then removes the certificate scopes owned by Route 14 on each Node, with `ensure: absent`
+  %%> Why one step:
+  %%> - the mirror of "Install cert, publish site" in `route:create`
   %%> Kept:
   %%> - Caddy itself and the Node's shared runtime
+  %%> - each target's own Instance certificate, until `instance:destroy`
   opt development targets
     SW->>N: Converge PHP-FPM pools<br/>php-fpm -t, then reload
     %%> What it does:
@@ -87,21 +96,18 @@ sequenceDiagram
     %%> Not included:
     %%> - a production target keeps its dedicated PHP-FPM service until `instance:destroy`
   end
-  SW->>N: Remove the certificates<br/>route-certificate-remove
-  %%> What it does:
-  %%> - removes the certificate scopes owned by Route 14 on each Node
-  %%> Refuses:
-  %%> - a scope that a remaining Caddy site still names
-  %%> Kept:
-  %%> - each target's own Instance certificate, until `instance:destroy`
-  SW->>N: Remove unused LAN rules<br/>ufw delete · Ingress 80/443
+  opt Cluster-scoped or public
+  SW->>N: Remove unused LAN rules<br/>@swamp/cfgmgmt/firewall absent
+  %%> When:
+  %%> - mirrors the `route:create` opts that add the Router LAN rule and open the Ingress edge
   %%> What it does:
   %%> - removes the Router LAN tuples on the workload Node that no published Route still needs
   %%> - an identical tuple that another Route uses stays
   %%> - on the Ingress, closes `orbit:ingress-http` and `orbit:ingress-https` when Route 14 was the last public Route
-  SW->>N: Check nothing is left<br/>Caddyfile, certificates, ufw
+  end
+  SW->>N: Check nothing is left<br/>@swamp/cfgmgmt check absent
   %%> What it does:
-  %%> - reads back each Node: no site block names `shop.test`, no Route 14 certificate scope, no removed tuple
+  %%> - the `check` of the file and firewall behaviors on each Node: no site block names `shop.test`, no Route 14 certificate scope, no removed tuple
   %%> Why:
   %%> - the Route only counts as removed when the Nodes show it
   alt every step succeeds
