@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: rule 1 (read-only from Node agent reports, like tool.adopt), R1 record-only branch, R4 Node-work branch like tool.remove; .env stays the user's file; Processes from Project definitions for development (instance.create). docs/domains/applications.md#register-an-existing-checkout.
+  %% Tightened: flow-tighten 2026-11-02, rules 5, 16, 22 (no Node re-read of admitted facts; cfgmgmt file mode, ssh exec setup, cfgmgmt systemd Processes).
   %% status: draft
   %% command: instance:register
   %% kind: instance.register
@@ -90,27 +91,22 @@ sequenceDiagram
     %%> - the task number, at once
     %%> Next:
     %%> - the CLI follows the task with `operation:show`
-    SW->>N: Verify the checkout<br/>@swamp/ssh · origin, HEAD, owner
-    %%> What it does:
-    %%> - checks that the checkout still matches the facts the Gateway admitted
-    %%> Why:
-    %%> - the agent's report may be a few seconds old; nothing changes on a different checkout
-    %%> How:
-    %%> - Git commands run with hooks and filesystem monitors off
     opt .env readable by others
-      SW->>N: Protect the .env file<br/>chmod 600 · content unchanged
+      SW->>N: Protect the .env file<br/>@swamp/ssh exec · chmod 600
+      %%> How:
+      %%> - Swamp reaches Node 12 over SSH from 209 with `@swamp/ssh`; one `chmod 600` argv, safe to repeat
       %%> What it does:
       %%> - removes group and public read access from `.env`
       %%> Not included:
       %%> - never reads or changes the content; the file stays the user's
     end
     opt --setup given
-      SW->>N: Run Project setup steps<br/>@swamp/ssh · own timeout each
+      SW->>N: Run Project setup steps<br/>@swamp/ssh exec · in order
       %%> What it does:
       %%> - runs the Project's setup steps in order, as the Node's managed user, from the repository root
       %%> Typical steps:
       %%> - `composer install`, `vp install`, `php artisan migrate`
-      SW->>N: Create, start Processes<br/>Project definitions · development
+      SW->>N: Create, start Processes<br/>@swamp/cfgmgmt/systemd · forEach
       %%> What it does:
       %%> - creates the Instance's Processes from the Project's Process definitions for `development`
       %%> - starts them, for example the Vite dev server (`vp-dev`)
@@ -118,9 +114,9 @@ sequenceDiagram
       %%> - after the setup steps, because Processes need the installed dependencies
     end
     alt all steps pass
-      N-->>SW: checkout commit
+      N-->>SW: steps passed
       %%> Returns:
-      %%> - the commit that is checked out
+      %%> - every step passed; the commit is the one the agent reported at admission
       SW-->>GW: Run succeeded<br/>terminal event
       %%> How the Gateway learns it:
       %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
