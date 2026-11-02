@@ -27,7 +27,7 @@ return [
         'workflow' => 'operation-fleet-peer-dns',
         'projection' => PeerDnsProjection::class,
         'workflow_inputs' => true,
-        'terminal_result' => ['job' => 'dns', 'step' => 'result'],
+        'terminal_result' => ['job' => 'dns', 'step' => 'Check the DNS policy'],
     ],
     'fleet.recipe_pr' => [
         'workflow' => 'operation-fleet-recipe-pr',

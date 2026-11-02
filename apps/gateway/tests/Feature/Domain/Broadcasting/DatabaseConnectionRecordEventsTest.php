@@ -10,7 +10,6 @@ use App\Data\DatabaseConnections\UpdateDatabaseConnectionData;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\DatabaseConnections\DatabaseDriver;
-use App\Domain\DatabaseServers\DatabaseConnectionUpdateProjection;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
@@ -43,7 +42,7 @@ describe('DatabaseConnection record events', function (): void {
         );
     });
 
-    it('broadcasts database.updated only after the native update succeeds', function (): void {
+    it('broadcasts database.updated when a record-only update is written', function (): void {
         $node = Node::query()->create(['name' => 'update-worker', 'user' => 'orbit', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '192.0.2.8', 'wireguard_ip' => '10.44.0.8']);
         $this->markAsGateway($node);
         config(['swamp.run_token' => 'fake.token']);
@@ -80,12 +79,7 @@ describe('DatabaseConnection record events', function (): void {
             password: null,
         ));
 
-        Event::assertNotDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::DatabaseUpdated);
-        app(DatabaseConnectionUpdateProjection::class)->apply($operation, [
-            'run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded',
-            'started_at' => '2026-10-31T09:00:00.000Z', 'finished_at' => '2026-10-31T09:00:01.000Z', 'result' => ['backend' => 'active'],
-        ]);
-
+        expect($operation->status->value)->toBe('succeeded');
         Event::assertDispatched(
             RecordBroadcast::class,
             fn (RecordBroadcast $event): bool => $event->type === RecordEventType::DatabaseUpdated

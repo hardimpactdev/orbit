@@ -143,11 +143,8 @@ it('round-trips mysql connection CRUD, encrypts the password, and redacts it fro
         'host' => 'db-internal.example.test',
     ]);
 
-    $update->assertAccepted()->assertJsonPath('data.kind', 'database.update');
-    $this->postJson('/api/v1/direct-operations/'.$update->json('data.id').'/result', [
-        'run_id' => 'e1589ed9-996b-4c9c-aa75-7749ef519210', 'status' => 'succeeded',
-        'started_at' => '2026-10-31T09:00:00.000Z', 'finished_at' => '2026-10-31T09:00:01.000Z', 'result' => ['backend' => 'active'],
-    ])->assertOk();
+    // A record-only change needs no run: the Operation has ended and the record is written (R1).
+    $update->assertAccepted()->assertJsonPath('data.kind', 'database.update')->assertJsonPath('data.status', 'succeeded');
     expect(DatabaseConnection::query()->where('slug', 'app')->sole()->host)->toBe('db-internal.example.test');
 
     expect(DatabaseConnection::query()->where('slug', 'app')->sole()->password)
@@ -281,12 +278,7 @@ it('updates a password independently and clears an optional node association', f
         'password' => $nextSecret,
     ]);
 
-    $update->assertAccepted()->assertJsonPath('data.kind', 'database.update');
-    expect(DatabaseConnection::query()->where('slug', 'app')->sole()->password)->toBe(DATABASE_CONNECTION_SECRET);
-    $this->postJson('/api/v1/direct-operations/'.$update->json('data.id').'/result', [
-        'run_id' => 'e1589ed9-996b-4c9c-aa75-7749ef519210', 'status' => 'succeeded',
-        'started_at' => '2026-10-31T09:00:00.000Z', 'finished_at' => '2026-10-31T09:00:01.000Z', 'result' => ['backend' => 'active'],
-    ])->assertOk();
+    $update->assertAccepted()->assertJsonPath('data.kind', 'database.update')->assertJsonPath('data.status', 'succeeded');
     expect(DatabaseConnection::query()->where('slug', 'app')->sole()->node_id)->toBeNull();
 
     expect($update->getContent())->not->toContain($nextSecret, DATABASE_CONNECTION_SECRET);

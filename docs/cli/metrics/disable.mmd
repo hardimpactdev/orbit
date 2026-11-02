@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R1-R4, metrics.exporter_disable decisions (order, full reverse), single-swamp-node. docs/reference/metrics.md#disable-and-purge.
+  %% Tightened: flow-tighten 2026-11-02, rules 17, 22 (cfgmgmt absent applies named; their checks are the end check).
   %% status: draft
   %% command: metrics:disable
   %% kind: metrics.disable
@@ -44,14 +45,14 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>G: Withdraw metrics.orbit<br/>Caddy reload · DNS · certificate
+  SW->>G: Withdraw metrics.orbit<br/>@swamp/cfgmgmt/file absent
   %%> What it does:
   %%> - removes the `metrics.orbit` site from the Gateway Node's Caddyfile, validates it, and reloads Caddy gracefully
   %%> - removes the `metrics.orbit` private DNS name through the shared DNS step on the `vpn` Node
   %%> - removes the site's certificate and key
   %%> Why first:
   %%> - nobody reaches Grafana while it goes away
-  SW->>N: Remove the containers<br/>Prometheus · Grafana
+  SW->>N: Remove the containers<br/>docker_container absent
   %%> What it does:
   %%> - stops and removes `orbit-metrics-prometheus` and `orbit-metrics-grafana`, and their unit files
   %%> - Prometheus stops collecting before any exporter goes
@@ -63,12 +64,12 @@ sequenceDiagram
   %%> - the same steps that `metrics:exporter:disable` runs for one Node
   %%> Kept:
   %%> - each Node's exporter preference, so a later enable selects the same Nodes
-  SW->>N: Remove the Grafana rules<br/>ufw · Grafana port 3000
+  SW->>N: Remove the Grafana rules<br/>@swamp/cfgmgmt/firewall absent
   %%> What it does:
   %%> - removes the allow for the Gateway Node and the deny for other peers
   %%> How:
   %%> - official `@swamp/cfgmgmt/firewall` over SSH from 209
-  SW->>N: Remove the configuration<br/>/etc/orbit/metrics
+  SW->>N: Remove the configuration<br/>@swamp/cfgmgmt/directory absent
   %%> What it does:
   %%> - deletes the configuration directory and the Grafana password file
   %%> Kept:
@@ -80,9 +81,9 @@ sequenceDiagram
     %%> Without --purge-data:
     %%> - both volumes stay, so a later enable continues with the old data
   end
-  SW->>N: Check it is gone<br/>no containers, rules or files
+  SW->>N: Check it is gone<br/>@swamp/cfgmgmt check absent
   %%> What it does:
-  %%> - checks both containers, the Grafana rules and the configuration are absent
+  %%> - the `check` of the docker_container, firewall and directory behaviors: both containers, the Grafana rules and the configuration are absent
   %%> Why:
   %%> - the role only counts as removed when Node 12 shows it
   alt every step passes

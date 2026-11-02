@@ -15,10 +15,7 @@ inputs:
     node_id:
       type: integer
       minimum: 1
-    kind:
-      type: string
-      enum:
-        - fleet.peer_dns
+    kind: {type: string, const: fleet.peer_dns}
     intent:
       type: object
     execution_secrets:
@@ -34,79 +31,42 @@ inputs:
 jobs:
   - name: dns
     steps:
-      - name: inspect_asset
+      - name: Read the DNS policy
         labels: {role: swamp}
-        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "inspect_asset-network-command" }}', methodName: read, inputs: {action: dns_inspect, input: '${{ {"server":inputs.intent.server} }}'}}
-      - name: inspect
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: [sh, '-c', 'wg show orbit public-key && echo @@ && resolvectl dns && echo @@ && resolvectl domain orbit && echo @@ && resolvectl default-route orbit && echo @@ && { cat /etc/wireguard/orbit.dns-link 2>/dev/null || true; } && echo @@ && { grep -E "^PostUp[[:space:]]*=[[:space:]]*resolvectl dns %i " /etc/wireguard/orbit.conf || true; }']}}
+      - name: Decide the DNS change
         labels: {role: swamp}
-        dependsOn: [{step: inspect_asset, condition: &ref_0 {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: script, globalArgs: {name: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, interpreter: python3, script: '${{ steps.inspect_asset.outputs.script_body }}'}}
-      - name: decision
+        dependsOn: [{step: Read the DNS policy, condition: &ref_0 {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "decide-the-dns-change-network-command" }}', methodName: decideDns, inputs: {stdout: '${{ steps["Read the DNS policy"].outputs.stdout }}', policy: '${{ {"server":inputs.intent.server,"dns_server":inputs.intent.dns_server,"domains":inputs.intent.domains,"public_key":inputs.intent.public_key} }}', require_uplink: true}}
+      - name: Keep the DNS hook
         labels: {role: swamp}
-        dependsOn: [{step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}]
-        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "decision-network-command" }}', methodName: decideDns, inputs: {stdout: '${{ steps.inspect.outputs.stdout }}', policy: '${{ {"server":inputs.intent.server,"dns_server":inputs.intent.dns_server,"domains":inputs.intent.domains,"public_key":inputs.intent.public_key} }}', require_uplink: true}}
-      - name: persist_asset
-        labels: {role: swamp}
-        dependsOn: [{step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}]
-        guard: '${{ !steps.decision.outputs.changed }}'
-        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "persist_asset-network-command" }}', methodName: read, inputs: {action: dns_persist, input: '${{ {"server":inputs.intent.server,"dns_server":inputs.intent.dns_server,"domains":inputs.intent.domains,"public_key":inputs.intent.public_key} }}'}}
-      - name: persist
-        labels: {role: swamp}
-        dependsOn: [{step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}]
-        guard: '${{ !steps.decision.outputs.changed }}'
+        dependsOn: [{step: Read the DNS policy, condition: *ref_0}, {step: Decide the DNS change, condition: *ref_0}]
+        guard: '${{ !steps["Decide the DNS change"].outputs.changed }}'
         writes: true
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: script, globalArgs: {name: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, interpreter: python3, script: '${{ steps.persist_asset.outputs.script_body }}'}}
-      - name: set_dns
+        task: {type: behavior, behaviorType: '@swamp/cfgmgmt/line', behaviorName: '${{ ("network-dns-hook-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: apply, globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true, path: /etc/wireguard/orbit.conf, regexp: '^PostUp\s*=\s*resolvectl dns %i ', line: '${{ inputs.intent.dns_hook }}', insertAfter: '^\[Interface\]', createFile: false}, inputs: {}}
+      - name: Write the DNS marker
         labels: {role: swamp}
-        dependsOn: [{step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}]
-        guard: '${{ !steps.decision.outputs.changed }}'
+        dependsOn: [{step: Read the DNS policy, condition: *ref_0}, {step: Decide the DNS change, condition: *ref_0}, {step: Keep the DNS hook, condition: *ref_0}]
+        guard: '${{ !steps["Decide the DNS change"].outputs.changed }}'
         writes: true
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["/usr/bin/resolvectl","dns","orbit",inputs.intent.server] }}'}}
-      - name: set_domains
+        task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ ("network-dns-link-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: apply, globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true, path: /etc/wireguard/orbit.dns-link, ensure: present, content: '${{ "orbit\n" + inputs.intent.server + "\n" + inputs.intent.domains.join("\n") + "\n" }}', owner: root, group: root, mode: '0600'}, inputs: {}}
+      - name: Set the DNS policy
         labels: {role: swamp}
-        dependsOn: [{step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}]
-        guard: '${{ !steps.decision.outputs.changed }}'
+        dependsOn: [{step: Read the DNS policy, condition: *ref_0}, {step: Decide the DNS change, condition: *ref_0}, {step: Keep the DNS hook, condition: *ref_0}, {step: Write the DNS marker, condition: *ref_0}]
+        guard: '${{ !steps["Decide the DNS change"].outputs.changed }}'
         writes: true
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["/usr/bin/resolvectl","domain","orbit"]+inputs.intent.domains.map(d,"~"+d) }}'}}
-      - name: set_default_route
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["bash","-c","s=$1; shift; resolvectl dns orbit \"$s\" && resolvectl domain orbit \"$@\" && resolvectl default-route orbit no","bash",inputs.intent.server]+inputs.intent.domains.map(d,"~"+d) }}'}}
+      - name: Clear the old link
         labels: {role: swamp}
-        dependsOn: [{step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}]
-        guard: '${{ !steps.decision.outputs.changed }}'
+        dependsOn: [{step: Read the DNS policy, condition: *ref_0}, {step: Decide the DNS change, condition: *ref_0}, {step: Keep the DNS hook, condition: *ref_0}, {step: Write the DNS marker, condition: *ref_0}, {step: Set the DNS policy, condition: *ref_0}]
+        guard: '${{ !steps["Decide the DNS change"].outputs.changed || steps["Decide the DNS change"].outputs.old_link == "orbit" }}'
         writes: true
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/resolvectl, default-route, orbit, 'no']}}
-      - name: clear_old_dns
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["bash","-c","resolvectl dns \"$1\" \"\" && resolvectl domain \"$1\" \"\" && resolvectl default-route \"$1\" yes && networkctl reconfigure \"$1\"","bash",steps["Decide the DNS change"].outputs.old_link] }}'}}
+      - name: Read the DNS policy again
         labels: {role: swamp}
-        dependsOn: [{step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}, {step: set_default_route, condition: *ref_0}]
-        guard: '${{ !steps.decision.outputs.changed || steps.decision.outputs.old_link == "orbit" }}'
-        writes: true
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["/usr/bin/resolvectl","dns",steps.decision.outputs.old_link,""] }}'}}
-      - name: clear_old_domains
+        dependsOn: [{step: Read the DNS policy, condition: *ref_0}, {step: Decide the DNS change, condition: *ref_0}, {step: Keep the DNS hook, condition: *ref_0}, {step: Write the DNS marker, condition: *ref_0}, {step: Set the DNS policy, condition: *ref_0}, {step: Clear the old link, condition: *ref_0}]
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: [sh, '-c', 'wg show orbit public-key && echo @@ && resolvectl dns && echo @@ && resolvectl domain orbit && echo @@ && resolvectl default-route orbit && echo @@ && { cat /etc/wireguard/orbit.dns-link 2>/dev/null || true; } && echo @@ && { grep -E "^PostUp[[:space:]]*=[[:space:]]*resolvectl dns %i " /etc/wireguard/orbit.conf || true; }']}}
+      - name: Check the DNS policy
         labels: {role: swamp}
-        dependsOn: [{step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}, {step: set_default_route, condition: *ref_0}, {step: clear_old_dns, condition: *ref_0}]
-        guard: '${{ !steps.decision.outputs.changed || steps.decision.outputs.old_link == "orbit" }}'
-        writes: true
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["/usr/bin/resolvectl","domain",steps.decision.outputs.old_link,""] }}'}}
-      - name: restore_default_route
-        labels: {role: swamp}
-        dependsOn: [{step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}, {step: set_default_route, condition: *ref_0}, {step: clear_old_dns, condition: *ref_0}, {step: clear_old_domains, condition: *ref_0}]
-        guard: '${{ !steps.decision.outputs.changed || steps.decision.outputs.old_link == "orbit" }}'
-        writes: true
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["/usr/bin/resolvectl","default-route",steps.decision.outputs.old_link,"yes"] }}'}}
-      - name: restore_uplink
-        labels: {role: swamp}
-        dependsOn: [{step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}, {step: set_default_route, condition: *ref_0}, {step: clear_old_dns, condition: *ref_0}, {step: clear_old_domains, condition: *ref_0}, {step: restore_default_route, condition: *ref_0}]
-        guard: '${{ !steps.decision.outputs.changed || steps.decision.outputs.old_link == "orbit" }}'
-        writes: true
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["/usr/bin/networkctl","reconfigure",steps.decision.outputs.old_link] }}'}}
-      - name: verify_asset
-        labels: {role: swamp}
-        dependsOn: [{step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}, {step: set_default_route, condition: *ref_0}, {step: clear_old_dns, condition: *ref_0}, {step: clear_old_domains, condition: *ref_0}, {step: restore_default_route, condition: *ref_0}, {step: restore_uplink, condition: *ref_0}]
-        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "verify_asset-network-command" }}', methodName: read, inputs: {action: dns_inspect, input: '${{ {"server":inputs.intent.server} }}'}}
-      - name: verify
-        labels: {role: swamp}
-        dependsOn: [{step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}, {step: set_default_route, condition: *ref_0}, {step: clear_old_dns, condition: *ref_0}, {step: clear_old_domains, condition: *ref_0}, {step: restore_default_route, condition: *ref_0}, {step: restore_uplink, condition: *ref_0}, {step: verify_asset, condition: *ref_0}]
-        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: script, globalArgs: {name: '${{ ("network-peer-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, interpreter: python3, script: '${{ steps.verify_asset.outputs.script_body }}'}}
-      - name: result
-        labels: {role: swamp}
-        dependsOn: [{step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}, {step: set_default_route, condition: *ref_0}, {step: clear_old_dns, condition: *ref_0}, {step: clear_old_domains, condition: *ref_0}, {step: restore_default_route, condition: *ref_0}, {step: restore_uplink, condition: *ref_0}, {step: verify_asset, condition: *ref_0}, {step: verify, condition: *ref_0}]
-        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "result-network-command" }}', methodName: dnsResult, inputs: {stdout: '${{ steps.verify.outputs.stdout }}', policy: '${{ {"server":inputs.intent.server,"dns_server":inputs.intent.dns_server,"domains":inputs.intent.domains,"public_key":inputs.intent.public_key} }}'}}
+        dependsOn: [{step: Read the DNS policy, condition: *ref_0}, {step: Decide the DNS change, condition: *ref_0}, {step: Keep the DNS hook, condition: *ref_0}, {step: Write the DNS marker, condition: *ref_0}, {step: Set the DNS policy, condition: *ref_0}, {step: Clear the old link, condition: *ref_0}, {step: Read the DNS policy again, condition: *ref_0}]
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "check-the-dns-policy-network-command" }}', methodName: dnsResult, inputs: {stdout: '${{ steps["Read the DNS policy again"].outputs.stdout }}', policy: '${{ {"server":inputs.intent.server,"dns_server":inputs.intent.dns_server,"domains":inputs.intent.domains,"public_key":inputs.intent.public_key} }}'}}

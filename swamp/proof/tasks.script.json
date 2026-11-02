@@ -1,0 +1,106 @@
+{
+  "kind": "tasks.script",
+  "workflow": "operation-task-script",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "clean_target": [
+    [
+      "sh",
+      "-c",
+      "rm -rf /srv/proof-task-* /tmp/orbit-task-index-*"
+    ]
+  ],
+  "before_gateway": [
+    [
+      "sh",
+      "-c",
+      "printf '%s' \"$1\" | runuser -u orbit -- env -C apps/gateway php ../../tools/swamp-proof-guest/gateway.php fixture",
+      "sh",
+      "{\"extensions\": [\"tasks\"], \"projects\": [{\"id\": 90, \"name\": \"Proof task\", \"slug\": \"proof-task\", \"type\": \"node-package\", \"root\": \".\", \"repository_url\": \"https://github.com/hardimpactdev/proof-task.git\", \"default_branch\": \"main\", \"source_access\": \"github_app\"}], \"task_groups\": [{\"id\": 900, \"project_id\": 90, \"title\": \"Proof task\", \"brief\": \"Proof\", \"status\": \"running\", \"orchestration\": \"external\", \"taskable\": {\"instance\": 9000}, \"subtasks\": [{\"id\": 901, \"position\": 1, \"title\": \"Proof\", \"brief\": \"Proof\", \"status\": \"running\"}]}], \"instances\": [{\"id\": 9000, \"project_id\": 90, \"node_id\": ${node.target}, \"name\": \"task-proof\", \"checkout_path\": \"/srv/proof-task-${proof.run}\", \"task_workspace_owner_id\": 900, \"branch_override\": \"task-proof\", \"source_layout\": \"checkout\", \"status\": \"active\", \"branch\": \"task-proof\"}], \"task_vms\": [{\"group_id\": 900, \"node_id\": ${node.target}, \"provider\": \"incus\", \"size\": \"normal\", \"name\": \"tvm-proof\", \"state\": \"ready\", \"wireguard_ip\": \"10.250.0.90\"}], \"operations\": [{\"kind\": \"tasks.provision\", \"target_type\": \"task_group\", \"target_id\": 900, \"node_id\": ${node.target}, \"status\": \"succeeded\", \"result\": {\"analysis_base\": {\"base\": \"c59d29169be449d7f7458a07062068eadb099389\", \"instance_id\": 9000, \"repository\": \"https://github.com/hardimpactdev/proof-task.git\", \"branch\": \"task-proof\"}}, \"input\": {\"group_id\": 900}, \"started_at\": \"2026-11-02T00:00:00Z\", \"finished_at\": \"2026-11-02T00:00:00Z\"}]}"
+    ]
+  ],
+  "before_target": [
+    [
+      "install",
+      "-d",
+      "-o",
+      "orbit",
+      "-g",
+      "orbit",
+      "/srv/proof-task-${proof.run}"
+    ],
+    [
+      "runuser",
+      "-u",
+      "orbit",
+      "--",
+      "sh",
+      "-c",
+      "set -e\nw=/srv/proof-task-$1\nmkdir -p \"$w/bin\" \"$w/scripts\"\ncd \"$w\"\nprintf '%s\\n' '#!/usr/bin/python3' 'import json, sys' 'v = json.load(sys.stdin)' 'r = {k: v[k] for k in (\"execution_id\", \"plan_sha256\", \"base\", \"head\", \"tree\")}' 'r.update(schema=1, status=\"ready\", diagnostics=[], report={\"schema\": \"proof.v1\", \"data\": {}})' 'print(json.dumps(r))' > bin/task-analyze\nprintf '%s\\n' '#!/bin/sh' 'printf \"%s\\n\" \"$@\"' > scripts/proof\nchmod 0755 bin/task-analyze scripts/proof\ngit init -q -b task-proof\ngit add bin/task-analyze scripts/proof\nGIT_AUTHOR_DATE=2026-11-02T00:00:00Z GIT_COMMITTER_DATE=2026-11-02T00:00:00Z git -c user.name=Proof -c user.email=proof@example.test -c commit.gpgsign=false commit -qm proof\n",
+      "sh",
+      "${proof.run}"
+    ]
+  ],
+  "request": {
+    "method": "POST",
+    "path": "task-groups/900/script",
+    "body": {
+      "subtask": 901,
+      "script": "scripts/proof",
+      "args": [
+        "$(touch never)",
+        " spaces "
+      ]
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "inspect",
+      "job": "script",
+      "step": "inspect",
+      "budget_seconds": 15
+    },
+    {
+      "name": "snapshot-before-add",
+      "job": "script",
+      "step": "snapshot-before-add",
+      "budget_seconds": 15
+    },
+    {
+      "name": "gate",
+      "job": "script",
+      "step": "gate",
+      "budget_seconds": 10
+    },
+    {
+      "name": "execute",
+      "job": "script",
+      "step": "execute",
+      "budget_seconds": 30
+    },
+    {
+      "name": "snapshot-after-add",
+      "job": "script",
+      "step": "snapshot-after-add",
+      "budget_seconds": 15
+    },
+    {
+      "name": "shape",
+      "job": "script",
+      "step": "shape",
+      "budget_seconds": 10
+    },
+    {
+      "name": "result",
+      "job": "script",
+      "step": "result",
+      "budget_seconds": 10
+    }
+  ],
+  "parity": "swamp/proof/tasks.script/parity.py"
+}

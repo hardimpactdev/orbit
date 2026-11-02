@@ -30,6 +30,8 @@ class TurnHandler(PiHandler):
             outcome = (
                 "approved" if self.server.role == "reviewer" else "ready_for_review"
             )
+            if self.server.omit_receipt:
+                return super().do_POST()
             subprocess.run(
                 [
                     str(self.server.workspace / ".git/orbit/turn"),
@@ -57,21 +59,11 @@ class NativeTurn(harness.NativeTestCase):
         module = self.repo / "extensions/behaviors/operations/tasks/turn.ts"
         module.parent.mkdir(parents=True)
         shutil.copy(ROOT / "extensions/behaviors/operations/tasks/turn.ts", module)
-        official = self.repo / ".swamp/pulled-extensions/@swamp/ssh"
-        official.parent.mkdir(parents=True)
-        shutil.copytree(ROOT / ".swamp/pulled-extensions/@swamp/ssh", official)
-        inventory = self.repo / "extensions/models/upstream_extensions.json"
-        inventory.parent.mkdir(parents=True)
-        inventory.write_text(
-            json.dumps(
-                {
-                    "@swamp/ssh": json.loads(
-                        (
-                            ROOT / "extensions/models/upstream_extensions.json"
-                        ).read_text()
-                    )["@swamp/ssh"]
-                }
-            )
+        inventory = json.loads(
+            (ROOT / "extensions/models/upstream_extensions.json").read_text()
+        )
+        self.cli(
+            "extension", "pull", f"@swamp/ssh@{inventory['@swamp/ssh']['version']}"
         )
         self.workspace = self.repo / "workspace"
         self.workspace.mkdir()
@@ -79,6 +71,11 @@ class NativeTurn(harness.NativeTestCase):
         self.git("config", "user.email", "test@example.test")
         self.git("config", "user.name", "Test")
         self.workspace.joinpath("file").write_text("original\n")
+        self.workspace.joinpath(".gitignore").write_text("ignored-tracked\n")
+        self.workspace.joinpath("ignored-tracked").write_text(
+            "tracked despite ignore\n"
+        )
+        self.git("add", "-f", "ignored-tracked")
         self.git("add", ".")
         self.git("commit", "-qm", "fixture")
         self.head = self.git("rev-parse", "HEAD")
@@ -86,6 +83,7 @@ class NativeTurn(harness.NativeTestCase):
         self.server.workspace, self.server.role = self.workspace, "implementer"
         self.server.calls, self.server.disconnect = [], False
         self.server.agent_text = "agent changed"
+        self.server.omit_receipt = False
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
@@ -102,7 +100,13 @@ class NativeTurn(harness.NativeTestCase):
         scp.write_text(
             "#!"
             + sys.executable
-            + '\nimport shutil,sys\nfrom pathlib import Path\nsrc=Path(sys.argv[-2]);dst=Path(sys.argv[-1].split(":",1)[1])\nshutil.copytree(src,dst/src.name,dirs_exist_ok=True)\n'
+            + "\n"
+            + """import shutil,sys
+from pathlib import Path
+src=Path(sys.argv[-2].split(':',1)[-1]);dst=Path(sys.argv[-1].split(':',1)[-1])
+if src.is_dir():shutil.copytree(src,dst/src.name,dirs_exist_ok=True)
+else:shutil.copyfile(src,dst/src.name if dst.is_dir() else dst)
+"""
         )
         scp.chmod(0o755)
         self.native_env["PATH"] = str(tools) + ":" + os.environ["PATH"]
@@ -162,21 +166,21 @@ class NativeTurn(harness.NativeTestCase):
         self.flow["name"] = "task-turn-fixture"
         for job in self.flow["jobs"]:
             self.assertEqual(job.pop("labels"), {"role": "swamp"})
-            self.assertEqual(job.pop("labels"), {"node": "209"})
             for step in job["steps"]:
                 self.assertEqual(step.pop("labels"), {"role": "swamp"})
-                self.assertEqual(step.pop("labels"), {"node": "209"})
-                args = step["task"].get("inputs", {}).get("argv")
-                if args:
-                    step["task"]["inputs"]["argv"] = [
-                        v.replace("/tmp/orbit-task-turn-", str(self.repo / "remote-"))
-                        for v in args
-                    ]
-                inputs = step["task"].get("inputs", {})
-                if "dst" in inputs:
-                    inputs["dst"] = inputs["dst"].replace(
-                        "/tmp/orbit-task-turn-", str(self.repo / "remote-")
-                    )
+
+        def paths(value):
+            if isinstance(value, dict):
+                return {key: paths(v) for key, v in value.items()}
+            if isinstance(value, list):
+                return [paths(v) for v in value]
+            if isinstance(value, str):
+                return value.replace(
+                    "/tmp/orbit-task-turn-local-", str(self.repo / "local-")
+                ).replace("/tmp/orbit-task-turn-", str(self.repo / "remote-"))
+            return value
+
+        self.flow = paths(self.flow)
         self.write_workflow()
 
     def git(self, *args):
@@ -234,6 +238,7 @@ class NativeTurn(harness.NativeTestCase):
         credential = "a1" * 32
         self.server.agent_text = "MODEL_KEY=" + credential
         self.inputs["intent"].update(role="reviewer", candidate=self.head)
+        self.workspace.joinpath(credential).write_text("untracked\n")
         run = self.run_workflow()
         self.assertEqual(run["status"], "succeeded")
         result = self.result(run)
@@ -245,12 +250,21 @@ class NativeTurn(harness.NativeTestCase):
         self.assertEqual(result["after_reset"]["head"], self.head)
         self.assertEqual(self.workspace.joinpath("file").read_text(), "original\n")
 
-    def test_moved_candidate_retains_its_public_refusal_without_pi_calls(self):
-        self.inputs["intent"].update(role="reviewer", candidate="f" * 40)
-        run = self.run_workflow(success=False)
-        self.assertEqual(run["status"], "failed")
-        self.assertEqual(self.result(run)["error_code"], "tasks.head_moved")
-        self.assertEqual(self.server.calls, [])
+    def test_snapshots_keep_real_index_unchanged_and_include_untracked_files(self):
+        self.server.role = "consult"
+        self.inputs["intent"]["role"] = "consult"
+        self.workspace.joinpath("untracked").write_text("new file\n")
+        index = self.workspace / ".git/index"
+        original = index.read_bytes()
+        run = self.run_workflow()
+        self.assertEqual(run["status"], "succeeded")
+        self.assertEqual(index.read_bytes(), original)
+        result = self.result(run)
+        self.assertNotEqual(
+            result["before"]["tree"], self.git("rev-parse", "HEAD^{tree}")
+        )
+        self.assertEqual(result["difference"]["summary"]["files"], 1)
+        self.assertFalse(list(self.repo.glob("remote-*/*.index")))
 
     def test_prompt_overflow_retains_its_public_refusal_without_pi_calls(self):
         self.inputs["intent"]["prompt"] = "x" * 100000
@@ -261,6 +275,24 @@ class NativeTurn(harness.NativeTestCase):
         )
         self.assertEqual(self.server.calls, [])
 
+    def test_missing_receipt_remains_a_completed_turn_without_a_receipt(self):
+        self.server.omit_receipt = True
+        run = self.run_workflow()
+        self.assertEqual(run["status"], "succeeded")
+        self.assertIsNone(self.result(run)["receipt"])
+
+    def test_failed_receipt_copy_fails_without_sending_another_pi_message(self):
+        step = next(
+            s for s in self.flow["jobs"][0]["steps"] if s["name"] == "receipt_copy"
+        )
+        step["task"]["inputs"]["src"] = str(self.workspace / "missing")
+        self.write_workflow()
+        run = self.run_workflow(success=False)
+        self.assertEqual(self.result(run)["state"], "failed")
+        self.assertEqual(
+            sum(path.endswith("/messages") for path, _ in self.server.calls), 1
+        )
+
     def test_failed_review_difference_keeps_failed_result_and_restores_candidate(self):
         self.server.role = "reviewer"
         self.inputs["intent"].update(role="reviewer", candidate=self.head)
@@ -269,12 +301,26 @@ class NativeTurn(harness.NativeTestCase):
             for step in self.flow["jobs"][0]["steps"]
             if step["name"] == "difference"
         )
-        difference["task"]["inputs"]["argv"] = ["false"]
+        difference["task"]["inputs"]["run"] = "false"
         self.write_workflow()
         run = self.run_workflow(success=False)
         self.assertEqual(run["status"], "failed")
         self.assertEqual(self.result(run)["state"], "failed")
         self.assertEqual(self.workspace.joinpath("file").read_text(), "original\n")
+
+    def test_failed_snapshot_keeps_its_index_for_native_resume(self):
+        add = next(
+            s
+            for s in self.flow["jobs"][0]["steps"]
+            if s["name"] == "snapshot_before_add"
+        )
+        add["task"]["inputs"]["argv"] = ["false"]
+        self.write_workflow()
+        run = self.run_workflow(success=False)
+        self.assertEqual(run["status"], "failed")
+        self.assertTrue(list(self.repo.glob("remote-*/before.index")))
+        self.assertEqual(self.server.calls, [])
+        self.assertEqual(self.git("diff", "--cached", "--name-only"), "")
 
     def test_native_resume_reuses_completed_message_send(self):
         marker = self.repo / "result-ready"

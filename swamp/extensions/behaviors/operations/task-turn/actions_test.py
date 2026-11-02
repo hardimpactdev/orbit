@@ -1,7 +1,6 @@
 """Execute the workflow's shipped action scripts against Git and a Pi HTTP fixture."""
 
 import ast
-import hashlib
 import json
 import os
 import subprocess
@@ -98,19 +97,17 @@ class TurnActions(unittest.TestCase):
         ).strip()
 
     def run_step(self, name, *, ok=True, **extra):
-        remote = name in {
-            "snapshot_before",
-            "snapshot_after",
-            "candidate",
-            "receipt_prepare",
-            "receipt_read",
-            "difference",
-            "restore",
-        }
-        script = "snapshot" if name in ("snapshot_before", "snapshot_after") else name
-        args = [sys.executable, "-B", str(SCRIPTS / (script + ".py"))]
-        if remote and "ORBIT_BEFORE" in extra:
-            args.append(extra.pop("ORBIT_BEFORE"))
+        remote = name == "receipt_prepare"
+        args = [sys.executable, "-B", str(SCRIPTS / (name + ".py"))]
+        if name == "receipt_read":
+            args.append(str(self.repo / ".git/orbit/receipt.json"))
+        if name == "difference":
+            args.extend(
+                [
+                    str(self.repo / ".git/orbit/counts"),
+                    str(self.repo / ".git/orbit/patch"),
+                ]
+            )
         result = subprocess.run(
             args,
             input=json.dumps(self.value) if remote else None,
@@ -145,8 +142,6 @@ class TurnActions(unittest.TestCase):
         }
 
     def test_receipt_helper_collects_real_repository_agent_receipt(self):
-        before = self.run_step("snapshot_before")
-        self.run_step("candidate", ORBIT_BEFORE=json.dumps(before))
         self.run_step("receipt_prepare")
         subprocess.run(
             [
@@ -167,27 +162,6 @@ class TurnActions(unittest.TestCase):
                 "deliverables": {"done": "evidence"},
             },
         )
-
-    def test_moved_review_candidate_fails_before_any_pi_call(self):
-        before = self.run_step("snapshot_before")
-        self.value.update(role="reviewer", candidate="f" * 40)
-        self.assertEqual(
-            self.run_step("candidate", ORBIT_BEFORE=json.dumps(before)),
-            {"admitted": False, "error_code": "tasks.head_moved"},
-        )
-
-    def test_reviewer_diff_is_collected_then_exact_candidate_restored(self):
-        self.value.update(role="reviewer", candidate=self.head)
-        before = self.run_step("snapshot_before")
-        (self.repo / "file").write_text("review mutation\n")
-        (self.repo / "untracked").write_text("review extra\n")
-        self.run_step("snapshot_after")
-        difference = self.run_step("difference", ORBIT_BEFORE=json.dumps(before))
-        self.assertEqual(difference["summary"]["files"], 2)
-        restored = self.run_step("restore")
-        self.assertEqual(restored["head"], self.head)
-        self.assertEqual((self.repo / "file").read_text(), "original\n")
-        self.assertFalse((self.repo / "untracked").exists())
 
     def test_pi_actions_are_separate_and_stream_ignores_another_turn(self):
         server, env = self.pi_server()
@@ -216,47 +190,6 @@ class TurnActions(unittest.TestCase):
         self.assertIn("tasks.pi_completion_unconfirmed", result.stderr)
         self.assertEqual(len(server.calls), 1)
 
-    def test_analysis_hash_and_entrypoint_are_bound_before_pi(self):
-        entry = self.repo / "bin/task-analyze"
-        entry.parent.mkdir()
-        entry.write_text("#!/bin/sh\nprintf report\n")
-        entry.chmod(0o755)
-        self.git("add", ".")
-        self.git("commit", "-qm", "Analyzer")
-        self.git("remote", "add", "origin", "https://github.com/acme/test.git")
-        before = self.run_step("snapshot_before")
-        content = '{"report":"safe"}'
-        source = {
-            "base": self.head,
-            "repository": "https://github.com/acme/test.git",
-            "plan_sha256": "d" * 64,
-        }
-        provenance = {
-            **source,
-            **before,
-            "instance_id": 12,
-            "node_id": 30,
-            "branch": self.git("symbolic-ref", "--short", "HEAD"),
-            "entrypoint_sha256": hashlib.sha256(entry.read_bytes()).hexdigest(),
-        }
-        self.value["analysis_evidence"] = {
-            "input": source,
-            "result": {
-                "artifact": {
-                    "content": content,
-                    "bytes": len(content),
-                    "sha256": hashlib.sha256(content.encode()).hexdigest(),
-                },
-                "provenance": provenance,
-            },
-        }
-        self.run_step("candidate", ORBIT_BEFORE=json.dumps(before))
-        self.value["analysis_evidence"]["result"]["artifact"]["content"] += "tampered"
-        self.assertEqual(
-            self.run_step("candidate", ORBIT_BEFORE=json.dumps(before)),
-            {"admitted": False, "error_code": "tasks.analysis_stale"},
-        )
-
     def test_receipt_symlink_cannot_escape_into_host_file(self):
         root = self.repo / ".git/orbit"
         root.mkdir()
@@ -268,7 +201,7 @@ class TurnActions(unittest.TestCase):
 
     def test_receipt_and_difference_sanitize_vm_credential_formats(self):
         credential = "a1" * 32
-        before = self.run_step("snapshot_before")
+        before = {"head": self.head, "tree": self.git("write-tree")}
         self.run_step("receipt_prepare")
         (self.repo / ".git/orbit/receipt.json").write_text(
             json.dumps(
@@ -285,7 +218,15 @@ class TurnActions(unittest.TestCase):
         self.assertIn("[REDACTED]", receipt["summary"])
         (self.repo / "file").write_text("MODEL_KEY=" + credential + "\n")
         self.value["role"] = "consult"
-        diff = self.run_step("difference", ORBIT_BEFORE=json.dumps(before))
+        self.git("add", "--all")
+        after = {"head": self.head, "tree": self.git("write-tree")}
+        (self.repo / ".git/orbit/counts").write_text(
+            self.git("diff", "--numstat", "-z", before["tree"], after["tree"], "--")
+        )
+        (self.repo / ".git/orbit/patch").write_text(
+            self.git("diff", before["tree"], after["tree"], "--")
+        )
+        diff = self.run_step("difference")
         self.assertNotIn(credential, json.dumps(diff))
         self.assertIn("[REDACTED]", diff["diff"])
 

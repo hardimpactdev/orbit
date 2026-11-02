@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, ADR 0241 allowlists, DECISIONS R1-R4 + 5 (process.stop shape, shared SSH identity).
+  %% Tightened: flow-tighten 2026-11-02, rule 22 (firewall.py is the one named gap: cfgmgmt firewall has no insert position).
   %% status: reviewed
   %% command: firewall:allow
   %% kind: firewall.allow
@@ -49,9 +50,12 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>N: Add the ufw rule<br/>@swamp/cfgmgmt/firewall apply
+  SW->>N: Add the ufw rule<br/>firewall.py · @swamp/ssh exec
   %%> How:
-  %%> - Swamp reaches Node 7 over SSH from 209, with the official `@swamp/cfgmgmt/firewall` behavior
+  %%> - Swamp reaches Node 7 over SSH from 209
+  %%> - `firewall.py` is sent as one `python3 -I -c` argument; nothing is copied to the Node
+  %%> Why a script:
+  %%> - the one named gap: `@swamp/cfgmgmt/firewall` cannot insert a rule at a position, and ufw stops at the first match
   %%> What it does:
   %%> - adds one ufw allow line per port and protocol, commented with its label
   %%> Order:
@@ -59,10 +63,11 @@ sequenceDiagram
   %%> - ufw stops at the first match, so Orbit sets this order on every change
   %%> - all operator rules sit above Orbit's own broad rules, such as WireGuard peer trust, so a deny on a port also applies to WireGuard peers
   %%> - an existing identical line is left as it is
+  %%> - reads ufw back after the insert and exits non-zero when the order is wrong
   SW->>N: Check the rule is live<br/>@swamp/cfgmgmt/firewall check
   %%> What it does:
   %%> - reads ufw back and checks every expected line is present
-  %%> - checks that narrower rules sit above broader ones for the same port
+  %%> - the order (narrower above broader) is read back by `firewall.py` in the step before
   %%> Why:
   %%> - the rule only counts as active when ufw shows it
   alt every line is present

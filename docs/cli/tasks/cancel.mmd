@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 (one task:cancel; ending a group with cleanup is its own action kind), docs/reference/tasks.md "Cancel a stuck task", DECISIONS R2-R4, flow-design-decisions 1 (token minted at admission).
+  %% Tightened: flow-tighten 2026-11-02, rules 16, 20 (no power read first: each guest step carries a guard on the VM's power, and the delete is safe to repeat).
   %% status: draft
   %% command: tasks:cancel
   %% kind: tasks.cancel
@@ -56,11 +57,6 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>H: Read the VM power<br/>provider state · VM 88
-  %%> What it does:
-  %%> - asks the provider whether VM 88 runs, is stopped, or is gone
-  %%> Why:
-  %%> - guest steps run only on a running VM
   opt approved work not on origin
     SW->>VM: Push approved work<br/>git bundle · task-42 · no force
     %%> What it does:
@@ -68,6 +64,8 @@ sequenceDiagram
     %%> - uncommitted changes are never pushed
     %%> If it fails:
     %%> - the run stops before any removal, so the work stays in the VM
+    %%> Guard:
+    %%> - runs only while VM 88 runs; guest steps never run on a stopped VM, so no power read runs first
   end
   Note over SW: Withdraw the Route<br/>@swamp/ssh · only this workspace
   %%> When:
@@ -77,7 +75,7 @@ sequenceDiagram
   opt VM still running
     SW->>VM: Run teardown steps<br/>Project teardown · own timeouts
     %%> When:
-    %%> - only while VM 88 runs; a stopped VM skips guest teardown
+    %%> - a `guard` on the provider's power state: only while VM 88 runs; a stopped VM skips guest teardown
   end
   SW->>H: Destroy the task VM<br/>delete VM · revoke model key
   %%> What it does:

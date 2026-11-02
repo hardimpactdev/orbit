@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0243/0244 task, DECISIONS R1 (offline removal starts no run), R2-R4, metrics.exporter_disable order, single-swamp-node. docs/cli/node.mdx#orbit-noderoleremove, docs/reference/node-provisioning.md#native-role-lifecycle.
+  %% Tightened: flow-tighten 2026-11-02, rules 8, 17, 22 (close the role's ports in the publish step, the mirror of node:role:add's "Publish and open ports"; cfgmgmt checks as the end check).
   %% status: draft
   %% command: node:role:remove
   %% kind: node.role_remove
@@ -33,7 +34,7 @@ sequenceDiagram
   %%> - the role is `active` or `failed`; `provisioning` or `removing` is refused until its claim is stale
   %%> - `app-dev`: Node 12 owns no Instances
   %%> - no Route depends on the role
-  %%> - the role is not `swamp`: serve on that Node runs every Swamp run, this one too, so the Gateway refuses with `validation.failed`
+  %%> - `swamp`: its workers don't run this removal; a Node's own Swamp role can't remove itself
   %%> - one role operation per Node: the Gateway waits up to 2 minutes for Node 12's role lock, then refuses with `node_role.node_busy`
   %%> Decides:
   %%> - whether Swamp must reach Node 12, or only the record changes
@@ -81,11 +82,16 @@ sequenceDiagram
       %%> What it does:
       %%> - the same steps as `metrics:exporter:disable`: stops and removes both exporters and their firewall allows
     end
-    SW->>N: Publish remaining roles<br/>Caddy, PHP, DNS · reload
+    SW->>N: Publish rest, close ports<br/>@swamp/cfgmgmt file · firewall
     %%> What it does:
     %%> - publishes the Caddy sites, PHP pools and private DNS names of the roles that stay, without this role's parts
     %%> - validates first, then reloads Caddy and PHP-FPM gracefully
     %%> - private DNS names go through the shared DNS step on the `vpn` Node
+    %%> - removes the role's managed `orbit:` rules with `@swamp/cfgmgmt/firewall`, `ensure: absent`; operator rules stay
+    %%> Last role:
+    %%> - restores `orbit:public-ssh-recovery` first, so Node 12 stays reachable over public SSH
+    %%> Why one step, first:
+    %%> - the mirror of "Publish and open ports" in `node:role:add`; nothing reaches the role before its runtime goes
     SW->>N: Remove the role runtime<br/>units, containers, certificates
     %%> What it does:
     %%> - stops and removes the role's own units and containers, and its certificates
@@ -94,14 +100,9 @@ sequenceDiagram
     %%> - shared packages, Tool Managers and their Tools, and anything another role still uses
     %%> How:
     %%> - official `@swamp/cfgmgmt` behaviors (systemd, docker_container, file, directory) over SSH from 209
-    SW->>N: Remove role firewall rules<br/>@swamp/cfgmgmt/firewall
+    SW->>N: Check it is gone<br/>@swamp/cfgmgmt check absent
     %%> What it does:
-    %%> - removes the role's managed `orbit:` rules; operator rules stay
-    %%> Last role:
-    %%> - restores `orbit:public-ssh-recovery` first, so Node 12 stays reachable over public SSH
-    SW->>N: Check it is gone<br/>no units, rules or sites
-    %%> What it does:
-    %%> - checks the role's units, containers, firewall rules and Caddy sites are absent
+    %%> - the `check` of the systemd, docker_container, file and firewall behaviors: the role's units, containers, rules and Caddy sites are absent
     %%> - checks the remaining roles' services still answer
     alt every step passes
       N-->>SW: role absent

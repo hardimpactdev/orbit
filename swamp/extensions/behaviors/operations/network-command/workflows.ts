@@ -1,6 +1,13 @@
 import { dotless } from "../_lib/behavior_name.ts";
 /** The two direct roots share native action assembly, never an execution engine. */
 import { stringify } from "jsr:@std/yaml@1.0.5";
+import { INSPECT } from "./assets.ts";
+const KEY = "/etc/wireguard/orbit.key";
+const CONF = "/etc/wireguard/orbit.conf";
+const PEERS = "/etc/wireguard/orbit-peers.conf";
+/** syncconf drops the interface key when its input has none, so the Node composes it from its own key file at apply time. */
+const SYNCCONF =
+    'wg syncconf orbit <(printf "[Interface]\\nPrivateKey = %s\\n\\n" "$(cat "$1")"; cat "$2")';
 const expr = (s: string) => "${{ " + s + " }}";
 const done = {
     type: "or",
@@ -39,10 +46,15 @@ function steps() {
         type: "behavior",
         behaviorType: "@nckrtl/network-command",
         // Named with its type: fixed names such as `result` recur across behavior types.
-        behaviorName: expr(JSON.stringify(name + "-network-command")),
+        behaviorName: expr(JSON.stringify(name.toLowerCase().replaceAll(" ", "-") + "-network-command")),
         methodName: method,
         inputs,
     }, guard);
+    // The hub keeps the name node:wireguard-hub:converge gives it; the peer is named after its SSH address.
+    const target = (connection: string) =>
+        expr(dotless(connection === "inputs.intent.hub.ssh"
+            ? '"wireguard-hub-" + string(inputs.intent.hub_id)'
+            : '"network-peer-" + string(' + connection + ".target.host)"));
     const ssh = (
         name: string,
         connection: string,
@@ -55,18 +67,10 @@ function steps() {
         {
             type: "behavior",
             behaviorType: "@swamp/ssh",
-            behaviorName: expr(
-                dotless((connection === "inputs.intent.hub_ssh"
-                    ? '"network-hub-"'
-                    : '"network-peer-"') + " + string(" + connection + ".target.host)"),
-            ),
+            behaviorName: target(connection),
             methodName: method,
             globalArgs: {
-                name: expr(
-                    dotless((connection === "inputs.intent.hub_ssh"
-                        ? '"network-hub-"'
-                        : '"network-peer-"') + " + string(" + connection + ".target.host)"),
-                ),
+                name: target(connection),
                 transport: {
                     kind: "ssh",
                     user: expr(connection + ".target.user"),
@@ -84,35 +88,48 @@ function steps() {
         guard,
         writes,
     );
-    const script = (
+    const cfg = (
         name: string,
-        action: string,
-        input: unknown,
-        connection = "inputs.intent.ssh",
+        type: string,
+        family: string,
+        connection: string,
+        globalArgs: Record<string, unknown>,
         guard?: string,
-        writes = true,
-    ) => {
-        typed(name + "_asset", "read", { action, input }, guard);
-        ssh(
-            name,
-            connection,
-            "script",
-            {
-                interpreter: "python3",
-                script: expr("steps." + name + "_asset.outputs.script_body"),
+        method = "apply",
+    ) => add(
+        name,
+        {
+            type: "behavior",
+            behaviorType: "@swamp/cfgmgmt/" + type,
+            behaviorName: family,
+            methodName: method,
+            globalArgs: {
+                nodeHost: expr(connection + ".target.host"),
+                nodeUser: expr(connection + ".target.user"),
+                nodePort: expr(connection + ".target.port"),
+                nodeIdentityFile: expr(connection + ".identity_file"),
+                become: true,
+                ...globalArgs,
             },
-            guard,
-            writes,
-        );
-    };
+            inputs: {},
+        },
+        guard,
+        method === "apply",
+    );
+    const peerName = (family: string) =>
+        expr(dotless(JSON.stringify(family + "-") + " + string(inputs.intent.ssh.target.host)"));
+    const read = (name: string, argv: unknown) =>
+        ssh(name, "inputs.intent.ssh", "exec", { argv }, undefined, false);
     const execStep = (name: string, argv: unknown, guard?: string) =>
         ssh(name, "inputs.intent.ssh", "exec", { argv }, guard);
-    return { list, typed, script, execStep };
+    return { list, typed, ssh, cfg, peerName, read, execStep };
 }
+const KEY_STEP = 'steps["Check the key"]';
+const DECISION = 'steps["Decide the DNS change"]';
 const policy = (network: boolean) =>
     network
         ? expr(
-            '{"server":inputs.intent.peer.dns_server,"dns_server":inputs.intent.peer.dns_server,"domains":inputs.intent.peer.domains,"public_key":steps.key.outputs.public_key}',
+            '{"server":inputs.intent.peer.dns_server,"dns_server":inputs.intent.peer.dns_server,"domains":inputs.intent.peer.domains,"public_key":' + KEY_STEP + '.outputs.public_key}',
         )
         : expr(
             '{"server":inputs.intent.server,"dns_server":inputs.intent.dns_server,"domains":inputs.intent.domains,"public_key":inputs.intent.public_key}',
@@ -125,123 +142,99 @@ function dnsActions(s: ReturnType<typeof steps>, network: boolean) {
     const domains = network
         ? "inputs.intent.peer.domains"
         : "inputs.intent.domains";
-    s.script(
-        "inspect",
-        "dns_inspect",
-        expr('{"server":' + server + "}"),
-        undefined,
-        undefined,
-        false,
-    );
-    s.typed("decision", "decideDns", {
-        stdout: expr("steps.inspect.outputs.stdout"),
+    s.read("Read the DNS policy", ["sh", "-c", INSPECT]);
+    s.typed("Decide the DNS change", "decideDns", {
+        stdout: expr('steps["Read the DNS policy"].outputs.stdout'),
         policy: p,
         require_uplink: network
             ? expr("inputs.intent.peer.operator_dns == null")
             : true,
     });
-    const guard = expr("!steps.decision.outputs.changed");
-    s.script("persist", "dns_persist", p, undefined, guard);
+    const guard = expr("!" + DECISION + ".outputs.changed");
+    s.cfg("Keep the DNS hook", "line", s.peerName("network-dns-hook"), "inputs.intent.ssh", {
+        path: CONF,
+        regexp: "^PostUp\\s*=\\s*resolvectl dns %i ",
+        line: expr("inputs.intent.dns_hook"),
+        insertAfter: "^\\[Interface\\]",
+        createFile: false,
+    }, guard);
+    s.cfg("Write the DNS marker", "file", s.peerName("network-dns-link"), "inputs.intent.ssh", {
+        path: "/etc/wireguard/orbit.dns-link",
+        ensure: "present",
+        content: expr('"orbit\\n" + ' + server + ' + "\\n" + ' + domains + '.join("\\n") + "\\n"'),
+        owner: "root",
+        group: "root",
+        mode: "0600",
+    }, guard);
+    // One command sets the whole policy on the tunnel link: server, routing domains, no default route.
     s.execStep(
-        "set_dns",
-        expr('["/usr/bin/resolvectl","dns","orbit",' + server + "]"),
-        guard,
-    );
-    s.execStep(
-        "set_domains",
+        "Set the DNS policy",
         expr(
-            '["/usr/bin/resolvectl","domain","orbit"]+' + domains +
-                '.map(d,"~"+d)',
+            '["bash","-c","s=$1; shift; resolvectl dns orbit \\"$s\\" && resolvectl domain orbit \\"$@\\" && resolvectl default-route orbit no","bash",' +
+                server + "]+" + domains + '.map(d,"~"+d)',
         ),
         guard,
     );
-    s.execStep("set_default_route", [
-        "/usr/bin/resolvectl",
-        "default-route",
-        "orbit",
-        "no",
-    ], guard);
-    const old = expr(
-        '!steps.decision.outputs.changed || steps.decision.outputs.old_link == "orbit"',
-    );
+    // An old Orbit selection on the uplink is cleared, and networkd gives the uplink its own DNS back.
     s.execStep(
-        "clear_old_dns",
+        "Clear the old link",
         expr(
-            '["/usr/bin/resolvectl","dns",steps.decision.outputs.old_link,""]',
+            '["bash","-c","resolvectl dns \\"$1\\" \\"\\" && resolvectl domain \\"$1\\" \\"\\" && resolvectl default-route \\"$1\\" yes && networkctl reconfigure \\"$1\\"","bash",' +
+                DECISION + ".outputs.old_link]",
         ),
-        old,
+        expr("!" + DECISION + '.outputs.changed || ' + DECISION + '.outputs.old_link == "orbit"'),
     );
-    s.execStep(
-        "clear_old_domains",
-        expr(
-            '["/usr/bin/resolvectl","domain",steps.decision.outputs.old_link,""]',
-        ),
-        old,
-    );
-    s.execStep(
-        "restore_default_route",
-        expr(
-            '["/usr/bin/resolvectl","default-route",steps.decision.outputs.old_link,"yes"]',
-        ),
-        old,
-    );
-    s.execStep(
-        "restore_uplink",
-        expr(
-            '["/usr/bin/networkctl","reconfigure",steps.decision.outputs.old_link]',
-        ),
-        old,
-    );
-    s.script(
-        "verify",
-        "dns_inspect",
-        expr('{"server":' + server + "}"),
-        undefined,
-        undefined,
-        false,
-    );
+    s.read("Read the DNS policy again", ["sh", "-c", INSPECT]);
 }
 export function workflow(network: boolean) {
     const s = steps();
     if (network) {
-        s.script(
-            "prepare_key",
-            "prepare_key",
-            expr('{"existing_key":inputs.intent.existing_key}'),
-        );
-        s.typed("key", "key", {
-            stdout: expr("steps.prepare_key.outputs.stdout"),
+        const peer = "inputs.intent.ssh", hub = "inputs.intent.hub.ssh";
+        const file = (path: string, content: string) => ({
+            path,
+            ensure: "present",
+            content: expr(content),
+            owner: "root",
+            group: "root",
+            mode: "0600",
+        });
+        const section =
+            'inputs.intent.hub.section.split("@KEY@").join(' + KEY_STEP + ".outputs.public_key)";
+        // The Node makes its key once and prints only the public key; the private key stays in its 0600 key file.
+        s.execStep("Prepare the key", [
+            "sh",
+            "-c",
+            "umask 077 && { test -s " + KEY + " || wg genkey > " + KEY + "; } && wg pubkey < " + KEY,
+        ]);
+        s.typed("Check the key", "key", {
+            stdout: expr('steps["Prepare the key"].outputs.stdout'),
             existing_key: expr("inputs.intent.existing_key"),
             other_public_keys: expr(
                 "inputs.intent.other_public_keys+[inputs.intent.peer.server_public_key]",
             ),
         });
-        s.script(
-            "publish_hub",
-            "hub_peer",
-            expr(
-                '{"existing_key":inputs.intent.existing_key,"public_key":steps.key.outputs.public_key,"address":inputs.intent.peer.address}',
-            ),
-            "inputs.intent.hub_ssh",
-        );
-        s.script(
-            "configure_peer",
-            "peer_config",
-            expr(
-                '{"public_key":steps.key.outputs.public_key,"peer":inputs.intent.peer}',
-            ),
-        );
-        s.execStep("enable_peer", [
-            "/usr/bin/systemctl",
-            "enable",
-            "wg-quick@orbit",
-        ]);
-        s.script("apply_peer", "apply_peer", {});
-        s.execStep("trust_firewall", expr("inputs.intent.trust_argv"));
+        // Only this Node's peer file changes on the hub, so runs that overlap never drop each other's peers.
+        s.cfg("Write the hub peer file", "file", expr(dotless('"wireguard-hub-peer-" + string(inputs.intent.hub_id) + "-" + string(inputs.node_id)')), hub, {
+            ...file("", section),
+            path: expr("inputs.intent.hub.file"),
+        });
+        s.ssh("Load the hub peer", hub, "exec", { argv: expr('["wg", "addconf", "orbit", inputs.intent.hub.file]') });
+        s.ssh("Drop the old key", hub, "exec", {
+            argv: expr('["wg", "set", "orbit", "peer", inputs.intent.existing_key, "remove"]'),
+        }, expr("inputs.intent.existing_key == null || inputs.intent.existing_key == " + KEY_STEP + ".outputs.public_key"));
+        s.cfg("Write the peer config", "file", s.peerName("network-config"), peer, file(CONF, "inputs.intent.config"));
+        s.cfg("Write the peer list", "file", s.peerName("network-peers"), peer, file(PEERS, "inputs.intent.peers"));
+        s.cfg("Start the tunnel", "systemd", s.peerName("network-service"), peer, {
+            service: "wg-quick@orbit",
+            ensure: "running",
+            enabled: true,
+        });
+        s.execStep("Load the peer", ["timeout", "30", "bash", "-c", SYNCCONF, "bash", KEY, PEERS]);
+        s.execStep("Trust WireGuard peers", expr("inputs.intent.trust_argv"));
     }
     dnsActions(s, network);
-    s.typed("result", network ? "networkResult" : "dnsResult", {
-        stdout: expr("steps.verify.outputs.stdout"),
+    s.typed(network ? "Check the network" : "Check the DNS policy", network ? "networkResult" : "dnsResult", {
+        stdout: expr('steps["Read the DNS policy again"].outputs.stdout'),
         policy: policy(network),
         ...(network
             ? {
@@ -268,9 +261,7 @@ export function workflow(network: boolean) {
                 node_id: { type: "integer", minimum: 1 },
                 kind: {
                     type: "string",
-                    enum: [
-                        network ? "node.network_converge" : "fleet.peer_dns",
-                    ],
+                    const: network ? "node.network_converge" : "fleet.peer_dns",
                 },
                 intent: { type: "object" },
                 execution_secrets: {
@@ -299,7 +290,11 @@ if (import.meta.main) {
                 import.meta.url,
             ),
             "# deno-fmt-ignore-file\n# Generated from network-command/workflows.ts\n" +
-                stringify(w, { flowLevel: 5, lineWidth: -1 }),
+                // check-flows finds the kind's workflow by its one-line `kind` declaration.
+                stringify(w, { flowLevel: 5, lineWidth: -1 }).replace(
+                    /^( +)kind:\n +type: string\n +const: (\S+)$/m,
+                    "$1kind: {type: string, const: $2}",
+                ),
         );
     }
 }

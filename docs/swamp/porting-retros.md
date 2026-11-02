@@ -169,3 +169,16 @@ The final Process/Horizon proof passed all twelve fixtures on minimal@7 at `93eb
 Horizon start and active handoff took 19.5 and 20.2 s within 120 s. The Horizon fixture exercises a PHP artisan boundary without a Redis job engine. 
 
 Live development Process 168 on Beast restarted successfully as Operation 7796 at 12:54:05–08Z. The proof VM was destroyed through `bin/swamp-proof down`, with Incus absence verified. The earlier WebSocket 429 and capacity failures left no passing receipts and were cleaned up before this proof.
+
+
+### Task turn Git actions and private data copies (rule 22, partial)
+
+Task turn removes three Node scripts (`candidate`, `snapshot`, `restore`) and their manifest entries. The admitted workspace and analysis evidence replace runtime ownership and provenance checks, as the audit directs. Git snapshots copy the real index first, then use two `GIT_INDEX_FILE` argv calls. This preserves ignored tracked files and leaves the real index unchanged. Reviewer cleanup uses quiet reset and clean.
+
+Diff argv writes files on the Node. Official SSH copy brings only data files to a private worker directory. Existing worker scripts redact receipt and diff text before producing history. Ten native cases, six action cases, eight data tests and four Gateway tests pass.
+
+The shared minimal@8 receipt is `~/swamp-execution/evidence/proof/tasks.turn/20261102T131318Z-minimal.json`, source `a4e77c1627`, Gateway operation 3, native run `65faf379-c831-4952-9b74-730135552b09`. One sample takes 53.49 seconds; p95 equals the sample. The budget is 180 seconds and queue timeout is 60 seconds. The proof uses real Gateway, vault, SSH and Git, with a synthetic Pi server. It makes no model request and uses no production data. Provisioning first failed on SSH before staging; restaging succeeded.
+
+This is not rule 22 done. Only `receipt_prepare.py` and its agent-facing `receipt_helper.py` still reach the Node, pending a way to install the tool in the image. No new shipped script was added. The task-turn chart is still pending. The assigned tighten2 charts follow this conversion.
+
+Orbit grows by 788 lines. Swamp grows by 775: workflows +569 declare Git commands, data copies and cleanup; proof fixtures +290 exercise the Gateway and real SSH without model calls. Behavior metadata and documentation grow by 51 lines to expose public hashes and name the remaining gap. Scripts shrink by 122 lines and tests by 13, removing replaced actions and their mirrored tests. TypeScript still only shapes public data.

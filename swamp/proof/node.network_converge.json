@@ -1,0 +1,80 @@
+{
+  "kind": "node.network_converge",
+  "workflow": "operation-node-network-converge",
+  "topology": "minimal",
+  "budget_seconds": 240,
+  "queue_timeout_seconds": 30,
+  "before_node": {
+    "peer": [
+      [
+        "sh",
+        "-c",
+        "systemctl disable --now wg-quick@orbit >/dev/null 2>&1 || true; rm -f /etc/wireguard/orbit.key /etc/wireguard/orbit.conf /etc/wireguard/orbit-peers.conf /etc/wireguard/orbit.dns-link; command -v wg-quick >/dev/null && command -v ufw >/dev/null || DEBIAN_FRONTEND=noninteractive apt-get install -y -q wireguard-tools ufw >/dev/null"
+      ],
+      [
+        "sh",
+        "-c",
+        "dev=$(ip -o -4 addr show | awk '$4 ~ /^10\\.231\\.0\\./ {print $2; exit}'); ip route replace 10.231.0.1/32 dev \"$dev\"; ip route replace 10.231.0.10/32 dev \"$dev\""
+      ]
+    ]
+  },
+  "before_gateway": [
+    [
+      "bash",
+      "tools/swamp-proof-guest/network-proof.sh",
+      "${node.target}"
+    ]
+  ],
+  "request": {
+    "method": "POST",
+    "path": "nodes/${node.peer}/network/converge"
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Prepare the key",
+      "job": "network",
+      "step": "Prepare the key",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Load the hub peer",
+      "job": "network",
+      "step": "Load the hub peer",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Start the tunnel",
+      "job": "network",
+      "step": "Start the tunnel",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Load the peer",
+      "job": "network",
+      "step": "Load the peer",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Set the DNS policy",
+      "job": "network",
+      "step": "Set the DNS policy",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Read the DNS policy again",
+      "job": "network",
+      "step": "Read the DNS policy again",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Check the network",
+      "job": "network",
+      "step": "Check the network",
+      "budget_seconds": 15
+    }
+  ],
+  "parity": "swamp/proof/node.network_converge/parity.py"
+}
