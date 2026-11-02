@@ -1,6 +1,7 @@
 sequenceDiagram
   %% Target design: swamp/workflows/workflow-operation-task-vm-upcloud-image-build.yaml, docs/reference/compute-drivers.md#build-the-upcloud-template and #sweep-upcloud, swamp/docs/task-vm-lifecycle.md (inline UpCloud curl on 209), docs/cli/README.md design rules R2-R4.
-  %% Tightened: flow-tighten 2026-11-02, rules 4 (no Gateway reads or progress writes from steps), 15 (no `admit` step), 3 (no in-run leftover sweep: the host sweep owns it), 1 and 19 (`delete-builder`, `delete-smoke` fold into the cleanup), 6 (stop and templatize merge), 18 (cleanup as one forEach), 22 (curl on 209, guest actions as `@swamp/ssh exec` argv, Pi by `@swamp/ssh copy`).
+  %% Tightened: flow-tighten 2026-11-02, rules 4 (no Gateway reads or progress writes from steps), 15 (no `admit` step; the Gateway computes every fixed agent envelope and host key), 3 (no in-run leftover sweep: the host sweep owns it), 1 and 19 (`delete-builder`, `delete-smoke` fold into the cleanup; one host key pair serves both servers), 6 (launch, boot and smoke checks one action per server; stop and templatize merge), 9 (one listing after the build feeds the end check and the cleanup), 18 (cleanup and prune as one forEach), 22 (curl on 209, guest actions as `@swamp/ssh exec` argv, Pi by `@swamp/ssh copy`).
+  %% Kept: rules 14 and 16 do not apply to agent calls: `orbit-agent command` exits 0 and prints `{ok:false}` on a refusal, so each call keeps a typed reply check on 209. JSON answers of UpCloud need TypeScript, so `Read the template` and `Plan the cleanup` stay.
   %% status: draft
   %% command: none · UpCloud template build for a recipe
   %% kind: task_vm.upcloud_image_build
@@ -19,76 +20,86 @@ sequenceDiagram
   %%> Requirements:
   %%> - UpCloud is configured and no other UpCloud build runs; the ledger records attempt 9 before any remote work
   %%> Result:
-  %%> - the Gateway generates the builder and smoke host key pairs and copies them, the UpCloud token and the Pi build reference into the vault (R3)
-  %%> - the intent holds the recipe, identity, build name, both public host keys, the SSH identity, the agent pin and the templates pinned by live VMs
+  %%> - the Gateway generates one ed25519 host key pair for the build servers and keeps it encrypted on the attempt
+  %%> - at the run start it copies the UpCloud token and the private host key into the vault (R3), and refuses with `task_vm.image_build_superseded` when the recipe or agent pin changed
+  %%> - the intent holds the recipe, identity, stamp, public host key, 209's SSH identity, the agent pin, every fixed agent envelope, the phase units and the templates pinned by live VMs
   GW->>SW: Start run, full intent<br/>task-vm-upcloud-image-build
   %%> Inputs:
   %%> - `operation_id`, `node_id`, `kind`, the full public `intent`, and vault key names only: `task-vm-upcloud-token`, `task-vm-image-bootstrap-9`
   %%> Runs as:
   %%> - every step on 209 (`labels: {role: swamp}`), not on the Gateway Node's worker (R4)
   %%> Not included:
-  %%> - no `admit` step and no in-run key generation (rules 15, 4)
-  SW->>UC: Launch the builder<br/>launch-builder · POST /server
+  %%> - no `admit` step and no key generation in the run (rules 15, 4)
+  SW->>UC: Launch the builder<br/>POST /server · boot over ssh
   %%> How:
-  %%> - one inline `curl` on 209; the token reaches the request through `--variable`, never argv
-  %%> - stock Ubuntu 26.04 template, builder user-data with the admitted host key, labels `orbit-task-image`
+  %%> - child `task-vm-upcloud-image-server`: one inline `curl` on 209 reads the plans, TypeScript shapes the body, one `curl` posts it; the token and the private host key reach curl through `--variable`, never argv
+  %%> - stock Ubuntu 26.04 template, builder user-data with the admitted host key, label `orbit-task-image=<stamp>`
+  %%> - the create answer holds the UUID and the public IPv4 address
+  %%> - pinned `@swamp/ssh exec` waits for the boot: OpenSSH `ConnectionAttempts` while sshd starts, then `cloud-init status --wait`, all under one literal timeout
+  %%> - `@swamp/ssh copy` of 209's agent, `agent.install` against the pin, `guest.cloud-init`, `image.owner` for UID and GID 1000, `image.inspect-phase` for the boot id
   %%> Returns:
-  %%> - the server UUID and address, kept as step output for later steps and the cleanup
-  SW->>G: Boot the builder<br/>boot-builder · image.owner
-  %%> How:
-  %%> - official `@swamp/ssh exec` with the admitted host key pinned before the first connection
-  %%> - `cloud-init status --wait`, the pinned agent copied and checked by `agent.install`, `image.owner` for UID and GID 1000, `image.inspect-phase` for the boot id
+  %%> - the server UUID and address, the boot id, and each phase's start and inspect envelope
   opt recipe pins a Pi build
-    SW->>G: Copy the Pi build<br/>@swamp/ssh copy · sha256
+    SW->>G: Stage the Pi build<br/>@swamp/ssh copy · sha256
     %%> How:
-    %%> - one official `@swamp/ssh copy` of the pinned binary to `/var/cache/orbit/pi/<sha256>.bin`; the `pi` phase checks it against its pin
+    %%> - child `task-vm-upcloud-image-pi`: copy the pinned binary from the Gateway Node to 209, `sha256sum -c` against its pin, copy it to the builder, then `sudo install` to `/var/cache/orbit/pi/<sha256>.bin`
     %%> Replaces:
     %%> - the chunked `pi.receive-artifact` transfer through the Gateway artifact callback
   end
-  loop each recipe phase
-    SW->>G: Run the phase<br/><phase>-start · wait · inspect
-    %%> Phases:
-    %%> - `apt-source`, `packages`, `javascript`, `rust`, `agent`, `pi`, as in the Incus build
-    %%> How:
-    %%> - `image.start-phase` returns the main PID, `timeout 1500 tail --pid=PID -f /dev/null` waits, `image.inspect-phase` must report `complete` for the same boot id
-    %%> - each is one `@swamp/ssh exec` argv: `sudo -n -- orbit-agent command <name>` with the agent envelope on stdin
-  end
-  SW->>G: Prepare and clean<br/>prepare-image · clean
-  %%> What it does:
-  %%> - `image.recipe-marker`, `image.verify`, `image.boot`, `image.firewall` (ufw on, only `orbit:public-ssh-recovery` open), then `image.clean`
-  SW->>UC: Make the template<br/>stop-builder · templatize
+  SW->>G: Run the phases<br/>start · wait · inspect
+  %%> Phases:
+  %%> - `apt-source`, `packages`, `javascript`, `rust`, `agent`, `pi`, in this order, as in the Incus build; `pi` runs only when the recipe pins a Pi build
   %%> How:
-  %%> - stop the builder, turn its disk into `orbit-task-base-<time>-unverified`, and wait until the storage is online, all in one step (rule 6)
+  %%> - child `task-vm-upcloud-image-phases`; each phase is `image.start-phase`, one `systemctl show --property=MainPID` read, `timeout 1500 tail --pid=PID -f /dev/null` (skipped when the phase already ended), and `image.inspect-phase`, which must report `complete` for the same boot id
+  %%> - a failed phase stops the chain; no later phase starts
+  SW->>G: Prepare and clean<br/>marker · verify · firewall · clean
+  %%> What it does:
+  %%> - `image.recipe-marker`, `image.verify`, `image.boot`, `image.firewall` (ufw on, only `orbit:public-ssh-recovery` open), then `image.clean`, one at a time
+  SW->>UC: Make the template<br/>stop · templatize
+  %%> How:
+  %%> - one soft stop with UpCloud's own 150-second hard-stop fallback, then the templatize request as `orbit-task-base-<stamp>-unverified`
+  %%> - UpCloud refuses templatize until the server has stopped and changes nothing; curl's own bounded retry under one literal `timeout` is the wait (Q-WAIT), no script polls
+  Note over SW: Read the template<br/>template_uuid
+  %%> What it does:
+  %%> - TypeScript on 209 reads the template UUID and title from the templatize answer
   %%> Returns:
   %%> - the template UUID, which the Gateway reads from this step's output (rule 4)
-  SW->>UC: Launch the smoke server<br/>launch-smoke · from template
+  SW->>UC: Smoke the template<br/>launch from template · check
   %%> How:
-  %%> - the task VM user-data with the smoke host key; the builder stays until the cleanup removes it
-  SW->>G: Smoke the template<br/>boot-smoke · smoke · image.check
-  %%> How:
-  %%> - boots as in step 3, then `image.verify` and `image.check` with the firewall check
+  %%> - the same server child with the task VM user-data and the same host key; the create waits with curl's bounded retry while UpCloud still prepares the template
+  %%> - boots as in step 3, then `image.verify` and `image.check` with the firewall check; the builder stays until the cleanup removes it
   %%> Result:
   %%> - a failed smoke check stops the build before promotion
-  SW->>UC: Promote and prune<br/>promote · prune · complete
+  SW->>UC: Promote the template<br/>PUT title, labels
   %%> What it does:
-  %%> - sets the `orbit.recipe` label, renames the template to `orbit-task-base-<time>`, then deletes older verified templates except the two newest and those pinned by live VMs
-  %%> End check:
-  %%> - the native `assert` step `complete` checks the promoted template UUID; this is the one end check (rule 9)
-  SW->>UC: Delete the build servers<br/>cleanup · completed · forEach
-  %%> What it does:
-  %%> - one `forEach` deletes the builder and smoke servers with their storage; after a failure it also deletes the unverified template
+  %%> - sets the `orbit.recipe` and `orbit-task-image` labels and renames the template to `orbit-task-base-<stamp>`; a PUT is safe to repeat, so curl retries while the smoke clone still holds the template
+  SW->>UC: List servers, templates<br/>settle · always
   %%> When:
-  %%> - always, with the condition `completed` (rule 19); it replaces the separate `delete-builder` and `delete-smoke` steps
+  %%> - after the build job, whatever its outcome, with the condition `always` (rule 19)
+  %%> What it does:
+  %%> - one listing of the servers labelled `orbit-task-image` and of the account's templates
+  %%> Why:
+  %%> - it finds this attempt's servers also when a create answer or a child's output was lost
+  Note over SW: Plan the cleanup<br/>promoted · deletes
+  %%> What it does:
+  %%> - TypeScript on 209 confirms the promoted title and labels, and picks what goes: this attempt's two servers; after promotion, verified templates beyond the two newest that no live VM pins; otherwise this attempt's unverified template
+  Note over SW: Check the template<br/>assert
+  %%> End check:
+  %%> - after a successful build, the native `assert` checks that the listed promoted template is the one templatize made; this is the one end check (rule 9)
+  SW->>UC: Delete servers, templates<br/>cleanup · forEach
+  %%> What it does:
+  %%> - one `forEach` over the plan; each started server gets a hard stop, then one `DELETE` with its storage, which curl retries while UpCloud still stops it (Q-WAIT)
+  %%> - it replaces the separate `delete-builder`, `delete-smoke` and `prune` steps (rules 1, 18)
   %%> On failure:
-  %%> - `task_vm.image_cleanup_failed`; the next host sweep removes what stays
+  %%> - best effort with `allowFailure` (rule 10): the run's outcome stays, and the next host sweep removes what stays
   alt template promoted
     SW-->>GW: Run succeeded<br/>template_uuid
     Note over GW: Record attempt 9<br/>succeeded · template verified
     %%> Result:
-    %%> - new UpCloud claims for this recipe use the template; the Gateway clears the vault copies
+    %%> - new UpCloud claims for this recipe use the template
   else a step fails
     SW--xGW: Run failed<br/>error_code, failed step
     Note over GW: Mark attempt 9 failed<br/>previous template stays
     %%> Result:
-    %%> - reconcile alerts for the identity; `task-vms:build-recipe --retry` records a new attempt
+    %%> - a refused agent reply keeps its own code; reconcile alerts for the identity; `task-vms:build-recipe --retry` records a new attempt
   end
