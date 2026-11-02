@@ -3,7 +3,6 @@
 import json
 import os
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
@@ -14,7 +13,6 @@ from tests.native_harness import NativeTestCase
 from tests.route_ssh_fixture import PIN, install_ssh
 
 ROOT = Path(__file__).resolve().parents[1]
-DENO = os.environ.get("DENO_BIN", "/fast/worktrees/swamp-lane8/_scratch/tools/deno")
 
 
 class RouteMutationFixture(NativeTestCase):
@@ -125,116 +123,6 @@ print('{"ready":true}')
             (self.repo / f"workflows/workflow-{name}.yaml").write_text(
                 yaml.safe_dump(workflow, sort_keys=False)
             )
-
-    def parent(self, compensate=False, guard=None):
-        module = (
-            ROOT / "extensions/behaviors/operations/routes/mutation-command/steps.ts"
-        )
-        code = f'import {{routeMutationSteps}} from {json.dumps(str(module))}; console.log(JSON.stringify([routeMutationSteps("forward","inputs.intent.route_mutations","forward",{json.dumps(guard)}),routeMutationSteps("restore","inputs.intent.route_mutations","restore")]));'
-        generated = json.loads(subprocess.check_output([DENO, "eval", code], text=True))
-        jobs = [{"name": "forward", "steps": generated[0]}]
-        if compensate:
-            jobs.append(
-                {
-                    "name": "compensation",
-                    "dependsOn": [{"job": "forward", "condition": {"type": "failed"}}],
-                    "steps": generated[1],
-                }
-            )
-        for job in jobs:
-            for step in job["steps"]:
-                step.pop("target")
-                step.pop("labels", None)
-        workflow = {
-            "id": "3efabfbc-eb73-42e1-8426-a4e00f0fe035",
-            "name": "fixture-route-mutation",
-            "vaults": [],
-            "inputs": {"type": "object"},
-            "jobs": jobs,
-        }
-        (self.repo / "workflows/workflow-fixture-route-mutation.yaml").write_text(
-            yaml.safe_dump(workflow, sort_keys=False)
-        )
-
-    def run_parent(self, success=True):
-        reply = json.loads(
-            self.cli(
-                "workflow",
-                "run",
-                "fixture-route-mutation",
-                "--input",
-                json.dumps(self.input),
-                success=success,
-            ).stdout
-        )
-        return json.loads(self.cli("workflow", "history", "get", reply["id"]).stdout)
-
-
-class RouteMutationNative(RouteMutationFixture):
-    def test_multi_item_parent_requires_every_public_contribution(self):
-        self.parent()
-        history = self.run_parent()
-        terminal = next(
-            step for step in history["jobs"][0]["steps"] if step["name"] == "forward-0"
-        )
-        self.assertTrue(terminal["outputs"]["ready"])
-        self.assertEqual(terminal["outputs"]["routes"][0]["route_id"], 31)
-        self.assertEqual(terminal["outputs"]["contributions"]["forward_prepare_certificates"], 2)
-        self.assertEqual(len([step for step in history["jobs"][0]["steps"] if step["name"].startswith("forward_prepare_certificates-")]), 2)
-        calls = [json.loads(line) for line in self.audit.read_text().splitlines()]
-        certificate_calls = [call for call in calls if call["action"] == "route-certificate-publish"]
-        self.assertEqual(sorted(len(call["scopes"]) for call in certificate_calls[:2]), [1, 2])
-        self.assertEqual({scope for call in certificate_calls[:2] for scope in call["scopes"]}, {"route-31-router", "route-32-router"})
-        self.assertEqual(len(calls), 20)
-        self.assertTrue(
-            all(
-                call["operation_id"] == 7
-                and call["node_id"] == 14
-                and call["kind"] == "node.add"
-                for call in calls
-            )
-        )
-
-    def test_empty_optional_fanouts_do_not_skip_required_publication(self):
-        self.plan["lan"] = []
-        self.plan["url_writes"] = []
-        self.plan["cleanup"] = []
-        self.plan["retire_lan"] = []
-        self.parent()
-        history = self.run_parent()
-        result = next(
-            step for step in history["jobs"][0]["steps"] if step["name"] == "forward-0"
-        )
-        self.assertTrue(result["outputs"]["ready"])
-        self.assertEqual(result["outputs"]["contributions"]["forward_lan"], 0)
-
-    def test_false_guard_creates_no_effects_and_no_completion_claim(self):
-        self.parent(guard="false")
-        history = self.run_parent()
-        self.assertFalse(self.audit.exists())
-        self.assertFalse(
-            any(
-                step.get("outputs", {}).get("ready")
-                for step in history["jobs"][0]["steps"]
-            )
-        )
-
-    def test_failed_forward_blocks_later_actions_and_complete_restore_runs(self):
-        self.parent(compensate=True)
-        self.native_env["FIXTURE_FAIL"] = "route-dns-publish"
-        history = self.run_parent(success=False)
-        restore = next(
-            step for step in history["jobs"][1]["steps"] if step["name"] == "restore-0"
-        )
-        self.assertTrue(restore["outputs"]["restored"])
-        forward = history["jobs"][0]["steps"]
-        self.assertTrue(
-            all(
-                step["status"] == "skipped"
-                for step in forward
-                if step["name"].startswith("forward_live_certificates")
-            )
-        )
 
 
 class RouteEnvironmentNative(NativeTestCase):

@@ -12,8 +12,8 @@ restoration certificate list selected by the existing `restoring` flag. The same
 stable scope may name different domains in those two phases; each phase keeps
 its own domain authority and rejects a mismatched CSR.
 
-`routeMutationSteps(name, intentExpr, mode, guard?, parentRunId = "run.id", ingress = false, withdrawal = false)`
-keeps its existing callers unchanged. The update phase children pass the root
+The committed `workflow-operation-route-update.yaml` carries the Route mutation
+steps directly. The update phase children pass the root
 signing ID and opt into captured public ingress transitions. The ingress child
 composes the canonical pinned tuple child for TCP ports 80 and 443, with
 explicit any-source rules and migration disabled. Capture uses the whole site
