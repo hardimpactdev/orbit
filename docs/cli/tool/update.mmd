@@ -1,4 +1,5 @@
 sequenceDiagram
+  %% Tightened: Decision 7 (2026-11-02), worker-side key verification before Node contact.
   %% Target design: ADR 0244 task, DECISIONS R1-R4 (process.stop shape, R2 state from the result), ADR 0242 signed apt sources. Same shape as tool.install.
   %% status: reviewed
   %% command: tool:update
@@ -41,24 +42,27 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
+  Note over SW: assets<br/>public command arguments
   opt --repository given
-    SW->>N: Prepare apt keyrings<br/>native directory
-    SW->>N: Fetch the signing key<br/>staging file
-    SW->>N: Read the key fingerprint<br/>gpg --with-colons --show-keys
-    Note over SW: Assert the key fingerprint<br/>one admitted primary key
-    SW->>N: Publish the signing key<br/>verified keyring
+    Note over SW: Fetch the signing key<br/>bounded download on 209
+    Note over SW: Read the key fingerprint<br/>gpg show-keys on 209
+    Note over SW: Assert the key fingerprint<br/>stop before the Node
+  end
+  opt --repository given
+    Note over SW: Dearmor the signing key<br/>binary key on 209
+    SW->>N: Prepare apt keyrings<br/>cfgmgmt directory
+    SW->>N: Publish the signing key<br/>cfgmgmt copy_file
     SW->>N: Pin repository packages<br/>only admitted packages
-    SW->>N: Update the apt source<br/>key checked by fingerprint
+    SW->>N: Update the apt source<br/>cfgmgmt file · deb822 source
     %%> When:
     %%> - only for `apt` with `--repository`
     %%> What it does:
-    %%> - downloads the signing key and checks its fingerprint
+    %%> - the signing key was downloaded and checked on 209 before any Node contact
     %%> - replaces the apt source with the new definition
   end
   opt signed apt repository
     SW->>N: Refresh apt source<br/>bounded update of this source
   end
-  Note over SW: assets<br/>public command arguments
   SW->>N: Read manager version<br/>one manager command
   SW->>N: Read installed package<br/>one package query
   opt macOS Homebrew
@@ -72,6 +76,7 @@ sequenceDiagram
   %%> - same version: nothing to do, outcome `unchanged`
   %%> - outside the constraint: stop here, outcome `blocked_by_constraint`
   %%> - newer and allowed: go on to the upgrade
+  Note over SW: decide<br/>candidate and constraint
   SW->>N: Upgrade the package<br/>apt-get install --no-remove
   %%> When:
   %%> - only when the candidate is newer and inside the constraint
@@ -83,15 +88,14 @@ sequenceDiagram
   opt apt
     SW->>N: Check apt package<br/>official package check
   end
-  Note over SW: decide<br/>candidate and constraint
   opt Homebrew formula
-    SW->>N: Check Homebrew formula<br/>official package check
+    SW->>N: Check Homebrew formula<br/>bounded brew inventory
   end
   SW->>N: Check the package<br/>native package check
   Note over SW: Decode package state<br/>typed package observation
   Note over SW: Assert package state<br/>native end check
   opt signing key staged
-    SW->>N: Remove the staged key<br/>cleanup on completion
+    Note over SW: Remove the staged key<br/>local cleanup, also on failure
   end
   alt the run ends normally
     N-->>SW: ripgrep 14.1.1, applied
