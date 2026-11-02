@@ -5,14 +5,8 @@ import {
   assertStringIncludes,
   assertThrows,
 } from "jsr:@std/assert@1.0.19";
-import {
-  batch as composerBatch,
-  plan as composerPlan,
-} from "../extensions/behaviors/composer-maintenance/_lib/batch.ts";
-import {
-  batch as jsBatch,
-  plan as jsPlan,
-} from "../extensions/behaviors/js-maintenance/_lib/batch.ts";
+import { plan as composerPlan } from "../extensions/behaviors/composer-maintenance/_lib/batch.ts";
+import { plan as jsPlan } from "../extensions/behaviors/js-maintenance/_lib/batch.ts";
 import {
   planBatch,
   scratch,
@@ -301,8 +295,8 @@ Deno.test("planning copy refuses a link that becomes an escape when an untracked
   });
 });
 for (const manager of ["composer", "js"] as const) {
-  Deno.test(`${manager}: preflight leaves checkout unchanged; batch applies two targets in one resolver operation`, async () => {
-    await fixture(async (root, log) => {
+  Deno.test(`${manager}: planning resolves two targets and leaves the checkout unchanged`, async () => {
+    await fixture(async (root) => {
       const names = manager === "composer"
         ? ["fixture/one", "fixture/two"]
         : ["one", "two"];
@@ -346,76 +340,6 @@ for (const manager of ["composer", "js"] as const) {
         stdout: "piped",
       }).output();
       assertEquals(new TextDecoder().decode(after.stdout), "");
-      await Deno.writeTextFile(log, "");
-      await (manager === "composer" ? composerBatch : jsBatch)(common, targets);
-      const commands = await Deno.readTextFile(log);
-      assertEquals(
-        commands.split("\n").filter((s) =>
-          s.startsWith(
-            manager === "composer" ? "composer update" : "npm install",
-          )
-        ).length,
-        1,
-      );
-      const manifest = JSON.parse(
-        await Deno.readTextFile(
-          `${root}/${manager === "composer" ? "composer" : "package"}.json`,
-        ),
-      );
-      assertEquals(
-        Object.values(
-          manifest[manager === "composer" ? "require" : "dependencies"],
-        ),
-        ["2.0.0", "2.0.0"],
-      );
-    });
-  });
-}
-
-for (const manager of ["composer", "js"] as const) {
-  Deno.test(`${manager}: stale findings refuse downgrades before any mutation and exact-target retries remain safe`, async () => {
-    await fixture(async (root, log) => {
-      const common = {
-        cwd: root,
-        paths: ["."],
-        policy: { ".": { minimumReleaseAgeDays: 7 } },
-        exceptions: emptyExceptions(),
-      };
-      const t: UpdateTarget = {
-        path: ".",
-        manager,
-        package: manager === "composer" ? "fixture/one" : "one",
-        version: "2.0.0",
-        purpose: "major",
-        advisories: [],
-        advisoryUrls: [],
-      };
-      const file = `${root}/${
-          manager === "composer" ? "composer.lock" : "package-lock.json"
-        }`,
-        lock = JSON.parse(await Deno.readTextFile(file));
-      if (manager === "composer") lock.packages[0].version = "3.0.0";
-      else lock.packages["node_modules/one"].version = "3.0.0";
-      await Deno.writeTextFile(file, JSON.stringify(lock));
-      const manifest = `${root}/${
-          manager === "composer" ? "composer.json" : "package.json"
-        }`,
-        before = await Deno.readTextFile(manifest);
-      await assertRejects(
-        () => (manager === "composer" ? composerBatch : jsBatch)(common, [t]),
-        Error,
-        "would downgrade",
-      );
-      assertEquals(await Deno.readTextFile(manifest), before);
-      assert(
-        !(await Deno.readTextFile(log)).includes(
-          manager === "composer" ? "composer update" : "npm install",
-        ),
-      );
-      if (manager === "composer") lock.packages[0].version = "2.0.0";
-      else lock.packages["node_modules/one"].version = "2.0.0";
-      await Deno.writeTextFile(file, JSON.stringify(lock));
-      await (manager === "composer" ? composerBatch : jsBatch)(common, [t]);
     });
   });
 }
@@ -455,45 +379,8 @@ Deno.test("Expo planning admits the SDK and its age-eligible React alignment as 
     }]);
     assertEquals(plan.blocked, []);
     assertEquals(plan.targets.map((t) => t.package), ["expo", "react"]);
-    await jsBatch(common, plan.targets);
-    const updated = JSON.parse(await Deno.readTextFile(`${root}/package.json`));
-    assertEquals(updated.dependencies.expo, "2.0.0");
-    assertEquals(updated.dependencies.react, "2.0.0");
   });
 });
-
-for (const manager of ["composer", "js"] as const) {
-  Deno.test(`${manager}: stale advisory IDs are refused before changing the checkout`, async () => {
-    await fixture(async (root) => {
-      const common = {
-        cwd: root,
-        paths: ["."],
-        policy: { ".": { minimumReleaseAgeDays: 7 } },
-        exceptions: emptyExceptions(),
-      };
-      const target: UpdateTarget = {
-        path: ".",
-        manager,
-        package: manager === "composer" ? "fixture/one" : "one",
-        version: "2.0.0",
-        purpose: "security",
-        advisories: ["not-a-current-advisory"],
-        advisoryUrls: ["https://example.test/advisory"],
-      };
-      const file = `${root}/${
-          manager === "composer" ? "composer.json" : "package.json"
-        }`,
-        before = await Deno.readTextFile(file);
-      await assertRejects(
-        () =>
-          (manager === "composer" ? composerBatch : jsBatch)(common, [target]),
-        Error,
-        "Stale advisory evidence",
-      );
-      assertEquals(await Deno.readTextFile(file), before);
-    });
-  });
-}
 
 Deno.test("batch declarations retain range styles and security floors", () => {
   for (
@@ -519,60 +406,7 @@ Deno.test("batch declarations retain range styles and security floors", () => {
 });
 
 for (const manager of ["composer", "js"] as const) {
-  for (const style of ["^", "~", ""] as const) {
-    Deno.test(`${manager}: ${style || "pin"} batches preserve style and raise an in-range security floor`, async () => {
-      await fixture(async (root) => {
-        const file = `${root}/${
-          manager === "composer" ? "composer" : "package"
-        }.json`;
-        const section = manager === "composer" ? "require" : "dependencies";
-        const name = manager === "composer" ? "fixture/one" : "one";
-        const manifest = JSON.parse(await Deno.readTextFile(file));
-        manifest[section][name] = `${style}1.0.0`;
-        await Deno.writeTextFile(file, JSON.stringify(manifest));
-        const target: UpdateTarget = {
-          path: ".",
-          manager,
-          package: name,
-          version: "1.5.0",
-          purpose: "security",
-          advisories: ["fixture-advisory"],
-          advisoryUrls: ["https://example.test/advisory"],
-        };
-        const common = {
-          cwd: root,
-          paths: ["."],
-          policy: {},
-          exceptions: emptyExceptions(),
-        };
-        const batch = manager === "composer" ? composerBatch : jsBatch;
-        await batch(common, [target]);
-        const expected = {
-          ...manifest,
-          [section]: { ...manifest[section], [name]: `${style}1.5.0` },
-        };
-        assertEquals(JSON.parse(await Deno.readTextFile(file)), expected);
-        await batch(common, [target]);
-        assertEquals(JSON.parse(await Deno.readTextFile(file)), expected);
-        const locked = JSON.parse(
-          await Deno.readTextFile(
-            `${root}/${
-              manager === "composer" ? "composer.lock" : "package-lock.json"
-            }`,
-          ),
-        );
-        if (manager === "js") {
-          assertEquals(locked.packages[""].dependencies, expected.dependencies);
-          assertEquals(locked.packages["node_modules/one"].version, "1.5.0");
-        } else {assertEquals(
-            locked.packages.find((p: { name: string }) => p.name === name)
-              .version,
-            "1.5.0",
-          );}
-      });
-    });
-  }
-  Deno.test(`${manager}: unsupported security ranges block before mutation and leave other candidates eligible`, async () => {
+  Deno.test(`${manager}: unsupported security ranges block in planning and leave other candidates eligible`, async () => {
     await fixture(async (root) => {
       const file = `${root}/${
         manager === "composer" ? "composer" : "package"
@@ -591,7 +425,6 @@ for (const manager of ["composer", "js"] as const) {
       ) {
         manifest[section][name] = range;
         await Deno.writeTextFile(file, JSON.stringify(manifest));
-        const before = await Deno.readTextFile(file);
         const target: UpdateTarget = {
           path: ".",
           manager,
@@ -601,15 +434,6 @@ for (const manager of ["composer", "js"] as const) {
           advisories: ["fixture-advisory"],
           advisoryUrls: ["https://example.test/advisory"],
         };
-        await assertRejects(
-          () =>
-            (manager === "composer" ? composerBatch : jsBatch)(common, [
-              target,
-            ]),
-          Error,
-          "Cannot preserve range style",
-        );
-        assertEquals(await Deno.readTextFile(file), before);
         const plan = await (manager === "composer" ? composerPlan : jsPlan)(
           common,
           [{
@@ -638,69 +462,6 @@ for (const manager of ["composer", "js"] as const) {
           [manager === "composer" ? "fixture/two" : "two"],
         );
       }
-    });
-  });
-}
-
-Deno.test("npm refuses version movement while restoring range metadata", async () => {
-  await fixture(async (root) => {
-    const manifest = JSON.parse(
-      await Deno.readTextFile(`${root}/package.json`),
-    );
-    manifest.dependencies.one = "^1.0.0";
-    await Deno.writeTextFile(`${root}/package.json`, JSON.stringify(manifest));
-    await Deno.writeTextFile(`${root}/move-version`, "");
-    await assertRejects(
-      () =>
-        jsBatch({
-          cwd: root,
-          paths: ["."],
-          policy: {},
-          exceptions: emptyExceptions(),
-        }, [{
-          path: ".",
-          manager: "js",
-          package: "one",
-          version: "2.0.0",
-          purpose: "major",
-          advisories: [],
-          advisoryUrls: [],
-        }]),
-      Error,
-      "Lockfile synchronization changed resolved versions",
-    );
-  });
-});
-
-for (const manager of ["composer", "js"] as const) {
-  Deno.test(`${manager}: a mixed major batch retains caret and tilde styles`, async () => {
-    await fixture(async (root) => {
-      const file = `${root}/${
-        manager === "composer" ? "composer" : "package"
-      }.json`;
-      const section = manager === "composer" ? "require" : "dependencies";
-      const names = manager === "composer"
-        ? ["fixture/one", "fixture/two"]
-        : ["one", "two"];
-      const manifest = JSON.parse(await Deno.readTextFile(file));
-      manifest[section] = { [names[0]]: "^1.0.0", [names[1]]: "~1.0.0" };
-      await Deno.writeTextFile(file, JSON.stringify(manifest));
-      await (manager === "composer" ? composerBatch : jsBatch)(
-        { cwd: root, paths: ["."], policy: {}, exceptions: emptyExceptions() },
-        names.map((name) => ({
-          path: ".",
-          manager,
-          package: name,
-          version: "2.0.0",
-          purpose: "major",
-          advisories: [],
-          advisoryUrls: [],
-        })),
-      );
-      assertEquals(JSON.parse(await Deno.readTextFile(file))[section], {
-        [names[0]]: "^2.0.0",
-        [names[1]]: "~2.0.0",
-      });
     });
   });
 }
@@ -798,181 +559,11 @@ Deno.test("major ranges retain admitting declarations and preserve operator prec
   );
 });
 
-const mixedTargets = (manager: "js" | "composer"): UpdateTarget[] => [
-  {
-    path: ".",
-    manager,
-    package: manager === "js" ? "one" : "fixture/one",
-    version: "1.5.0",
-    purpose: "security",
-    advisories: ["fixture-advisory"],
-    advisoryUrls: ["https://example.test/advisory"],
-  },
-  {
-    path: ".",
-    manager,
-    package: manager === "js" ? "two" : "fixture/two",
-    version: "2.0.0",
-    purpose: "major",
-    advisories: [],
-    advisoryUrls: [],
-  },
-];
 const batchArgs = (root: string) => ({
   cwd: root,
   paths: ["."],
   policy: {},
   exceptions: emptyExceptions(),
-});
-
-for (const workspaces of [false, true]) {
-  for (const moved of [false, true]) {
-    Deno.test(`Bun ${workspaces ? "workspaces" : "root"}: mixed security/dev batch ${moved ? "refuses sync movement" : "restores ranges and lock metadata"}`, async () => {
-      await fixture(async (root, log) => {
-        const manifest = {
-          packageManager: "bun@1.4.0",
-          dependencies: { one: "^1.0.0" },
-          devDependencies: { two: "~1.0.0" },
-          ...(workspaces ? { workspaces: ["packages/*"] } : {}),
-        };
-        await Deno.writeTextFile(
-          `${root}/package.json`,
-          JSON.stringify(manifest),
-        );
-        await Deno.remove(`${root}/package-lock.json`);
-        const packages = {
-          one: ["one@1.0.0", "", {}],
-          two: ["two@1.0.0", "", {}],
-          ...(workspaces
-            ? {
-              local: ["local@workspace:packages/local"],
-              "local/one": ["one@0.9.0"],
-            }
-            : {}),
-        };
-        const members = {
-          "": {
-            dependencies: manifest.dependencies,
-            devDependencies: manifest.devDependencies,
-          },
-          ...(workspaces
-            ? {
-              "packages/local": {
-                name: "local",
-                dependencies: { one: "0.9.0" },
-              },
-            }
-            : {}),
-        };
-        await Deno.writeTextFile(
-          `${root}/bun.lock`,
-          JSON.stringify({ lockfileVersion: 1, workspaces: members, packages }),
-        );
-        if (workspaces) {
-          await Deno.mkdir(`${root}/packages/local`, { recursive: true });
-          await Deno.writeTextFile(
-            `${root}/packages/local/package.json`,
-            JSON.stringify(members["packages/local"]),
-          );
-        }
-        if (moved) {
-          await Deno.writeTextFile(
-            `${root}/move-version`,
-            workspaces ? "nested" : "",
-          );
-          await assertRejects(
-            () => jsBatch(batchArgs(root), mixedTargets("js")),
-            Error,
-            "Lockfile synchronization changed resolved versions",
-          );
-        } else {
-          await jsBatch(batchArgs(root), mixedTargets("js"));
-          const updated = JSON.parse(
-            await Deno.readTextFile(`${root}/package.json`),
-          );
-          assertEquals(updated.dependencies.one, "^1.5.0");
-          assertEquals(updated.devDependencies.two, "~2.0.0");
-          const lock = JSON.parse(await Deno.readTextFile(`${root}/bun.lock`));
-          assertEquals(lock.packages.one[0], "one@1.5.0");
-          assertEquals(
-            lock.workspaces[""].devDependencies,
-            updated.devDependencies,
-          );
-          if (workspaces) {
-            assertEquals(lock.packages.local, packages.local);
-            assertEquals(lock.packages["local/one"], packages["local/one"]);
-            assertEquals(
-              lock.workspaces["packages/local"],
-              members["packages/local"],
-            );
-          }
-        }
-        assertStringIncludes(
-          await Deno.readTextFile(log),
-          "bun install --lockfile-only --ignore-scripts",
-        );
-      });
-    });
-  }
-}
-
-Deno.test("Vite+ mixed security/dev batch uses npm for lock synchronization and retains the Vite+ audit", async () => {
-  await fixture(async (root, log) => {
-    await Deno.writeTextFile(
-      `${root}/package.json`,
-      JSON.stringify({
-        dependencies: { one: "^1.0.0" },
-        devDependencies: { two: "~1.0.0", "vite-plus": "1.4.0" },
-        packageManager: "npm@11.12.0",
-      }),
-    );
-    const lock = JSON.parse(
-      await Deno.readTextFile(`${root}/package-lock.json`),
-    );
-    lock.packages["node_modules/vite-plus"] = { version: "1.4.0" };
-    await Deno.writeTextFile(`${root}/package-lock.json`, JSON.stringify(lock));
-    await Deno.mkdir(`${root}/node_modules/.bin`, { recursive: true });
-    await Deno.copyFile(`${root}/../bin/npm`, `${root}/node_modules/.bin/vp`);
-    await Deno.chmod(`${root}/node_modules/.bin/vp`, 0o755);
-    await jsBatch(batchArgs(root), mixedTargets("js"));
-    const updated = JSON.parse(await Deno.readTextFile(`${root}/package.json`));
-    assertEquals(updated.devDependencies, {
-      two: "~2.0.0",
-      "vite-plus": "1.4.0",
-    });
-    assertEquals(updated.dependencies.one, "^1.5.0");
-    assertStringIncludes(
-      await Deno.readTextFile(log),
-      "npm install --package-lock-only --ignore-scripts",
-    );
-    assertStringIncludes(await Deno.readTextFile(log), "vp pm audit --json");
-  });
-});
-
-Deno.test("Composer mixed security/require-dev batch preserves sections and floors", async () => {
-  await fixture(async (root) => {
-    await Deno.writeTextFile(
-      `${root}/composer.json`,
-      JSON.stringify({
-        require: { "fixture/one": "^1.0" },
-        "require-dev": { "fixture/two": "~1.0" },
-      }),
-    );
-    const lock = JSON.parse(await Deno.readTextFile(`${root}/composer.lock`));
-    lock["packages-dev"].push(lock.packages.pop());
-    await Deno.writeTextFile(`${root}/composer.lock`, JSON.stringify(lock));
-    await composerBatch(batchArgs(root), mixedTargets("composer"));
-    const updated = JSON.parse(
-      await Deno.readTextFile(`${root}/composer.json`),
-    );
-    assertEquals(updated, {
-      require: { "fixture/one": "^1.5" },
-      "require-dev": { "fixture/two": "~2.0" },
-    });
-    const after = JSON.parse(await Deno.readTextFile(`${root}/composer.lock`));
-    assertEquals(after["packages-dev"][0].version, "2.0.0");
-    assertEquals(after.packages[0].version, "1.5.0");
-  });
 });
 
 for (const unrelated of [false, true]) {
@@ -1037,85 +628,15 @@ for (const unrelated of [false, true]) {
         JSON.parse(await Deno.readTextFile(`${root}/package.json`)),
         manifest,
       );
-      if (unrelated) {
-        await jsBatch(batchArgs(root), plan.targets);
-        const updated = JSON.parse(
-          await Deno.readTextFile(`${root}/package.json`),
-        );
-        assertEquals(updated.dependencies, {
-          ...manifest.dependencies,
-          one: "^2.0.0",
-        });
-      } else {assertEquals(
+      if (!unrelated) {
+        assertEquals(
           (await Deno.readTextFile(log)).includes("npm install"),
           false,
-        );}
+        );
+      }
     });
   });
 }
-
-import { registry } from "./fixtures/batch/registry.ts";
-Deno.test("native npm batch restores a caret and passes npm ci consistency without scripts", async () => {
-  const temp = await Deno.makeTempDir({ prefix: "native-batch-range-" });
-  const server = await registry(temp);
-  const root = `${temp}/checkout`;
-  const npm = async (args: string[]) => {
-    const result = await new Deno.Command("npm", {
-      cwd: root,
-      args,
-      stdout: "piped",
-      stderr: "piped",
-      env: { npm_config_cache: `${temp}/cache` },
-    }).output();
-    assertEquals(result.code, 0, new TextDecoder().decode(result.stderr));
-  };
-  try {
-    await Deno.mkdir(root);
-    await Deno.writeTextFile(
-      `${root}/.npmrc`,
-      `registry=http://127.0.0.1:${server.addr.port}/\naudit=false\nfund=false\n`,
-    );
-    await Deno.writeTextFile(
-      `${root}/package.json`,
-      JSON.stringify({
-        name: "native-batch",
-        private: true,
-        packageManager: "npm@11.12.0",
-        dependencies: { "batch-range-fixture": "^1.0.0" },
-      }),
-    );
-    await npm(["install", "--ignore-scripts"]);
-    await jsBatch(batchArgs(root), [{
-      path: ".",
-      manager: "js",
-      package: "batch-range-fixture",
-      version: "2.0.0",
-      purpose: "major",
-      advisories: [],
-      advisoryUrls: [],
-    }]);
-    assertEquals(
-      JSON.parse(await Deno.readTextFile(`${root}/package.json`))
-        .dependencies["batch-range-fixture"],
-      "^2.0.0",
-    );
-    assertEquals(
-      JSON.parse(await Deno.readTextFile(`${root}/package-lock.json`))
-        .packages["node_modules/batch-range-fixture"].version,
-      "2.0.0",
-    );
-    await npm([
-      "ci",
-      "--dry-run",
-      "--ignore-scripts",
-      "--no-audit",
-      "--no-fund",
-    ]);
-  } finally {
-    await server.shutdown();
-    await Deno.remove(temp, { recursive: true });
-  }
-});
 
 for (const manager of ["composer", "js"] as const) {
   Deno.test(`${manager}: the solver only sees security versions with a writable floor`, async () => {
@@ -1153,15 +674,6 @@ for (const manager of ["composer", "js"] as const) {
       assertEquals(
         (await Deno.readTextFile(log)).includes("2.0.0 || 1.5.0"),
         false,
-      );
-      await (manager === "composer" ? composerBatch : jsBatch)(
-        batchArgs(root),
-        plan.targets,
-      );
-      const updated = JSON.parse(await Deno.readTextFile(file));
-      assertEquals(
-        updated[manager === "composer" ? "require" : "dependencies"][name],
-        "^2",
       );
     });
   });
@@ -1374,9 +886,6 @@ Deno.test("legacy capitalized npm names stay eligible beside another package and
       "JSONStream",
       "one",
     ]);
-    await jsBatch(batchArgs(root), plan.targets);
-    const updated = JSON.parse(await Deno.readTextFile(path));
-    assertEquals(updated.dependencies.JSONStream, "^2.0.0");
   });
 });
 

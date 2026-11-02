@@ -1,12 +1,5 @@
-import { ImpactContextSchema } from "../_lib/maintenance/impact.ts";
-import { ProjectTypeSchema } from "../_lib/maintenance/project_type.ts";
-import {
-  BatchPlanSchema,
-  type Candidate,
-  TargetsSchema,
-} from "../_lib/maintenance/batch.ts";
-import { batch, plan } from "./_lib/batch.ts";
-import { ExceptionsSchema } from "../_lib/maintenance/exceptions.ts";
+import { BatchPlanSchema, type Candidate } from "../_lib/maintenance/batch.ts";
+import { plan } from "./_lib/batch.ts";
 /** Composer maintenance in a supplied checkout, with no orchestration dependency. */
 import {
   type Context,
@@ -24,12 +17,9 @@ import {
   MaintenanceFailure,
   object,
   places,
-  readJson,
   reportJson,
-  run,
 } from "./_lib/io.ts";
-import { allowSecurity, staleExceptions, StaleSchema } from "./_lib/policy.ts";
-import { ChangeSchema, summarize } from "./_lib/summary.ts";
+import { staleExceptions, StaleSchema } from "./_lib/policy.ts";
 
 export { MaintenanceFailure } from "./_lib/io.ts";
 
@@ -47,70 +37,17 @@ const DetectionSchema = z.strictObject({
   candidates: z.array(CandidateSchema),
   stale_exceptions: z.array(StaleSchema).optional(),
 });
-const RoutineSchema = z.strictObject({
-  schema: z.literal(1),
-  paths: z.array(z.string()),
-});
-const PackageSchema = CommonSchema.extend({
-  path: z.string().default("."),
-  package: z.string().regex(/^[a-z0-9][a-z0-9_.-]*\/[a-z0-9][a-z0-9_.-]*$/),
-  version: z.string().regex(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/),
-  purpose: z.enum(["major", "security"]),
-  advisoryIds: z.array(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:/-]*$/))
-    .default([]),
-}).refine((a) => (a.purpose === "security") === (a.advisoryIds.length > 0), {
-  message: "Security needs advisory ids; major takes none",
-});
-const PackageResultSchema = z.strictObject({
-  schema: z.literal(1),
-  path: z.string(),
-  manager: z.literal("composer"),
-  package: z.string(),
-  version: z.string(),
-  purpose: z.enum(["major", "security"]),
-  advisoryIds: z.array(z.string()),
-});
-const SummaryArgsSchema = CommonSchema.extend({
-  base: z.string().optional(),
-  projectType: ProjectTypeSchema.default("laravel-app"),
-  impact: ImpactContextSchema.nullish(),
-});
-const SummarySchema = z.strictObject({
-  schema: z.literal(1),
-  title: z.string(),
-  body: z.string(),
-  text: z.string(),
-  changes: z.array(ChangeSchema),
-});
 
 /** Swamp behavior: local commands and versioned schema 1 resources. */
 export const behavior = {
   type: "@nckrtl/composer-maintenance",
-  version: "2026.10.30.1",
+  version: "2026.11.02.1",
   globalArguments: z.strictObject({}),
   resources: {
     failure: failureResource,
-    exceptions: {
-      description: "Release-age exception receipts",
-      schema: ExceptionsSchema,
-      lifetime: "infinite",
-      garbageCollection: 20,
-    },
-    routine: {
-      description: "Completed Composer routine paths",
-      schema: RoutineSchema,
-      lifetime: "30d",
-      garbageCollection: 20,
-    },
     detection: {
       description: "Locked majors, advisories and due exceptions",
       schema: DetectionSchema,
-      lifetime: "30d",
-      garbageCollection: 20,
-    },
-    batch: {
-      description: "Completed project batch targets",
-      schema: z.strictObject({ schema: z.literal(1), targets: TargetsSchema }),
       lifetime: "30d",
       garbageCollection: 20,
     },
@@ -120,36 +57,8 @@ export const behavior = {
       lifetime: "infinite",
       garbageCollection: 10,
     },
-    package: {
-      description: "One completed dependency update",
-      schema: PackageResultSchema,
-      lifetime: "30d",
-      garbageCollection: 20,
-    },
-    summary: {
-      description: "Dependency PR title, body and direct lock changes",
-      schema: SummarySchema,
-      lifetime: "30d",
-      garbageCollection: 20,
-    },
   },
   methods: failureReceipts({
-    routine: {
-      description:
-        "Update each configured Composer path within declared ranges; stop on failure",
-      arguments: CommonSchema,
-      execute: async (input: z.input<typeof CommonSchema>, ctx: Context) => {
-        const args = parse(CommonSchema, input);
-        const project = await places(args);
-        for (const place of project.places) {
-          await run(place.dir, ["update", "--no-interaction"], ctx.signal);
-        }
-        return await write(ctx, "routine", RoutineSchema, {
-          schema: 1,
-          paths: args.paths,
-        });
-      },
-    },
     detect: {
       description:
         "Detect Composer locked majors and advisories without vendor",
@@ -242,140 +151,6 @@ export const behavior = {
           "plan",
           BatchPlanSchema,
           await plan(parse(CommonSchema, common), candidates, ctx.signal),
-        );
-      },
-    },
-    batch: {
-      description:
-        "Apply every selected project target together; preserve release-age policy",
-      arguments: CommonSchema.extend({ targets: TargetsSchema }),
-      execute: async (
-        input: z.input<typeof CommonSchema> & {
-          targets: z.infer<typeof TargetsSchema>;
-        },
-        ctx: Context,
-      ) => {
-        const { targets, ...common } = input;
-        TargetsSchema.parse(targets);
-        await batch(parse(CommonSchema, common), targets, ctx.signal);
-        return await write(
-          ctx,
-          "batch",
-          z.strictObject({ schema: z.literal(1), targets: TargetsSchema }),
-          { schema: 1, targets },
-        );
-      },
-    },
-    package: {
-      description:
-        "Update one direct Composer dependency using a major range or exact security version",
-      arguments: PackageSchema,
-      execute: async (input: z.input<typeof PackageSchema>, ctx: Context) => {
-        const args = parse(PackageSchema, input);
-        const project = await places(args);
-        const place = project.places.find((p) => p.path === args.path);
-        if (!place) {
-          throw new MaintenanceFailure(`Unknown path ${args.path}`, 64);
-        }
-        const manifest = await readJson(`${place.dir}/composer.json`);
-        const sections = ["require", "require-dev"].filter((section) => {
-          const value = manifest[section];
-          return value !== null && typeof value === "object" &&
-            args.package in value;
-        });
-        const range = sections.length === 1
-          ? (manifest[sections[0]] as Record<string, unknown>)[args.package]
-          : null;
-        if (
-          typeof range !== "string" ||
-          /(?:npm:|workspace:|git|https?:|file:|link:|\bas\b)/.test(range)
-        ) {
-          throw new MaintenanceFailure(
-            "Target must be one existing direct registry dependency in exactly one section",
-            64,
-          );
-        }
-        if (args.purpose === "security") {
-          const before = (await audit(place.dir, ctx.signal))[args.package] ??
-            [];
-          if (
-            args.advisoryIds.some((id) => !before.some((a) => a.id === id)) &&
-            !(before.length === 0 && range === args.version)
-          ) {
-            throw new MaintenanceFailure(
-              "Requested advisories are not current findings for this package",
-              64,
-            );
-          }
-          if (before.length) {
-            await allowSecurity(
-              place,
-              args.package,
-              args.policy,
-              args.exceptions,
-              ctx,
-            );
-          }
-        }
-        const target = args.purpose === "major"
-          ? `^${args.version}`
-          : args.version;
-        const requireArgs = [
-          "require",
-          `${args.package}:${target}`,
-          "--no-update",
-          "--no-interaction",
-        ];
-        if (sections[0] === "require-dev") requireArgs.push("--dev");
-        await run(place.dir, requireArgs, ctx.signal);
-        await run(place.dir, [
-          "update",
-          args.package,
-          "--with-dependencies",
-          "--no-interaction",
-        ], ctx.signal);
-        if (
-          args.purpose === "security" &&
-          ((await audit(place.dir, ctx.signal))[args.package] ?? []).length
-        ) {
-          throw new MaintenanceFailure(
-            "The selected package still has security advisories",
-            1,
-          );
-        }
-        return await write(ctx, "package", PackageResultSchema, {
-          schema: 1,
-          path: args.path,
-          manager: "composer",
-          package: args.package,
-          version: args.version,
-          purpose: args.purpose,
-          advisoryIds: args.advisoryIds,
-        });
-      },
-    },
-    summary: {
-      description:
-        "Write the dependency PR title and description from base and current locked versions",
-      arguments: SummaryArgsSchema,
-      execute: async (
-        input: z.input<typeof SummaryArgsSchema>,
-        ctx: Context,
-      ) => {
-        const args = parse(SummaryArgsSchema, input);
-        const project = await places(args);
-        return await write(
-          ctx,
-          "summary",
-          SummarySchema,
-          await summarize(
-            project.root,
-            project.places,
-            args.base,
-            ctx.signal,
-            args.projectType,
-            args.impact,
-          ),
         );
       },
     },

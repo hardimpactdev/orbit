@@ -6,7 +6,9 @@ worker driver or a many-action workflow inside a behavior.
 
 ## Project data
 
-`@nckrtl/composer-maintenance` owns shared Composer policy. Project
+`@nckrtl/composer-maintenance` owns shared Composer policy. It has two methods:
+`detect` finds locked majors, advisories and due exceptions, and `plan` resolves
+eligible targets in a disposable checkout. Project
 configuration supplies a checkout, relative paths and the repository's existing
 release-age assertion. Paths must stay inside the checkout and identify Composer
 manifests. Do not invent an age rule for a project that has none.
@@ -18,21 +20,13 @@ version, purpose and advisories. Manifest range rules are in
 checkout during planning.
 
 Security policy verifies advisory identity and the final lockfile. Major targets
-preserve the required range style. Policy never silences advisories, accepts
-stale downgrades or adds a release-age exception to a batch. Per-package
-security exceptions preserve existing settings, record their date and duration
-as native exception data, and never reset an older record.
+preserve the required range style. Policy never silences advisories or accepts
+stale downgrades.
 
-`exceptions` is schema 1 project data. Shared methods emit exception metadata as
-a Swamp resource; they do not own a Gateway stage-completion handshake or a
-repository maintenance ledger.
+`exceptions` is schema 1 project input. `detect` reports elapsed exceptions and
+never changes `vet.json` or the exception records.
 [Exception data](../../../docs/project-maintenance-exceptions.md) belongs to the
 private project extension.
-
-Summary data contains a title, body, complete text and structured changes. It
-compares direct declarations and locked versions against the selected base. Only
-cleared advisories count as fixes. Report package and path identity
-consistently; an empty update does not produce a successful PR summary.
 
 ## Distribution and checks
 
@@ -47,8 +41,8 @@ Run the focused specifications with the installed Deno runtime:
 deno test --allow-all extensions/behaviors/composer-maintenance/mod_test.ts
 ```
 
-The tests exercise parsing, Git comparisons, policy edits and native resource
-data with external package binaries as fixtures. See
+The tests exercise parsing and native resource data with external package
+binaries as fixtures. See
 [fixture provenance](fixtures/README.md). Runtime authoring and the required
 per-PR checks remain in the binding guide.
 
