@@ -138,7 +138,7 @@ jobs:
     - {step: 'Restart the Node agent', condition: {type: succeeded}}
     - {step: 'Apply private DNS policy', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     - {step: 'Install Caddy', condition: {type: always}}
-    guard: '${{ inputs.intent.roles.caddy == null || steps["Install Caddy"].status == "failed" }}'
+    guard: '${{ inputs.intent.roles.caddy == null || ("Install Caddy" in steps && steps["Install Caddy"].status == "failed") }}'
     task:
       type: workflow
       workflowIdOrName: node-caddy-sites
