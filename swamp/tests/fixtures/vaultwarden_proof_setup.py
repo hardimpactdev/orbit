@@ -143,7 +143,18 @@ def main():
     ca = "/usr/local/share/ca-certificates/orbit-root.crt"
     shutil.copyfile(STATE / "tls/ca.pem", ca)
     os.chmod(ca, 0o644)
-    run(["apt-get", "install", "-y", "python3-cryptography", "nodejs", "npm"])
+    run(["apt-get", "update"])
+    run(
+        [
+            "apt-get",
+            "install",
+            "-y",
+            "--no-install-recommends",
+            "python3-cryptography",
+            "nodejs",
+            "npm",
+        ]
+    )
     url = "https://vault-proof.orbit:8443"
     context = ssl.create_default_context(cafile=ca)
     deadline = time.monotonic() + 30
