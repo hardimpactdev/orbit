@@ -744,7 +744,7 @@ Cluster Router set and unset each start one native `operation-cluster-router` ru
 
 Native certificate children own issuance, inspection, trust installation and activation. The retained Node residue cleanup path only removes an admitted certificate scope after Caddy withdrawal. It resolves the admitted user locally and refuses a supplied home that does not match that account. It cannot request, publish, trust or reload certificates.
 
-Admission records each configured Node user from the database without looking up the account on that Node. The native worker resolves its account home and group before installing prerequisites or removing old certificates.
+Admission records each configured Node user from the database without looking up the account on that Node. The native worker resolves its account home and group before installing prerequisites or removing old certificates. Certificate scripts refuse an account home with empty, dot or parent path segments, or a newline, before selecting certificate paths. A supplied home must match the account exactly.
 
 Placed steps install the pinned Caddy package and role prerequisites, reconcile Router and workload firewall rules, publish certificates and Caddy, select the Router, publish private DNS and retire the old baseline after DNS expiry. Swamp runs the system commands directly. The Gateway records Router selection and cleanup checkpoints; it creates no child Operations and checks no execution receipts.
 

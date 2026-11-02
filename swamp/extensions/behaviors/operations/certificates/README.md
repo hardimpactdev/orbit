@@ -70,6 +70,8 @@ activation and key cleanup steps. The Gateway projects role state after those st
 
 ## Native leaf actions and the official certificate extension
 
+Native certificate scripts resolve the admitted account home locally before selecting certificate paths. They require a canonical absolute home with no empty, dot or parent segments and no control newlines, matching the legacy managed-account resolver. A supplied home must match that account exactly.
+
 Standalone leaf workflows receive the complete public intent and return one public presence result through the shared terminal subscriber. They use Swamp command steps for Node-local actions and the official `@swamp/ssh` extension for remote actions. There is no family subscriber, intent callback, status callback or private-key resource.
 
 Official `@swamp/cfgmgmt/certificate` was checked at upstream `d6f7afdcd6d04a63fdbc6ed56c403832770f67a6`. Its check/apply methods require both `certContent` and sensitive `keyContent`. They cannot generate a CSR or publish against an existing Node-local key path. Using that deployment interface would move the leaf private key out of its existing Node-local custody. The remaining scripts use OpenSSL for this specific gap: request a CSR with the local key, publish the returned public certificate beside that key, inspect the pair, or remove the admitted scope. They do not implement SSH, retry, scheduling or signing policy. The Gateway owns certificate policy.

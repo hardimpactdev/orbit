@@ -1,0 +1,100 @@
+{
+  "kind": "route.destroy",
+  "workflow": "operation-route-removal",
+  "topology": "app-dev",
+  "budget_seconds": 300,
+  "queue_timeout_seconds": 600,
+  "prepare": [
+    {
+      "argv": [
+        "orbit",
+        "route:create",
+        "proof-home-${proof.run}.test",
+        "--node=${topology.app-dev.node_id}",
+        "--upstream=http://127.0.0.1:18081",
+        "--idempotency-key=proof-home-create-${proof.run}",
+        "--json"
+      ],
+      "capture": {
+        "route_id": "$.result.route_id"
+      }
+    }
+  ],
+  "request": {
+    "argv": [
+      "orbit",
+      "route:destroy",
+      "${capture.route_id}",
+      "--yes",
+      "--idempotency-key=proof-home-remove-${proof.run}",
+      "--json"
+    ],
+    "operation": "$.id"
+  },
+  "envelope": {
+    "route_id": "${capture.route_id}",
+    "offline": false,
+    "route_lifecycle": {
+      "route_id": "${capture.route_id}",
+      "result_route_id": "${capture.route_id}",
+      "effectful": true,
+      "removal": true
+    },
+    "route_removal": {
+      "routes": [
+        {
+          "route_id": "${capture.route_id}",
+          "domain": "proof-home-${proof.run}.test",
+          "replacement_of": null
+        }
+      ]
+    }
+  },
+  "secrets": [],
+  "expect": {
+    "status": "failed",
+    "outputs": {
+      "job": "certificate",
+      "step": "remove",
+      "match": {
+        "stdout": "{\"error_code\": \"certificate.account_invalid\"}\n"
+      }
+    }
+  },
+  "phases": [
+    {
+      "name": "parent-withdrawal",
+      "job": "update",
+      "step": "forward",
+      "budget_seconds": 240
+    },
+    {
+      "name": "certificate-account-refusal",
+      "job": "certificate",
+      "step": "remove",
+      "budget_seconds": 10
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "-I",
+      "swamp/proof/route.destroy/parity.py"
+    ],
+    "cases": [
+      "noncanonical-nss-home-present",
+      "certificate-scope-preserved",
+      "unrelated-scope-preserved"
+    ]
+  },
+  "before_request": [
+    {
+      "argv": [
+        "python3",
+        "-I",
+        "swamp/proof/route.destroy/before_request.py"
+      ],
+      "timeout_seconds": 60
+    }
+  ]
+}

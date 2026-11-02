@@ -36,9 +36,13 @@ def account(raw):
     user = pwd.getpwnam(raw["user"])
     if raw.get("home", user.pw_dir) != user.pw_dir:
         raise ValueError("certificate.home_mismatch")
-    home = pathlib.Path(user.pw_dir)
-    if not home.is_absolute():
+    if (
+        not user.pw_dir.startswith("/")
+        or any(part in ("", ".", "..") for part in user.pw_dir[1:].split("/"))
+        or any(char in user.pw_dir for char in ("\r", "\n"))
+    ):
         raise ValueError("certificate.account_invalid")
+    home = pathlib.Path(user.pw_dir)
     return user, home / ".orbit/certificates" / raw["scope"], CADDY / raw["scope"]
 
 
