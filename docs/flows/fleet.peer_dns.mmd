@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, DECISIONS 2 (DNS hold) and R1-R4, agent-observer-swamp-acts, single-swamp-node. docs/reference/private-dns.md#resolver-selection.
+  %% Target design: ADR 0244 task, DECISIONS and R1-R4, agent-observer-swamp-acts, single-swamp-node. docs/reference/private-dns.md#resolver-selection.
   %% status: draft
   %% command: none · routing domains change
   autonumber
@@ -42,10 +42,6 @@ sequenceDiagram
   SW->>N: Set the DNS policy<br/>resolvectl dns · domain
   %%> What it does:
   %%> - sets the DNS server and routing domains on the `orbit` link, with `default-route no`, so only private domains go to Orbit's DNS
-  Note over SW: open: Nick decides<br/>DNS hold
-  %%> Open:
-  %%> - this step changes how Nodes resolve private names; the hold `native-dns-takeover-held` still applies
-  %%> - Nick decides whether it runs natively before the DNS hold for Routes is lifted
   opt policy was on another link
     SW->>N: Clear the old link<br/>dns · domains · uplink route
     %%> When:
