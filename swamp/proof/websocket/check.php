@@ -76,9 +76,9 @@ $unit = 'orbit-proof-websocket-'.$nonce;
 if ($mode === 'seed-rotation') {
     $project = Project::query()->firstOrCreate(['slug' => 'proof-websocket-rotation'], ['name' => 'Proof WebSocket rotation',
         'repository_url' => 'https://example.test/proof-websocket.git', 'default_branch' => 'main', 'root' => 'public']);
-    Instance::query()->updateOrCreate(['id' => 7001], ['project_id' => $project->id, 'node_id' => (int) $argv[3], 'name' => 'default',
+    Instance::query()->firstOrNew(['id' => 7001])->forceFill(['id' => 7001, 'project_id' => $project->id, 'node_id' => (int) $argv[3], 'name' => 'default',
         'environment' => 'development', 'checkout_path' => '/home/orbit/apps/proof-websocket/default', 'source_is_laravel' => true,
-        'status' => 'active', 'provisioning_step' => 'active']);
+        'status' => 'active', 'provisioning_step' => 'active'])->save();
     exit(0);
 }
 if ($mode === 'offline') {
