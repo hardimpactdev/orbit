@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task + full intent as inputs, R1-R4, single-swamp-node; DECISIONS scope (SQLite only when chosen, Schedules move, cert from destination CSR in-run), 1 (signing is the one step→Gateway call), 2 (DNS held); .env and Processes as in instance.create. docs/reference/instance-transfer.md.
+  %% Target design: ADR 0244 task + full intent as inputs, R1-R4, single-swamp-node; DECISIONS scope (SQLite only when chosen, Schedules move, cert from destination CSR in-run), 1 (signing is the one step→Gateway call); .env and Processes as in instance.create. docs/reference/instance-transfer.md.
   %% status: draft
   %% command: instance:transfer
   autonumber
@@ -114,10 +114,11 @@ sequenceDiagram
   %%> - reloads Caddy; no restart
   %%> Cutover:
   %%> - from here Node 15 serves Instance 42
-  Note over SW: DNS publication held<br/>open: Nick decides
-  %%> Open:
-  %%> - DNS publication for Routes is on hold (`native-dns-takeover-held`)
-  %%> - until Nick decides, the run changes no DNS record
+  Note over SW: Point DNS at Node 15<br/>Node 1 over @swamp/ssh
+  %%> What it does:
+  %%> - points the Route's private DNS record at Node 15, then waits the 31-second grace
+  %%> How:
+  %%> - over SSH from 209 to the VPN Node (Node 1), with the `swamp` role's key
   SW->>D: Create, start Processes<br/>Project definitions · development
   %%> What it does:
   %%> - creates the Instance's Processes on Node 15 from Project 7's definitions for `development`, and starts them
