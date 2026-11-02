@@ -8,6 +8,7 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Routes\NativeRouteCreatePlan;
 use App\Domain\Routes\RouteStatus;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -28,7 +29,8 @@ beforeEach(function (): void {
     {
         public function resolve(Node $node): ManagedUserAccount
         {
-            return new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
+            // Admission runs inside the database transaction, so it never asks the agent.
+            throw new RuntimeException('admission must not ask the agent');
         }
     });
     $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('public-root');
@@ -78,9 +80,26 @@ it('records one unpublished Route intent then starts its exact native create wor
         ->and($this->socket->sent)->toHaveCount(1)
         ->and($this->socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-route-create');
     expect($operation->input)->not->toHaveKeys(['environment_fields', 'private_bindings'])
-        ->and($this->socket->sent[0]['payload']['inputs']['intent'])->toBe($operation->input['route_lifecycle'])
+        ->and($this->socket->sent[0]['payload']['inputs']['intent'])->toBe($operation->input['route_create'])
         ->and($this->socket->sent[0]['payload']['inputs']['execution_secrets'])->toEqual((object) [])
         ->and($operation->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676');
+    // One list per chart step, each item ready for its official behavior or command (rule 22).
+    $plan = $operation->input['route_create'];
+    expect($plan)->toMatchArray(['route_id' => $route->id, 'domain' => 'created.private.test', 'lan' => [], 'ingress_ports' => [],
+        'links' => [], 'url_lines' => [], 'env_files' => [], 'ingress' => [], 'dns' => [], 'leaf_indexes' => [0], 'trust' => [$node->id], 'root_certificate' => 'public-root'])
+        ->and($plan['probes'])->toBe([['node_id' => $node->id, 'address' => $node->wireguard_ip, 'domain' => 'created.private.test']])
+        ->and($plan['nodes'][$node->id])->toMatchArray(['host' => $node->wireguard_ip, 'user' => 'orbit', 'identity_file' => '/etc/orbit/swamp-role-worker/ssh-identity'])
+        ->and($plan['leaves'][0])->toMatchArray(['node_id' => $node->id, 'scope' => 'app-instance-'.$instance->id, 'domain' => 'created.private.test',
+            'current' => '/etc/caddy/orbit-certificates/app-instance-'.$instance->id.'/current', 'user' => 'orbit'])
+        // The run reads the account on the Node; admission never asks the agent.
+        ->and($plan['site_nodes'])->toBe([$node->id])
+        ->and($plan['nodes'][$node->id]['account'])->toBe('orbit')
+        ->and($plan['caddy'][0]['node_id'])->toBe($node->id)
+        ->and($plan['caddy'][0]['content'])->toStartWith('# Managed by Orbit: Node Caddy build')->toContain('https://created.private.test {')
+        // The ordered grants: deny the checkout first, then passage above the root, then the root itself.
+        ->and($plan['acl'][1]['argv'])->toBe(['/usr/sbin/runuser', '-u', 'orbit', '--', '/usr/bin/setfacl', '-P', '-R', '-n', '-m', 'u:caddy:---', '--', '/srv/create'])
+        ->and(array_column(array_slice($plan['acl'], 2, 2), 'argv'))->toBe([['/usr/bin/setfacl', '-m', 'u:caddy:--x', '--', '/srv/create'], ['/usr/bin/setfacl', '-m', 'u:caddy:--x', '--', '/srv']])
+        ->and(end($plan['acl'])['argv'])->toBe(['/usr/sbin/runuser', '-u', 'orbit', '--', '/usr/bin/setfacl', '-P', '-R', '-n', '-m', 'u:caddy:r-X', '--', '/srv/create/public']);
 });
 
 it('refuses executor callbacks without publishing or deleting admitted Route intent', function (string $status): void {
@@ -100,7 +119,7 @@ it('refuses executor callbacks without publishing or deleting admitted Route int
         ->and($route->targets()->pluck('instance_id')->all())->toBe([$instance->id]);
 })->with(['running', 'succeeded', 'failed', 'cancelled']);
 
-it('admits public Process publication without requesting a private ingress certificate', function (bool $lan, bool $allowed): void {
+it('admits public Process publication only when the recorded firewall admits the Ingress, without a private ingress certificate', function (bool $lan, bool $allowed): void {
     [, $node] = native_create_admission_fixture();
     $cluster = Cluster::query()->create(['name' => 'create-public', 'state' => 'active']);
     $ingress = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-host-key', 'name' => 'create-public-ingress', 'public_ssh_host' => '192.0.2.43', 'wireguard_ip' => '10.44.0.43', 'cluster_id' => $cluster->id,
@@ -121,31 +140,28 @@ it('admits public Process publication without requesting a private ingress certi
     }
     $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
 
-    $this->postJson('/api/v1/routes', ['domain' => 'create-public.example.test', 'publication' => 'public', 'process_id' => $process->id, 'ingress_node_id' => $ingress->id])->assertAccepted();
+    $response = $this->postJson('/api/v1/routes', ['domain' => 'create-public.example.test', 'publication' => 'public', 'process_id' => $process->id, 'ingress_node_id' => $ingress->id]);
 
+    if ($lan && ! $allowed) {
+        // The recorded firewall admits no Ingress traffic: refused at admission, before any record or run.
+        $response->assertConflict()->assertJsonPath('error.code', 'route.upstream_firewall_mismatch');
+        expect(Route::query()->count())->toBe(0)->and(Operation::query()->count())->toBe(0)->and($this->socket->sent)->toBe([]);
+
+        return;
+    }
+    $response->assertAccepted();
     $route = Route::query()->sole();
     $operation = Operation::query()->sole();
     expect($operation->input['certificates'])->toBe([])
         ->and($operation->input['participant_node_ids'])->toEqualCanonicalizing([$node->id, $ingress->id, $router->id, 209])
         ->and($route->sites_published)->toBeFalse();
     $intent = $operation->input['route_lifecycle'];
-    expect($this->socket->sent[0]['payload']['inputs']['intent'])->toBe($intent)
-        ->and($intent['preparation']['probes'][0]['protocol'])->toBe('http')
-        ->and($intent['preparation']['probes'][0]['probe'])->toMatchArray(['address' => $lan ? $node->lan_ip : $node->wireguard_ip, 'port' => 8787]);
-    $expected = $intent['preparation']['upstream_firewalls'][0];
-    expect($expected['node_id'])->toBe($node->id);
-    if ($allowed) {
-        expect($expected['expected'][0])->toMatchArray(['comment' => 'orbit process-lan', 'source' => $ingress->lan_ip, 'port' => '8787']);
-        $node->firewallRules()->delete();
-        expect($operation->fresh()->input['route_lifecycle']['preparation']['upstream_firewalls'][0])->toBe($expected);
-    } elseif ($lan) {
-        expect($expected['expected'])->toBe([]);
-        $node->firewallRules()->create(['label' => 'process-lan', 'action' => 'allow', 'source' => $ingress->lan_ip, 'port' => '8787', 'protocol' => 'tcp', 'status' => 'active']);
-        expect($operation->fresh()->input['route_lifecycle']['preparation']['upstream_firewalls'][0]['expected'])->toBe([])
-            ->and($this->socket->sent)->toHaveCount(1);
-    } else {
-        expect($expected['expected'][0]['comment'])->toBe('orbit:wireguard-members');
-    }
+    $plan = $operation->input['route_create'];
+    expect($this->socket->sent[0]['payload']['inputs']['intent'])->toBe($plan)
+        // The upstream firewall is checked at admission; the run opens the Ingress edge only.
+        ->and(array_column($plan['ingress_ports'], 'node_id'))->each->toBe($ingress->id)
+        ->and($plan['nodes'])->toHaveKey($ingress->id)
+        ->and($intent['preparation']['upstream_firewalls'][0]['expected'][0]['comment'])->toBe($allowed ? 'orbit process-lan' : 'orbit:wireguard-members');
     $path = '/api/v1/direct-operations/'.$operation->id;
     $this->withServerVariables(['REMOTE_ADDR' => $ingress->wireguard_ip]);
     $this->postJson($path.'/result', ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'status' => 'succeeded',
@@ -193,3 +209,26 @@ it('refuses reserved proxy names, remote upstreams and mixed scope before native
     };
     expect(Route::query()->count())->toBe(0)->and(Operation::query()->count())->toBe(0)->and($this->socket->sent)->toBe([]);
 })->with(['reserved', 'remote', 'mixed']);
+
+it('publishes private DNS only when the records change, so a domain inside the TLD needs no step', function (bool $changed): void {
+    [$instance, $node] = native_create_admission_fixture();
+    $route = Route::query()->create(['project_id' => $instance->project_id, 'node_id' => $node->id, 'domain' => 'inside.private.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    $records = static fn (string $extra): array => ['records' => "address=/private.test/10.44.0.41\n".$extra, 'catalog' => '{}', 'digest' => str_repeat('a', 64)];
+    $publication = ['node_id' => $node->id, 'user' => 'orbit', 'serves_routes' => false,
+        'before' => ['caddy' => 0, 'php' => 0, 'dns' => 0], 'after' => ['caddy' => 0, 'php' => 0, 'dns' => 1]];
+    $empty = array_fill_keys(['publications', 'certificates', 'lan', 'ingress', 'url_writes'], []);
+    $lifecycle = ['effectful' => true, 'public_activated' => false, 'workloads' => [], 'verifications' => [],
+        'preparation' => ['certificates' => [], 'lan' => [], 'probes' => [], 'upstream_firewalls' => []],
+        'route_mutations' => ['artifacts' => ['caddy' => [], 'php' => [['configurations' => [], 'account_user' => 'orbit']],
+            'dns' => [$records(''), $records($changed ? "host-record=inside.private.test,10.44.0.41\n" : '')]],
+            'forward' => [...$empty, 'publications' => [$publication]]],
+        'renders' => [(string) $node->id => ['caddy' => null, 'php' => null, 'dns' => ['records' => 'full records', 'catalog' => '{}']]]];
+
+    $plan = app(NativeRouteCreatePlan::class)->build($route, $lifecycle);
+
+    expect(array_column($plan['dns'], 'node_id'))->toBe($changed ? [$node->id] : []);
+    if ($changed) {
+        // The whole VPN Node file from the admitted render, not the trimmed change.
+        expect($plan['dns'][0]['records'])->toBe('full records');
+    }
+})->with(['new record' => [true], 'records unchanged' => [false]]);

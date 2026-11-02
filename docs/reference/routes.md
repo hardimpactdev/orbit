@@ -104,6 +104,10 @@ Create an explicit app Route for an Instance with `route:create <instance> <doma
 
 Creation reserves a `pending`, unpublished Route and starts one native Swamp workflow. Swamp prepares and publishes it before the Gateway records it active. An unchanged pending reservation can be retried. Failed or retiring Routes refuse a creation retry; their retained intent is available for explicit convergence. An unchanged active retry performs no effects and preserves its serving state even when that retry Operation fails. This form does not accept a Project argument, `--target`, `--node`, or `--cluster`. The custom proxy form is `route:create <domain> --node=NODE --upstream=URL` or `route:create <domain> --node=NODE --process=PROCESS`. Public Process Routes use `--process=PROCESS [--ingress=NODE] --publication=public`.
 
+The workflow, `operation-route-create`, has the seven steps of the [route:create chart](/cli/route/create). Each Node makes its key and CSR, and 209 has each CSR signed. A Cluster Route then allows the Router on LAN. One `route-create-site` child per Node installs the certificate and publishes the site. Then 209 probes the site over TLS, and a public Route opens the Ingress edge. A domain outside the TLD gets its private DNS last.
+
+Every Node change is an official `@swamp/cfgmgmt` behavior or one `@swamp/ssh exec` command. A failed step leaves the Route `pending` with its `failed_step` and `error_code`. There is no rollback.
+
 ```bash
 orbit route:create 12 shop.example.test
 orbit route:create 12 shop.example.com --publication=public

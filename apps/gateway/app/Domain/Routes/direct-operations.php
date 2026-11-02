@@ -15,9 +15,10 @@ return [
         'workflow_inputs' => true, 'terminal_result' => ['job' => 'update', 'step' => 'result'],
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(forward|restore)-route_material_[0-9]+$']],
     ],
+    // The end check is the first TLS probe: every effectful create probes at least one Node, and a failed probe fails the run.
     'route.create' => [
         'workflow' => 'operation-route-create', 'projection' => NativeRouteConvergenceProjection::class,
-        'workflow_inputs' => true, 'terminal_result' => ['job' => 'update', 'step' => 'result'],
+        'workflow_inputs' => true, 'terminal_result' => ['job' => 'create', 'step' => 'Probe the site over TLS-0', 'native' => true],
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(forward|restore)-route_material_[0-9]+$']],
     ],
     'route.target_set' => [

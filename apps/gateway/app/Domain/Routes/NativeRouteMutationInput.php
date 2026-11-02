@@ -32,7 +32,7 @@ final readonly class NativeRouteMutationInput
      * @param  Collection<int,DevelopmentSite>  $candidateSites
      * @param  list<int>  $extraNodeIds
      * @param  Closure(Closure():array<string,mixed>):array<string,mixed>  $render
-     * @return array{route_mutations:array<string,mixed>,participant_node_ids:list<int>,certificates:list<array<string,mixed>>,execution_secrets:array<string,array{vault:string,key:string}>}
+     * @return array{renders:array<int|string,array<string,mixed>>|object,route_mutations:array<string,mixed>,participant_node_ids:list<int>,certificates:list<array<string,mixed>>,execution_secrets:array<string,array{vault:string,key:string}>}
      */
     public function capture(array $previous, array $desired, array $staged, array $forwardPrior,
         Collection $beforeSites, Collection $candidateSites, array $extraNodeIds, Closure $render, ?NodeEnrollmentCandidate $enrollment = null, bool $restorable = true): array
@@ -58,7 +58,7 @@ final readonly class NativeRouteMutationInput
             ...$afterSites->filter(static fn (DevelopmentSite $site): bool => in_array($site->domain, $domains, true))->pluck('nodeId')->all(),
             ...PrivateDnsPublicationNodes::query()->pluck('id')->all()])));
         sort($nodeIds);
-        $publications = [];
+        $publications = $renders = [];
         $participants = $nodeIds;
         foreach ($nodeIds as $index => $nodeId) {
             $node = Node::query()->findOrFail($nodeId);
@@ -72,6 +72,9 @@ final readonly class NativeRouteMutationInput
                 'after' => app(NativeRoutePublicationInput::class)->snapshot($node, $afterSites),
             ]);
             $participants[] = ValidatedData::integer($forward['control_node_id']);
+            // The whole after-state of the Node, which official cfgmgmt file steps write as is (rule 22).
+            $after = ValidatedData::object($forward['after']);
+            $renders[(string) $nodeId] = ['caddy' => ValidatedData::object($after['caddy'])['content'] ?? null, 'php' => $after['php'], 'dns' => $after['dns']];
             $serves = in_array($nodeId, $addressNodes, true) || $beforeSites->where('nodeId', $nodeId)->contains(static fn (DevelopmentSite $site): bool => in_array($site->domain, $domains, true))
                 || $afterSites->where('nodeId', $nodeId)->contains(static fn (DevelopmentSite $site): bool => in_array($site->domain, $domains, true));
             $restoreConnection = $forward['host_keys'] === null ? $forward['connection']
@@ -141,7 +144,7 @@ final readonly class NativeRouteMutationInput
         $participants = array_values(array_unique($participants));
         sort($participants);
 
-        return ['route_mutations' => ['schema_version' => 2, 'artifacts' => $compact['artifacts'], 'forward' => $forward, ...($restorable ? ['restore' => $restore] : [])],
+        return ['renders' => $renders === [] ? (object) [] : $renders, 'route_mutations' => ['schema_version' => 2, 'artifacts' => $compact['artifacts'], 'forward' => $forward, ...($restorable ? ['restore' => $restore] : [])],
             'participant_node_ids' => $participants, 'certificates' => $certificates, 'execution_secrets' => $secrets];
     }
 

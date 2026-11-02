@@ -106,6 +106,24 @@ it('projects create serving state only at native terminal success', function (st
         ->and($route->targets()->count())->toBe(1);
 })->with(['succeeded', 'failed', 'cancelled']);
 
+it('maps the failed chart step of a create to its code and keeps the Route rerunnable', function (string $failed, string $step, string $code): void {
+    $route = $this->routes['pool'];
+    $route->update(['status' => 'pending', 'sites_published' => false]);
+    $capture = app(NativeRouteLifecycleInput::class)->capture($route->fresh(), ['mode' => 'converge']);
+    $op = lifecycle_operation($route, $capture, 'route.create');
+    // A step fails with its own exit code; the run has no report step, so the Gateway maps the step (rule 14).
+    $op = app(NativeRouteConvergenceProjection::class)->apply($op, ['run_id' => $op->state['swamp_run_id'], 'status' => 'failed', 'started_at' => '2026-11-01T05:00:00Z',
+        'finished_at' => '2026-11-01T05:01:00Z', 'error_code' => null, 'failure' => ['failed_step' => $failed], 'result' => []]);
+    expect($op->error_code)->toBe($code)
+        ->and($route->fresh())->status->value->toBe('pending')->failed_step->toBe($step)->error_code->toBe($code)->sites_published->toBeFalse();
+})->with([
+    'a forEach iteration' => ['Install cert, publish site-7', 'Install cert, publish site', 'route.publish_failed'],
+    'the signer' => ['Sign the CSR-7', 'Sign the CSR', 'app-dev.certificate_sign_failed'],
+    'private DNS' => ['Publish private DNS-1', 'Publish private DNS', 'private_dns.publication_failed'],
+    'a certificate request' => ['Make a CSR on the Node-0', 'Make a CSR on the Node', 'app-dev.certificate_request_failed'],
+    'the probe' => ['Probe the site over TLS-0', 'Probe the site over TLS', 'route.probe_failed'],
+]);
+
 it('deletes or withdraws only at native terminal success', function (string $kind, string $status): void {
     $route = $this->routes['pool'];
     $this->instances['old']->update(['status' => 'reserved']);

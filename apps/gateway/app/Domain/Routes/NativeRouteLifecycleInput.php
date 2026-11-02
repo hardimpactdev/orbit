@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Routes\PublicProcessRouteFirewall;
@@ -107,6 +108,10 @@ final readonly class NativeRouteLifecycleInput
                     throw new \LogicException('Public Process capture requires the admitted Ingress.');
                 }
                 $expected = app(PublicProcessRouteFirewall::class)->expectation($candidate, $ingress);
+                // The Gateway's recorded firewall is current; a Process Node that admits no Ingress traffic refuses here.
+                if ($expected['expected'] === []) {
+                    throw new ResourceOperationException('route.upstream_firewall_mismatch', 'The Process Node firewall does not admit the Ingress.', 409);
+                }
                 $process = $route->customProxy?->process;
                 if ($process === null) {
                     throw new \LogicException('Public Process capture requires its recorded Process.');
@@ -126,7 +131,9 @@ final readonly class NativeRouteLifecycleInput
             }
         }
 
-        return ['intent' => [...$metadata, 'route_mutations' => $capture['route_mutations']],
+        return ['intent' => [...$metadata, 'route_mutations' => $capture['route_mutations'],
+            // Whole after-renders feed route.create's file steps (rule 22); a withdrawal needs none, so its intent stays small.
+            ...($removing ? [] : ['renders' => $capture['renders'] ?? (object) []])],
             'certificates' => $capture['certificates'], 'participant_node_ids' => $capture['participant_node_ids'], 'execution_secrets' => $capture['execution_secrets']];
     }
 }

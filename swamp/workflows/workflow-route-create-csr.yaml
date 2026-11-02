@@ -1,0 +1,75 @@
+id: 500bf0af-8b95-5538-8293-286e9666ddf9
+name: route-create-csr
+description: "route.create: one leaf key and CSR on its Node."
+vaults: []
+queueTimeout: 30
+inputs:
+  type: object
+  properties:
+    intent: {type: object}
+    leaf: {type: integer, minimum: 0}
+  required: [intent, leaf]
+  additionalProperties: false
+jobs:
+- name: create
+  labels: {role: swamp}
+  steps:
+    # The leaf version folder Caddy reads, root:caddy 0750.
+  - name: 'folder'
+    labels: {role: swamp}
+    dependsOn: []
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/directory'
+      behaviorName: '${{ ("route-cert-dir-" + string(inputs.intent.leaves[inputs.leaf].node_id) + "-" + inputs.intent.leaves[inputs.leaf].scope.split("/").join("-")).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {path: '${{ inputs.intent.leaves[inputs.leaf].directory }}', owner: root, group: caddy, mode: '0750', ensure: present,
+        nodeHost: '${{ inputs.intent.nodes[string(inputs.intent.leaves[inputs.leaf].node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.intent.leaves[inputs.leaf].node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.intent.leaves[inputs.leaf].node_id)].port }}',
+        nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.intent.leaves[inputs.leaf].node_id)].identity_file }}', become: true}
+      inputs: {}
+    # One openssl req: a Node-local key and the public CSR on stdout; the key never leaves the Node.
+  - name: 'csr'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'folder', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("route-csr-" + string(inputs.intent.leaves[inputs.leaf].node_id) + "-" + inputs.intent.leaves[inputs.leaf].scope.split("/").join("-")).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ ("route-csr-" + string(inputs.intent.leaves[inputs.leaf].node_id) + "-" + inputs.intent.leaves[inputs.leaf].scope.split("/").join("-")).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: '${{ inputs.intent.nodes[string(inputs.intent.leaves[inputs.leaf].node_id)].user }}'
+          port: '${{ inputs.intent.nodes[string(inputs.intent.leaves[inputs.leaf].node_id)].port }}'
+          identityFile: '${{ inputs.intent.nodes[string(inputs.intent.leaves[inputs.leaf].node_id)].identity_file }}'
+        hosts:
+        - name: target
+          address: '${{ inputs.intent.nodes[string(inputs.intent.leaves[inputs.leaf].node_id)].host }}'
+          transport: {hostKeys: '${{ inputs.intent.nodes[string(inputs.intent.leaves[inputs.leaf].node_id)].host_keys }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: '${{ ["timeout", "30", "openssl", "req", "-new", "-newkey", "rsa:2048", "-nodes", "-keyout", inputs.intent.leaves[inputs.leaf].directory + "/key.pem", "-subj", "/CN=" + inputs.intent.leaves[inputs.leaf].domain] }}'
+        timeoutSec: 40
+    # The leaf key, root:caddy 0640, without its content.
+  - name: 'key'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'folder', condition: {type: always}}
+    - {step: 'csr', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ ("route-cert-key-" + string(inputs.intent.leaves[inputs.leaf].node_id) + "-" + inputs.intent.leaves[inputs.leaf].scope.split("/").join("-")).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {path: '${{ inputs.intent.leaves[inputs.leaf].directory + "/key.pem" }}', owner: root, group: caddy, mode: '0640', ensure: present,
+        nodeHost: '${{ inputs.intent.nodes[string(inputs.intent.leaves[inputs.leaf].node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.intent.leaves[inputs.leaf].node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.intent.leaves[inputs.leaf].node_id)].port }}',
+        nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.intent.leaves[inputs.leaf].node_id)].identity_file }}', become: true}
+      inputs: {}

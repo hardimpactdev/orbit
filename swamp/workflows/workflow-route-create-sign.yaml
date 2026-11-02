@@ -1,0 +1,48 @@
+id: 71347678-030a-595a-9509-d8309edc5420
+name: route-create-sign
+description: "route.create: 209 has one Node-made CSR signed by the Gateway."
+vaults: []
+queueTimeout: 30
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    parent_run_id: {type: string, minLength: 1}
+    leaf: {type: object}
+    request: {type: string, minLength: 1}
+  required: [operation_id, parent_run_id, leaf, request]
+  additionalProperties: false
+jobs:
+- name: create
+  labels: {role: swamp}
+  steps:
+    # The 209 signer's path; the certificate signer is the only shipped script.
+  - name: 'scripts'
+    labels: {role: swamp}
+    dependsOn: []
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/certificate-script-assets'
+      behaviorName: certificate-script-assets
+      methodName: read
+      inputs: {}
+    # The one step that calls the Gateway: the signed leaf, then the Orbit root.
+  - name: 'sign'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'scripts', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ ("route-sign-" + string(inputs.leaf.node_id) + "-" + inputs.leaf.scope.split("/").join("-")).split(".").join("-") }}'
+      methodName: execute
+      inputs:
+        run: "timeout 90 python3 -I \"$ORBIT_SIGN_SCRIPT\""
+        env:
+          ORBIT_SIGN_SCRIPT: '${{ steps.scripts.outputs.sign }}'
+          ORBIT_CERTIFICATE_OPERATION_ID: '${{ string(inputs.operation_id) }}'
+          ORBIT_CERTIFICATE_RUN_ID: '${{ inputs.parent_run_id }}'
+          ORBIT_CERTIFICATE_NODE_ID: '${{ string(inputs.leaf.node_id) }}'
+          ORBIT_CERTIFICATE_SCOPE: '${{ inputs.leaf.scope }}'
+          ORBIT_CERTIFICATE_REQUEST: '${{ inputs.request }}'

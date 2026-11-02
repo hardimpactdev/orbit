@@ -43,15 +43,15 @@
   },
   "phases": [
     {
-      "name": "certificates",
-      "job": "update",
-      "step": "prepare-certificates-0",
-      "budget_seconds": 120
+      "name": "sign",
+      "job": "create",
+      "step": "Sign the CSR-0",
+      "budget_seconds": 60
     },
     {
-      "name": "result",
-      "job": "update",
-      "step": "complete",
+      "name": "probe",
+      "job": "create",
+      "step": "Probe the site over TLS-0",
       "budget_seconds": 30
     }
   ],

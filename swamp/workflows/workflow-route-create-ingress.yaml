@@ -1,0 +1,108 @@
+id: 4f76810d-dbbb-5b97-9ec5-ed68275ca7fc
+name: route-create-ingress
+description: "route.create: the public site and ports on the Ingress."
+vaults: []
+queueTimeout: 30
+inputs:
+  type: object
+  properties:
+    intent: {type: object}
+    node_id: {type: integer, minimum: 1}
+  required: [intent, node_id]
+  additionalProperties: false
+jobs:
+- name: create
+  labels: {role: swamp}
+  steps:
+    # The Ingress's public ports 80 and 443.
+  - name: 'ports'
+    labels: {role: swamp}
+    dependsOn: []
+    writes: true
+    forEach: {item: port, in: '${{ inputs.intent.ingress_ports.filter(p, string(p.node_id) == string(inputs.node_id)) }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/firewall'
+      behaviorName: '${{ ("route-ingress-port-" + string(inputs.node_id) + "-" + string(self.port.port)).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {port: '${{ self.port.port }}', protocol: tcp, action: allow, ensure: present,
+        nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
+        nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
+      inputs: {}
+    # The Ingress's whole Caddyfile with the public site.
+  - name: 'caddyfile'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'ports', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    writes: true
+    forEach: {item: site, in: '${{ inputs.intent.ingress.filter(s, string(s.node_id) == string(inputs.node_id)) }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ ("route-ingress-caddyfile-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {path: /etc/caddy/Caddyfile, content: '${{ self.site.content }}', owner: root, group: caddy, mode: '0640', ensure: present,
+        nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
+        nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
+      inputs: {}
+    # caddy validate before the reload.
+  - name: 'caddy-validate'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'ports', condition: {type: always}}
+    - {step: 'caddyfile', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    forEach: {item: site, in: '${{ inputs.intent.ingress.filter(s, string(s.node_id) == string(inputs.node_id)) }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("route-ingress-validate-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ ("route-ingress-validate-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}'
+          port: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}'
+          identityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}'
+        hosts:
+        - name: target
+          address: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}'
+          transport: {hostKeys: '${{ inputs.intent.nodes[string(inputs.node_id)].host_keys }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '60', runuser, -u, caddy, --, caddy, validate, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
+        timeoutSec: 70
+    # A reload keeps open connections.
+  - name: 'caddy-reload'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'ports', condition: {type: always}}
+    - {step: 'caddyfile', condition: {type: always}}
+    - {step: 'caddy-validate', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    writes: true
+    forEach: {item: site, in: '${{ inputs.intent.ingress.filter(s, string(s.node_id) == string(inputs.node_id)) }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("route-ingress-reload-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ ("route-ingress-reload-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}'
+          port: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}'
+          identityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}'
+        hosts:
+        - name: target
+          address: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}'
+          transport: {hostKeys: '${{ inputs.intent.nodes[string(inputs.node_id)].host_keys }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '60', systemctl, reload, caddy]
+        timeoutSec: 70

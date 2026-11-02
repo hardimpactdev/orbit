@@ -27,7 +27,8 @@ final readonly class NativeRouteAdmission
 
         return [...$input, match ($kind) {
             'route.update' => 'route_update', 'route.target_set' => 'route_target', default => 'route_lifecycle'
-        } => $capture['intent'], 'certificates' => $capture['certificates'],
+        } => $capture['intent'], ...($kind === 'route.create' ? ['route_create' => app(NativeRouteCreatePlan::class)->build($route, $capture['intent'])] : []),
+            'certificates' => $capture['certificates'],
             'participant_node_ids' => array_values(array_unique([$rootNodeId, ...ValidatedData::integerList($capture['participant_node_ids'])])),
             'execution_secrets' => $capture['execution_secrets']];
     }

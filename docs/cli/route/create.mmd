@@ -86,13 +86,17 @@ sequenceDiagram
     %%> Why:
     %%> - the Router forwards to the workload over LAN, with no WireGuard fallback
   end
-  SW->>N: Install cert, publish site<br/>@swamp/cfgmgmt/file · reload
-  %%> What it does:
-  %%> - writes the certificate next to its key, owned `root:caddy`, mode 0750, and checks it matches the key and domain
-  %%> - writes the new site blocks into the Caddyfile of each affected Node
-  %%> - validates the whole file, then reloads Caddy
+  SW->>N: Install cert, publish site<br/>child route-create-site · reload
+  %%> What it does, per Node, in one child run:
+  %%> - installs the signed certificate next to its key, `root:caddy` 0644, and points `current` at it
+  %%> - copies the pair into the account's `~/.orbit/certificates`, which development servers read
+  %%> - trusts the Orbit root, writes the PHP-FPM pools, then the whole Caddyfile
+  %%> - validates the Caddyfile, then reloads Caddy
+  %%> - writes `APP_URL`, or a production `.env` from the vault
+  %%> Until instance:create owns it:
+  %%> - grants Caddy read access to the web root, one `setfacl` per directory
   %%> How:
-  %%> - `@swamp/cfgmgmt/file` for the certificate and the Caddyfile, `caddy validate` as one `@swamp/ssh exec`, then a reload with `@swamp/cfgmgmt/systemd`
+  %%> - `@swamp/cfgmgmt` file, link and line; `caddy validate`, reloads and `setfacl` as `@swamp/ssh exec`
   %%> Why reload:
   %%> - a reload keeps open connections; Caddy is never restarted (rule 7)
   %%> Refuses:
@@ -117,10 +121,10 @@ sequenceDiagram
     %%> - waiting for Let's Encrypt; Caddy retries on its own
   end
   opt domain outside the TLD
-    SW->>V: Publish private DNS<br/>records + catalog, then reload
+    SW->>V: Publish private DNS<br/>records + catalog, then restart
     %%> What it does:
     %%> - adds the domain, for example `shop.nick.dev`, pointing at Node 7, or at the Router for a Cluster Route
-    %%> - checks the loaded catalog and a DNS reply
+    %%> - writes the records and the catalog with `@swamp/cfgmgmt/file`, then restarts dnsmasq; it reads records only at start
     %%> Order:
     %%> - DNS goes last, so a name only resolves when its site serves
     %%> When:

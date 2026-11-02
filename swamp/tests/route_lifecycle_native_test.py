@@ -3,50 +3,8 @@
 import json
 
 import yaml
-from tests.route_update_native_test import ROOT, RouteTargetNative, RouteUpdateNative
 
-
-class RouteCreateNative(RouteTargetNative):
-    root_workflow = "operation-route-create"
-    root_kind = "route.create"
-    failure_code = "route.create_failed"
-
-    def setUp(self):
-        super().setUp()
-        self.input["intent"]["preparation"]["upstream_firewalls"] = []
-        self.input["intent"]["verifications"] = []
-
-    def test_failed_public_verification_restores_a_completed_publication(self):
-        self.input["intent"]["preparation"]["probes"] = []
-        self.input["intent"]["verifications"] = [{"node_id": 9}]
-        self.native_env["FIXTURE_FAIL"] = "cluster-router-probe"
-        history, result = self.run_update(success=False)
-        steps = {step["name"]: step for step in history["jobs"][0]["steps"]}
-        self.assertEqual(steps["forward"]["status"], "succeeded")
-        self.assertEqual(steps["verify-0"]["status"], "failed")
-        self.assertFalse(result["ready"])
-        self.assertTrue(result["restored"])
-
-    def test_missing_process_allowance_blocks_publication(self):
-        self.input["intent"]["preparation"]["upstream_firewalls"] = [{"node_id": 9}]
-        source = self.repo / "workflows/workflow-cluster-router-probe.yaml"
-        child = yaml.safe_load(source.read_text())
-        child.update(
-            id="d7eec9b6-54b9-47db-b509-6234b552fb35", name="route-upstream-firewall"
-        )
-        child["jobs"][0]["steps"][0]["task"]["inputs"]["env"]["FIXTURE_ACTION"] = (
-            "route-upstream-firewall"
-        )
-        (self.repo / "workflows/workflow-route-upstream-firewall.yaml").write_text(
-            yaml.safe_dump(child, sort_keys=False)
-        )
-        self.native_env["FIXTURE_FAIL"] = "route-upstream-firewall"
-        history, result = self.run_update(success=False)
-        steps = {step["name"]: step for step in history["jobs"][0]["steps"]}
-        self.assertEqual(steps["prepare-upstream-0"]["status"], "failed")
-        self.assertEqual(steps["forward"]["status"], "skipped")
-        self.assertFalse(result["ready"])
-        self.assertTrue(result["restored"])
+from tests.route_update_native_test import ROOT, RouteUpdateNative
 
 
 class RouteRemoveNative(RouteUpdateNative):

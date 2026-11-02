@@ -16,6 +16,17 @@ use Illuminate\Support\Facades\DB;
 /** Stored serving state follows the native terminal observation only. */
 final readonly class NativeRouteConvergenceProjection implements DirectOperationProjection, NativeOperationProjection
 {
+    /** Each chart step's error code. A step fails with its own exit code; its stderr carries the reason (rule 14). */
+    public const array StepCodes = [
+        'Make a CSR on the Node' => 'app-dev.certificate_request_failed',
+        'Sign the CSR' => 'app-dev.certificate_sign_failed',
+        'Allow the Router on LAN' => 'route.lan_firewall_failed',
+        'Install cert, publish site' => 'route.publish_failed',
+        'Probe the site over TLS' => 'route.probe_failed',
+        'Open the Ingress edge' => 'route.ingress_firewall_failed',
+        'Publish private DNS' => 'private_dns.publication_failed',
+    ];
+
     public function __construct(private DirectOperation $direct) {}
 
     public function native(Operation $operation): bool
@@ -25,7 +36,7 @@ final readonly class NativeRouteConvergenceProjection implements DirectOperation
 
     public function input(Operation $operation): array
     {
-        return ['intent' => $operation->input['route_lifecycle'], 'execution_secrets' => $operation->input['execution_secrets']];
+        return ['intent' => $operation->input['route_create'], 'execution_secrets' => $operation->input['execution_secrets']];
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -33,21 +44,34 @@ final readonly class NativeRouteConvergenceProjection implements DirectOperation
         return DB::transaction(function () use ($operation, $data): Operation {
             $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $wasTerminal = $operation->status->terminal();
-            $result = ValidatedData::object($data['result'] ?? []);
+            $failure = is_array($data['failure'] ?? null) ? $data['failure'] : [];
+            $failed = is_string($failure['failed_step'] ?? null) ? $failure['failed_step'] : null;
+            $step = null;
+            foreach (array_keys(self::StepCodes) as $label) {
+                // A forEach iteration is named after its step, such as "Publish the site-7".
+                if ($failed !== null && ($failed === $label || str_starts_with($failed, $label.'-'))) {
+                    $step = $label;
+                }
+            }
+            if ($data['status'] === 'failed') {
+                $data['error_code'] = $step === null ? ($data['error_code'] ?? 'route.create_failed') : self::StepCodes[$step];
+            }
+            $intent = ValidatedData::object($operation->input['route_lifecycle']);
+            $result = match ($data['status']) {
+                'succeeded' => ['ready' => true, 'route_id' => $operation->target_id],
+                'failed' => ['error_code' => $data['error_code'], 'failed_step' => $step],
+                default => ValidatedData::object($data['result'] ?? []),
+            };
             $operation = $this->direct->project($operation, $data, $result);
             if ($wasTerminal || ! $operation->status->terminal()) {
                 return $operation;
             }
-            $intent = ValidatedData::object($operation->input['route_lifecycle']);
             if ($intent['effectful'] && $operation->status === OperationStatus::Succeeded) {
                 Route::query()->whereKey($operation->target_id)->update(['status' => RouteStatus::Active, 'sites_published' => true,
                     'replacement_step' => $intent['public_activated'] ? RouteReplacementStep::IngressFirewall : null,
                     'failed_step' => null, 'error_code' => null]);
             } elseif ($intent['effectful'] && $operation->status === OperationStatus::Failed) {
-                Route::query()->whereKey($operation->target_id)->update(['failed_step' => 'native-create', 'error_code' => $operation->error_code]);
-            }
-            if ($operation->status === OperationStatus::Succeeded || ($result['restored'] ?? false)) {
-                app(NativeRouteLanInput::class)->recordMigrations(ValidatedData::integerList($result['migrated_node_ids'] ?? []), ValidatedData::integerList($result['migrated_node_ids'] ?? []));
+                Route::query()->whereKey($operation->target_id)->update(['failed_step' => $step ?? 'native-create', 'error_code' => $operation->error_code]);
             }
 
             return $operation;

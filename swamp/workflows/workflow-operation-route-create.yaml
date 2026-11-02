@@ -1,507 +1,147 @@
 id: 8882537c-e250-4b80-8690-ce8c0fa419b8
 name: operation-route-create
-description: Immutable Route workload mutation and restoration through official209
-  publication children.
-vaults:
-- orbit-control-inputs
+description: "Route create in the chart's seven steps; Node work through official cfgmgmt and SSH behaviors (rule 22)."
+vaults: [orbit-control-inputs]
+queueTimeout: 30
 inputs:
   type: object
   properties:
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
-    kind:
-      type: string
-      enum:
-      - route.create
-    intent:
-      type: object
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: route.create}
+    intent: {type: object}
     execution_secrets:
       type: object
       additionalProperties:
         type: object
-        additionalProperties: false
         properties:
-          vault:
-            type: string
-            enum:
-            - orbit-control-inputs
-          key:
-            type: string
-            pattern: ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$
-        required:
-        - vault
-        - key
-  required:
-  - operation_id
-  - node_id
-  - kind
-  - intent
-  - execution_secrets
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$'}
+        required: [vault, key]
+        additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
-- name: update
+- name: create
+  labels: {role: swamp}
   steps:
-  - name: prepare
+    # Per leaf: a Node-local key and its public CSR (route-create-csr).
+  - name: 'Make a CSR on the Node'
     labels: {role: swamp}
-    forEach:
-      item: workload
-      in: ${{ inputs.intent.workloads }}
     dependsOn: []
+    writes: true
+    forEach: {item: leaf, in: '${{ inputs.intent.leaf_indexes }}'}
     task:
       type: workflow
-      workflowIdOrName: instance-route-workload
+      workflowIdOrName: route-create-csr
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent:
-          node_id: ${{ self.workload.node_id }}
-          instance_id: ${{ self.workload.instance_id }}
-          connection: ${{ self.workload.connection }}
-          host_keys: ${{ self.workload.host_keys }}
-          plan: ${{ self.workload.prepare }}
-        execution_secrets: {}
-  - name: prepare-upstream
+        intent: '${{ inputs.intent }}'
+        leaf: '${{ self.leaf }}'
+    # Per leaf: 209 has the CSR signed; the one Gateway call (route-create-sign).
+  - name: 'Sign the CSR'
     labels: {role: swamp}
     dependsOn:
-    - step: prepare
-      condition:
-        type: always
-    forEach:
-      item: part
-      in: '${{ inputs.intent.effectful ? inputs.intent.preparation.upstream_firewalls
-        : [] }}'
-    guard: ${{ steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed")
-      }}
+    - {step: 'Make a CSR on the Node', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    forEach: {item: leaf, in: '${{ inputs.intent.leaf_indexes }}'}
     task:
       type: workflow
-      workflowIdOrName: route-upstream-firewall
+      workflowIdOrName: route-create-sign
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ self.part }}
-        execution_secrets: {}
-  - name: prepare-certificates
+        operation_id: '${{ inputs.operation_id }}'
+        parent_run_id: '${{ run.id }}'
+        leaf: '${{ inputs.intent.leaves[self.leaf] }}'
+        request: '${{ steps["Make a CSR on the Node-" + string(self.leaf)].outputs.csr.stdout }}'
+    # Cluster Route: the Router's LAN address may reach each workload on 443.
+  - name: 'Allow the Router on LAN'
     labels: {role: swamp}
     dependsOn:
-    - step: prepare
-      condition:
-        type: always
-    - step: prepare-upstream
-      condition:
-        type: always
-    forEach:
-      item: part
-      in: '${{ inputs.intent.effectful ? inputs.intent.preparation.certificates.filter(item,inputs.intent.preparation.certificates.filter(first,first.node_id
-        == item.node_id)[0].scope == item.scope) : [] }}'
-    guard: ${{ steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed")
-      }}
-    task:
-      type: workflow
-      workflowIdOrName: route-certificate-publish
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent:
-          leaves: ${{ inputs.intent.preparation.certificates.filter(leaf,leaf.node_id
-            == self.part.node_id) }}
-          control_node_id: 209
-          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id
-            == self.part.node_id)[0].connection }}
-          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id
-            == self.part.node_id)[0].host_keys }}
-          node_id: ${{ self.part.node_id }}
-        execution_secrets: {}
-        parent_run_id: ${{ run.id }}
-        restoring: false
-  - name: prepare-lan
-    labels: {role: swamp}
-    dependsOn:
-    - step: prepare
-      condition:
-        type: always
-    - step: prepare-upstream
-      condition:
-        type: always
-    - step: prepare-certificates
-      condition:
-        type: always
-    forEach:
-      item: part
-      in: '${{ inputs.intent.effectful ? inputs.intent.preparation.lan : [] }}'
-    guard: ${{ steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed")
-      }}
-    task:
-      type: workflow
-      workflowIdOrName: route-lan-apply
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent:
-          rule: ${{ self.part }}
-          control_node_id: 209
-          connection: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id
-            == self.part.node_id)[0].connection }}
-          host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id
-            == self.part.node_id)[0].host_keys }}
-        execution_secrets: {}
-  - name: prepare-caddy
-    labels: {role: swamp}
-    dependsOn:
-    - step: prepare
-      condition:
-        type: always
-    - step: prepare-upstream
-      condition:
-        type: always
-    - step: prepare-certificates
-      condition:
-        type: always
-    - step: prepare-lan
-      condition:
-        type: always
-    forEach:
-      item: part
-      in: '${{ inputs.intent.effectful ? inputs.intent.preparation.publications :
-        [] }}'
-    guard: ${{ steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed")
-      }}
-    task:
-      type: workflow
-      workflowIdOrName: operation-route-caddy-delta
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent:
-          node_id: ${{ self.part.node_id }}
-          user: ${{ self.part.user }}
-          control_node_id: ${{ self.part.control_node_id }}
-          connection: ${{ self.part.connection }}
-          host_keys: ${{ self.part.host_keys }}
-          direction: ${{ self.part.direction }}
-          before: ${{ inputs.intent.route_mutations.artifacts.caddy[self.part.before] }}
-          after: ${{ inputs.intent.route_mutations.artifacts.caddy[self.part.after] }}
-          alternatives: ${{ self.part.alternatives.map(ref,inputs.intent.route_mutations.artifacts.caddy[ref]) }}
-        execution_secrets: {}
-  - name: prepare-probe
-    labels: {role: swamp}
-    dependsOn:
-    - step: prepare
-      condition:
-        type: always
-    - step: prepare-upstream
-      condition:
-        type: always
-    - step: prepare-certificates
-      condition:
-        type: always
-    - step: prepare-lan
-      condition:
-        type: always
-    - step: prepare-caddy
-      condition:
-        type: always
-    forEach:
-      item: part
-      in: '${{ inputs.intent.effectful ? inputs.intent.preparation.probes : [] }}'
-    guard: ${{ steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed")
-      }}
-    task:
-      type: workflow
-      workflowIdOrName: cluster-router-probe
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ self.part }}
-        execution_secrets: {}
-  - name: forward
-    labels: {role: swamp}
-    dependsOn:
-    - step: prepare
-      condition:
-        type: always
-    - step: prepare-upstream
-      condition:
-        type: always
-    - step: prepare-certificates
-      condition:
-        type: always
-    - step: prepare-lan
-      condition:
-        type: always
-    - step: prepare-caddy
-      condition:
-        type: always
-    - step: prepare-probe
-      condition:
-        type: always
-    guard: ${{ !inputs.intent.effectful || steps.exists(k,k.startsWith("prepare-")
-      && steps[k].status == "failed") }}
-    task:
-      type: workflow
-      workflowIdOrName: route-mutation-forward
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        parent_run_id: ${{ run.id }}
-  - name: verify
-    labels: {role: swamp}
-    forEach:
-      item: part
-      in: '${{ inputs.intent.effectful ? inputs.intent.verifications : [] }}'
-    dependsOn:
-    - step: prepare
-      condition:
-        type: always
-    - step: prepare-upstream
-      condition:
-        type: always
-    - step: prepare-certificates
-      condition:
-        type: always
-    - step: prepare-lan
-      condition:
-        type: always
-    - step: prepare-caddy
-      condition:
-        type: always
-    - step: prepare-probe
-      condition:
-        type: always
-    - step: forward
-      condition:
-        type: always
-    guard: ${{ !("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready
-      }}
-    task:
-      type: workflow
-      workflowIdOrName: cluster-router-probe
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ self.part }}
-        execution_secrets: {}
-  - name: retire
-    labels: {role: swamp}
-    forEach:
-      item: workload
-      in: ${{ inputs.intent.workloads }}
-    dependsOn:
-    - step: prepare
-      condition:
-        type: always
-    - step: prepare-upstream
-      condition:
-        type: always
-    - step: prepare-certificates
-      condition:
-        type: always
-    - step: prepare-lan
-      condition:
-        type: always
-    - step: prepare-caddy
-      condition:
-        type: always
-    - step: prepare-probe
-      condition:
-        type: always
-    - step: forward
-      condition:
-        type: always
-    - step: verify
-      condition:
-        type: always
-    guard: ${{ !("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready
-      }}
-    task:
-      type: workflow
-      workflowIdOrName: instance-route-workload
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent:
-          node_id: ${{ self.workload.node_id }}
-          instance_id: ${{ self.workload.instance_id }}
-          connection: ${{ self.workload.connection }}
-          host_keys: ${{ self.workload.host_keys }}
-          plan: ${{ self.workload.selected }}
-        execution_secrets: {}
-  - name: restore-workload
-    labels: {role: swamp}
-    forEach:
-      item: workload
-      in: ${{ inputs.intent.workloads }}
-    dependsOn:
-    - step: prepare
-      condition:
-        type: always
-    - step: prepare-upstream
-      condition:
-        type: always
-    - step: prepare-certificates
-      condition:
-        type: always
-    - step: prepare-lan
-      condition:
-        type: always
-    - step: prepare-caddy
-      condition:
-        type: always
-    - step: prepare-probe
-      condition:
-        type: always
-    - step: forward
-      condition:
-        type: always
-    - step: verify
-      condition:
-        type: always
-    - step: retire
-      condition:
-        type: always
-    guard: ${{ !(inputs.intent.effectful && (!("forward" in steps) || steps.forward.status
-      != "succeeded" || !steps.forward.outputs.result.ready || steps.exists(k,(k.startsWith("retire-")
-      || k.startsWith("verify-")) && steps[k].status == "failed"))) }}
-    task:
-      type: workflow
-      workflowIdOrName: instance-route-workload
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent:
-          node_id: ${{ self.workload.node_id }}
-          instance_id: ${{ self.workload.instance_id }}
-          connection: ${{ self.workload.connection }}
-          host_keys: ${{ self.workload.host_keys }}
-          plan: ${{ self.workload.restore }}
-        execution_secrets: {}
-  - name: restore
-    labels: {role: swamp}
-    dependsOn:
-    - step: prepare
-      condition:
-        type: always
-    - step: prepare-upstream
-      condition:
-        type: always
-    - step: prepare-certificates
-      condition:
-        type: always
-    - step: prepare-lan
-      condition:
-        type: always
-    - step: prepare-caddy
-      condition:
-        type: always
-    - step: prepare-probe
-      condition:
-        type: always
-    - step: forward
-      condition:
-        type: always
-    - step: verify
-      condition:
-        type: always
-    - step: retire
-      condition:
-        type: always
-    - step: restore-workload
-      condition:
-        type: always
-    guard: ${{ !(inputs.intent.effectful && (!("forward" in steps) || steps.forward.status
-      != "succeeded" || !steps.forward.outputs.result.ready || steps.exists(k,(k.startsWith("retire-")
-      || k.startsWith("verify-")) && steps[k].status == "failed"))) }}
-    task:
-      type: workflow
-      workflowIdOrName: route-mutation-restore
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        parent_run_id: ${{ run.id }}
-  - name: result
-    labels: {role: swamp}
-    dependsOn:
-    - step: prepare
-      condition:
-        type: always
-    - step: prepare-upstream
-      condition:
-        type: always
-    - step: prepare-certificates
-      condition:
-        type: always
-    - step: prepare-lan
-      condition:
-        type: always
-    - step: prepare-caddy
-      condition:
-        type: always
-    - step: prepare-probe
-      condition:
-        type: always
-    - step: forward
-      condition:
-        type: always
-    - step: verify
-      condition:
-        type: always
-    - step: retire
-      condition:
-        type: always
-    - step: restore-workload
-      condition:
-        type: always
-    - step: restore
-      condition:
-        type: always
+    - {step: 'Make a CSR on the Node', condition: {type: always}}
+    - {step: 'Sign the CSR', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    writes: true
+    forEach: {item: rule, in: '${{ inputs.intent.lan }}'}
     task:
       type: behavior
-      behaviorType: '@nckrtl/route-update-result'
-      behaviorName: route-update-result
-      methodName: read
-      inputs:
-        effectful: ${{ inputs.intent.effectful }}
-        failure_code: route.create_failed
-        preparation_counts: '${{ inputs.intent.effectful ? {"prepare-certificates":
-          size(inputs.intent.preparation.certificates.filter(item,inputs.intent.preparation.certificates.filter(first,first.node_id
-          == item.node_id)[0].scope == item.scope)), "prepare-lan": size(inputs.intent.preparation.lan),
-          "prepare-caddy": size(inputs.intent.preparation.publications), "prepare-probe":
-          size(inputs.intent.preparation.probes), "prepare-upstream": "upstream_firewalls"
-          in inputs.intent.preparation ? size(inputs.intent.preparation.upstream_firewalls)
-          : 0, "verify": "verifications" in inputs.intent ? size(inputs.intent.verifications)
-          : 0} : {} }}'
-        route_id: ${{ inputs.intent.route_id }}
-        result_route_id: ${{ inputs.intent.result_route_id }}
-        workload_count: ${{ size(inputs.intent.workloads) }}
-        steps: ${{ steps }}
-  - name: complete
+      behaviorType: '@swamp/cfgmgmt/firewall'
+      behaviorName: '${{ ("route-lan-" + string(self.rule.node_id) + "-" + string(self.rule.port) + "-" + self.rule.source.split("/").join("-")).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {port: '${{ self.rule.port }}', protocol: '${{ self.rule.protocol }}', action: allow, ensure: present, source: '${{ self.rule.source }}',
+        nodeHost: '${{ inputs.intent.nodes[string(self.rule.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(self.rule.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(self.rule.node_id)].port }}',
+        nodeIdentityFile: '${{ inputs.intent.nodes[string(self.rule.node_id)].identity_file }}', become: true}
+      inputs: {}
+    # Per Node: certificate, web root, pools, Caddyfile, APP_URL and .env (route-create-site).
+  - name: 'Install cert, publish site'
     labels: {role: swamp}
     dependsOn:
-    - step: result
-      condition:
-        type: always
+    - {step: 'Make a CSR on the Node', condition: {type: always}}
+    - {step: 'Sign the CSR', condition: {type: always}}
+    - {step: 'Allow the Router on LAN', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    writes: true
+    forEach: {item: node, in: '${{ inputs.intent.site_nodes }}'}
+    task:
+      type: workflow
+      workflowIdOrName: route-create-site
+      inputs:
+        intent: '${{ inputs.intent }}'
+        node_id: '${{ self.node }}'
+        execution_secrets: '${{ inputs.execution_secrets }}'
+        signed: '${{ inputs.intent.leaf_indexes.map(i, steps["Sign the CSR-" + string(i)].outputs.sign.stdout) }}'
+    # From 209 to each serving Node and the Router on 443 with the Route domain as SNI; a failed chain fails the step.
+  - name: 'Probe the site over TLS'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Make a CSR on the Node', condition: {type: always}}
+    - {step: 'Sign the CSR', condition: {type: always}}
+    - {step: 'Allow the Router on LAN', condition: {type: always}}
+    - {step: 'Install cert, publish site', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    forEach: {item: probe, in: '${{ inputs.intent.probes }}'}
     task:
       type: behavior
-      behaviorType: '@nckrtl/route-update-result'
-      behaviorName: route-update-complete
-      methodName: complete
+      behaviorType: command/shell
+      behaviorName: '${{ ("route-probe-" + string(self.probe.node_id)).split(".").join("-") }}'
+      methodName: execute
       inputs:
-        stdout: ${{ steps.result.outputs.stdout }}
+        run: "timeout 20 openssl s_client -connect \"$ORBIT_PROBE_ADDRESS:443\" -servername \"$ORBIT_PROBE_DOMAIN\" -verify_hostname \"$ORBIT_PROBE_DOMAIN\" -verify_return_error -CAfile /usr/local/share/ca-certificates/orbit-managed-root-ca.crt </dev/null"
+        env:
+          ORBIT_PROBE_ADDRESS: '${{ self.probe.address }}'
+          ORBIT_PROBE_DOMAIN: '${{ self.probe.domain }}'
+    # Public Route: the Ingress site and its ports 80 and 443 (route-create-ingress).
+  - name: 'Open the Ingress edge'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Make a CSR on the Node', condition: {type: always}}
+    - {step: 'Sign the CSR', condition: {type: always}}
+    - {step: 'Allow the Router on LAN', condition: {type: always}}
+    - {step: 'Install cert, publish site', condition: {type: always}}
+    - {step: 'Probe the site over TLS', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    writes: true
+    forEach: {item: site, in: '${{ inputs.intent.ingress }}'}
+    task:
+      type: workflow
+      workflowIdOrName: route-create-ingress
+      inputs:
+        intent: '${{ inputs.intent }}'
+        node_id: '${{ self.site.node_id }}'
+    # Only outside the TLD: records, catalog, then dnsmasq (route-create-dns).
+  - name: 'Publish private DNS'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Make a CSR on the Node', condition: {type: always}}
+    - {step: 'Sign the CSR', condition: {type: always}}
+    - {step: 'Allow the Router on LAN', condition: {type: always}}
+    - {step: 'Install cert, publish site', condition: {type: always}}
+    - {step: 'Probe the site over TLS', condition: {type: always}}
+    - {step: 'Open the Ingress edge', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    writes: true
+    forEach: {item: vpn, in: '${{ inputs.intent.dns }}'}
+    task:
+      type: workflow
+      workflowIdOrName: route-create-dns
+      inputs:
+        intent: '${{ inputs.intent }}'
+        node_id: '${{ self.vpn.node_id }}'
