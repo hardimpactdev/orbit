@@ -158,10 +158,9 @@ Orbit runs Swamp on one Node, 209. A ported step runs on the swamp workers (`lab
 | `operation-node-role-add-direct`, `-relocate-direct`, `-remove-direct` | 193: node role add, removal, metrics, publication and certificate steps |
 | `operation-node-bootstrap-host`, `-install`, `-probe`, `-verify`, `operation-node-macos-inspect`, `operation-node-prepare-php-packages` | 8: Node bootstrap |
 | `operation-node-wireguard-hub-converge` | 3: `@nckrtl/node-wireguard-direct` |
-| `operation-ai-router-account-update` | 3: AI router accounts |
-| `operation-conn-direct`, `operation-vault-direct`, `operation-dependency-merge`, `node-worker-canary` | 4: one step each |
+| `operation-conn-direct`, `operation-vault-direct`, `operation-dependency-merge` | 3: one step each |
 
-Task VM hosts keep a Node worker for the remaining image work: `operation-task-vm-upcloud-image-build` runs on the host itself. Shark keeps `orbit-node-13` for it. `operation-task-vm-image-build`, `task-vm-image-reaper` and `operation-task-vm-cache-fill` run every step on role `swamp` workers and reach the host over official SSH.
+`operation-task-vm-upcloud-image-build` still selects a host worker; that placement must move to 209 before the host worker is removed. Task VM group workers have their own lifecycle. `operation-task-vm-image-build`, `task-vm-image-reaper` and `operation-task-vm-cache-fill` run every step on role `swamp` workers and reach the host over official SSH.
 
 ## Test layout
 

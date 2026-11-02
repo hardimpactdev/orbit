@@ -146,20 +146,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/node-worker/canary.ts",
-      "rule": "multi-action",
-      "count": 7,
-      "evidence": [
-        "/usr/bin/cat",
-        "/usr/bin/hostname",
-        "/usr/bin/id",
-        "/usr/bin/stat",
-        "/usr/bin/sudo",
-        "/usr/bin/systemctl",
-        "/usr/sbin/ip"
-      ]
-    },
-    {
       "file": "extensions/behaviors/node-worker/install.ts",
       "rule": "multi-action",
       "count": 5,
@@ -207,34 +193,6 @@
     {
       "file": "extensions/behaviors/operations/_lib/node-agent.ts",
       "rule": "agent-dynamic",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/ai-router/accounts_direct.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/ai-router/accounts.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/ai-router/accounts.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/ai-router/accounts.ts",
-      "rule": "private-material",
       "count": 1,
       "evidence": []
     },
