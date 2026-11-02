@@ -117,7 +117,8 @@ final readonly class RoleRegistry
                 singleton: true,
                 assignableDuringProvisioning: false,
                 mutable: true,
-                relocatable: true,
+                // Serve on the swamp Node runs every Swamp run, so a relocation can't stop it. Live relocation is open.
+                relocatable: false,
                 // Metrics for the swamp Node comes with the Metrics port (wave 7).
                 metrics: false,
             ),

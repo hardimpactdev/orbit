@@ -34,12 +34,14 @@ sequenceDiagram
   %%> - moves the checkout to it
   %%> Why:
   %%> - Swamp's default mode reads `swamp/` from a Git checkout; no custom loader
-  N->>N: Render Gateway grants<br/>swamp/grants/orbit-gateway.yaml
+  N->>N: Render serve's grants<br/>swamp/grants/*.yaml
   %%> What it does:
   %%> - writes which workflows the Gateway may start, from `swamp/config/gateway-workflow-grants.json`
-  %%> - serve's other grants are `swamp/grants/orbit-serve.yaml` in the repository, so the checkout already holds them
+  %%> - writes serve's other grants, from `swamp/config/serve-grants.json`, as `swamp/grants/orbit-serve.yaml`
   %%> Why a script:
   %%> - serve's grants format can't hold the manifest's schedule producer marks, and no official behavior renders grants
+  %%> Not included:
+  %%> - the swamp role writes no grants; they follow the checkout
   alt Shipped script lists same
     N->>SW: Reload workflows, grants<br/>swamp serve reload
     %%> What it does:
