@@ -126,7 +126,7 @@ def prepare(node, network):
     run(['incus', 'exec', node['key'], '--', 'bash', '/root/prepare-node.sh', 'configure-runtime'])
     public = IDENTITY.with_suffix('.pub').read_text().split()
     run(['incus', 'exec', node['key'], '--', 'bash', '/root/prepare-node.sh', 'gateway-authorize', ' '.join(public[:2])])
-    bootstrap = ' '.join(BOOTSTRAP.with_suffix('.pub').read_text().split()[:2])
+    bootstrap = ' '.join(BOOTSTRAP.with_suffix('.pub').read_text().split()[:2]) + ' swamp-proof-gateway'
     run(['incus', 'exec', node['key'], '--', 'sh', '-c', 'grep -qxF "$1" /home/orbit/.ssh/authorized_keys || printf "%s\\n" "$1" >> /home/orbit/.ssh/authorized_keys',
          'sh', bootstrap])
     # Unmanaged SSH allowance and an active backend: the state an enrolled Node has.
