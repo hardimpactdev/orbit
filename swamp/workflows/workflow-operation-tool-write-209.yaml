@@ -1,6 +1,6 @@
 id: 3f4a442f-a80b-4d66-9ef8-5b1f4c462f7f
 name: operation-tool-write-209
-description: Tool install and update from 209 in the steps of docs/flows/tool.install.mmd and tool.update.mmd, one shipped phase script per step through official SSH.
+description: Native Tool installation and update through cfgmgmt and bounded SSH argv.
 vaults: []
 queueTimeout: 60
 inputs:
@@ -8,141 +8,138 @@ inputs:
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [tool.install, tool.update]}
+    kind:
+      type: string
+      enum: [tool.install, tool.update]
     intent: {type: object}
     ssh: {type: object}
     execution_secrets: {type: object, additionalProperties: false}
   required: [operation_id, node_id, kind, intent, ssh]
   additionalProperties: false
-# Node steps carry their flow chart labels (ADR 0246); install and update share this workflow, so each kind's own
-# labels run only for that kind. Lowercase steps are typed work on 209 that the charts do not show. A Node step prints
-# its result and exits nonzero when it did not do its job; later steps read that exit code.
 jobs:
 - name: tools
   steps:
   - name: assets
     labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/tool-write-command'
-      behaviorName: '${{ "tw-assets" }}'
-      methodName: assets
-      inputs: {input: '${{ inputs.intent }}'}
-  # Only when the Tool Manager is not ready yet: the shared setup child, which the development deploy also runs.
+    task: {type: behavior, behaviorType: '@nckrtl/tool-write-command', behaviorName: '${{ "tw-argv-" + string(inputs.node_id) }}', methodName: assets, inputs: {input: '${{ inputs.intent }}'}}
   - name: Set up the Tool Manager
     labels: {role: swamp}
     dependsOn: [{step: assets, condition: {type: succeeded}}]
-    guard: '${{ inputs.intent.kind == "tool.update" || !("setup" in inputs.intent) || inputs.intent.setup == null || ("manager_ready" in inputs.intent && inputs.intent.manager_ready) }}'
-    task:
-      type: workflow
-      workflowIdOrName: operation-tool-manager-setup
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', intent: '${{ inputs.intent }}', ssh: '${{ inputs.ssh }}', report: true}
-  - name: Add the signed apt source
-    labels: {role: swamp}
-    dependsOn:
-      - {step: assets, condition: {type: succeeded}}
-      - {step: Set up the Tool Manager, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    guard: '${{ inputs.intent.kind != "tool.install" || !("repository_given" in inputs.intent) || !inputs.intent.repository_given || ("Set up the Tool Manager" in steps && steps["Set up the Tool Manager"].status == "succeeded" && steps["Set up the Tool Manager"].outputs["Set up the Tool Manager"].exitCode != 0) }}'
-    task: &source
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tw-source-" + string(inputs.ssh.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: &ssh
-        name: '${{ ("tw-source-" + string(inputs.ssh.target.host)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: '${{ inputs.ssh.target.user }}'
-          port: '${{ inputs.ssh.target.port }}'
-          identityFile: '${{ inputs.ssh.identity_file }}'
-          identitiesOnly: true
-          hostKeys: '${{ inputs.ssh.target.host_keys }}'
-        hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]
-      inputs:
-        hosts: name:target
-        okExitCodes: any
-        timeoutSec: 65
-        argv: [timeout, '60', python3, -I, -c, '${{ steps.assets.outputs.driver }}', source]
-        stdin: '${{ steps.assets.outputs.bundle }}'
-  - name: Update the apt source
+    guard: ${{ inputs.intent.kind == "tool.update" || !("setup" in inputs.intent) || inputs.intent.setup == null || ("manager_ready" in inputs.intent && inputs.intent.manager_ready) }}
+    task: {type: workflow, workflowIdOrName: operation-tool-manager-setup, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', intent: '${{ inputs.intent }}', ssh: '${{ inputs.ssh }}', report: true}}
+  - name: Prepare apt keyrings
     labels: {role: swamp}
     dependsOn: [{step: assets, condition: {type: succeeded}}]
-    guard: '${{ inputs.intent.kind != "tool.update" || !("repository_given" in inputs.intent) || !inputs.intent.repository_given }}'
-    task: *source
+    guard: ${{ !("repository_given" in inputs.intent) || !inputs.intent.repository_given }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/directory', behaviorName: '${{ "prepare-apt-keyrings-" + string(inputs.node_id) }}', methodName: apply, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', become: true, path: /etc/apt/keyrings, mode: '0755', ensure: present}, inputs: {}}
+  - name: Fetch the signing key
+    labels: {role: swamp}
+    dependsOn: [{step: Prepare apt keyrings, condition: {type: succeeded}}]
+    guard: ${{ !("repository_given" in inputs.intent) || !inputs.intent.repository_given }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/fetch', behaviorName: '${{ "fetch-the-signing-key-" + string(inputs.node_id) }}', methodName: apply, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', become: true, url: '${{ steps.assets.outputs.repository.signing_key.url }}', path: '${{ "/tmp/orbit-tool-key-" + string(inputs.node_id) + ".asc" }}', force: true, mode: '0644'}, inputs: {}}
+  - name: Read the key fingerprint
+    labels: {role: swamp}
+    dependsOn: [{step: Fetch the signing key, condition: {type: succeeded}}]
+    guard: ${{ !("repository_given" in inputs.intent) || !inputs.intent.repository_given }}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "read-the-key-fingerprint-" + string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "read-the-key-fingerprint-" + string(inputs.node_id) }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', timeoutSec: 65, argv: [timeout, '60', gpg, --batch, --with-colons, --show-keys, '${{ "/tmp/orbit-tool-key-" + string(inputs.node_id) + ".asc" }}']}}
+  - name: Assert the key fingerprint
+    labels: {role: swamp}
+    dependsOn: [{step: Read the key fingerprint, condition: {type: succeeded}}]
+    guard: ${{ !("repository_given" in inputs.intent) || !inputs.intent.repository_given }}
+    task: {type: assert, expr: 'steps["Read the key fingerprint"].outputs.stdout.split("\n").filter(row, row.startsWith("pub:")).size() == 1 && steps["Read the key fingerprint"].outputs.stdout.split("\n").filter(row, row.startsWith("fpr:"))[0].split(":")[9] == steps.assets.outputs.repository.signing_key.fingerprint', severity: high, message: tool.repository_key_mismatch}
+  - name: Publish the signing key
+    labels: {role: swamp}
+    dependsOn: [{step: Assert the key fingerprint, condition: {type: succeeded}}]
+    guard: ${{ !("repository_given" in inputs.intent) || !inputs.intent.repository_given }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "publish-the-signing-key-" + string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "publish-the-signing-key-" + string(inputs.node_id) }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', timeoutSec: 65, argv: [timeout, '60', gpg, --batch, --yes, --dearmor, --output, '${{ "/etc/apt/keyrings/orbit-" + steps.assets.outputs.repository.name + ".gpg" }}', '${{ "/tmp/orbit-tool-key-" + string(inputs.node_id) + ".asc" }}'], sudo: true}}
+  - name: Pin repository packages
+    labels: {role: swamp}
+    dependsOn: [{step: Publish the signing key, condition: {type: succeeded}}]
+    guard: ${{ !("repository_given" in inputs.intent) || !inputs.intent.repository_given }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ "pin-repository-packages-" + string(inputs.node_id) }}', methodName: apply, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', become: true, path: '${{ "/etc/apt/preferences.d/orbit-" + steps.assets.outputs.repository.name + ".pref" }}', content: '${{ steps.assets.outputs.repository.uris.map(uri, uri.split("/")[2]).map(host, "Package: " + steps.assets.outputs.repository_packages.join(" ") + "\nPin: origin \"" + host + "\"\nPin-Priority: 990\n\nPackage: *\nPin: origin \"" + host + "\"\nPin-Priority: 1\n").join("\n") }}', mode: '0644', owner: root, ensure: present}, inputs: {}}
+  - name: Add the signed apt source
+    labels: {role: swamp}
+    dependsOn: [{step: Pin repository packages, condition: {type: succeeded}}]
+    guard: ${{ !("repository_given" in inputs.intent) || !inputs.intent.repository_given || inputs.intent.kind != "tool.install" }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/apt_repository', behaviorName: '${{ "add-the-signed-apt-source-" + string(inputs.node_id) }}', methodName: apply, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', become: true, name: '${{ "orbit-" + steps.assets.outputs.repository.name }}', uris: '${{ steps.assets.outputs.repository.uris }}', suites: '${{ steps.assets.outputs.repository.suites }}', components: '${{ steps.assets.outputs.repository.components }}', architectures: '${{ "architectures" in steps.assets.outputs.repository ? steps.assets.outputs.repository.architectures : ["amd64"] }}', signedBy: '${{ "/etc/apt/keyrings/orbit-" + steps.assets.outputs.repository.name + ".gpg" }}', ensure: present}, inputs: {}}
+  - name: Update the apt source
+    labels: {role: swamp}
+    dependsOn: [{step: Pin repository packages, condition: {type: succeeded}}]
+    guard: ${{ !("repository_given" in inputs.intent) || !inputs.intent.repository_given || inputs.intent.kind != "tool.update" }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/apt_repository', behaviorName: '${{ "update-the-apt-source-" + string(inputs.node_id) }}', methodName: apply, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', become: true, name: '${{ "orbit-" + steps.assets.outputs.repository.name }}', uris: '${{ steps.assets.outputs.repository.uris }}', suites: '${{ steps.assets.outputs.repository.suites }}', components: '${{ steps.assets.outputs.repository.components }}', architectures: '${{ "architectures" in steps.assets.outputs.repository ? steps.assets.outputs.repository.architectures : ["amd64"] }}', signedBy: '${{ "/etc/apt/keyrings/orbit-" + steps.assets.outputs.repository.name + ".gpg" }}', ensure: present}, inputs: {}}
+  - name: Remove the staged key
+    labels: {role: swamp}
+    dependsOn: [{step: Fetch the signing key, condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}, {step: Publish the signing key, condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}]
+    guard: ${{ !("repository_given" in inputs.intent) || !inputs.intent.repository_given }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "remove-the-staged-key-" + string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "remove-the-staged-key-" + string(inputs.node_id) }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', timeoutSec: 65, argv: [timeout, '60', rm, --force, --, '${{ "/tmp/orbit-tool-key-" + string(inputs.node_id) + ".asc" }}'], sudo: true}}
+    allowFailure: true
+  - name: Read manager version
+    labels: {role: swamp}
+    dependsOn: [{step: Set up the Tool Manager, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Add the signed apt source, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Update the apt source, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Prepare apt keyrings, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Fetch the signing key, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Read the key fingerprint, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Assert the key fingerprint, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Publish the signing key, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Pin repository packages, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "read-manager-version-" + string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "read-manager-version-" + string(inputs.node_id) }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', timeoutSec: 65, argv: '${{ ["timeout", "60"] + steps.assets.outputs.version }}'}}
+  - name: Read installed package
+    labels: {role: swamp}
+    dependsOn: [{step: Set up the Tool Manager, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Add the signed apt source, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Update the apt source, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Prepare apt keyrings, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Fetch the signing key, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Read the key fingerprint, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Assert the key fingerprint, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Publish the signing key, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Pin repository packages, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "read-installed-package-" + string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "read-installed-package-" + string(inputs.node_id) }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', timeoutSec: 65, argv: '${{ ["timeout", "60"] + steps.assets.outputs.inventory }}', okExitCodes: [0, 1]}}
+  - name: Read macOS version
+    labels: {role: swamp}
+    dependsOn: [{step: Set up the Tool Manager, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Add the signed apt source, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Update the apt source, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Prepare apt keyrings, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Fetch the signing key, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Read the key fingerprint, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Assert the key fingerprint, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Publish the signing key, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Pin repository packages, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    guard: ${{ inputs.intent.platform != "macos" || !inputs.intent.manager.startsWith("brew") }}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "read-macos-version-" + string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "read-macos-version-" + string(inputs.node_id) }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', timeoutSec: 65, argv: [timeout, '60', /usr/bin/sw_vers, -productVersion]}}
   - name: Check the candidate
     labels: {role: swamp}
-    dependsOn:
-      - {step: Set up the Tool Manager, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-      - {step: Add the signed apt source, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-      - {step: Update the apt source, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    guard: '${{ ("Set up the Tool Manager" in steps && steps["Set up the Tool Manager"].status == "succeeded" && steps["Set up the Tool Manager"].outputs["Set up the Tool Manager"].exitCode != 0) || ["Add the signed apt source", "Update the apt source"].exists(s, s in steps && steps[s].status == "succeeded" && steps[s].outputs.exitCode != 0) }}'
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tw-check-" + string(inputs.ssh.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh
-      inputs:
-        hosts: name:target
-        okExitCodes: any
-        timeoutSec: 125
-        argv: [timeout, '120', python3, -I, -c, '${{ steps.assets.outputs.driver }}', check]
-        stdin: '${{ steps.assets.outputs.bundle }}'
-  # The constraint, the installed version and every refusal, before any package write.
+    dependsOn: [{step: Read manager version, condition: {type: succeeded}}, {step: Read installed package, condition: {type: succeeded}}, {step: Read macOS version, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "check-the-candidate-" + string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "check-the-candidate-" + string(inputs.node_id) }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', timeoutSec: 65, argv: '${{ ["timeout", "60"] + steps.assets.outputs.candidate }}'}}
   - name: decide
     labels: {role: swamp}
-    dependsOn: [{step: Check the candidate, condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/tool-write-command'
-      behaviorName: '${{ "tw-decide" }}'
-      methodName: decide
-      inputs: {input: '${{ inputs.intent }}', check: '${{ steps["Check the candidate"] }}'}
-  # apt as root with --no-remove, waiting up to 300 s for a busy lock; other managers as the managed account.
+    dependsOn: [{step: Check the candidate, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    task: {type: behavior, behaviorType: '@nckrtl/tool-write-command', behaviorName: '${{ "tw-decision-" + string(inputs.node_id) }}', methodName: decide, inputs: {input: '${{ inputs.intent }}', version: '${{ steps["Read manager version"] }}', query: '${{ steps["Read installed package"] }}', os: '${{ "Read macOS version" in steps ? steps["Read macOS version"] : null }}', check: '${{ "Check the candidate" in steps ? steps["Check the candidate"] : null }}'}}
+    guard: ${{ !("Read manager version" in steps) || !("Read installed package" in steps) }}
   - name: Install the package
     labels: {role: swamp}
     dependsOn: [{step: decide, condition: {type: succeeded}}]
-    guard: '${{ inputs.intent.kind != "tool.install" || !steps.decide.outputs.mutate }}'
-    task: &write
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tw-write-" + string(inputs.ssh.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh
-      inputs:
-        hosts: name:target
-        okExitCodes: any
-        timeoutSec: 905
-        argv: [timeout, '900', python3, -I, -c, '${{ steps.assets.outputs.driver }}', write, '${{ steps.decide.outputs.candidate_json }}']
-        stdin: '${{ steps.assets.outputs.bundle }}'
+    guard: ${{ !steps.decide.outputs.mutate || inputs.intent.kind != "tool.install" || inputs.intent.manager == "brew" }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("tool-package-install-" + inputs.intent.manager + "-" + string(inputs.node_id)).split(".").join("-") }}', methodName: exec, inputs: {hosts: 'name:target', timeoutSec: 905, argv: '${{ inputs.intent.manager == "apt" ? ["timeout","900","/usr/bin/env","LC_ALL=C","DEBIAN_FRONTEND=noninteractive","/usr/bin/apt-get","-o","DPkg::Lock::Timeout=300","install","--yes","--no-install-recommends","--no-remove","--",inputs.intent.package + "=" + steps.decide.outputs.version] : ["timeout","900"] + steps.assets.outputs.write }}', sudo: '${{ inputs.intent.manager == "apt" }}'}, globalArgs: {name: '${{ ("tool-package-install-" + inputs.intent.manager + "-" + string(inputs.node_id)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}}
+  - name: Install Homebrew formula
+    labels: {role: swamp}
+    dependsOn: [{step: decide, condition: {type: succeeded}}]
+    guard: ${{ inputs.intent.manager != "brew" || !steps.decide.outputs.mutate || inputs.intent.kind != "tool.install" }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/homebrew', behaviorName: '${{ "tool-formula-install-" + string(inputs.node_id) }}', methodName: apply, inputs: {}, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', packages: ['${{ inputs.intent.package }}'], ensure: present}}
   - name: Upgrade the package
     labels: {role: swamp}
     dependsOn: [{step: decide, condition: {type: succeeded}}]
-    guard: '${{ inputs.intent.kind != "tool.update" || !steps.decide.outputs.mutate }}'
-    task: *write
+    guard: ${{ !steps.decide.outputs.mutate || inputs.intent.kind != "tool.update" }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("tool-package-update-" + inputs.intent.manager + "-" + string(inputs.node_id)).split(".").join("-") }}', methodName: exec, inputs: {hosts: 'name:target', timeoutSec: 905, argv: '${{ inputs.intent.manager == "apt" ? ["timeout","900","/usr/bin/env","LC_ALL=C","DEBIAN_FRONTEND=noninteractive","/usr/bin/apt-get","-o","DPkg::Lock::Timeout=300","install","--yes","--no-install-recommends","--no-remove","--",inputs.intent.package + "=" + steps.decide.outputs.version] : ["timeout","900"] + steps.assets.outputs.write }}', sudo: '${{ inputs.intent.manager == "apt" }}'}, globalArgs: {name: '${{ ("tool-package-update-" + inputs.intent.manager + "-" + string(inputs.node_id)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}}
+  - name: Check apt package
+    labels: {role: swamp}
+    dependsOn: [{step: Install the package, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Install Homebrew formula, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Upgrade the package, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    guard: ${{ !steps.decide.outputs.mutate || inputs.intent.manager != "apt" }}
+    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/apt', behaviorName: '${{ "tool-apt-end-" + string(inputs.node_id) }}', methodName: check, inputs: {}, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', packages: ['${{ inputs.intent.package }}'], ensure: present}}
+  - name: Check Homebrew formula
+    labels: {role: swamp}
+    dependsOn: [{step: Install the package, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Install Homebrew formula, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Upgrade the package, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    guard: ${{ !steps.decide.outputs.mutate || inputs.intent.manager != "brew" }}
+    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/homebrew', behaviorName: '${{ "tool-formula-end-" + string(inputs.node_id) }}', methodName: check, inputs: {}, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', packages: ['${{ inputs.intent.package }}'], ensure: present}}
+  - name: Check the package
+    labels: {role: swamp}
+    dependsOn: [{step: Install the package, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Install Homebrew formula, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Upgrade the package, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    guard: ${{ !steps.decide.outputs.mutate || inputs.intent.manager in ["apt", "brew"] }}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "tool-command-end-" + string(inputs.node_id) }}', methodName: exec, inputs: {hosts: 'name:target', timeoutSec: 65, argv: '${{ ["timeout","60"] + steps.assets.outputs.inventory }}', okExitCodes: [0, 1]}, globalArgs: {name: '${{ "tool-command-end-" + string(inputs.node_id) }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}}
   - name: result
     labels: {role: swamp}
-    dependsOn:
-      - {step: Set up the Tool Manager, condition: {type: always}}
-      - {step: Add the signed apt source, condition: {type: always}}
-      - {step: Update the apt source, condition: {type: always}}
-      - {step: Check the candidate, condition: {type: always}}
-      - {step: decide, condition: {type: always}}
-      - {step: Install the package, condition: {type: always}}
-      - {step: Upgrade the package, condition: {type: always}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/tool-write-command'
-      behaviorName: '${{ "tw-result" }}'
-      methodName: result
-      inputs:
-        input: '${{ inputs.intent }}'
-        setup: '${{ !("Set up the Tool Manager" in steps) ? {"status": "skipped"} : steps["Set up the Tool Manager"].status != "succeeded" ? {"status": steps["Set up the Tool Manager"].status} : {"status": "succeeded", "outputs": steps["Set up the Tool Manager"].outputs["Set up the Tool Manager"]} }}'
-        source: '${{ "Add the signed apt source" in steps && steps["Add the signed apt source"].status != "skipped" ? steps["Add the signed apt source"] : ("Update the apt source" in steps && steps["Update the apt source"].status != "skipped" ? steps["Update the apt source"] : null) }}'
-        check: '${{ "Check the candidate" in steps ? steps["Check the candidate"] : null }}'
-        decision: '${{ "decide" in steps ? steps.decide : null }}'
-        write: '${{ "Install the package" in steps && steps["Install the package"].status != "skipped" ? steps["Install the package"] : ("Upgrade the package" in steps && steps["Upgrade the package"].status != "skipped" ? steps["Upgrade the package"] : null) }}'
+    dependsOn: [{step: Set up the Tool Manager, condition: {type: always}}, {step: Prepare apt keyrings, condition: {type: always}}, {step: Fetch the signing key, condition: {type: always}}, {step: Read the key fingerprint, condition: {type: always}}, {step: Assert the key fingerprint, condition: {type: always}}, {step: Publish the signing key, condition: {type: always}}, {step: Pin repository packages, condition: {type: always}}, {step: Add the signed apt source, condition: {type: always}}, {step: Update the apt source, condition: {type: always}}, {step: Remove the staged key, condition: {type: always}}, {step: Read manager version, condition: {type: always}}, {step: Read installed package, condition: {type: always}}, {step: Read macOS version, condition: {type: always}}, {step: Check the candidate, condition: {type: always}}, {step: decide, condition: {type: always}}, {step: Install the package, condition: {type: always}}, {step: Install Homebrew formula, condition: {type: always}}, {step: Upgrade the package, condition: {type: always}}, {step: Check apt package, condition: {type: always}}, {step: Check Homebrew formula, condition: {type: always}}, {step: Check the package, condition: {type: always}}]
+    task: {type: behavior, behaviorType: '@nckrtl/tool-write-command', behaviorName: '${{ "tw-result-" + string(inputs.node_id) }}', methodName: result, inputs: {input: '${{ inputs.intent }}', decision: '${{ "decide" in steps ? steps.decide : null }}', check: '${{ "Check the candidate" in steps ? steps["Check the candidate"] : null }}', setup: '${{ "Set up the Tool Manager" in steps ? steps["Set up the Tool Manager"] : null }}', source: '${{ ["Prepare apt keyrings","Fetch the signing key","Read the key fingerprint","Assert the key fingerprint","Publish the signing key","Pin repository packages","Add the signed apt source","Update the apt source"].exists(name, name in steps && steps[name].status == "failed") ? steps[["Prepare apt keyrings","Fetch the signing key","Read the key fingerprint","Assert the key fingerprint","Publish the signing key","Pin repository packages","Add the signed apt source","Update the apt source"].filter(name, name in steps && steps[name].status == "failed")[0]] : inputs.intent.kind == "tool.install" ? ("Add the signed apt source" in steps ? steps["Add the signed apt source"] : null) : ("Update the apt source" in steps ? steps["Update the apt source"] : null) }}', write: '${{ inputs.intent.kind == "tool.update" ? ("Upgrade the package" in steps ? steps["Upgrade the package"] : null) : inputs.intent.manager == "brew" ? ("Install Homebrew formula" in steps ? steps["Install Homebrew formula"] : null) : ("Install the package" in steps ? steps["Install the package"] : null) }}', after: '${{ !((inputs.intent.manager == "apt" ? "Check apt package" : inputs.intent.manager == "brew" ? "Check Homebrew formula" : "Check the package") in steps) || steps[(inputs.intent.manager == "apt" ? "Check apt package" : inputs.intent.manager == "brew" ? "Check Homebrew formula" : "Check the package")].status != "succeeded" ? null : (inputs.intent.manager in ["apt", "brew"] ? data.latest((inputs.intent.manager == "apt" ? "tool-apt-end-" : "tool-formula-end-") + string(inputs.node_id), inputs.ssh.target.host).attributes : steps[(inputs.intent.manager == "apt" ? "Check apt package" : inputs.intent.manager == "brew" ? "Check Homebrew formula" : "Check the package")].outputs) }}', key: '${{ "Assert the key fingerprint" in steps ? steps["Assert the key fingerprint"] : null }}'}}
   - name: accepted
     labels: {role: swamp}
     dependsOn: [{step: result, condition: {type: succeeded}}]
-    task: {type: assert, expr: 'steps.result.outputs.ok == true', severity: high, message: The Tool write did not complete.}
+    task: {type: assert, expr: steps.result.outputs.ok == true, severity: high, message: The native package end check must match the admitted Tool intent.}

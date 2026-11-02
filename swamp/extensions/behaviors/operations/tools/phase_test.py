@@ -58,42 +58,8 @@ class Phase(unittest.TestCase):
         self.phase('setup', {'QUERY': {'scope': 'conflict'}}, manager='vp', setup=['MANAGER', ''])
         self.assertEqual((self.names(), self.code), ([('QUERY', False)], 1))
 
-    def test_source_runs_as_root_and_check_reads_the_candidate_with_it(self):
-        self.assertEqual(self.phase('source', {}, repository=REPOSITORY), {'ready': True})
-        self.assertEqual((self.calls[0][1:3], self.code), ((True, ['prepare', REPOSITORY]), 0))
-        self.phase('source', {'REPOSITORY': {'ready': False, 'error_code': 'tool.repository_key_mismatch'}}, repository=REPOSITORY)
-        self.assertEqual(self.code, 1)
-        facts = {'manager_version': 'apt 3', 'versions': ['1.0'], 'complete': True}
-        result = self.phase('check', {'QUERY': facts, 'CANDIDATE': {'version': '2.0'}}, kind='tool.update', repository=REPOSITORY)
-        self.assertEqual(self.names(), [('QUERY', False), ('CANDIDATE', False)])
-        self.assertEqual((self.calls[1][2][0]['before'], self.calls[1][2][0]['repository']), (facts, REPOSITORY))
-        self.assertEqual((result, self.code), ({'facts': facts, 'candidate': {'version': '2.0'}}, 0))
 
-    def test_write_installs_the_decided_candidate_and_reads_it_back(self):
-        after = {'manager_version': 'apt 3', 'versions': ['2.0'], 'complete': True}
-        result = self.phase('write', {'QUERY': [{'versions': []}, after]}, extra=['{"version": "2.0"}'])
-        self.assertEqual(self.names(), [('QUERY', False), ('WRITE', True), ('QUERY', False)])
-        self.assertEqual(self.calls[1][2][0]['candidate'], {'version': '2.0'})
-        self.assertEqual((result, self.code), ({'written': True, 'facts': after}, 0))
-        self.assertFalse(self.phase('write', {'WRITE': None}, manager='composer', extra=['{}'])['written'])
-        self.assertEqual((self.names()[1], self.code), (('WRITE', False), 1))
 
-    def test_removal_phases_fail_natively_when_they_did_not_do_their_job(self):
-        present = {'manager_version': 'apt 3', 'versions': ['1.0'], 'complete': True}
-        absent = {**present, 'versions': []}
-        self.assertEqual(self.phase('plan', {'QUERY': present, 'PLAN': {'packages': ['hello']}})['plan'], {'packages': ['hello']})
-        self.assertEqual(self.names(), [('QUERY', False), ('PLAN', False)])
-        self.phase('remove', {'QUERY': present})
-        self.assertEqual((self.names(), self.code), ([('QUERY', False), ('REMOVE', True)], 0))
-        self.phase('remove', {'QUERY': present, 'REMOVE': None}, manager='vp')
-        self.assertEqual((self.names()[1], self.code), (('REMOVE', False), 1))
-        self.assertEqual((self.phase('gone', {'QUERY': absent}), self.code), ({'facts': absent}, 0))
-        self.phase('gone', {'QUERY': present})
-        self.assertEqual(self.code, 1)
-        self.phase('remove_source', {}, repository=REPOSITORY, remove_repository=True)
-        self.assertEqual((self.calls[0][1:3], self.code), ((True, ['cleanup', REPOSITORY]), 0))
-        self.phase('remove_source', {'REPOSITORY': {'ready': False, 'error_code': 'tool.repository_failed'}}, repository=REPOSITORY)
-        self.assertEqual(self.code, 1)
 
 
 if __name__ == '__main__':

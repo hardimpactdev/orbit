@@ -72,19 +72,12 @@ Deno.test("the shared manager setup reads only the manager, with no package", as
   assertEquals([bundle.input.manager, bundle.input.package, bundle.repository], ["vp", "", null]);
   assertEquals(WriteInput.safeParse({ ...base, kind: "tool.manager_converge" }).success, false);
 });
-Deno.test("every manager script compiles and public intent travels as argv JSON, never in rewritten source", async () => {
+Deno.test("manager writes carry public arguments and no script source", async () => {
   const ctx = { extensionFile: (p: string) => new URL(p, import.meta.url).pathname, writeResource: () => Promise.resolve(null) };
   for (const manager of ["apt", "composer", "vp", "brew", "brew-cask"]) {
     const value = input({ manager, package: "vendorsentinel", platform: manager === "brew-cask" ? "macos" : "linux" });
-    const { bundle, driver } = await behavior.methods.assets.execute({ input: value }, ctx);
-    const parsed = JSON.parse(bundle);
-    assertEquals(parsed.input.package, "vendorsentinel");
-    assertEquals(parsed.root, manager === "apt");
-    for (const source of [driver, parsed.query, parsed.candidate, parsed.write]) {
-      assertEquals(source.includes("vendorsentinel"), false);
-      const child = new Deno.Command("python3", { args: ["-c", "import ast,sys;ast.parse(sys.stdin.read())"], stdin: "piped", stderr: "piped" }).spawn();
-      const writer = child.stdin.getWriter(); await writer.write(new TextEncoder().encode(source)); await writer.close();
-      const output = await child.output(); assertEquals(output.code, 0, new TextDecoder().decode(output.stderr));
-    }
+    const argv = await behavior.methods.assets.execute({ input: value }, ctx);
+    assertEquals(argv.candidate.includes("-c"), false);
+    assertEquals(argv.inventory.some((arg) => arg.includes("vendorsentinel")) || manager !== "apt", true);
   }
 });

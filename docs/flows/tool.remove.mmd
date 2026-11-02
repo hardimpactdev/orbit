@@ -50,6 +50,11 @@ sequenceDiagram
     %%> - the task number, at once
     %%> Next:
     %%> - the CLI follows the task with `operation:show`
+    SW->>N: Read manager version<br/>one manager command
+    SW->>N: Read installed package<br/>one package query
+    opt macOS Homebrew
+      SW->>N: Read macOS version<br/>bottle compatibility
+    end
     SW->>N: Plan the removal<br/>e.g. apt-get --simulate remove
     %%> What it does:
     %%> - asks the Tool Manager what removing the package would also remove
@@ -60,6 +65,9 @@ sequenceDiagram
     %%> - `brew`: refuses when another formula still depends on it
     %%> - `brew-cask`: checks the cask is safe to uninstall
     %%> - `composer`, `vp`: no plan needed; global packages have no system dependents
+    opt Homebrew formula
+      SW->>N: Remove Homebrew formula<br/>native resource
+    end
     SW->>N: Remove the package<br/>e.g. dpkg --remove
     %%> What it does:
     %%> - removes exactly this package, so dependency changes can't pull in more removals
@@ -70,6 +78,12 @@ sequenceDiagram
     %%> - `composer`, `vp`: removes the global package, as the Node's managed user
     %%> Busy apt lock:
     %%> - it waits for the lock within the run's time budget, then fails
+    opt apt
+      SW->>N: Check apt absence<br/>official package check
+    end
+    opt Homebrew formula
+      SW->>N: Check Homebrew absence<br/>official package check
+    end
     SW->>N: Check it is gone<br/>package query
     %%> What it does:
     %%> - asks the Tool Manager again; the package must be absent
@@ -81,6 +95,7 @@ sequenceDiagram
       %%> - the check passed
       opt last Tool from that apt source
         SW->>N: Remove the apt source<br/>no Tool uses it anymore
+        SW->>N: Remove repository pins<br/>native file removal
         %%> When:
         %%> - only when this was the last Tool installed from a signed apt repository
         %%> What it does:

@@ -61,14 +61,10 @@ Deno.test("brew refuses while another installed formula depends on it", () => {
   assertEquals(probe(input, facts, { packages: ["hello", "other"] }).error_code, "tool.removal_plan_unsafe");
   assertEquals(probe(input, facts, { packages: ["hello"] }).remove, true);
 });
-Deno.test("every shipped query, plan and removal compiles", async () => {
+Deno.test("removals use one manager argv with no shipped code", async () => {
   for (const manager of ["apt", "composer", "vp", "brew", "brew-cask"]) {
-    const { bundle } = await behavior.methods.assets.execute({ input: fixture(manager).input }, ctx);
-    const parsed = JSON.parse(bundle);
-    for (const source of [parsed.query, parsed.remove, ...(parsed.plan ? [parsed.plan] : [])]) {
-      const child = new Deno.Command("python3", { args: ["-c", "import ast,sys;ast.parse(sys.stdin.read())"], stdin: "piped", stderr: "piped" }).spawn();
-      const writer = child.stdin.getWriter(); await writer.write(new TextEncoder().encode(source)); await writer.close();
-      const output = await child.output(); assertEquals(output.code, 0, new TextDecoder().decode(output.stderr));
-    }
+    const value = await behavior.methods.assets.execute({ input: fixture(manager).input }, ctx);
+    assertEquals(value.remove.includes("-c"), false);
+    assertEquals(value.plan.includes("-c"), false);
   }
 });

@@ -1,6 +1,6 @@
 id: 5c48c4ee-452a-4dd5-8f14-5d3e1b681445
 name: operation-tool-remove-209
-description: Tool removal from 209 in the steps of flows/tool.remove.mmd, one shipped phase script per step through official SSH.
+description: Native Tool removal through cfgmgmt and bounded SSH argv.
 vaults: []
 queueTimeout: 60
 inputs:
@@ -8,128 +8,89 @@ inputs:
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [tool.remove]}
+    kind:
+      type: string
+      enum: [tool.remove]
     intent: {type: object}
     ssh: {type: object}
     execution_secrets: {type: object, additionalProperties: false}
   required: [operation_id, node_id, kind, intent, ssh]
   additionalProperties: false
-# Node steps carry their flow chart labels (ADR 0246); lowercase steps are typed work on 209 that the chart does not show.
 jobs:
 - name: tools
   steps:
   - name: assets
     labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/tool-remove-command'
-      behaviorName: '${{ "tr-assets" }}'
-      methodName: assets
-      inputs: {input: '${{ inputs.intent }}'}
-  # The installed package and, for apt and brew, what removing it would also remove.
-  - name: Plan the removal
+    task: {type: behavior, behaviorType: '@nckrtl/tool-remove-command', behaviorName: '${{ "tr-argv-" + string(inputs.node_id) }}', methodName: assets, inputs: {input: '${{ inputs.intent }}'}}
+  - name: Read manager version
     labels: {role: swamp}
     dependsOn: [{step: assets, condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tr-plan-" + string(inputs.ssh.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: &ssh
-        name: '${{ ("tr-plan-" + string(inputs.ssh.target.host)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: '${{ inputs.ssh.target.user }}'
-          port: '${{ inputs.ssh.target.port }}'
-          identityFile: '${{ inputs.ssh.identity_file }}'
-          identitiesOnly: true
-          hostKeys: '${{ inputs.ssh.target.host_keys }}'
-        hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]
-      inputs:
-        hosts: name:target
-        okExitCodes: any
-        timeoutSec: 65
-        argv: [timeout, '60', python3, -I, -c, '${{ steps.assets.outputs.driver }}', plan]
-        stdin: '${{ steps.assets.outputs.bundle }}'
-  # Refuse a plan that removes anything else, a Composer non-root or an unsafe cask; nothing changes then.
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "read-manager-version-" + string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "read-manager-version-" + string(inputs.node_id) }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', timeoutSec: 65, argv: '${{ ["timeout", "60"] + steps.assets.outputs.version }}'}}
+  - name: Read installed package
+    labels: {role: swamp}
+    dependsOn: [{step: assets, condition: {type: succeeded}}]
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "read-installed-package-" + string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "read-installed-package-" + string(inputs.node_id) }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', timeoutSec: 65, argv: '${{ ["timeout", "60"] + steps.assets.outputs.inventory }}', okExitCodes: [0, 1]}}
+  - name: Read macOS version
+    labels: {role: swamp}
+    dependsOn: [{step: assets, condition: {type: succeeded}}]
+    guard: ${{ inputs.intent.platform != "macos" || !inputs.intent.manager.startsWith("brew") }}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "read-macos-version-" + string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "read-macos-version-" + string(inputs.node_id) }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', timeoutSec: 65, argv: [timeout, '60', /usr/bin/sw_vers, -productVersion]}}
+  - name: Plan the removal
+    labels: {role: swamp}
+    dependsOn: [{step: Read manager version, condition: {type: succeeded}}, {step: Read installed package, condition: {type: succeeded}}, {step: Read macOS version, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    guard: ${{ !(inputs.intent.manager in ["apt", "brew"]) }}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "plan-the-removal-" + string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "plan-the-removal-" + string(inputs.node_id) }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', timeoutSec: 65, argv: '${{ ["timeout", "60"] + steps.assets.outputs.plan }}'}}
   - name: decide
     labels: {role: swamp}
-    dependsOn: [{step: Plan the removal, condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/tool-remove-command'
-      behaviorName: '${{ "tr-decide" }}'
-      methodName: decide
-      inputs: {input: '${{ inputs.intent }}', plan: '${{ steps["Plan the removal"] }}'}
+    dependsOn: [{step: Plan the removal, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    task: {type: behavior, behaviorType: '@nckrtl/tool-remove-command', behaviorName: '${{ "tr-decision-" + string(inputs.node_id) }}', methodName: decide, inputs: {input: '${{ inputs.intent }}', version: '${{ steps["Read manager version"] }}', query: '${{ steps["Read installed package"] }}', os: '${{ "Read macOS version" in steps ? steps["Read macOS version"] : null }}', plan: '${{ "Plan the removal" in steps ? steps["Plan the removal"] : null }}'}}
+    guard: ${{ !("Read manager version" in steps) || !("Read installed package" in steps) }}
   - name: Remove the package
     labels: {role: swamp}
     dependsOn: [{step: decide, condition: {type: succeeded}}]
-    guard: '${{ !steps.decide.outputs.remove }}'
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tr-remove-" + string(inputs.ssh.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh
-      inputs:
-        hosts: name:target
-        timeoutSec: 125
-        argv: [timeout, '120', python3, -I, -c, '${{ steps.assets.outputs.driver }}', remove]
-        stdin: '${{ steps.assets.outputs.bundle }}'
+    guard: ${{ !steps.decide.outputs.remove || inputs.intent.manager == "brew" }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("tool-package-remove-" + inputs.intent.manager + "-" + string(inputs.node_id)).split(".").join("-") }}', methodName: exec, inputs: {hosts: 'name:target', timeoutSec: 905, argv: '${{ inputs.intent.manager == "apt" ? ["timeout","120","/usr/bin/env","LC_ALL=C","DEBIAN_FRONTEND=noninteractive","/usr/bin/dpkg","--remove","--",inputs.intent.package] : ["timeout","900"] + steps.assets.outputs.remove }}', sudo: '${{ inputs.intent.manager == "apt" }}'}, globalArgs: {name: '${{ ("tool-package-remove-" + inputs.intent.manager + "-" + string(inputs.node_id)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}}
+  - name: Remove Homebrew formula
+    labels: {role: swamp}
+    dependsOn: [{step: decide, condition: {type: succeeded}}]
+    guard: ${{ inputs.intent.manager != "brew" || !steps.decide.outputs.remove }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/homebrew', behaviorName: '${{ "tool-formula-remove-" + string(inputs.node_id) }}', methodName: apply, inputs: {}, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', packages: ['${{ inputs.intent.package }}'], ensure: absent}}
+  - name: Check apt absence
+    labels: {role: swamp}
+    dependsOn: [{step: Remove the package, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Remove Homebrew formula, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    guard: ${{ !steps.decide.outputs.remove || inputs.intent.manager != "apt" }}
+    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/apt', behaviorName: '${{ "tool-apt-end-" + string(inputs.node_id) }}', methodName: check, inputs: {}, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', packages: ['${{ inputs.intent.package }}'], ensure: absent}}
+  - name: Check Homebrew absence
+    labels: {role: swamp}
+    dependsOn: [{step: Remove the package, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Remove Homebrew formula, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    guard: ${{ !steps.decide.outputs.remove || inputs.intent.manager != "brew" }}
+    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/homebrew', behaviorName: '${{ "tool-formula-end-" + string(inputs.node_id) }}', methodName: check, inputs: {}, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', packages: ['${{ inputs.intent.package }}'], ensure: absent}}
   - name: Check it is gone
     labels: {role: swamp}
-    dependsOn: [{step: Remove the package, condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tr-check-" + string(inputs.ssh.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh
-      inputs:
-        hosts: name:target
-        timeoutSec: 65
-        argv: [timeout, '60', python3, -I, -c, '${{ steps.assets.outputs.driver }}', gone]
-        stdin: '${{ steps.assets.outputs.bundle }}'
-  # Best-effort: the package is already gone, so a failure here keeps the apt repository record for a later cleanup.
+    dependsOn: [{step: Remove the package, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Remove Homebrew formula, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    guard: ${{ !steps.decide.outputs.remove || inputs.intent.manager in ["apt", "brew"] }}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "tool-command-end-" + string(inputs.node_id) }}', methodName: exec, inputs: {hosts: 'name:target', timeoutSec: 65, argv: '${{ ["timeout","60"] + steps.assets.outputs.inventory }}', okExitCodes: [0, 1]}, globalArgs: {name: '${{ "tool-command-end-" + string(inputs.node_id) }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}}
   - name: Remove the apt source
     labels: {role: swamp}
+    dependsOn: [{step: Check apt absence, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check Homebrew absence, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check it is gone, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    guard: ${{ !steps.assets.outputs.remove_repository || !steps.decide.outputs.ready }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/apt_repository', behaviorName: '${{ "remove-the-apt-source-" + string(inputs.node_id) }}', methodName: apply, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', become: true, name: '${{ "orbit-" + steps.assets.outputs.repository.name }}', signedBy: '${{ "/etc/apt/keyrings/orbit-" + steps.assets.outputs.repository.name + ".gpg" }}', ensure: absent}, inputs: {}}
     allowFailure: true
-    dependsOn:
-      - {step: decide, condition: {type: succeeded}}
-      - {step: Check it is gone, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    guard: '${{ !inputs.intent.remove_repository || !steps.decide.outputs.ready || (steps.decide.outputs.remove && !("Check it is gone" in steps && steps["Check it is gone"].status == "succeeded")) }}'
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tr-source-" + string(inputs.ssh.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh
-      inputs:
-        hosts: name:target
-        timeoutSec: 65
-        argv: [timeout, '60', python3, -I, -c, '${{ steps.assets.outputs.driver }}', remove_source]
-        stdin: '${{ steps.assets.outputs.bundle }}'
+  - name: Remove repository pins
+    labels: {role: swamp}
+    dependsOn: [{step: Remove the apt source, condition: {type: succeeded}}]
+    guard: ${{ !steps.assets.outputs.remove_repository }}
+    writes: true
+    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ "remove-repository-pins-" + string(inputs.node_id) }}', methodName: apply, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', become: true, path: '${{ "/etc/apt/preferences.d/orbit-" + steps.assets.outputs.repository.name + ".pref" }}', ensure: absent}, inputs: {}}
+    allowFailure: true
   - name: result
     labels: {role: swamp}
-    dependsOn:
-      - {step: Plan the removal, condition: {type: always}}
-      - {step: decide, condition: {type: always}}
-      - {step: Remove the package, condition: {type: always}}
-      - {step: Check it is gone, condition: {type: always}}
-      - {step: Remove the apt source, condition: {type: always}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/tool-remove-command'
-      behaviorName: '${{ "tr-result" }}'
-      methodName: result
-      inputs:
-        input: '${{ inputs.intent }}'
-        plan: '${{ "Plan the removal" in steps ? steps["Plan the removal"] : null }}'
-        decision: '${{ "decide" in steps ? steps.decide : null }}'
-        remove: '${{ "Remove the package" in steps ? steps["Remove the package"] : null }}'
-        check: '${{ "Check it is gone" in steps ? steps["Check it is gone"] : null }}'
-        source: '${{ "Remove the apt source" in steps ? steps["Remove the apt source"] : null }}'
+    dependsOn: [{step: Read manager version, condition: {type: always}}, {step: Read installed package, condition: {type: always}}, {step: Read macOS version, condition: {type: always}}, {step: Plan the removal, condition: {type: always}}, {step: decide, condition: {type: always}}, {step: Remove the package, condition: {type: always}}, {step: Remove Homebrew formula, condition: {type: always}}, {step: Check apt absence, condition: {type: always}}, {step: Check Homebrew absence, condition: {type: always}}, {step: Check it is gone, condition: {type: always}}, {step: Remove the apt source, condition: {type: always}}, {step: Remove repository pins, condition: {type: always}}]
+    task: {type: behavior, behaviorType: '@nckrtl/tool-remove-command', behaviorName: '${{ "tr-result-" + string(inputs.node_id) }}', methodName: result, inputs: {input: '${{ inputs.intent }}', plan: '${{ "Plan the removal" in steps ? steps["Plan the removal"] : null }}', decision: '${{ "decide" in steps ? steps.decide : null }}', remove: '${{ inputs.intent.manager == "brew" ? ("Remove Homebrew formula" in steps ? steps["Remove Homebrew formula"] : null) : ("Remove the package" in steps ? steps["Remove the package"] : null) }}', check: '${{ (inputs.intent.manager == "apt" ? "Check apt absence" : inputs.intent.manager == "brew" ? "Check Homebrew absence" : "Check it is gone") in steps ? steps[(inputs.intent.manager == "apt" ? "Check apt absence" : inputs.intent.manager == "brew" ? "Check Homebrew absence" : "Check it is gone")] : null }}', source: '${{ "Remove the apt source" in steps ? steps["Remove the apt source"] : null }}', after: '${{ !((inputs.intent.manager == "apt" ? "Check apt absence" : inputs.intent.manager == "brew" ? "Check Homebrew absence" : "Check it is gone") in steps) || steps[(inputs.intent.manager == "apt" ? "Check apt absence" : inputs.intent.manager == "brew" ? "Check Homebrew absence" : "Check it is gone")].status != "succeeded" ? null : (inputs.intent.manager in ["apt", "brew"] ? data.latest((inputs.intent.manager == "apt" ? "tool-apt-end-" : "tool-formula-end-") + string(inputs.node_id), inputs.ssh.target.host).attributes : steps[(inputs.intent.manager == "apt" ? "Check apt absence" : inputs.intent.manager == "brew" ? "Check Homebrew absence" : "Check it is gone")].outputs) }}'}}
   - name: accepted
     labels: {role: swamp}
     dependsOn: [{step: result, condition: {type: succeeded}}]
-    task: {type: assert, expr: 'steps.result.outputs.ok == true', severity: high, message: The Tool removal did not prove the package absent.}
+    task: {type: assert, expr: steps.result.outputs.ok == true, severity: high, message: The native package end check must match the admitted Tool intent.}

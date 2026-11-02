@@ -1,4 +1,5 @@
 import { z } from "npm:zod@4.4.3";
+import * as native from "./native.ts";
 import { Setup } from "../node-bootstrap/tool_setup_assets.ts";
 import { AdoptInput, type Context, Facts, ManagerFields, phaseAssets, platformSupports, repositoryError } from "./adopt.ts";
 import { allows, normalizeVersion, printed, safeVersion, Step, ToolRefusal, verifyInstalled } from "./contract.ts";
@@ -63,7 +64,7 @@ export function decide(input: Input, phase: Phase): Decision {
   }
 }
 /** A Node step that ran but did not do its job: it printed its result and exited nonzero. */
-const unfinished = (step: StepValue) => step !== null && step.status !== "skipped" && (step.status !== "succeeded" || step.outputs?.exitCode !== 0);
+const unfinished = (step: StepValue) => step !== null && step.status !== "skipped" && (step.status !== "succeeded" || (step.outputs?.exitCode !== undefined && step.outputs.exitCode !== 0));
 export type WriteSteps = { setup: StepValue; source: StepValue; check: StepValue; decision: StepValue; write: StepValue };
 /** The terminal result: the first chart step that did not finish, or the version the write left behind. */
 export function writeResult(input: Input, steps: WriteSteps) {
@@ -96,22 +97,33 @@ export function writeResult(input: Input, steps: WriteSteps) {
 }
 export const behavior = {
   type: "@nckrtl/tool-write-command", version: "2026.11.02.4",
-  resources: { assets: { schema: z.object({ driver: z.string(), bundle: z.string() }), lifetime: "1d", garbageCollection: 10 }, decision: { schema: Public, lifetime: "1d", garbageCollection: 10 }, result: { schema: z.object({ stdout: z.string(), ok: z.boolean() }), lifetime: "1d", garbageCollection: 10 } },
+  resources: { assets: { schema: Public, lifetime: "1d", garbageCollection: 10 }, decision: { schema: Public, lifetime: "1d", garbageCollection: 10 }, result: { schema: z.object({ stdout: z.string(), ok: z.boolean() }), lifetime: "1d", garbageCollection: 10 } },
   methods: {
-    assets: { description: "Read the phase driver and the selected manager scripts, with the public intent as argv JSON", arguments: z.object({ input: WriteInput }),
-      execute: async (args: { input: Input }, ctx: Context) => {
-        const family = args.input.manager.startsWith("brew") ? "brew" : args.input.manager;
-        const value = await phaseAssets(args.input.kind, args.input, ctx, { candidate: `candidates/${family}.py`, write: `writes/${family}.py` });
-        await ctx.writeResource("assets", "assets", value); return value;
-      } },
+    assets: { description: "Shape public command argv for the admitted manager", arguments: z.object({ input: WriteInput }),
+      execute: async (args: { input: Input }, ctx: Context) => { const value = native.commands(args.input); await ctx.writeResource("assets", "assets", value); return value; } },
     manager_assets: { description: "Read the phase driver and the manager query for the shared Tool Manager setup", arguments: z.object({ input: ManagerInput }),
       execute: async (args: { input: z.infer<typeof ManagerInput> }, ctx: Context) => {
         const value = await phaseAssets("tool.install", { ...args.input, package: "", repository: null, repository_packages: [], remove_repository: false }, ctx, {});
         await ctx.writeResource("assets", "assets", value); return value;
       } },
-    decide: { description: "Refuse or select the package write from Check the candidate", arguments: z.object({ input: WriteInput, check: Step.nullable() }),
-      execute: async (args: { input: Input; check: StepValue }, ctx: Context) => { const value = decide(args.input, printed(args.check)); await ctx.writeResource("decision", "decision", value); return value; } },
-    result: { description: "Publish only typed manager and installed package results", arguments: z.object({ input: WriteInput, setup: Step.nullable(), source: Step.nullable(), check: Step.nullable(), decision: Step.nullable(), write: Step.nullable() }),
-      execute: async (args: { input: Input } & WriteSteps, ctx: Context) => { const value = writeResult(args.input, args); await ctx.writeResource("result", "result", value); return value; } },
+    decide: { description: "Check native manager observations and the normal candidate before any write", arguments: z.object({ input: WriteInput, version: Step.nullable(), query: Step.nullable(), os: Step.nullable(), check: Step.nullable() }),
+      execute: async (args: { input: Input; version: StepValue; query: StepValue; os: StepValue; check: StepValue }, ctx: Context) => {
+        let phase: Phase = null;
+        try { const facts = native.inventory(args.input, args.version, args.query, args.os); phase = { facts, candidate: null }; phase.candidate = native.candidate(args.input, args.check, facts); }
+        catch (error) { if (!(error instanceof ToolRefusal) && !(error instanceof z.ZodError) && !(error instanceof SyntaxError)) throw error; }
+        const value = { ...decide(args.input, phase), version: phase?.candidate ? (phase.candidate as { version?: string }).version ?? "" : "" };
+        await ctx.writeResource("decision", "decision", value); return value;
+      } },
+    result: { description: "Shape the installed version from the native end check for Gateway projection", arguments: z.object({ input: WriteInput, setup: Step.nullable(), source: Step.nullable(), check: Step.nullable(), decision: Step.nullable(), write: Step.nullable(), key: Step.nullable(), after: Public.nullable() }),
+      execute: async (args: { input: Input; key: StepValue; after: Record<string, unknown> | null } & WriteSteps, ctx: Context) => {
+        if (args.key?.status === "failed") args.source = { status: "succeeded", outputs: { exitCode: 1, stdout: JSON.stringify({ ready: false, error_code: "tool.repository_key_mismatch" }) } };
+        let write = args.write;
+        if (write?.status === "succeeded") {
+          let facts: unknown = null;
+          try { facts = native.after(args.input, args.after); } catch { /* An unreadable end check cannot prove success. */ }
+          write = { status: "succeeded", outputs: { exitCode: 0, stdout: JSON.stringify({ written: true, facts }) } };
+        }
+        const value = writeResult(args.input, { ...args, write }); await ctx.writeResource("result", "result", value); return value;
+      } },
   },
 };

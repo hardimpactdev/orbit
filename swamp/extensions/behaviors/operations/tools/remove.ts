@@ -1,5 +1,6 @@
 import { z } from "npm:zod@4.4.3";
-import { AdoptInput, type Context, phaseAssets } from "./adopt.ts";
+import * as native from "./native.ts";
+import { AdoptInput, type Context } from "./adopt.ts";
 import { homebrewRemovalBlock } from "./adopt_homebrew.ts";
 import { printed, Step, ToolRefusal } from "./contract.ts";
 import { writeInventory } from "./write.ts";
@@ -39,33 +40,35 @@ export function removalResult(input: Input, plan: StepValue, decision: StepValue
 export const behavior = {
     type: "@nckrtl/tool-remove-command", version: "2026.11.02.2",
     resources: {
-        assets: { schema: z.object({ driver: z.string(), bundle: z.string() }), lifetime: "1d", garbageCollection: 10 },
+        assets: { schema: z.record(z.string(), z.unknown()), lifetime: "1d", garbageCollection: 10 },
         decision: { schema: z.record(z.string(), z.unknown()), lifetime: "1d", garbageCollection: 10 },
         result: { schema: z.object({ stdout: z.string(), ok: z.boolean() }), lifetime: "1d", garbageCollection: 10 },
     },
     methods: {
         assets: {
-            description: "Read the phase driver, the manager query, the apt or brew plan and the removal, with the public intent as argv JSON",
-            arguments: z.object({ input: RemoveInput }),
-            execute: async (args: { input: Input }, ctx: Context) => {
-                const scripts: Record<string, string> = { remove: `mutations/${args.input.manager.replace("-", "_")}.py` };
-                if (args.input.manager === "apt" || args.input.manager === "brew") scripts.plan = `mutations/${args.input.manager}_plan.py`;
-                const value = await phaseAssets("tool.remove", args.input, ctx, scripts);
-                await ctx.writeResource("assets", "assets", value); return value;
-            },
+            description: "Shape public command argv for the admitted manager", arguments: z.object({ input: RemoveInput }),
+            execute: async (args: { input: Input }, ctx: Context) => { const value = native.commands({ ...args.input, kind: "tool.remove" }); await ctx.writeResource("assets", "assets", value); return value; },
         },
         decide: {
-            description: "Refuse or select the removal from its plan",
-            arguments: z.object({ input: RemoveInput, plan: Step.nullable() }),
-            execute: async (args: { input: Input; plan: StepValue }, ctx: Context) => {
-                const value = removalDecision(args.input, printed(args.plan)); await ctx.writeResource("decision", "decision", value); return value;
+            description: "Refuse a native removal plan that removes another package",
+            arguments: z.object({ input: RemoveInput, version: Step.nullable(), query: Step.nullable(), os: Step.nullable(), plan: Step.nullable() }),
+            execute: async (args: { input: Input; version: StepValue; query: StepValue; os: StepValue; plan: StepValue }, ctx: Context) => {
+                let phase = null;
+                try { phase = { facts: native.inventory(args.input, args.version, args.query, args.os), ...(["apt", "brew"].includes(args.input.manager) ? { plan: native.removalPlan(args.input, args.plan) } : {}) }; }
+                catch (error) { if (!(error instanceof ToolRefusal) && !(error instanceof z.ZodError) && !(error instanceof SyntaxError)) throw error; }
+                const value = removalDecision(args.input, phase); await ctx.writeResource("decision", "decision", value); return value;
             },
         },
         result: {
             description: "Project only proven absence",
-            arguments: z.object({ input: RemoveInput, plan: Step.nullable(), decision: Step.nullable(), remove: Step.nullable(), check: Step.nullable(), source: Step.nullable() }),
-            execute: async (args: { input: Input; plan: StepValue; decision: StepValue; remove: StepValue; check: StepValue; source: StepValue }, ctx: Context) => {
-                const value = removalResult(args.input, args.plan, args.decision, args.remove, args.check, args.source); await ctx.writeResource("result", "result", value); return value;
+            arguments: z.object({ input: RemoveInput, plan: Step.nullable(), decision: Step.nullable(), remove: Step.nullable(), check: Step.nullable(), source: Step.nullable(), after: z.record(z.string(), z.unknown()).nullable() }),
+            execute: async (args: { input: Input; plan: StepValue; decision: StepValue; remove: StepValue; check: StepValue; source: StepValue; after: Record<string, unknown> | null }, ctx: Context) => {
+                let check = args.check;
+                if (check?.status === "succeeded") {
+                    try { if (native.after(args.input, args.after).versions.length !== 0) check = { status: "failed" }; }
+                    catch { check = { status: "failed" }; }
+                }
+                const value = removalResult(args.input, args.plan, args.decision, args.remove, check, args.source); await ctx.writeResource("result", "result", value); return value;
             },
         },
     },

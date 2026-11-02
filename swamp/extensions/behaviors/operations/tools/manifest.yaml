@@ -3,7 +3,8 @@ name: '@nckrtl/tool-adopt-command'
 version: 2026.11.02.4
 visibility: private
 license: MIT
-description: The Tool phase driver, its manager scripts, and the typed Tool decisions and results.
+description: Native Tool commands and typed decisions; shared query scripts remain
+  only for frozen adoption and manager setup.
 behaviors:
 - operations/tools/adopt.ts
 - operations/tools/remove.ts
@@ -16,20 +17,5 @@ additionalFiles:
 - queries/brew_query.py
 - queries/brew.py
 - queries/brew_cask.py
-- mutations/apt.py
-- mutations/apt_plan.py
-- mutations/brew_plan.py
-- mutations/brew.py
-- mutations/brew_cask.py
-- mutations/composer.py
-- mutations/vp.py
-- candidates/apt.py
-- candidates/composer.py
-- candidates/vp.py
-- candidates/brew.py
-- writes/apt.py
-- writes/composer.py
-- writes/vp.py
-- writes/brew.py
 - apt_repository.py
 - phase.py
