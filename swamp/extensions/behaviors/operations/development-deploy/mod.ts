@@ -1,4 +1,4 @@
-import projectEnvironmentRuntime from "../task-repository/scripts/project_environment.py" with {
+import projectEnvironmentRuntime from "./scripts/project_environment.py" with {
     type: "text",
 };
 import { z } from "npm:zod@4.4.3";

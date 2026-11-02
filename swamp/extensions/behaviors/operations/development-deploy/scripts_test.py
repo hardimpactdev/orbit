@@ -22,9 +22,9 @@ def script(name):
     runtime = (HERE.parent / "instance-deploy/app_step_runtime.ts").read_text()
     cache = re.search(r".raw`(.*?)`;", runtime, re.S)[1]
     program = re.search(r"appStepRuntime = String.raw`(.*?)`;", runtime, re.S)[1].replace("${JSON.stringify(ciCacheImportProgram)}", repr(cache))
-    program = program.replace("${projectEnvironmentRuntime}", (HERE.parent / "task-repository/scripts/project_environment.py").read_text())
+    program = program.replace("${projectEnvironmentRuntime}", (HERE / "scripts/project_environment.py").read_text())
     body = body.replace('APP_RUNTIME = "__APP_STEP_RUNTIME__"', "APP_RUNTIME = " + repr(program))
-    environment = (HERE.parent / "task-repository/scripts/project_environment.py").read_text()
+    environment = (HERE / "scripts/project_environment.py").read_text()
     common = (HERE / "scripts/common.py").read_text().replace("from project_environment import load_project_environment\n", "")
     return environment + "\n" + common + "\n" + body
 
