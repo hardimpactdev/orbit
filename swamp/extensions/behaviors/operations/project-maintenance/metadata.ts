@@ -261,8 +261,12 @@ export const behavior = {
                 );
                 const urls: string[] = [];
                 for (
+                    // Only open groups have pull requests to watch; ended groups keep URLs from older repository names.
                     const group of args.intent.groups.filter((group) =>
-                        group.project_id === project.projectId
+                        group.project_id === project.projectId &&
+                        !["completed", "cancelled", "failed"].includes(
+                            String(group.status),
+                        )
                     )
                 ) {
                     const candidates = [group.pr_url, group.watched_pr_url];

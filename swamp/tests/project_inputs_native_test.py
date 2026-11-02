@@ -80,9 +80,18 @@ class ProjectInputsNativeTest(NativeTestCase):
     def test_orbit_routine_reads_its_policy(self):
         self.workflow("routine")
         self.inputs["intent"]["project"] = {"id": 46, "repository": "https://github.com/hardimpactdev/orbit.git", "default_branch": "main", "check": "composer check"}
+        # Ended groups keep PR URLs from the repository's old name; only open groups are checked.
+        self.inputs["intent"]["groups"] = [{"id": 1, "project_id": 46, "status": "completed", "pr_url": "https://github.com/nckrtl/orbit/pull/1025", "watched_pr_url": None},
+                                           {"id": 2, "project_id": 46, "status": "backlog", "pr_url": "https://github.com/hardimpactdev/orbit/pull/2450", "watched_pr_url": None}]
         _history, steps = self.run_workflow("routine")
         self.assertEqual(steps["Read the admitted input"]["status"], "succeeded")
         self.assertEqual(json.loads(steps["Report the result"]["outputs"]["stdout"])["project_id"], 46)
+
+    def test_an_open_group_with_a_foreign_pull_request_is_refused(self):
+        self.workflow("routine")
+        self.inputs["intent"]["groups"] = [{"id": 1, "project_id": 32, "status": "running", "pr_url": "https://github.com/someone/else/pull/1", "watched_pr_url": None}]
+        _, steps = self.run_workflow("routine", success=False)
+        self.assertIn("pr_identity_mismatch", steps["Read the admitted input"]["error"])
 
     def test_project_mismatch_fails_before_any_downstream_request(self):
         self.workflow("routine")
