@@ -1,0 +1,77 @@
+id: e7367bae-c2b8-42f2-b0ab-ace4d565c4df
+name: metrics-containers-remove
+description: Stop and remove the Prometheus and Grafana containers and their unit files; the named volumes stay.
+vaults: [default, orbit-control-inputs]
+inputs:
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string}
+    intent: {type: object}
+  required: [operation_id, node_id, kind, intent]
+jobs:
+- name: remove
+  steps:
+  - name: plan
+    labels: {role: swamp}
+    task: {type: behavior, behaviorType: '@nckrtl/metrics-role-plan', behaviorName: '${{ "metrics-plan" }}', methodName: plan, inputs: {assignment_id: '${{ inputs.intent.assignment_id }}', address: '${{ inputs.intent.ssh_execution.target.host }}', files: '${{ inputs.intent.files }}'}}
+  - name: stopped
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: plan, condition: {type: succeeded}}]
+    forEach: {item: service, in: '${{ [0, 1] }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/systemd'
+      behaviorName: '${{ ("metrics-off-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
+      methodName: apply
+      inputs: {}
+      globalArgs:
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+        service: '${{ steps.plan.outputs.services[self.service].name + ".service" }}'
+        ensure: stopped
+        enabled: false
+  - name: container
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: stopped, condition: {type: succeeded}}]
+    dataOutputOverrides: [{specName: state, vaultName: orbit-control-inputs}]
+    forEach: {item: service, in: '${{ [0, 1] }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/docker_container'
+      behaviorName: '${{ ("metrics-remove-container-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
+      methodName: apply
+      inputs: {}
+      globalArgs:
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+        name: '${{ steps.plan.outputs.services[self.service].name }}'
+        image: '${{ steps.plan.outputs.services[self.service].image }}'
+        ensure: absent
+  - name: unit_file
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: container, condition: {type: succeeded}}]
+    forEach: {item: service, in: '${{ [0, 1] }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ ("metrics-rm-unit-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
+      methodName: apply
+      inputs: {}
+      globalArgs:
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+        path: '${{ "/etc/systemd/system/" + steps.plan.outputs.services[self.service].name + ".service" }}'
+        ensure: absent

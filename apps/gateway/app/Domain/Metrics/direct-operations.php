@@ -24,10 +24,15 @@ $credentials = ['metrics.credentials_reset' => [
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^metrics-credentials-operation-[1-9][0-9]*-(probe|apply|confirm)$']],
 ]];
 
-return $credentials + $exporters + array_fill_keys(['metrics.enable', 'metrics.disable'], [
-    'workflow' => 'operation-metrics-role',
+return $credentials + $exporters + ['metrics.enable' => [
+    'workflow' => 'operation-metrics-enable',
     'projection' => MetricsRoleProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'finish', 'step' => 'result'],
+    'terminal_result' => ['job' => 'role', 'step' => 'Publish metrics.orbit', 'native' => true],
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^metrics-role-operation-[1-9][0-9]*$']],
-]);
+], 'metrics.disable' => [
+    'workflow' => 'operation-metrics-disable',
+    'projection' => MetricsRoleProjection::class,
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'role', 'step' => 'Check it is gone', 'native' => true],
+]];

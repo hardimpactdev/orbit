@@ -34,7 +34,7 @@ sequenceDiagram
   %%> - the list of exporter Nodes, the Caddy site, the private DNS name and the firewall rules to remove
   %%> Result:
   %%> - the role marked removing, and task #5174 recorded with the full intent
-  GW->>SW: Start run, full intent<br/>operation-metrics-role
+  GW->>SW: Start run, full intent<br/>operation-metrics-disable
   %%> What it does:
   %%> - starts one Swamp run on serve (Node 209)
   %%> Inputs:
@@ -60,13 +60,18 @@ sequenceDiagram
   %%> - official `@swamp/cfgmgmt` behaviors (systemd, docker_container, file) over SSH from 209
   Note over SW: Remove the fleet exporters<br/>same steps as exporter:disable
   %%> What it does:
-  %%> - for each exporter Node: stops and removes the exporters, the `prometheus-node-exporter` package and the firewall allows for Node 12
+  %%> - for each exporter Node: stops and removes the exporters and the `prometheus-node-exporter` package, one Node at a time
   %%> - the same steps that `metrics:exporter:disable` runs for one Node
   %%> Kept:
   %%> - each Node's exporter preference, so a later enable selects the same Nodes
+  Note over SW: Remove the fleet allows<br/>same allows as exporter:disable
+  %%> What it does:
+  %%> - for each exporter Node: removes the firewall allows for Node 12, one Node at a time
+  %%> How:
+  %%> - the `metrics-exporter-allows` child that `metrics:exporter:disable` runs
   SW->>N: Remove the Grafana rules<br/>@swamp/cfgmgmt/firewall absent
   %%> What it does:
-  %%> - removes the allow for the Gateway Node and the deny for other peers
+  %%> - removes the allow for the Gateway Node
   %%> How:
   %%> - official `@swamp/cfgmgmt/firewall` over SSH from 209
   SW->>N: Remove the configuration<br/>@swamp/cfgmgmt/directory absent
@@ -81,9 +86,10 @@ sequenceDiagram
     %%> Without --purge-data:
     %%> - both volumes stay, so a later enable continues with the old data
   end
-  SW->>N: Check it is gone<br/>@swamp/cfgmgmt check absent
+  SW->>N: Check it is gone<br/>@swamp/ssh exec · one command
   %%> What it does:
-  %%> - the `check` of the docker_container, firewall and directory behaviors: both containers, the Grafana rules and the configuration are absent
+  %%> - one command fails unless no `orbit-metrics-` container and no `/etc/orbit/metrics` remain
+  %%> - a cfgmgmt `check` reports drift without failing, so it cannot be the end check
   %%> Why:
   %%> - the role only counts as removed when Node 12 shows it
   alt every step passes

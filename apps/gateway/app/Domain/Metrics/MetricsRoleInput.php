@@ -11,6 +11,7 @@ use App\Domain\Routes\NativeRoutePublicationInput;
 use App\Domain\Routes\PrivateDnsPublicationNodes;
 use App\Domain\Routes\RouteRenderContext;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
+use App\Models\Node;
 use App\Models\NodeRole;
 use App\Support\ValidatedData;
 
@@ -26,18 +27,21 @@ final readonly class MetricsRoleInput
         $gateway = app(MetricsGatewayResolver::class)->resolve();
         $ssh = app(SwampSshExecutionInput::class)->forNode($node);
         $certificates = app(NodeRoleCertificateInput::class)->capture($node, RoleName::Metrics, removing: ! $enabled);
-        $caddy = app(RouteRenderContext::class)->renderRoleCertificates($certificates,
-            fn (): array => app(NativeCaddyPublicationInput::class)->forNode($gateway));
         $files = ValidatedData::stringMap(app(MetricsFleetCapture::class)->captureFor($assignment, $enabled)['runtime_files']);
-        $fleet = [];
-        foreach (app(MetricsExporterProjection::class)->for($node) as $item) {
-            $target = $item->node;
-            $selected = $enabled && $item->selection->selected;
-            $fleet[] = ['exporter_node_id' => $target->id, 'enabled' => $selected, 'metrics_address' => $node->wireguard_ip,
-                'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($target),
-                'runtime' => ['ssh_execution' => $ssh, 'configuration' => $files['/etc/orbit/metrics/prometheus.yml']],
-                'service' => app(MetricsFleetCapture::class)->forExporter($node, $target, $selected)];
-        }
+        // Member Caddy plans render under the same prospective role certificates as the Gateway site.
+        [$caddy, $fleet] = app(RouteRenderContext::class)->renderRoleCertificates($certificates, function () use ($gateway, $node, $enabled, $ssh, $files): array {
+            $fleet = [];
+            foreach (app(MetricsExporterProjection::class)->for($node) as $item) {
+                $target = $item->node;
+                $selected = $enabled && $item->selection->selected;
+                $fleet[] = ['exporter_node_id' => $target->id, 'enabled' => $selected, 'metrics_address' => $node->wireguard_ip,
+                    'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($target),
+                    'runtime' => ['ssh_execution' => $ssh, 'configuration' => $files['/etc/orbit/metrics/prometheus.yml']],
+                    'service' => $this->service($node, $target, $selected, $gateway)];
+            }
+
+            return [app(NativeCaddyPublicationInput::class)->forNode($gateway), $fleet];
+        });
         $dns = [];
         foreach (PrivateDnsPublicationNodes::query()->get() as $dnsNode) {
             $dns[] = ['node_id' => $dnsNode->id, ...app(NativeCaddyPublicationInput::class)->connectionForNode($dnsNode),
@@ -52,5 +56,18 @@ final readonly class MetricsRoleInput
             'gateway_ssh' => app(SwampSshExecutionInput::class)->forNode($gateway),
             'firewall' => ['port' => 3000, 'source' => $gateway->wireguard_ip, 'action' => 'allow', 'ensure' => $enabled ? 'present' : 'absent'],
             'purge_volumes' => $purge ? ['orbit-metrics-prometheus-data', 'orbit-metrics-grafana-data'] : []];
+    }
+
+    /**
+     * The role publishes and withdraws the Gateway's Caddyfile itself, after its certificate; a Gateway member plan would
+     * publish metrics.orbit before the certificate exists, or put it back after the withdrawal.
+     *
+     * @return array<string,mixed>
+     */
+    private function service(Node $metrics, Node $target, bool $selected, Node $gateway): array
+    {
+        $service = app(MetricsFleetCapture::class)->forExporter($metrics, $target, $selected);
+
+        return $target->is($gateway) ? [...$service, 'caddy' => null] : $service;
     }
 }

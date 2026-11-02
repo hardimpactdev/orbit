@@ -1,0 +1,113 @@
+id: 7398163d-b3e5-48dd-9b25-62cf89fe4c65
+name: operation-metrics-enable
+description: metrics.enable from captured intent. Install Docker, write the configuration, start the containers, add the fleet exporters, then publish metrics.orbit.
+vaults: [default, orbit-control-inputs]
+inputs:
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [metrics.enable]}
+    intent: {type: object}
+    execution_secrets: {type: object, additionalProperties: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^metrics-role-operation-[1-9][0-9]*$'}}, required: [vault, key], additionalProperties: false}}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+jobs:
+- name: role
+  steps:
+  - name: Install Docker
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: metrics-docker
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}'}
+  - name: Write the configuration
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Install Docker', condition: {type: succeeded}}]
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
+    task:
+      type: workflow
+      workflowIdOrName: metrics-configuration
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', execution_secrets: '${{ inputs.execution_secrets }}'}
+  - name: Start the containers
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Write the configuration', condition: {type: succeeded}}]
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
+    task:
+      type: workflow
+      workflowIdOrName: metrics-containers
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}'}
+  - name: Add the fleet exporters
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Start the containers', condition: {type: succeeded}}]
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
+    # One member at a time: members share Caddy and Swamp worker capacity.
+    concurrency: 1
+    forEach: {item: exporter, in: '${{ inputs.intent.fleet }}'}
+    task:
+      type: workflow
+      workflowIdOrName: metrics-exporter-node
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ self.exporter.exporter_node_id }}', kind: '${{ self.exporter.enabled ? "metrics.exporter_enable" : "metrics.exporter_disable" }}', intent: '${{ self.exporter }}'}
+  - name: Allow the fleet scrapes
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Add the fleet exporters', condition: {type: always}}]
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
+    # One member at a time: members share Caddy and Swamp worker capacity.
+    concurrency: 1
+    forEach: {item: exporter, in: '${{ inputs.intent.fleet }}'}
+    task:
+      type: workflow
+      workflowIdOrName: metrics-exporter-allows
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ self.exporter.exporter_node_id }}', kind: '${{ self.exporter.enabled ? "metrics.exporter_enable" : "metrics.exporter_disable" }}', intent: '${{ self.exporter }}'}
+  - name: Sign metrics.orbit cert
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Start the containers', condition: {type: succeeded}}, {step: 'Add the fleet exporters', condition: {type: always}}, {step: 'Allow the fleet scrapes', condition: {type: always}}]
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
+    forEach: {item: leaf, in: '${{ inputs.intent.certificates.leaves }}'}
+    task:
+      type: workflow
+      workflowIdOrName: node-role-certificate-publish
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        parent_run_id: ${{ run.id }}
+        leaf: ${{ self.leaf }}
+        ssh:
+          name: '${{ ("metrics-cert-" + string(self.leaf.node_id) + "-" + self.leaf.scope).split(".").join("-") }}'
+          transport: {kind: ssh, user: '${{ inputs.intent.gateway_ssh.target.user }}', port: '${{ inputs.intent.gateway_ssh.target.port }}', identityFile: '${{ inputs.intent.gateway_ssh.identity_file }}'}
+          hosts: [{name: target, address: '${{ inputs.intent.gateway_ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.gateway_ssh.target.host_keys }}'}}]
+  - name: Allow the Gateway in
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Start the containers', condition: {type: succeeded}}, {step: 'Add the fleet exporters', condition: {type: always}}, {step: 'Allow the fleet scrapes', condition: {type: always}}, {step: 'Sign metrics.orbit cert', condition: {type: always}}]
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/firewall'
+      behaviorName: '${{ ("metrics-port-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: apply
+      inputs: {}
+      globalArgs:
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+        port: '${{ inputs.intent.firewall.port }}'
+        source: '${{ inputs.intent.firewall.source }}'
+        action: allow
+        ensure: '${{ inputs.intent.firewall.ensure }}'
+  - name: Publish metrics.orbit
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Start the containers', condition: {type: succeeded}}, {step: 'Add the fleet exporters', condition: {type: always}}, {step: 'Allow the fleet scrapes', condition: {type: always}}, {step: 'Sign metrics.orbit cert', condition: {type: always}}, {step: 'Allow the Gateway in', condition: {type: succeeded}}]
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
+    task:
+      type: workflow
+      workflowIdOrName: metrics-publication
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}'}

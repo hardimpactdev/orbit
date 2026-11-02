@@ -1,0 +1,116 @@
+id: e19d0fb4-a5f0-4c86-89dd-de20bfc5f789
+name: metrics-configuration
+description: Write the Metrics configuration, the Prometheus candidate checked by promtool before it is published, and the Grafana password from the vault.
+vaults: [default, orbit-control-inputs]
+inputs:
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string}
+    intent: {type: object}
+    execution_secrets: {type: object, additionalProperties: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^metrics-role-operation-[1-9][0-9]*$'}}, required: [vault, key], additionalProperties: false}}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+jobs:
+- name: configuration
+  steps:
+  - name: plan
+    labels: {role: swamp}
+    task: {type: behavior, behaviorType: '@nckrtl/metrics-role-plan', behaviorName: '${{ "metrics-plan" }}', methodName: plan, inputs: {assignment_id: '${{ inputs.intent.assignment_id }}', address: '${{ inputs.intent.ssh_execution.target.host }}', files: '${{ inputs.intent.files }}'}}
+  - name: directories
+    labels: {role: swamp}
+    writes: true
+    forEach: {item: directory, in: '${{ inputs.intent.directories }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/directory'
+      behaviorName: '${{ ("metrics-directory-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
+      methodName: apply
+      inputs: {}
+      globalArgs: &owner
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+        path: ${{ self.directory }}
+        ensure: present
+        owner: root
+        group: root
+        mode: '0755'
+  - name: files
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: plan, condition: {type: succeeded}}, {step: directories, condition: {type: succeeded}}]
+    forEach: {item: file, in: '${{ inputs.intent.files }}'}
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ ("metrics-file-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
+      methodName: apply
+      inputs: {}
+      globalArgs: {<<: *owner, path: '${{ self.file.path == "/etc/orbit/metrics/prometheus.yml" ? "/etc/orbit/metrics/prometheus-" + run.id + ".yml" : self.file.path }}', content: '${{ self.file.content }}', ensure: present, owner: root, group: root, mode: '0644'}
+  - name: units
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: plan, condition: {type: succeeded}}, {step: directories, condition: {type: succeeded}}]
+    forEach: {item: file, in: '${{ [0, 1, 2] }}'}
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ ("metrics-unit-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
+      methodName: apply
+      inputs: {}
+      globalArgs: {<<: *owner, path: '${{ steps.plan.outputs.files[self.file].path }}', content: '${{ steps.plan.outputs.files[self.file].content }}', ensure: present, owner: root, group: root, mode: '0644'}
+  - name: validate
+    labels: {role: swamp}
+    dependsOn: [{step: files, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ ("metrics-validate-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      globalArgs: &ssh
+        name: '${{ ("metrics-validate-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+        transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}
+        hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]
+      inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/docker, run, --rm, --entrypoint, /bin/promtool, --volume, '${{ "/etc/orbit/metrics/prometheus-" + run.id + ".yml:/etc/prometheus/prometheus.yml:ro" }}', 'prom/prometheus:v3.5.0', check, config, /etc/prometheus/prometheus.yml]}
+  - name: publish
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: validate, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ ("metrics-publish-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      globalArgs: *ssh
+      inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/cp, --no-preserve=all, '${{ "/etc/orbit/metrics/prometheus-" + run.id + ".yml" }}', /etc/orbit/metrics/prometheus.yml]}
+  - name: remove_candidate
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: validate, condition: {type: always}}, {step: publish, condition: {type: always}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ ("metrics-remove-candidate-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: apply
+      inputs: {}
+      globalArgs: {<<: *owner, path: '${{ "/etc/orbit/metrics/prometheus-" + run.id + ".yml" }}', ensure: absent}
+  # Q-SECRET: the password reaches the Node only on stdin; it is never an argument, an output or a log line.
+  - name: password
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: publish, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ ("metrics-password-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      globalArgs: *ssh
+      inputs:
+        hosts: 'name:target'
+        sudo: true
+        argv: [/usr/bin/install, '-m', '0400', '-o', '472', '-g', '472', /dev/stdin, /etc/orbit/metrics/grafana/admin-password]
+        stdin: '${{ vault.get(inputs.execution_secrets.password.vault, inputs.execution_secrets.password.key) }}'

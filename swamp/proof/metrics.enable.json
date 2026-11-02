@@ -1,0 +1,52 @@
+{
+  "kind": "metrics.enable",
+  "workflow": "operation-metrics-enable",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 1200,
+  "queue_timeout_seconds": 60,
+  "before_gateway": [
+    [
+      "install",
+      "-D",
+      "-m",
+      "0644",
+      "/home/orbit/.orbit/ca/root.pem",
+      "/etc/orbit/agent/ca.pem"
+    ]
+  ],
+  "request": {
+    "method": "POST",
+    "path": "metrics",
+    "body": {
+      "node_id": "${node.metrics}"
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Install Docker",
+      "job": "role",
+      "step": "Install Docker",
+      "budget_seconds": 300
+    },
+    {
+      "name": "Start the containers",
+      "job": "role",
+      "step": "Start the containers",
+      "budget_seconds": 300
+    },
+    {
+      "name": "Publish metrics.orbit",
+      "job": "role",
+      "step": "Publish metrics.orbit",
+      "budget_seconds": 120
+    }
+  ],
+  "parity": [
+    "swamp/proof/metrics.role/parity.py",
+    "enable"
+  ]
+}

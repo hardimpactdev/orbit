@@ -1,0 +1,45 @@
+id: 2f8f11ca-5e1e-4dcb-a3e3-392c7eafd19d
+name: metrics-publication
+description: Publish metrics.orbit on the Gateway Node and its private DNS name, then prove the site answers with its Orbit certificate.
+inputs:
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string}
+    intent: {type: object}
+  required: [operation_id, node_id, kind, intent]
+jobs:
+- name: publication
+  steps:
+  - name: caddy
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: operation-route-caddy
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.intent.caddy.node_id }}', kind: '${{ inputs.kind }}', intent: {caddy_publication: '${{ inputs.intent.caddy }}'}, execution_secrets: {}}
+  - name: dns
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: caddy, condition: {type: succeeded}}]
+    forEach: {item: dns, in: '${{ inputs.intent.dns }}'}
+    task:
+      type: workflow
+      workflowIdOrName: route-dns-publish
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ self.dns.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ self.dns }}', execution_secrets: {}}
+  # Q-WAIT: one bounded wait. Any HTTP answer over a verified Orbit certificate proves the site and its certificate; the
+  # Gateway's authorization decides the status code.
+  - name: answers
+    labels: {role: swamp}
+    dependsOn: [{step: caddy, condition: {type: succeeded}}, {step: dns, condition: {type: always}}]
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ ("metrics-site-" + string(inputs.intent.gateway_ssh.target.host)).split(".").join("-") }}'
+      globalArgs:
+        name: '${{ ("metrics-site-" + string(inputs.intent.gateway_ssh.target.host)).split(".").join("-") }}'
+        transport: {kind: ssh, user: '${{ inputs.intent.gateway_ssh.target.user }}', port: '${{ inputs.intent.gateway_ssh.target.port }}', identityFile: '${{ inputs.intent.gateway_ssh.identity_file }}'}
+        hosts: [{name: target, address: '${{ inputs.intent.gateway_ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.gateway_ssh.target.host_keys }}'}}]
+      inputs: {hosts: 'name:target', sudo: true, timeoutSec: 70, argv: [timeout, '60', sh, -c, 'until code=$(curl -s -o /dev/null -w "%{http_code}" --cacert /etc/orbit/agent/ca.pem --resolve "metrics.orbit:443:$1" https://metrics.orbit/) && [ "$code" != 000 ]; do sleep 1; done', metrics-site, '${{ inputs.intent.gateway_ssh.target.host }}']}

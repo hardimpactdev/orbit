@@ -1,0 +1,52 @@
+{
+  "kind": "metrics.disable",
+  "workflow": "operation-metrics-disable",
+  "topology": "minimal",
+  "clean": false,
+  "budget_seconds": 900,
+  "queue_timeout_seconds": 60,
+  "before_gateway": [
+    [
+      "install",
+      "-D",
+      "-m",
+      "0644",
+      "/home/orbit/.orbit/ca/root.pem",
+      "/etc/orbit/agent/ca.pem"
+    ]
+  ],
+  "request": {
+    "method": "DELETE",
+    "path": "metrics",
+    "body": {
+      "force": true
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Withdraw metrics.orbit",
+      "job": "role",
+      "step": "Withdraw metrics.orbit",
+      "budget_seconds": 120
+    },
+    {
+      "name": "Remove the containers",
+      "job": "role",
+      "step": "Remove the containers",
+      "budget_seconds": 120
+    },
+    {
+      "name": "Check it is gone",
+      "job": "role",
+      "step": "Check it is gone",
+      "budget_seconds": 30
+    }
+  ],
+  "parity": [
+    "swamp/proof/metrics.role/parity.py",
+    "disable"
+  ]
+}

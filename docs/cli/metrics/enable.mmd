@@ -40,7 +40,7 @@ sequenceDiagram
   %%> Result:
   %%> - the `metrics` assignment on Node 12 recorded with status provisioning
   %%> - task #5173 recorded with the full intent
-  GW->>SW: Start run, full intent<br/>operation-metrics-role
+  GW->>SW: Start run, full intent<br/>operation-metrics-enable
   %%> What it does:
   %%> - starts one Swamp run on serve (Node 209)
   %%> Inputs:
@@ -75,13 +75,19 @@ sequenceDiagram
   %%> How:
   %%> - official `@swamp/cfgmgmt` behaviors (docker_image, systemd, docker_container) over SSH from 209
   %%> Read-back:
-  %%> - the `docker_container` check, then one bounded `timeout 60` wait for Prometheus `/-/ready`; the Grafana login is proven by the end check through `metrics.orbit`
+  %%> - one bounded `timeout 60` wait for Prometheus `/-/ready`, and one for a Grafana login with the stored `admin` password
+  %%> - curl reads the password file on Node 12 and hides it from the process list; it never appears in inputs, outputs or logs
   Note over SW: Add the fleet exporters<br/>same steps as exporter:enable
   %%> What it does:
-  %%> - for each selected Node: the exporters, their WireGuard listeners and the firewall allows for Node 12
+  %%> - for each selected Node: the exporters and their WireGuard listeners, one Node at a time
   %%> - the same steps that `metrics:exporter:enable` runs for one Node
   %%> Which Nodes:
   %%> - every eligible Node with a role that takes part in Metrics, or an `enabled` preference, and Node 12 itself
+  Note over SW: Allow the fleet scrapes<br/>same allows as exporter:enable
+  %%> What it does:
+  %%> - for each selected Node: the firewall allows for Node 12 on the exporter ports, one Node at a time
+  %%> How:
+  %%> - the `metrics-exporter-allows` child that `metrics:exporter:enable` runs
   SW->>GW: Sign metrics.orbit cert<br/>operation:direct:certificate-sign
   %%> How:
   %%> - a step creates the key on the Gateway Node and reads only the CSR
@@ -89,12 +95,13 @@ sequenceDiagram
   GW-->>SW: Signed certificate<br/>leaf + chain
   %%> What happens next:
   %%> - Swamp writes the certificate beside its key on the Gateway Node
-  SW->>N: Allow the Gateway in<br/>firewall.py · @swamp/ssh exec
+  SW->>N: Allow the Gateway in<br/>@swamp/cfgmgmt/firewall
   %%> What it does:
-  %%> - allows only the Gateway Node to reach Grafana on port 3000, and denies other peers
-  %%> - places the allow above the deny, and both above broad WireGuard trust
+  %%> - allows the Gateway Node to reach Grafana on port 3000
   %%> How:
-  %%> - `firewall.py`, the one named gap: the allow and deny must sit above the managed WireGuard trust, and `@swamp/cfgmgmt/firewall` has no insert position
+  %%> - the official `@swamp/cfgmgmt/firewall` behavior over SSH from 209
+  %%> Not included:
+  %%> - no deny for other peers yet; that needs a rule above the managed WireGuard trust, which `@swamp/cfgmgmt/firewall` cannot place
   SW->>G: Publish metrics.orbit<br/>@swamp/cfgmgmt/file · reload
   %%> What it does:
   %%> - adds the `metrics.orbit` site to the Gateway Node's Caddyfile, validates it, and reloads Caddy gracefully
@@ -102,6 +109,8 @@ sequenceDiagram
   %%> - publishes `metrics.orbit` to the Gateway's WireGuard address through the shared DNS step on the `vpn` Node
   %%> Why a record:
   %%> - `metrics.orbit` names one service on the Gateway Node; no Cluster or Node TLD answer covers it
+  %%> End check:
+  %%> - one bounded `timeout 60` wait on the Gateway Node until `https://metrics.orbit` answers with its Orbit certificate
   alt every step passes
     G-->>SW: metrics.orbit answers
     %%> Returns:

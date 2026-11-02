@@ -40,6 +40,15 @@ beforeEach(function (): void {
     app(SettingRepository::class)->put(new SettingScope(SettingScopeType::Node, $this->target->id), NativeMetricsCredentialManager::ActivePasswordKey, 'fixture-grafana-private-value', SettingValueProtection::Secret);
 });
 
+it('leaves the Gateway Caddyfile to the role and renders other member plans under its prospective certificates', function (): void {
+    $this->postJson('/api/v1/metrics', ['node_id' => $this->target->id])->assertAccepted();
+    $input = Operation::query()->sole()->input;
+    $gateway = collect($input['fleet'])->firstWhere('exporter_node_id', $this->gateway->id);
+    expect($gateway)->not->toBeNull()
+        ->and($gateway['service']['caddy'])->toBeNull()
+        ->and($input['caddy']['caddy']['content'])->toContain('metrics.orbit');
+});
+
 it('admits a complete public role intent and a names-only password execution copy', function (): void {
     $this->postJson('/api/v1/metrics', ['node_id' => $this->target->id])->assertAccepted();
     $op = Operation::query()->sole();
@@ -95,7 +104,17 @@ it('replays role admission without a Gateway execution hold', function (): void 
     expect($this->socket->sent)->toHaveCount(2);
     $this->withoutHeader('Idempotency-Key')->putJson('/api/v1/metrics/exporters/'.$this->gateway->id)->assertAccepted();
     expect(Operation::query()->count())->toBe(2);
-    expect(app(DirectOperation::class)->definition('metrics.enable')['workflow'])->toBe('operation-metrics-role');
+    expect(app(DirectOperation::class)->definition('metrics.enable')['workflow'])->toBe('operation-metrics-enable');
+});
+
+it('runs each kind in its own workflow with its chart end check as the native terminal step', function (): void {
+    $enable = app(DirectOperation::class)->definition('metrics.enable');
+    $disable = app(DirectOperation::class)->definition('metrics.disable');
+    expect($enable['workflow'])->toBe('operation-metrics-enable')
+        ->and($enable['terminal_result'])->toMatchArray(['job' => 'role', 'step' => 'Publish metrics.orbit', 'native' => true])
+        ->and($disable['workflow'])->toBe('operation-metrics-disable')
+        ->and($disable['terminal_result'])->toMatchArray(['job' => 'role', 'step' => 'Check it is gone', 'native' => true])
+        ->and($disable)->not->toHaveKey('execution_copies');
 });
 
 it('requires explicit removal consent before any native effect', function (): void {
