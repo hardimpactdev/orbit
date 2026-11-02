@@ -100,7 +100,7 @@ A domain provider extends Laravel's `ServiceProvider`. Bootstrap discovers it wi
 
 An operation manifest returns a map from kind name to an `OperationKind` class for PHP execution, or to `['executor' => 'swamp', 'completion' => CompletionClass::class]` for Swamp execution. Keep new kind constants in the owning domain. The registry rejects duplicate kind names. The CLI fragment returns `actions`, `noun_endings`, and `route_exceptions` lists.
 
-A navigation fragment contains a `navigation` list of entries with `tab`, `group`, `order`, and `pages`. Use an existing tab and group, or add a group in the fragment. `order` places pages within the group; filenames break ties. A fragment may also contain `redirects`. Site settings live in `docs/site.json`; API navigation comes from OpenAPI. Existing pages have separate fragments, so two families can add pages without editing a common index.
+A navigation fragment contains a nonempty `navigation` list of entries with `tab`, `group`, `order`, and `pages`. `composer docs-build` fails on a fragment without one. Use an existing tab and group, or add a group in the fragment. `order` places pages within the group; filenames break ties. A fragment may also contain `redirects`. Site settings live in `docs/site.json`; API navigation comes from OpenAPI. Existing pages have separate fragments, so two families can add pages without editing a common index.
 
 Family conversion pull requests leave the shared loaders, `ApplicationServiceProvider.php`, `CommandVocabulary.php`, `OperationKinds.php`, `docs/site.json`, and build workflows alone. Changes to these contracts belong in a separate shared-infrastructure pull request. Family pull requests never update generated files or install a merge driver.
 

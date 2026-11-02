@@ -12,7 +12,10 @@ def configuration(root=ROOT, spec=None):
     entries = []
     for path in sorted((root / 'docs/navigation').glob('*.json')):
         fragment = json.loads(path.read_text())
-        entries.extend(fragment.get('navigation', []))
+        # A fragment without navigation entries would publish nothing and leave its pages off the site.
+        if not isinstance(fragment.get('navigation'), list) or not fragment['navigation']:
+            raise SystemExit(f'{path.relative_to(root)}: needs a nonempty "navigation" list of tab, group, order, and pages entries')
+        entries.extend(fragment['navigation'])
         config['redirects'].extend(fragment.get('redirects', []))
     for entry in sorted(entries, key=lambda entry: entry['order']):
         tab = next(tab for tab in config['navigation']['tabs'] if tab['tab'] == entry['tab'])
