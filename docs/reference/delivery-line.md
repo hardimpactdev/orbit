@@ -206,6 +206,8 @@ Run it as the Gateway account from the release under test. It then uses that rel
 
 A restarted scheduler starts its first tick on the next full minute, so a release does not pass `--wait-for-tick`. It [confirms the first tick afterwards](/reference/gateway-recovery#post-release-tick-confirmation). `tasks_tick` runs `artisan schedule:list` with only `HOME`, `PATH`, and `LANG`, as the release's own artisan commands do. With `--wait-for-tick`, it reads `orbit tasks:status --json` every 2 seconds until the total limit, and passes once `last_tick_at` is at or after `--since`, or no more than `--tick-within` seconds before the run. It keeps polling while another poll interval fits, without reserving a full read limit. A read cut short by the total limit counts as `tick_stale`, with the last seen tick in `detail.last_tick_at`, not as `timeout`.
 
+`node_list` and `tasks_list` send their command once more when the Gateway answers `gateway.unhandled`, its code for a server error. The first request after the switch can meet a cold Gateway: in release 1159 it failed after 7 seconds, and the same request passed in 2 seconds afterwards. The check's `detail.retried` keeps the first error, and a second failure fails the check.
+
 All checks run at the same time. Each has its own time limit, and `--timeout` bounds the whole run, so a release waits at most that long. A check that does not finish in time is `timeout`. The [`tasks:status`](/cli/tasks/status) tick record comes from the Gateway clock, so compare it on the Gateway host.
 
 | Option | Default | Meaning |

@@ -233,7 +233,7 @@ def run_command(argv, budget, limit=COMMAND_LIMIT, what=None, env=None, cwd=None
     return process.returncode, stdout.decode('utf-8', errors='replace'), stderr.decode('utf-8', errors='replace')
 
 
-def orbit_json(options, budget, *arguments, limit=COMMAND_LIMIT):
+def orbit_json(options, budget, *arguments, limit=COMMAND_LIMIT, retried=None):
     argv = [options.orbit, *arguments, '--json']
     what = 'orbit ' + ' '.join(arguments)
     code, stdout, stderr = run_command(argv, budget, limit, what)
@@ -242,13 +242,17 @@ def orbit_json(options, budget, *arguments, limit=COMMAND_LIMIT):
     except json.JSONDecodeError:
         body = None
     if code == 0 and isinstance(body, dict) and 'error' not in body:
-        return body
+        return {**body, 'retried': retried} if retried else body
     error = body.get('error') if isinstance(body, dict) else None
     if isinstance(error, dict):
+        # The first request after a switch can fail on a cold Gateway (release 1159: one 500 in 7 s, then 2 s passes).
+        # A server error gets one more request; a refusal or a second failure fails the check.
+        if error.get('code') == 'gateway.unhandled' and retried is None:
+            return orbit_json(options, budget, *arguments, limit=limit, retried=error)
         raise CheckFailed(
             'cli_failed',
             f'{what} failed with {error.get("code")}: {error.get("message")}',
-            {'command': what, 'exit_code': code, 'cli_error': error},
+            {'command': what, 'exit_code': code, 'cli_error': error, **({'retried': retried} if retried else {})},
         )
     raise CheckFailed(
         'cli_failed',
@@ -401,7 +405,7 @@ def check_node_list(options, budget):
     nodes = body.get('nodes')
     if not isinstance(nodes, list) or not nodes:
         raise CheckFailed('cli_unexpected', 'orbit node:list returned no Nodes. The Gateway Node is always listed.', {'command': 'orbit node:list'})
-    return f'orbit node:list returned {len(nodes)} Nodes.', {'command': 'orbit node:list', 'nodes': len(nodes), 'request_id': body.get('request_id')}
+    return f'orbit node:list returned {len(nodes)} Nodes.', {'command': 'orbit node:list', 'nodes': len(nodes), 'request_id': body.get('request_id'), **({'retried': body['retried']} if body.get('retried') else {})}
 
 
 def check_tasks_list(options, budget):
@@ -414,7 +418,7 @@ def check_tasks_list(options, budget):
     groups = body.get('task_groups')
     if not isinstance(groups, list):
         raise CheckFailed('cli_unexpected', 'orbit tasks:list returned no task_groups list.', {'command': 'orbit tasks:list'})
-    return f'orbit tasks:list returned {len(groups)} task groups.', {'command': 'orbit tasks:list', 'task_groups': len(groups), 'request_id': body.get('request_id')}
+    return f'orbit tasks:list returned {len(groups)} task groups.', {'command': 'orbit tasks:list', 'task_groups': len(groups), 'request_id': body.get('request_id'), **({'retried': body['retried']} if body.get('retried') else {})}
 
 
 def check_web(options, budget):

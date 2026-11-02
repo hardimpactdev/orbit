@@ -362,6 +362,23 @@ class GatewaySmokeTest(unittest.TestCase):
         self.assertIn('gateway.unreachable', checks['node_list']['message'])
         self.assertEqual(checks['node_list']['detail']['cli_error']['code'], 'gateway.unreachable')
 
+    def test_a_gateway_server_error_gets_one_more_request(self):
+        unhandled = {'error': {'code': 'gateway.unhandled', 'message': 'The gateway could not complete the request.', 'request_id': 'cold'}}
+        self.world.orbit('tasks:list', None, sequence=[{'stdout': unhandled, 'exit': 1}, {'stdout': {'task_groups': [], 'request_id': 'warm'}}])
+
+        check = self.world.smoke().json['checks']['tasks_list']
+
+        self.assertEqual(check['status'], 'passed', check)
+        self.assertEqual((check['detail']['request_id'], check['detail']['retried']['request_id']), ('warm', 'cold'))
+        self.assertEqual([call[0] for call in self.world.orbit_calls()].count('tasks:list'), 2)
+
+        self.world.orbit('tasks:list', None, sequence=[{'stdout': unhandled, 'exit': 1}])
+        (self.world.fake / 'orbit' / 'tasks-list.count').unlink()
+        check = self.world.smoke().json['checks']['tasks_list']
+        self.assertEqual((check['status'], check['error']), ('failed', 'cli_failed'), check)
+        self.assertEqual(check['detail']['retried']['request_id'], 'cold')
+        self.assertEqual([call[0] for call in self.world.orbit_calls()].count('tasks:list'), 4)
+
     def test_node_list_fails_without_nodes(self):
         self.world.orbit('node:list', {'nodes': [], 'request_id': 'r'})
 
