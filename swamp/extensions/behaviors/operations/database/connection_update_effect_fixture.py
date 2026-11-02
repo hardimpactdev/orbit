@@ -23,7 +23,8 @@ def effect():
     material={'password':password}
     def docker(*args,check=True):
         value=subprocess.run(['/usr/bin/docker',*args],capture_output=True,text=True,check=False,timeout=120)
-        if check:assert value.returncode==0,'Disposable Valkey fixture command failed'
+        # docker's stderr names the cause (image pull, name clash) and holds no credential: they travel by mounted file or --env-file.
+        if check:assert value.returncode==0,'Disposable Valkey fixture command failed: '+args[0]+': '+value.stderr.strip()[-500:]
         return value.stdout
     def read():
         with credentials({'driver':'redis'},material) as envfile:
