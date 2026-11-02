@@ -2,7 +2,7 @@ id: 10c1e646-19cd-4527-8be5-01f524976346
 name: operation-instance-destroy
 description: Development Instance destroy from 209 in the chart's phases, one shipped script per Node phase through official SSH.
 vaults: [orbit-control-inputs]
-queueTimeout: 30
+queueTimeout: 60
 inputs:
   type: object
   properties:

@@ -3,7 +3,7 @@ name: operation-instance-setup-direct
 description: Run an Instance's admitted Project setup or teardown list in order over official SSH from 209, as the Instance account.
 vaults: []
 # The list totals at most 540 s; the run budget adds the check and report steps.
-queueTimeout: 30
+queueTimeout: 60
 inputs:
   type: object
   properties:

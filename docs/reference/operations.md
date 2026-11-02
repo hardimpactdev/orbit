@@ -74,7 +74,7 @@ Renewal stays a hand procedure. When an alert names a worker token, follow the [
 
 ## Native run budgets
 
-Each step in a native Instance workflow has a queue timeout: 10 seconds for create and 30 seconds for setup or destroy. Each child workflow declares its own queue timeout. These queue limits do not change the Operation's run budget.
+Each step in a native Instance workflow has a queue timeout: 10 seconds for create and 60 seconds for setup or destroy. Destroy's native children also declare 60 seconds, except the database child, which keeps the database family's 30-second limit. Each child workflow declares its own queue timeout. These queue limits do not change the Operation's run budget.
 
 The Gateway tracks each direct Operation's budget from `started_at`, including native start confirmation. The shared `OperationRunBudgets` table reads `instance.create` from the server-captured immutable `input.run_budget_seconds`. The create admission computes that positive integer from its captured phase plan, including heavy Project setup. The Gateway does not re-read the Project.
 
