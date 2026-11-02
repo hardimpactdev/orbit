@@ -14,6 +14,9 @@ beforeEach(function (): void {
     $this->update = fn (array $body) => $this
         ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
         ->patchJson("/api/v1/instances/{$this->instance->id}", $body);
+    $this->autoDeploy = fn (bool $enable) => $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->postJson("/api/v1/instances/{$this->instance->id}/auto-deploy/".($enable ? 'enable' : 'disable'));
 });
 
 it('returns the stored deployment branch through API and MCP updates and reads', function (bool $mcp): void {
@@ -45,7 +48,7 @@ it('records a valid branch on a refused update and omits other deployment input'
     $this->owner->roles()->where('role', RoleName::AppProd->value)->delete();
     $this->owner->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
 
-    ($this->update)(['branch' => 'release/next', 'shared_paths' => ['private-uploads'], 'auto_deploy' => true])
+    ($this->update)(['branch' => 'release/next', 'shared_paths' => ['private-uploads']])
         ->assertConflict()->assertJsonPath('error.code', 'deployment_config.unavailable');
 
     expect(Activity::query()->where('command', 'instance:update')->sole()->properties?->get('input'))->toBe(['branch' => 'release/next']);
@@ -60,13 +63,14 @@ it('omits malformed branch input and unknown fields from Activity', function (ar
     'invalid branch' => [['branch' => 'private value']],
     'object' => [['branch' => ['private' => 'value']]],
     'unknown field' => [['branch' => 'release', 'command' => 'private-command']],
+    'auto_deploy has its own commands' => [['branch' => 'release', 'auto_deploy' => true]],
 ]);
 
-describe('setting automatic deployment of an Instance', function (): void {
+describe('enabling and disabling automatic deployment of an Instance', function (): void {
     it('turns automatic deployment on behind the merge check and resumes after the newest deployment', function (): void {
         $row = InstanceDeployment::query()->create(['instance_id' => $this->instance->id, 'branch' => 'main', 'started_at' => now(), 'status' => 'succeeded', 'triggered_by' => 'laptop', 'kind' => 'rollback']);
 
-        ($this->update)(['auto_deploy' => true])
+        ($this->autoDeploy)(true)
             ->assertOk()
             ->assertJsonPath('data.auto_deploy.enabled', true)
             ->assertJsonPath('data.auto_deploy.gate', 'Required checks')
@@ -81,7 +85,7 @@ describe('setting automatic deployment of an Instance', function (): void {
     it('warns that every commit deploys when the Project has no merge check', function (string $sourceAccess): void {
         $this->project->update(['merge_check' => null, 'source_access' => $sourceAccess]);
 
-        ($this->update)(['auto_deploy' => true])
+        ($this->autoDeploy)(true)
             ->assertOk()
             ->assertJsonPath('data.auto_deploy.enabled', true)
             ->assertJsonPath('data.auto_deploy.gate', null)
@@ -91,23 +95,23 @@ describe('setting automatic deployment of an Instance', function (): void {
     it('refuses a merge check that the Gateway GitHub App cannot read and changes nothing', function (array $project): void {
         $this->project->update($project);
 
-        ($this->update)(['auto_deploy' => true, 'branch' => 'release'])
+        ($this->autoDeploy)(true)
             ->assertConflict()
             ->assertJsonPath('error.code', 'instance.auto_deploy_gate_unreadable');
 
-        expect($this->instance->fresh()->auto_deploy)->toBeFalse()
-            ->and($this->instance->fresh()->deployment_branch)->toBeNull();
+        expect($this->instance->fresh()->auto_deploy)->toBeFalse();
     })->with([
         'GitHub CLI' => [['source_access' => 'gh_cli']],
         'another host' => [['repository_url' => 'https://example.test/shop.git']],
     ]);
 
-    it('sets the branch and automatic deployment together, and turns it off again', function (): void {
-        ($this->update)(['branch' => 'release', 'auto_deploy' => true])->assertOk();
+    it('keeps the branch from update when automatic deployment turns on and off', function (): void {
+        ($this->update)(['branch' => 'release'])->assertOk();
+        ($this->autoDeploy)(true)->assertOk();
         expect($this->instance->fresh()->deployment_branch)->toBe('release')
             ->and($this->instance->fresh()->auto_deploy)->toBeTrue();
 
-        ($this->update)(['auto_deploy' => false])->assertOk()->assertJsonPath('data.auto_deploy.enabled', false);
+        ($this->autoDeploy)(false)->assertOk()->assertJsonPath('data.auto_deploy.enabled', false);
         expect($this->instance->fresh()->auto_deploy)->toBeFalse()
             ->and($this->instance->fresh()->deployment_branch)->toBe('release');
     });
@@ -116,19 +120,18 @@ describe('setting automatic deployment of an Instance', function (): void {
         $this->owner->roles()->where('role', RoleName::AppProd->value)->delete();
         $this->owner->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
 
-        ($this->update)(['auto_deploy' => true])
+        ($this->autoDeploy)(true)
             ->assertConflict()
             ->assertJsonPath('error.code', 'deployment_config.unavailable');
     });
 
-    it('refuses a body without a field or with a malformed value', function (array $body): void {
+    it('refuses an update that tries to change automatic deployment', function (array $body): void {
         ($this->update)($body)->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
 
         expect($this->instance->fresh()->auto_deploy)->toBeFalse();
     })->with([
         'empty' => [[]],
-        'string flag' => [['auto_deploy' => 'yes']],
-        'unknown key' => [['auto_deploy' => true, 'gate' => 'none']],
+        'flag' => [['auto_deploy' => true]],
     ]);
 
     it('shows development defaults as always automatic and other development Instances as manual', function (string $name, bool $enabled): void {

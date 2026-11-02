@@ -87,9 +87,9 @@ class UpCloudProviderNative(NativeTestCase):
         for name in ('task-vm-provider-upcloud', 'task-vm-provider-power'):
             value = yaml.safe_load((ROOT / f'workflows/workflow-{name}.yaml').read_text())
             for job in value['jobs']:
-                self.assertEqual(job.pop('target'), 'orbit-node-209')
+                self.assertEqual(job.pop('labels'), {'role': 'swamp'})
                 for step in job['steps']:
-                    self.assertEqual(step.pop('target'), 'orbit-node-209')
+                    self.assertEqual(step.pop('labels'), {'role': 'swamp'})
             (self.repo / f'workflows/workflow-{name}.yaml').write_text(yaml.safe_dump(value, sort_keys=False))
         self.cli('vault', 'create', 'local_encryption', 'orbit-control-inputs')
         self.cli('vault', 'put', 'orbit-control-inputs', 'task-vm-upcloud-token', input=self.token)
@@ -99,7 +99,7 @@ class UpCloudProviderNative(NativeTestCase):
                        'gateway_node_id': 14, 'model_router_node_id': 6, 'provider': 'upcloud', 'provider_id': None, 'name': 'tvm-42',
                        'image_fingerprint': self.image, 'recipe_identity': 'sha256:' + 'a' * 64, 'vm': None, 'create': None,
                        'bootstrap_host_key': self.public,
-                       'ssh_identity': {'control_node_id': 209, 'identity_file': '/run/credentials/orbit-node-worker.service/proxy-ssh-identity', 'public_key': self.public},
+                       'ssh_identity': {'control_node_id': 209, 'identity_file': '/etc/orbit/swamp-role-worker/ssh-identity', 'public_key': self.public},
                        'upcloud': {'zone': 'fi-hel1', 'plan': 'test-plan', 'disk_gb': 20, 'max_vms': 2, 'source_template': self.image}}
         self.copies = {'upcloud': {'vault': 'orbit-control-inputs', 'key': 'task-vm-upcloud-token'},
                        'bootstrap': {'vault': 'orbit-control-inputs', 'key': 'task-vm-provider-bootstrap-42'}}

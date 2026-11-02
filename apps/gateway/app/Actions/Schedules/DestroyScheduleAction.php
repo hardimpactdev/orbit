@@ -7,9 +7,11 @@ namespace App\Actions\Schedules;
 use App\Data\Schedules\ScheduleData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Schedules\NativeSchedules;
 use App\Domain\Schedules\ScheduleOperationAdmission;
 use App\Domain\Schedules\ScheduleOperationException;
 use App\Domain\Schedules\ScheduleRuntimeManager;
+use App\Domain\Schedules\ScheduleTrigger;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
@@ -26,6 +28,13 @@ final readonly class DestroyScheduleAction
 
     public function execute(#[SensitiveParameter] Schedule $schedule, bool $cascade = false): Schedule
     {
+        if ($schedule->trigger === ScheduleTrigger::Swamp) {
+            app(NativeSchedules::class)->remove($schedule);
+            $schedule->delete();
+            ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(RecordEventType::ScheduleDeleted, $schedule->id, ['id' => $schedule->id, 'name' => $schedule->name]);
+
+            return $schedule;
+        }
         $schedule->update([
             'status' => LifecycleStatus::Removing,
             'failed_step' => null,
@@ -73,6 +82,10 @@ final readonly class DestroyScheduleAction
 
     public function admit(Schedule $schedule, bool $cascade = false, ?Node $caller = null, ?string $requestId = null): Operation
     {
+        if ($schedule->trigger === ScheduleTrigger::Swamp) {
+            return app(NativeSchedules::class)->destroy($schedule, $caller, $requestId);
+        }
+
         return app(ScheduleOperationAdmission::class)->execute($schedule, 'destroy', $cascade, $caller, $requestId);
     }
 }

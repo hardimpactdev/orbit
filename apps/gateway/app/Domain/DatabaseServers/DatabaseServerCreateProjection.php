@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace App\Domain\DatabaseServers;
 
+use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampCommandStep;
-use App\Models\DatabaseConnection;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\DatabaseServer;
 use App\Models\Node;
@@ -16,38 +17,40 @@ use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
+/** The admitted intent as run inputs, and the server and Process records from the terminal result. */
 final readonly class DatabaseServerCreateProjection implements DirectOperationProjection
 {
     public function input(Operation $operation): array
     {
-        $intent = $this->intent($operation);
-        $input = $this->admittedInput($operation);
-        $node = Node::query()->findOrFail($operation->node_id);
-
-        $copy = ['vault' => 'orbit-control-inputs', 'key' => 'database-server-create-intent-'.$intent->id];
+        $input = ValidatedData::object($this->intent($operation)->payload['admission']['input'] ?? null);
+        $server = DatabaseServer::query()->findOrFail($operation->target_id);
+        $initialize = $input['initialize'] === true;
+        $secrets = ['client_env' => ['vault' => 'orbit-control-inputs', 'key' => "database-server-{$server->id}-client-env"]];
+        if ($initialize) {
+            $secrets['first_env'] = ['vault' => 'orbit-control-inputs', 'key' => "database-server-{$server->id}-first-env"];
+        }
+        if ($server->driver === DatabaseDriver::Redis) {
+            $secrets['acl'] = ['vault' => 'orbit-control-inputs', 'key' => "database-server-create-intent-{$operation->id}"];
+        }
         if (! $operation->status->terminal()) {
-            $copy = app(SwampCommandStep::class)->executionCopy($copy['vault'], $copy['key'],
-                json_encode($intent->payload['commands']['database-apply']['input'], JSON_THROW_ON_ERROR));
+            $secrets['client_env'] = DatabaseServerAdminSecret::clientEnvCopy($server);
+            if ($initialize) {
+                $secrets['first_env'] = DatabaseServerAdminSecret::firstEnvCopy($server);
+            }
+            if (isset($secrets['acl'])) {
+                $secrets['acl'] = app(SwampCommandStep::class)->executionCopy($secrets['acl']['vault'], $secrets['acl']['key'], ValkeyAcl::file($server));
+            }
         }
+        $commands = app(DatabaseServerCommands::class)->render(['driver' => ValidatedData::string($input['driver']),
+            'process_id' => ValidatedData::integer($input['process_id']), 'container' => ValidatedData::string($input['container']),
+            'container_input' => ValidatedData::object($input['container_input']), 'spec' => ValidatedData::string($input['spec']),
+            'scrub_spec' => ValidatedData::string($input['scrub_spec']), 'initialize' => $initialize,
+            'volume' => ValidatedData::nullableString($input['volume'] ?? null)], $operation->id);
 
-        return ['intent' => [...$input, 'ssh' => ['host' => $node->wireguard_ip, 'user' => $node->user,
-            'host_keys' => is_string($node->ssh_host_key_type) && is_string($node->ssh_host_key)
-                ? [$node->ssh_host_key_type.' '.$node->ssh_host_key] : []]],
-            'execution_secrets' => ['server_create' => $copy]];
-    }
-
-    /** @return array<string, mixed> */
-    private function admittedInput(Operation $operation): array
-    {
-        $intent = $this->intent($operation);
-        $input = ValidatedData::object($intent->payload['admission']['input'] ?? null);
-        $container = ValidatedData::object($input['container_input']);
-        if (array_diff(array_keys($container), ['image', 'command', 'restart', 'working_directory', 'ports', 'mounts']) !== []) {
-            $this->invalid();
-        }
-
-        return [...array_intersect_key($input, array_flip(['driver', 'process_id', 'container', 'spec', 'scrub_spec', 'initialize', 'validate_existing', 'was_active', 'default_open', 'host', 'port', 'volume'])),
-            'container_input' => $container];
+        return ['intent' => [...array_intersect_key($input, array_flip(['server_id', 'driver', 'container', 'initialize'])),
+            'container_input' => ['image' => ValidatedData::object($input['container_input'])['image']], 'commands' => $commands,
+            'ssh_execution' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($operation->node_id))],
+            'execution_secrets' => $secrets];
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -57,10 +60,11 @@ final readonly class DatabaseServerCreateProjection implements DirectOperationPr
         if (is_string($raw['error_code'] ?? null) && preg_match('/\A[a-z0-9_.-]{1,100}\z/D', $raw['error_code']) === 1) {
             $result['error_code'] = $raw['error_code'];
         }
+        $failedStep = is_string($raw['failed_step'] ?? null) ? $raw['failed_step'] : null;
         $status = ValidatedData::string($data['status']);
-        $code = ValidatedData::nullableString($data['error_code'] ?? null);
+        $code = ValidatedData::nullableString($data['error_code'] ?? null) ?? ($result['error_code'] ?? null);
 
-        return DB::transaction(function () use ($operation, $data, $result, $status, $code): Operation {
+        return DB::transaction(function () use ($operation, $data, $result, $status, $code, $failedStep): Operation {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
             $terminal = $operation->status->terminal();
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
@@ -69,19 +73,8 @@ final readonly class DatabaseServerCreateProjection implements DirectOperationPr
                 $projection = $this->intent($operation)->payload['projection'];
                 $server->update($projection['server'] ?? []);
                 $server->process?->fill($projection['process'] ?? [])->fill(['status' => 'active', 'failed_step' => null, 'error_code' => null])->save();
-                if (($id = $this->intent($operation)->payload['admission']['input']['adoption_connection_id'] ?? null) !== null) {
-                    DatabaseConnection::query()->find(ValidatedData::integer($id))?->update(['database_server_id' => $server->id]);
-                }
             } elseif (! $terminal && $server !== null && in_array($status, ['failed', 'cancelled', 'interrupted'], true)) {
-                $admitted = ValidatedData::object($this->intent($operation)->payload['admission']['input'] ?? null);
-                if ($status === 'failed' && $code === 'database.server_adoption_refused'
-                    && $admitted['created'] && $admitted['validate_existing'] && ! $admitted['was_active']
-                    && $admitted['adoption_connection_id'] !== null && $server->status->value !== 'active') {
-                    $server->delete();
-
-                    return $projected;
-                }
-                $server->update(['status' => $server->status->value === 'active' ? 'active' : 'failed', 'error_code' => $code, 'failed_step' => 'database-apply']);
+                $server->update(['status' => $server->status->value === 'active' ? 'active' : 'failed', 'error_code' => $code, 'failed_step' => $failedStep]);
             }
 
             return $projected;
@@ -92,15 +85,9 @@ final readonly class DatabaseServerCreateProjection implements DirectOperationPr
     {
         $id = app(DatabaseIntentSource::class)->ownerId($operation);
         if ($operation->kind !== 'database_server.create' || $operation->target_type !== 'database_server' || $id === null) {
-            $this->invalid();
+            throw new ResourceOperationException('database.server_intent_invalid', 'Server creation does not match its admitted records.', 422);
         }
-        $intent = DatabaseExecutionIntent::recorded($id);
 
-        return $intent;
-    }
-
-    private function invalid(): never
-    {
-        throw new ResourceOperationException('database.server_intent_invalid', 'Server creation does not match its admitted records.', 422);
+        return DatabaseExecutionIntent::recorded($id);
     }
 }

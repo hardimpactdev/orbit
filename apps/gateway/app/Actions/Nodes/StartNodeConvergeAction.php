@@ -23,6 +23,10 @@ final readonly class StartNodeConvergeAction
         }
 
         $snapshot = app(NodeConvergeInput::class)->captureNative($node, $force, $firstVisit);
+        // A part the Gateway cannot render refuses here; no run starts that could not apply it.
+        if (is_string($snapshot['refusal'] ?? null)) {
+            throw new ResourceOperationException($snapshot['refusal'], 'A footprint part cannot be rendered for this Node.', 409);
+        }
         $snapshot['verifier_hash'] = $node->agent_secret_hash;
 
         return $this->operations->execute('node.converge', 'node', $node->id, $node->id,

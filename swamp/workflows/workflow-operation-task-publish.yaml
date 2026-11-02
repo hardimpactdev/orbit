@@ -47,31 +47,27 @@ inputs:
   additionalProperties: false
 jobs:
 - name: publish
-  target: orbit-node-209
-  labels: &id001
-    node: '209'
+  labels: {role: swamp}
   steps:
   - name: prepare
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
-      behaviorName: ${{ "task-publication-prepare-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-publication-prepare" }}'
       methodName: prepare
       inputs:
         intent: ${{ inputs.intent }}
         node_id: ${{ inputs.node_id }}
   - name: prepare_remote
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-publication-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-publication-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &id002
-        name: ${{ "task-publication-ssh-" + string(inputs.operation_id) }}
+        name: '${{ ("task-publication-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -93,12 +89,11 @@ jobs:
       condition:
         type: succeeded
   - name: copy_assets
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-publication-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-publication-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: copy
       globalArgs: *id002
       inputs:
@@ -112,12 +107,11 @@ jobs:
       condition:
         type: succeeded
   - name: snapshot_before
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-publication-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-publication-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id002
       inputs:
@@ -132,12 +126,11 @@ jobs:
       condition:
         type: succeeded
   - name: verify_before
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
-      behaviorName: ${{ "task-publication-verify_before-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-publication-verify_before" }}'
       methodName: verify
       inputs:
         input: ${{ inputs.intent }}
@@ -147,12 +140,11 @@ jobs:
       condition:
         type: succeeded
   - name: export
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-publication-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-publication-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id002
       inputs:
@@ -168,12 +160,11 @@ jobs:
         type: succeeded
     guard: ${{ !steps.verify_before.outputs.admitted }}
   - name: export_result
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
-      behaviorName: ${{ "task-publication-export_result-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-publication-export_result" }}'
       methodName: decode
       inputs:
         value: ${{ steps.export.outputs.stdout }}
@@ -182,12 +173,11 @@ jobs:
       condition:
         type: succeeded
   - name: prepare_local
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-publication-prepare_local-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-publication-prepare_local" }}'
       methodName: execute
       inputs:
         run: 'mkdir -p "$ORBIT_PUBLICATION_ROOT"
@@ -201,12 +191,11 @@ jobs:
         type: succeeded
     guard: ${{ !has(steps.export_result.outputs.exported) || !steps.export_result.outputs.exported }}
   - name: copy_bundle
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-publication-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-publication-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: copy
       globalArgs: *id002
       inputs:
@@ -219,12 +208,11 @@ jobs:
       condition:
         type: succeeded
   - name: import
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-publication-import-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-publication-import" }}'
       methodName: execute
       inputs:
         run: 'python3 -B "$ORBIT_ACTION"
@@ -239,12 +227,11 @@ jobs:
       condition:
         type: succeeded
   - name: import_result
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
-      behaviorName: ${{ "task-publication-import_result-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-publication-import_result" }}'
       methodName: decode
       inputs:
         value: ${{ steps.import.outputs.stdout }}
@@ -253,12 +240,11 @@ jobs:
       condition:
         type: succeeded
   - name: remote_tip
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-publication-remote_tip-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-publication-remote_tip" }}'
       methodName: execute
       inputs:
         run: 'python3 -B "$ORBIT_ACTION"
@@ -275,12 +261,11 @@ jobs:
         type: succeeded
     guard: ${{ !has(steps.import_result.outputs.imported) || !steps.import_result.outputs.imported }}
   - name: tip
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
-      behaviorName: ${{ "task-publication-tip-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-publication-tip" }}'
       methodName: decode
       inputs:
         value: ${{ steps.remote_tip.outputs.stdout }}
@@ -289,12 +274,11 @@ jobs:
       condition:
         type: succeeded
   - name: push
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-publication-push-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-publication-push" }}'
       methodName: execute
       inputs:
         run: 'python3 -B "$ORBIT_ACTION"
@@ -311,12 +295,11 @@ jobs:
         type: succeeded
     guard: ${{ has(steps.tip.outputs.error_code) || steps.tip.outputs.commit == inputs.intent.commit }}
   - name: push_result
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
-      behaviorName: ${{ "task-publication-push_result-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-publication-push_result" }}'
       methodName: decode
       inputs:
         value: '${{ has(steps.push) && has(steps.push.outputs) && has(steps.push.outputs.stdout) ? steps.push.outputs.stdout : "{}" }}'
@@ -328,12 +311,11 @@ jobs:
         - type: succeeded
         - type: skipped
   - name: snapshot_after
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-publication-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-publication-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id002
       inputs:
@@ -348,12 +330,11 @@ jobs:
       condition:
         type: succeeded
   - name: verify_after
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
-      behaviorName: ${{ "task-publication-verify_after-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-publication-verify_after" }}'
       methodName: verify
       inputs:
         input: ${{ inputs.intent }}
@@ -363,12 +344,11 @@ jobs:
       condition:
         type: succeeded
   - name: read_pull
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-publication-read_pull-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-publication-read_pull" }}'
       methodName: execute
       inputs:
         run: 'python3 -B "$ORBIT_ACTION"
@@ -386,12 +366,11 @@ jobs:
     guard: ${{ inputs.intent.pull_request == null || !steps.verify_after.outputs.admitted || !(steps.tip.outputs.commit == inputs.intent.commit || (has(steps.push_result.outputs.pushed)
       && steps.push_result.outputs.pushed)) }}
   - name: write_pull
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-publication-write_pull-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-publication-write_pull" }}'
       methodName: execute
       inputs:
         run: 'python3 -B "$ORBIT_ACTION"
@@ -408,12 +387,11 @@ jobs:
       condition:
         type: succeeded
   - name: revoke
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-publication-revoke-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-publication-revoke" }}'
       methodName: execute
       inputs:
         run: 'python3 -B "$ORBIT_ACTION"
@@ -433,12 +411,11 @@ jobs:
       condition:
         type: always
   - name: cleanup_remote
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-publication-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-publication-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id002
       inputs:
@@ -454,12 +431,11 @@ jobs:
       condition:
         type: always
   - name: cleanup_local
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-publication-cleanup_local-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-publication-cleanup_local" }}'
       methodName: execute
       inputs:
         run: 'rm -rf -- "$ORBIT_PUBLICATION_ROOT"
@@ -473,12 +449,11 @@ jobs:
       condition:
         type: always
   - name: shape_result
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
-      behaviorName: ${{ "task-publication-shape_result-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-publication-shape_result" }}'
       methodName: result
       inputs:
         input: ${{ inputs.intent }}
@@ -564,12 +539,11 @@ jobs:
       condition:
         type: always
   - name: result
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-publication-result-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-publication-result" }}'
       methodName: execute
       inputs:
         run: 'printf ''%s\n'' "$ORBIT_RESULT"
@@ -582,12 +556,11 @@ jobs:
       condition:
         type: succeeded
   - name: outcome
-    target: orbit-node-209
-    labels: *id001
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-publication-outcome-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-publication-outcome" }}'
       methodName: execute
       inputs:
         run: 'python3 -c ''import json, os, sys; sys.exit(1 if "error_code" in json.loads(os.environ["ORBIT_RESULT"]) else 0)''

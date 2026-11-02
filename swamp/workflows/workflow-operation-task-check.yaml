@@ -48,25 +48,25 @@ inputs:
   additionalProperties: false
 jobs:
 - name: check
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: prepare
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-prepare-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-prepare" }}'
       methodName: prepare
       inputs:
         intent: ${{ inputs.intent }}
         node_id: ${{ inputs.node_id }}
         operation_id: ${{ inputs.operation_id }}
   - name: prepare_remote
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -75,7 +75,7 @@ jobs:
         - -p
         - ${{ "/tmp/orbit-task-check-" + run.id }}
       globalArgs: &id001
-        name: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+        name: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -91,11 +91,11 @@ jobs:
       condition:
         type: succeeded
   - name: copy_assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: copy
       inputs:
         hosts: name:target
@@ -109,11 +109,11 @@ jobs:
       condition:
         type: succeeded
   - name: validate
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -128,11 +128,11 @@ jobs:
       condition:
         type: succeeded
   - name: validation
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-validation-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-validation" }}'
       methodName: decode
       inputs:
         value: '${{ has(steps.validate) && has(steps.validate.outputs) && has(steps.validate.outputs.stdout) ? steps.validate.outputs.stdout : "{}" }}'
@@ -141,11 +141,11 @@ jobs:
       condition:
         type: succeeded
   - name: original
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -161,11 +161,11 @@ jobs:
         type: succeeded
     guard: ${{ !has(steps.validation.outputs.valid) || !steps.validation.outputs.valid }}
   - name: setup-${{ self._index }}
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -189,11 +189,11 @@ jobs:
     guard: ${{ self._index > 0 && (!("setup-" + string(self._index - 1) in steps) || !("outputs" in steps["setup-" + string(self._index - 1)]) || steps["setup-"
       + string(self._index - 1)].outputs.exitCode != 0) }}
   - name: setup_result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-setup_result-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-setup_result" }}'
       methodName: setup
       inputs:
         intent: ${{ inputs.intent }}
@@ -210,11 +210,11 @@ jobs:
       condition:
         type: always
   - name: before
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -229,11 +229,11 @@ jobs:
       condition:
         type: succeeded
   - name: project
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -252,11 +252,11 @@ jobs:
         type: succeeded
     guard: ${{ !steps.setup_result.outputs.passed || inputs.intent.command == null }}
   - name: diff
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -275,11 +275,11 @@ jobs:
       condition:
         type: succeeded
   - name: base_prepare-${{ self._index }}
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -302,12 +302,12 @@ jobs:
     guard: ${{ !self.deliverable.fails_on_base || !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode
       != 0) }}
   - name: base_ready-${{ self._index }}
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach: *id002
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-base-ready-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-base-ready-" + string(self._index) }}'
       methodName: decode
       inputs:
         value: '${{ "base_prepare-" + string(self._index) in steps && "outputs" in steps["base_prepare-" + string(self._index)] && "stdout" in steps["base_prepare-"
@@ -322,11 +322,11 @@ jobs:
     guard: ${{ !self.deliverable.fails_on_base || !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode
       != 0) }}
   - name: base-${{ self._index }}
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -356,11 +356,11 @@ jobs:
       != 0) || !("base_ready-" + string(self._index) in steps) || !("outputs" in steps["base_ready-" + string(self._index)]) || !("checkout_path" in steps["base_ready-"
       + string(self._index)].outputs) }}
   - name: deliverable-${{ self._index }}
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -384,11 +384,11 @@ jobs:
     concurrency: 1
     guard: ${{ !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode != 0) }}
   - name: after
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -409,11 +409,11 @@ jobs:
       condition:
         type: succeeded
   - name: changed
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -430,11 +430,11 @@ jobs:
       condition:
         type: succeeded
   - name: local
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-local-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-local" }}'
       methodName: local
       inputs:
         intent: ${{ inputs.intent }}
@@ -444,11 +444,11 @@ jobs:
       condition:
         type: succeeded
   - name: commit
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -465,11 +465,11 @@ jobs:
         type: succeeded
     guard: ${{ has(steps.local.outputs.result.error_code) || steps.local.outputs.result.outcome != "passed" || inputs.intent.phase != "handoff" }}
   - name: candidate
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-candidate-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-candidate" }}'
       methodName: candidate
       inputs:
         intent: ${{ inputs.intent }}
@@ -483,11 +483,11 @@ jobs:
       condition:
         type: succeeded
   - name: export
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -504,11 +504,11 @@ jobs:
     guard: ${{ has(steps.candidate.outputs.result.error_code) || inputs.intent.check_name == null || steps.candidate.outputs.result.outcome != "passed"
       || steps.candidate.outputs.result.commit == null }}
   - name: prepare_local
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-prepare_local-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-prepare_local" }}'
       methodName: execute
       inputs:
         run: 'mkdir -p -- "$ORBIT_PUBLICATION_ROOT"
@@ -521,11 +521,11 @@ jobs:
       condition:
         type: succeeded
   - name: copy_bundle
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: copy
       inputs:
         hosts: name:target
@@ -538,11 +538,11 @@ jobs:
       condition:
         type: succeeded
   - name: import
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-import-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-import" }}'
       methodName: execute
       inputs:
         run: 'python3 -B "$ORBIT_ACTION"
@@ -557,11 +557,11 @@ jobs:
       condition:
         type: succeeded
   - name: import_result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-import_result-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-import_result" }}'
       methodName: decode
       inputs:
         value: '${{ has(steps.import) && has(steps.import.outputs) && has(steps.import.outputs.stdout) ? steps.import.outputs.stdout : "{}" }}'
@@ -570,11 +570,11 @@ jobs:
       condition:
         type: succeeded
   - name: mint_github
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-mint-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-mint" }}'
       methodName: execute
       inputs:
         run: 'python3 -B "$ORBIT_ACTION"
@@ -591,11 +591,11 @@ jobs:
         type: succeeded
     guard: ${{ !has(steps.import_result.outputs.imported) || !steps.import_result.outputs.imported }}
   - name: mint_result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-mint-result-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-mint-result" }}'
       methodName: decode
       inputs:
         value: ${{ steps.mint_github.outputs.stdout }}
@@ -604,11 +604,11 @@ jobs:
       condition:
         type: succeeded
   - name: push
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-push-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-push" }}'
       methodName: execute
       inputs:
         run: 'python3 -B "$ORBIT_ACTION"
@@ -625,11 +625,11 @@ jobs:
         type: succeeded
     guard: ${{ !has(steps.mint_result.outputs.minted) || !steps.mint_result.outputs.minted }}
   - name: revoke_write
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-revoke-write-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-revoke-write" }}'
       methodName: execute
       inputs:
         run: 'python3 -B "$ORBIT_ACTION"
@@ -645,11 +645,11 @@ jobs:
     guard: ${{ !steps.finish.outputs.minted }}
     allowFailure: true
   - name: pushed_snapshot
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -664,11 +664,11 @@ jobs:
       condition:
         type: succeeded
   - name: finish
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-finish-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-finish" }}'
       methodName: finish
       inputs:
         intent: ${{ inputs.intent }}
@@ -696,11 +696,11 @@ jobs:
       condition:
         type: always
   - name: pending
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-pending-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-pending" }}'
       methodName: pending
       inputs:
         pending: true
@@ -715,11 +715,11 @@ jobs:
         type: succeeded
     guard: ${{ !steps.finish.outputs.pending }}
   - name: revoke_unused_read
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-revoke-unused-read-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-revoke-unused-read" }}'
       methodName: execute
       inputs:
         run: 'python3 -B "$ORBIT_ACTION"
@@ -735,11 +735,11 @@ jobs:
     guard: ${{ steps.finish.outputs.pending || !steps.finish.outputs.minted }}
     allowFailure: true
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-result-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-result" }}'
       methodName: execute
       inputs:
         run: 'printf ''%s\n'' "$ORBIT_RESULT"
@@ -755,11 +755,11 @@ jobs:
       condition:
         type: succeeded
   - name: outcome
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-outcome-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-outcome" }}'
       methodName: execute
       inputs:
         run: 'python3 -c ''import json, os, sys; sys.exit(1 if "error_code" in json.loads(os.environ["ORBIT_RESULT"]) else 0)''
@@ -772,11 +772,11 @@ jobs:
       condition:
         type: succeeded
   - name: cleanup_remote
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-check-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -792,11 +792,11 @@ jobs:
         type: always
     allowFailure: true
   - name: cleanup_local
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-cleanup_local-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-cleanup_local" }}'
       methodName: execute
       inputs:
         run: 'rm -rf -- "$ORBIT_PUBLICATION_ROOT"

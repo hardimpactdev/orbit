@@ -1,3 +1,4 @@
+import { dotless } from "../_lib/behavior_name.ts";
 /** Shared same-root CSR -> control signer -> fixed-pair publication jobs. */
 type Fields = Record<string, unknown>;
 const expr = (value: string) => "${{ " + value + " }}";
@@ -38,8 +39,8 @@ export function roleCertificateJobs(
         behaviorType: "@nckrtl/node-role-certificates",
         behaviorName: expr(
             methodName === "record"
-                ? '"cert-record-" + run.id + "-" + string(self._index)'
-                : '"role-cert-" + run.id',
+                ? '"cert-record-" + string(inputs.node_id) + "-" + string(self._index)'
+                : '"role-cert"',
         ),
         methodName,
         inputs: { ...args, ...extra },
@@ -47,7 +48,7 @@ export function roleCertificateJobs(
     const connection =
         `${plan}.connections.filter(c, c.node_id == self.leaf.node_id)[0].ssh`;
     const ssh = {
-        name: expr('"role-certificate-" + run.id + "-" + string(self._index)'),
+        name: expr(dotless('"role-certificate-" + ' + key("self.leaf"))),
         transport: {
             kind: "ssh",
             user: expr(connection + ".target.user"),
@@ -74,7 +75,7 @@ export function roleCertificateJobs(
         dependsOn: [dependency(`${inventory}_job`)],
         steps: [{
             name: publish + expr(key("self.leaf")),
-            target: "orbit-node-209",
+            labels: { role: "swamp" },
             forEach: { item: "leaf", in: expr(leaves) },
             ...guard,
             task: {
@@ -96,7 +97,7 @@ export function roleCertificateJobs(
         steps: [{
             name: record + expr("string(self.participant)"),
             writes: true,
-            target: expr('"orbit-node-" + string(inputs.node_id)'),
+            labels: { node: expr("string(inputs.node_id)") },
 
             forEach: { item: "participant", in: expr(nodes) },
             ...guard,

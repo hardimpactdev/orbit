@@ -1,0 +1,94 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, DECISIONS 1 (token minted at admission, vault), R1-R3, Recall fleet-recipe-pr-maintains-orbit-prs. docs/reference/compute-drivers.md#nightly-recipe-maintenance.
+  %% status: draft
+  %% command: none · nightly recipe maintenance
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane GH icon=server pill=target tone=purple
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant GH as GitHub<br/>orbit repository
+  Note over GW: Plan the recipe PR<br/>open snapshot · task #5162
+  %%> When:
+  %%> - nightly from 03:00 Europe/Amsterdam for a new Ubuntu snapshot date, and when newer pinned artifacts exist (Sury PHP, Incus LTS)
+  %%> - for an open recipe PR: when main, its required checks or its draft state change, at most every 15 minutes per action
+  %%> Not included:
+  %%> - no command; no per-five-minute Swamp poll; the Gateway plans from its own records
+  %%> - it never applies a recipe to a Node; `fleet.recipe` does that
+  %%> Requirements:
+  %%> - the GitHub App is installed on `hardimpactdev/orbit`
+  %%> - the serving release carries main's recipe definitions, else `fleet.recipe_pending_deployment`
+  %%> - one open task per date, variant and recipe revision; a repeat returns the same task
+  %%> What it decides:
+  %%> - the variant: `snapshot` or `artifacts`
+  %%> - the action: `open`, `update`, `merge` or `retire`
+  %%> Result:
+  %%> - task #5162 recorded with the full intent
+  %%> - a token with `contents: write`, `pull_requests: write` and `checks: read` for this one repository, minted after commit and pushed to the vault as `recipe-pr-5162` (R3)
+  GW->>SW: Start run, full intent<br/>operation-fleet-recipe-pr
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209); no Node is a target
+  %%> Inputs:
+  %%> - the variant, the action, the date, and the expected PR number and head
+  %%> - the vault key name of the token, never the token
+  SW->>GH: Prepare the candidate<br/>read main · resolve pins
+  %%> What it does:
+  %%> - reads main's recipe and resolves every Ubuntu pin against the snapshot's signed indexes, or the newer artifact pins
+  %%> - keeps the candidate in step output, so a resumed run reuses it
+  %%> Stops:
+  %%> - an unchanged or newer date, a missing package or differing versions per architecture; nothing is written
+  %%> How:
+  %%> - each GitHub step reads the token with `vault.get`; no step calls the Gateway
+  alt action open
+    SW->>GH: Open the PR<br/>branch · file · pull request
+    %%> What it does:
+    %%> - creates the branch `nightly/recipe-<date>`, writes the recipe file, and opens the PR against main
+    %%> - an existing branch or PR for the same date is reused
+  else action update
+    SW->>GH: Refresh the PR<br/>tree · commit · expected head
+    %%> What it does:
+    %%> - rebuilds a failed PR on current main with one new commit, updating the ref only from the expected head
+    %%> Refuses:
+    %%> - a PR that a person changed, or one that was already refreshed once
+  else action merge
+    SW->>GH: Merge on green<br/>Required checks · expected head
+    %%> What it does:
+    %%> - merges only when `Required checks` passed on the exact head
+    %%> - an already merged exact head completes without another merge
+  else action retire
+    SW->>GH: Close the PR<br/>superseded · comment
+    %%> What it does:
+    %%> - closes an App PR once main reached its date or a newer PR is open, then posts a best-effort comment with the reason
+  end
+  SW->>GH: Revoke the token<br/>DELETE /installation/token
+  %%> What it does:
+  %%> - revokes the token before the run ends, on success and on failure
+  %%> If it fails:
+  %%> - the run still reports its result; the token expires within one hour
+  alt the action succeeded
+    GH-->>SW: PR #812 opened
+    %%> Returns:
+    %%> - the PR number, its head, and its state
+    SW-->>GW: Run succeeded<br/>terminal event · PR · head
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record the recipe PR<br/>PR #812 · task succeeded
+    %%> Result:
+    %%> - the recipe PR record gets the PR number, head and state
+    %%> - task #5162 succeeds
+  else a GitHub write fails
+    GH--xSW: refused or no reply
+    %%> When:
+    %%> - GitHub refuses a write, or a reply is lost, so the outcome is uncertain
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Mark the task failed<br/>alert · rerun after a check
+    %%> Result:
+    %%> - task #5162 fails and raises a recipe alert with the PR number and head
+    %%> On GitHub:
+    %%> - a branch, commit or PR made before the failure stays
+    %%> Retry:
+    %%> - the next plan admits a new task; its first step reads the branch, PR and head again before any write
+  end

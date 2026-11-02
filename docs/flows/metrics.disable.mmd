@@ -1,0 +1,124 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, DECISIONS R1-R4, metrics.exporter_disable decisions (order, full reverse), single-swamp-node. docs/reference/metrics.md#disable-and-purge.
+  %% status: draft
+  %% command: metrics:disable
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane G icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Node 12<br/>Prometheus·Grafana
+  participant G as Gateway Node<br/>Caddy for Grafana
+  CLI->>GW: metrics:disable<br/>--force --purge-data
+  %%> Command:
+  %%> - `orbit metrics:disable --force`
+  %%> - syntax: `[--force] [--purge-data] [--json]`
+  %%> Input:
+  %%> - no Node: the role has one holder, here Node 12
+  %%> - `--purge-data` also deletes the Prometheus and Grafana volumes and the stored Grafana passwords
+  %%> Confirmation:
+  %%> - in a terminal, the CLI shows what goes and asks; the default is No
+  %%> - `--force` is required without a terminal, with `--json`, and with `--purge-data` (`metrics.force_required`)
+  Note over GW: Check, mark removing<br/>role: removing · task #5174
+  %%> Requirements:
+  %%> - exactly one active Gateway Node, and your Node has an access grant to it
+  %%> - a `metrics` role exists on Node 12
+  %%> - no other Metrics change runs; the Gateway holds one Metrics lock
+  %%> Builds:
+  %%> - the list of exporter Nodes, the Caddy site, the private DNS name and the firewall rules to remove
+  %%> Result:
+  %%> - the role marked removing, and task #5174 recorded with the full intent
+  GW->>SW: Start run, full intent<br/>operation-metrics-role
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - what to remove, and with `--purge-data` the two exact volume names
+  %%> - Node 12's and the Gateway Node's addresses and SSH host keys; the SSH identity comes from the `swamp` role
+  GW-->>CLI: 202 Accepted<br/>task #5174
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>G: Withdraw metrics.orbit<br/>Caddy reload · DNS · certificate
+  %%> Open:
+  %%> - the DNS part is under the DNS hold; Nick decides
+  %%> What it does:
+  %%> - removes the `metrics.orbit` site from the Gateway Node's Caddyfile, validates it, and reloads Caddy gracefully
+  %%> - removes the `metrics.orbit` private DNS name through the shared DNS step on the `vpn` Node
+  %%> - removes the site's certificate and key
+  %%> Why first:
+  %%> - nobody reaches Grafana while it goes away
+  SW->>N: Remove the containers<br/>Prometheus · Grafana
+  %%> What it does:
+  %%> - stops and removes `orbit-metrics-prometheus` and `orbit-metrics-grafana`, and their unit files
+  %%> - Prometheus stops collecting before any exporter goes
+  %%> How:
+  %%> - official `@swamp/cfgmgmt` behaviors (systemd, docker_container, file) over SSH from 209
+  Note over SW: Remove the fleet exporters<br/>same steps as exporter:disable
+  %%> What it does:
+  %%> - for each exporter Node: stops and removes the exporters, the `prometheus-node-exporter` package and the firewall allows for Node 12
+  %%> - the same steps that `metrics:exporter:disable` runs for one Node
+  %%> Kept:
+  %%> - each Node's exporter preference, so a later enable selects the same Nodes
+  SW->>N: Remove the Grafana rules<br/>ufw · Grafana port 3000
+  %%> What it does:
+  %%> - removes the allow for the Gateway Node and the deny for other peers
+  %%> How:
+  %%> - official `@swamp/cfgmgmt/firewall` over SSH from 209
+  SW->>N: Remove the configuration<br/>/etc/orbit/metrics
+  %%> What it does:
+  %%> - deletes the configuration directory and the Grafana password file
+  %%> Kept:
+  %%> - Docker and the installed packages
+  opt --purge-data
+    SW->>N: Delete the volumes<br/>docker volume rm · 2 volumes
+    %%> What it does:
+    %%> - deletes exactly the Prometheus and Grafana volumes, so all metrics history and dashboards go
+    %%> Without --purge-data:
+    %%> - both volumes stay, so a later enable continues with the old data
+  end
+  SW->>N: Check it is gone<br/>no containers, rules or files
+  %%> What it does:
+  %%> - checks both containers, the Grafana rules and the configuration are absent
+  %%> Why:
+  %%> - the role only counts as removed when Node 12 shows it
+  alt every step passes
+    N-->>SW: Metrics absent
+    %%> Returns:
+    %%> - the check passed
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Delete the assignment<br/>role gone · task succeeded
+    %%> Result:
+    %%> - the `metrics` assignment is deleted, and the exporters are recorded as removed
+    %%> - the stored Grafana password stays, unless `--purge-data`; then the active and pending passwords are deleted
+    %%> - task #5174 succeeds
+  else a step fails
+    N--xSW: exit ≠ 0 or still present
+    %%> When:
+    %%> - a Caddy, container, exporter, firewall, removal or check step fails
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Keep the assignment<br/>failed · resume the failed step
+    %%> Result:
+    %%> - the assignment and the Grafana passwords stay; the role is marked failed with the step's error code
+    %%> - task #5174 fails
+    %%> On the Node:
+    %%> - parts removed before the failure stay removed; there is no rollback
+    %%> Retry:
+    %%> - Swamp resumes from the failed step, or run the same command again; removal steps skip what is already gone
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5174
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end

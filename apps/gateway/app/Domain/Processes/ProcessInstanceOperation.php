@@ -13,7 +13,6 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\CaddyPublicationPlan;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -43,34 +42,25 @@ final readonly class ProcessInstanceOperation implements DirectOperationProjecti
      */
     public function capture(Instance $instance, string $kind): array
     {
-        if (! in_array($kind, ['process.install_instance_definitions', 'process.restart_instance'], true)) {
+        if ($kind !== 'process.install_instance_definitions') {
             throw new ResourceOperationException('operation.kind_unavailable', 'This is not an Instance Process kind.', 409);
         }
-        if ($kind === 'process.install_instance_definitions' && $instance->placedOnAppProd()) {
+        if ($instance->placedOnAppProd()) {
             $instance = app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForClone($instance);
         }
-        $query = Process::query()->whereIn('owner_type', Instance::morphTypes())->where('owner_id', $instance->id);
-        $verb = $kind === 'process.restart_instance' ? 'restart' : 'create';
-        if ($verb === 'restart') {
-            $query->where('status', LifecycleStatus::Active)->where('desired_state', DesiredProcessState::Running)->where('restart_on_deploy', true);
-        } else {
-            $query->whereNotNull('source_definition_id')->whereNotIn('status', [LifecycleStatus::Active, LifecycleStatus::Removing]);
-        }
+        $query = Process::query()->whereIn('owner_type', Instance::morphTypes())->where('owner_id', $instance->id)
+            ->whereNotNull('source_definition_id')->whereNotIn('status', [LifecycleStatus::Active, LifecycleStatus::Removing]);
         $records = $query->orderBy('id')->lockForUpdate()->limit(4097)->get();
         if ($records->count() > 4096) {
             throw new ResourceOperationException('operation.runtime_limit', 'An Instance runtime plan may contain at most 4096 members.', 409);
         }
-        $pin = null;
         $members = [];
         foreach ($records as $record) {
-            if ($verb === 'restart') {
-                $pin ??= app(AgentDelivery::class)->pin($instance->node);
-            }
-            $input = $this->admission->inputFor($record, $verb);
+            $input = $this->admission->inputFor($record, 'create');
             if ($input['node_id'] !== $instance->node_id) {
                 throw new ResourceOperationException('operation.execution_forbidden', 'The Process is placed on another Node.', 422);
             }
-            $members[] = ['id' => $record->id, 'input' => [...$input, ...($pin === null ? [] : ['agent_sha256' => $pin])]];
+            $members[] = ['id' => $record->id, 'input' => $input];
         }
 
         return ['instance_id' => $instance->id, 'node_id' => $instance->node_id, 'members' => $members];
@@ -98,7 +88,7 @@ final readonly class ProcessInstanceOperation implements DirectOperationProjecti
     public static function member(Operation $parent, array $member): Operation
     {
         $view = new Operation;
-        $view->forceFill(['id' => $parent->id, 'status' => $parent->status, 'kind' => $parent->kind === 'process.restart_instance' ? 'process.restart' : 'process.create',
+        $view->forceFill(['id' => $parent->id, 'status' => $parent->status, 'kind' => 'process.create',
             'target_type' => 'process', 'target_id' => $member['id'], 'node_id' => $parent->node_id, 'input' => $member['input']]);
 
         return $view;
@@ -175,19 +165,30 @@ final readonly class ProcessInstanceOperation implements DirectOperationProjecti
             $code = ValidatedData::nullableString($data['error_code'] ?? null);
             $result = $status === OperationStatus::Succeeded ? ['ready' => true] : ($code === null ? [] : ['error_code' => $code]);
             $projected = $this->direct->project($operation, $data, $result);
-            if (! $terminal && $status->terminal() && $status !== OperationStatus::Cancelled) {
-                foreach (self::members($operation) as $member) {
-                    $outcome = match ($status) {
-                        OperationStatus::Succeeded => OperationOutcome::succeeded(['ready' => true, 'state' => $member['input']['desired'] === 'running' ? 'active' : 'inactive']),
-                        OperationStatus::Failed => OperationOutcome::failed(ValidatedData::string($code), $result),
-                        OperationStatus::Interrupted => OperationOutcome::interrupted($code, $result),
-                        default => throw new \LogicException('A terminal Process installation status is required.'),
-                    };
-                    $this->completion->complete(self::member($operation, $member), $outcome);
-                }
+            if (! $terminal) {
+                $this->completeMembers($operation, $status, $code, $result);
             }
 
             return $projected;
         });
+    }
+
+    /** Record each admitted member from its parent's terminal status; a cancelled parent leaves them as they are.
+     * @param  array<string,mixed>  $result
+     */
+    public function completeMembers(Operation $operation, OperationStatus $status, ?string $code, array $result): void
+    {
+        if (! $status->terminal() || $status === OperationStatus::Cancelled) {
+            return;
+        }
+        foreach (self::members($operation) as $member) {
+            $outcome = match ($status) {
+                OperationStatus::Succeeded => OperationOutcome::succeeded(['ready' => true, 'state' => $member['input']['desired'] === 'running' ? 'active' : 'inactive']),
+                OperationStatus::Failed => OperationOutcome::failed(ValidatedData::string($code), $result),
+                OperationStatus::Interrupted => OperationOutcome::interrupted($code, $result),
+                default => throw new \LogicException('A terminal Process installation status is required.'),
+            };
+            $this->completion->complete(self::member($operation, $member), $outcome);
+        }
     }
 }

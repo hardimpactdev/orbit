@@ -1,0 +1,61 @@
+{
+  "topology": "minimal",
+  "queue_timeout_seconds": 300,
+  "kind": "schedule.run",
+  "workflow": "task-command-run",
+  "budget_seconds": 120,
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "schedules",
+      "bind": "schedule",
+      "bind_input": "id",
+      "body": {
+        "target_type": "node",
+        "target_id": "${node.target}",
+        "name": "run-${proof.run}",
+        "calendar": "0 3 1 1 *",
+        "command": "touch /tmp/proof-schedule-${proof.run}",
+        "timeout_seconds": 60
+      }
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "schedules/${schedule.id}/run"
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Read the check script",
+      "job": "run",
+      "step": "Read the check script",
+      "budget_seconds": 20
+    },
+    {
+      "name": "Check user and directory",
+      "job": "run",
+      "step": "Check user and directory",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Run the command",
+      "job": "run",
+      "step": "Run the command",
+      "budget_seconds": 70
+    },
+    {
+      "name": "Report the result",
+      "job": "run",
+      "step": "Report the result",
+      "budget_seconds": 20
+    }
+  ],
+  "parity": [
+    "swamp/proof/schedule/parity.py",
+    "ran",
+    "/tmp/proof-schedule-${proof.run}"
+  ]
+}

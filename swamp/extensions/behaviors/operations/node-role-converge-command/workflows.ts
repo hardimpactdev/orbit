@@ -1,3 +1,4 @@
+import { dotless } from "../_lib/behavior_name.ts";
 import { roleFirewallSteps } from "./firewall_steps.ts";
 import {
     roleActionSteps,
@@ -8,13 +9,14 @@ import {
     roleObserverSteps,
 } from "./observer_steps.ts";
 import { stringify } from "jsr:@std/yaml@1.0.12";
+import { behaviorName } from "../_lib/behavior_name.ts";
 type Fields = Record<string, unknown>;
 const ex = (s: string) => "${{ " + s + " }}";
 const on = (
     step: string,
     type = "succeeded",
 ) => [{ step, condition: { type } }];
-const target = { target: "orbit-node-209" };
+const target = { labels: { role: "swamp" } };
 const references = {
     type: "object",
     additionalProperties: {
@@ -40,8 +42,10 @@ function select(group: Fields[], item: string, list: string): Fields[] {
         }
         step.task = JSON.parse(task);
         const typed = step.task as Fields;
-        typed.behaviorName = ex(
-            '"' + step.name + '-"+run.id+"-"+string(self._index)',
+        typed.behaviorName = behaviorName(
+            String(step.name),
+            typed.globalArgs,
+            true,
         );
         if (typed.globalArgs) {
             typed.globalArgs = {
@@ -55,7 +59,7 @@ function select(group: Fields[], item: string, list: string): Fields[] {
 export function roleWorkflow() {
     const ssh = "inputs.intent.ssh";
     const globals = {
-        name: ex('"role-converge-"+run.id'),
+        name: ex(dotless('"role-converge-" + string(' + ssh + ".target.host)")),
         transport: {
             kind: "ssh",
             user: ex(ssh + ".target.user"),
@@ -242,7 +246,6 @@ export function roleWorkflow() {
         "inputs.intent.cli.skip_reason != null || inputs.intent.cli.plan_error != null",
     );
     for (const step of steps) {
-        delete step.labels;
         step.allowFailure = true;
     }
     return {

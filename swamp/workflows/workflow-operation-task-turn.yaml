@@ -49,7 +49,7 @@ jobs:
 - name: turn
   steps:
   - name: prepare
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-turn-data'
@@ -58,13 +58,9 @@ jobs:
         intent: ${{ inputs.intent }}
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
-      behaviorName: ${{ "task-turn-prepare-" + string(inputs.operation_id) }}
-    labels:
-      node: '209'
+      behaviorName: '${{ "task-turn-prepare" }}'
   - name: prepare_assets
-    target: orbit-node-209
-    labels:
-      node: '209'
+    labels: {role: swamp}
     dependsOn:
     - step: prepare
       condition:
@@ -72,10 +68,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-turn-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &id001
-        name: ${{ "task-turn-ssh-" + string(inputs.operation_id) }}
+        name: '${{ ("task-turn-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -94,9 +90,7 @@ jobs:
         - ${{ "/tmp/orbit-task-turn-" + run.id }}
     guard: ${{ steps.prepare.outputs.error_code != null }}
   - name: copy_assets
-    target: orbit-node-209
-    labels:
-      node: '209'
+    labels: {role: swamp}
     dependsOn:
     - step: prepare_assets
       condition:
@@ -104,7 +98,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-turn-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: copy
       globalArgs: *id001
       inputs:
@@ -114,7 +108,7 @@ jobs:
         recursive: true
         direction: to
   - name: snapshot_before
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: copy_assets
       condition:
@@ -122,7 +116,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-turn-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -132,10 +126,8 @@ jobs:
         - -B
         - ${{ "/tmp/orbit-task-turn-" + run.id + "/scripts/snapshot.py" }}
         stdin: ${{ steps.prepare.outputs.intent_json }}
-    labels:
-      node: '209'
   - name: candidate
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: snapshot_before
       condition:
@@ -143,7 +135,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-turn-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -154,12 +146,8 @@ jobs:
         - ${{ "/tmp/orbit-task-turn-" + run.id + "/scripts/candidate.py" }}
         - ${{ steps.snapshot_before.outputs.stdout }}
         stdin: ${{ steps.prepare.outputs.intent_json }}
-    labels:
-      node: '209'
   - name: candidate_result
-    target: orbit-node-209
-    labels:
-      node: '209'
+    labels: {role: swamp}
     dependsOn:
     - step: candidate
       condition:
@@ -167,12 +155,12 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-turn-data'
-      behaviorName: ${{ "task-turn-candidate-result-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-turn-candidate-result" }}'
       methodName: candidate
       inputs:
         value: ${{ steps.candidate.outputs.stdout }}
   - name: receipt_prepare
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: candidate_result
       condition:
@@ -180,7 +168,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-turn-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -190,11 +178,9 @@ jobs:
         - -B
         - ${{ "/tmp/orbit-task-turn-" + run.id + "/scripts/receipt_prepare.py" }}
         stdin: ${{ steps.prepare.outputs.intent_json }}
-    labels:
-      node: '209'
     guard: ${{ !steps.candidate_result.outputs.admitted }}
   - name: session_create
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: receipt_prepare
       condition:
@@ -213,12 +199,10 @@ jobs:
           ORBIT_PI_URL: ${{ steps.prepare.outputs.pi_url }}
           ORBIT_PI_BODY: ${{ steps.prepare.outputs.create_json }}
           ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/session_create.py" }}
-      behaviorName: ${{ "task-turn-session_create-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-turn-session_create" }}'
     guard: ${{ !inputs.intent.new_session }}
-    labels:
-      node: '209'
   - name: message_send
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: receipt_prepare
       condition:
@@ -243,11 +227,9 @@ jobs:
           ORBIT_PI_URL: ${{ steps.prepare.outputs.pi_url }}
           ORBIT_PI_BODY: ${{ steps.prepare.outputs.send_json }}
           ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/message_send.py" }}
-      behaviorName: ${{ "task-turn-message_send-" + string(inputs.operation_id) }}
-    labels:
-      node: '209'
+      behaviorName: '${{ "task-turn-message_send" }}'
   - name: observe
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: message_send
       condition:
@@ -266,11 +248,9 @@ jobs:
           ORBIT_PI_URL: ${{ steps.prepare.outputs.pi_url }}
           ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/observe.py" }}
         timeout: 1800000
-      behaviorName: ${{ "task-turn-observe-" + string(inputs.operation_id) }}
-    labels:
-      node: '209'
+      behaviorName: '${{ "task-turn-observe" }}'
   - name: snapshot_after
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: observe
       condition:
@@ -278,7 +258,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-turn-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -288,10 +268,8 @@ jobs:
         - -B
         - ${{ "/tmp/orbit-task-turn-" + run.id + "/scripts/snapshot.py" }}
         stdin: ${{ steps.prepare.outputs.intent_json }}
-    labels:
-      node: '209'
   - name: receipt_read
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: snapshot_after
       condition:
@@ -299,7 +277,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-turn-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -309,10 +287,8 @@ jobs:
         - -B
         - ${{ "/tmp/orbit-task-turn-" + run.id + "/scripts/receipt_read.py" }}
         stdin: ${{ steps.prepare.outputs.intent_json }}
-    labels:
-      node: '209'
   - name: difference
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: receipt_read
       condition:
@@ -320,7 +296,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-turn-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -332,10 +308,8 @@ jobs:
         - ${{ steps.snapshot_before.outputs.stdout }}
         stdin: ${{ steps.prepare.outputs.intent_json }}
     guard: ${{ inputs.intent.role == "implementer" }}
-    labels:
-      node: '209'
   - name: interrupt
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: observe
       condition:
@@ -353,12 +327,10 @@ jobs:
           ORBIT_PI_TOKEN: ${{ vault.get(inputs.execution_secrets.pi_token.vault, inputs.execution_secrets.pi_token.key) }}
           ORBIT_PI_URL: ${{ steps.prepare.outputs.pi_url }}
           ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/interrupt.py" }}
-      behaviorName: ${{ "task-turn-interrupt-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-turn-interrupt" }}'
     guard: ${{ (has(steps.observe) && steps.observe.status == "succeeded") || !has(steps.message_send) || steps.message_send.status != "succeeded" }}
-    labels:
-      node: '209'
   - name: restore
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: difference
       condition:
@@ -372,7 +344,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("task-turn-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -384,10 +356,8 @@ jobs:
         stdin: ${{ steps.prepare.outputs.intent_json }}
     guard: ${{ inputs.intent.role != "reviewer" || !has(steps.candidate_result) || !has(steps.candidate_result.outputs) || !steps.candidate_result.outputs.admitted
       }}
-    labels:
-      node: '209'
   - name: shape_result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: prepare
       condition:
@@ -440,11 +410,9 @@ jobs:
           || (inputs.intent.role != "implementer" && (!has(steps.difference) || steps.difference.status != "succeeded")) }}
         failure_code: '${{ has(steps.prepare.outputs) && steps.prepare.outputs.error_code != null ? steps.prepare.outputs.error_code : (has(steps.candidate_result)
           && has(steps.candidate_result.outputs) ? steps.candidate_result.outputs.error_code : null) }}'
-      behaviorName: ${{ "task-turn-shape_result-" + string(inputs.operation_id) }}
-    labels:
-      node: '209'
+      behaviorName: '${{ "task-turn-shape_result" }}'
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: shape_result
       condition:
@@ -459,11 +427,9 @@ jobs:
           '
         env:
           ORBIT_RESULT: ${{ steps.shape_result.outputs.result_json }}
-      behaviorName: ${{ "task-turn-result-" + string(inputs.operation_id) }}
-    labels:
-      node: '209'
+      behaviorName: '${{ "task-turn-result" }}'
   - name: outcome
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: result
       condition:
@@ -479,9 +445,5 @@ jobs:
         env:
           ORBIT_RESULT: ${{ steps.shape_result.outputs.result_json }}
           ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/outcome.py" }}
-      behaviorName: ${{ "task-turn-outcome-" + string(inputs.operation_id) }}
-    labels:
-      node: '209'
-  target: orbit-node-209
-  labels:
-    node: '209'
+      behaviorName: '${{ "task-turn-outcome" }}'
+  labels: {role: swamp}

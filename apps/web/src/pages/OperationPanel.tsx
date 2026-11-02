@@ -1,10 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import {
-    instanceOperationsQuery,
-    isTerminal,
-    type Operation,
-} from "../api/operations";
+import { instanceOperationsQuery, isTerminal, type Operation } from "../api/operations";
 import type { Instance } from "../api/types";
 import { useFallbackPoll } from "../realtime/liveness";
 import { useOperation } from "../realtime/operation";

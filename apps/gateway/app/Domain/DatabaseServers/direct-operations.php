@@ -9,6 +9,7 @@ use App\Domain\DatabaseServers\DatabaseCreateProjection;
 use App\Domain\DatabaseServers\DatabaseDestroyOwnedProjection;
 use App\Domain\DatabaseServers\DatabaseDestroyProjection;
 use App\Domain\DatabaseServers\DatabaseReadProjection;
+use App\Domain\DatabaseServers\DatabaseServerAdminSecret;
 use App\Domain\DatabaseServers\DatabaseServerCloseProjection;
 use App\Domain\DatabaseServers\DatabaseServerCreateProjection;
 use App\Domain\DatabaseServers\DatabaseServerDestroyProjection;
@@ -32,18 +33,20 @@ return ['database.update' => [
     'workflow' => 'operation-database-create',
     'projection' => DatabaseCreateProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'create', 'step' => 'result'],
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-create-intent-[1-9][0-9]*$']],
+    'terminal_result' => ['job' => 'create', 'step' => 'Report the result'],
+    'execution_copies' => [DatabaseServerAdminSecret::EXECUTION_COPY, ['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-create-intent-[1-9][0-9]*$'],
+        ['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-create-owner-[1-9][0-9]*$']],
 ], 'database_server.destroy' => [
     'workflow' => 'operation-database-server-destroy',
     'projection' => DatabaseServerDestroyProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'result', 'step' => 'result'],
+    'terminal_result' => ['job' => 'server', 'step' => 'Report the result'],
 ], 'database_server.create' => [
     'workflow' => 'operation-database-server-create',
     'projection' => DatabaseServerCreateProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'server', 'step' => 'result'],
+    'terminal_result' => ['job' => 'server', 'step' => 'Report the result'],
+    'execution_copies' => [DatabaseServerAdminSecret::EXECUTION_COPY, ['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-server-create-intent-[1-9][0-9]*$']],
 ], 'database.write' => [
     'workflow' => 'operation-database-write',
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-write-intent-[1-9][0-9]*$']],
@@ -67,11 +70,6 @@ return ['database.update' => [
     'workflow_inputs' => true,
     'terminal_result' => ['job' => 'user', 'step' => 'result'],
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-user-create-intent-[1-9][0-9]*$']],
-], 'database.sqlite_export' => [
-    'workflow' => 'operation-database-sqlite-export',
-    'projection' => DatabaseSqliteProjection::class,
-    'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'sqlite', 'step' => 'result'],
 ], 'database.sqlite_seed' => [
     'workflow' => 'operation-database-sqlite-seed',
     'projection' => DatabaseSqliteProjection::class,
@@ -87,8 +85,8 @@ return ['database.update' => [
     'workflow' => 'operation-database-destroy',
     'projection' => DatabaseDestroyProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'result', 'step' => 'result'],
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-destroy-intent-[1-9][0-9]*$']],
+    'terminal_result' => ['job' => 'destroy', 'step' => 'Report the result'],
+    'execution_copies' => [DatabaseServerAdminSecret::EXECUTION_COPY],
 ], 'database.destroy_owned' => [
     'workflow' => 'operation-database-destroy-owned',
     'projection' => DatabaseDestroyOwnedProjection::class,

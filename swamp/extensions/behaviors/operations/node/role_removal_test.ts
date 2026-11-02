@@ -152,8 +152,8 @@ Deno.test("source chain publishes DNS before grace then Caddy before runtime and
     job.name === "source_runtime_job"
   )! as { steps: { target: string; labels: { node: string } }[] };
   assertEquals(
-    runtime.steps[0].target,
-    '${{ "orbit-node-" + string(steps.source_inventory.outputs.node_id) }}',
+    runtime.steps[0].labels,
+    { node: "${{ string(steps.source_inventory.outputs.node_id) }}" },
   );
   assertEquals(
     runtime.steps[0].labels.node,

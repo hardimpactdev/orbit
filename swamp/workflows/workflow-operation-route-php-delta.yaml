@@ -1,5 +1,6 @@
 id: 3ae539e4-bd32-4fbc-b50d-bd13e660ed30
 name: operation-route-php-delta
+queueTimeout: 30
 description: Compose captured public sections and apply them with official file actions.
 vaults: []
 inputs:
@@ -83,14 +84,14 @@ inputs:
   additionalProperties: false
 jobs:
 - name: composition
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: plan
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-publication-command'
-      behaviorName: ${{ "route-delta-plan-" + run.id }}
+      behaviorName: '${{ "route-delta-plan" }}'
       methodName: phpPlan
       inputs:
         node_id: ${{ inputs.intent.node_id }}
@@ -102,14 +103,14 @@ jobs:
         direction: ${{ inputs.intent.direction }}
         host_keys: ${{ inputs.intent.host_keys }}
   - name: read-account
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-read-account-" + run.id }}
+      behaviorName: '${{ ("route-ssh-read-account-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &id001
-        name: ${{ "route-ssh-" + run.id }}
+        name: '${{ ("route-ssh-read-account-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -150,11 +151,11 @@ jobs:
       condition:
         type: succeeded
   - name: read-current
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-read-current-" + run.id }}
+      behaviorName: '${{ ("route-ssh-read-current-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -187,11 +188,11 @@ jobs:
       condition:
         type: succeeded
   - name: compose
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-publication-command'
-      behaviorName: ${{ "route-delta-compose-" + run.id }}
+      behaviorName: '${{ "route-delta-compose" }}'
       methodName: php
       inputs:
         node_id: ${{ inputs.intent.node_id }}
@@ -209,17 +210,17 @@ jobs:
       condition:
         type: succeeded
 - name: publication
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: apply-pool
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-apply-pool-" + run.id + "-" + string(self._index) }}
+      behaviorName: '${{ ("route-ssh-apply-pool-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: ${{ "route-ssh-apply-pool-" + run.id + "-" + string(self._index) }}
+        name: '${{ ("route-ssh-apply-pool-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -246,14 +247,14 @@ jobs:
       item: pool
       in: ${{ steps.compose.outputs.files }}
   - name: validate
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-validate-" + run.id + "-" + string(self._index) }}
+      behaviorName: '${{ ("route-ssh-validate-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: ${{ "route-ssh-validate-" + run.id + "-" + string(self._index) }}
+        name: '${{ ("route-ssh-validate-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -280,14 +281,14 @@ jobs:
       item: pool
       in: ${{ steps.compose.outputs.files }}
   - name: reload
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-reload-" + run.id + "-" + string(self._index) }}
+      behaviorName: '${{ ("route-ssh-reload-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: ${{ "route-ssh-reload-" + run.id + "-" + string(self._index) }}
+        name: '${{ ("route-ssh-reload-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -318,18 +319,18 @@ jobs:
     condition:
       type: succeeded
 - name: completion
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn:
   - job: publication
     condition:
       type: succeeded
   steps:
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "route-delta-result-" + run.id }}
+      behaviorName: '${{ "route-delta-result" }}'
       methodName: execute
       inputs:
         run: printf '%s\n' '{"ready":true}'

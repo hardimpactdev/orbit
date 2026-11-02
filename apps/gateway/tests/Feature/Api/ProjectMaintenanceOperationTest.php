@@ -7,12 +7,15 @@ use App\Domain\Projects\ProjectMaintenanceProjection;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskExtensionState;
+use App\Domain\Tasks\TaskStartCommit;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
+use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeRoutePublicationSocket;
+use Tests\Support\FakeTaskStartCommit;
 
 beforeEach(function (): void {
     $node = $this->markAsGateway(Node::query()->create(['name' => 'project-maintenance-gateway', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.2', 'public_ssh_host' => '192.0.2.2']));
@@ -33,8 +36,10 @@ it('captures Project settings and the complete group snapshot without executing 
     expect($operation->kind)->toBe('project.routine')->and($operation->node_id)->toBe(209)
         ->and($operation->input['project'])->toBe(['id' => $this->project->id, 'repository' => 'https://github.com/nckrtl/launch.git', 'default_branch' => 'main', 'check' => 'composer check'])
         ->and($operation->input['groups'][0]['id'])->toBe($group->id)
+        // Swamp validates admitted_at as a Zulu ISO datetime; an offset fails the run's first step.
+        ->and($operation->input['admitted_at'])->toMatch('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/')
         ->and(Task::topLevel()->count())->toBe(1)
-        ->and(app(DirectOperation::class)->definition('project.routine')['terminal_result'])->toBe(['job' => 'routine', 'step' => 'result']);
+        ->and(app(DirectOperation::class)->definition('project.routine')['terminal_result'])->toBe(['job' => 'routine', 'step' => 'Report the result']);
     $this->project->update(['task_check' => 'new check']);
     $this->postJson($url, [])->assertAccepted()->assertJsonPath('data.id', $operation->id);
     expect($this->socket->sent)->toHaveCount(1);
@@ -63,6 +68,21 @@ it('admits one group only after the bound terminal result and makes replay a noo
     expect(Task::topLevel()->count())->toBe(1)->and(Task::topLevel()->first()->status->value)->toBe('todo')
         ->and($operation->fresh()->status->value)->toBe('succeeded')
         ->and($operation->fresh()->state['maintenance_group_id'])->toBe(Task::topLevel()->first()->id);
+});
+
+it('starts the admitted group provision after the projection commits, so its source read holds no transaction', function (): void {
+    $start = new FakeTaskStartCommit;
+    app()->instance(TaskStartCommit::class, $start);
+    $id = $this->withHeader('Idempotency-Key', 'committed-admission')->postJson('/api/v1/projects/'.$this->project->id.'/maintenance/routine', [])->assertAccepted()->json('data.id');
+    $operation = Operation::findOrFail($id);
+    $result = ['project_id' => $this->project->id, 'requests' => [['action' => 'create_group', 'project_id' => $this->project->id,
+        'maintenance' => ['mode' => 'routine', 'project' => ['projectId' => $this->project->id, 'repository' => $this->project->repository_url], 'targets' => []],
+        'input' => ['title' => 'Routine', 'brief' => 'Swamp schedule: native-fixture', 'tasks' => [['title' => 'Routine', 'brief' => 'Maintain dependencies.', 'deliverables' => [['id' => 'review', 'type' => 'review', 'description' => 'Review the changes.']]]]],
+    ]]];
+    $level = DB::transactionLevel();
+    app(ProjectMaintenanceProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null, 'result' => $result]);
+    expect($start->transactionLevels)->toBe([$level]);
 });
 
 it('settles an early native failure without inventing a result or starting a group', function (): void {

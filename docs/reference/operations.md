@@ -17,6 +17,8 @@ Swamp is the sole executor of task groups. The Gateway stores task state and run
 
 A long operation, such as an [Instance deploy or rollback](/reference/deployments#deploy-through-the-api), is a record in the Gateway database with named steps. Its kind declares its executor: PHP uses the [Gateway queue](/reference/gateway-queue); Swamp claims work through the [Services primitives](#swamp-execution). The request that starts it answers `202 Accepted` with the record and returns at once. A client then follows the record until it ends. Nothing a client does, such as closing its connection, stops the operation. Only [cancel](#cancel-an-operation) does.
 
+Not every recorded result is an operation. The Gateway records an automatic deploy's Activity entries and release alerts from the terminal result of its scheduled run, with no Operation; see [Instance releases](/reference/deployments).
+
 Instance deploy, rollback, [task provision](/reference/tasks#provision-an-external-group), [task checks](/reference/tasks#check-an-external-group), and [task turns](/reference/tasks#run-an-external-turn) are operations. [External review parking](/reference/tasks#park-an-external-group-for-review) is also a keyed operation. It succeeds only after provider-confirmed stopped power; replay or recovery keeps the same group and VM. Instance create and remove, and Route convergence still run inside their request ([ADR 0209](/decisions/0209-run-long-operations-as-durable-queued-operations)). Other long commands, such as `node:add` and `instance:transfer`, also still run inside their request. [ADR 0218](/decisions/0218-take-long-commands-off-the-request-path) plans to move them off the request path and to lower the request limit.
 
 Production deployments include a resumable `process_restart` step after PHP refresh. It restarts active Instance Processes before after-activation commands. A completed restart step is skipped on recovery. An interrupted restart step can restart a Process again. A stored deploy plan from before this step was introduced keeps its original steps after a Gateway upgrade. See [Deploy](/reference/deployments#deploy) for the opt-out and failure behavior.
@@ -27,7 +29,50 @@ Every `instance.create` or `instance.deploy` Operation that enters `failed` or `
 
 The alert uses the existing [signed release webhook](/reference/gateway-recovery#webhook), with event `instance.operation_failed`. It includes the Operation, Instance and Node IDs, kind, native root run ID, failed step and error code. It does not include inputs, private material, output or stderr. The Activity command `instance:failure-alert` records the notification and webhook outcome. An unavailable webhook does not change the failed Operation. Both release webhook settings must be configured for delivery; otherwise Activity records `not_configured`.
 
+## Swamp datastore watch
+
+The native schedule `swamp-datastore-watch` runs every 15 minutes on the swamp role's workers on Node 209. It reads only: one `command/shell` step counts the files under serve's datastore, `.swamp/` in the serve checkout, and samples serve's CPU over 5 seconds with `top`. It prints one JSON result with the auto-definitions per type, `outputs`, `workflow_runs`, `data`, `step_leases`, `grants` and `serve_cpu_percent`. The step never calls the Gateway.
+
+The Gateway reads the terminal `measure` output through the shared scheduled-result reader and raises a [problem](/reference/tasks#fingerprints) with source `swamp` for each crossed bound:
+
+| Key | Raised when |
+| --- | --- |
+| `datastore\|auto_definitions\|<type>` | One auto-definition type other than `swamp/grant` holds more than 2,000 files |
+| `datastore\|outputs` | `outputs` holds more than 50,000 files |
+| `datastore\|step_leases` | `data/swamp/step-lease` holds more than 60,000 files; bookkeeping keeps leases 2 hours, so the count should level off near 2 hours of dispatches |
+| `datastore\|grants` | Serve holds more than 500 grant records, the auto-definitions of type `swamp/grant` |
+| `serve\|cpu` | Serve used more than 50% CPU over the sample |
+| `watch\|failed` | A watch run did not succeed, so the datastore is unwatched |
+
+A key is filed once two fires at least 10 minutes apart report it. The first later fire that does not report a key resolves it. A replayed or older run changes nothing. Large auto-definition directories are the known cause of high serve CPU ([Lab #4280](https://swamp-club.com/lab/4280)).
+
+## Swamp credential expiry alerts
+
+The native schedule `swamp-credential-monitor` runs every hour at minute 7 on the swamp role's workers. It is alert only: it reads expiry metadata and changes no credential or grant. Its `check` step runs as `orbit`, with no serve token and no `sudo`, and reads these sources:
+
+- `swamp access token list` and `swamp worker token list`, read locally from the serve datastore;
+- `swamp auth token list --collective nckrtl`, for club tokens; a token with no `expiresAt` is reported as `no_expiry`;
+- `openssl x509 -enddate` for the `swamp.orbit` certificate.
+
+Each credential gets one class: `ok` (more than 72 hours left), `within_72h`, `within_6h`, `expired` or `no_expiry`. Revoked and disabled tokens are skipped. The check stops alerting on a credential one week after it expired. The step publishes only the alerts, at most 200, soonest expiry first.
+
+| Result | Alert reason |
+| --- | --- |
+| A credential is `within_72h`, `within_6h` or `expired` | The class |
+| The `orbit-node-209-access` or `orbit-node-209` token is not listed | `missing` |
+| A native list fails, times out or changes shape | The run fails |
+
+The Gateway reads the terminal `check` output through the shared scheduled-result reader. It sends event `swamp.credential_expiring` through the [signed release webhook](/reference/gateway-recovery#webhook) with each credential's kind, name, reason, expiry and hours left. Each credential, expiry and reason alerts once after a delivered webhook. While a condition holds, every run reports it again, so an undelivered alert is retried by the next run. A condition that clears and returns alerts again.
+
+If a monitor run does not succeed, the Gateway sends `swamp.credential_monitor_failed` once per failure streak. An undelivered failure alert is sent again by the next failed run. When a run succeeds after a delivered failure alert, the Gateway sends `swamp.credential_monitor_recovered`, again on each run until it is delivered. A webhook that is not configured counts as undelivered. The monitor runs on the worker it watches: when the `orbit-node-209` pair has expired, no worker claims the step, and only the failure alert reports it after `queueTimeout`.
+
+The Gateway keeps the last projected run, the failure streak and the delivered alerts in the Gateway setting `swamp.credential-monitor`. It skips any run that started at or before the last one, so a replay after a reader reset or `optimize:clear` sends nothing. The Activity command `swamp:credential-alert` records each notification and its webhook outcome.
+
+Renewal stays a hand procedure. When an alert names a worker token, follow the [worker enrollment steps](/reference/node-provisioning#per-node-swamp-worker) to issue it again. Then follow the [break-glass recovery steps](/reference/node-provisioning#break-glass-recovery-for-services-and-swamp-209) to restore the worker.
+
 ## Native run budgets
+
+Each step in a native Instance workflow has a queue timeout: 10 seconds for create and 30 seconds for setup or destroy. Each child workflow declares its own queue timeout. These queue limits do not change the Operation's run budget.
 
 The Gateway tracks each direct Operation's budget from `started_at`, including native start confirmation. The shared `OperationRunBudgets` table reads `instance.create` from the server-captured immutable `input.run_budget_seconds`. The create admission computes that positive integer from its captured phase plan, including heavy Project setup. The Gateway does not re-read the Project.
 
@@ -43,7 +88,11 @@ An unbound admission with attempts `0` has a separate 600-second budget, matchin
 
 The existing shared observer projects an expired budget as `failed` with `error_code: operation.timed_out` and records `cancel_requested`. Operation reads apply the same deadline if the observer is unavailable. Expiration keeps the native binding, any captured F1 error detail, the failed or active step, and existing result evidence. An Operation admitted with a generic target hold keeps it until the shared reader verifies the exact bound native root is terminal. That receipt releases the hold and records the native status without reopening the timed-out Operation.
 
-A projection that implements `DirectOperationTimeout` records its documented failure state in the expiry transaction, because no terminal projection runs for a timed-out Operation. Node removal, `task_vm.destroy`, `tasks.cancel` and `tasks.maintenance_finish` use it to mark the departing Node `failed`; the native run may still finish, and a later admission recovers the records. These kinds hold no generic target lock, so that admission can overlap the still-running native root; their steps are idempotent.
+A run can beat its expiry. For example, Swamp's start reply arrives after the 600-second admission budget, so the Operation expires unbound, and the run then ends within its kind's budget. When the exact native terminal finished before the bound deadline, the shared reader reopens the Operation and projects that terminal normally. The `timed_out` mark and its cancel request go, and the records reach their real end state. A terminal at or after the deadline keeps the timeout.
+
+A projection that implements `DirectOperationTimeout` records its documented failure state in the expiry transaction, because no terminal projection runs for a timed-out Operation unless its run beat the expiry. Node removal, `task_vm.destroy`, `tasks.cancel` and `tasks.maintenance_finish` use it to mark the departing Node `failed`; the native run may still finish, and a later admission recovers the records.
+
+`task_vm.destroy`, `tasks.cancel` and `tasks.maintenance_finish` hold the generic Operation target key (`task_vm:<id>` or `task_group:<id>`). Expiry keeps that key: a new admission returns `operation.target_busy` until the shared reader verifies the exact bound native terminal and releases it. Settlement leaves the timed-out Operation closed. Native `interrupted` destroy and Task cleanup results project as `failed`; recovery starts a new Operation. The task VM sweep logs each admission refusal with its details and continues with other rows.
 
 For an unbound timed-out admission, the existing exact lookup by Operation identity releases the hold only when Serve proves there is no matching run. A matching run binds without reopening the timeout; ambiguity or an unavailable lookup keeps the hold. A valid native terminal with `completedAt` at or before the deadline wins in the shared history read, even when its projection arrives late, so it causes no timeout or timeout alert.
 
@@ -53,7 +102,11 @@ This is the Gateway's budget result, not proof that the native run or its descen
 
 The shared observer projects live step names from native run events without reading history. `current_step_started_at` is the native timestamp when the event supplies one; it stays null when the runtime omits it. `current_step_observed_at` records when the Gateway observed that event. Replayed progress cannot replace a newer event.
 
-A failed or interrupted root retains its first causal step as `failed_step` and a bounded safe diagnostic in `error.detail`. Recorded stderr is preferred; otherwise the native step error is retained. `error.stderr_recorded` distinguishes recorded stderr from missing stderr, including worker disconnection or dispatch refusal. Stdout is never failure evidence. The shared projector and the existing exact history read use the same diagnostic extractor. An older native failure can receive missing detail once through its next normal Operation read, without changing its terminal result or sending another failure alert.
+A failed or interrupted root retains its first causal step as `failed_step` and a bounded safe diagnostic in `error.detail`. Recorded stderr is preferred; otherwise the native step error is retained. `error.stderr_recorded` distinguishes recorded stderr from missing stderr, including worker disconnection or dispatch refusal. Stdout is never failure evidence.
+
+When a kind's workflow has no result-reporting step, the kind declares its terminal result as `native`. Its projector then reads Swamp's own run data keyed by step name ([Swamp command steps](/reference/swamp-command-steps#read-swamps-run-data-instead-of-a-result-step)). `node.wireguard_hub_converge` is the first: its run ends on a native `assert`, and the Gateway records `projected: true` when that check succeeded.
+
+A failed step with exit 124 and a command beginning with a literal `timeout N` reports `<step> timed out after <N>s`; other failures keep their redacted diagnostic. The shared projector and the existing exact history read use the same diagnostic extractor. An older native failure can receive missing detail once through its next normal Operation read, without changing its terminal result or sending another failure alert.
 
 The shared extractor redacts known Instance and Process environment values, configured Swamp credentials and credential-shaped text before retaining the last 4 KiB. It drops a truncated first line whose identifying prefix may be missing, then redacts the retained text again. Budget expiry omits `error.stderr_recorded`, because that result makes no claim about native stderr. Native family scripts still own safe output preservation; this projection does not change their placement or execution.
 
@@ -429,11 +482,6 @@ MCP has an experimental Tasks primitive for long tool calls. An operation alread
 
 [Tasks scripts](/reference/tasks#run-a-tracked-repository-script) use `workspace_ready` and `script` steps. The key is required. Replaying the same key precedes admission checks and returns the original receipt and bounded result, including after workspace removal. The existing target hold, lease, delayed reads, cancellation, and uncertain-ownership fences apply. Script completion grants no factory approval, check eligibility, or next-step scheduling.
 
-### Production smoke operations
-
-The [production smoke API](/reference/deployments#dispatch-and-receipt) starts `instance.smoke` with the separate `instance_smoke` target and a required caller-bound key. It never takes the Instance deploy lock. The durable send step records intent before GitHub and is resumable only as a read after that intent. Delayed read steps release the worker. Observation ends 720 seconds after admission (Swamp’s 600-second budget plus 120 seconds for queue delay), after which unresolved evidence is retained as unknown; this transport limit does not replace Swamp's baseline deadline.
-
-Cancellation stops observation and reports unknown; it never resends or cancels the GitHub run. Operation failures describe control-plane errors, while the smoke result independently distinguishes verified failed tests from pending or unknown execution evidence.
 
 ## Swamp execution
 
@@ -579,14 +627,13 @@ The Gateway does not load those deleted interfaces.
 
 Synchronous Cluster changes that would move an Analytics tracking Route return
 `route.analytics_native_required` before changing records, LAN rules or DNS.
-Those changes require the native Route workflow. Agent recovery returns
-`node.agent_rekey_unavailable` until native configure ownership can be proved.
+Those changes require the native Route workflow.
 Task workspace removal waits for native publication when approved work has not
 been pushed.
 
-The required CI registry check also requires an exact `run` and `read` intent for every declared workflow in `swamp/config/gateway-workflow-grants.json`, under `user:orbit-gateway`. Version 2 also requires exact vault key patterns with both `write` and same-key `read`, matched against each kind's public `execution_copies` declaration. This public manifest describes expected policy, not installed permissions. The live grant owner verifies the registered workflow and the installed Gateway token with native `access.can-i` before uptake. CI never applies grants or reads credentials.
+The required CI registry check reads `swamp/config/gateway-workflow-grants.json` for `user:orbit-gateway`. It requires one `run` and `read` grant on every workflow (`*`), and an exact `write` grant only for a declared schedule input producer. Version 2 also requires exact vault key patterns with both `write` and same-key `read`, matched against each kind's public `execution_copies` declaration. CI never applies grants or reads credentials. The swamp role applies this manifest to serve: its convergence and every release Swamp load render it into serve's grants directory and run `swamp access reload` ([ADR 0243](/decisions/0243-serve-swamp-through-a-swamp-role)).
 
-The normal load reconciles this manifest after runtime publication and before consuming its source feed. It backs up policy, adds only missing exact actions, preserves existing grants and groups, and stops for inspection after an uncertain mutation. See the [Swamp shape gate](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape-gate.md#gateway-workflow-grant-intent).
+See the [Swamp shape gate](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape-gate.md#gateway-workflow-grant-intent).
 
 New admission stores `state.swamp_start = {key: 'operation:' + id, workflow: admittedDefinition.workflow}` in the same transaction that creates the Operation, before submission after commit. It preserves unrelated state. A replay or admission fence keeps its recorded row unchanged. This public receipt records the admitted start identity; it does not bind a native run or establish a status. Only native evidence can establish `state.swamp_run_id`.
 
@@ -598,11 +645,13 @@ At observer startup, record-channel recovery or an Operation notice, an unbound 
 
 ### Execution-copy failures
 
-The Gateway pushes execution secrets through the shared `SwampVaultExecutionCopy` client before starting a run. A failed push returns `swamp.vault_sync_unavailable`. The `Swamp execution copy unavailable` warning records the public vault and key names, native request ID, failure phase, a recognized server refusal code and the HTTP handshake status when available. These fields distinguish connection failures from vault refusals. It records no secret value, token, payload, remote message or original exception message. The client does not retry the write.
+The Gateway pushes execution secrets through the shared `SwampVaultExecutionCopy` client before starting a run. No network call runs inside a database transaction: an admission transaction only records the intent and the Operation. `SwampDispatch` holds the execution copies and run starts until the transaction commits, then pushes every copy and starts the runs. A rolled-back admission pushes and starts nothing. A failed push returns `swamp.vault_sync_unavailable` and fails each Operation admitted in that transaction before its run starts. Outside a transaction, the push runs at once.
+
+The `Swamp execution copy unavailable` warning records the public vault and key names, native request ID, failure phase, a recognized server refusal code and the HTTP handshake status when available. These fields distinguish connection failures from vault refusals. It records no secret value, token, payload, remote message or original exception message. The client does not retry the write.
 
 ### Recover a terminal native result
 
-`GET /api/v1/operations/{operation}` makes one bounded native history read for an active direct Operation with a recorded run ID. It queries that exact UUID and checks the workflow name, Operation ID, kind and root Node. Only a native status of failed or interrupted can record `operation.native_failed`, through the same terminal transition as the existing root failure callback. The verified native status is preserved, including interrupted. Native success never invents a missing domain result.
+`GET /api/v1/operations/{operation}` makes one bounded native history read for an active direct Operation with a recorded run ID. It queries that exact UUID and checks the workflow name, Operation ID, kind and root Node. Only a native status of failed or interrupted can record `operation.native_failed`, through the same terminal transition as the existing root failure callback. That transition applies the kind's own projection, so a read that sees the failure first still ends the kind's records: a failed `tasks.provision` releases its group reservation. The verified native status is preserved, including interrupted. Native success never invents a missing domain result.
 
 This recovers a lost failure callback after a serve restart or a refused source bundle. Missing history, connection errors, authorization refusals, invalid history and all other native statuses leave recorded status unchanged. The native request runs outside the database transaction; the final write locks and rechecks the original binding and terminal status. Existing terminal results never change. There is no background poller, execution replay, family action or secret hydration. Terminal failure reports the native outcome; it does not prove that every partial Node effect stopped.
 
@@ -618,7 +667,7 @@ Cancelling a queued or running Operation with no `swamp_run_id` and zero attempt
 
 A declaration may constrain its writer with literal `writer_scope` admitted fields; `node_id` and `parent_operation_id` come from Gateway admission authority. A scope mismatch records the previous polled writer. Tool admission also checks that its prepared input and the stored writer decision agree before it records an Operation.
 
-`firewall.allow`, `firewall.deny` and `firewall.remove` pass the admitted Node rule and shared tuple plan to `operation-firewall-direct`. Every step runs on Node 209. The official firewall model reaches the target over WireGuard after the admitted pin is verified in the published known_hosts snapshot. Read-only `firewall.inspect` uses one pinned official SSH read and a typed comparison step. The Gateway projects the native terminal result.
+`firewall.allow`, `firewall.deny` and `firewall.remove` pass the admitted Node rule and shared tuple plan to `operation-firewall-direct`. Every step runs on Node 209. The official firewall model reaches the target over WireGuard after the admitted pin is verified in the published known_hosts snapshot. Doctor's `firewall` family owns the read-only UFW read and comparison. The Gateway projects the native terminal result.
 
 All Tool kinds use direct Swamp execution for root intents on Node 209. Its Gateway command descriptors, completion proofs and package execution policy, manager child admission and receipt adapters are removed. Swamp materializes the admitted manager and applies package policy locally. The Gateway retains typed manager and Tool result projection.
 

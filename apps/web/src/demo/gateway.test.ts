@@ -72,12 +72,13 @@ describe("the demo Gateway", () => {
     });
 
     it("records each request for a test to assert on", async () => {
-        await api("DELETE", "/api/v1/nodes/2/firewall-rules/https-public");
+        const identity = { port: "443", protocol: "tcp", source: "0.0.0.0/0" };
+        await api("POST", "/api/v1/nodes/2/firewall-rules/remove", identity);
 
         expect(gateway.requests.at(-1)).toEqual({
-            method: "DELETE",
-            path: "/api/v1/nodes/2/firewall-rules/https-public",
-            body: undefined,
+            method: "POST",
+            path: "/api/v1/nodes/2/firewall-rules/remove",
+            body: identity,
         });
         expect(await get("/api/v1/nodes/2/firewall-rules")).toHaveLength(1);
     });

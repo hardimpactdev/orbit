@@ -92,9 +92,9 @@ flowchart TD
 
   subgraph RUN["job transfer: 39 steps on 209"]
     T1["probe: destination-ready, source filesystem, top,<br/>git-directory, common, origin, source-proof<br/>10 steps: 6 SSH"]
-    T2["pause: operation-process-stop child per Process (7 steps)"]
+    T2["pause: operation-process-control child per Process (11 steps, 7 run for a stop)"]
     T3["copy: archive (source), download to 209, upload,<br/>install, destination-proof, standalone, worktree-config,<br/>environment-permissions: 11 steps, 7 SSH"]
-    T4["workloads: instance-route-workload child (15 steps each)<br/>activate: operation-process-create child per Process (32 steps)"]
+    T4["workloads: instance-route-workload child (15 steps each)<br/>activate: operation-process-create child per Process (29 steps)"]
     T5["forward: route-mutation-forward child, 17 steps<br/>(161 with nested certificate, PHP, LAN, Caddy, DNS children)"]
     T6["recovery before cutover (guarded): restore Route,<br/>restore source runtime, discard destination: 5 steps"]
     T7["result"]
@@ -131,12 +131,12 @@ Legacy action to Swamp steps on main. Child steps are declared steps per item.
 | --- | --- | --- | --- | --- |
 | Admission | Gateway, in the request | `StartInstanceTransferAction`, one transaction | 0 | SQLite and Schedules **refused** |
 | Probe | inside capture | 10 probe steps | 10 | new |
-| Pause | 3 calls per Process + 1 per Schedule | `pause`: `operation-process-stop` child | 1 | **3 → 7 child steps** per Process |
+| Pause | 3 calls per Process + 1 per Schedule | `pause`: `operation-process-control` child | 1 | **3 → 7 child steps run** per Process (11 declared) |
 | Copy | 3 calls | `archive-assets` … `environment-permissions` | 11 | **3 → 11** |
 | SQLite | about 6 calls (optional) | refused | 0 | **dropped** |
 | Environment | 2 calls + Gateway import and rebuild | `.env` travels inside the archive; `environment-permissions` closes its mode | 0 | store import and rebuild **dropped** |
 | Route and workloads | about 10 calls + DNS | `workloads` child (15) + `forward` child (17, 161 with nested children) | 2 | **about 12 → up to 176** declared |
-| Activate | 3 calls per Process + Schedules | `activate`: `operation-process-create` child | 1 | **3 → 32 declared** per Process (about 26 run on systemd) |
+| Activate | 3 calls per Process + Schedules | `activate`: `operation-process-create` child | 1 | **3 → 29 declared** per Process (about 26 run on systemd) |
 | Recovery | Gateway rollback before cutover | `restore`, `restore-source-runtime`, `discard-destination-runtime`, `discard-assets`, `discard` | 5 | |
 | Retire | about 6 calls | `retire-runtime` child, `retire-source-assets`, `retire-source`, `prune-worktree` | 4 | |
 | Finish | Gateway | `result`, 3 archive removals, `complete` | 5 | |

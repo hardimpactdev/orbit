@@ -10,7 +10,7 @@ export function roleCertificateSteps(
 ): Fields[] {
     return [{
         name,
-        target: "orbit-node-209",
+        labels: { role: "swamp" },
 
         ...(dependency
             ? {

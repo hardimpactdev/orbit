@@ -8,7 +8,6 @@ use Orbit\Sdk\Requests\Clusters\UnsetClusterRouterRequest;
 use Orbit\Sdk\Requests\Routes\CreateRouteRequest;
 use Orbit\Sdk\Requests\Routes\DestroyRouteRequest;
 use Orbit\Sdk\Requests\Routes\SetRouteTargetRequest;
-use Orbit\Sdk\Requests\Routes\UnsetRouteTargetRequest;
 use Orbit\Sdk\Requests\Routes\UpdateRouteRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Http\Faking\MockClient;
@@ -35,7 +34,6 @@ it('preserves Route and Router write retry keys and decodes the admitted Operati
     'update' => [fn () => new UpdateRouteRequest(7, domain: 'next.example.test', idempotencyKey: 'route-proof'), 'route.update'],
     'destroy' => [fn () => new DestroyRouteRequest(7, offline: true, idempotencyKey: 'route-proof'), 'route.destroy'],
     'set target' => [fn () => new SetRouteTargetRequest(7, 4, idempotencyKey: 'route-proof'), 'route.target_set'],
-    'unset target' => [fn () => new UnsetRouteTargetRequest(7, idempotencyKey: 'route-proof'), 'route.target_unset'],
     'set router' => [fn () => new SetClusterRouterRequest(2, 3, idempotencyKey: 'route-proof'), 'cluster.router_set'],
     'unset router' => [fn () => new UnsetClusterRouterRequest(2, true, idempotencyKey: 'route-proof'), 'cluster.router_unset'],
 ]);

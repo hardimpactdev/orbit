@@ -43,16 +43,16 @@ inputs:
   additionalProperties: false
 jobs:
 - name: resume
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: eligible
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: assert
       expr: inputs.intent.eligible == true
       message: The captured VM is not eligible for this transition
   - name: provider
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: task-vm-provider-power
@@ -68,7 +68,7 @@ jobs:
       condition:
         type: succeeded
   - name: ssh
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: provider
       condition:
@@ -82,14 +82,14 @@ jobs:
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
   - name: artifact
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-resume-" + run.id }}
+      behaviorName: '${{ ("vm-resume-" + string(steps.ssh.outputs.result.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &id001
-        name: ${{ "vm-resume-" + run.id }}
+        name: '${{ ("vm-resume-" + string(steps.ssh.outputs.result.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ steps.ssh.outputs.result.ssh_execution.target.user }}
@@ -133,11 +133,11 @@ jobs:
         type: succeeded
     guard: ${{ inputs.intent.mode == "converge" }}
   - name: pi
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-resume-" + run.id }}
+      behaviorName: '${{ ("vm-resume-" + string(steps.ssh.outputs.result.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -161,7 +161,7 @@ jobs:
         type: always
     guard: ${{ inputs.intent.mode == "converge" }}
   - name: runtime-confirmed
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: ssh
       condition:
@@ -178,11 +178,11 @@ jobs:
         0 && steps.pi.outputs.exitCode == 0)
       message: The resumed runtime is not ready
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "vm-terminal-" + run.id }}
+      behaviorName: '${{ "vm-terminal" }}'
       methodName: execute
       inputs:
         run: "/usr/bin/python3 -B - <<'PYTHON'\nimport json\nimport os\n\nvalue={key:int(os.environ['ORBIT_'+key.upper()])\

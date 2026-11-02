@@ -30,10 +30,6 @@ return [
         'workflow_inputs' => true, 'terminal_result' => ['job' => 'update', 'step' => 'result'],
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(forward|restore)-route_material_[0-9]+$']],
     ]),
-    'route.target_unset' => [
-        'workflow' => 'operation-route-target-unset', 'projection' => RouteOperationProjection::class,
-        'workflow_inputs' => true, 'terminal_result' => ['job' => 'confirmation', 'step' => 'result'],
-    ],
     'route.lan_remove' => [
         'workflow' => 'operation-route-lan-remove', 'projection' => NativeRouteLanRemovalProjection::class,
         'workflow_inputs' => true, 'terminal_result' => ['job' => 'withdrawal', 'step' => 'remove-lan'],

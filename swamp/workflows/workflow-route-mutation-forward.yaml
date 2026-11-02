@@ -1,6 +1,7 @@
 id: b2ec4a6d-fc95-4a2c-b6b8-e26c7bf871c7
 name: route-mutation-forward
-target: orbit-node-209
+queueTimeout: 30
+labels: {role: swamp}
 description: Canonical Route publications and complete native contribution proof.
 vaults:
 - orbit-control-inputs
@@ -518,7 +519,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/route-mutation-command'
-      behaviorName: '${{ "forward-result-" + run.id + "-" + string(self._index) }}'
+      behaviorName: '${{ "forward-result-" + string(self._index) }}'
       methodName: result
       inputs:
         stage: ${{ self.stage }}

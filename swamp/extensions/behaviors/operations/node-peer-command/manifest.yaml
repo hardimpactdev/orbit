@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: "@nckrtl/node-peer-command"
-version: 2026.10.31.1
+version: 2026.11.01.1
 visibility: private
 license: MIT
 description: Public metadata for individually placed existing peer configuration actions.

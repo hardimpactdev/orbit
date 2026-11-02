@@ -95,7 +95,9 @@ final readonly class DocsImpact
                     }
                 }
             }
-            if (preg_match('#(?:^|/)(?:tests?|node_modules)/#', $path) === 1) {
+            // Test inputs need no docs owner: test folders, test files beside their source, and swamp/proof's
+            // topology proof fixtures and parity checks. A test only references the codes its source owns.
+            if (preg_match('#(?:^|/)(?:tests?|node_modules)/|^swamp/proof/|(?:^|/)test_[^/]*\.py$|_test\.(?:ts|py)$#', $path) === 1) {
                 continue;
             }
 

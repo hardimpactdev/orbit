@@ -20,6 +20,7 @@ export const Role = z.enum([
   "websocket",
   "analytics",
   "ci-runner",
+  "swamp",
 ]);
 export const AccountName = z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/);
 export const Path = z.string().regex(/^(\/[A-Za-z0-9._-]+)+$/).refine((p) =>

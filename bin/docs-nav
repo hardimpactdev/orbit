@@ -19,6 +19,7 @@ declare(strict_types=1);
  */
 const DOCS_NAV_OUTSIDE = [
     'README' => 'Map of the docs folder for contributors, read on GitHub.',
+    'flows/README' => 'Format rules for the flow charts, read on GitHub; command pages show the charts.',
     'decisions/README' => 'Folder index read on GitHub; the site lists the decisions overview instead.',
     'domains/README' => 'Folder index read on GitHub; the site lists each domain page directly.',
     'solutions/README' => 'Folder index read on GitHub; the site lists each solution page directly.',

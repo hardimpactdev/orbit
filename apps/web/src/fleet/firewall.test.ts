@@ -7,7 +7,7 @@ const rule = (status: FirewallRule["status"]): FirewallRule =>
         id: 1,
         node_id: 2,
         node: "beast",
-        name: "https-public",
+        label: "https-public",
         action: "allow",
         source: "any",
         protocol: "tcp",

@@ -4,23 +4,20 @@ declare(strict_types=1);
 
 namespace App\Data\Firewall;
 
-use App\Domain\Firewall\FirewallAction;
 use App\Domain\Firewall\FirewallBackendStatus;
 use App\Models\FirewallRule;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
-use Spatie\LaravelData\Optional;
 
 #[MapOutputName(SnakeCaseMapper::class)]
 final class FirewallRuleData extends Data
 {
-    /** @param list<string> $sources */
     public function __construct(
         public int $id,
         public int $nodeId,
         public string $node,
-        public string $name,
+        public ?string $label,
         public string $action,
         public string $source,
         public string $protocol,
@@ -29,7 +26,6 @@ final class FirewallRuleData extends Data
         public ?string $backendStatus,
         public ?string $failedStep,
         public ?string $errorCode,
-        public array|Optional $sources,
     ) {}
 
     public static function fromModel(
@@ -42,7 +38,7 @@ final class FirewallRuleData extends Data
             id: $rule->id,
             nodeId: $rule->node_id,
             node: $rule->node->name,
-            name: $rule->name,
+            label: $rule->label,
             action: $rule->action->value,
             source: $rule->source,
             protocol: $rule->protocol,
@@ -51,7 +47,6 @@ final class FirewallRuleData extends Data
             backendStatus: $backendStatus?->value,
             failedStep: $rule->failed_step,
             errorCode: $rule->error_code,
-            sources: $rule->action === FirewallAction::Allowlist ? $rule->sources : Optional::create(),
         );
     }
 }

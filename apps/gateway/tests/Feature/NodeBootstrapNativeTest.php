@@ -18,6 +18,7 @@ use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
+use App\Models\ToolManagerRecord;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
@@ -114,6 +115,14 @@ it('records empty successful observations without an empty Node write', function
         'result' => []])->assertOk();
     expect($operation->fresh()->status)->toBe(OperationStatus::Succeeded)->and($this->target->fresh()->user)->toBe('prior');
 });
+
+it('records apt as a ready Tool Manager once the host bootstrap succeeds', function (string $kind, bool $recorded): void {
+    $operation = app(AdmitNodeBootstrapAction::class)->execute($this->target, $kind);
+    $this->postJson('/api/v1/direct-operations/'.$operation->id.'/result', ['run_id' => $this->run,
+        'status' => 'succeeded', 'started_at' => '2026-10-31T09:00:00.000Z', 'finished_at' => '2026-10-31T09:00:01.000Z',
+        'result' => []])->assertOk();
+    expect(ToolManagerRecord::query()->where('node_id', $this->target->id)->where('name', 'apt')->where('status', 'active')->exists())->toBe($recorded);
+})->with([['node.bootstrap_host', true], ['node.bootstrap_verify', false]]);
 
 it('captures stored public host keys for the official SSH pin policy', function (): void {
     $key = base64_encode(str_repeat('p', 32));

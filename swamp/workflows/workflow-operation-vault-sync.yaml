@@ -102,16 +102,16 @@ jobs:
 - name: prepare
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/vault-sync-plan'
       methodName: assets
       inputs:
         intent: ${{ inputs.intent }}
-      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-assets" }}
+      behaviorName: '${{ "vault-sync-assets" }}'
   - name: workspace
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -126,14 +126,13 @@ jobs:
           mktemp -d -t orbit-vault-sync.XXXXXX
 
           '
-      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-workspace"
-        }}
+      behaviorName: '${{ "vault-sync-workspace" }}'
     dependsOn:
     - step: assets
       condition:
         type: succeeded
   - name: configure
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -151,14 +150,13 @@ jobs:
           ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
           ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
             inputs.execution_secrets.configuration.key) }}
-      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-configure"
-        }}
+      behaviorName: '${{ "vault-sync-configure" }}'
     dependsOn:
     - step: workspace
       condition:
         type: succeeded
   - name: login
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -176,13 +174,13 @@ jobs:
           ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
           ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
             inputs.execution_secrets.configuration.key) }}
-      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-login" }}
+      behaviorName: '${{ "vault-sync-login" }}'
     dependsOn:
     - step: configure
       condition:
         type: succeeded
   - name: unlock
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -200,13 +198,13 @@ jobs:
           ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
           ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
             inputs.execution_secrets.configuration.key) }}
-      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-unlock" }}
+      behaviorName: '${{ "vault-sync-unlock" }}'
     dependsOn:
     - step: login
       condition:
         type: succeeded
   - name: sync
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -224,13 +222,13 @@ jobs:
           ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
           ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
             inputs.execution_secrets.configuration.key) }}
-      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-sync" }}
+      behaviorName: '${{ "vault-sync-sync" }}'
     dependsOn:
     - step: unlock
       condition:
         type: succeeded
   - name: inventory
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -248,14 +246,13 @@ jobs:
           ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
           ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
             inputs.execution_secrets.configuration.key) }}
-      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-inventory"
-        }}
+      behaviorName: '${{ "vault-sync-inventory" }}'
     dependsOn:
     - step: sync
       condition:
         type: succeeded
   - name: trash
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -274,13 +271,13 @@ jobs:
           ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
             inputs.execution_secrets.configuration.key) }}
           ORBIT_VAULT_TRASH: 'true'
-      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-trash" }}
+      behaviorName: '${{ "vault-sync-trash" }}'
     dependsOn:
     - step: inventory
       condition:
         type: succeeded
   - name: plan
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/vault-sync-plan'
@@ -289,7 +286,7 @@ jobs:
         intent: ${{ inputs.intent }}
         inventory: ${{ steps.inventory.outputs.stdout }}
         trash: ${{ steps.trash.outputs.stdout }}
-      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-plan" }}
+      behaviorName: '${{ "vault-sync-plan" }}'
     dependsOn:
     - step: trash
       condition:
@@ -301,7 +298,7 @@ jobs:
       type: succeeded
   steps:
   - name: delete
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -320,7 +317,7 @@ jobs:
           ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
             inputs.execution_secrets.configuration.key) }}
           ORBIT_VAULT_ITEM: ${{ self.item.input_json }}
-      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-delete-" + string(self._index) }}
+      behaviorName: '${{ "vault-sync-delete-" + string(self._index) }}'
     forEach:
       item: item
       in: ${{ steps.plan.outputs.deletes }}
@@ -332,7 +329,7 @@ jobs:
       type: succeeded
   steps:
   - name: write
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -351,7 +348,7 @@ jobs:
           ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
             inputs.execution_secrets.configuration.key) }}
           ORBIT_VAULT_ITEM: ${{ self.item.input_json }}
-      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-write-" + string(self._index) }}
+      behaviorName: '${{ "vault-sync-write-" + string(self._index) }}'
     forEach:
       item: item
       in: ${{ steps.plan.outputs.writes }}
@@ -363,7 +360,7 @@ jobs:
       type: always
   steps:
   - name: logout
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -381,10 +378,10 @@ jobs:
           ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
           ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
             inputs.execution_secrets.configuration.key) }}
-      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-logout" }}
+      behaviorName: '${{ "vault-sync-logout" }}'
     guard: ${{ !("workspace" in steps) || !("stdout" in steps.workspace.outputs) }}
   - name: remove-cache
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
@@ -399,8 +396,7 @@ jobs:
           '
         env:
           ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
-      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-remove-cache"
-        }}
+      behaviorName: '${{ "vault-sync-remove-cache" }}'
     dependsOn:
     - step: logout
       condition:
@@ -413,7 +409,7 @@ jobs:
       type: always
   steps:
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/vault-sync-plan'
@@ -425,4 +421,4 @@ jobs:
           == "succeeded" && "outputs" in steps[name] && "stdout" in steps[name].outputs).map(name, steps[name].outputs.stdout) }}
         successful: ${{ "plan" in steps && steps.plan.status == "succeeded" && steps.all(name,
           steps[name].status != "failed" && steps[name].status != "cancelled") }}
-      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-result" }}
+      behaviorName: '${{ "vault-sync-result" }}'

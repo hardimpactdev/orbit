@@ -17,9 +17,6 @@ use App\Http\Controllers\Api\InstanceReleasesController;
 use App\Http\Controllers\Api\InstanceRollbacksController;
 use App\Http\Controllers\Api\InstancesController;
 use App\Http\Controllers\Api\InstanceSetupController;
-use App\Http\Controllers\Api\InstanceSmokeControlController;
-use App\Http\Controllers\Api\InstanceSmokeController;
-use App\Http\Controllers\Api\InstanceSmokeRepairController;
 use App\Http\Controllers\Api\InstanceTransfersController;
 use App\Http\Controllers\Api\ProjectLifecycleStepsController;
 use App\Http\Controllers\Api\ResolveDirectoryInstanceController;
@@ -60,6 +57,8 @@ Route::middleware([
     Route::get('instances', [InstancesController::class, 'index'])->name('instance:list');
     Route::get('instances/{instance}', [InstancesController::class, 'show'])->name('instance:show');
     Route::patch('instances/{instance}', [InstancesController::class, 'update'])->name('instance:update');
+    Route::post('instances/{instance}/auto-deploy/enable', [InstancesController::class, 'enableAutoDeploy'])->name('instance:auto-deploy:enable');
+    Route::post('instances/{instance}/auto-deploy/disable', [InstancesController::class, 'disableAutoDeploy'])->name('instance:auto-deploy:disable');
     Route::post('instances/{instance}/rename', [InstancesController::class, 'rename'])->name('instance:rename');
     Route::post('instances', [InstancesController::class, 'store'])->name('instance:create');
     Route::post('instances/register', [InstancesController::class, 'register'])->name('instance:register');
@@ -101,21 +100,7 @@ Route::middleware([
     Route::get('instances/{instance}/deployment-source/checks', [InstanceDeploymentSourceController::class, 'checks'])->name('instance:deployment-source:checks');
     Route::post('instances/{instance}/deploy/automatic/resolve', [InstanceDeploymentsController::class, 'resolve'])->name('instance:deploy:automatic:resolve');
     Route::get('instances/{instance}/deploy/automatic/receipt', [InstanceDeploymentsController::class, 'receipt'])->name('instance:deploy:automatic:receipt');
-    Route::post('instances/{instance}/smoke/repair', [InstanceSmokeRepairController::class, 'store'])->name('instance:smoke:repair');
-    Route::get('instances/{instance}/smoke/repair/receipt', [InstanceSmokeRepairController::class, 'receipt'])->name('instance:smoke:repair:receipt');
-    Route::post('instances/{instance}/smoke/control', [InstanceSmokeControlController::class, 'store'])->name('instance:smoke:control');
-    Route::get('instances/{instance}/smoke/control/receipt', [InstanceSmokeControlController::class, 'receipt'])->name('instance:smoke:control:receipt');
-    Route::post('instances/{instance}/smoke/redeploy', [InstanceSmokeControlController::class, 'redeploy'])->name('instance:smoke:redeploy');
-    Route::get('instances/{instance}/smoke/redeploy/receipt', [InstanceSmokeControlController::class, 'redeployReceipt'])->name('instance:smoke:redeploy:receipt');
-    Route::post('instances/{instance}/smoke', [InstanceSmokeController::class, 'store'])->name('instance:smoke');
-    Route::get('instances/{instance}/smoke/receipt', [InstanceSmokeController::class, 'receipt'])->name('instance:smoke:receipt');
-    Route::get('instances/{instance}/smoke/context', [InstanceSmokeController::class, 'context'])->name('instance:smoke:context');
-    Route::post('instances/{instance}/smoke/failure', [InstanceSmokeController::class, 'failure'])->name('instance:smoke:failure');
-    Route::get('instances/{instance}/smoke/failure/receipt', [InstanceSmokeController::class, 'failureReceipt'])->name('instance:smoke:failure:receipt');
-    Route::post('instances/{instance}/smoke/rollback', [InstanceSmokeController::class, 'rollback'])->name('instance:smoke:rollback');
-    Route::get('instances/{instance}/smoke/rollback/receipt', [InstanceSmokeController::class, 'rollbackReceipt'])->name('instance:smoke:rollback:receipt');
     Route::put('instances/{instance}/auto-deploy/policy', [InstanceAutomaticDeployPolicyController::class, 'update'])->name('instance:auto-deploy:policy:update');
-    Route::post('instances/{instance}/auto-deploy/events', [InstanceAutomaticDeployPolicyController::class, 'store'])->name('instance:auto-deploy:event:create');
     Route::post('instances/{instance}/deploy/automatic', [InstanceDeploymentsController::class, 'automatic'])->name('instance:deploy:automatic');
     Route::post(
         'instances/{instance}/rollback',

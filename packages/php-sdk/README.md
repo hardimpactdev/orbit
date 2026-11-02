@@ -9,7 +9,7 @@ gateway application.
 During monorepo development, `apps/cli` consumes this package through a
 Composer path repository with symlinking enabled.
 
-The SDK exposes exactly 248 public Gateway operations. It preserves typed
+The SDK exposes exactly 252 public Gateway operations. It preserves typed
 payloads, bounded responses, structured errors, and request IDs without
 applying Gateway policy. It does not define command-line presentation or
 remote execution behavior.
@@ -24,8 +24,8 @@ The SDK exposes typed list, create, show, update, and destroy requests for Proje
 
 ## Schedules
 
-The SDK exposes typed list, add, show, run, logs, complete, remove, and activate
-requests for Node and Instance Schedules. Add requests preserve omitted
+The SDK exposes typed list, add, show, run, logs, complete, remove, activate, and
+deactivate requests for Node and Instance Schedules. Add requests preserve omitted
 optional values separately from explicit values. Item and collection responses
 are immutable, bounded, and redacted. Completion preserves the Gateway's empty
 response and exposes only its validated response-header request ID. The Gateway
@@ -122,5 +122,3 @@ selectors. They return typed `DependencyResultsResponse` values from Swamp.
 Inspect availability, report provenance, freshness, and PR certainty even after
 HTTP 200. Reads never start maintenance. See the
 [dependency contract](../../docs/reference/instance-dependency-contracts.md).
-
-`MigrateDockerRequest` records one Node-bound Docker maintenance Operation. It transports the mode, explicit confirmation, optional recipe and fallback, and an idempotency key. The Gateway owns admission; Swamp performs migration and Process reconciliation.

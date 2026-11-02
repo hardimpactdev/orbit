@@ -2,7 +2,7 @@ import { assert, assertEquals } from "jsr:@std/assert@1";
 import { parse } from "jsr:@std/yaml@1";
 import { roleCertificateJobs } from "../node/role_certificates_workflow.ts";
 
-Deno.test("certificate control steps use exactly one selector and distinct child signer identity", async () => {
+Deno.test("certificate control steps use exactly one selector and a signer named by target", async () => {
     for (
         const name of [
             "route-certificate-publish",
@@ -26,9 +26,10 @@ Deno.test("certificate control steps use exactly one selector and distinct child
                     name + "/" + step.name,
                 );
                 const task = step.task as Record<string, unknown>;
+                // Named by target, never by run (docs/flows/README.md).
                 if (task.behaviorType === "command/shell") {
                     assert(
-                        String(task.behaviorName).includes("run.id"),
+                        !String(task.behaviorName).includes("run.id"),
                         name + "/" + step.name,
                     );
                 }
@@ -46,8 +47,8 @@ Deno.test("same-Node role scopes get distinct model identities across child and 
                 const identity = task.type === "workflow"
                     ? (task.inputs as { ssh: { name: string } }).ssh.name
                     : task.behaviorName;
-                assert(String(identity).includes("run.id"));
-                assert(String(identity).includes("self._index"));
+                assert(!String(identity).includes("run.id"));
+                assert(String(identity).includes("self."));
             }
         }
     }
@@ -83,7 +84,7 @@ Deno.test("all certificate HTTP steps use the one Gateway-only signer script", a
                     '/usr/bin/python3 -B "$ORBIT_CERTIFICATE_SIGN_SCRIPT"',
                     entry.name + "/" + step.name,
                 );
-                assert(task.behaviorName?.includes("run.id"));
+                assert(!task.behaviorName?.includes("run.id"));
             }
         }
     }
@@ -141,7 +142,7 @@ Deno.test("retained role parents delegate each leaf to the visible native child"
     const child = tasks.find((task) => task.type === "workflow")!;
     assertEquals(child.workflowIdOrName, "node-role-certificate-publish");
     assertEquals(
-        steps.find((step) => step.task === child)!.target,
-        "orbit-node-209",
+        steps.find((step) => step.task === child)!.labels,
+        { role: "swamp" },
     );
 });

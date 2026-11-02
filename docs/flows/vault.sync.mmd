@@ -1,0 +1,99 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, DECISIONS R2-R4, swamp-vault-design (Vaultwarden = human copy). docs/reference/vaultwarden.md#sync.
+  %% status: draft
+  %% command: vault:sync
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane VW icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant VW as Vaultwarden<br/>vault.orbit Route
+  CLI->>GW: vault:sync<br/>--json
+  %%> Command:
+  %%> - `orbit vault:sync`
+  %%> - syntax: `[--idempotency-key=KEY] [--json]`
+  %%> When:
+  %%> - the Gateway admits the same sync itself when a database credential changes, and once an hour to repair drift
+  %%> - run the command to see the result at once
+  %%> Not included:
+  %%> - no per-minute poll; nothing runs while nothing changed, except the hourly check
+  Note over GW: Build the wanted items<br/>task #5168 · items to vault
+  %%> Requirements:
+  %%> - the `vault` extension is on and Vaultwarden is set up, else `vault.not_configured`
+  %%> - no other setup, sync or teardown runs; a busy sync waits briefly, then returns `vault.sync_busy`
+  %%> What it does:
+  %%> - builds one Database item per MySQL and PostgreSQL connection and Database user with a stored password; others are listed as skipped
+  %%> - pushes the wanted items and the account secrets to the Swamp vault as `vault-sync-5168` after commit (R3)
+  %%> Result:
+  %%> - task #5168 recorded with the publishing ledger as input
+  GW->>SW: Start run, full intent<br/>operation-vault-sync
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209); no Node is a target
+  %%> Inputs:
+  %%> - the setup, the ledger of published item IDs and sources, and the vault key names; never a password
+  GW-->>CLI: 202 Accepted<br/>task #5168
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`, then prints `vault:status`
+  SW->>VW: Log in and unlock<br/>bw login · unlock · sync
+  %%> How:
+  %%> - the official Bitwarden CLI on 209, in a scratch home, trusting only the Orbit root CA
+  %%> - secrets come from `vault.get`, in the environment of each command
+  SW->>VW: Read the collection<br/>bw list items · trash
+  %%> What it does:
+  %%> - reads the collection's items and the trash, and finds Orbit's items by their `orbit.source` field
+  Note over SW: Plan the changes<br/>create · rewrite · adopt · delete
+  %%> What it does:
+  %%> - creates missing items, rewrites changed ones, adopts an item for a wanted source the ledger lacks
+  %%> - deletes a recorded item whose source is gone, only when its ID and source match the ledger
+  %%> Leaves:
+  %%> - items without `orbit.source`, and copies the ledger does not name
+  SW->>VW: Delete gone items<br/>bw delete --permanent
+  %%> What it does:
+  %%> - deletes each planned item permanently, one per step
+  %%> Refuses:
+  %%> - an item that also belongs to another visible collection: `vault.item_shared`
+  SW->>VW: Write the items<br/>bw create · bw edit
+  %%> What it does:
+  %%> - creates or rewrites each planned item as a Secure Note with the Database item fields, one per step
+  SW->>VW: Log out<br/>bw logout · remove scratch home
+  %%> What it does:
+  %%> - logs out and deletes the scratch home, on success and on failure
+  alt every change made
+    VW-->>SW: items match
+    %%> Returns:
+    %%> - each item's ID and source
+    SW-->>GW: Run succeeded<br/>terminal event · item IDs
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Update the ledger<br/>last_synced_at · task done
+    %%> Result:
+    %%> - the publishing ledger records each item ID; `vault:status` shows the new `last_synced_at`
+    %%> - task #5168 succeeds
+  else a change fails
+    VW--xSW: refused or no answer
+    %%> When:
+    %%> - login or unlock fails, Vaultwarden is down, or a create, edit or delete fails
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its safe error code
+    Note over GW: Keep the ledger<br/>last_error · vault.sync_failed
+    %%> Result:
+    %%> - the ledger stays unchanged; `vault:status` shows `last_error`; task #5168 fails
+    %%> In Vaultwarden:
+    %%> - changes made before the failure stay
+    %%> Retry:
+    %%> - safe: the next sync reads the collection again and adopts items a lost reply created
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5168
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end

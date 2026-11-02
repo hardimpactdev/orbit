@@ -16,7 +16,6 @@ final class UpdateClusterCommand extends ClusterCommand
         {cluster : Numeric Cluster ID}
         {--name= : New Cluster name}
         {--tld= : New development TLD; empty unsets it}
-        {--state= : New state: inactive or active}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -32,12 +31,10 @@ final class UpdateClusterCommand extends ClusterCommand
 
         $name = $this->input->getOption('name');
         $tld = $this->input->getOption('tld');
-        $state = $this->input->getOption('state');
         $hasName = $name !== null;
         $hasTld = $tld !== null;
-        $hasState = $state !== null;
 
-        if (! $hasName && ! $hasTld && ! $hasState) {
+        if (! $hasName && ! $hasTld) {
             return $this->renderGatewayFailure(
                 'cluster.update_required',
                 'Provide at least one Cluster update option.',
@@ -56,13 +53,6 @@ final class UpdateClusterCommand extends ClusterCommand
             return self::FAILURE;
         }
 
-        if ($hasState && (! is_string($state) || ! in_array($state, ['inactive', 'active'], strict: true))) {
-            return $this->renderGatewayFailure(
-                'cluster.state_invalid',
-                'State must be inactive or active.',
-            );
-        }
-
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
@@ -77,8 +67,6 @@ final class UpdateClusterCommand extends ClusterCommand
                 name: is_string($name) ? $name : null,
                 hasTld: $hasTld,
                 tld: is_string($tld) && $tld !== '' ? $tld : null,
-                hasState: $hasState,
-                state: is_string($state) ? $state : null,
             ),
             ClusterResponse::class,
             ['Update Cluster', 'Updating Cluster', 'Updated Cluster'],

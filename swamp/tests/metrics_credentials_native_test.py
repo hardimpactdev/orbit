@@ -22,11 +22,12 @@ class MetricsCredentialsNative(NativeTestCase):
 
     def setUp(self):
         super().setUp()
-        self.active = 'fixture-active-' + self.repo.name
+        self.active = 'fixture-active-"\\' + self.repo.name
         self.pending = 'fixture-pending-' + self.repo.name
         self.secret = json.dumps({'active_password': self.active, 'pending_password': self.pending})
         self.secrets = (self.active, self.pending, self.secret)
         self.current = self.active
+        self.success_status = 200
         self.applied = 0
         self.fail_apply = False
         self.fail_confirm = False
@@ -45,7 +46,7 @@ class MetricsCredentialsNative(NativeTestCase):
                 self.wfile.write(b'{"public":true}')
 
             def do_GET(self):
-                status = 200 if self.authorized() else 401
+                status = owner.success_status if self.authorized() else 401
                 if owner.fail_confirm and owner.applied and status == 200:
                     status = 503
                 self.finish_reply(status)
@@ -66,42 +67,46 @@ class MetricsCredentialsNative(NativeTestCase):
         self.thread.start()
         self.addCleanup(self.http.server_close)
         self.addCleanup(self.http.shutdown)
-        self.copy_behaviors('operations/metrics-credentials')
-        script = self.repo / 'extensions/behaviors/operations/metrics-credentials/scripts/credential.py'
-        script.write_text(script.read_text().replace('HTTPConnection(address, 3000)', f'HTTPConnection(address, {self.http.server_port})'))
+        (self.repo / 'extensions/behaviors').mkdir(parents=True)
         self.state = self.repo / 'calls.json'
         self.state.write_text('[]')
-        schema = (ROOT / '.swamp/pulled-extensions/@swamp/ssh/models/_lib/schemas.ts').as_uri()
-        fixture = '''import { z } from "npm:zod@4.4.3";
-import { ExecArgsSchema, GlobalArgsSchema } from SCHEMA;
-export const behavior = {
- type: "@fixture/metrics-credential-host", version: "2026.11.01.1",
- globalArguments: z.record(z.string(), z.unknown()),
- resources: { output: { schema: z.object({stdout:z.string(),exitCode:z.number()}), lifetime:"infinite", garbageCollection:10 } },
- methods: { exec: { description:"Real HTTP action through synthetic SSH host", arguments:z.record(z.string(),z.unknown()), execute: async (raw,ctx) => {
-  const a=ExecArgsSchema.parse(raw); GlobalArgsSchema.parse(ctx.globalArgs);
-  const calls=JSON.parse(Deno.readTextFileSync(STATE)); calls.push(a.argv[3]); Deno.writeTextFileSync(STATE,JSON.stringify(calls));
-  const p=new Deno.Command(a.argv[0],{args:a.argv.slice(1),stdin:"piped",stdout:"piped",stderr:"piped"}).spawn();
-  const w=p.stdin.getWriter(); await w.write(new TextEncoder().encode(a.stdin)); await w.close();
-  const r=await p.output(); const stdout=new TextDecoder().decode(r.stdout);
-  if(r.code!==0) throw new Error(new TextDecoder().decode(r.stderr));
-  return {dataHandles:[await ctx.writeResource("output","result",{stdout,exitCode:r.code})]};
- } } }
-};'''.replace('SCHEMA', json.dumps(schema)).replace('STATE', json.dumps(str(self.state)))
-        (self.repo / 'extensions/behaviors/fixture.ts').write_text(fixture)
+        self.cli('extension', 'pull', '@swamp/ssh@2026.10.23.1')
+        fixture = self.repo / 'fixture-ssh'
+        fixture.write_text('#!' + sys.executable + '\n' + r'''import json, shlex, subprocess, sys
+from pathlib import Path
+argv = shlex.split(sys.argv[-1])
+path = Path(STATE)
+calls = json.loads(path.read_text())
+calls.append('apply' if any(v.endswith('/password') for v in argv) else 'confirm' if '--fail' in argv else 'probe')
+path.write_text(json.dumps(calls))
+result = subprocess.run(argv, input=sys.stdin.read(), text=True, capture_output=True)
+sys.stdout.write(result.stdout)
+sys.stderr.write(result.stderr)
+sys.exit(result.returncode)
+'''.replace('STATE', repr(str(self.state))))
+        fixture.chmod(0o700)
         workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-metrics-credentials-reset.yaml').read_text())
         for step in workflow['jobs'][0]['steps']:
-            self.assertEqual(step.pop('target'), 'orbit-node-209')
+            self.assertEqual(step.pop('labels'), {'role': 'swamp'})
             step['task'] = copy.deepcopy(step['task'])
             if step['task'].get('behaviorType') == '@swamp/ssh':
-                step['task']['behaviorType'] = '@fixture/metrics-credential-host'
+                step['task']['globalArgs']['sshBinary'] = str(fixture)
+                step['task']['inputs']['argv'] = [v.replace(':3000/', f':{self.http.server_port}/') if isinstance(v,str) else v for v in step['task']['inputs']['argv']]
         (self.repo / 'workflows/workflow-credentials.yaml').write_text(yaml.safe_dump(workflow, sort_keys=False))
         self.cli('vault', 'create', 'local_encryption', 'orbit-control-inputs')
-        self.cli('vault', 'put', 'orbit-control-inputs', 'metrics-credentials-operation-12', input=self.secret)
+        self.configs = {}
+        quote = lambda v: '"' + v.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t') + '"'
+        for action in ('probe', 'apply', 'confirm'):
+            config = 'user = ' + quote('admin:' + (self.active if action == 'apply' else self.pending)) + '\n'
+            if action == 'apply':
+                body = json.dumps({'oldPassword': self.active, 'newPassword': self.pending, 'confirmNewPassword': self.pending})
+                config += 'request = PUT\nheader = "Content-Type: application/json"\ndata = ' + quote(body) + '\n'
+            self.configs[action] = config
+            self.cli('vault', 'put', 'orbit-control-inputs', 'metrics-credentials-operation-12-' + action, input=config)
 
     def run_reset(self, success=True):
         ssh = {'identity_file':'/approved', 'target':{'host':'127.0.0.1','user':'orbit','port':22,'host_keys':['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND']}}
-        inputs = {'operation_id':12,'node_id':9,'kind':'metrics.credentials_reset','intent':{'ssh_execution':ssh,'address':'127.0.0.1','pending_fingerprint':hashlib.sha256(self.pending.encode()).hexdigest()},'execution_secrets':{'credentials':{'vault':'orbit-control-inputs','key':'metrics-credentials-operation-12'}}}
+        inputs = {'operation_id':12,'node_id':9,'kind':'metrics.credentials_reset','intent':{'ssh_execution':ssh,'address':'127.0.0.1','pending_fingerprint':hashlib.sha256(self.pending.encode()).hexdigest()},'execution_secrets':{action:{'vault':'orbit-control-inputs','key':'metrics-credentials-operation-12-'+action} for action in ('probe','apply','confirm')}}
         started = json.loads(self.cli('workflow','run','operation-metrics-credentials-reset','--input',json.dumps(inputs),success=success).stdout)
         return json.loads(self.cli('workflow','history','get',started['id']).stdout)
 
@@ -131,3 +136,8 @@ export const behavior = {
         self.fail_confirm = False
         self.assertEqual(self.run_reset()['status'], 'succeeded')
         self.assertEqual(self.applied, 1)
+
+    def test_native_assert_rejects_an_unexpected_success_status(self):
+        self.current, self.success_status = self.pending, 204
+        self.assertEqual(self.run_reset(False)['status'], 'failed')
+        self.assertEqual(self.applied, 0)

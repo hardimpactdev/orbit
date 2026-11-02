@@ -14,11 +14,11 @@ jobs:
   - name: group
     steps:
       - name: ensure
-        labels: { pool: migration, node: "209" }
+        labels: {role: swamp}
         task:
           type: behavior
           behaviorType: '@nckrtl/orbit-group-run'
-          behaviorName: '${{ "orbit-group-" + inputs.workItem }}'
+          behaviorName: '${{ ("orbit-group-" + inputs.workItem).split(".").join("-") }}'
           methodName: ensure
           globalArgs:
             factory: '${{ inputs.factory }}'
@@ -28,11 +28,11 @@ jobs:
             workItem: '${{ inputs.workItem }}'
       - name: recover
         dependsOn: [{ step: ensure, condition: { type: succeeded } }]
-        labels: { pool: migration, node: "209" }
+        labels: {role: swamp}
         task:
           type: behavior
           behaviorType: '@nckrtl/orbit-group-run'
-          behaviorName: '${{ "orbit-group-recovery-" + inputs.workItem }}'
+          behaviorName: '${{ ("orbit-group-recovery-" + inputs.workItem).split(".").join("-") }}'
           methodName: recover
           globalArgs:
             factory: '${{ inputs.factory }}'

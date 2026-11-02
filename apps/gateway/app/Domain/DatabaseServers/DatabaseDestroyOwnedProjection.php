@@ -29,8 +29,19 @@ final readonly class DatabaseDestroyOwnedProjection implements DirectOperationPr
         $intent = DatabaseExecutionIntent::recorded($id);
         $admission = $intent->payload['admission'] ?? throw new ResourceOperationException('database.ownership_unproven', 'The owned removal has no admission snapshot.', 422);
         $input = array_intersect_key($admission['input'], array_flip(['servers', 'sqlite']));
-        $rows = $input['servers'] ?? null;
-        $passwords = $intent->payload['commands']['database-apply']['input']['participant_passwords'] ?? null;
+        [$input['servers'], $copies] = self::servers($id, $input['servers'] ?? null, ! $operation->status->terminal());
+
+        return ['intent' => $input, 'execution_secrets' => $copies];
+    }
+
+    /**
+     * The server children's intents and one vault copy of each admitted server password, named after the database intent.
+     *
+     * @return array{0: list<array<string,mixed>>, 1: array<string, array{vault:string,key:string}>}
+     */
+    public static function servers(int $intentId, mixed $rows, bool $push): array
+    {
+        $passwords = DatabaseExecutionIntent::recorded($intentId)->payload['commands']['database-apply']['input']['participant_passwords'] ?? null;
         if (! is_array($rows) || ! array_is_list($rows) || ! is_array($passwords)) {
             throw new ResourceOperationException('database.ownership_unproven', 'The owned removal snapshot is incomplete.', 422);
         }
@@ -43,8 +54,8 @@ final readonly class DatabaseDestroyOwnedProjection implements DirectOperationPr
             $serverInput = ValidatedData::object($server['intent'] ?? null);
             $serverInput['owners'] = (object) ValidatedData::object($serverInput['owners'] ?? []);
             $server['intent'] = $serverInput;
-            $copy = ['vault' => 'orbit-control-inputs', 'key' => 'database-destroy-owned-intent-'.$id.'-server-'.$serverId];
-            if (! $operation->status->terminal()) {
+            $copy = ['vault' => 'orbit-control-inputs', 'key' => 'database-destroy-owned-intent-'.$intentId.'-server-'.$serverId];
+            if ($push) {
                 $participant = $passwords[$nodeId] ?? null;
                 $password = is_array($participant) ? ($participant[$serverId] ?? null) : null;
                 if (! is_string($password)) {
@@ -55,9 +66,8 @@ final readonly class DatabaseDestroyOwnedProjection implements DirectOperationPr
             $servers[] = $server;
             $copies['server_'.$serverId] = $copy;
         }
-        $input['servers'] = $servers;
 
-        return ['intent' => $input, 'execution_secrets' => $copies];
+        return [$servers, $copies];
     }
 
     public function assertPublicParticipant(Operation $operation, int $callerNodeId): void

@@ -5,11 +5,11 @@ covers:
   - apps/gateway/app/Actions/DatabaseServers/**
   - apps/gateway/app/Actions/DatabaseConnections/{CreateServerDatabaseAction,CreateDatabaseUserAction,DropServerDatabaseAction}.php
   - apps/gateway/app/{Domain,Infrastructure}/DatabaseServers/**
-  - apps/gateway/database/migrations/2026_12_30_000000_add_test_processes_to_database_connections.php
   - apps/gateway/app/Http/{Controllers/Api/DatabaseServersController.php,Requests/DatabaseServers/**}
-  - apps/gateway/{app/Models/DatabaseServer.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
+  - apps/gateway/{app/Models/DatabaseServer.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,database/migrations/2026_12_30_000000_add_test_processes_to_database_connections.php}
   - apps/cli/app/Commands/Database/{CreateDatabaseServerCommand,ListDatabaseServersCommand,ShowDatabaseServerCommand,DestroyDatabaseServerCommand,CreateDatabaseUserCommand}.php
   - packages/php-sdk/src/{Requests,Responses}/DatabaseServers/**
+  - swamp/{extensions/behaviors/operations/database-server-commands/create_assets.ts,workflows/workflow-operation-database-{server-create,server-destroy,create,destroy}.yaml}
 ---
 
 # Database servers
@@ -20,13 +20,17 @@ A server's `driver` names its kind. A `mysql` server runs MySQL, a `pgsql` serve
 
 ## Execution
 
-Managed database creation supplies public names and vault descriptors to placed native steps on 209. Official SSH runs one script action at a time on the admitted Node. Native fan-out creates databases and applies grants. Ownership checks precede changes; existing data and passwords survive repair and resume. SQL readiness makes one observation and leaves recovery to native resume. Server startup observes Docker’s healthy, unhealthy or die event without a family readiness deadline. The Gateway projects the recorded Connection after native success.
+Managed database creation runs `operation-database-create` on Node 209 over official SSH, one `docker exec -i` per action ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/database.create.mmd)): check names are free, create the owner and databases, then log in as the owner over TCP.
+
+The create statement carries the owner's password, so the Gateway renders it and puts it in the vault, and the step reads it on standard input. MySQL and Valkey clients read the admin login from a root-only 0600 env file that `@swamp/cfgmgmt/file` writes from the server's key `database-server-<id>-client-env`; the owner's login uses a second such file. Always-run steps remove both. PostgreSQL uses local trust for the admin work.
+
+A database that exists for another owner is refused with `database.name_conflict` before any change. The Gateway projects the recorded connection after native success.
 
 Database actions return one [Operation](/reference/operations) with HTTP 202. The Gateway validates the request and records intent. Swamp runs one native DAG on the admitted Nodes and returns a bounded result. The CLI follows the Operation; use `--idempotency-key` after a lost start response. List and show read Gateway records. Tables, schema, describe and read-only queries run in the native Database read workflow.
 
 When a read starts, the workflow receives full non-secret intent and vault key names. Its placed steps run on 209 and use official SSH to the admitted Node; the Gateway supplies private material through the shared execution copy. Separate script files enforce read-only access and redact bounded rows before native output. The shared terminal subscriber records the typed result.
 
-Instance lifecycle workflows compose Database actions as placed jobs. They do not create child Operations or wait in the Gateway. Removal refuses system databases (`mysql`, `sys`, `performance_schema`, `information_schema`, `postgres` and names beginning with `template`), including any owned prefix that could match them. The native action checks expanded names before SQL. Create and user admission refuse while removal targets the same server; removal refuses while creation is unfinished.
+Instance lifecycle workflows compose Database actions as placed jobs. They do not create child Operations or wait in the Gateway. `instance:destroy` drops the databases and users an Instance owns on each server through the same server child as `database:destroy`; the Gateway copies each server's admitted password to the vault at run start. Removal refuses system databases (`mysql`, `sys`, `performance_schema`, `information_schema`, `postgres` and names beginning with `template`), including any owned prefix that could match them. The native action checks expanded names before SQL. Create and user admission refuse while removal targets the same server; removal refuses while creation is unfinished.
 
 Native workflows read stored credentials through the declared private-material source for the admitted run and Node. Operation history contains no passwords or step receipts. Removal deletes the admitted record after native success.
 
@@ -34,13 +38,21 @@ The SQL user parent resolves private data inside its existing read boundary. The
 
 ## Create a server
 
-`database_server.create` records Server and Process intent and starts `operation-database-server-create` with the full public intent and vault key names. Every step runs on Node 209. The official SSH extension reaches the server Node with its recorded host key and the approved control key. Native steps perform adoption checks, container replacement, readiness and initializer removal. The shared terminal subscriber projects the public result. The initializer environment, admin password, ACL file and ACL user data use the shared vault execution copy; they are absent from workflow inputs and command arguments.
+`database_server.create` records the server and its Process, then starts `operation-database-server-create` with the full public intent. The intent holds each docker command the run needs, rendered by the Gateway. Every step runs on Node 209 and reaches the server Node with its recorded host key. Each step is one official `@swamp/cfgmgmt` behavior or one docker command over official SSH; nothing is copied to the Node. The steps follow the [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/database_server.create.mmd).
 
-The parent uses the same native `database-server-container` child workflow for initial creation and initializer removal across all three engines. Each action remains a separate step. Docker owns health probes. One readiness step inspects health and reads Docker's first terminal health event: healthy succeeds; unhealthy or container exit fails. Docker owns the readiness budget. Stopping and reaping the event reader uses a separate process cleanup bound. A separate step checks the recorded admin login. Failure returns a bounded result after native recovery. After fixing a phase failure, an authorized operator can select `--from initial` or `--from scrub` with native `swamp workflow resume --run <run-id>`. Resuming only terminal delivery preserves completed effects.
+| Step | What it does |
+| --- | --- |
+| Pull the image | `@swamp/cfgmgmt/docker_image` keeps the image present. |
+| Create the volume, Write the ACL file | Valkey only. The ACL file holds password hashes and goes into the data volume with `@swamp/cfgmgmt/file` (0600). |
+| Write the first login | MySQL and PostgreSQL on an empty volume. The password variable goes into a 0600 env file. |
+| Remove the old container, Start the container | `docker rm --force`, then `docker run` with the env file. A rerun starts over from the data volume. |
+| Wait until ready | One bounded probe loop (`timeout 60`). The server accepts TCP only after its first-start initialization. |
+| Stop, remove and start the final container | MySQL and PostgreSQL. The final container runs without the password variable, on the same volume. |
+| Check the admin login | The admin logs in over TCP with the password from a 0600 env file. |
 
-Newly reserved Process records store an empty environment; successful projection removes legacy initializer fields. Container convergence, rollback, removal, and SQL readiness run directly in Swamp. Private command and initialization values reach Docker through protected stdin. The agent observes the Node. Rollback reverts the kind PR.
+The password reaches the vault under two server keys: `database-server-<id>-client-env` holds the admin login for clients, and `database-server-<id>-first-env` holds the first-start variable. A Valkey ACL file goes under `database-server-create-intent-<operation>`. No value enters the workflow inputs, a step output, or a command argument. Always-run steps remove both env files from the Node. The result names the failed step and its error code, for example `database.server_unhealthy`, and the server record keeps both.
 
-`database:server:create` creates the server and its Process in one command. It refuses a server with an unfinished removal intent. A Valkey repair also refuses a changed default-user policy. An old open repair never reopens a closed default user.
+`database:server:create` creates the server and its Process in one command. It refuses a server with an unfinished removal intent, and a Node without a stored SSH host key (`swamp.ssh_target_unavailable`).
 
 ```bash
 orbit database:server:create beast-mysql --node=beast
@@ -56,14 +68,14 @@ orbit database:server:create beast-valkey --node=beast --driver=redis
 
 ### A MySQL server
 
-The Gateway records the server and protected command intent. Swamp runs placed SSH steps from Node 209 and creates a MySQL server in this order:
+The Gateway records the server and its intent. Swamp runs SSH steps from Node 209 and creates a MySQL server in this order:
 
 1. It generates a random root password and stores it encrypted on the server record.
 2. It creates a Docker Node Process named `<slug>` with image `mysql:<tag>`, the port published on the Node's WireGuard address to container port `3306`, and the volume `orbit-<slug>-data` for `/var/lib/mysql`.
 3. It starts the Process with `MYSQL_ROOT_PASSWORD` set and waits until MySQL accepts the root login.
 4. It removes the variable from the Process and recreates the container. The data volume keeps the password.
 
-Until password removal succeeds, an initialization retry injects the same recorded password into the container environment again. After step 4, the Gateway keeps the encrypted root password and Swamp keeps its vault execution copy. The password is absent from the Process record, the container environment and `docker inspect`. Client commands use a temporary 0600 credentials file and remove it when they finish. Orbit waits for the root login over TCP inside the container, which only the final MySQL server accepts, so it never recreates the container while MySQL still initializes its data directory.
+Until password removal succeeds, a retry starts the container with the same recorded password again. After step 4, the Gateway keeps the encrypted root password and Swamp keeps its vault execution copy. The password is absent from the Process record, the container environment and `docker inspect`. Client commands use a temporary 0600 credentials file and remove it when they finish. Orbit waits for the root login over TCP inside the container, which only the final MySQL server accepts, so it never recreates the container while MySQL still initializes its data directory.
 
 ### A PostgreSQL server
 
@@ -112,32 +124,6 @@ Write endpoints return HTTP 202 with an Operation. List and show return `id`, `s
 
 The server's Process is an ordinary Docker Node Process: read its logs, stop it, start it, or restart it with the [`process`](/cli/process) commands. `process:destroy` refuses it with `process.required_by_database_server`; remove the server instead. `process:update` refuses the Process of a `redis` server with the same code, so the command always keeps `--aclfile`.
 
-## Adopt a Valkey Process
-
-`database:server:create` with `--process` and `--connection` brings an existing Valkey Process under Orbit, without a new volume and without a data move. The option exists only to adopt the `valkey` Processes on `services` and `beast` ([ADR 0221](/decisions/0221-run-valkey-database-servers-with-orbit-owned-acl-users)). A later version removes it.
-
-```bash
-orbit database:server:create services-valkey --node=services --driver=redis --process=162 --connection=services-valkey
-```
-
-The Gateway checks recorded Process and connection ownership before admitting adoption. The Node checks live credentials, ACLs and persistence before writing its ACL file or changing the container, including when the original command already has `--aclfile`. Either check refuses with `database.server_adoption_refused` unless all of these hold:
-
-- The driver is `redis`, and the Process is a Docker Process of that Node with a `valkey/valkey` image and a volume at `/data`.
-- The Process publishes container port `6379` on the Node's WireGuard address. That host port becomes the server's port.
-- No server owns the Process yet.
-- The live ACL contains only `default`, with all rights and exactly the selected password, or `nopass` without password hashes.
-- The effective configuration uses `/data`, append-only persistence, `appendonlydir`, `appendonly.aof`, `dump.rdb`, and 16 databases. Adoption refuses other values before it writes a file.
-- The connection is a `redis` connection to that address and port.
-- The connection logs in as `default`, with its password or without a password.
-
-The adoption never locks out a client that works today:
-
-- When the connection has a password, that password becomes the admin password, and the ACL file's `default` line holds its hash.
-- When the connection has no password, the Gateway generates the admin password. The ACL file's `default` line is `user default on nopass ~* &* +@all`.
-- A server adopted without a password stays as open as it was until you [close it](#close-an-adopted-server).
-
-Then Swamp invokes the named ACL command to write `/data/users.acl` into the Process's volume, and replaces the Process specification with the one above. The Process keeps its ID, name, volume, and port. It waits for the admin login, and links the connection to the server. Valkey restarts once and reads its append-only file again, so its data stays. The connection's clients keep logging in as `default` as before.
-
 ## Close an adopted server
 
 `database:server:close` gives `default` the admin password, so a client without a password gets no access. Run it after each client of an open server has [its own user](#create-an-acl-user-on-a-valkey-server).
@@ -151,7 +137,7 @@ Swamp runs the named Valkey command for `ACL SETUSER default resetpass #<sha256 
 - A connection on the server has no password. Its clients would be locked out. Destroy it, or move its clients first.
 - A client other than the Gateway is logged in as `default`. The result contains only the fixed refusal code.
 
-After saving the password, the Node program revokes every other `default` session, including one accepted between the client check and the password change. A retry repeats the save and revocation before it records closure. A client that is not connected at that moment is not seen, so move every client before you close the server. Like adoption, the command exists only for the two adopted Processes.
+After saving the password, the Node program revokes every other `default` session, including one accepted between the client check and the password change. A retry repeats the save and revocation before it records closure. A client that is not connected at that moment is not seen, so move every client before you close the server. The command exists only for the two adopted Processes.
 
 ## Create a database on a server
 
@@ -213,11 +199,13 @@ The Gateway checks an explicit index against the live server before it creates o
 The user is named after the slug. Orbit generates its password and runs:
 
 ```text
-ACL SETUSER <slug> reset on #<sha256 of the password> resetchannels ~<pattern> ... -@all +<rule> ... -@admin -@dangerous -function -script
+ACL SETUSER <slug> reset on #<sha256 of the password> resetchannels ~<pattern> ... -@all +<rule> ... -@admin -@dangerous -function -script [+flushdb]
 ACL SAVE
 ```
 
 Orbit adds every part except the patterns and the rules. So a user never has pub/sub channels or another user's password. The final `-@admin -@dangerous` removes every admin and dangerous command, also one that a category such as `@keyspace` holds. The final `-function -script` removes the `FUNCTION` and `SCRIPT` commands, such as `FUNCTION FLUSH` and `SCRIPT FLUSH`. They act on the whole server, and `@write` and `@slow` hold some of them. `EVAL` stays available when a rule allows it. No user can change the ACL or the server's configuration.
+
+`FLUSHDB` is the one dangerous command a user can get back. When `--allow=flushdb` is given, Orbit adds `+flushdb` after the final deny. `FLUSHDB` clears only the index that the client selected, so give such a user its own `--database` index; a Laravel cache store on Redis needs it for `cache:clear`. ACL rules do not limit which index a client selects, so the index separates apps only while each app selects its own. `FLUSHALL` stays denied.
 
 The Gateway refuses these inputs with `validation.failed`:
 
@@ -245,8 +233,10 @@ The shared terminal subscriber records the user after native success. Native ter
 `database:user:create` adds or updates a user on a MySQL or PostgreSQL server, for example a read-only user in production. `database:user:list` lists the users that Orbit created for a connection.
 
 ```bash
-orbit database:user:create dlf-leden --username=reporting --password=SECRET --read-only
+orbit database:user:create dlf-leden --username=reporting --read-only
 ```
+
+The CLI reads the password from piped standard input, or asks for it with a hidden prompt on a terminal; see [`database:user:create`](/cli/database#orbit-databaseusercreate).
 
 A read-only user gets `SELECT` on the database. A regular MySQL user gets all database privileges; a regular PostgreSQL user gets the data-write grants described above. Running the command again sets the password and replaces the privileges. A connection without a server returns `database.server_required` (422). A connection on a `redis` server returns `database.driver_unsupported` (422): on Valkey, each user is a connection of its own. The user of a connection on the same server returns `database.name_conflict` (409), so the command never changes the password that a connection uses. The Gateway stores the user's password encrypted, so it can [publish it to Vaultwarden](/reference/vaultwarden#database-user-passwords). No response returns it.
 
@@ -255,7 +245,7 @@ A read-only user gets `SELECT` on the database. A regular MySQL user gets all da
 Create a managed read login for a logical replication consumer such as PowerSync.
 
 ```bash
-orbit database:user:create app --username=powersync --password=SECRET --replication
+orbit database:user:create app --username=powersync --replication
 ```
 
 `--replication` (API field `replication`, boolean, default false) requires a managed PostgreSQL server with live `wal_level=logical`. Orbit checks it before changing the role or grants. It refuses another driver with `database.driver_unsupported` (422) and another WAL level with `database.wal_level_not_logical` (422). Orbit does not change server configuration.
@@ -278,13 +268,13 @@ For Valkey writes, Swamp invokes the fixed `database.valkey` program on the serv
 
 `database:destroy` of a connection on a MySQL server drops the database, every database whose name starts with its test database name, and each user Orbit created for it that no other connection on the server uses. On PostgreSQL it drops only the primary, test database, and recorded worker pool. It deletes the record only after every database and unshared user is gone. A failed drop keeps the record; a repeat tolerates missing objects and finishes the remaining drops.
 
-Standalone removal receives captured public intent and a vault descriptor. Native steps on 209 use official SSH to inventory, prove ownership, check blockers, drop each database and remove each unshared user. PostgreSQL restores surviving connection fences after failure. Valkey saves the admitted ACL users for rollback before deleting them and persists the result with a separate save step. Native retry of the removal child repeats the safety checks; resuming terminal delivery alone repeats no effects. The Gateway removes records through the shared terminal projector.
+Standalone removal runs `operation-database-destroy` on Node 209 over official SSH, one `docker exec -i` per action with the statement the Gateway rendered at admission on standard input ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/database.destroy.mmd)). It finds MySQL test databases under the recorded prefix, checks blockers for the whole set, drops, and checks the names are gone. On Valkey it runs `ACL DELUSER` for each user and `ACL SAVE`. MySQL and Valkey clients read the admin login from a root-only 0600 env file that `@swamp/cfgmgmt/file` writes from the server's vault key `database-server-<id>-client-env` and an always-run step removes; PostgreSQL uses local trust inside the container. The Gateway removes records through the shared terminal projector.
 
-The Gateway admits the recorded resource identities and starts one native Swamp workflow. It performs no live probe, builds no SQL, and holds no execution lock. Swamp inventories MySQL test-prefix members, verifies full grants for the recorded user, and checks PostgreSQL owners before removal. System database names and prefixes are refused before SQL. PostgreSQL keeps a persistent connection fence across the final checks and drops. Swamp restores database admission after a failed drop.
+The Gateway admits the recorded resource identities and starts one native Swamp workflow. It performs no live probe, builds no SQL, and refuses a server Node without a stored SSH host key. System database names and prefixes are refused before SQL. Standalone removal runs no ownership probe and no connection fence (flow-tighten rule 22): a client that connects between the blocker check and the drop is cut off.
 
 Before the first drop, Orbit checks the whole removal set. PostgreSQL sessions, replication slots (including inactive logical slots), prepared transactions, and subscriptions block removal. Dependencies of an unshared role outside the set also block it, including ownership and grants in another database or on a shared object. MySQL checks connected clients, metadata locks on the planned schemas (including transactions that use qualified table names without a default database), stored objects outside the set whose definer is a user being removed, and incoming cross-schema foreign keys. Cross-schema references between planned databases also block; remove those constraints first.
 
-PostgreSQL removal closes new client admission across the whole planned set with `ALLOW_CONNECTIONS false`, then checks blockers again before any drop. Existing clients stay connected and block removal. The fence remains through the drops. On refusal or failure, Orbit restores each surviving database's exact prior `ALLOW_CONNECTIONS` value; it never changes `CONNECTION LIMIT`.
+Owned removal (`instance:destroy` and `database.destroy_owned`) still runs the older removal child until its port. There, PostgreSQL removal closes new client admission across the whole planned set with `ALLOW_CONNECTIONS false`, then checks blockers again before any drop. Existing clients stay connected and block removal. The fence remains through the drops. On refusal or failure, Orbit restores each surviving database's exact prior `ALLOW_CONNECTIONS` value; it never changes `CONNECTION LIMIT`.
 
 The admin database `postgres` keeps the original admission values and database OIDs in the admin-only `orbit_admin.database_removal_fences` table. Journaling and fencing commit together. A crash before commit rolls both back; a crash after commit retains the journal for retry. Retrying either completes removal or restores admission before returning a refusal. A changed database OID stops recovery instead of changing a replacement database.
 
@@ -296,11 +286,11 @@ On a Valkey server, `database:destroy` deletes the connection's ACL user with `A
 
 ## Remove a server
 
-`database:server:destroy <slug>` refuses with `database.server_in_use` (409) while a connection points to the server. Otherwise it removes the Process and the server record. A never-active adopted server is record-only: durable create history must prove adoption and no earlier successful or active creation. In that case removal preserves the operator's Process, container and volume. Admission marks the server as removing, so new database creation refuses an inactive server. It keeps the volume, so the data survives. Remove the volume on the Node by hand when its data must go.
+`database:server:destroy <slug>` refuses with `database.server_in_use` (409) while a connection points to the server. A server without a Process has nothing on its Node, so the Gateway deletes the record at once and returns a succeeded Operation with no run (R1). Otherwise admission marks the server as removing, so new database creation refuses it, and starts `operation-database-server-destroy`. Three official SSH steps run one docker command each: stop the container gently, remove it, and check that `docker container inspect` reports it missing. The volume stays, so the data survives. Remove the volume on the Node by hand when its data must go.
 
 `database:server:destroy` starts `operation-database-server-destroy` with the public Process identity and target SSH metadata. All steps select Node 209 with one placement selector and reach the server Node through official SSH. Native fan-out inspects every container slot before any stop or removal. Each slot inspection uses its own SSH model, named by the native run and iteration, so model locks do not serialize independent observations. One shared native child stops and removes each present owned container through the shared Process scripts. The named data volume stays intact.
 
-A server without a Process, or a record-only adoption cleanup, uses no remote action. The shared terminal subscriber deletes the Server and Process records only after native success; record-only cleanup preserves the operator Process. Steps make no Gateway calls and need no database credentials. Rollback reverts the cutover PR.
+The shared terminal subscriber deletes the Server and Process records only after native success. A failed step marks the server failed with that step and its error code, and keeps both records; run the command again. Steps make no Gateway calls and need no database credentials.
 
 After correcting a failed action, an authorized operator can use native `swamp workflow resume operation-database-server-destroy --run <run-id> --from prepared` to inspect all slots again before continuing. Already absent containers stay absent. Resuming only terminal delivery preserves completed effects.
 
@@ -320,16 +310,7 @@ Run the server's `database:server:create` command again to make an active Valkey
 orbit database:server:create beast-valkey --node=beast --driver=redis
 ```
 
-Gateway admission reads current state and prepares these Swamp steps:
-
-1. It checks that `default` logs in with the admin password and that Valkey runs with `/data/users.acl`.
-2. If either check fails, or admin commands cannot restore the ACL, it rebuilds the file and restarts the Process.
-3. It runs `ACL SETUSER <name> reset <rules> #<hash>` for each recorded user that is missing or differs. It runs `ACL DELUSER` for each other user, except the `default` of an open server.
-4. It runs `ACL SAVE`.
-
-Rebuilding the file repairs a server that cannot start because the file is lost. The Gateway waits for the admin login before it retries ACL commands. It uses the same program as creation. The file holds `default` and one line per recorded user, `user <name> #<sha256 of the password> <rules>`. The restart uses [`process:restart`](/cli/process).
-
-An active server reconciles its recorded users and saves the ACL; the effect is safe to repeat. Keys stay. A client of a deleted user loses its connection. A failed step returns its error and leaves the server active, so run the command again. The Operation holds the server target, so another public database Operation returns `operation.target_busy`. A repeat on a MySQL server repairs private publication.
+The same steps run. The ACL file step rewrites `/data/users.acl` from the records: `default` and one line per recorded user, `user <name> #<sha256 of the password> <rules>`. The start step then restarts the running container once, so Valkey reads the file. Rebuilding the file also repairs a server that cannot start because the file is lost. Keys stay. A client of a deleted user loses its connection. A failed step returns its error and leaves the server active, so run the command again. The Operation holds the server target, so another public database Operation returns `operation.target_busy`. A repeat on a MySQL server repairs private publication.
 
 ## Errors
 
@@ -339,16 +320,29 @@ The server commands return these codes.
 | --- | --- | --- |
 | `database.server_slug_conflict` | 409 | Another server has the slug. |
 | `database.server_port_in_use` | 409 | Another Process on the Node publishes the port. |
-| `database.server_start_failed` | 502 | The server did not accept the admin login within 120 seconds. |
+| `database.server_image_pull_failed` | 502 | Docker could not pull the server image. |
+| `database.server_start_failed` | 502 | Docker could not create or start the server container. |
+| `database.server_unhealthy` | 502 | The container reported unhealthy or exited before it became healthy. |
+| `database.server_login_failed` | 502 | The admin login failed after the container became healthy. |
+| `database.server_scrub_failed` | 502 | Docker could not recreate the container without its first-start password. |
+| `database.server_inspect_failed` | 502 | Docker could not list the server's containers. |
+| `database.server_remove_failed` | 502 | Docker could not stop or remove a server container. |
+| `database.server_remove_incomplete` | 502 | A container of the server's Process is still present after removal. |
+| `database.owner_login_failed` | 502 | The new owner could not log in after creation. |
+| `database.create_outcome_unknown` | 502 | The create run ended without a readable result; run the command again. |
+| `database.server_create_failed` | 502 | The create run ended without reaching the admin login check. |
+| `database.server_container_foreign` | 409 | A container with the server's name belongs to another Process; nothing changed. |
+| `database.valkey_acl_failed` | 502 | Docker could not write the Valkey ACL file into the volume. |
 | `database.server_in_use` | 409 | A connection still points to the server, another database removal or ACL change is running, or closing would lock out a client. |
 | `database.server_connection_managed` | 409 | A change would replace a managed PostgreSQL or Valkey connection's identity or credentials. |
 | `database.server_inactive` | 409 | The server is not active yet. Run `database:server:create` again to finish it. |
-| `database.server_adoption_refused` | 409 | The Process or the connection cannot be adopted. The message names the check that failed. |
 | `database.server_required` | 422 | The connection has no server, so Orbit cannot create a user on it. |
 | `database.driver_unsupported` | 422 | The driver does not support this operation, including automatic PostgreSQL Instance database creation and cloning. |
 | `database.lan_unavailable` | 422 | The server or consumer is not eligible for the selected LAN endpoint. |
 | `database.required_by_analytics` | 409 | Analytics still uses this connection; move the role before destroying it. |
 | `database.acl_rules_invalid` | 422 | Valkey refused a key pattern or a rule. |
+| `database.destroy_incomplete` | 502 | A planned database or user is still present after the drops; run the command again. |
+| `database.destroy_outcome_unknown` | 502 | The removal run ended without a readable result; run the command again. |
 | `database.in_use` | 409 | A session, replication object, prepared transaction, or user dependency blocks the planned database removal. Nothing is dropped. |
 | `database.name_conflict` | 409 | The name is taken on the server, a recorded test member has a foreign owner, or its managed role is missing. |
 | `database.slug_conflict` | 409 | The connection slug exists and the request is not an identical PostgreSQL pool retry. |
@@ -378,7 +372,7 @@ A connection describes one database that an Instance uses. A server holds the ad
 
 ### Valkey starts only from Orbit's ACL file
 
-With an ACL file, Valkey ignores `requirepass`. A file without a `default` line, or a start without `--aclfile`, gives every client full access without a password. So Orbit writes the file before the first start, always with a `default` line, and refuses `process:update` of the Process. A missing or broken file stops Valkey instead of opening it. New servers require a password. The [open adoption](#adopt-a-valkey-process) is the temporary exception. The recorded open state remains until the operator closes it.
+With an ACL file, Valkey ignores `requirepass`. A file without a `default` line, or a start without `--aclfile`, gives every client full access without a password. So Orbit writes the file before the first start, always with a `default` line, and refuses `process:update` of the Process. A missing or broken file stops Valkey instead of opening it. New servers require a password. A server adopted open before adoption was removed stays open until the operator [closes it](#close-an-adopted-server).
 
 ### One Valkey user is one connection
 
@@ -395,10 +389,6 @@ The Gateway holds the admin password and each user's password and rules, so the 
 ### Valkey admin over WireGuard
 
 `valkey-cli` exits 0 on an error reply when it reads commands from standard input, so a script inside the container cannot tell a refused `ACL SETUSER` from a done one. The fixed Node program uses the recorded private endpoint and reads each protocol reply. Swamp owns retries, and the Gateway supplies credentials only inside the authorized invocation. The native database operations own live validation.
-
-### Adoption without a data move
-
-The Valkey on `services` holds the Gateway queue and the collector's state, and the Gateway already holds its password. Adoption keeps the volume and the port and restarts Valkey once. A new server and a move of the data would need a queue outage or a copy tool, a release, and a new collector setup. Adoption is refused for MySQL, whose root password may be unknown.
 
 ### PostgreSQL shares the SQL server lifecycle
 

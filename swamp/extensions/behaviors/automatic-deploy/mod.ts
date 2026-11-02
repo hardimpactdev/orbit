@@ -1,5 +1,9 @@
 import { z } from "npm:zod@4.4.3";
-import { type DevelopmentContext, DevelopmentState } from "./development.ts";
+import {
+  type DevelopmentContext,
+  DevelopmentState,
+  type Emit,
+} from "./development.ts";
 import { GatewayClient, gatewayHttp } from "./gateway.ts";
 import {
   type Gateway,
@@ -31,6 +35,7 @@ export interface LiveGateway extends Gateway {
     context: DevelopmentContext,
     now: string,
     filter: number[],
+    emit: Emit,
   ): Promise<{ name: string }[]>;
   discover(filter: number[]): Promise<number[]>;
   guard(instance: number, observation: Observation): Promise<void>;
@@ -39,11 +44,6 @@ export interface LiveGateway extends Gateway {
     projection: NonNullable<Observation["publication"]>,
     observation: Observation,
   ): Promise<void>;
-  event(
-    instance: number,
-    body: PolicyEvent,
-    key: string,
-  ): ReturnType<Gateway["operation"]>;
 }
 
 /** One fleet behavior lock owns all state and effect ordering. */
@@ -53,7 +53,7 @@ export function automaticDeploy(
 ) {
   return {
     type: "@nckrtl/automatic-deploy",
-    version: "2026.11.01.3",
+    version: "2026.11.02.1",
     globalArguments: z.object({
       gatewayUrl: z.string().url().default("https://gateway.orbit"),
       caFile: z.string().default(
@@ -69,8 +69,18 @@ export function automaticDeploy(
       },
       state: {
         description:
-          "Policy memory, admission intent and policy-event receipts; never deploy success",
+          "Policy memory, admission intent and raised events; never deploy success",
         schema: StateSchema,
+        lifetime: "infinite",
+        garbageCollection: 10,
+      },
+      fire: {
+        description:
+          "This fire's new policy events and failures, for the Gateway's terminal projection",
+        schema: z.object({
+          fire_json: z.string(),
+          failure_count: z.number().int().nonnegative(),
+        }),
         lifetime: "infinite",
         garbageCollection: 10,
       },
@@ -92,6 +102,10 @@ export function automaticDeploy(
             );
           const handles = new Map<string, { name: string }>();
           const failures: { instance: number; error: unknown }[] = [];
+          const events: { instance: number; key: string; body: PolicyEvent }[] =
+            [];
+          const emit: Emit = (instance, key, body) =>
+            events.push({ instance, key, body });
           for (const instance of await client.discover(instances)) {
             try {
               const name = `state-${instance}`;
@@ -106,37 +120,23 @@ export function automaticDeploy(
                 ) return;
                 handles.set(name, await context.writeResource("state", name, state));
               };
-              const deliver = async (state: State) => {
-                for (const event of state.events) {
-                  if (
-                    event.receipt &&
-                    ["succeeded", "failed", "cancelled", "interrupted"].includes(
-                      String(event.receipt.status),
-                    )
-                  ) continue;
-                  const operation = event.operation_id
-                    ? await client.operation(event.operation_id)
-                    : await client.event(instance, event.body, event.key);
-                  event.operation_id = operation.id;
-                  event.receipt = { ...operation };
-                  await save(state);
-                }
-              };
+              const raised = new Set(previous.events.map((e) => e.key));
               const decision = await tick(
                 instance,
                 previous,
                 client,
                 save,
                 clock(),
-                async (observation, state) => {
+                async (observation) => {
                   observed = observation;
-                  // Guard before saving state, delivering events, or admitting a deploy.
+                  // Guard before saving state or admitting a deploy.
                   await client.guard(instance, observation);
-                  await deliver(state);
                 },
               );
               if (!decision || !observed) continue;
-              await deliver(decision.state);
+              for (const event of decision.state.events) {
+                if (!raised.has(event.key)) emit(instance, event.key, event.body);
+              }
               try {
                 await client.publish(instance, decision.projection, observed);
               } catch (error) {
@@ -159,24 +159,35 @@ export function automaticDeploy(
             }
           }
           for (
-            const handle of await client.development(context, clock(), instances)
+            const handle of await client.development(
+              context,
+              clock(),
+              instances,
+              emit,
+            )
           ) {
             handles.set(handle.name, handle);
           }
-          if (failures.length) {
-            throw new AggregateError(
-              failures.map(({ error }) => error),
-              failures.map(({ instance, error }) =>
-                `Instance ${instance}: ${
-                  error instanceof PolicyError
-                    ? `${error.code}: ${error.message}`
-                    : error instanceof Error
+          // The Gateway records events and failures from the fire's terminal result; no step calls it for them.
+          // A failed Instance no longer stops the tick, so the other events still arrive; the assert step fails the run.
+          handles.set(
+            "fire",
+            await context.writeResource("fire", "fire", {
+              fire_json: JSON.stringify({
+                events,
+                failures: failures.map(({ instance, error }) => ({
+                  instance,
+                  error_code: error instanceof PolicyError
+                    ? error.code
+                    : "automatic.tick_failed",
+                  message: (error instanceof Error
                     ? error.message
-                    : String(error)
-                }`
-              ).join("; "),
-            );
-          }
+                    : String(error)).slice(0, 4096),
+                })),
+              }),
+              failure_count: failures.length,
+            }),
+          );
           return { dataHandles: [...handles.values()] };
         },
       },

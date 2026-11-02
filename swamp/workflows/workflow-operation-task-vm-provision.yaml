@@ -44,10 +44,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: provision
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: provision
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: task-vm-provision
@@ -58,7 +58,7 @@ jobs:
         intent: ${{ inputs.intent }}
         execution_secrets: ${{ inputs.execution_secrets }}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: provision
       condition:
@@ -66,7 +66,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "vm-provision-result-"+run.id }}
+      behaviorName: '${{ "vm-provision-result" }}'
       methodName: execute
       inputs:
         run: 'printf ''%s\n'' "$ORBIT_RESULT"

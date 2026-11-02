@@ -48,18 +48,16 @@ The existing observer recovered the terminal result during normal Gateway releas
 
 ## Publish the approved 209 SSH key
 
-`POST /api/v1/nodes/{node}/ssh-access/converge` accepts an empty JSON object and returns one `node.ssh_access_converge` Operation with HTTP 202. The caller needs the normal directed access to the target Node. `Idempotency-Key` reuses the same admission. A matching active or successful publication also returns its existing Operation. The caller cannot select a key, endpoint, credential, command or worker.
+`POST /api/v1/nodes/{node}/ssh-access/converge` accepts an empty JSON object and returns one `node.ssh_access_converge` Operation with HTTP 202. The caller needs the normal directed access to the target Node. `Idempotency-Key` reuses the same admission. A matching active or successful publication also returns its existing Operation. The caller cannot select a key, endpoint, credential, command or script. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/node.ssh_access_converge.mmd) shows the steps.
 
-The Gateway captures the stored managed account, WireGuard address and complete SSH host key through the shared `SwampSshExecutionInput`. Every step runs on 209. The workflow `operation-node-ssh-access-converge` reads the shipped public authorized-key action and executes it with official `@swamp/ssh.script` and Python 3 as the authenticated managed account. The action retains existing keys and appends the approved 209 public key only when absent.
+Orbit only adds its own keys to the managed account's `~/.ssh/authorized_keys`: the `swamp` role's public key, then each operator key that Orbit records. Orbit records no operator keys yet. It never removes, reorders or changes another line, so operator keys that Orbit does not manage keep their access.
 
-The workflow declares only `orbit-control-inputs` in its top-level vault list. For this first-key publication only, `task.globalArgs.transport.identityContent` resolves the existing `orbit-control-inputs/bootstrap-identity-node-14` execution copy. This identity performs no other Node action. A subsequent official SSH `exec` runs `/usr/bin/true` with 209's own `identityFile` and the same target pins.
+The Gateway captures the stored managed account, WireGuard address and complete SSH host key through the shared `SwampSshExecutionInput`. The run needs no secret. Every step runs on 209 and connects with the `swamp` role identity:
 
-A distinct official SSH fleet name prevents reuse of the connection authenticated with the Gateway identity; `identitiesOnly: true` makes this check select the approved own key. Native readiness requires that verification to succeed. The shared subscriber reads the fixed `ssh_access/result` terminal step and records `ssh_access_ready: true` and the dedicated footprint `ssh_access_digest`. The full footprint digest, convergence time, other artifacts and Node identity stay intact. Failure records no ready contribution. This operation does not claim completion of the full observer footprint or enrollment.
+- `Add the Orbit keys` runs one official `@swamp/cfgmgmt/authorized_key` per key. It adds a missing line and leaves a present one alone.
+- `Log in with Swamp identity` opens a new session with only that identity. It is the end check, read from Swamp's run data.
 
-Before the first admission, the owning load lane publishes the exact workflow and lane16 proves the Gateway's exact workflow run/read authority. The existing vault read authority is a separate requirement. Lane21 owns rollout, target verification and removal of the Gateway identity execution copy after all targets verify with 209's own key. This source change performs no live publication, grant change or key rollout.
-
-Core workflow dependencies, vault expressions, method outputs and the existing terminal subscriber provide the execution contract. Official SSH package `2026.10.23.1` provides transport, pins, identity handling and sudo with its defaults. Official cfgmgmt authorized-key actions were checked: their connection schema lacks the admitted full host-key list. The shipped key policy uses official SSH for that connection contract and adds no transport or secret channel.
-
+A Node that does not accept the `swamp` role identity yet needs Node bootstrap first; this command cannot add that first key. The shared subscriber records `ssh_access_ready: true` and the footprint `ssh_access_digest`. A failure keeps the old digest; added keys stay, and a rerun is safe.
 
 ## Shared public role prerequisites
 

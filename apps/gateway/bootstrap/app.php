@@ -22,6 +22,7 @@ use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
+use App\Jobs\WebSocket\CloseWebSocketOperations;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -63,12 +64,16 @@ $app = Application::configure(basePath: dirname(__DIR__))
         // Horizon's metrics for its dashboard, only while Horizon runs.
         GatewaySchedule::command($schedule, 'horizon:snapshot', uniqueFor: 300)->everyFiveMinutes()
             ->when(static fn (): bool => GatewayQueueRedis::configured());
+        // Reverb reports close WebSocket registry tasks; this fails the ones whose processes stopped reporting.
+        GatewaySchedule::job($schedule, new CloseWebSocketOperations)->everyMinute()
+            ->when(static fn (): bool => GatewayQueueRedis::configured());
         // Reconcile the deployed recipe each minute; only an identity change queues image builds.
         GatewaySchedule::job($schedule, new RefreshTaskVmBaseImages)->everyMinute()
             ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
-        // The task VM host sweep: orphaned VMs and clones, and live rows whose VM is gone. It also runs while only the
+        // The task VM host sweep: orphaned VMs and clones, and live rows whose VM is gone. Background maintenance, so every
+        // thirty minutes; Swamp runs one host sweep at a time. It also runs while only the
         // UpCloud token file is set, so no UpCloud server that Orbit created keeps costing money.
-        GatewaySchedule::job($schedule, new SweepTaskVmHosts)->everyTenMinutes()
+        GatewaySchedule::job($schedule, new SweepTaskVmHosts)->everyThirtyMinutes()
             ->when(static function (): bool {
                 $taskVms = TaskVmSettings::scheduled();
 

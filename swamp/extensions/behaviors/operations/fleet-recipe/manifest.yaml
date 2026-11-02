@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/fleet-recipe-command'
-version: 2026.11.01.1
+version: 2026.11.01.2
 visibility: private
 license: MIT
 description: Shared signed recipe policies and single-action host programs.
@@ -17,3 +17,4 @@ additionalFiles:
   - scripts/file.py
   - scripts/observer_identity.py
   - scripts/observer_checkout.py
+  - scripts/swamp_workers.py

@@ -37,11 +37,14 @@ final readonly class FailNativeOperationAction
                 return $current;
             }
 
-            return $this->direct->project($current, [
+            // The family projection, as for a subscriber terminal: a history read that wins the race must not skip
+            // the kind's records (a failed provision kept its group reserved, so no retry could claim it).
+            return $this->direct->projection($current)->apply($current, [
                 'run_id' => $runId, 'status' => $status->value,
                 'started_at' => ($current->started_at ?? $current->created_at ?? now())->toISOString(),
-                'finished_at' => $finishedAt ?? now()->toISOString(), 'error_code' => 'operation.native_failed', 'failure' => $failure,
-            ], []);
+                'finished_at' => $finishedAt ?? now()->toISOString(), 'error_code' => 'operation.native_failed',
+                'result' => ['error_code' => 'operation.native_failed'], 'failure' => $failure,
+            ]);
         });
     }
 }

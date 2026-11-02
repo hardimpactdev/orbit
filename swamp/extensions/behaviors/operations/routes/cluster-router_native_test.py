@@ -37,7 +37,7 @@ class ClusterNative(NativeTestCase):
             if source is None:
                 source = workflow
             for step in workflow["jobs"][0]["steps"]:
-                step.pop("target", None)
+                step.pop("target", None); step.pop("labels", None)
                 step.pop("labels", None)
                 if step["task"]["type"] == "workflow":
                     names.add(step["task"]["workflowIdOrName"])

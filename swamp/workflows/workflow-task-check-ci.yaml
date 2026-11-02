@@ -7,22 +7,22 @@ vaults:
 - orbit-control-inputs
 jobs:
 - name: checks
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-ci-data-" + run.id }}
+      behaviorName: '${{ "task-check-ci-data" }}'
       methodName: assets
       inputs: {}
   - name: read-${{ self.check.attributes.inputs.operation_id }}
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-ci-read-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+      behaviorName: '${{ "task-check-ci-read-" + string(self._index) }}'
       methodName: execute
       inputs:
         run: 'python3 -B "$ORBIT_ACTION"
@@ -42,11 +42,11 @@ jobs:
       condition:
         type: succeeded
   - name: ci-${{ self.check.attributes.inputs.operation_id }}
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-ci-data-" + run.id }}
+      behaviorName: '${{ "task-check-ci-data-" + string(self._index) }}'
       methodName: ci
       inputs:
         pending: ${{ self.check.attributes }}
@@ -57,15 +57,15 @@ jobs:
       condition:
         type: succeeded
   - name: prepare_remote-${{ self.check.attributes.inputs.operation_id }}
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+      behaviorName: '${{ ("task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &id002
-        name: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+        name: '${{ ("task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ self.check.attributes.inputs.intent.ssh_execution.target.user }}
@@ -92,12 +92,12 @@ jobs:
     guard: ${{ steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.pending || steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.status
       != "succeeded" }}
   - name: copy_assets-${{ self.check.attributes.inputs.operation_id }}
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+      behaviorName: '${{ ("task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: copy
       globalArgs: *id002
       inputs:
@@ -112,12 +112,12 @@ jobs:
     guard: ${{ steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.pending || steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.status
       != "succeeded" }}
   - name: snapshot-${{ self.check.attributes.inputs.operation_id }}
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+      behaviorName: '${{ ("task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id002
       inputs:
@@ -134,12 +134,12 @@ jobs:
       != "succeeded" }}
     allowFailure: true
   - name: observed-${{ self.check.attributes.inputs.operation_id }}
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach: *id001
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-ci-data-" + run.id }}
+      behaviorName: '${{ "task-check-ci-data-" + string(self._index) }}'
       methodName: observed
       inputs:
         value: ${{ steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs }}
@@ -151,12 +151,12 @@ jobs:
       condition:
         type: always
   - name: cleanup_remote-${{ self.check.attributes.inputs.operation_id }}
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+      behaviorName: '${{ ("task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id002
       inputs:
@@ -174,11 +174,11 @@ jobs:
       != "succeeded" }}
     allowFailure: true
   - name: settle-${{ self.check.attributes.inputs.operation_id }}
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-pending-" + string(self.check.attributes.inputs.operation_id) }}
+      behaviorName: '${{ "task-check-pending-" + string(self._index) }}'
       methodName: settle
       inputs:
         value: ${{ steps["observed-" + string(self.check.attributes.inputs.operation_id)].outputs }}
@@ -188,12 +188,12 @@ jobs:
       condition:
         type: succeeded
   - name: revoke_read-${{ self.check.attributes.inputs.operation_id }}
-    target: orbit-node-209
+    labels: {role: swamp}
     forEach: *id001
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-revoke-read-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+      behaviorName: '${{ "task-check-revoke-read-" + string(self._index) }}'
       methodName: execute
       inputs:
         run: 'python3 -B "$ORBIT_ACTION"
@@ -210,11 +210,11 @@ jobs:
     guard: ${{ steps["observed-" + string(self.check.attributes.inputs.operation_id)].outputs.pending }}
     allowFailure: true
   - name: collect
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-ci-data-" + run.id }}
+      behaviorName: '${{ "task-check-ci-data" }}'
       methodName: collect
       inputs:
         steps: ${{ steps }}
@@ -226,11 +226,11 @@ jobs:
       condition:
         type: always
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-ci-result-" + run.id }}
+      behaviorName: '${{ "task-check-ci-result" }}'
       methodName: execute
       inputs:
         run: 'printf ''%s\n'' "$ORBIT_RESULT"

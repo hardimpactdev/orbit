@@ -143,10 +143,9 @@ describe('tasks contract', function (): void {
         run_task_contract('tasks-create/no-subtasks', 'tasks:create', ['title' => 'Empty', '--project' => '1', '--brief' => 'No subtasks.', '--status' => 'todo'], 1);
     });
 
-    it('renders group updates, a refused update, cancel, and complete', function (): void {
+    it('renders group updates, a refused update, and complete', function (): void {
         run_task_contract('tasks-update/updated', 'tasks:update', ['group' => '1', '--title' => 'Add the tasks command family'], 0);
         run_task_contract('tasks-update/not-in-backlog', 'tasks:update', ['group' => '1', '--title' => 'Too late'], 1);
-        run_task_contract('tasks-cancel/cancelled', 'tasks:cancel', ['group' => '1', '--yes' => true], 0);
         run_task_contract('tasks/tasks-complete/completed', 'tasks:complete', ['group' => '2', '--yes' => true], 0);
     });
 

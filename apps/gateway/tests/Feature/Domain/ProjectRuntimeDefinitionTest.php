@@ -119,7 +119,7 @@ it('rejects invalid applicability and runtime specification boundaries', functio
         ->assertJsonPath('error.code', 'validation.failed');
 })->with([
     'empty applicability' => ['process', domain_process_definition_payload(environments: [])],
-    'development applicability' => ['process', domain_process_definition_payload(environments: ['development'])],
+    'schedule development applicability' => ['schedule', domain_schedule_definition_payload(environments: ['development'])],
     'duplicate applicability' => [
         'process',
         domain_process_definition_payload(environments: ['production', 'production']),

@@ -60,7 +60,7 @@ print('{"ready":true}')
         )
         for job in parent["jobs"]:
             for step in job["steps"]:
-                self.assertEqual(step.pop("target"), "orbit-node-209")
+                self.assertEqual(step.pop("labels"), {"role": "swamp"})
                 self.assertNotIn("labels", step)
         (self.repo / "workflows/workflow-analytics-disable.yaml").write_text(
             yaml.safe_dump(parent, sort_keys=False)

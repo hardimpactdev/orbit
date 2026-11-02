@@ -30,7 +30,6 @@ final class UpdateProjectRequest extends GatewayRequest implements HasBody
         private readonly bool $taskCheckProvided = false,
         private readonly ?string $sourceAccess = null,
         private readonly ?bool $taskWorkspaceRouted = null,
-        private readonly ?bool $reviewAndMerge = null,
         private readonly ?string $mergeCheck = null,
         private readonly bool $mergeCheckProvided = false,
         private readonly ?string $name = null,
@@ -60,10 +59,9 @@ final class UpdateProjectRequest extends GatewayRequest implements HasBody
                 'root' => $this->root,
                 ...($this->taskCheckProvided ? ['task_check' => $this->taskCheck] : []),
                 ...($this->taskWorkspaceRouted === null ? [] : ['task_workspace_routed' => $this->taskWorkspaceRouted]),
-                ...($this->reviewAndMerge === null ? [] : ['review_and_merge' => $this->reviewAndMerge]),
                 ...($this->mergeCheckProvided ? ['merge_check' => $this->mergeCheck] : []),
             ],
-            static fn (mixed $value, string $key): bool => in_array($key, ['task_check', 'task_workspace_routed', 'review_and_merge', 'merge_check'], true) || $value !== null,
+            static fn (mixed $value, string $key): bool => in_array($key, ['task_check', 'task_workspace_routed', 'merge_check'], true) || $value !== null,
             ARRAY_FILTER_USE_BOTH,
         );
     }

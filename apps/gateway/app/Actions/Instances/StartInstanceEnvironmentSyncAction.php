@@ -6,7 +6,7 @@ namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
-use App\Domain\Instances\Environment\NativeInstanceEnvironmentMaterial;
+use App\Domain\Instances\Environment\NativeInstanceEnvironmentSync;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\DB;
 final readonly class StartInstanceEnvironmentSyncAction
 {
     public function __construct(private StartOperationAction $operations, private OperationIdempotency $idempotency,
-        private InstanceEnvironmentContextResolver $contexts, private NativeInstanceEnvironmentMaterial $material) {}
+        private InstanceEnvironmentContextResolver $contexts, private NativeInstanceEnvironmentSync $sync) {}
 
     public function execute(Instance $instance, ?string $caller = null, ?string $requestId = null): Operation
     {
@@ -33,8 +33,7 @@ final readonly class StartInstanceEnvironmentSyncAction
             if (! $instance->environmentValues()->exists()) {
                 throw new ResourceOperationException('env.configuration_missing', 'Import or store environment configuration before synchronization.', 409);
             }
-            $input = ['instance_id' => $instance->id, 'direct_environment' => $this->material->forContext($context),
-                'environment_material' => ['$secret' => 'instance.environment_sync', 'id' => $instance->id]];
+            $input = ['instance_id' => $instance->id, 'direct_environment' => $this->sync->plan($context)];
 
             return $this->operations->execute('instance.sync_environment', 'instance', $instance->id, $instance->node_id,
                 $input, $caller, $requestId);

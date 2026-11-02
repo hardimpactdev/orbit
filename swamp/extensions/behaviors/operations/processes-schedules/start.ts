@@ -1,11 +1,4 @@
 import { z } from "npm:zod@4.4.3";
-import type { Http } from "../../automatic-deploy/gateway.ts";
-import { Globals } from "../_lib/direct.ts";
-import {
-  DirectArgs,
-  directOperation,
-  GatewayOperation,
-} from "../_lib/direct.ts";
 import { localProcessAction } from "./native-action.ts";
 import { Input } from "./process-input.ts";
 
@@ -59,24 +52,7 @@ export const StartInput = Input.extend({
     });
   }
 });
-export const Preparation = z.object({
-  vite: z.boolean(),
-  proceed: z.boolean(),
-  error_code: Code.optional(),
-}).strict();
-const Args = DirectArgs.extend({
-  kind: z.enum(["process.start", "process.restart"]),
-  node_id: z.number().int().positive(),
-});
-const Parent = z.object({
-  id: z.number().int().positive(),
-  kind: Args.shape.kind,
-  node_id: z.number().int().positive(),
-  status: z.enum(["queued", "running", "succeeded", "failed", "cancelled"]),
-  cancel_requested: z.boolean(),
-  input: StartInput,
-});
-type Context = { globalArgs: z.infer<typeof Globals>; signal?: AbortSignal };
+type Kind = "process.start" | "process.restart";
 type Result = { ready: true; state: string } | { error_code: string };
 const pause = (signal?: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
@@ -161,7 +137,7 @@ export function startActions(
     prepare: async (
       input: z.infer<typeof StartInput>,
       signal?: AbortSignal,
-      kind: z.infer<typeof Args>["kind"] = "process.start",
+      kind: Kind = "process.start",
     ) => {
       const admitted = StartInput.parse(input);
       const run = call(admitted, signal);
@@ -202,7 +178,7 @@ export function startActions(
     activate: async (
       input: z.infer<typeof StartInput>,
       signal?: AbortSignal,
-      kind: z.infer<typeof Args>["kind"] = "process.start",
+      kind: Kind = "process.start",
     ): Promise<Result> => {
       const admitted = StartInput.parse(input);
       const run = call(admitted, signal);
@@ -223,97 +199,6 @@ export function startActions(
       );
       if (start) return start;
       return await verify(admitted, signal, kind === "process.start");
-    },
-  };
-}
-
-export function startMethods(
-  makeHttp: (ctx: Context) => Http,
-  actions = startActions(),
-) {
-  return {
-    prepareStart: {
-      description:
-        "Prepare the bound same-root Process start on its admitted Node",
-      arguments: Args,
-      execute: async (
-        args: z.infer<typeof Args>,
-        ctx: Context & {
-          writeResource: (
-            type: string,
-            name: string,
-            value: z.infer<typeof Preparation>,
-          ) => Promise<unknown>;
-        },
-      ) => {
-        const gateway = new GatewayOperation(makeHttp(ctx), args);
-        const current = Parent.parse(await gateway.read(ctx.signal));
-        if (
-          current.id !== args.operation_id || current.kind !== args.kind ||
-          current.node_id !== args.node_id
-        ) throw new Error("Process start parent differs");
-        const vite = current.input.vite_plan !== undefined;
-        let preparation: z.infer<typeof Preparation>;
-        if (
-          !["queued", "running"].includes(current.status) ||
-          current.cancel_requested || ctx.signal?.aborted
-        ) {
-          preparation = { vite, proceed: false };
-        } else {
-          const result = await actions.prepare(
-            current.input,
-            ctx.signal,
-            args.kind,
-          );
-          preparation = "error_code" in result
-            ? { vite, proceed: false, error_code: result.error_code }
-            : { vite, proceed: true };
-        }
-        const handle = await ctx.writeResource(
-          "startPreparation",
-          "start-" + args.run_id,
-          preparation,
-        );
-        return { dataHandles: [handle] };
-      },
-    },
-    activateStart: {
-      description:
-        "Activate Process start after its same-root native publication and project the result",
-      arguments: Args.extend({
-        preparation: Preparation,
-        publication_status: z.enum(["succeeded", "failed", "skipped"]),
-      }),
-      execute: async (
-        args: z.infer<typeof Args> & {
-          preparation: z.infer<typeof Preparation>;
-          publication_status: "succeeded" | "failed" | "skipped";
-        },
-        ctx: Context,
-      ) => {
-        const gateway = new GatewayOperation(makeHttp(ctx), args);
-        return await directOperation(args, gateway, (safe) => {
-          const input = StartInput.parse(safe);
-          if (args.preparation.error_code) {
-            return Promise.resolve({ error_code: args.preparation.error_code });
-          }
-          if (!args.preparation.proceed) {
-            throw new Error("Process start was not prepared");
-          }
-          if (
-            input.vite_plan !== undefined &&
-            args.publication_status !== "succeeded"
-          ) return Promise.resolve({ error_code: "process.caddy_failed" });
-          return actions.activate(input, ctx.signal, args.kind);
-        }, (result) =>
-          z.union([
-            z.object({
-              ready: z.literal(true),
-              state: z.string().regex(/^[a-z][a-z_-]{0,63}$/),
-            }).strict(),
-            z.object({ error_code: Code }).strict(),
-          ]).parse(result), ctx.signal);
-      },
     },
   };
 }

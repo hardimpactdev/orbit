@@ -12,6 +12,9 @@ declare(strict_types=1);
 /** The environment value, or the default while it is unset or empty. "0" counts as set. */
 $env = static fn (string $key, mixed $default): mixed => filled(env($key)) ? env($key) : $default;
 
+/** A JSON list of Project ids; malformed JSON stays null for validation. */
+$projectIds = static fn (string $key): mixed => json_decode((string) (env($key) ?: '[]'), true);
+
 return [
     'enabled' => (bool) env('ORBIT_TASK_VMS_ENABLED', false),
     'dev_cluster_id' => env('ORBIT_TASK_VMS_DEV_CLUSTER_ID'),
@@ -22,7 +25,10 @@ return [
     // Minutes a group waits for review before its task VM stops. Its next work starts the VM again.
     'park_after_minutes' => $env('ORBIT_TASK_VMS_PARK_AFTER_MINUTES', 30),
     // A JSON list of Project ids whose groups without a declared topology get a medium VM (TaskVmSize::resources()).
-    'medium_projects' => json_decode((string) (env('ORBIT_TASK_VMS_MEDIUM_PROJECTS') ?: '[]'), true),
+    'medium_projects' => $projectIds('ORBIT_TASK_VMS_MEDIUM_PROJECTS'),
+    // A JSON list of Project ids whose groups without a declared topology get a large VM (TaskVmSize::resources()).
+    // Large wins when a Project is in both lists; declared topologies keep their own size.
+    'large_projects' => $projectIds('ORBIT_TASK_VMS_LARGE_PROJECTS'),
     // A JSON object from Project id to path patterns, such as {"46":["apps/agent/**"]}. A handoff that changes one fails
     // while no subtask of the group declares a topology.
     'topology_paths' => json_decode((string) (env('ORBIT_TASK_VMS_TOPOLOGY_PATHS') ?: '{}'), true),

@@ -11,6 +11,14 @@ const roots = [
     "operation-database-create",
     "operation-database-server-create",
     "operation-database-server-destroy",
+    "operation-database-clone",
+    "operation-database-cleanup",
+    "operation-database-destroy",
+    "operation-database-destroy-owned",
+    "operation-database-sqlite-seed",
+    "operation-instance-create",
+    "operation-instance-setup-direct",
+    "operation-instance-destroy",
 ];
 
 Deno.test("Fixture workflows and their children declare queueTimeout", async () => {

@@ -30,6 +30,9 @@ final readonly class ScheduledProjectMaintenance implements ScheduledResultProje
 
     public const string StateKey = 'swamp.project-maintenance';
 
+    /** Hourly at :17:40. Detection is daily and routines weekly, so an hour of latency costs nothing. */
+    public const string Schedule = '40 17 * * * *';
+
     public function activate(): void
     {
         if (app(TaskExtensionState::class)->enabled()) {
@@ -69,6 +72,7 @@ final readonly class ScheduledProjectMaintenance implements ScheduledResultProje
             $storedInputs = ValidatedData::object($state['inputs'] ?? []);
             $snapshot = $this->capture();
             if (($state['snapshot'] ?? null) === $snapshot && ($state['published'] ?? false)
+                && ($state['schedule'] ?? null) === self::Schedule
                 && ($storedInputs['admissions'] ?? []) === ($state['admissions'] ?? [])) {
                 $record->value = json_encode([...$state, 'dirty' => false], JSON_THROW_ON_ERROR);
                 $record->saveQuietly();
@@ -80,14 +84,14 @@ final readonly class ScheduledProjectMaintenance implements ScheduledResultProje
                 'admissions' => ($state['admissions'] ?? []) === [] ? (object) [] : $state['admissions']];
             $next = [...$state, 'revision' => $revision, 'snapshot' => $snapshot, 'inputs' => $inputs, 'published' => false, 'dirty' => true];
             try {
-                app(SwampSchedulePublisher::class)->publish(self::Workflow, '40 * * * * *', $inputs);
+                app(SwampSchedulePublisher::class)->publish(self::Workflow, self::Schedule, $inputs);
             } catch (Throwable $exception) {
                 $record->value = json_encode($next, JSON_THROW_ON_ERROR);
                 $record->saveQuietly();
 
                 return $exception;
             }
-            $record->value = json_encode([...$next, 'published' => true, 'dirty' => false], JSON_THROW_ON_ERROR);
+            $record->value = json_encode([...$next, 'schedule' => self::Schedule, 'published' => true, 'dirty' => false], JSON_THROW_ON_ERROR);
             $record->saveQuietly();
 
             return null;

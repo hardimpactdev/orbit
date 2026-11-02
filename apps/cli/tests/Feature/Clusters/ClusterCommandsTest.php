@@ -7,8 +7,10 @@ use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\Clusters\ActivateClusterRequest;
 use Orbit\Sdk\Requests\Clusters\AddClusterNodeRequest;
 use Orbit\Sdk\Requests\Clusters\CreateClusterRequest;
+use Orbit\Sdk\Requests\Clusters\DeactivateClusterRequest;
 use Orbit\Sdk\Requests\Clusters\DestroyClusterRequest;
 use Orbit\Sdk\Requests\Clusters\ListClustersRequest;
 use Orbit\Sdk\Requests\Clusters\RemoveClusterNodeRequest;
@@ -95,7 +97,6 @@ it('updates only supplied Cluster fields and treats an empty TLD as unset', func
             'cluster' => '3',
             '--name' => 'local',
             '--tld' => '',
-            '--state' => 'inactive',
             '--json' => true,
         ])
         ->assertExitCode(0);
@@ -103,9 +104,19 @@ it('updates only supplied Cluster fields and treats an empty TLD as unset', func
     expect($mockClient->getLastRequest()?->body()->all())->toBe([
         'name' => 'local',
         'tld' => null,
-        'state' => 'inactive',
     ]);
 });
+
+it('activates and deactivates a Cluster through its own commands', function (string $command, string $request): void {
+    $mockClient = cluster_cli_mock($request, cluster_cli_gateway_data());
+
+    $this->artisan($command, ['cluster' => '3', '--json' => true])->assertExitCode(0);
+
+    expect($mockClient->getLastRequest())->toBeInstanceOf($request);
+})->with([
+    ['cluster:activate', ActivateClusterRequest::class],
+    ['cluster:deactivate', DeactivateClusterRequest::class],
+]);
 
 it('removes a Cluster only after force confirmation', function (): void {
     $mockClient = cluster_cli_confirmed_mock(DestroyClusterRequest::class, cluster_cli_gateway_data());
@@ -172,7 +183,8 @@ it('rejects invalid IDs before any HTTP request', function (string $command, arr
     expect($mockClient->getLastPendingRequest())->toBeNull();
 })->with([
     'show Cluster' => ['cluster:show', ['cluster' => '0']],
-    'update Cluster' => ['cluster:update', ['cluster' => 'not-an-id', '--state' => 'active']],
+    'update Cluster' => ['cluster:update', ['cluster' => 'not-an-id', '--name' => 'local']],
+    'activate Cluster' => ['cluster:activate', ['cluster' => 'not-an-id']],
     'remove Cluster' => ['cluster:destroy', ['cluster' => '-1', '--force' => true]],
     'attach Cluster' => ['cluster:node:add', ['cluster' => '0', 'node' => '2']],
     'attach Node' => ['cluster:node:add', ['cluster' => '3', 'node' => '0']],
@@ -228,11 +240,6 @@ it('rejects malformed TLD and state values before any HTTP request', function (
         'cluster:update',
         ['cluster' => '3', '--tld' => '-invalid'],
         'TLD must be one DNS label',
-    ],
-    'update malformed state' => [
-        'cluster:update',
-        ['cluster' => '3', '--state' => 'pending'],
-        'State must be inactive or active',
     ],
 ]);
 

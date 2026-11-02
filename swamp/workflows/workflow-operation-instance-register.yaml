@@ -30,20 +30,20 @@ inputs:
   additionalProperties: false
 jobs:
 - name: source
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: inspect-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/instance-source-command'
-      behaviorName: ${{ "reg-inspect-assets-" + run.id }}
+      behaviorName: '${{ "reg-inspect-assets" }}'
       methodName: read
       inputs:
         action: inspect
         input: ${{ inputs.intent }}
   - name: filesystem
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: inspect-assets
       condition:
@@ -51,10 +51,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "reg-filesystem-" + run.id }}
+      behaviorName: '${{ ("reg-filesystem-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: script
       globalArgs: &id001
-        name: ${{ "instance-register-" + run.id }}
+        name: '${{ ("reg-filesystem-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -70,7 +70,7 @@ jobs:
         interpreter: python3
         script: ${{ steps["inspect-assets"].outputs.script_body }}
   - name: top
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: filesystem
       condition:
@@ -78,7 +78,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "reg-top-" + run.id }}
+      behaviorName: '${{ ("reg-top-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -94,7 +94,7 @@ jobs:
         - rev-parse
         - --show-toplevel
   - name: common
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: top
       condition:
@@ -102,7 +102,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "reg-common-" + run.id }}
+      behaviorName: '${{ ("reg-common-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -119,7 +119,7 @@ jobs:
         - --path-format=absolute
         - --git-common-dir
   - name: worktrees
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: common
       condition:
@@ -127,7 +127,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "reg-worktrees-" + run.id }}
+      behaviorName: '${{ ("reg-worktrees-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -144,7 +144,7 @@ jobs:
         - list
         - --porcelain
   - name: origin-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: worktrees
       condition:
@@ -152,13 +152,13 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/instance-source-command'
-      behaviorName: ${{ "reg-origin-assets-" + run.id }}
+      behaviorName: '${{ "reg-origin-assets" }}'
       methodName: read
       inputs:
         action: origin
         input: ${{ inputs.intent }}
   - name: origin
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: origin-assets
       condition:
@@ -166,7 +166,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "reg-origin-" + run.id }}
+      behaviorName: '${{ ("reg-origin-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: script
       globalArgs: *id001
       inputs:
@@ -174,7 +174,7 @@ jobs:
         interpreter: python3
         script: ${{ steps["origin-assets"].outputs.script_body }}
   - name: branch
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: origin
       condition:
@@ -182,7 +182,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "reg-branch-" + run.id }}
+      behaviorName: '${{ ("reg-branch-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -198,7 +198,7 @@ jobs:
         - branch
         - --show-current
   - name: commit
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: branch
       condition:
@@ -206,7 +206,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "reg-commit-" + run.id }}
+      behaviorName: '${{ ("reg-commit-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -223,7 +223,7 @@ jobs:
         - --verify
         - HEAD^{commit}
   - name: default
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: commit
       condition:
@@ -231,7 +231,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "reg-default-" + run.id }}
+      behaviorName: '${{ ("reg-default-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -248,7 +248,7 @@ jobs:
         - --format=%(symref)
         - refs/remotes/origin/HEAD
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: default
       condition:
@@ -256,7 +256,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/instance-source-command'
-      behaviorName: ${{ "reg-result-" + run.id }}
+      behaviorName: '${{ "reg-result" }}'
       methodName: result
       inputs:
         kind: ${{ inputs.kind }}
@@ -271,7 +271,7 @@ jobs:
           commit: ${{ steps.commit.outputs }}
           default: ${{ steps.default.outputs }}
   - name: protect-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: result
       condition:
@@ -279,13 +279,13 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/instance-source-command'
-      behaviorName: ${{ "reg-protect-assets-" + run.id }}
+      behaviorName: '${{ "reg-protect-assets" }}'
       methodName: read
       inputs:
         action: protect_environment
         input: ${{ inputs.intent }}
   - name: protect-environment
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: protect-assets
       condition:
@@ -293,7 +293,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "reg-protect-environment-" + run.id }}
+      behaviorName: '${{ ("reg-protect-environment-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: script
       globalArgs: *id001
       inputs:

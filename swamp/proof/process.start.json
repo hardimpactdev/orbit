@@ -1,0 +1,50 @@
+{
+  "kind": "process.start",
+  "workflow": "operation-process-start",
+  "topology": "minimal",
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "processes",
+      "bind": "process",
+      "body": {
+        "target_type": "node",
+        "target_id": "${node.target}",
+        "name": "start-${proof.run}",
+        "runtime": "systemd",
+        "command": [
+          "/usr/bin/sleep",
+          "infinity"
+        ],
+        "start": false
+      }
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "processes/${process.id}/start"
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Apply the unit state",
+      "job": "runtime",
+      "step": "Apply the unit state",
+      "budget_seconds": 20
+    },
+    {
+      "name": "Accept the Process",
+      "job": "runtime",
+      "step": "Accept the Process",
+      "budget_seconds": 20
+    }
+  ],
+  "parity": [
+    "swamp/proof/process/parity.py",
+    "running"
+  ]
+}

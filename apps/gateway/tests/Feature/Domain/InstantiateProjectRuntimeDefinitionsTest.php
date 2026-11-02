@@ -337,3 +337,18 @@ function orb225_schedule(Instance $instance, string $name): Schedule
         'status' => LifecycleStatus::Active,
     ]);
 }
+
+it('copies a cron definition as an active native Schedule and keeps a systemd one on the Node timer path', function (): void {
+    orb225_schedule_definition($this->orbitApp, 'laravel-scheduler');
+    $this->orbitApp->scheduleDefinitions()->create(['name' => 'nightly', 'environments' => ['production'],
+        'spec' => ['command' => '/usr/bin/php artisan report:send', 'calendar' => '0 3 * * *', 'timeout_seconds' => 600]]);
+
+    $this->action->captureForClone($this->target);
+
+    $copies = Schedule::query()->where('target_id', $this->target->id)->get()->keyBy('name');
+    expect($copies['nightly']->trigger->value)->toBe('swamp')
+        ->and($copies['nightly']->status->value)->toBe('active')
+        ->and($copies['nightly']->desired_timer_state->value)->toBe('disabled')
+        ->and($copies['laravel-scheduler']->trigger->value)->toBe('node')
+        ->and($copies['laravel-scheduler']->status->value)->toBe('provisioning');
+});

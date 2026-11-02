@@ -1037,7 +1037,7 @@ function role_baseline_roles(): array
 {
     return array_values(array_filter(
         RoleName::cases(),
-        static fn (RoleName $role): bool => ! in_array($role, [RoleName::Router, RoleName::Ingress, RoleName::Analytics, RoleName::Metrics], strict: true),
+        static fn (RoleName $role): bool => ! in_array($role, [RoleName::Router, RoleName::Ingress, RoleName::Analytics, RoleName::Metrics, RoleName::Swamp], strict: true),
     ));
 }
 

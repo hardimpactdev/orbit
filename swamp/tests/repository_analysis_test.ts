@@ -336,6 +336,7 @@ Deno.test("failed author edits recover through fresh analysis, preserving counte
   result.provenance.operation_id = 901;
   result.provenance.before = after;
   result.provenance.after = after;
+  Object.assign(result.provenance, after);
   const analysis = stageHarness({ operationId: 901, result });
   await runStage(analysisArgs, analysis.deps);
   assertEquals(analysis.calls.find((x) => x.method === "POST")!.body!.tree, after.tree);

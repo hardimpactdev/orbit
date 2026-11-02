@@ -470,6 +470,26 @@ it('docs impact resolves planned Doctor files and rejects unknown planned config
         ->and($report['errors'])->toContain('Unable to resolve planned surface [apps/gateway/config/runtime.php]; provide an existing path or a covers: owner.');
 });
 
+it('docs impact needs no owner for planned proof fixtures, which are test inputs', function (): void {
+    $root = docsImpactFixture();
+    $report = new DocsImpact($root)->report(null, ['swamp/proof/metrics.exporter_enable.json', 'swamp/proof/metrics/parity.py']);
+
+    expect($report['errors'])->toBe([])
+        ->and(collect($report['impacted_pages'])->pluck('page'))->not->toContain('unowned');
+});
+
+it('docs impact needs no owner for a test file beside its source', function (): void {
+    $root = docsImpactFixture();
+    foreach (['swamp/extensions/behaviors/operations/integrations/metrics_actions_test.ts', 'tools/test_swamp_proof.py'] as $path) {
+        @mkdir(dirname($root.'/'.$path), 0777, true);
+        file_put_contents($root.'/'.$path, "{ error_code: 'metrics.unowned_in_test' }\n");
+    }
+    $report = new DocsImpact($root)->report(null, ['swamp/extensions/behaviors/operations/integrations/metrics_actions_test.ts', 'tools/test_swamp_proof.py']);
+
+    expect($report['errors'])->toBe([])
+        ->and(collect($report['surfaces'])->where('owner', 'unowned')->all())->toBe([]);
+});
+
 it('docs impact extracts a deleted surface from the base commit', function (): void {
     $root = docsImpactFixture();
     $path = 'apps/gateway/app/Domain/Tasks/TaskGroupGuard.php';

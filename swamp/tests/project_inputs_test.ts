@@ -177,6 +177,40 @@ Deno.test("native PR reads reject a different repository before exposing the vau
     }
 });
 
+Deno.test("native schedule reads only the owning project's recorded exceptions, once per project", async () => {
+    const f = fixture();
+    try {
+        const queries: string[] = [];
+        const ctx = {
+            ...f.ctx,
+            queryData: (predicate: string) => {
+                queries.push(predicate);
+                return Promise.resolve([]);
+            },
+            writeResource: () => Promise.resolve({ name: "output" }),
+        };
+        await metadata.methods.schedule.execute({
+            revision: 1,
+            snapshot_hash: "a".repeat(64),
+            projects: [{
+                id: 32,
+                repository: "https://github.com/nckrtl/launch.git",
+                default_branch: "main",
+                check: "composer check",
+            }],
+            groups: [],
+            operations: [],
+            admissions: {},
+        }, ctx);
+        assertEquals(
+            queries.filter((q) => q.startsWith("modelType")),
+            ['modelType == "@nckrtl/project-launch" && name == "exceptions"'],
+        );
+    } finally {
+        await f.close();
+    }
+});
+
 Deno.test("native schedule selects from full public intent and skips the recorded slot without Gateway calls", async () => {
     const f = fixture();
     try {

@@ -15,6 +15,7 @@ use Orbit\Sdk\Requests\Projects\ShowScheduleDefinitionRequest;
 use Orbit\Sdk\Requests\Projects\UpdateScheduleDefinitionRequest;
 use Orbit\Sdk\Requests\Schedules\CreateScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\DestroyScheduleRequest;
+use Orbit\Sdk\Requests\Schedules\DisableScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\EnableScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\ListSchedulesRequest;
 use Orbit\Sdk\Requests\Schedules\RunScheduleRequest;
@@ -274,6 +275,7 @@ it('sends one UUID request and renders separate timer and lifecycle states', fun
     'run' => ['schedule:run', RunScheduleRequest::class],
     'remove' => ['schedule:destroy', DestroyScheduleRequest::class],
     'activate' => ['schedule:enable', EnableScheduleRequest::class],
+    'disable' => ['schedule:disable', DisableScheduleRequest::class],
 ]);
 
 it('refuses JSON schedule definition destruction without --yes', function (): void {
@@ -335,6 +337,7 @@ it('renders one UUID operation response in exact json', function (string $comman
     'run' => ['schedule:run', RunScheduleRequest::class],
     'remove' => ['schedule:destroy', DestroyScheduleRequest::class],
     'activate' => ['schedule:enable', EnableScheduleRequest::class],
+    'disable' => ['schedule:disable', DisableScheduleRequest::class],
 ]);
 
 it('renders only the bounded log output returned by the Gateway for humans', function (): void {
@@ -701,6 +704,7 @@ function schedule_cli_endpoint_suffix(string $command): string
     return match ($command) {
         'schedule:run' => '/run',
         'schedule:enable' => '/activate',
+        'schedule:disable' => '/disable',
         default => '',
     };
 }

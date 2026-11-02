@@ -28,9 +28,9 @@ class DependencyUpgradeInputsNativeTest(NativeTestCase):
         shutil.copy(ROOT / 'models/@nckrtl/orbit-deps/orbit-deps.yaml', models / 'orbit-deps.yaml')
         flow = yaml.safe_load((ROOT / 'workflows/workflow-dependency-upgrade.yaml').read_text())
         for job in flow['jobs']:
-            self.assertEqual(job.pop('target'), 'orbit-node-209')
+            self.assertEqual(job.pop('labels'), {'role': 'swamp'})
             for step in job['steps']:
-                self.assertEqual(step.pop('target'), 'orbit-node-209')
+                self.assertEqual(step.pop('labels'), {'role': 'swamp'})
         (self.repo / 'workflows/workflow-dependency-upgrade.yaml').write_text(yaml.safe_dump(flow, sort_keys=False))
         git('remote', 'add', 'origin', str(source))
         inputs = self.repo / 'inputs.json'

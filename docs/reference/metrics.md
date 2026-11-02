@@ -9,6 +9,7 @@ covers:
   - apps/gateway/app/Http/Controllers/Api/{MetricsController,GrafanaAccessAuthorizationController}.php
   - apps/gateway/app/Infrastructure/Processes/PrometheusProcessRuntimeStatusIndex.php
   - apps/gateway/app/Infrastructure/Caddy/Build/Sources/MetricsCaddySiteSource.php
+  - swamp/{workflows/workflow-operation-metrics-*.yaml,extensions/behaviors/operations/{metrics-*/**,integrations/metrics_*.ts}}
 ---
 
 # Metrics role
@@ -62,12 +63,14 @@ A Node can host an exporter only when the Gateway manages it. The Node must be a
 
 | Preference | Node | Result |
 | --- | --- | --- |
-| none | Has an active or provisioning role | Selected |
-| none | Has no role | Not selected |
+| none | Has an active or provisioning role that takes part in Metrics | Selected |
+| none | Has no such role | Not selected |
 | `enabled` | Any eligible Node | Selected |
 | `disabled` | Any eligible Node except the Metrics Node | Not selected |
 | any | Not eligible | Not selected |
 | any | The Metrics Node, when eligible | Selected |
+
+Every role takes part in Metrics except `swamp`. Adding, converging, removing or relocating `swamp` captures no Metrics fleet, so its root skips the Metrics phases. Metrics for the swamp Node comes with the Metrics port (wave 7).
 
 `orbit metrics:exporter:enable` and `orbit metrics:exporter:disable` return an accepted native Operation and store the desired preference. Node 209 runs the official cfgmgmt package, fetch, file, systemd and firewall models. The captured public intent fixes the target, SSH identity, unit configuration, source-scoped port rules and complete Prometheus configuration. Steps read no Gateway state. Admission refuses a second active exporter change for the same Metrics owner before writing its preference.
 
@@ -133,7 +136,9 @@ With no active Gateway, or more than one, every caller gets `node_access.require
 
 The Grafana user is `admin`. The first convergence generates a random password. The Gateway stores it encrypted in the Metrics Node's settings. Later convergence reuses it.
 
-`orbit metrics:credentials` reads the Gateway's stored administrator credential without executing a host action. `--reset` admits one native Operation. The Gateway creates or reuses an encrypted pending password and supplies a names-only execution copy. On 209, official pinned SSH checks the candidate, applies it only if needed, and verifies it in separate steps. Terminal success promotes the pending password; failure preserves it. The CLI follows the Operation before reading the stored credential. After a failed or uncertain reset, a new `metrics:credentials --reset` reuses the pending password and checks it before another write. A direct native resume does not reopen an already-terminal Gateway Operation.
+`orbit metrics:credentials` reads the Gateway's stored administrator credential without executing a host action. `--reset` admits one native Operation. The Gateway creates or reuses an encrypted pending password and stores three curl configurations in the vault; run inputs carry only their key names. On 209, official pinned SSH runs one bounded curl command per action, with its configuration on stdin. It checks the pending login, changes the password only after HTTP 401, and verifies the new login. A native assert requires HTTP 200. Only HTTP status codes enter history; response bodies are discarded. 
+
+The run has no result step: the Gateway reads success from the native assert. Terminal success promotes the pending password; failure preserves it. The CLI follows the Operation before reading the stored credential. After a failed or uncertain reset, a new `metrics:credentials --reset` reuses the pending password and checks it before another write. A direct native resume does not reopen an already-terminal Gateway Operation.
 
 Short database transactions protect credential creation, pending reuse, promotion and purge. The Gateway holds no execution-lifetime lock and performs no host verification during a read. Native workflow steps own the execution. Credential responses use `Cache-Control: no-store`; Operation results contain public reset metadata only.
 

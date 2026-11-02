@@ -17,6 +17,7 @@ import type { SystemCommand } from "../processes-schedules/system.ts";
 import { initializePlausible } from "../analytics/initialization.ts";
 import { configureClickhouse } from "../analytics/clickhouse.ts";
 import { localSystemCommand, type SystemTransport } from "./system_command.ts";
+import { SwampWorkers, SwampWorkersRemoval } from "./role_swamp_workers.ts";
 
 const Digest = z.string().regex(/^[a-f0-9]{64}$/);
 const Code = z.string().regex(/^[a-z0-9_.-]{1,100}$/);
@@ -63,6 +64,7 @@ export const RoleRuntime = z.discriminatedUnion("role", [
     assignment_id: z.number().int().positive(),
     material: Base.shape.material,
   }).strict(),
+  SwampWorkers,
 ]);
 export const RoleRuntimeRemoval = z.discriminatedUnion("role", [
   Identity.extend({
@@ -81,6 +83,7 @@ export const RoleRuntimeRemoval = z.discriminatedUnion("role", [
     install_path: z.string().startsWith("/"),
     purge_data: z.boolean(),
   }).strict(),
+  SwampWorkersRemoval,
 ]);
 type Outcome = { completed: true; changed?: boolean } | { error_code: string };
 const Configuration = z.record(
@@ -157,6 +160,8 @@ export async function installRoleRuntime(
   native: NativeRuntimeActions = nativeRuntime(transport),
 ): Promise<Outcome> {
   const input = RoleRuntime.parse(raw);
+  // Generated native steps apply the swamp role's runtime (role_swamp_runtime_workflow.ts).
+  if (input.role === "swamp") throw new Error("The swamp runtime runs as native steps");
   if (input.material.id !== input.node_id) {
     throw new Error("Runtime material belongs to another Node");
   }
@@ -333,6 +338,8 @@ export async function removeRoleRuntime(
 ): Promise<Outcome> {
   const input = RoleRuntimeRemoval.parse(raw);
   signal?.throwIfAborted();
+  // The Gateway refuses this: serve on the swamp Node runs every removal, so it can't remove itself.
+  if (input.role === "swamp") throw new Error("The swamp role can't remove itself");
   if (input.role === "websocket") {
     return await removeWebSocketRuntime(
       {

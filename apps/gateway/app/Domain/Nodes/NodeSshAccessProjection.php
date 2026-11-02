@@ -6,6 +6,7 @@ namespace App\Domain\Nodes;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Infrastructure\Swamp\NativeRunResult;
 use App\Models\NodeFootprint;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -19,7 +20,7 @@ final readonly class NodeSshAccessProjection implements DirectOperationProjectio
     {
         $target = ValidatedData::object($intent['target']);
 
-        return hash('sha256', json_encode(['target' => $target, 'public_key' => $intent['public_key']], JSON_THROW_ON_ERROR));
+        return hash('sha256', json_encode(['target' => $target, 'keys' => $intent['keys']], JSON_THROW_ON_ERROR));
     }
 
     public function input(Operation $operation): array
@@ -32,7 +33,11 @@ final readonly class NodeSshAccessProjection implements DirectOperationProjectio
         return DB::transaction(function () use ($operation, $data): Operation {
             $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $terminal = $operation->status->terminal();
-            $result = array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip(['ssh_access_ready', 'error_code']));
+            // Swamp's run data: the swamp role identity logged in after the keys were added.
+            $raw = ValidatedData::object($data['result'] ?? []);
+            $login = NativeRunResult::stepStatus($raw, 'Log in with Swamp identity');
+            $result = ($data['status'] ?? null) === 'succeeded' && $login === 'succeeded'
+                ? ['ssh_access_ready' => true] : array_intersect_key($raw, array_flip(['error_code']));
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if ($terminal || $projected->status->value !== 'succeeded' || ($result['ssh_access_ready'] ?? false) !== true) {
                 return $projected;

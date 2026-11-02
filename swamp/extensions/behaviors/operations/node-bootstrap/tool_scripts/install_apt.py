@@ -77,7 +77,7 @@ def install(value):
                 argv.append(str(path))
         environment = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
         subprocess.run(
-            ["apt-get", *options, "update"],
+            ["apt-get", "-o", "DPkg::Lock::Timeout=300", *options, "update"],
             env=environment,
             check=True,
             stdout=sys.stderr,
@@ -85,6 +85,8 @@ def install(value):
         subprocess.run(
             [
                 "apt-get",
+                "-o",
+                "DPkg::Lock::Timeout=300",
                 *options,
                 "install",
                 "--yes",

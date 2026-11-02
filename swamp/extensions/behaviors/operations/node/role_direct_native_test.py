@@ -79,8 +79,8 @@ class DirectRoleNative(NativeTestCase):
         self.assertIsNone(state['operation']['result']['follow_up'])
         self.assertTrue(all('/direct-operations/91' in call['path'] for call in state['calls']))
 
-    def test_exact_node_target_and_label_are_retained_with_dynamic_participants(self):
-        self.assertIn('"orbit-node-" + string(inputs.node_id)', self.source)
+    def test_exact_node_label_places_dynamic_participants(self):
+        self.assertNotIn('"orbit-node-" + string(', self.source)
         self.assertIn("node: '${{ string(inputs.node_id) }}'", self.source)
         self.assertIn('analytics_storage', self.source)
         self.assertIn('snapshot.runtime.clickhouse.node_id', self.source)

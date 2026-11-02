@@ -10,7 +10,18 @@ import sys
 def configuration():
     raw = json.loads(os.environ["ORBIT_VAULT_CONFIGURATION"])
     intent = json.loads(os.environ["ORBIT_VAULT_INTENT"])
-    for name in ("url", "client_id", "organization_id", "collection_id"):
+    for name in (
+        key
+        for key in (
+            "url",
+            "client_id",
+            "organization_id",
+            "collection_id",
+            "organization",
+            "collection",
+        )
+        if key in intent
+    ):
         if raw[name] != intent[name]:
             raise ValueError("vault.intent_changed")
     return raw, intent

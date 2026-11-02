@@ -161,7 +161,7 @@ it('generates and retains one encrypted bootstrap pair for a new UpCloud VM', fu
     expect($this->vm->fresh()->provider_bootstrap)->toBe($pair);
 });
 
-it('does not admit an UpCloud operation when its bootstrap vault copy is refused', function (): void {
+it('fails the UpCloud operation before its run when its bootstrap vault copy is refused', function (): void {
     configureNativeUpCloudProvision();
     $socket = new FakeRoutePublicationSocket;
     $socket->reply = static function (array $message): array {
@@ -171,8 +171,9 @@ it('does not admit an UpCloud operation when its bootstrap vault copy is refused
     };
     app()->instance(WebSocketClient::class, $socket);
     expect(fn () => app(StartTaskVmProvisionAction::class)->execute($this->vm->id))->toThrow(ResourceOperationException::class);
-    expect(Operation::query()->where('kind', 'task_vm.provision')->count())->toBe(0)
-        ->and($this->vm->fresh()->provider_bootstrap)->toBeNull();
+    expect(Operation::query()->where('kind', 'task_vm.provision')->sole())
+        ->status->toBe(OperationStatus::Failed)->error_code->toBe('swamp.vault_sync_unavailable');
+    expect(array_column($socket->sent, 'type'))->not->toContain('workflow.run');
 });
 
 it('refuses UpCloud bootstrap drift against the stored host pin', function (): void {

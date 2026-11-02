@@ -31,14 +31,14 @@ jobs:
 - name: publication
   steps:
   - name: read-records
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-dns-root-read-records-" + run.id }}
+      behaviorName: '${{ ("route-dns-root-read-records-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &id001
-        name: ${{ "route-dns-root-" + run.id }}
+        name: '${{ ("route-dns-root-read-records-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -56,11 +56,11 @@ jobs:
         - /usr/bin/cat
         - /etc/dnsmasq.d/orbit-records.conf
   - name: read-catalog
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-dns-root-read-catalog-" + run.id }}
+      behaviorName: '${{ ("route-dns-root-read-catalog-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -74,7 +74,7 @@ jobs:
       condition:
         type: succeeded
   - name: publish
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: read-records
       condition:
@@ -102,7 +102,7 @@ jobs:
           - *id002
           - ${{ inputs.intent.after }}
   - name: restore
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: read-records
       condition:
@@ -132,7 +132,7 @@ jobs:
           - ${{ inputs.intent.after }}
     guard: ${{ steps.publish.status != "failed" }}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: publish
       condition:
@@ -143,7 +143,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "route-dns-root-result-" + run.id }}
+      behaviorName: '${{ "route-dns-root-result" }}'
       methodName: execute
       inputs:
         run: "if [ \"$READY\" = true ]; then\n  printf '{\"ready\":true,\"outcome\"\

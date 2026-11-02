@@ -28,7 +28,7 @@ beforeEach(function (): void {
     app()->instance(InstanceEnvironmentReader::class, $this->environment);
     app()->instance(InstanceEnvironmentWriter::class, $this->environment);
     app()->instance(InstanceTestEnvironmentWriter::class, $this->environment);
-    $operator = Node::query()->create([
+    $operator = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND',
         'name' => 'operator',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.2',
@@ -37,7 +37,7 @@ beforeEach(function (): void {
     $this->markAsGateway($operator);
     $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
 
-    $this->node = Node::query()->create([
+    $this->node = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND',
         'name' => 'app-dev',
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',

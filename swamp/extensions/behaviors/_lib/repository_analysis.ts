@@ -267,7 +267,8 @@ const Result = z.strictObject({
     base: oid,
     instance_id: positive,
     node_id: positive,
-    lease_id: positive,
+    head: oid,
+    tree: oid,
     execution_id: z.string().regex(/^[a-f0-9]{32}$/),
     entrypoint_sha256: digest,
     plan_id: text,
@@ -304,7 +305,7 @@ export async function validateAnalysis(raw: unknown, expected: {
     p.operation_id !== expected.operation || p.group !== expected.group || p.subtask !== expected.subtask ||
     p.instance_id !== expected.instanceId || p.node_id !== expected.nodeId || p.repository !== plan.repository || p.branch !== plan.branch ||
     p.plan_id !== plan.manifest.id || p.plan_revision !== plan.manifest.revision || p.plan_sha256 !== plan.plan_sha256 || p.base !== plan.base ||
-    p.before.head !== candidate.head || p.before.tree !== candidate.tree || e.execution_id !== p.execution_id ||
+    p.before.head !== candidate.head || p.before.tree !== candidate.tree || p.head !== p.before.head || p.tree !== p.before.tree || e.execution_id !== p.execution_id ||
     e.plan_sha256 !== p.plan_sha256 || e.base !== p.base || e.head !== candidate.head || e.tree !== candidate.tree || e.report.data.base !== plan.base ||
     Date.parse(p.finished_at) < Date.parse(p.started_at)
   ) throw new Error("analysis provenance differs from requested workspace/plan/candidate");

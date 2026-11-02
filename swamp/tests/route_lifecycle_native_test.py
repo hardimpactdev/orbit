@@ -60,10 +60,10 @@ class RouteRemoveNative(RouteUpdateNative):
         for name in ["route-mutation-withdraw", self.root_workflow]:
             path = self.repo / "workflows" / ("workflow-" + name + ".yaml")
             flow = yaml.safe_load((ROOT / "workflows" / path.name).read_text())
-            flow.pop("target", None)
+            flow.pop("target", None); flow.pop("labels", None)
             for job in flow["jobs"]:
                 for step in job["steps"]:
-                    step.pop("target", None)
+                    step.pop("target", None); step.pop("labels", None)
                     if step["name"] == "reachable":
                         step["task"] = {
                             "type": "behavior",

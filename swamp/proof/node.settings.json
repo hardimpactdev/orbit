@@ -1,0 +1,38 @@
+{
+  "kind": "node.settings",
+  "workflow": "operation-node-settings",
+  "topology": "minimal",
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "prepare": [],
+  "request": {
+    "method": "PATCH",
+    "path": "nodes/${node.target}/settings",
+    "body": {
+      "apps": {
+        "path": "/srv/proof-${proof.run}/apps"
+      }
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Create the apps folder",
+      "job": "settings",
+      "step": "Create the apps folder",
+      "budget_seconds": 40
+    },
+    {
+      "name": "Check owner and mode",
+      "job": "settings",
+      "step": "Check owner and mode",
+      "budget_seconds": 30
+    }
+  ],
+  "parity": [
+    "swamp/proof/node.settings/parity.py",
+    "created"
+  ]
+}

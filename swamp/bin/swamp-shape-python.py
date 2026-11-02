@@ -23,7 +23,7 @@ HOST_TOOL_LOCKS = {
 SAFE_REF = re.compile(r"(?:key|id|ref|name|hash|digest|public|field)s?$", re.I)
 
 
-def scan(source, gateway_primitives=(), context=None, phase_seconds=0):
+def scan(source, gateway_primitives=(), context=None, phase_seconds=0, phase_ssh=False):
     findings = []
     try:
         tree = ast.parse(source)
@@ -95,7 +95,7 @@ def scan(source, gateway_primitives=(), context=None, phase_seconds=0):
             return prefix(node.left, at, seen)
         return None
 
-    phase_controls = python_controls(tree, phase_seconds, bound, context)
+    phase_controls = python_controls(tree, phase_seconds, bound, context, phase_ssh)
 
     def lock_path(node, at, seen=frozenset()):
         if isinstance(node, ast.Name) and node.id not in seen:
@@ -213,6 +213,6 @@ if __name__ == "__main__":
                           for file, value in payload.items()}))
     elif len(sys.argv) > 2 and sys.argv[2] == "--source-context":
         payload = json.loads(payload)
-        print(json.dumps(scan(payload["source"], primitives, payload["sources"], payload.get("phase_seconds", 0))))
+        print(json.dumps(scan(payload["source"], primitives, payload["sources"], payload.get("phase_seconds", 0), payload.get("phase_ssh", False))))
     else:
         print(json.dumps(scan(payload, primitives)))

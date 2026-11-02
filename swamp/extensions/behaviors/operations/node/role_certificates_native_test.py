@@ -51,7 +51,7 @@ console.log(JSON.stringify({id:"c466ef02-dae7-4309-bf18-a38c11a6777c",name:"role
         workflow = json.loads(result.stdout)
         for job in workflow["jobs"]:
             for step in job["steps"]:
-                step.pop("target", None)
+                step.pop("target", None); step.pop("labels", None)
                 step.pop("labels", None)
         (self.repo / "workflows/workflow-role-certificate-fixture.yaml").write_text(
             json.dumps(workflow)
@@ -93,7 +93,7 @@ console.log(JSON.stringify({id:"c466ef02-dae7-4309-bf18-a38c11a6777c",name:"role
                 "node_id": leaf["node_id"],
                 "ssh": {
                     "control_node_id": 209,
-                    "identity_file": "/run/credentials/orbit-node-worker.service/proxy-ssh-identity",
+                    "identity_file": "/etc/orbit/swamp-role-worker/ssh-identity",
                     "public_key": "ssh-ed25519 public",
                     "target": {
                         "name": "target",

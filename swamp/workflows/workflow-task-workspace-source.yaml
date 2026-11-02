@@ -46,17 +46,17 @@ jobs:
 - name: source
   steps:
   - name: prepare
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-provision-data'
-      behaviorName: ${{ "tp-data-"+run.id+"-prepare" }}
+      behaviorName: '${{ "tp-data-prepare" }}'
       methodName: prepare
       inputs:
         intent: ${{ inputs.intent }}
     dependsOn: []
   - name: directory
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: task-vm-workspace
@@ -71,11 +71,11 @@ jobs:
         type: succeeded
     allowFailure: true
   - name: control
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "tp-"+run.id+"-control" }}
+      behaviorName: '${{ "tp-control" }}'
       methodName: execute
       inputs:
         run: 'mkdir -p -- "$ORBIT_ROOT"
@@ -89,11 +89,11 @@ jobs:
         type: succeeded
     allowFailure: true
   - name: clone_private
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "tp-"+run.id+"-clone-private" }}
+      behaviorName: '${{ "tp-clone-private" }}'
       methodName: execute
       inputs:
         run: 'git clone --branch "$ORBIT_BRANCH" -- "$ORBIT_REPOSITORY" "$ORBIT_SOURCE"
@@ -120,11 +120,11 @@ jobs:
     guard: ${{ !has(inputs.execution_secrets.git_authorization) }}
     allowFailure: true
   - name: clone_public
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "tp-"+run.id+"-clone-public" }}
+      behaviorName: '${{ "tp-clone-public" }}'
       methodName: execute
       inputs:
         run: 'git clone --branch "$ORBIT_BRANCH" -- "$ORBIT_REPOSITORY" "$ORBIT_SOURCE"
@@ -143,11 +143,11 @@ jobs:
     guard: ${{ has(inputs.execution_secrets.git_authorization) }}
     allowFailure: true
   - name: bundle
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "tp-"+run.id+"-bundle" }}
+      behaviorName: '${{ "tp-bundle" }}'
       methodName: execute
       inputs:
         run: 'git -C "$ORBIT_SOURCE" bundle create "$ORBIT_BUNDLE" --all
@@ -173,11 +173,11 @@ jobs:
         - type: skipped
     allowFailure: true
   - name: prepare_remote
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "tp-ssh-"+run.id }}
+      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
@@ -185,7 +185,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: ${{ "task-provision-ssh-"+run.id }}
+        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -204,11 +204,11 @@ jobs:
         type: succeeded
     allowFailure: true
   - name: copy_assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "tp-ssh-"+run.id }}
+      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: copy
       globalArgs:
         hosts:
@@ -216,7 +216,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: ${{ "task-provision-ssh-"+run.id }}
+        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -234,11 +234,11 @@ jobs:
         type: succeeded
     allowFailure: true
   - name: copy_bundle
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "tp-ssh-"+run.id }}
+      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: copy
       globalArgs:
         hosts:
@@ -246,7 +246,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: ${{ "task-provision-ssh-"+run.id }}
+        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -267,11 +267,11 @@ jobs:
         type: succeeded
     allowFailure: true
   - name: import
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "tp-ssh-"+run.id }}
+      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
@@ -279,7 +279,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: ${{ "task-provision-ssh-"+run.id }}
+        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -302,11 +302,11 @@ jobs:
         type: succeeded
     allowFailure: true
   - name: origin
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "tp-ssh-"+run.id }}
+      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
@@ -314,7 +314,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: ${{ "task-provision-ssh-"+run.id }}
+        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -336,11 +336,11 @@ jobs:
         type: succeeded
     allowFailure: true
   - name: branch
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "tp-ssh-"+run.id }}
+      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
@@ -348,7 +348,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: ${{ "task-provision-ssh-"+run.id }}
+        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -363,17 +363,18 @@ jobs:
         - switch
         - -c
         - ${{ inputs.intent.workspace.branch }}
+        - ${{ inputs.intent.workspace.start_commit }}
     dependsOn:
     - step: origin
       condition:
         type: succeeded
     allowFailure: true
   - name: observe
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "tp-ssh-"+run.id }}
+      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
@@ -381,7 +382,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: ${{ "task-provision-ssh-"+run.id }}
+        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -404,11 +405,11 @@ jobs:
         type: succeeded
     allowFailure: true
   - name: profile
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-provision-data'
-      behaviorName: ${{ "tp-data-"+run.id+"-profile" }}
+      behaviorName: '${{ "tp-data-profile" }}'
       methodName: profile
       inputs:
         intent: ${{ inputs.intent }}
@@ -419,11 +420,11 @@ jobs:
         type: succeeded
     allowFailure: true
   - name: setup-${{ self._index }}
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "tp-setup-"+run.id+"-"+string(self._index) }}
+      behaviorName: '${{ ("tp-setup-" + string(inputs.workspace.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
@@ -431,7 +432,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: ${{ "tp-setup-"+run.id+"-"+string(self._index) }}
+        name: '${{ ("tp-setup-" + string(inputs.workspace.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
         transport:
           identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -458,11 +459,11 @@ jobs:
       in steps) || steps["setup-"+string(self._index-1)].status != "succeeded")) }}
     allowFailure: true
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-provision-data'
-      behaviorName: ${{ "tp-data-"+run.id+"-result" }}
+      behaviorName: '${{ "tp-data-result" }}'
       methodName: source_result
       inputs:
         intent: ${{ inputs.intent }}
@@ -514,11 +515,11 @@ jobs:
       condition:
         type: always
   - name: cleanup
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "tp-"+run.id+"-cleanup" }}
+      behaviorName: '${{ "tp-cleanup" }}'
       methodName: execute
       inputs:
         run: 'rm -rf -- "$ORBIT_ROOT"
@@ -532,11 +533,11 @@ jobs:
         type: always
     allowFailure: true
   - name: cleanup_remote
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "tp-ssh-"+run.id }}
+      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
@@ -544,7 +545,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: ${{ "task-provision-ssh-"+run.id }}
+        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -562,7 +563,7 @@ jobs:
       condition:
         type: always
     allowFailure: true
-  target: orbit-node-209
+  labels: {role: swamp}
 name: task-workspace-source
 vaults:
 - orbit-control-inputs

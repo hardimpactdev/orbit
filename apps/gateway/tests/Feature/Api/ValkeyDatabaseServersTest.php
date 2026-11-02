@@ -2,16 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Domain\Processes\DesiredProcessState;
-use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
-use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\Node;
-use App\Models\Operation;
 use App\Models\Process;
 use Illuminate\Support\Str;
 use Tests\Support\FakeRoutePublicationSocket;
@@ -24,7 +20,7 @@ beforeEach(function (): void {
     $this->programs = new FakeValkeyAclAgent(app(AgentCommandRunner::class));
     app()->instance(AgentCommandRunner::class, $this->programs);
 
-    $gateway = Node::query()->create([
+    $gateway = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND',
         'name' => 'gateway',
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
@@ -41,7 +37,7 @@ beforeEach(function (): void {
     $socket->reply = fn (array $sent): array => ($sent['type'] === 'vault.put' ? [['type' => 'vault.put', 'id' => $sent['id'], 'payload' => ['data' => ['vaultName' => $sent['payload']['vaultName'], 'secretKey' => $sent['payload']['key'], 'vaultType' => 'local_encryption']]]] : [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-server-create', 'runId' => Str::uuid()->toString()]]]);
     app()->instance(WebSocketClient::class, $socket);
 
-    $this->dbNode = Node::query()->create([
+    $this->dbNode = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND',
         'name' => 'beast',
         'architecture' => 'amd64',
         'status' => LifecycleStatus::Active,
@@ -74,7 +70,7 @@ describe('database:server:create --driver=redis', function (): void {
             ->and($this->programs->runs)->toBe([]);
     });
 
-    it('validates the driver and the adoption fields', function (array $body): void {
+    it('validates the driver', function (array $body): void {
         $this->postJson('/api/v1/database-servers', $body)
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation.failed');
@@ -85,11 +81,6 @@ describe('database:server:create --driver=redis', function (): void {
         'pgsql' => fn (): array => valkey_server_request($this->dbNode, ['driver' => 'sqlite']),
         'sqlite' => fn (): array => valkey_server_request($this->dbNode, ['driver' => 'sqlite']),
         'unknown driver' => fn (): array => valkey_server_request($this->dbNode, ['driver' => 'valkey']),
-        'process without connection' => fn (): array => valkey_server_request($this->dbNode, ['process_id' => 1]),
-        'connection without process' => fn (): array => valkey_server_request($this->dbNode, ['connection' => 'services-valkey']),
-        'process with port' => fn (): array => valkey_server_request($this->dbNode, ['process_id' => 1, 'connection' => 'services-valkey', 'port' => 6379]),
-        'string process' => fn (): array => valkey_server_request($this->dbNode, ['process_id' => '1', 'connection' => 'services-valkey']),
-        'bad connection slug' => fn (): array => valkey_server_request($this->dbNode, ['process_id' => 1, 'connection' => 'Services Valkey']),
     ]);
 
     it('lists and shows the driver of each server', function (): void {
@@ -133,147 +124,6 @@ describe('the Process of a Valkey server', function (): void {
             ->and($this->runtime->convergedProcessIds)->toBe([]);
     });
 
-});
-
-describe('database:server:create --process --connection', function (): void {
-    beforeEach(function (): void {
-        $this->otherNode = Node::query()->create([
-            'name' => 'shark',
-            'status' => LifecycleStatus::Active,
-            'platform' => 'linux',
-            'public_ssh_host' => '192.0.2.81',
-            'public_ssh_port' => 22,
-            'user' => 'orbit',
-            'wireguard_ip' => '10.44.0.81',
-        ]);
-        $this->process = Process::query()->create([
-            'owner_type' => Node::class,
-            'owner_id' => $this->dbNode->id,
-            'name' => 'valkey',
-            'runtime' => ProcessRuntime::Docker,
-            'working_directory' => null,
-            'runtime_config' => [
-                'image' => 'valkey/valkey:8.0',
-                'command' => ['sh', '-c', 'exec valkey-server --appendonly yes --requirepass "$VALKEY_PASSWORD"'],
-                'environment' => ['VALKEY_PASSWORD' => 'queue-secret'],
-                'ports' => ['10.44.0.80:6379:6379'],
-                'volumes' => [['source' => 'services-valkey-data', 'target' => '/data', 'read_only' => false]],
-            ],
-            'restart_policy' => 'unless-stopped',
-            'desired_state' => DesiredProcessState::Running,
-            'status' => LifecycleStatus::Active,
-        ]);
-        $this->connection = DatabaseConnection::query()->create([
-            'slug' => 'services-valkey',
-            'driver' => 'redis',
-            'node_id' => $this->dbNode->id,
-            'host' => '10.44.0.80',
-            'port' => 6379,
-            'password' => 'queue-secret',
-        ]);
-        $this->adoption = valkey_server_request($this->dbNode, [
-            'slug' => 'services-valkey',
-            'process_id' => $this->process->id,
-            'connection' => 'services-valkey',
-        ]);
-    });
-
-    it('requires Node-side checks on first adoption even when the command already has aclfile', function (): void {
-        $this->process->update(['runtime_config' => [...$this->process->runtime_config, 'command' => ['valkey-server', '--aclfile', '/data/users.acl']]]);
-        $response = $this->postJson('/api/v1/database-servers', $this->adoption)->assertAccepted();
-        $operation = Operation::query()->findOrFail($response->json('data.id'));
-        expect($operation->input['validate_existing'])->toBeTrue();
-        expect($this->programs->runs)->toBe([]);
-    });
-
-    it('refuses another Process for an adopted slug', function (): void {
-        $this->postJson('/api/v1/database-servers', $this->adoption)->assertAccepted();
-
-        $other = $this->process->replicate();
-        $other->name = 'replacement';
-        $other->save();
-        $this->postJson('/api/v1/database-servers', [...$this->adoption, 'process_id' => $other->id])
-            ->assertConflict()
-            ->assertJsonPath('error.code', 'database.server_slug_conflict');
-    });
-
-    it('refuses an adoption that fails a check, names the check, and changes nothing', function (Closure $arrange, string $message): void {
-        $arrange->call($this);
-        $process = $this->process->refresh()->getAttributes();
-        $servers = DatabaseServer::query()->count();
-
-        $this->postJson('/api/v1/database-servers', $this->adoption)
-            ->assertConflict()
-            ->assertJsonPath('error.code', 'database.server_adoption_refused')
-            ->assertJsonPath('error.message', fn (string $actual): bool => str_contains($actual, $message));
-
-        expect(DatabaseServer::query()->count())->toBe($servers)
-            ->and($this->process->refresh()->getAttributes())->toBe($process)
-            ->and($this->connection->refresh()->database_server_id)->toBeNull()
-            ->and($this->programs->runs)->toBe([])
-            ->and($this->runtime->convergedProcessIds)->toBe([]);
-    })->with([
-        'a mysql driver' => [function (): void {
-            $this->adoption['driver'] = 'mysql';
-        }, 'Only a redis server can adopt a Process.'],
-        'no driver' => [function (): void {
-            unset($this->adoption['driver']);
-        }, 'Only a redis server can adopt a Process.'],
-        'a missing Process' => [function (): void {
-            $this->adoption['process_id'] = 9999;
-        }, 'is not a Docker Process of Node [beast]'],
-        'a Process of another Node' => [function (): void {
-            $this->process->update(['owner_id' => $this->otherNode->id]);
-        }, 'is not a Docker Process of Node [beast]'],
-        'a systemd Process' => [function (): void {
-            $this->process->update(['runtime' => ProcessRuntime::Systemd]);
-        }, 'is not a Docker Process of Node [beast]'],
-        'another image' => [function (): void {
-            $this->process->update(['runtime_config' => [...$this->process->runtime_config, 'image' => 'redis:8']]);
-        }, 'does not run a valkey/valkey image'],
-        'another repository' => [function (): void {
-            $this->process->update(['runtime_config' => [...$this->process->runtime_config, 'image' => 'valkey/valkey-bundle:8.1']]);
-        }, 'does not run a valkey/valkey image'],
-        'no volume at /data' => [function (): void {
-            $this->process->update(['runtime_config' => [...$this->process->runtime_config, 'volumes' => []]]);
-        }, 'has no Docker volume at /data'],
-        'a host path at /data' => [function (): void {
-            $this->process->update(['runtime_config' => [...$this->process->runtime_config, 'volumes' => [['source' => '/srv/valkey', 'target' => '/data', 'read_only' => false]]]]);
-        }, 'has no Docker volume at /data'],
-        'a port outside WireGuard' => [function (): void {
-            $this->process->update(['runtime_config' => [...$this->process->runtime_config, 'ports' => ['127.0.0.1:6379:6379']]]);
-        }, 'does not publish container port 6379 on the WireGuard address of Node [beast]'],
-        'another container port' => [function (): void {
-            $this->process->update(['runtime_config' => [...$this->process->runtime_config, 'ports' => ['10.44.0.80:6379:6380']]]);
-        }, 'does not publish container port 6379 on the WireGuard address of Node [beast]'],
-        'a Process that a server owns' => [function (): void {
-            DatabaseServer::query()->create([
-                'slug' => 'older-valkey',
-                'driver' => 'redis',
-                'node_id' => $this->dbNode->id,
-                'process_id' => $this->process->id,
-                'tag' => '8.1',
-                'port' => 6379,
-                'root_password' => 'other-secret',
-                'status' => LifecycleStatus::Active,
-            ]);
-        }, 'already runs Database server [older-valkey]'],
-        'a missing connection' => [function (): void {
-            $this->adoption['connection'] = 'missing';
-        }, 'Database connection [missing] is not a redis connection.'],
-        'a mysql connection' => [function (): void {
-            $this->connection->update(['driver' => 'mysql', 'database' => 'app', 'username' => 'app']);
-        }, 'Database connection [services-valkey] is not a redis connection.'],
-        'a connection to another host' => [function (): void {
-            $this->connection->update(['host' => '10.44.0.81']);
-        }, 'Database connection [services-valkey] does not point to 10.44.0.80:6379.'],
-        'a connection to another port' => [function (): void {
-            $this->connection->update(['port' => 6380]);
-        }, 'Database connection [services-valkey] does not point to 10.44.0.80:6379.'],
-        'a connection with an ACL user' => [function (): void {
-            $this->connection->update(['username' => 'queue']);
-        }, 'Adoption requires the default-user connection.'],
-    ]);
 });
 
 describe('database:server:close boundary', function (): void {

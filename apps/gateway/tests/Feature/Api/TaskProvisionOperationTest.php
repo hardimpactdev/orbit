@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Operations\FailNativeOperationAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Data\Tasks\StartTaskAnalysisData;
 use App\Domain\Certificates\LeafCertificateSigner;
@@ -13,6 +14,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskAnalysisIntent;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskProvisionProjection;
+use App\Domain\Tasks\TaskStartCommit;
 use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmState;
@@ -28,8 +30,10 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskWorkspaceLeaseRecord;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Tests\Support\FakeRoutePublicationSocket;
+use Tests\Support\FakeTaskStartCommit;
 use Tests\Support\TaskVmRecipeImages;
 use Tests\Support\TaskVmSettingsBuilder;
 
@@ -117,6 +121,32 @@ it('admits one Tasks root with canonical placement, enrollment and checkout inte
         ->and(Instance::query()->sole()->status->value)->toBe('reserved');
 });
 
+it('pins the workspace to the start commit read before the admission transaction', function (): void {
+    $start = new FakeTaskStartCommit(str_repeat('f', 40));
+    app()->instance(TaskStartCommit::class, $start);
+    $level = DB::transactionLevel();
+    $operation = app(StartTaskProvisionAction::class)->execute($this->group, 'fixture', null);
+    expect($operation->input['workspace']['start_commit'])->toBe(str_repeat('f', 40))
+        ->and($start->transactionLevels)->toBe([$level]);
+});
+
+it('refuses without a green start commit before it captures any guest or workspace', function (): void {
+    app()->instance(TaskStartCommit::class, new FakeTaskStartCommit(refusal: new ResourceOperationException('tasks.no_green_commit', 'No green commit.', 409)));
+    expect(fn () => app(StartTaskProvisionAction::class)->execute($this->group, 'fixture', null))
+        ->toThrow(ResourceOperationException::class, 'No green commit.');
+    expect($this->vm->fresh()->node_id)->toBeNull()->and(Instance::query()->count())->toBe(0)
+        ->and(Operation::query()->count())->toBe(0)->and($this->group->fresh()->status->value)->toBe('todo');
+});
+
+it('refuses a group that cannot be provisioned before it reads the start commit', function (): void {
+    $start = new FakeTaskStartCommit(refusal: new ResourceOperationException('tasks.no_green_commit', 'No green commit.', 409));
+    app()->instance(TaskStartCommit::class, $start);
+    $this->group->update(['status' => 'backlog']);
+    expect(fn () => app(StartTaskProvisionAction::class)->execute($this->group->fresh(), 'fixture', null))
+        ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('tasks.not_todo'));
+    expect($start->transactionLevels)->toBe([]);
+});
+
 it('replays before group validation and starts no second native run', function (): void {
     $key = app(OperationIdempotency::class);
     $key->kind = 'tasks.provision';
@@ -186,6 +216,17 @@ it('ends a failed, interrupted or cancelled native provision without claiming VM
         ->and($this->group->fresh()->reserved_at)->toBeNull()
         ->and($this->vm->fresh()->state)->not->toBe(TaskVmState::Destroyed);
 })->with(['failed', 'interrupted', 'cancelled']);
+
+it('ends the group when a history read observes the failed native provision first', function (): void {
+    $operation = app(StartTaskProvisionAction::class)->execute($this->group, 'fixture', null);
+    // A reader such as the stage's operation poll sees the failed run before the subscriber does (op 7473).
+    app(FailNativeOperationAction::class)->execute($operation, $operation->state['swamp_run_id'], OperationStatus::Failed,
+        ['failed_step' => 'observe-vm', 'detail' => 'Invalid behavior name.', 'stderr_recorded' => false], '2026-11-02T08:15:18.000Z');
+    expect($operation->fresh()->status)->toBe(OperationStatus::Failed)
+        ->and($this->group->fresh()->status->value)->toBe('failed')
+        ->and($this->group->fresh()->reserved_at)->toBeNull()
+        ->and($this->vm->fresh()->state)->toBe(TaskVmState::Failed);
+});
 
 it('retains confirmed VM readiness when terminal source preparation fails', function (): void {
     $operation = app(StartTaskProvisionAction::class)->execute($this->group, 'fixture', null);

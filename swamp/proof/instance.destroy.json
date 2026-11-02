@@ -1,0 +1,131 @@
+{
+  "kind": "instance.destroy",
+  "workflow": "operation-instance-destroy",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "projects",
+      "operation": false,
+      "bind": "project",
+      "body": {
+        "slug": "proof-destroy",
+        "name": "Proof destroy",
+        "type": "node-package",
+        "root": ".",
+        "repository_url": "https://github.com/octocat/Hello-World.git",
+        "default_branch": "master"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "projects/${project.id}/teardown-steps",
+      "operation": false,
+      "body": {
+        "name": "marker",
+        "command": "printf 'proof-private-%s-output' teardown; touch ../teardown-ran-${proof.run}",
+        "timeout_seconds": 10
+      }
+    },
+    {
+      "method": "POST",
+      "path": "projects/${project.id}/process-definitions",
+      "operation": false,
+      "body": {
+        "name": "dev-server",
+        "environments": [
+          "development"
+        ],
+        "spec": {
+          "runtime": "systemd",
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "http.server",
+            "8766"
+          ],
+          "restart_policy": "on-failure"
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "instances",
+      "bind": "instance",
+      "body": {
+        "project_id": "${project.id}",
+        "node_id": "${node.target}",
+        "name": "d-${proof.run}"
+      }
+    }
+  ],
+  "before_target": [
+    [
+      "runuser",
+      "-u",
+      "orbit",
+      "--",
+      "sh",
+      "-c",
+      "printf '.env\\n' >> /home/orbit/apps/proof-destroy/d-${proof.run}/.git/info/exclude"
+    ]
+  ],
+  "request": {
+    "method": "DELETE",
+    "path": "instances/${instance.id}",
+    "body": {
+      "force": false
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Read the scripts",
+      "job": "destroy",
+      "step": "Read the scripts",
+      "budget_seconds": 15
+    },
+    {
+      "name": "Verify the source",
+      "job": "destroy",
+      "step": "Verify the source",
+      "budget_seconds": 20
+    },
+    {
+      "name": "Check work is pushed",
+      "job": "destroy",
+      "step": "Check work is pushed",
+      "budget_seconds": 40
+    },
+    {
+      "name": "Run teardown steps",
+      "job": "destroy",
+      "step": "Run teardown steps",
+      "budget_seconds": 20
+    },
+    {
+      "name": "Remove the source",
+      "job": "destroy",
+      "step": "Remove the source",
+      "budget_seconds": 20
+    },
+    {
+      "name": "Check it is gone",
+      "job": "destroy",
+      "step": "Check it is gone",
+      "budget_seconds": 20
+    },
+    {
+      "name": "Report the result",
+      "job": "destroy",
+      "step": "Report the result",
+      "budget_seconds": 15
+    }
+  ],
+  "parity": "swamp/proof/instance.destroy/parity.py"
+}

@@ -5,7 +5,7 @@ description: "Prepare architecture and documentation, build a feature, and submi
 covers:
   - .agents/skills/reviewing-pull-requests/references/test-*.md
   - "{composer.json,vet.json,.gitattributes}"
-  - bin/{bootstrap,gateway-app-key,test,pest-plain,review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,docs-merge-check,build-api,docs-navigation,dependency-audit}
+  - bin/{bootstrap,gateway-app-key,test,pest-plain,review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,docs-merge-check,build-api,docs-navigation,docs-flows,check-flows,dependency-audit}
   - "{apps/*,packages/php-sdk}/{composer,vet}.json"
   - "{apps/*,packages/php-sdk}/phpstan.neon"
   - apps/gateway/{database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,tests/{Support/{LinuxHost,TestToolchain,LocalShellSshExecutor,WithCommittedSqliteDatabase}.php,Feature/Database/SchemaBaselineTest.php}}
@@ -78,7 +78,9 @@ composer docs-build
 composer docs-lint
 ```
 
-The context index, OpenAPI, MCP catalogue, web API types, and Mintlify configuration are build outputs. Git ignores `docs/generated/context.json`, `docs/openapi.json`, `apps/gateway/resources/mcp/tools.json`, `apps/web/src/api/schema.d.ts`, and `docs/docs.json`. Do not add them to a pull request. A Gateway Composer install builds OpenAPI and the MCP catalogue through `bin/build-api`, including the release preparation install. This needs PHP, Composer, Python 3, and the complete repository sources. The Gateway serves the built MCP manifest from its release directory. Web checks and builds generate their TypeScript types from that OpenAPI document.
+The context index, OpenAPI, MCP catalogue, web API types, and Mintlify configuration are build outputs. Git ignores `docs/generated/context.json`, `docs/openapi.json`, `apps/gateway/resources/mcp/tools.json`, `apps/web/src/api/schema.d.ts`, `docs/docs.json`, and `docs/flows-data.js`. Do not add them to a pull request.
+
+`bin/docs-flows` writes the [flow charts](https://github.com/hardimpactdev/orbit/tree/main/docs/flows) to `docs/flows-data.js`, and `docs/flow.js` shows each chart under its `orbit <command>` heading. A command's charts are the kinds its route starts, from `#[StartsOperation]` through `x-orbit-kinds` in `docs/openapi.json`, so run `bin/build-api` before `composer docs-build`. A Gateway Composer install builds OpenAPI and the MCP catalogue through `bin/build-api`, including the release preparation install. This needs PHP, Composer, Python 3, and the complete repository sources. The Gateway serves the built MCP manifest from its release directory. Web checks and builds generate their TypeScript types from that OpenAPI document.
 
 Run `bin/build-api` after API changes. Run `composer docs-build` before documentation checks. CI runs these generation steps before the checks that consume the outputs. A fresh local web checkout needs `composer install --working-dir=apps/gateway` before `bun run build` in `apps/web`.
 
@@ -98,7 +100,7 @@ A domain provider extends Laravel's `ServiceProvider`. Bootstrap discovers it wi
 
 An operation manifest returns a map from kind name to an `OperationKind` class for PHP execution, or to `['executor' => 'swamp', 'completion' => CompletionClass::class]` for Swamp execution. Keep new kind constants in the owning domain. The registry rejects duplicate kind names. The CLI fragment returns `actions`, `noun_endings`, and `route_exceptions` lists.
 
-A navigation fragment contains a `navigation` list of entries with `tab`, `group`, `order`, and `pages`. Use an existing tab and group, or add a group in the fragment. `order` places pages within the group; filenames break ties. A fragment may also contain `redirects`. Site settings live in `docs/site.json`; API navigation comes from OpenAPI. Existing pages have separate fragments, so two families can add pages without editing a common index.
+A navigation fragment contains a nonempty `navigation` list of entries with `tab`, `group`, `order`, and `pages`. `composer docs-build` fails on a fragment without one. Use an existing tab and group, or add a group in the fragment. `order` places pages within the group; filenames break ties. A fragment may also contain `redirects`. Site settings live in `docs/site.json`; API navigation comes from OpenAPI. Existing pages have separate fragments, so two families can add pages without editing a common index.
 
 Family conversion pull requests leave the shared loaders, `ApplicationServiceProvider.php`, `CommandVocabulary.php`, `OperationKinds.php`, `docs/site.json`, and build workflows alone. Changes to these contracts belong in a separate shared-infrastructure pull request. Family pull requests never update generated files or install a merge driver.
 
@@ -205,7 +207,7 @@ Use the [delivery-line commands](/reference/delivery-line) to prove a bug on cur
 
 GitHub CI runs Composer validation, changed-PHP syntax checks, CLI and web builds, the Docs build and generated-contract freshness, as [CI](/reference/implementation-loop#ci) lists. It builds agent delivery only when the published agent's `apps/agent` tree differs; otherwise it reuses the verified published artifacts.
 
-Root `composer check` runs `bin/review-check`. It runs `composer validate --strict` and `composer check` in each of the five Composer projects, several projects at once. It runs no test suite. It checks the working tree as it is, uncommitted changes included, and writes a report under `<git-common-dir>/orbit-checks/<HEAD>/`. For changed paths it also checks generated OpenAPI and MCP artifacts, Rust formatting, the web and Pi server profiles, and a PHP finding pack. Artifact failures name the regeneration command. A missing tool fails its check. Orbit's Project task check runs this gate at every task handoff, and CI runs the handoff's builds and static checks. [The candidate gate](/reference/implementation-loop#the-candidate-gate) lists every check.
+Root `composer check` runs `bin/review-check`. It runs `composer validate --strict` and `composer check` in each of the five Composer projects, several projects at once. It runs no test suite. It checks the working tree as it is, uncommitted changes included, and writes a report under `<git-common-dir>/orbit-checks/<HEAD>/`. For changed paths it also checks generated OpenAPI and MCP artifacts, Rust formatting, the web and Pi server profiles, and a PHP finding pack. Artifact failures name the regeneration command. A missing tool fails its check. Orbit's Project task check runs this gate at every task handoff, and CI's Project check runs it on every commit. [The candidate gate](/reference/implementation-loop#the-candidate-gate) lists every check.
 
 The five projects share one tooling baseline: the same Composer script names and commands, the same `composer check` steps, and PHPStan level 9. `bin/tooling-baseline` fails when a project drifts from it, or when Pint skips a folder that Rector or PHPStan checks. CI and `bin/review-check` run it. To change a project's tooling on purpose, change the baseline in the same pull request and give the reason for any difference.
 
@@ -318,6 +320,8 @@ Deleting a migration without an owner does not require a new ownership binding f
 A waiver lives in the Git directory, not in a tracked file, because it matters only to one branch and nothing reads it after the merge. A shared tracked file is rejected: concurrent branches appended to the same lines, so most merges of `main` into a task branch conflicted.
 
 Page ownership belongs beside the documentation, in `covers:` frontmatter and the extractor's surface mappings. Listing owners in every task brief is rejected, because duplicate lists go stale and miss new surfaces. Running only existing generators is also rejected: generated API, CLI, and MCP contracts do not find every hand-written page affected by configuration, errors, migrations, or schedules. Current generator output needs no duplicate prose, but stale or missing output still requires an update.
+
+A planned new file needs an owner whose glob also matches a tracked path, such as `metrics-*/**`, so a kind's new behavior directory needs no placeholder. Test inputs need no owner: `tests/` directories and the topology proof fixtures in `swamp/proof/`.
 
 Coverage declarations are optional, but docs-lint checks that their globs are safe and match tracked paths. A committed ratchet prevents already-covered pages from dropping their declarations. Requiring coverage on every page at once is rejected, because a monotonic ratchet lets documentation consolidation add ownership incrementally without weakening existing coverage.
 

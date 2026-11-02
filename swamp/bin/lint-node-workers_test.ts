@@ -375,7 +375,7 @@ Deno.test("official firewall apply is recognized without opening the extension n
       nodeUser: "orbit",
       nodePort: 22,
       nodeIdentityFile:
-        "/run/credentials/orbit-node-worker.service/proxy-ssh-identity",
+        "/etc/orbit/swamp-role-worker/ssh-identity",
       become: true,
     },
     inputs: {},

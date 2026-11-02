@@ -94,28 +94,3 @@ Deno.test("SQLite action output retains bounded failures and rejects missing or 
         { ref: snapshot, json: JSON.stringify(snapshot) },
     );
 });
-
-Deno.test("public export wrapper projects bounded child metadata without rejecting backend", async () => {
-    const value = {
-        backend: "active",
-        bytes: 4096,
-        sha256: "a".repeat(64),
-        mode: 384,
-    };
-    assertEquals(
-        await behavior.methods.result.execute({
-            kind: "database.sqlite_export",
-            expected: ["run"],
-            export_step: "run",
-            steps: {
-                run: {
-                    status: "succeeded",
-                    outputs: {
-                        result: { stdout: JSON.stringify(value), exitCode: 0 },
-                    },
-                },
-            },
-        }, ctx),
-        { stdout: JSON.stringify(value) + "\n", exitCode: 0 },
-    );
-});

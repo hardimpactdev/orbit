@@ -20,8 +20,8 @@ use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectLifecycleStepStore;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Schedules\NativeSchedules;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\DatabaseConnection;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\InstanceTransfer;
@@ -31,6 +31,7 @@ use App\Models\Route;
 use App\Models\RouteAnalyticsTracking;
 use App\Models\RouteTarget;
 use App\Models\WebSocketAppTarget;
+use App\Support\ValidatedData;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -55,6 +56,9 @@ final readonly class StartInstanceDestroyAction
             throw new ResourceOperationException('operation.kind_unavailable', 'Native publication verification requires anonymous or scoped GitHub App repository access.', 503);
         }
         $snapshot = $this->snapshot($instance, $force);
+        // A native Schedule fires from its own workflow on serve, not from the Node; it stops before the Instance goes.
+        $members = array_column(is_array($snapshot['members'] ?? null) ? $snapshot['members'] : [], 'instance_id');
+        app(NativeSchedules::class)->removeForInstances($members === [] ? [$instance->id] : ValidatedData::integerList($members));
 
         return DB::transaction(function () use ($instance, $snapshot, $caller, $requestId, $kind): Operation {
             if (($replay = $this->idempotency->replay($kind)) !== null) {
@@ -69,7 +73,7 @@ final readonly class StartInstanceDestroyAction
     /** @return array<string, mixed> */
     public function snapshot(Instance $instance, bool $force): array
     {
-        if (! $instance->placedOnAppDev() || DatabaseConnection::query()->where('owner_instance_id', $instance->id)->whereNotNull('database_server_id')->exists()) {
+        if (! $instance->placedOnAppDev()) {
             throw new ResourceOperationException('operation.kind_unavailable', 'This removal placement has no native destroy DAG.', 503);
         }
         $instance->load($this->removalRelations());

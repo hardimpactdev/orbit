@@ -27,7 +27,9 @@ use Tests\Support\FakeRoutePublicationSocket;
 beforeEach(function (): void {
     config(['swamp.run_token' => 'fixture.shared.token']);
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-instance-destroy', 'runId' => (string) Str::uuid()]]];
+    $socket->reply = static fn (array $request): array => $request['type'] === 'vault.put'
+        ? [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]]
+        : [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-instance-destroy', 'runId' => (string) Str::uuid()]]];
     app()->instance(WebSocketClient::class, $socket);
     $this->socket = $socket;
     $accounts = Mockery::mock(ManagedUserAccountResolver::class);
@@ -63,9 +65,10 @@ it('admits stored source intent and one native root without Gateway source or ac
         ->and($operation->input['source_pending'])->toBeTrue()
         ->and($operation->input['members'][0]['origin'])->toBeNull()
         ->and($operation->input['members'][0]['worktree_inventory'])->toBeNull()
-        ->and($this->socket->sent)->toHaveCount(1)
-        ->and($this->socket->sent[0]['type'])->toBe('workflow.run')
-        ->and($this->socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-instance-destroy')
+        ->and(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'workflow.run'])
+        ->and($this->socket->sent[0]['payload']['key'])->toBe('instance-git-operation-'.$id)
+        ->and($this->socket->sent[1]['payload']['workflowIdOrName'])->toBe('operation-instance-destroy')
+        ->and($this->socket->sent[1]['payload']['inputs']['execution_secrets']['git_read']['key'])->toBe('instance-git-operation-'.$id)
         ->and($this->instance->refresh()->status)->toBe(InstanceState::Removing)
         ->and(InstanceRemoval::query()->count())->toBe(1);
     Queue::assertNothingPushed();
@@ -169,15 +172,25 @@ it('admits only the requested member without discovering or deleting sibling wor
         ->and(InstanceRemoval::query()->sole()->members()->count())->toBe(1);
 })->with([false, true]);
 
-it('refuses an unported managed removal before source reads or intent writes', function (): void {
+it('drops an owned server database through the server child, with its password copied by the database intent', function (): void {
     $server = DatabaseServer::query()->create(['slug' => 'dispatch-managed', 'node_id' => $this->node->id,
         'driver' => 'mysql', 'tag' => 'test', 'port' => 3306, 'root_password' => 'fixture-private-password', 'status' => 'active']);
-    DatabaseConnection::query()->create(['slug' => 'dispatch-managed', 'driver' => 'mysql',
+    DatabaseConnection::query()->create(['slug' => 'dispatch-managed', 'driver' => 'mysql', 'host' => '10.44.0.9', 'port' => 3306,
+        'database' => 'dispatch_managed', 'username' => 'dispatch_managed', 'password' => 'fixture-connection-password',
         'database_server_id' => $server->id, 'owner_instance_id' => $this->instance->id]);
-    $this->deleteJson($this->path, ['force' => true])->assertStatus(503)->assertJsonPath('error.code', 'operation.kind_unavailable');
-    expect(Operation::query()->count())->toBe(0);
-    expect($this->instance->refresh()->status)->toBe(InstanceState::Active);
-    expect(InstanceRemoval::query()->count())->toBe(0);
+    $id = $this->withHeader('Idempotency-Key', 'destroy-managed')->deleteJson($this->path, ['force' => true])->assertAccepted()->json('data.id');
+    $operation = Operation::query()->findOrFail($id);
+    $intentId = $operation->input['direct_destroy']['database']['intent_id'];
+    $run = collect($this->socket->sent)->firstWhere('type', 'workflow.run')['payload']['inputs'];
+    $key = 'database-destroy-owned-intent-'.$intentId.'-server-'.$server->id;
+
+    expect(collect($this->socket->sent)->where('type', 'vault.put')->pluck('payload.key')->all())->toContain($key)
+        ->and($run['execution_secrets']['server_'.$server->id])->toBe(['vault' => 'orbit-control-inputs', 'key' => $key])
+        ->and(array_column($run['intent']['direct_destroy']['database']['servers'], 'server_id'))->toBe([$server->id])
+        ->and($run['intent']['direct_destroy']['database']['servers'][0]['intent']['ssh'])->toBe(['host' => '10.44.0.9', 'user' => 'orbit',
+            'host_keys' => ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG']])
+        ->and(json_encode($run))->not->toContain('fixture-private-password')->not->toContain('fixture-connection-password')
+        ->and($this->instance->refresh()->status)->toBe(InstanceState::Removing);
 });
 
 it('refuses a second native root with a new key while the accepted removal is queued or running', function (): void {
@@ -224,7 +237,7 @@ it('admits a new native retry after terminal failure using the same immutable so
     expect($retried->input)->toBe($saved)
         ->and($retried->state['swamp_run_id'])->not->toBe($first->state['swamp_run_id'])
         ->and($retried->input['direct_destroy']['database']['sqlite'][0]['connection_id'])->toBe($database->id)
-        ->and($this->socket->sent)->toHaveCount(2);
+        ->and(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'workflow.run', 'vault.put', 'workflow.run']);
     expect(Operation::query()->count())->toBe(2);
     $executable = app(InstanceDestroySourceInspection::class)->executable(Operation::query()->findOrFail($next)->input);
     expect($executable['source_pending'])->toBeFalse()

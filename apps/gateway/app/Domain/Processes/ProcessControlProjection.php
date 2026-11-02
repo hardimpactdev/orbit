@@ -9,7 +9,6 @@ use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\CaddyPublicationPlan;
-use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -23,17 +22,7 @@ final readonly class ProcessControlProjection implements DirectOperationProjecti
 
     public function input(Operation $operation): array
     {
-        if (in_array($operation->kind, ['process.create', 'process.update', 'process.destroy'], true)) {
-            return app(ProcessLifecycleInput::class)->forOperation($operation);
-        }
-
-        $input = $this->inputFor($operation->kind, $operation->input, (int) $operation->node_id);
-
-        return $operation->kind === 'process.stop'
-            ? ['intent' => ['control' => Arr::except($input, ['agent_sha256']),
-                'ssh_execution' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($operation->node_id))],
-                'execution_secrets' => []]
-            : $input;
+        return app(ProcessLifecycleInput::class)->forOperation($operation);
     }
 
     /** @param array<string,mixed> $intent
@@ -63,8 +52,19 @@ final readonly class ProcessControlProjection implements DirectOperationProjecti
         $status = OperationStatus::from(ValidatedData::string($data['status']));
         $code = ValidatedData::nullableString($data['error_code'] ?? null);
         $reported = ValidatedData::object($data['result'] ?? []);
+        $desired = match ($operation->kind) {
+            'process.stop', 'process.destroy' => 'stopped',
+            'process.start', 'process.restart' => 'running',
+            'process.create', 'process.update' => ValidatedData::string($operation->input['desired']),
+            default => throw new \LogicException('A Process lifecycle kind is required.'),
+        };
+        $state = $status === OperationStatus::Succeeded && $operation->kind !== 'process.destroy'
+            ? ($operation->input['runtime'] === 'systemd'
+                ? ($desired === 'running' ? 'active' : 'inactive')
+                : trim(ValidatedData::string($reported['state'])))
+            : null;
         $result = match ($status) {
-            OperationStatus::Succeeded => ['ready' => true, ...($operation->kind === 'process.destroy' ? [] : ['state' => $reported['state'] ?? null])],
+            OperationStatus::Succeeded => ['ready' => true, ...($operation->kind === 'process.destroy' ? [] : ['state' => $state])],
             OperationStatus::Failed, OperationStatus::Interrupted => ['error_code' => $code],
             default => [],
         };

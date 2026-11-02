@@ -1,7 +1,8 @@
 import { nodeCertificateGroups } from "../../certificates/batch_steps.ts";
+import { behaviorName } from "../../_lib/behavior_name.ts";
 type Fields = Record<string, unknown>;
 const expr = (value: string) => "${{ " + value + " }}";
-const coordinator = { target: "orbit-node-209" };
+const coordinator = { labels: { role: "swamp" } };
 const completed = { type: "always" };
 /** Compose native children under the real parent Operation, without callbacks or effects in TS. */
 export function routeMutationSteps(
@@ -239,9 +240,7 @@ export function routeMutationSteps(
         task: {
             type: "behavior",
             behaviorType: "@nckrtl/route-mutation-command",
-            behaviorName: expr(
-                `"${name}-result-" + run.id + "-" + string(self._index)`,
-            ),
+            behaviorName: behaviorName(name + "-result", undefined, true),
             methodName: "result",
             inputs: {
                 stage: expr("self.stage"),

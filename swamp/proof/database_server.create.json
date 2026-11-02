@@ -1,0 +1,117 @@
+{
+  "kind": "database_server.create",
+  "workflow": "operation-database-server-create",
+  "topology": "minimal",
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "expect": {
+    "status": "succeeded"
+  },
+  "request": {
+    "method": "POST",
+    "path": "database-servers",
+    "body": {
+      "slug": "proof-mysql-${proof.run}",
+      "node_id": "${node.target}",
+      "driver": "mysql",
+      "port": 33172
+    }
+  },
+  "phases": [
+    {
+      "name": "Pull the image",
+      "job": "server",
+      "step": "Pull the image",
+      "budget_seconds": 600
+    },
+    {
+      "name": "Write the first login",
+      "job": "server",
+      "step": "Write the first login",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Remove the old container",
+      "job": "server",
+      "step": "Remove the old container",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Start the container",
+      "job": "server",
+      "step": "Start the container",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Wait until ready",
+      "job": "server",
+      "step": "Wait until ready",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Stop the first container",
+      "job": "server",
+      "step": "Stop the first container",
+      "budget_seconds": 70
+    },
+    {
+      "name": "Remove the first container",
+      "job": "server",
+      "step": "Remove the first container",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Start the final container",
+      "job": "server",
+      "step": "Start the final container",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Wait for the final server",
+      "job": "server",
+      "step": "Wait for the final server",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Write the client login",
+      "job": "server",
+      "step": "Write the client login",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Check the admin login",
+      "job": "server",
+      "step": "Check the admin login",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Remove the first login",
+      "job": "server",
+      "step": "Remove the first login",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Remove the client login",
+      "job": "server",
+      "step": "Remove the client login",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Report the result",
+      "job": "server",
+      "step": "Report the result",
+      "budget_seconds": 30
+    }
+  ],
+  "parity": [
+    "swamp/proof/database_server/parity.py",
+    "running"
+  ],
+  "clean_target": [
+    [
+      "sh",
+      "-c",
+      "docker ps --all --quiet --filter name=-proof- | xargs -r docker rm --force"
+    ]
+  ]
+}

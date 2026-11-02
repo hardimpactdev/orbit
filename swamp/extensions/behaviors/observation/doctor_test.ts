@@ -310,8 +310,8 @@ Deno.test("native read failure recovery uses only the new Node check scope after
     assert(!healthy.observed_checks["9"].includes("node.inspection_failed"));
 });
 
-Deno.test("Doctor shares allowlist line and ordering checks without false drift", () => {
-    const comment = "orbit:node:9:allowlist:rex";
+Deno.test("Doctor matches source allows and their deny by tuple without false drift", () => {
+    const comment = "orbit rex";
     const base = {
         comment,
         direction: "in",
@@ -326,10 +326,10 @@ Deno.test("Doctor shares allowlist line and ordering checks without false drift"
         nodes: [{
             ...node(),
             resources: {
-                firewall_rules: [{ id: 11, name: "rex", status: "active" }],
+                firewall_rules: [{ id: 11, name: "7297/tcp from any", status: "active" }],
                 firewall_expected: [
                     {
-                        name: "rex",
+                        name: "7297/tcp from any",
                         shape: {
                             ...base,
                             action: "allow",
@@ -337,7 +337,7 @@ Deno.test("Doctor shares allowlist line and ordering checks without false drift"
                         },
                     },
                     {
-                        name: "rex",
+                        name: "7297/tcp from any",
                         shape: { ...base, action: "deny", source: "any" },
                     },
                 ],
@@ -356,21 +356,8 @@ Deno.test("Doctor shares allowlist line and ordering checks without false drift"
             [read.key]: step("Status: active\n" + rows.join("\n")),
         });
     assertEquals(codes(observe([allow, deny, trust])), []);
-    assert(
-        codes(observe([trust, allow, deny])).includes("firewall.rule_mismatch"),
-    );
+    assertEquals(codes(observe([allow.replace(" # " + comment, ""), deny, trust])), []);
     assert(codes(observe([deny, trust])).includes("firewall.rule_missing"));
-    assert(
-        codes(
-            observe([
-                "0.0.0.0/1 7297/tcp DENY IN Anywhere # " + comment +
-                ":updating",
-                allow,
-                deny,
-                trust,
-            ]),
-        ).includes("firewall.rule_mismatch"),
-    );
     value.nodes[0].resources.firewall_rules[0].status = "failed";
     assert(
         codes(observe([allow, deny, trust])).includes(

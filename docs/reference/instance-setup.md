@@ -94,15 +94,21 @@ The checkout's `.git/config` is not trusted. The operator writes it, and so does
 
 ## Run setup
 
-Swamp executes explicit Project setup as an `instance.run_steps` Operation. The Gateway keeps list configuration, validates its immutable digest and target, and records proven receipts. `instance:setup` admits the setup list through `POST /api/v1/instances/{instance}/setup`, which returns `202` and an Operation. Its optional `Idempotency-Key` replays the same admission. The CLI follows that Operation; `--json` returns its final record. An empty list completes with a proven no-op receipt. An explicit setup failure keeps the Instance. Creation and removal keep their native lifecycle runner and rollback policy.
+Swamp executes explicit Project setup as an `instance.run_steps` Operation ([flow](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/instance.run_steps.mmd)). The Gateway keeps list configuration and validates its immutable digest and target. When the run starts, it passes every command in order, the account and the checkout as run inputs. The run reaches the Node over official `@swamp/ssh` from the swamp role's workers, runs the list as the account with `sudo -u` through the same runner as `instance:create`, and returns only the outcome, the failed step and its redacted stderr tail. No step reads the Gateway.
+
+`instance:setup` admits the setup list through `POST /api/v1/instances/{instance}/setup`, which returns `202` and an Operation. Its optional `Idempotency-Key` replays the same admission. The CLI follows that Operation; `--json` returns its final record. An empty list completes with a proven no-op receipt. An explicit setup failure keeps the Instance. Creation and removal keep their native lifecycle runner and rollback policy.
 
 Client migration: older MCP, SDK and CLI clients expect a synchronous setup result. Update them to follow the returned Operation. Development creation and removal compose the configured commands directly in their native parents. They do not start a child Operation.
 
 A native create failure retains its reserved Instance and owned checkout with a bounded failure code. After its root is terminal, submit a fresh normal create Operation with a new idempotency key, or use [Instance removal](/reference/instance-removal). Create does not start a rollback or cleanup child. A fresh run may repeat earlier setup commands; configure them to converge. Failed-run `workflow resume` is not required because pinned e459 loses inline official SSH global arguments on resume.
 
-The development `instance:create` root runs from control Node209 through official SSH with its complete admitted input and stored host pins. Source, environment and each setup command are separate native steps. The Gateway records source identity, encrypted environment values, managed keys and activation from the terminal result. Environment values travel through private files and named vault outputs; the public result contains keys only. A failed environment write still retains the seeded values for a fresh retry.
+The development `instance:create` root runs from control Node209 through official SSH with its complete admitted input and stored host pins. It keeps the legacy phases, one shipped script per phase: prepare, source, environment and setup, then the Process step and finish.
 
-The root runs its setup list after source and environment preparation, before recording the Instance as active. It currently refuses Route, database and runtime-definition combinations before reservation. 
+Prepare refuses before the first write (account, destination, a branch in use, ownership). Source checks out the admitted branch and prints only its commit. Environment writes the `.env` the Gateway rendered at admission from the Project environment template; the Gateway pushes it to the vault after the admission commits. Setup runs the whole list in one step, then one step creates and starts the development Processes through the shared Process create workflow. Nothing about `.env` comes back from the Node. The Gateway mints the GitHub read token when the run starts, as the legacy Gateway did before its source call.
+
+Admission stores the rendered environment values. The terminal result carries only the checked-out commit; from it the Gateway records the source identity, the managed keys and activation.
+
+The root runs its setup list after source and environment preparation, before recording the Instance as active. It currently refuses Route and database combinations before reservation. 
 
 Setup steps receive two variables:
 
@@ -111,7 +117,7 @@ Setup steps receive two variables:
 | `ORBIT_SEED_PATH` | The checkout of `default` on the same Node. |
 | `ORBIT_SEED_COMMIT` | The last commit that [deployed](/reference/deployments#development-defaults) in that checkout. |
 
-Development create captures these values for its run. The retained explicit setup path reads them before each step. Project steps own the [dependency copy](/domains/applications#dependency-copy), including nested monorepo folders.
+Development create captures these values for its run. Explicit setup captures them when its run starts. Project steps own the [dependency copy](/domains/applications#dependency-copy), including nested monorepo folders.
 
 When the default has not deployed at source preparation, Orbit records an empty seed decision and setup installs from lock files. Retries keep that decision. When Orbit registers an Instance, it records a seed only if the adopted source commit matches the default's deployed commit. It never pairs an older source with newer seed dependencies.
 
@@ -119,15 +125,15 @@ A task VM has no `default` Instance and no seed. Every new task workspace [clone
 
 A routed Laravel Instance has its `.env` before setup runs. When Orbit creates that file, it already holds `APP_URL`, a usable `APP_KEY`, and the Project's `APP_NAME`, so setup does not need `key:generate`. See [Laravel application URL](/domains/applications#laravel-application-url). A routed task VM workspace gets that `.env` and its PHP packages before the baseline check, and its Route after the check started. Its setup steps must not need the Route. See [Start the baseline check before the Route](/reference/compute-drivers#start-the-baseline-check-before-the-route).
 
-Create activates the Instance only after source, environment, VP preparation and every admitted setup action succeed. Failure retains the unfinished Instance and its captured source and environment for a fresh Operation. It does not run teardown or automatic removal.
+Create activates the Instance only after source, environment, every admitted setup action and its development Processes succeed. Failure retains the unfinished Instance and its captured source and environment for a fresh Operation. It does not run teardown or automatic removal.
 
 Each command runs with `bash -eu` at the repository root of the code the Instance serves, even when the Laravel [application directory](/reference/projects#application-directory) is nested. For example, a setup command for root `apps/site/public` must use `cd apps/site && composer install` to install that application's dependencies. Teardown and task-check commands also keep their repository-root scope. Each setup command runs on the Instance's Node, as the Node's managed user. This is the `instance:create` and `instance:setup` path. A task workspace does not use it. The task baseline runs the same commands, also as the managed user, inside the task check. [Project check](/reference/tasks#project-check) describes that run.
 
 That root is the checkout. A `default` Instance deploys in its checkout too, so setup sees the code that runs. Its seed is its own checkout, so its setup gets empty seed variables. Setup, teardown, and a [development deployment](/reference/deployments#development-defaults) of the default share the lifecycle lock on the checkout, under the retained explicit setup path. The native create root does not use that lock.
 
-The retained explicit setup and teardown path exports `VP_HOME` to the Node's [resolved Vite+ store](/reference/tools#tool-managers). Native create exports its captured project runtime store when VP preparation selected one. Project-local `vp` processes inherit the selected value even in these non-login shells, rather than using the default `~/.vite-plus`.
+The retained explicit setup and teardown path exports `VP_HOME` to the Node's [resolved Vite+ store](/reference/tools#tool-managers). Native create exports the same store when the account has one, in the same order, as the legacy setup runner did. Project-local `vp` processes inherit the selected value even in these non-login shells, rather than using the default `~/.vite-plus`.
 
-The retained `instance:setup` path uses the agent's `instance.run-lifecycle-step`, a checkout lock and process-group cleanup. Native create and destroy execute each private command through official SSH, with a native timeout. Public history contains no command text or output. A failed command stops later commands and retains the Instance. Official SSH stops its local SSH process on cancellation or timeout; it does not prove remote descendants have stopped. Inspect the target before starting a fresh Operation after an uncertain command outcome.
+The retained `instance:setup` path uses the agent's `instance.run-lifecycle-step`, a checkout lock and process-group cleanup. Native destroy executes each private command through official SSH, and native create runs the whole list in one official SSH step; each command keeps its admitted timeout. Public history contains no command text or output. A failed command stops later commands and retains the Instance. Official SSH stops its local SSH process on cancellation or timeout; it does not prove remote descendants have stopped. Inspect the target before starting a fresh Operation after an uncertain command outcome.
 
 [Registration](/domains/applications#register-an-existing-checkout) verifies the source's own state, not unrelated refs in its shared repository. In-place adoption records the verified destination before it closes the environment file's permissions. For a nested Laravel root such as `apps/site/public`, that file is `apps/site/.env`; checks for cached Laravel configuration also use `apps/site/bootstrap/cache/config.php`. Git identity keeps its repository-wide scope. A retry after that checkpoint checks the destination's Git identity rather than the pre-adoption digest, so Orbit's own permission change does not prevent recovery. Setup still runs only after adoption completes.
 
@@ -141,9 +147,9 @@ orbit instance:setup <instance>
 
 ## Deadlines
 
-Explicit `instance:setup` returns after admitting the Operation. A list has 550 seconds of forward work from its first claim. Before each command, the Gateway records a bound budget receipt from server time. The command timeout is the smaller of its stored timeout and the remaining budget, with five seconds reserved for command cleanup. Restarting Swamp does not reset that budget.
+Explicit `instance:setup` returns after admitting the Operation. Each command runs within its stored timeout, and the whole list within 540 seconds, the most its timeouts may add up to.
 
-Native create and destroy return after admission. Each command uses its admitted timeout. A failed run has no automatic rollback or removal. Retained explicit setup keeps its existing list budget.
+Native create and destroy return after admission. Each command uses its admitted timeout. The create run budget is 60 seconds, plus the admitted setup timeouts, plus 30 seconds for the Process step; the setup phase stops at 540 seconds. A failed run has no automatic rollback or removal. Retained explicit setup keeps its existing list budget.
 
 A step cut short by the list budget, or with no time left to start, ends the Operation with `command.deadline_exceeded`, `outcome: deadline`, and the step name. The Gateway validates this classification against the proven command or budget receipt. Lower the step timeouts until the list fits.
 

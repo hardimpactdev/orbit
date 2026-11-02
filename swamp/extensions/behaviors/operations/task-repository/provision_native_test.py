@@ -60,6 +60,7 @@ class NativeProvision(fixture.NativeRepository):
                     "repository": str(self.workspace),
                     "repository_identity": "github:acme/test",
                     "default_branch": "main",
+                    "start_commit": self.start,
                     "branch": "task-30",
                     "user": "orbit",
                     "project_type": "monorepo",
@@ -149,10 +150,10 @@ export const model = {
             ),
         ]:
             for job in flow["jobs"]:
-                self.assertEqual(job.pop("target"), "orbit-node-209")
+                self.assertEqual(job.pop("labels"), {"role": "swamp"})
                 self.assertNotIn("labels", job)
                 for step in job["steps"]:
-                    self.assertEqual(step.pop("target"), "orbit-node-209")
+                    self.assertEqual(step.pop("labels"), {"role": "swamp"})
                     self.assertNotIn("labels", step)
             encoded = (
                 json.dumps(flow)
@@ -274,6 +275,19 @@ raise SystemExit(r.returncode)
             steps["vm"]["outputs"]["result"]["root_kind"], "tasks.provision"
         )
 
+    def test_task_branch_starts_at_the_admitted_commit_not_the_newer_default_branch_head(
+        self,
+    ):
+        (self.workspace / "red").write_text("newer head\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "Red head")
+        history, steps = self.execute_provision()
+        result = json.loads(steps["result"]["outputs"]["stdout"])
+        self.assertEqual(history["status"], "succeeded")
+        self.assertEqual(result["starting_commit"], self.start)
+        self.assertEqual(result["analysis_base"]["base"], self.start)
+        self.assertFalse(self.checkout.joinpath("red").exists())
+
     def test_git_execution_copy_stays_on209_and_out_of_guest_configuration_and_history(
         self,
     ):
@@ -333,7 +347,9 @@ raise SystemExit(r.returncode)
         self.git("add", ".")
         self.git("commit", "-qm", "Unsupported PHP")
         self.inputs["intent"]["workspace"].update(
-            project_type="laravel-app", skip_profile=False
+            project_type="laravel-app",
+            skip_profile=False,
+            start_commit=self.git("rev-parse", "HEAD"),
         )
         history, steps = self.execute_provision(success=False)
         result = json.loads(steps["result"]["outputs"]["stdout"])

@@ -173,7 +173,7 @@ else:sys.exit(64)
             execute("swamp", "behavior", "validate", "dependency-scanner", "--json")
             execute("swamp", "behavior", "validate", "dependency-pr-reader", "--json")
             minute_workflow=root / "workflows/workflow-maintenance-projects.yaml"
-            minute_workflow.write_text(minute_workflow.read_text().replace("trigger:\n  schedule: '40 * * * * *'\n", ""))
+            minute_workflow.write_text(minute_workflow.read_text().replace("trigger:\n  schedule: '40 17 * * * *'\n", ""))
             shutil.copyfile(REPO / "workflows/workflow-project-detect.yaml", root / "workflows/workflow-detect.yaml")
             with socket.socket() as sock:
                 sock.bind(("127.0.0.1", 0))
@@ -198,7 +198,7 @@ else:sys.exit(64)
                     enrollment.write_text(token)
                     enrollment.chmod(0o600)
                     worker = subprocess.Popen([CLI, "worker", "connect", url, "--token-file", str(enrollment),
-                                               "--cache-dir", str(root / "worker-cache"), "--label", "pool=migration", "--label", "node=209"],
+                                               "--cache-dir", str(root / "worker-cache"), "--label", "role=swamp", "--label", "node=209"],
                                               cwd=root, env=env, stdout=log, stderr=log)
 
                     def rpc(name, version=None, model="orbit-gateway"):

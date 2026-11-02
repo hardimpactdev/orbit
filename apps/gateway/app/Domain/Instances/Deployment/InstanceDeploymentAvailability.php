@@ -51,9 +51,6 @@ final class InstanceDeploymentAvailability
             throw self::unavailable();
         }
         $required = [];
-        if (($intent['runtime_synchronous'] ?? false) !== true) {
-            $required[] = 'process.restart_instance';
-        }
         if (($intent['php'] ?? false) === true) {
             $required[] = 'node.prepare_php_packages';
         }
@@ -64,7 +61,7 @@ final class InstanceDeploymentAvailability
             }
         }
         if (($intent['needs_vp'] ?? false) === true) {
-            $required = [...$required, 'instance.prepare_vp_environment', 'tool.manager_converge'];
+            $required[] = 'instance.prepare_vp_environment';
         }
         $definitions = OperationKinds::definitions();
         foreach ($required as $kind) {

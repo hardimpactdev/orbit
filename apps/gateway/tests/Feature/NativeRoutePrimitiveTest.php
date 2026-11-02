@@ -15,7 +15,7 @@ it('declares full-input native terminal ownership for the remaining Route primit
     expect($direct->definition($kind)['workflow_inputs'] ?? false)->toBeTrue()
         ->and($direct->usesNativeTerminal($operation))->toBeTrue()
         ->and($direct->definition($kind))->not->toHaveKey('primitive');
-})->with(['route.workload_verify', 'route.public_verify', 'route.target_unset', 'route.private_dns_publish']);
+})->with(['route.workload_verify', 'route.public_verify', 'route.private_dns_publish']);
 
 it('keeps the admitted probe connection unchanged when Node data changes', function (): void {
     $node = Node::query()->create(['name' => 'primitive', 'platform' => 'linux', 'status' => 'active', 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => '10.44.0.9', 'user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-pin']);

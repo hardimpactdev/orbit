@@ -6,14 +6,11 @@ import {
   type Operation,
   PolicyError,
   type PolicyEvent,
-  PolicyEventSchema,
   RowSchema,
   sha,
 } from "./policy.ts";
 
 export const DevelopmentState = z.object({
-  event: z.object({ key: z.string(), body: PolicyEventSchema }).nullable()
-    .default(null),
   sequence: z.number().int().nonnegative().default(0),
   pending: z.object({
     commit: sha,
@@ -39,8 +36,9 @@ export type DevelopmentContext = {
     value: Record<string, unknown>,
   ): Promise<{ name: string }>;
 };
+/** Adds one policy event to the fire's terminal result; the Gateway records it. */
+export type Emit = (instance: number, key: string, body: PolicyEvent) => void;
 type Admissions = {
-  event(instance: number, body: PolicyEvent, key: string): Promise<Operation>;
   deploy(instance: number, commit: string, key: string): Promise<Operation>;
   receipt(
     instance: number,
@@ -74,6 +72,7 @@ export async function tickDevelopment(
   ctx: DevelopmentContext,
   admissions: Admissions,
   now: string,
+  emit: Emit,
   filter: number[] = [],
 ) {
   const request = async (
@@ -148,31 +147,11 @@ export async function tickDevelopment(
         operationId: number | null = null,
         routeOperationId: number | null = null,
       ) => {
-        if (state.event) {
-          await admissions.event(id, state.event.body, state.event.key);
-          state.event = null;
-          await save();
-        }
         const changed = state.result !== result || state.commit !== head;
         if (changed) state.since = now;
-        if (
-          changed &&
-          !["up_to_date", "deploying", "gate_pending"].includes(result)
-        ) {
-          state.event = {
-            key: `dev.policy.${id}.${++state.sequence}`,
-            body: {
-              event: "activity",
-              result,
-              commit: head,
-              operation_id: operationId,
-              error_code: result === "failed"
-                ? "deployment.automatic_failed"
-                : null,
-              message: null,
-            },
-          };
-        }
+        const activity = changed &&
+          !["up_to_date", "deploying", "gate_pending"].includes(result);
+        if (activity) state.sequence++;
         state.result = result;
         state.commit = head;
         await save();
@@ -193,10 +172,17 @@ export async function tickDevelopment(
             ? {}
             : { route_operation_id: routeOperationId }),
         });
-        if (state.event) {
-          await admissions.event(id, state.event.body, state.event.key);
-          state.event = null;
-          await save();
+        if (activity) {
+          emit(id, `dev.policy.${id}.${state.sequence}`, {
+            event: "activity",
+            result,
+            commit: head,
+            operation_id: operationId,
+            error_code: result === "failed"
+              ? "deployment.automatic_failed"
+              : null,
+            message: null,
+          });
         }
         return operationId;
       };

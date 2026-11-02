@@ -2,7 +2,7 @@ id: a37dfa1b-1633-475f-90c7-dfd9c83008ca
 name: maintenance-projects
 description: Select Project maintenance from Gateway-published full public intent.
 trigger:
-  schedule: '40 * * * * *'
+  schedule: '40 17 * * * *'
 inputs:
   type: object
   required: [revision, snapshot_hash, projects, groups, operations, admissions]
@@ -18,14 +18,14 @@ reports:
   skip: ['@swamp/workflow-summary']
 jobs:
   - name: maintenance
-    target: orbit-node-209
+    labels: {role: swamp}
     steps:
       - name: select
-        target: orbit-node-209
+        labels: {role: swamp}
         task:
           type: behavior
           behaviorType: '@nckrtl/project-maintenance-input'
-          behaviorName: '${{ "maintenance-input-" + run.id }}'
+          behaviorName: '${{ "maintenance-input-project-maintenance-input" }}'
           methodName: schedule
           inputs:
             revision: '${{ inputs.revision }}'
@@ -35,12 +35,12 @@ jobs:
             operations: '${{ inputs.operations }}'
             admissions: '${{ inputs.admissions }}'
       - name: result
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: [{step: select, condition: {type: succeeded}}]
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: '${{ "maintenance-result-" + run.id }}'
+          behaviorName: '${{ "maintenance-result" }}'
           methodName: execute
           inputs:
             run: 'printf "%s\n" "$ORBIT_RESULT"'

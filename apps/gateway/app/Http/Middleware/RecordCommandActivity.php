@@ -744,7 +744,7 @@ final readonly class RecordCommandActivity
     private function instanceUpdateInput(Request $request): array
     {
         try {
-            $input = $this->jsonInspector->inspect($request->getContent(), ['branch', 'shared_paths', 'auto_deploy']);
+            $input = $this->jsonInspector->inspect($request->getContent(), ['branch', 'shared_paths']);
         } catch (UnexpectedValueException) {
             return [];
         }
@@ -814,7 +814,7 @@ final readonly class RecordCommandActivity
         try {
             $input = $this->jsonInspector->inspect(
                 $request->getContent(),
-                ['name', 'slug', 'repository_url', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'review_and_merge', 'merge_check'],
+                ['name', 'slug', 'repository_url', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'merge_check'],
             );
         } catch (UnexpectedValueException) {
             return [];

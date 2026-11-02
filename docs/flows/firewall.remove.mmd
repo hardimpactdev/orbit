@@ -1,0 +1,91 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, ADR 0241 allowlists, DECISIONS R1-R4 + 5 (process.stop shape, shared SSH identity). Same shape as firewall.allow.
+  %% status: reviewed
+  %% command: firewall:remove
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>reached over ssh
+  CLI->>GW: firewall:remove 5432<br/>--node=7 --from=CIDR
+  %%> Command:
+  %%> - `orbit firewall:remove 5432 --node=7 --from=10.6.0.0/24`
+  %%> - syntax: `<port> --node=ID [--from=SOURCE] [--protocol=tcp|udp]`
+  %%> Input:
+  %%> - the port as the argument, and the Node
+  %%> - `--from` and `--protocol` only when several rules share the port
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Validate, mark removing<br/>rule: removing · task #5131
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 7
+  %%> - exactly one rule on Node 7 matches the port, source and protocol
+  %%> - no other firewall change runs on Node 7; the Gateway holds one lock per Node
+  %%> Works out what to keep:
+  %%> - a ufw line that another rule, or a rule Orbit itself needs, also uses stays on the Node
+  %%> - only lines that belong to this rule alone are removed
+  %%> Result:
+  %%> - the rule for port 5432 recorded as removing
+  %%> - task #5131 recorded with the full intent
+  %%> - nothing has happened on the Node yet
+  GW->>SW: Start run, full intent<br/>operation-firewall-direct
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - the ufw lines to remove, and the lines that must stay
+  %%> - Node 7's address and SSH host keys; the SSH identity comes from the `swamp` role
+  GW-->>CLI: 202 Accepted<br/>task #5131
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>N: Remove the ufw lines<br/>@swamp/cfgmgmt/firewall apply
+  %%> How:
+  %%> - Swamp reaches Node 7 over SSH from 209, with the official `@swamp/cfgmgmt/firewall` behavior
+  %%> What it does:
+  %%> - removes each line that belongs to this rule alone
+  %%> - a line that is already gone is skipped
+  %%> - for an allowlist rule, it also removes the rule's ordered block of lines
+  SW->>N: Check the end state<br/>@swamp/cfgmgmt/firewall check
+  %%> What it does:
+  %%> - reads ufw back: removed lines are gone, and kept lines are still there
+  %%> Why:
+  %%> - the rule only counts as removed when ufw shows it
+  alt end state is right
+    N-->>SW: end state confirmed
+    %%> Returns:
+    %%> - the check passed
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Delete the rule<br/>record gone · task succeeded
+    %%> Result:
+    %%> - the rule for port 5432 is deleted from the Gateway
+    %%> - task #5131 succeeds
+  else removing or checking fails
+    N--xSW: exit ≠ 0
+    %%> When:
+    %%> - ufw refuses the change, SSH fails, or the end state is wrong
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Mark the rule failed<br/>task failed · rerun after a fix
+    %%> Result:
+    %%> - the rule for port 5432 stays, marked failed, so you can see it
+    %%> - task #5131 fails
+    %%> On the Node:
+    %%> - lines removed before the failure stay removed; there is no rollback
+    %%> - that is safe: a rerun skips lines that are already gone
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5131
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end

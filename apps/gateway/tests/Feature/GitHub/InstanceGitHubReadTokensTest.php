@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Instances\InstanceGitHubReadTokens;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Instance;
 use App\Models\Node;
@@ -109,4 +110,39 @@ it('keeps anonymous repository reads when the configured App has no installation
     expect($result)->toBe(['git_read' => InstanceGitHubReadTokens::reference($this->operation)])
         ->and($this->socket->sent[0]['payload']['value'])->toBe('{"github_token":null}');
     Http::assertSentCount(1);
+});
+
+it('mints the create read scope when the run starts, as the legacy Gateway did before its source call', function (): void {
+    Http::fake(['*/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response(['token' => 'private-instance-sentinel', 'expires_at' => now()->addHour()->format('Y-m-d\TH:i:s\Z'), 'permissions' => ['contents' => 'read', 'metadata' => 'read']], 201), '*/installation/repositories*' => Http::response(['total_count' => 1, 'repositories' => [['full_name' => 'hardimpactdev/orbit']]])]);
+    expect(app(InstanceGitHubReadTokens::class)->start($this->operation))->toBe(InstanceGitHubReadTokens::reference($this->operation))
+        ->and($this->socket->sent[0]['payload']['value'])->toBe('{"github_token":"private-instance-sentinel"}')
+        ->and(json_encode($this->operation->fresh()->toArray()))->not->toContain('private-instance-sentinel');
+});
+
+it('copies a null create token for a repository without an App installation', function (): void {
+    $origin = 'https://git.example.test/team/native-read.git';
+    $this->project->forceFill(['repository_url' => $origin, 'repository_identity' => GitRepositoryIdentity::derive($origin)])->save();
+    $this->operation->update(['input' => [...$this->operation->input, 'repository' => $origin, 'repository_identity' => GitRepositoryIdentity::derive($origin)]]);
+    expect(app(InstanceGitHubReadTokens::class)->start($this->operation))->toBe(InstanceGitHubReadTokens::reference($this->operation))
+        ->and($this->socket->sent[0]['payload']['value'])->toBe('{"github_token":null}');
+    Http::assertNothingSent();
+});
+
+it('refuses a create start with the same repository rule as the step mint, before any read or copy', function (string $change): void {
+    match ($change) {
+        'repository' => $this->project->update(['repository_url' => 'https://github.com/other/repository.git']),
+        'identity' => $this->operation->update(['input' => [...$this->operation->input, 'repository_identity' => 'github.com/other/repository']]),
+        'gh_cli' => $this->project->update(['source_access' => 'gh_cli']),
+        'node' => $this->operation->update(['node_id' => null]),
+    };
+    expect(fn () => app(InstanceGitHubReadTokens::class)->start($this->operation))->toThrow(ResourceOperationException::class);
+    Http::assertNothingSent();
+    expect($this->socket->sent)->toBe([]);
+})->with(['repository', 'identity', 'gh_cli', 'node']);
+
+it('copies no credential for an already active create, which runs no source phase', function (): void {
+    $this->operation->update(['input' => [...$this->operation->input, 'direct_provisioning' => ['already_active' => true]]]);
+    expect(app(InstanceGitHubReadTokens::class)->start($this->operation))->toBe(InstanceGitHubReadTokens::reference($this->operation))
+        ->and($this->socket->sent[0]['payload']['value'])->toBe('{"github_token":null}');
+    Http::assertNothingSent();
 });

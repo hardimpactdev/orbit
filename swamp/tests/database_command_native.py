@@ -61,7 +61,7 @@ print(json.dumps({'databases':v.get('inventory',[])} if action=='inventory' else
                 job.pop('target')
                 self.assertNotIn('labels', job)
                 for step in job['steps']:
-                    self.assertEqual(step.pop('target'), 'orbit-node-209')
+                    self.assertEqual(step.pop('labels'), {'role': 'swamp'})
                     self.assertNotIn('labels', step)
                     if step['task'].get('behaviorType') == '@swamp/ssh':
                         args = step['task']['globalArgs']

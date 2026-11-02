@@ -52,7 +52,7 @@ export const ProviderReceipt = z.object({
     settled: z.literal(true),
 }).strict();
 
-/** Decode one observation; transitions remain failed native steps, never a polling loop. */
+/** Decode one observation; the native provider phase owns any bounded state wait. */
 export function observation(
     intent: ProviderIntent,
     action: PowerAction,

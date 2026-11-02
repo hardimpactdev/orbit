@@ -6,7 +6,6 @@ inputs:
     node_id: {type: integer, minimum: 1}
     user: {type: string, pattern: '^[a-z_][a-z0-9_-]{0,31}$'}
   required: [node_id, user]
-target: '${{ "orbit-node-" + string(inputs.node_id) }}'
 labels:
   node: '${{ string(inputs.node_id) }}'
 vaults: []

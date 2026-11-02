@@ -48,6 +48,7 @@ final readonly class ReportWebSocketRuntimeAction
                 'reported_at' => now(), 'state' => $report['state'],
                 'error' => $report['error'] ?? null,
             ]);
+            DB::afterCommit(static fn () => app(CloseWebSocketOperationsAction::class)->execute());
         });
     }
 }

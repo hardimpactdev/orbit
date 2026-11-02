@@ -18,7 +18,7 @@ The Gateway owns the environment configuration of every Instance. It stores each
 
 `ORBIT_DOCUMENT_CLEANUP_RUNTIME` selects the private local directory for isolated Project Document cleanup-gate fixtures when `APP_ENV=testing`; other environments ignore this override. Its default is `/run/orbit/project-documents/`. Never point it into `ORBIT_HOME`, a checkout, a web directory, or a backup. Installed Gateway services use the default runtime directory. This setting is not an Instance environment value or deletion authorization. See [the restore-time cleanup gate](/reference/project-documents#restore-time-cleanup-gate).
 
-`ORBIT_TASK_VMS_ENABLED`, `ORBIT_TASK_VMS_DEV_CLUSTER_ID`, `ORBIT_TASK_VMS_WIREGUARD_RANGE`, `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN`, `ORBIT_TASK_VMS_PI_ARTIFACT_PATH`, `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256`, `ORBIT_TASK_VMS_PI_MODELS`, `ORBIT_TASK_VMS_MEDIUM_PROJECTS`, and `ORBIT_TASK_VMS_PARK_AFTER_MINUTES` configure [task VMs](/reference/compute-drivers#configure-task-vms) in the Gateway's own environment. They are not Instance keys. Task VMs are off by default, the reserved WireGuard range defaults to `10.44.0.128/25`, a waiting VM parks after 30 minutes, and the other values are unset. `ORBIT_TASK_VMS_PI_MODELS` and `ORBIT_TASK_VMS_MEDIUM_PROJECTS` are JSON lists. The Gateway validates these values once, when it first uses them.
+`ORBIT_TASK_VMS_ENABLED`, `ORBIT_TASK_VMS_DEV_CLUSTER_ID`, `ORBIT_TASK_VMS_WIREGUARD_RANGE`, `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN`, `ORBIT_TASK_VMS_PI_ARTIFACT_PATH`, `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256`, `ORBIT_TASK_VMS_PI_MODELS`, `ORBIT_TASK_VMS_MEDIUM_PROJECTS`, `ORBIT_TASK_VMS_LARGE_PROJECTS`, and `ORBIT_TASK_VMS_PARK_AFTER_MINUTES` configure [task VMs](/reference/compute-drivers#configure-task-vms) in the Gateway's own environment. They are not Instance keys. Task VMs are off by default, the reserved WireGuard range defaults to `10.44.0.128/25`, a waiting VM parks after 30 minutes, and the other values are unset. `ORBIT_TASK_VMS_PI_MODELS`, `ORBIT_TASK_VMS_MEDIUM_PROJECTS`, and `ORBIT_TASK_VMS_LARGE_PROJECTS` are JSON lists. For groups without a declared topology, `large_projects` takes precedence over `medium_projects`. The Gateway validates these values once, when it first uses them.
 
 Incus hosts are configured through [Node `settings.task_vms`](/reference/node-settings#configure-a-task-vm-host), not an environment list or the `app-dev` role. `ORBIT_TASK_VMS_INCUS_HOSTS` is read only by the [deployment migration](/reference/node-settings#migrate-the-environment-host-list). Keep its current JSON list until migration copies it into the existing host Nodes, verify their settings, and then remove the variable.
 
@@ -80,17 +80,17 @@ Import, update, and synchronization use the Instance's recorded owning Node. A R
 
 ## Native environment synchronization
 
-`instance.sync_environment` records one Instance intent and starts one native Swamp root on its exact owning Node. Swamp checks the existing workload keys locally, writes `.env` and merges the managed `.env.testing` keys. The Gateway stores only the result and synchronized key names. Environment values stay inside the approved shared private-material callback. Create and clone use the same local action as steps of their own native roots.
+`instance.sync_environment` records one Instance intent and starts one Swamp run on Node 209 ([flow](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/instance.sync_environment.mmd)). At admission the Gateway renders the files and records the key names and the sha256 of each file, never a value.
 
-The admission freezes the environment, account, application path and agent digest from stored placement. Development uses the configured Node account. Production uses the Instance production account. Caller input cannot choose an account or a Node. Native jobs target `orbit-node-N` with the string Node label. There is no Gateway child, agent relay, receipt protocol or polled writer.
+When the run starts, it pushes the rendered files into the vault key `instance-environment-<operation>`. The steps reach the owning Node over official `@swamp/ssh`: they check for foreign keys, write `.env` and merge the managed `.env.testing` keys with the files from `vault.get` on stdin, and check each file's sha256. No step calls the Gateway, and no per-Node worker takes part. The Gateway records the result and the admitted key names from the terminal run. If the stored values change between admission and run start, the run does not start and the task fails with `env.configuration_changed`.
+
+The admission freezes the environment, account and application path from stored placement. Development uses the configured Node account. Production uses the Instance production account. Caller input cannot choose an account or a Node. The file steps run as that account through `sudo -u`; the production runtime refresh runs as root. There is no Gateway child, agent relay, receipt protocol or polled writer.
 
 The local preflight refuses a file with keys that neither stored configuration nor Orbit's previous owned-key set includes. A missing file is allowed. The raw file limit remains 1 MiB. Production synchronization composes native config-cache preparation, FPM OPcache refresh and opted-in Process restarts after the file writes. Development and file-only parent preparation use only the local filesystem steps.
 
 ## Parent environment steps
 
 Create seeds encrypted values from its bounded source template before the native environment step. The Gateway validates the exact create root, preparation ID, Project, Node and checkout. Clone reads its stored candidate snapshot. These steps run within their parent roots and admit no child Operation. Public synchronization still requires an active Instance.
-
-The shared private read can occur before source preparation while a parent needs Git material. In that phase its environment field is null. Once the source is classified, the Gateway checks the owner and returns rendered content, key names and the optional testing-file plan inside the private callback. A null field never means synchronization succeeded.
 
 ## Where the file lives
 
@@ -145,13 +145,13 @@ The Gateway checks the complete result before it stores any part of an import or
 
 Synchronization takes one snapshot of the Instance, any authoritative Route, and the stored configuration. It resolves `{{instance.domain}}` to the Route's domain when one is present and resolves `{{instance.environment}}` to `development` on `app-dev` or `production` on `app-prod`. Only a stored domain placeholder requires a Route. A leftover `{{` or `}}` after rendering returns `env.reference_unavailable` (409) before the file changes.
 
-The Gateway resolves stored placement and renders the protected values without contacting the Node. The native worker runs `instance.inspect-environment-sync` locally before replacement. It checks the user, path, directory permission, file type and owner, read-only storage and free space, then reads existing workload keys. A failed preflight leaves `.env` unchanged.
+The Gateway resolves stored placement and renders the protected values without contacting the Node. Before replacement, the check step checks the user, path, directory permission, file type and owner, read-only storage and free space, then reads the existing workload keys. A failed preflight leaves `.env` unchanged.
 
-The Gateway renders every stored key in sorted order, as a quoted value. The [Node agent](/reference/node-agent#commands)'s `instance.write-environment` writes the result as a candidate file with mode `0600`, owned by the runtime user, and renames it over `.env`; `instance.read-environment` reads and checks the file. Both walk to the directory without following a link and accept only the runtime user's regular file. A matching file with mode `0600` stays in place and returns `changed: false`. Stored configuration is the only input. Edits to stored keys disappear.
+The Gateway renders every stored key in sorted order, as a quoted value. The write step writes the result as a candidate file with mode `0600`, owned by the runtime user, and renames it over `.env`. It walks to the directory without following a link and accepts only the runtime user's regular file. A matching file with mode `0600` stays in place and returns `changed: false`. Stored configuration is the only input. Edits to stored keys disappear.
 
 Before it writes, Swamp reads the file's key names locally. A key that stored configuration lacks fails the Operation with `env.sync_would_drop_keys`, and the file stays unchanged. Orbit owns, and so may remove, only the keys its last synchronization wrote and the keys a detach removed since. To keep the other keys, store them with `env:update`, or import the file with `replace` when its other keys are already stored. Otherwise remove them from the file. A Route transition on a production Instance skips this check, because deploys already own that file.
 
-When Swamp cannot confirm the write, the Operation fails with `env.sync_unconfirmed`, and the file may have changed. Repeat synchronization: it checks the file again and either accepts the matching file or writes it.
+When the written file's sha256 differs from the rendered one, or Swamp cannot confirm the write, the Operation fails with `env.sync_unconfirmed`, and the file may have changed. Repeat synchronization: it checks the file again and either accepts the matching file or writes it.
 
 A stored Database attachment keeps its explicit network choice when synchronization projects environment values. [LAN selection](/reference/database-connections#choose-lan-for-an-instance) requires an active peer and a current managed publication; WireGuard is the default. Transfer and clone reattachment reset the choice to WireGuard.
 
@@ -165,9 +165,11 @@ Laravel loads `.env.testing` instead of `.env` when `APP_ENV` is `testing`. So a
 
 When Git cannot report whether it tracks the file, for example because of a dubious-ownership error or a damaged repository, the Operation fails with `env.testing_tracking_unknown` and leaves `.env.testing` unchanged. A checkout outside a Git repository counts as untracked. Orbit never deletes `.env.testing`. The file stays after the Instance stops owning its `DB` database.
 
-Development synchronization changes only `.env` and `.env.testing`. The placed Swamp worker performs these writes directly as the admitted Node account, using fixed local filesystem commands. It never calls an agent action.
+Development synchronization changes only `.env` and `.env.testing`. The steps write them over SSH as the admitted Node account with the shipped `environment.py` script. They never call an agent action.
 
-Production synchronization refreshes the runtime on every request, even when `.env` is unchanged. It rebuilds an existing Laravel configuration cache into a private candidate, boots Artisan against it and replaces the old cache only after success. An uncached application stays uncached. It then refreshes the dedicated FPM OPcache through the canonical PHP action and restarts active Processes whose desired state is running and whose `restart_on_deploy` setting is true. All steps run on the admitted Node within the same native root. A failed cache build preserves the previous cache and prevents FPM refresh and Process restarts. A missing current release skips runtime refresh.
+Production synchronization refreshes the runtime on every request, even when `.env` is unchanged. It rebuilds an existing Laravel configuration cache into a private candidate, boots Artisan against it and replaces the old cache only after success. An uncached application stays uncached.
+
+It then reloads the Instance's PHP-FPM service, which resets its OPcache, and restarts active Processes whose desired state is running and whose `restart_on_deploy` setting is true. One `Refresh the runtime` step does this on the admitted Node within the same run; there is no separate Process restart kind. A failed cache build preserves the previous cache and prevents FPM refresh and Process restarts. A missing current release skips runtime refresh.
 
 The Gateway records the native outcome and updates the list of owned keys only after success. A failed root preserves the previous key list and pending-runtime marker. Repeat synchronization after correcting the bounded error.
 
@@ -231,7 +233,8 @@ Import, update, and the start of synchronization return these codes in the Orbit
 | `env.reference_unavailable` | 409 | A placeholder is left over after rendering. |
 | `operation.target_busy` | 409 | Another operation holds the Instance. |
 | `env.configuration_missing` | 409 | Synchronization found no stored configuration. Import or store values first. |
-| `env.sync_unconfirmed` | Operation | Swamp cannot confirm the write. Repeat synchronization. |
+| `env.sync_unconfirmed` | Operation | Swamp cannot confirm the write, or the written file differs from the rendering. Repeat synchronization. |
+| `env.configuration_changed` | Operation | Stored values changed between admission and the run start. The run does not start. Repeat synchronization. |
 | `env.config_cache_refresh_failed` | Operation | Config cache preparation failed or was unconfirmed. A failed build keeps the old cache; an unconfirmed result may have replaced it. FPM opcache was not reset. |
 | `env.php_runtime_refresh_failed` | Operation | Config cache preparation completed, but FPM opcache refresh failed. |
 | `operation.kind_unavailable` | 409 | Native synchronization is not registered. No Operation or file change is admitted. |

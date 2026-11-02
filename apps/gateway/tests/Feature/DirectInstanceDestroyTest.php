@@ -166,6 +166,7 @@ it('stores the owning SQLite artifact and records desired state without executin
     expect($recorded['direct_destroy']['database']['owner_instance_id'])->toBe($this->instance->id)
         ->and($recorded['direct_destroy']['database']['sqlite'])->toBe([[
             'connection_id' => $connection->id, 'node_id' => $this->node->id, 'checkout' => $this->instance->checkout_path, 'path' => $connection->path,
+            'ssh' => ['host' => $this->node->wireguard_ip, 'user' => $this->node->user, 'host_keys' => [$this->node->ssh_host_key_type.' '.$this->node->ssh_host_key]],
         ]])->and($recorded['direct_destroy']['runtime'])->toBe(['processes' => [], 'schedules' => []])
         ->and($recorded['direct_destroy']['node_user'])->toBe($this->node->user)
         ->and($recorded['direct_destroy']['teardown'][0]['user'])->toBe($this->node->user)
@@ -551,11 +552,11 @@ it('projects native failure with its exact failed phase and retries the complete
     $operation = Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance',
         'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'running',
         'input' => $intent, 'state' => ['instance_destroy_writer' => 'direct', 'swamp_run_id' => $run]]);
-    $result = ['error_code' => 'instance.destroy_failed', 'failed_step' => 'databases'];
+    $result = ['removed' => false, 'error_code' => 'instance.removal_incomplete', 'failed_step' => 'Remove SQLite files'];
 
     app(DevelopmentInstanceDestroyProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'failed',
         'started_at' => '2026-10-31T04:00:00.000Z', 'finished_at' => '2026-10-31T04:00:01.000Z',
-        'result' => $result, 'error_code' => 'instance.destroy_failed']);
+        'result' => $result, 'error_code' => 'instance.removal_incomplete']);
 
     expect($operation->refresh()->status->value)->toBe('failed');
     expect($operation->result)->toBe($result);

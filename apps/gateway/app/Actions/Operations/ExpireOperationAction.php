@@ -34,6 +34,9 @@ final readonly class ExpireOperationAction
                 : ($current->failed_step ?? $current->current_step);
             $seconds = OperationRunBudgets::seconds($current);
             $state['native_timeout'] = ['budget_seconds' => $seconds, 'deadline' => $deadline->toISOString()];
+            // What reopen() restores when the bound run turns out to have met its budget.
+            $state['native_timeout_restore'] = ['cancel_requested' => $current->cancel_requested_at !== null,
+                'native_failure' => is_array($failure) && is_string($failure['detail'] ?? null)];
             if (! is_array($failure) || ! is_string($failure['detail'] ?? null)) {
                 $state['native_failure'] = ['failed_step' => $step,
                     'detail' => "The Operation exceeded its {$seconds}-second run budget.", 'stderr_recorded' => false];
@@ -53,9 +56,49 @@ final readonly class ExpireOperationAction
         });
     }
 
+    /** Expired by the Gateway with no native terminal recorded yet; a lock-holding one also awaits settlement. */
+    public static function expiredUnsettled(Operation $operation): bool
+    {
+        $timeout = $operation->state['native_timeout'] ?? null;
+
+        return $operation->status === OperationStatus::Failed && $operation->error_code === 'operation.timed_out'
+            && is_array($timeout) && ! isset($timeout['native_terminal_status']);
+    }
+
     public static function awaitsSettlement(Operation $operation): bool
     {
         return $operation->status === OperationStatus::Failed && $operation->error_code === 'operation.timed_out' && $operation->lock_key !== null;
+    }
+
+    /**
+     * Undo an expiry whose root was not bound yet, once its exact native terminal met the bound kind's budget.
+     * The admission deadline (600 s) applies until the start reply binds the run; a slow reply must not turn a
+     * run that met its budget into a failure. The caller then projects the terminal as usual.
+     */
+    public function reopen(Operation $operation, string $runId): Operation
+    {
+        return DB::transaction(function () use ($operation, $runId): Operation {
+            $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+            if (! self::expiredUnsettled($current)) {
+                return $current;
+            }
+            app(DirectOperation::class)->assertRun($current, $runId);
+            $state = $current->state ?? [];
+            $restore = is_array($state['native_timeout_restore'] ?? null) ? $state['native_timeout_restore'] : [];
+            unset($state['native_timeout'], $state['native_timeout_restore']);
+            if (($restore['native_failure'] ?? true) !== true) {
+                unset($state['native_failure']);
+            }
+            $result = $current->result ?? [];
+            unset($result['error_code']);
+            app(OperationStore::class)->change($current, [
+                'status' => OperationStatus::Running, 'finished_at' => null, 'error_code' => null, 'failed_step' => null,
+                'cancel_requested_at' => ($restore['cancel_requested'] ?? true) === true ? $current->cancel_requested_at : null,
+                'state' => $state, 'result' => $result,
+            ]);
+
+            return $current;
+        });
     }
 
     /** Called only after the shared reader verifies the exact terminal native root identity. */

@@ -26,10 +26,10 @@ class RouteUpdateNative(fixture.RouteMutationFixture):
             workflow = yaml.safe_load(
                 (ROOT / "workflows" / ("workflow-" + name + ".yaml")).read_text()
             )
-            workflow.pop("target", None)
+            workflow.pop("target", None); workflow.pop("labels", None)
             for job in workflow["jobs"]:
                 for step in job["steps"]:
-                    step.pop("target", None)
+                    step.pop("target", None); step.pop("labels", None)
                     step.pop("labels", None)
             (self.repo / "workflows" / ("workflow-" + name + ".yaml")).write_text(
                 yaml.safe_dump(workflow, sort_keys=False)

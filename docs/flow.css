@@ -1,0 +1,39 @@
+/* Flow charts on command pages (snippets/flow.jsx). The chart theme comes from the migration dashboard; Mintlify marks dark mode with .dark. */
+.flow,.flow-doc{--canvas:#f6f8fa;--dotc:rgba(31,35,40,.18);--lane:#ffffff;--shadow:rgba(31,35,40,.06);--shadow2:rgba(31,35,40,.08);--card:#ffffff;--border:#b9c3cd;--text:#1f2328;--muted:#3d444d;--faint:#59636e;
+  --gray:#4b535d;--blue:#0969da;--green:#1a7f37;--amber:#9a6700;--purple:#8250df;--red:#cf222e;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif;--mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace}
+.dark .flow,.dark .flow-doc{--canvas:#0d1117;--dotc:rgba(139,148,158,.28);--lane:#151b23;--shadow:rgba(1,4,9,.55);--shadow2:rgba(1,4,9,.35);--card:#1c2128;--border:#545d68;--text:#f0f6fc;--muted:#c9d1d9;--faint:#9ea7b3;
+  --gray:#b1bac4;--blue:#58a6ff;--green:#3fb950;--amber:#d29922;--purple:#bc8cff;--red:#f85149}
+.flow svg{width:100%;height:auto;display:block;font-family:var(--sans)}
+.flow .canvas{fill:var(--canvas)}.flow .dot{fill:var(--dotc)}
+.flow .lane{fill:var(--lane);stroke:color-mix(in srgb,var(--border) 45%,transparent);filter:drop-shadow(0 2px 6px var(--shadow)) drop-shadow(0 12px 32px var(--shadow2))}
+.flow .life{stroke:var(--border);stroke-dasharray:3 4}
+.flow .card{fill:var(--card);stroke:var(--border)}.flow .chip{fill:color-mix(in srgb,var(--faint) 16%,transparent)}
+.flow .glyph{fill:none;stroke:var(--muted);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}.flow .glyph-f{fill:var(--muted)}.flow .glyph-t{fill:var(--muted);font-size:13px;font-weight:700}
+.flow .ttl{fill:var(--text);font-size:13.5px;font-weight:600}.flow .sub{fill:var(--faint);font-size:10.5px;font-family:var(--mono)}
+.flow .pill{font-size:9px;font-weight:700;letter-spacing:.06em}
+.flow .edge{stroke-width:1.6}.flow .edge.ret{stroke-dasharray:5 4}.flow .x{stroke-width:1.8;stroke-linecap:round}
+.flow .epill{fill:var(--canvas)}.flow .elbl{font-size:11px;font-weight:600}
+.flow .num{font-size:7.5px;font-weight:700;font-family:var(--mono)}
+.flow .mono{fill:var(--faint);font-size:10.5px;font-family:var(--mono);paint-order:stroke;stroke:var(--canvas);stroke-width:4px;stroke-linejoin:round}
+.flow .note{fill:var(--card);stroke:var(--border)}.flow .lbl{fill:var(--text);font-size:12px;font-weight:500}
+.flow .frame{fill:none;stroke:var(--border);stroke-dasharray:5 4}
+.flow .ftag{fill:var(--faint);font-size:9.5px;font-weight:700;letter-spacing:.08em}.flow .flbl{fill:var(--muted);font-size:11px}
+.flow .step{cursor:pointer}
+.flow .step.selected .epill,.flow .step.selected .note{stroke:var(--blue)!important;stroke-width:2.5}
+.flow-doc{margin:16px 0;outline:none;color:var(--text);font-family:var(--sans)}
+.flow-head{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:0 0 8px;font-size:13px}
+.flow-head code,.flow-panel code{font-family:var(--mono);font-size:12px;background:var(--canvas);border:1px solid var(--border);border-radius:4px;padding:0 4px}
+.flow-hint{margin-left:auto;font-size:12px;color:var(--faint)}
+.flow-status{font-size:11px;border:1px solid var(--border);border-radius:999px;padding:1px 8px;color:var(--faint)}
+.flow-status.reviewed{color:var(--green);border-color:var(--green)}.flow-status.draft{color:var(--amber);border-color:var(--amber)}
+.flow-inline{border-radius:14px;overflow:hidden}
+.flow-panel{margin-top:10px;border:1px solid var(--border);border-radius:14px;background:var(--card);padding:14px 18px;font-size:14px;line-height:1.5}
+.flow-panel-num,.flow-muted{font-size:12px;color:var(--faint)}
+.flow-panel-title{margin:4px 0 6px;font-size:17px;font-weight:600}
+.flow-panel-detail{font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:10px}
+.flow-panel-info p{margin:0 0 10px}.flow-panel-info ul{margin:0 0 10px;padding-left:18px;list-style:disc}
+.flow-panel-info .info-head{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin:14px 0 4px}
+.flow-panel-info .info-head:first-child{margin-top:4px}
+.flow .step{cursor:pointer}
+.flow .step.selected .epill,.flow .step.selected .note{stroke:var(--blue)!important;stroke-width:2.5}

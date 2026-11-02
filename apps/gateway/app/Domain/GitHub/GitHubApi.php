@@ -198,6 +198,21 @@ interface GitHubApi
     public function compareCommits(#[SensitiveParameter] string $token, GitHubRepository $repository, string $baseSha, string $headSha): GitHubCommitComparison;
 
     /**
+     * The git blob SHA of one file at a commit, from its directory listing, without the file contents.
+     * Null when the file is absent or not a regular file. Needs a token with `contents: read`.
+     *
+     * @throws GitHubApiException
+     */
+    public function fileBlob(#[SensitiveParameter] string $token, GitHubRepository $repository, string $commit, string $path): ?string;
+
+    /**
+     * The contents of one git blob, at most 128 KiB. Needs a token with `contents: read`.
+     *
+     * @throws GitHubApiException
+     */
+    public function blobContents(#[SensitiveParameter] string $token, GitHubRepository $repository, string $blob): string;
+
+    /**
      * Open pull requests of the repository, oldest first, at most three pages of 100. A malformed row fails the list.
      *
      * @return list<GitHubListedPullRequest>

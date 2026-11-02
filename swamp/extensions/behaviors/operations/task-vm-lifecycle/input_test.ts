@@ -3,7 +3,7 @@ import { observation, ProviderInput, receipt } from "./input.ts";
 const ssh = {
     control_node_id: 209,
     identity_file:
-        "/run/credentials/orbit-node-worker.service/proxy-ssh-identity",
+        "/etc/orbit/swamp-role-worker/ssh-identity",
     public_key: "ssh-ed25519 public",
     target: {
         name: "target",

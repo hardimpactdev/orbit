@@ -34,6 +34,9 @@ Route::middleware([
     Route::post('schedules/{schedule}/activate', [SchedulesController::class, 'activate'])
         ->whereUuid('schedule')
         ->name('schedule:enable');
+    Route::post('schedules/{schedule}/disable', [SchedulesController::class, 'disable'])
+        ->whereUuid('schedule')
+        ->name('schedule:disable');
     Route::get('schedules/{schedule}', [SchedulesController::class, 'show'])
         ->whereUuid('schedule')
         ->name('schedule:show');

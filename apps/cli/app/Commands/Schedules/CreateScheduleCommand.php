@@ -28,7 +28,7 @@ final class CreateScheduleCommand extends ScheduleCommand
         {--instance= : Positive Instance ID}
         {--project= : Numeric Project ID}
         {--for= : Comma-separated definition environments}
-        {--calendar= : Native systemd calendar expression}
+        {--calendar= : Cron expression, such as "0 3 * * *" or @daily; a systemd calendar for a Project definition}
         {--command= : Command to run}
         {--timeout=3600 : Execution timeout in seconds, from 1 to 86400}
         {--no-start : Install an Instance Schedule with its timer disabled and stopped}

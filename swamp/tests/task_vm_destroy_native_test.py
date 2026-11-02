@@ -22,12 +22,12 @@ class TaskVmDestroyNative(lifecycle.TaskVmLifecycleFixture):
         for name in ('task-vm-destroy','operation-task-vm-destroy','node-role-remove','operation-node-remove'):
             value = yaml.safe_load((ROOT / ('workflows/workflow-' + name + '.yaml')).read_text())
             if 'target' in value:
-                self.assertEqual(value.pop('target'), 'orbit-node-209')
+                self.assertEqual(value.pop('labels'), {'role': 'swamp'})
             for job in value['jobs']:
                 if 'target' in job:
-                    self.assertEqual(job.pop('target'), 'orbit-node-209')
+                    self.assertEqual(job.pop('labels'), {'role': 'swamp'})
                 for step in job['steps']:
-                    self.assertEqual(step.pop('target'), 'orbit-node-209')
+                    self.assertEqual(step.pop('labels'), {'role': 'swamp'})
                     task = step['task']
                     if task.get('behaviorType') == '@swamp/ssh':
                         task['globalArgs']['sshBinary'] = str(self.repo / 'ssh')

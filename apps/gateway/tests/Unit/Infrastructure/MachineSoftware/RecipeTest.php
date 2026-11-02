@@ -317,6 +317,7 @@ describe('machine recipe structure and identity', function (): void {
             'app-dev' => $development,
             'base' => $base,
             'ci-runner' => [...$common, ...RecipeLoader::IncusPackages, 'acl', 'attr', 'git', 'unzip', ...$php85],
+            'swamp' => [...$common, 'caddy'],
         ];
         expect($php)->toBe([...array_values(array_unique([...$recipe->php('8.5')->packages, ...$recipe->php('8.4')->packages])), 'dpkg-repack']);
         foreach ($profiles as $role => $expected) {

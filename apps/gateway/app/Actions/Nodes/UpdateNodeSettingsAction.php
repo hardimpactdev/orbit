@@ -20,7 +20,6 @@ use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
-use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Operation;
@@ -54,16 +53,17 @@ final readonly class UpdateNodeSettingsAction
                 return $node;
             }
 
-            $storage = $this->validator->directIntent($normalized, $node, $create);
             if ($node->platform !== 'linux') {
                 throw new ResourceOperationException('node.settings_platform_unsupported', 'Apps-root actions require a Linux Node.');
             }
+            // Orbit creates each managed account with its own group and home, so the root is checked here, not on the Node.
+            $account = new ManagedUserAccount($node->user, $node->user, $node->user === 'root' ? '/root' : '/home/'.$node->user);
+            $root = $this->validator->validateEffective($normalized, $node, $account);
 
             return $this->operations->execute('node.settings', 'node', $node->id, $node->id, [
-                'agent_pin' => app(AgentDelivery::class)->pin($node),
                 'ssh' => app(SwampSshExecutionInput::class)->forNode($node),
                 'node_id' => $node->id, 'caller_node_id' => $caller?->id,
-                ...$storage, 'settings' => $this->normalizer->stored($normalized),
+                'root' => $root->value, 'user' => $account->user, 'group' => $account->group, 'settings' => $this->normalizer->stored($normalized),
                 'settings_patch' => ['apps' => $patch->hasApps, 'task_vms' => $patch->hasTaskVms],
             ], 'operator', $requestId, expectedWriter: 'direct');
         });

@@ -8,8 +8,6 @@ use App\Data\DatabaseServers\CreateDatabaseServerData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseConnections\DockerPublishedPort;
 use App\Domain\DatabaseServers\DatabaseServerProcess;
-use App\Domain\DatabaseServers\ValkeyAcl;
-use App\Domain\DatabaseServers\ValkeyProcessAdoption;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessSpecification;
@@ -17,7 +15,7 @@ use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\DockerProcessRenderer;
-use App\Models\DatabaseConnection;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\Node;
@@ -35,7 +33,6 @@ final readonly class CreateDatabaseServerAction
     public function __construct(
         private ProcessTargetResolver $targets,
         private ProcessSpecification $specifications,
-        private ValkeyProcessAdoption $adoption,
         private RecordDatabaseOperationAction $operations,
     ) {}
 
@@ -58,34 +55,26 @@ final readonly class CreateDatabaseServerAction
         }
 
         DatabaseServerProcess::validatePrivateAddresses($node);
+        app(SwampSshExecutionInput::class)->forNode($node);
         if ($data->driver === DatabaseDriver::Pgsql && preg_match(DatabaseServerProcess::POSTGRES_TAG_PATTERN, $data->tag) !== 1) {
             throw new ResourceOperationException('validation.failed', 'Managed PostgreSQL requires a major 18 image tag.', 422);
         }
-        $adoption = null;
 
-        if ($data->processId !== null) {
-            if ($data->driver !== DatabaseDriver::Redis) {
-                throw ValkeyProcessAdoption::refused('Only a redis server can adopt a Process.');
-            }
-
-            $adoption = $this->adoption->admit($node, $data->slug, $data->processId, (string) $data->connection);
-        }
-
-        $reserved = $this->reserve($data, $node, $adoption);
+        $reserved = $this->reserve($data, $node);
         $server = $reserved['server'];
         // Only an explicit create/retry opts an existing server into private publication checks.
         $server->update(['private_endpoints_managed' => true]);
 
         $process = $server->process;
-        $processData = $server->driver === DatabaseDriver::Redis
-            ? DatabaseServerProcess::valkeyData($server, $node, $process->name ?? $server->slug,
-                ($process === null ? null : DatabaseServerProcess::valkeyVolume($process)) ?? DatabaseServerProcess::volume($server->slug))
+        $redis = $server->driver === DatabaseDriver::Redis;
+        $volume = $redis ? (($process === null ? null : DatabaseServerProcess::valkeyVolume($process)) ?? DatabaseServerProcess::volume($server->slug)) : null;
+        $processData = $redis
+            ? DatabaseServerProcess::valkeyData($server, $node, $process->name ?? $server->slug, (string) $volume)
             : DatabaseServerProcess::data($server, $node, $server->root_password);
         $attributes = $this->specifications->attributes($processData, $target);
-        $initialize = $server->driver !== DatabaseDriver::Redis && ($server->status !== LifecycleStatus::Active || $process === null || DatabaseServerProcess::holdsRootPassword($process));
+        $initialize = ! $redis && ($server->status !== LifecycleStatus::Active || $process === null || DatabaseServerProcess::holdsRootPassword($process));
         $initialEnvironment = $initialize ? $attributes['runtime_config']['environment'] : [];
         $attributes['runtime_config']['environment'] = [];
-        $validateExisting = $adoption !== null && $server->status !== LifecycleStatus::Active;
         if ($process === null) {
             $process = Process::query()->create([
                 'owner_type' => Node::class, 'owner_id' => $node->id, 'name' => $server->slug,
@@ -96,37 +85,27 @@ final readonly class CreateDatabaseServerAction
         $desired = clone $process;
         $desired->fill($attributes);
         $docker = new DockerProcessRenderer;
-        $scrubSpec = $docker->specHash($desired, $target);
         $containerInput = $docker->containerInput($desired, $target);
         unset($containerInput['environment']);
         $initial = clone $desired;
         $initial->runtime_config = [...$desired->runtime_config, 'environment' => $initialEnvironment];
-        $private = ['password' => $server->root_password, 'environment' => $initialEnvironment,
-            'acl' => $server->driver === DatabaseDriver::Redis ? ValkeyAcl::file($server) : '',
-            'payload' => $server->driver === DatabaseDriver::Redis ? (object) ['users' => array_map(static fn ($user): array => ['name' => $user->name, 'rules' => $user->rules, 'hashes' => $user->passwordHashes], array_values(ValkeyAcl::users($server))),
-                'default_open' => $server->default_open] : (object) []];
 
+        // The root password and the Valkey ACL file go to the vault at run start; the intent holds no secret.
         return $this->operations->execute('database_server.create', 'database_server', $server->id, $node->id,
             ['server_id' => $server->id, 'driver' => $server->driver->value, 'created' => $reserved['created'],
                 'process_id' => $process->id, 'container' => $docker->containerName($process), 'container_input' => $containerInput,
-                'spec' => $docker->specHash($initial, $target), 'scrub_spec' => $scrubSpec, 'initialize' => $initialize,
-                'validate_existing' => $validateExisting, 'was_active' => $server->status === LifecycleStatus::Active,
-                'host' => $node->wireguard_ip, 'port' => $server->port, 'default_open' => $server->default_open,
-                'volume' => $server->driver === DatabaseDriver::Redis ? (DatabaseServerProcess::valkeyVolume($process) ?? DatabaseServerProcess::volume($server->slug)) : null,
-                'adoption_connection_id' => $adoption['connection']->id ?? null],
-            ['database-apply' => ['name' => 'database.server-create', 'input' => $private, 'protected' => ['password', 'environment', 'acl', 'payload'], 'redactions' => [$server->root_password]]],
+                'spec' => $docker->specHash($initial, $target), 'scrub_spec' => $docker->specHash($desired, $target), 'initialize' => $initialize,
+                'password_variable' => $redis ? null : DatabaseServerProcess::passwordVariable($server), 'volume' => $volume],
+            [],
             ['server' => ['status' => 'active', 'failed_step' => null, 'error_code' => null],
-                'process' => ['runtime_config' => $desired->runtime_config, 'working_directory' => $desired->working_directory, 'restart_policy' => $desired->restart_policy], 'adopted_connection' => $data->connection]);
+                'process' => ['runtime_config' => $desired->runtime_config, 'working_directory' => $desired->working_directory, 'restart_policy' => $desired->restart_policy]]);
     }
 
-    /**
-     * @param  array{process: Process, connection: DatabaseConnection, port: int}|null  $adoption
-     * @return array{server: DatabaseServer, created: bool}
-     */
-    private function reserve(CreateDatabaseServerData $data, Node $node, ?array $adoption): array
+    /** @return array{server: DatabaseServer, created: bool} */
+    private function reserve(CreateDatabaseServerData $data, Node $node): array
     {
         try {
-            return DB::transaction(function () use ($data, $node, $adoption): array {
+            return DB::transaction(function () use ($data, $node): array {
                 $existing = DatabaseServer::query()
                     ->where('slug', $data->slug)
                     ->lockForUpdate()
@@ -136,36 +115,15 @@ final readonly class CreateDatabaseServerAction
                     if ($existing->status === LifecycleStatus::Removing) {
                         throw new ResourceOperationException('database.server_removing', 'The server has an unfinished removal intent.', 409);
                     }
-                    if (
-                        $existing->node_id !== $node->id
-                        || $existing->driver !== $data->driver
-                        || $existing->tag !== $data->tag
-                        || ($data->processId === null ? $existing->port !== $data->port : $existing->process_id !== $data->processId)
-                    ) {
+                    if ($existing->node_id !== $node->id || $existing->driver !== $data->driver
+                        || $existing->tag !== $data->tag || $existing->port !== $data->port) {
                         throw $this->slugConflict($data->slug);
                     }
 
                     return ['server' => $existing, 'created' => false];
                 }
 
-                if ($adoption !== null) {
-                    $server = DatabaseServer::query()->create([
-                        'slug' => $data->slug,
-                        'driver' => DatabaseDriver::Redis,
-                        'node_id' => $node->id,
-                        'process_id' => $adoption['process']->id,
-                        'tag' => $data->tag,
-                        'port' => $adoption['port'],
-                        'root_password' => $adoption['connection']->password ?: Str::random(self::ROOT_PASSWORD_LENGTH),
-                        'default_open' => ! filled($adoption['connection']->password),
-                        'status' => LifecycleStatus::Provisioning,
-                    ]);
-
-                    return ['server' => $server, 'created' => true];
-                }
-
-                $port = (int) $data->port;
-                $this->assertPortFree($node, $port);
+                $this->assertPortFree($node, $data->port);
 
                 $server = DatabaseServer::query()->create([
                     'slug' => $data->slug,
@@ -173,7 +131,7 @@ final readonly class CreateDatabaseServerAction
                     'node_id' => $node->id,
                     'process_id' => null,
                     'tag' => $data->tag,
-                    'port' => $port,
+                    'port' => $data->port,
                     'root_password' => Str::random(self::ROOT_PASSWORD_LENGTH),
                     'status' => LifecycleStatus::Provisioning,
                 ]);
@@ -220,7 +178,7 @@ final readonly class CreateDatabaseServerAction
     {
         return new ResourceOperationException(
             errorCode: 'database.server_slug_conflict',
-            message: "Database server [{$slug}] already exists with a different Node, driver, tag, port, or Process.",
+            message: "Database server [{$slug}] already exists with a different Node, driver, tag or port.",
             status: 409,
         );
     }

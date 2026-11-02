@@ -14,8 +14,9 @@ def converge(run=subprocess.run):
     for rule in (ALLOW, DENY):
         run(["/usr/sbin/ufw", "--force", "delete", *rule], check=True,
             capture_output=True)
+    # prepend also works on a fresh guest's empty ruleset, where insert 1 is invalid.
     for rule in (DENY, ALLOW):
-        run(["/usr/sbin/ufw", "insert", "1", *rule], check=True,
+        run(["/usr/sbin/ufw", "prepend", *rule], check=True,
             capture_output=True)
     run(["/usr/sbin/ufw", "--force", "enable"], check=True, capture_output=True)
     return {"ssh_source": SOURCE, "ssh_firewall_ready": True}

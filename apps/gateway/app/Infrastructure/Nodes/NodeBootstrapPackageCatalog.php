@@ -29,7 +29,7 @@ final class NodeBootstrapPackageCatalog
             RoleName::Gateway => ['ca-certificates', 'caddy', 'logrotate'],
             RoleName::Vpn => ['dnsmasq', 'openssl'],
             RoleName::Router => ['caddy', 'openssl'],
-            RoleName::Ingress => ['caddy'],
+            RoleName::Ingress, RoleName::Swamp => ['caddy'],
             RoleName::AppDev, RoleName::AppProd => [
                 'acl',
                 'attr',

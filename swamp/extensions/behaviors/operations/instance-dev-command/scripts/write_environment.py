@@ -1,4 +1,4 @@
-"""Publish the admitted private environment as the managed account; stdout has keys only."""
+"""Write the Gateway-rendered environment as the managed account; stdout holds no environment content or keys."""
 import json
 import os
 import sys
@@ -7,9 +7,12 @@ from pathlib import Path
 
 
 def publish(value):
-    directory = Path(value['directory'])
+    directory, checkout = Path(value['directory']), Path(value['checkout'])
     target = directory / '.env'
-    if directory.is_symlink() or not directory.is_dir() or directory.stat().st_uid != os.geteuid():
+    if not directory.is_relative_to(checkout) or any(path.is_symlink() for path in (directory, *directory.parents)
+                                                      if path == checkout or checkout in path.parents):
+        raise ValueError('env.sync_failed')
+    if not directory.is_dir() or directory.stat().st_uid != os.geteuid():
         raise ValueError('instance.source_ownership_mismatch')
     if target.is_symlink() or target.exists() and (not target.is_file() or target.stat().st_uid != os.geteuid()):
         raise ValueError('env.sync_failed')
@@ -26,7 +29,7 @@ def publish(value):
         os.replace(temporary, target)
     finally:
         Path(temporary).unlink(missing_ok=True)
-    return {'ready': True, 'keys': value['keys']}
+    return {'ready': True}
 
 
 if __name__ == '__main__':

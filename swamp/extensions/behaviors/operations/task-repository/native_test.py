@@ -103,10 +103,10 @@ class NativeRepository(harness.NativeTestCase):
         )
         self.flow["name"] = "task-repository-fixture"
         for job in self.flow["jobs"]:
-            self.assertEqual(job.pop("target"), "orbit-node-209")
+            self.assertEqual(job.pop("labels"), {"role": "swamp"})
             self.assertEqual(job.pop("labels"), {"node": "209"})
             for step in job["steps"]:
-                self.assertEqual(step.pop("target"), "orbit-node-209")
+                self.assertEqual(step.pop("labels"), {"role": "swamp"})
                 self.assertEqual(step.pop("labels"), {"node": "209"})
                 task_inputs = step["task"].get("inputs", {})
                 for key, value in task_inputs.items():

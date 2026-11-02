@@ -15,11 +15,29 @@ function records(text: string): Map<string, string> {
 }
 const object = (value: unknown): value is Record<string, unknown> =>
     value !== null && typeof value === "object" && !Array.isArray(value);
+/**
+ * Requesters map a WireGuard address to its Node id; only the Gateway's Node registry
+ * writes them. Task VMs reuse addresses, and a removal whose first attempt failed left
+ * the old id behind, so a three-way check made every later removal on that address
+ * conflict. A key this change touches takes the desired id; other keys stay.
+ */
+function requesters(before: unknown, after: unknown, current: unknown) {
+    const map = (value: unknown) => object(value) ? value : {};
+    const result = { ...map(current) };
+    const [was, will] = [map(before), map(after)];
+    for (const key of new Set([...Object.keys(was), ...Object.keys(will)])) {
+        if (JSON.stringify(was[key]) === JSON.stringify(will[key])) continue;
+        if (will[key] === undefined) delete result[key];
+        else result[key] = will[key];
+    }
+    return result;
+}
 function catalog(
     before: unknown,
     after: unknown,
     current: unknown,
     alternatives: unknown[],
+    top = false,
 ): unknown {
     // PHP serializes empty associative arrays as []; these catalog fields are maps.
     const normalize = (value: unknown) =>
@@ -40,6 +58,10 @@ function catalog(
         for (
             const key of new Set(maps.flatMap((value) => Object.keys(value)))
         ) {
+            if (top && key === "requesters") {
+                result[key] = requesters(maps[0][key], maps[1][key], maps[2][key]);
+                continue;
+            }
             const value = catalog(
                 maps[0][key],
                 maps[1][key],
@@ -82,6 +104,7 @@ export function mergeDns(
                 JSON.parse(after.catalog),
                 JSON.parse(current.catalog),
                 alternatives.map((value) => JSON.parse(value.catalog)),
+                true,
             ),
         ) + "\n",
     };

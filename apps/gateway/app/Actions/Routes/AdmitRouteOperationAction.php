@@ -146,26 +146,19 @@ final readonly class AdmitRouteOperationAction
         });
     }
 
-    public function clearTarget(Route $route, ?Node $caller = null, ?string $requestId = null): Operation
+    /** Record-only: clearing the target set touches no Node, so no run starts. */
+    public function clearTarget(Route $route): Route
     {
         $previous = array_values($route->targets()->orderBy('instance_id')->pluck('instance_id')->map(StoredInteger::from(...))->all());
 
-        return $this->owned($previous, function () use ($route, $previous, $caller, $requestId): Operation {
+        return app(InstanceEnvironmentOperationLock::class)->run($previous, fn (): Route => DB::transaction(function () use ($route, $previous): Route {
             $updated = $this->targets->clear($route, $previous);
-            $nodeId = Instance::query()->whereKey($previous)->orderBy('id')->value('node_id')
-                ?? $updated->node_id ?? $updated->cluster?->routerAssignment?->node_id;
-            if (! is_int($nodeId)) {
-                throw new ResourceOperationException('route.router_required', 'The Route requires a serving Node.', 409);
-            }
-            $operation = $this->operations->execute('route.target_unset', 'route', $updated->id, $nodeId,
-                ['route_id' => $updated->id, 'node_ids' => [$nodeId], 'access_node_ids' => [$nodeId],
-                    'caller_node_id' => $caller?->id, 'previous_target_instance_ids' => $previous], 'operator', $requestId);
             DB::afterCommit(fn () => app(RecordEventBroadcaster::class)->broadcast(
                 RecordEventType::RouteUpdated, $updated->id, RouteData::fromModel($updated)->toArray(),
             ));
 
-            return $operation->refresh();
-        });
+            return $updated;
+        }));
     }
 
     public function destroy(Route $route, bool $offline = false, ?Node $caller = null, ?string $requestId = null): Operation

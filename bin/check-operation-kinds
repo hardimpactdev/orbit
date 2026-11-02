@@ -5,6 +5,7 @@ declare(strict_types=1);
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\GatewayWorkflowGrantCheck;
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationRegistryCheck;
 use Illuminate\Contracts\Console\Kernel;
 
@@ -16,7 +17,18 @@ try {
     $count = $app->make(OperationRegistryCheck::class)->execute();
     $policy = json_decode(file_get_contents(__DIR__.'/../swamp/config/gateway-workflow-grants.json'), true, flags: JSON_THROW_ON_ERROR);
     $workflows = (new GatewayWorkflowGrantCheck)->execute($app->make(DirectOperation::class)->grantDefinitions(), $policy);
+    // Every kind has a chart in docs/flows, or waits in pending.txt; bin/check-flows checks the charts themselves.
+    $flows = __DIR__.'/../docs/flows';
+    $kinds = array_keys(OperationKinds::definitions());
+    $pending = file($flows.'/pending.txt', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    $missing = array_filter($kinds, static fn (string $kind): bool => ! is_file("{$flows}/{$kind}.mmd") && ! in_array($kind, $pending, true));
+    $unknown = array_diff($pending, $kinds);
+    if ($missing !== [] || $unknown !== []) {
+        throw new RuntimeException('Flow charts: kinds without a chart or a docs/flows/pending.txt line: '.(implode(', ', $missing) ?: 'none')
+            .'; pending.txt lines that are no kind: '.(implode(', ', $unknown) ?: 'none'));
+    }
     fwrite(STDOUT, "Operation registry valid: {$count} kinds.\n");
+    fwrite(STDOUT, 'Flow charts cover every kind; '.count($pending)." pending.\n");
     fwrite(STDOUT, "GATEWAY-WORKFLOW-GRANTS workflows={$workflows} principal=user:orbit-gateway policy=intended\n");
 } catch (Throwable $exception) {
     fwrite(STDERR, $exception::class.': '.$exception->getMessage()."\n");

@@ -13,7 +13,6 @@ jobs:
 - name: account
   steps:
   - name: update
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
     labels: {node: '${{ string(inputs.node_id) }}'}
     task:
       type: behavior

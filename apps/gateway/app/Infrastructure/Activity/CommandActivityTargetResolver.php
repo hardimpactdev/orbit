@@ -170,7 +170,7 @@ final readonly class CommandActivityTargetResolver
             return $this->scheduleTarget($request);
         }
 
-        if (in_array($request->route()?->getName(), ['firewall:allow', 'firewall:deny', 'firewall:allowlist'], strict: true)) {
+        if (in_array($request->route()?->getName(), ['firewall:allow', 'firewall:deny'], strict: true)) {
             $rule = $this->createdFirewallRule($request);
 
             if ($rule instanceof FirewallRule) {

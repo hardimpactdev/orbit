@@ -1,1 +1,12 @@
-{"group":"Reference","pages":["reference/route-mutation-steps"]}
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Applications",
+      "order": 3,
+      "pages": [
+        "reference/route-mutation-steps"
+      ]
+    }
+  ]
+}

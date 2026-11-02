@@ -65,10 +65,10 @@ raise SystemExit(int(os.environ.get('SSH_FAIL','0')))
                     'name': 'noop', 'task': {'type': 'assert', 'expr': ('has(inputs.intent.caddy_publication.connection.nodeHost)' if name == 'operation-route-caddy' else 'has(inputs.intent.connection.nodeHost)'), 'message': 'disposable captured publication connection'}}]}]}))
         for name in ('node-role-remove', 'operation-node-remove'):
             workflow = yaml.safe_load((ROOT / ('workflows/workflow-' + name + '.yaml')).read_text())
-            self.assertEqual(workflow.pop('target'), 'orbit-node-209')
+            self.assertEqual(workflow.pop('labels'), {'role': 'swamp'})
             for job in workflow['jobs']:
                 for step in job['steps']:
-                    self.assertEqual(step.pop('target'), 'orbit-node-209')
+                    self.assertEqual(step.pop('labels'), {'role': 'swamp'})
                     self.assertNotIn('labels', step)
                     task = step['task']
                     if task.get('behaviorType') == '@swamp/ssh':
@@ -146,9 +146,12 @@ raise SystemExit(int(os.environ.get('SSH_FAIL','0')))
     def test_exact209_placement_delivers_assets_through_remote_only_serve(self):
         for path in (self.repo / 'workflows').glob('workflow-*.yaml'):
             workflow = yaml.safe_load(path.read_text())
+            workflow.pop('labels', None)
             workflow['target'] = 'orbit-node-209'
             for job in workflow['jobs']:
+                job.pop('labels', None)
                 for step in job['steps']:
+                    step.pop('labels', None)
                     step['target'] = 'orbit-node-209'
             path.write_text(yaml.safe_dump(workflow, sort_keys=False))
         self.cli('access', 'token', 'mint', 'fixture-admin', '--principal', 'user:fixture')

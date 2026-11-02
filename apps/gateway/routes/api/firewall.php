@@ -22,21 +22,12 @@ Route::middleware([
     Route::get('nodes/{node}/live-firewall-rules', [FirewallRulesController::class, 'live'])
         ->whereNumber('node')
         ->name('firewall:live:list');
-    Route::post('nodes/{node}/firewall-inspection', [FirewallRulesController::class, 'inspect'])
-        ->whereNumber('node')
-        ->name('firewall:inspect');
     Route::post('nodes/{node}/firewall-rules/allow', [FirewallRulesController::class, 'allow'])
         ->defaults('firewall_action', 'allow')
         ->name('firewall:allow');
-    Route::post('nodes/{node}/firewall-rules/allowlist', [FirewallRulesController::class, 'allowlist'])
-        ->name('firewall:allowlist');
     Route::post('nodes/{node}/firewall-rules/deny', [FirewallRulesController::class, 'deny'])
         ->defaults('firewall_action', 'deny')
         ->name('firewall:deny');
-    Route::delete(
-        'nodes/{node}/firewall-rules/{firewallRule:name}',
-        [FirewallRulesController::class, 'destroy'],
-    )
-        ->scopeBindings()
+    Route::post('nodes/{node}/firewall-rules/remove', [FirewallRulesController::class, 'destroy'])
         ->name('firewall:remove');
 });

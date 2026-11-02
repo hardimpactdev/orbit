@@ -1,1 +1,12 @@
-{"group":"Reference","pages":["reference/route-node-rendering"]}
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Applications",
+      "order": 3,
+      "pages": [
+        "reference/route-node-rendering"
+      ]
+    }
+  ]
+}

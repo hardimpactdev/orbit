@@ -1,0 +1,68 @@
+{
+  "kind": "firewall.deny-peer",
+  "workflow": "operation-firewall-direct",
+  "topology": "minimal",
+  "budget_seconds": 300,
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "assets",
+      "job": "firewall",
+      "step": "assets",
+      "budget_seconds": 60
+    },
+    {
+      "name": "apply",
+      "job": "firewall",
+      "step": "apply",
+      "budget_seconds": 60
+    },
+    {
+      "name": "accepted",
+      "job": "firewall",
+      "step": "accepted",
+      "budget_seconds": 60
+    }
+  ],
+  "clean_target": [
+    [
+      "sh",
+      "-c",
+      "ufw --force delete allow from 10.231.0.0/24 >/dev/null 2>&1; ufw allow from 10.231.0.0/24 comment orbit:wireguard-members"
+    ],
+    [
+      "sh",
+      "-c",
+      "for port in 7297 7298; do setsid python3 -m http.server --bind 0.0.0.0 $port >/dev/null 2>&1 </dev/null & done; sleep 1"
+    ]
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "nodes/${node.target}/firewall-rules/allow",
+      "body": {
+        "port": "7297",
+        "protocol": "tcp",
+        "source": "10.231.0.1"
+      }
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "nodes/${node.target}/firewall-rules/deny",
+    "body": {
+      "port": "7297",
+      "protocol": "tcp",
+      "label": "peer gate"
+    }
+  },
+  "parity": [
+    "swamp/proof/firewall/peer.py",
+    "+7297/tcp ALLOW 10.231.0.1 # orbit",
+    "+7297/tcp DENY Anywhere # orbit peer gate",
+    "+Anywhere ALLOW 10.231.0.0/24 # orbit:wireguard-members",
+    "+7297/tcp (v6) DENY Anywhere (v6)"
+  ]
+}

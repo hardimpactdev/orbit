@@ -700,7 +700,7 @@ A Process can run on a service Node outside any Cluster. Selecting an Ingress in
 
 LAN address selection uses the recorded /24, not Cluster membership; the source firewall check and connection probe confirm the path before activation. Requiring a listener on the selected address avoids silently rewriting Docker publications. Arbitrary remote URLs, wildcard bindings, a Router hop, and a private certificate on the service Node add exposure or complexity without helping this HTTP path.
 
-Route and certificate dispatch takes a kind and worker identity. The placed family invocation claims and executes on the same worker Node. Before its first effect, it saves the claimed Operation ID. A retry keeps that ID and verifies a saved terminal result through the Gateway. An empty claim ends the invocation. A lost lease ends the attempt; a later dispatch may reclaim expired work.
+Route and certificate dispatch takes a kind and worker identity. The placed family invocation claims and executes on the same Node that runs the worker. Before its first effect, it saves the claimed Operation ID. A retry keeps that ID and verifies a saved terminal result through the Gateway. An empty claim ends the invocation. A lost lease ends the attempt; a later dispatch may reclaim expired work.
 
 Retained Swamp Route composition uses Node-bound children. `route.caddy_converge` takes `{reason}` and publishes the current whole-Node render through its native workflow. The bound public GET returns `input.caddy_publication` from `CaddyPublicationPlan::forNode()`. It includes the Node identity and agent pin, then either the Caddy content, version, listener addresses and serving flag, or a bounded render refusal. Native model `@nckrtl/route-publication`, named `route-publication-node-ID`, holds its lock through the read and local validation/reload. Only proven render or target validation failures include `stage: render|validate`; other failures cannot permit first-Node degradation.
 
@@ -730,7 +730,7 @@ A child `route.destroy` request uses `{route_id, offline: false}`. The shared ch
 
 Each parent prepares exact `{stage, key}` child entries. Child-phase and residue result lists allow at most 4,096 entries and use the shared kit's string and whole-result limits. Opening a phase makes only those children eligible. A commit checks each child's stamped parent, admission snapshot and successful result through the shared child proof. Final proof checks the required phases and children again. The parent completion must match that recorded result.
 
-`route.target_unset` clears eligible Project Route associations and records its intent atomically. It starts `operation-route-target-unset` directly on the admitted Node. Swamp confirms the stored empty target set and projects the result. It has no publication, Metrics, child Operation, executor claim or polled writer. Active Instance and replacement guards still apply.
+`route:target:unset` is record-only. The Gateway clears eligible Project Route associations in one transaction and returns the Route. It starts no run and records no Operation. Active Instance and replacement guards still apply.
 
 Target changes broadcast `route.updated` only after the admission transaction commits. A refused preparation leaves the target unchanged and emits no `route.updated` event.
 

@@ -35,7 +35,7 @@ The contract is that `bin/docs-openapi` produces the same `docs/openapi.json` on
 
 One input still reads outside the checkout. `php artisan route:list` loads the Gateway `.env`, the installed Gateway dependencies, and the PHP binary on `PATH`. The file matches only when that [pinned environment](#pinned-environment) matches too.
 
-The firewall API includes `POST /api/v1/nodes/{node}/firewall-rules/allowlist`. Its `sources` array replaces the complete allowed set. The generated MCP tool is `firewall-allowlist`; the [firewall reference](/cli/firewall#orbit-firewallallowlist) defines its limits and protected ports. Docs impact matches versioned API paths to routes whose shared group supplies the `api/v1` prefix.
+The firewall API removes a rule with `POST /api/v1/nodes/{node}/firewall-rules/remove`, matched by port, protocol and source. The generated MCP tool is `firewall-remove`; the [firewall reference](/cli/firewall#rule-identity) defines identity, order and protected ports. Docs impact matches versioned API paths to routes whose shared group supplies the `api/v1` prefix.
 
 ## Inputs
 
@@ -55,7 +55,9 @@ The firewall API includes `POST /api/v1/nodes/{node}/firewall-rules/allowlist`. 
 
 The generator reads every command class, including commands the CLI hides at runtime. It does not run `orbit list`, and it does not load `apps/cli/vendor`.
 
-`bin/docs-openapi` also contains fixed schema text that it does not parse from the rows above, such as the deployment event stream. It also stores operation summaries and descriptions, including `tool:scan`, `tool:adopt`, `tasks:create`, `tasks:update`, and `tasks:complete`. Those descriptions stay in the script so the API and MCP keep the operation contracts rather than only the short CLI summaries. That text is part of the checkout. Editing the script changes the document in the same way on every machine.
+`bin/docs-openapi` also contains fixed schema text that it does not parse from the rows above, such as the deployment event stream. It also stores operation summaries and descriptions, including `tool:scan`, `tool:adopt`, `tasks:create`, `tasks:update`, and `tasks:complete`. Those descriptions stay in the script so the API and MCP keep the operation contracts rather than only the short CLI summaries.
+
+Each summary is keyed by route name, so removing a route removes its summary in the same change. A new route needs its own summary in the same change, as `cluster:activate`, `instance:auto-deploy:enable` and `project:review-and-merge:enable` have; without one, the operation's summary is its bare route name. That text is part of the checkout. Editing the script changes the document in the same way on every machine.
 
 The `tasks:create` and `tasks:update` descriptions follow the [Tasks contract](/reference/tasks#tasks-and-subtasks): a task belongs to a Project, and an external ADE plans the work. The descriptions keep the status, subtask, and deliverable requirements. The completion description includes the ended watched pull request path, its durable receipt, and the `tasks.not_settling` and `tasks.subtask_interrupt_failed` errors. The `tasks:question:close` description names the `question_closed` comment and the `tasks.question_closed` refusal, and its `question` path parameter is a positive integer.
 
@@ -89,7 +91,7 @@ The Project development deploy step operations publish typed step responses from
 
 The script publishes HTTP 202 and the queued release record for `gateway:release:deploy` and `gateway:release:rollback`, because the [Gateway release](/reference/gateway-recovery#deploy-through-the-api) runs in its own unit after the request ends. It publishes HTTP 202 and the queued [operation](/reference/operations) for each controller action that answers `202` with an operation, `instance:deploy` and `instance:rollback`, and the operation with its steps for `operation:show`. It also maps the automatic release controller to its state schema.
 
-A controller method that starts an operation declares its kind, such as `#[StartsOperation(OperationKinds::InstanceDeploy)]`. This marker enables the shared idempotency check and the generated `Idempotency-Key` header. Generation fails if a method answers `202` with `OperationData` without the marker. The operation store refuses a keyed start whose kind differs from its marker.
+A controller method that starts an operation declares its kind, such as `#[StartsOperation(OperationKinds::InstanceDeploy)]`. This marker enables the shared idempotency check and the generated `Idempotency-Key` header. Only the marker adds that header; the generator names no route that needs one. Generation fails if a method answers `202` with `OperationData` without the marker. The operation store refuses a keyed start whose kind differs from its marker.
 
 `database:create` publishes three request variants: register an existing connection, create a MySQL database on a server, or create a Valkey ACL user on a server. Registration keeps `database` as a string. Valkey user creation takes an integer index and requires the `patterns` and `allow` lists. Server creation limits `driver` to `mysql` or `redis`. These variants also feed the MCP manifest and web API types.
 

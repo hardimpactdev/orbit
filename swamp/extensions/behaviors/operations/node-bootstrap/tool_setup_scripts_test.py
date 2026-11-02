@@ -22,6 +22,18 @@ class SetupScriptsTest(unittest.TestCase):
     def path(self, value):
         return self.root / str(value).lstrip('/') if str(value).startswith(('/opt/', '/home/linuxbrew')) else Path(value)
 
+    def test_apt_install_waits_for_a_busy_dpkg_lock(self):
+        script = self.load('install_apt.py')
+        release = self.root / 'os-release'
+        release.write_text('ID=ubuntu\nVERSION_CODENAME=resolute\n')
+        script['install'].__globals__['OS_RELEASE'] = release
+        with patch('subprocess.run') as run, patch('subprocess.check_output', return_value='1.0'):
+            script['install']({'snapshot': '20260101T000000Z', 'packages': [{'name': 'hello', 'version': '1.0', 'artifact': None}]})
+        update, install = (call.args[0] for call in run.call_args_list)
+        self.assertEqual(update[:3], ['apt-get', '-o', 'DPkg::Lock::Timeout=300'])
+        self.assertEqual(install[:3], ['apt-get', '-o', 'DPkg::Lock::Timeout=300'])
+        self.assertEqual(install[-2:], ['--', 'hello=1.0'])
+
     def test_composer_recovers_owned_partial_scope_and_preserves_existing_roots(self):
         script = self.load('prepare_composer.py')
         root = self.path('/opt/orbit/composer')

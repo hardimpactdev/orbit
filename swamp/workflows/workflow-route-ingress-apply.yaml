@@ -1,5 +1,6 @@
 id: 4977fbb9-658c-4d9c-a984-d003f4dbe225
 name: route-ingress-apply
+queueTimeout: 30
 description: Converge public ingress through the canonical pinned tuple child.
 vaults: []
 inputs:
@@ -29,7 +30,7 @@ jobs:
   - name: firewall
     steps:
       - name: converge
-        target: orbit-node-209
+        labels: {role: swamp}
         task:
           type: workflow
           workflowIdOrName: route-lan-apply
@@ -50,7 +51,7 @@ jobs:
                   string(r.port), "port": r.port, "protocol": "tcp", "source":
                   "any", "ensure": r.ensure}) }}
       - name: result
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: converge
             condition:

@@ -65,20 +65,20 @@ jobs:
 - name: prepare
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/conn-revocation-plan'
-      behaviorName: ${{ "conn-" + string(inputs.operation_id) + "-assets" }}
+      behaviorName: '${{ "conn-assets" }}'
       methodName: assets
       inputs:
         intent: ${{ inputs.intent }}
   - name: list
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "conn-" + string(inputs.operation_id) + "-list" }}
+      behaviorName: '${{ "conn-list" }}'
       methodName: execute
       inputs:
         run: '#!/bin/sh
@@ -98,11 +98,11 @@ jobs:
         type: succeeded
     guard: ${{ inputs.intent.labels.size() == 0 }}
   - name: select
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/conn-revocation-plan'
-      behaviorName: ${{ "conn-" + string(inputs.operation_id) + "-select" }}
+      behaviorName: '${{ "conn-select" }}'
       methodName: select
       inputs:
         intent: ${{ inputs.intent }}
@@ -119,7 +119,7 @@ jobs:
       type: succeeded
   steps:
   - name: session
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: conn-revoke-session
@@ -140,11 +140,11 @@ jobs:
       type: succeeded
   steps:
   - name: link
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "conn-" + string(inputs.operation_id) + "-link-" + run.id + "-" + string(self._index) }}
+      behaviorName: '${{ "conn-link-" + string(self._index) }}'
       methodName: execute
       inputs:
         run: '#!/bin/sh
@@ -169,11 +169,11 @@ jobs:
       type: always
   steps:
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/conn-revocation-plan'
-      behaviorName: ${{ "conn-" + string(inputs.operation_id) + "-result" }}
+      behaviorName: '${{ "conn-result" }}'
       methodName: finish
       inputs:
         successful: ${{ steps.all(name, steps[name].status == "succeeded" || steps[name].status

@@ -2,6 +2,7 @@ id: 11b8ed3f-1814-4165-80c9-8af59fe94c22
 name: operation-task-provision
 description: Compose canonical VM provision, source checkout and ordered setup from full inputs on209;
   no guest worker or Gateway step callbacks.
+queueTimeout: 30
 vaults:
 - orbit-control-inputs
 inputs:
@@ -44,20 +45,20 @@ inputs:
   additionalProperties: false
 jobs:
 - name: provision
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: vm_inputs
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-provision-data'
-      behaviorName: ${{ "tp-data-"+run.id+"-vm_inputs" }}
+      behaviorName: '${{ "tp-data-vm_inputs" }}'
       methodName: vm_inputs
       inputs:
         execution_secrets: ${{ inputs.execution_secrets }}
     dependsOn: []
   - name: vm
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: task-vm-provision
@@ -72,11 +73,11 @@ jobs:
       condition:
         type: succeeded
   - name: guest
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-provision-data'
-      behaviorName: ${{ "tp-data-"+run.id+"-guest" }}
+      behaviorName: '${{ "tp-data-guest" }}'
       methodName: guest
       inputs:
         intent: ${{ inputs.intent }}
@@ -86,7 +87,7 @@ jobs:
       condition:
         type: succeeded
   - name: source
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: guest
       condition:
@@ -103,7 +104,7 @@ jobs:
           : {} }}'
         workspace: ${{ steps.guest.outputs.workspace }}
   - name: proof_club
-    target: orbit-node-209
+    labels: {role: swamp}
     queueTimeout: 10
     guard: ${{ !has(inputs.intent.proof_club_required) || !inputs.intent.proof_club_required || inputs.intent.project_id != 62 || !has(inputs.execution_secrets.proof_club) }}
     dependsOn:
@@ -113,7 +114,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "tp-proof-club-"+run.id }}
+      behaviorName: '${{ ("tp-proof-club-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
@@ -121,7 +122,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
-        name: ${{ "task-proof-ssh-"+run.id }}
+        name: '${{ ("tp-proof-club-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
           kind: ssh
@@ -143,11 +144,11 @@ jobs:
         - ${{ inputs.intent.workspace.user }}
         stdin: ${{ vault.get(inputs.execution_secrets.proof_club.vault, inputs.execution_secrets.proof_club.key) }}
   - name: shape_result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-provision-data'
-      behaviorName: ${{ "tp-data-"+run.id+"-shape_result" }}
+      behaviorName: '${{ "tp-data-shape_result" }}'
       methodName: result
       inputs:
         intent: ${{ inputs.intent }}
@@ -166,11 +167,11 @@ jobs:
       condition:
         type: always
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "tp-"+run.id+"-result" }}
+      behaviorName: '${{ "tp-result" }}'
       methodName: execute
       inputs:
         run: 'printf ''%s\n'' "$ORBIT_RESULT"
@@ -183,11 +184,11 @@ jobs:
       condition:
         type: succeeded
   - name: outcome
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "tp-"+run.id+"-outcome" }}
+      behaviorName: '${{ "tp-outcome" }}'
       methodName: execute
       inputs:
         run: 'python3 -c ''import json,os,sys; sys.exit(1 if "error_code" in json.loads(os.environ["ORBIT_RESULT"])

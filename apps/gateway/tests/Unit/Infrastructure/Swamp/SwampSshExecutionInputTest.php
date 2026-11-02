@@ -9,7 +9,7 @@ use App\Models\Node;
 it('exposes the approved public 209 identity before a bootstrap target exists', function (): void {
     expect((new SwampSshExecutionInput)->identity())->toBe([
         'control_node_id' => 209,
-        'identity_file' => '/run/credentials/orbit-node-worker.service/proxy-ssh-identity',
+        'identity_file' => '/etc/orbit/swamp-role-worker/ssh-identity',
         'public_key' => 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND',
     ]);
 });

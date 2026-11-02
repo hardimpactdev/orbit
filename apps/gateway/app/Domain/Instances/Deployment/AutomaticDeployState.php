@@ -4,10 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Deployment;
 
-use App\Data\Instances\InstanceSmokeFailureData;
-use App\Data\Instances\InstanceSmokeRepairEntryData;
 use App\Models\Instance;
-use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -47,70 +44,12 @@ final class AutomaticDeployState
     /** Keeps a commit from deploying automatically, such as the commit a rollback moved away from. */
     public function block(string $commit): void
     {
-        $permanent = $this->smokeBlocked();
-        $recent = array_values(array_diff(array_unique([...$this->blocked(), $commit]), $permanent));
-        $this->state['blocked'] = [...$permanent, ...array_slice($recent, -self::BlockedLimit)];
-    }
-
-    public function recordSmokeFailure(string $key, int $caller, string $fingerprint, InstanceSmokeFailureData $failure): void
-    {
-        $entries = $this->state['smoke_failures'] ?? [];
-        $entries = is_array($entries) ? $entries : [];
-        $entries[$key] = ['caller_node_id' => $caller, 'fingerprint' => $fingerprint, 'failure' => $failure->toArray()];
-        $this->state['smoke_failures'] = $entries;
-        $this->block($failure->commit);
-    }
-
-    /** @return array{caller_node_id: int, fingerprint: string, failure: array<string, mixed>}|null */
-    public function smokeFailure(string $key): ?array
-    {
-        $entries = $this->state['smoke_failures'] ?? null;
-        $entry = is_array($entries) ? ($entries[$key] ?? null) : null;
-
-        return is_array($entry) && is_int($entry['caller_node_id'] ?? null) && is_string($entry['fingerprint'] ?? null) && is_array($entry['failure'] ?? null)
-            ? ['caller_node_id' => $entry['caller_node_id'], 'fingerprint' => $entry['fingerprint'], 'failure' => ValidatedData::object($entry['failure'])] : null;
-    }
-
-    public function smokeRepair(string $key): ?InstanceSmokeRepairEntryData
-    {
-        $entries = $this->state['smoke_repairs'] ?? null;
-        $entry = is_array($entries) ? ($entries[$key] ?? null) : null;
-
-        return is_array($entry) ? InstanceSmokeRepairEntryData::from($entry) : null;
-    }
-
-    public function recordSmokeRepair(InstanceSmokeRepairEntryData $entry): void
-    {
-        $entries = $this->state['smoke_repairs'] ?? [];
-        $entries = is_array($entries) ? $entries : [];
-        $entries[$entry->repair->requestKey] = $entry->toArray();
-        $this->state['smoke_repairs'] = $entries;
-    }
-
-    /** @param array<string, mixed> $control */
-    public function smokeControl(array $control): void
-    {
-        $this->state['smoke_control'] = $control;
-    }
-
-    public function smokeHeld(): bool
-    {
-        $control = $this->state['smoke_control'] ?? null;
-
-        return is_array($control) && is_array($control['hold'] ?? null);
+        $this->state['blocked'] = array_slice(array_values(array_unique([...$this->blocked(), $commit])), -self::BlockedLimit);
     }
 
     public function operatorControl(): void
     {
         $this->state['operator_version'] = (is_int($this->state['operator_version'] ?? null) ? $this->state['operator_version'] : 0) + 1;
-    }
-
-    /** @return list<string> */
-    public function smokeBlocked(): array
-    {
-        $entries = $this->state['smoke_failures'] ?? null;
-
-        return is_array($entries) ? array_values(array_unique(array_filter(array_column(array_column($entries, 'failure'), 'commit'), is_string(...)))) : [];
     }
 
     /** @return list<string> */

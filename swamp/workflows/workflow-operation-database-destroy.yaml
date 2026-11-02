@@ -1,53 +1,225 @@
 id: ad81876c-b31c-4ea4-8930-e9468294471a
 name: operation-database-destroy
-description: Remove admitted databases and unshared users through native SSH actions from209.
-writes: true
+description: database:destroy from 209, one docker exec per SQL or Valkey action with the Gateway-rendered statement on stdin.
 vaults: [orbit-control-inputs]
+queueTimeout: 30
 inputs:
   type: object
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [database.destroy]}
+    kind: {type: string, const: database.destroy}
     intent: {type: object}
-    execution_secrets: {type: object, properties: {database_destroy: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^database-destroy-intent-[1-9][0-9]*$'}}, required: [vault, key], additionalProperties: false}}, required: [database_destroy], additionalProperties: false}
+    # Names only: client_env, the server's admin login as a Docker env file (MySQL and Valkey).
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^database-server-[1-9][0-9]*-client-env$'}
+        required: [vault, key]
+        additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
-- name: remove
-  target: orbit-node-209
+- name: destroy
+  labels: {role: swamp}
   steps:
-  - name: remove
-    target: orbit-node-209
-    task:
-      type: workflow
-      workflowIdOrName: database-destroy-actions
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        scope: single
-        intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-- name: result
-  target: orbit-node-209
-  dependsOn: [{job: remove, condition: {type: always}}]
-  steps:
-  - name: result
-    target: orbit-node-209
-    writes: false
+    # A 0600 root-only env file the Docker CLI reads for docker exec; PostgreSQL uses local trust and skips it.
+  - name: 'Write the client login'
+    labels: {role: swamp}
+    writes: true
+    guard: ${{ inputs.intent.driver == "pgsql" }}
     task:
       type: behavior
-      behaviorType: '@nckrtl/database-server-command-assets'
-      behaviorName: ${{ "db-destroy-result-" + run.id }}
-      methodName: result
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "database-destroy-login-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs: &login
+        path: ${{ inputs.intent.login }}
+        ensure: present
+        content: ${{ vault.get(inputs.execution_secrets.client_env.vault, inputs.execution_secrets.client_env.key) }}
+        owner: root
+        group: root
+        mode: '0600'
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+      inputs: {}
+  - name: 'Find the test databases'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Write the client login', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    guard: '${{ inputs.intent.statements.inventory == "" || !(inputs.intent.driver == "pgsql" || steps["Write the client login"].status == "succeeded") }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-destroy-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: &ssh
+        name: ${{ "database-destroy-ssh-" + string(inputs.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}
       inputs:
-        completed: ${{ steps.remove.status == "succeeded" }}
-        backend: absent
-        failure_code: database.destroy_outcome_unknown
-        steps: ${{ steps }}
-  - name: accept_result
-    target: orbit-node-209
-    writes: false
-    dependsOn: [{step: result, condition: {type: succeeded}}]
-    task: {type: assert, expr: steps.result.outputs.exitCode == 0, severity: high, message: Database removal did not complete.}
+        hosts: name:target
+        sudo: true
+        argv: '${{ ["timeout", "60"] + inputs.intent.client }}'
+        stdin: '${{ inputs.intent.statements.inventory }}'
+        okExitCodes: [0, 1]
+        timeoutSec: 70
+    # Any row is a blocker: database.in_use, and nothing is dropped.
+  - name: 'Check for blockers'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Write the client login', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: 'Find the test databases', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    guard: '${{ inputs.intent.statements.blockers == "" || !(inputs.intent.driver == "pgsql" || steps["Write the client login"].status == "succeeded") }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-destroy-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: '${{ ["timeout", "60"] + inputs.intent.client }}'
+        stdin: '${{ inputs.intent.statements.blockers }}'
+        okExitCodes: [0, 1]
+        timeoutSec: 70
+  - name: 'Drop databases and users'
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: 'Write the client login', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: 'Check for blockers', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    guard: '${{ !(inputs.intent.driver == "pgsql" || steps["Write the client login"].status == "succeeded") || ("Check for blockers" in steps && steps["Check for blockers"].status == "succeeded" && (steps["Check for blockers"].outputs.exitCode != 0 || steps["Check for blockers"].outputs.stdout.trim() != "")) }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-destroy-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: '${{ ["timeout", "300"] + inputs.intent.client }}'
+        stdin: '${{ inputs.intent.statements.drop + ("Find the test databases" in steps && steps["Find the test databases"].status == "succeeded" && steps["Find the test databases"].outputs.exitCode == 0 ? steps["Find the test databases"].outputs.stdout.split("\n").filter(n, n != "").map(n, "DROP DATABASE IF EXISTS `" + n + "`;\n").join("") : "") }}'
+        okExitCodes: [0, 1]
+        timeoutSec: 310
+  - name: 'Check they are gone'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Drop databases and users', condition: {type: succeeded}}
+    guard: '${{ steps["Drop databases and users"].outputs.exitCode != 0 }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-destroy-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: '${{ ["timeout", "60"] + inputs.intent.client }}'
+        stdin: '${{ inputs.intent.statements.gone }}'
+        okExitCodes: [0, 1]
+        timeoutSec: 70
+    # Always, as the last Node step: the admin login leaves the Node whatever happened above.
+  - name: 'Remove the client login'
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: 'Write the client login', condition: {type: completed}}
+    - {step: 'Find the test databases', condition: {type: always}}
+    - {step: 'Check for blockers', condition: {type: always}}
+    - {step: 'Drop databases and users', condition: {type: always}}
+    - {step: 'Check they are gone', condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "database-destroy-login-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs:
+        path: ${{ inputs.intent.login }}
+        ensure: absent
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+      inputs: {}
+  - name: 'Report the result'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Write the client login', condition: {type: always}}
+    - {step: 'Find the test databases', condition: {type: always}}
+    - {step: 'Check for blockers', condition: {type: always}}
+    - {step: 'Drop databases and users', condition: {type: always}}
+    - {step: 'Check they are gone', condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: database-destroy-result
+      methodName: execute
+      inputs:
+        run: |
+          python3 -I - <<'PY'
+          import json
+          import os
+          import sys
+
+          # valkey-cli reading stdin exits 0 on an error reply, so its output is read for error lines too.
+          ERRORS = ('ERR', 'NOPERM', 'WRONGPASS', 'NOAUTH', 'ERROR', 'error:')
+
+
+          def failed(name):
+              status, code, out = (os.environ[name + suffix] for suffix in ('_STATUS', '_EXIT', '_STDOUT'))
+              return status == 'failed' or (status == 'succeeded' and (code not in ('', '0') or any(line.startswith(ERRORS) for line in out.splitlines())))
+
+
+          result = {'backend': 'absent'}
+          if os.environ['LOGIN_STATUS'] == 'failed':
+              result = {'failed_step': 'Write the client login', 'error_code': 'database.server_command_failed'}
+          elif failed('FIND'):
+              result = {'failed_step': 'Find the test databases', 'error_code': 'database.server_command_failed'}
+          elif failed('BLOCKERS'):
+              result = {'failed_step': 'Check for blockers', 'error_code': 'database.server_command_failed'}
+          elif os.environ['BLOCKERS_STATUS'] == 'succeeded' and os.environ['BLOCKERS_STDOUT'].strip():
+              result = {'failed_step': 'Check for blockers', 'error_code': 'database.in_use'}
+          elif failed('DROP'):
+              result = {'failed_step': 'Drop databases and users', 'error_code': 'database.server_command_failed'}
+          elif failed('GONE') or os.environ['GONE_STATUS'] != 'succeeded' or os.environ['GONE_STDOUT'].strip():
+              result = {'failed_step': 'Check they are gone', 'error_code': 'database.destroy_incomplete'}
+          print(json.dumps(result))
+          sys.exit(0 if 'backend' in result else 1)
+          PY
+        env:
+          LOGIN_STATUS: '${{ "Write the client login" in steps ? steps["Write the client login"].status : "skipped" }}'
+          FIND_STATUS: '${{ "Find the test databases" in steps ? steps["Find the test databases"].status : "skipped" }}'
+          FIND_EXIT: '${{ "Find the test databases" in steps && steps["Find the test databases"].status == "succeeded" ? string(steps["Find the test databases"].outputs.exitCode) : "" }}'
+          FIND_STDOUT: '${{ "Find the test databases" in steps && steps["Find the test databases"].status == "succeeded" ? steps["Find the test databases"].outputs.stdout : "" }}'
+          BLOCKERS_STATUS: '${{ "Check for blockers" in steps ? steps["Check for blockers"].status : "skipped" }}'
+          BLOCKERS_EXIT: '${{ "Check for blockers" in steps && steps["Check for blockers"].status == "succeeded" ? string(steps["Check for blockers"].outputs.exitCode) : "" }}'
+          BLOCKERS_STDOUT: '${{ "Check for blockers" in steps && steps["Check for blockers"].status == "succeeded" ? steps["Check for blockers"].outputs.stdout : "" }}'
+          DROP_STATUS: '${{ "Drop databases and users" in steps ? steps["Drop databases and users"].status : "skipped" }}'
+          DROP_EXIT: '${{ "Drop databases and users" in steps && steps["Drop databases and users"].status == "succeeded" ? string(steps["Drop databases and users"].outputs.exitCode) : "" }}'
+          DROP_STDOUT: '${{ "Drop databases and users" in steps && steps["Drop databases and users"].status == "succeeded" ? steps["Drop databases and users"].outputs.stdout : "" }}'
+          GONE_STATUS: '${{ "Check they are gone" in steps ? steps["Check they are gone"].status : "skipped" }}'
+          GONE_EXIT: '${{ "Check they are gone" in steps && steps["Check they are gone"].status == "succeeded" ? string(steps["Check they are gone"].outputs.exitCode) : "" }}'
+          GONE_STDOUT: '${{ "Check they are gone" in steps && steps["Check they are gone"].status == "succeeded" ? steps["Check they are gone"].outputs.stdout : "" }}'
+        ignoreExitCode: true
+  - name: 'Fail on an error'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Report the result', condition: {type: succeeded}}]
+    task: {type: assert, expr: 'steps["Report the result"].outputs.exitCode == 0', severity: high, message: The database removal did not complete.}

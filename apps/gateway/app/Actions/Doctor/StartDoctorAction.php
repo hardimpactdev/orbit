@@ -75,7 +75,7 @@ final readonly class StartDoctorAction
                 ...($has(['process']) ? $this->runtime->execute($node) : []),
                 ...($has(['firewall']) && $node->platform === 'linux' ? [
                     'firewall_expected' => app(FirewallInspectionInput::class)->expected($node),
-                    'firewall_rules' => $node->firewallRules()->orderBy('id')->get()->map(static fn ($rule): array => ['id' => $rule->id, 'name' => $rule->name, 'status' => $rule->status->value])->all(),
+                    'firewall_rules' => $node->firewallRules()->orderBy('id')->get()->map(static fn ($rule): array => ['id' => $rule->id, 'name' => $rule->identity(), 'status' => $rule->status->value])->all(),
                 ] : []),
             ];
             $managed = $this->eligibility->isManagedForObservation($node);

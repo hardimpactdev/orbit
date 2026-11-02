@@ -10,8 +10,7 @@ inputs:
 vaults: []
 jobs:
   - name: squash
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: "${{ string(inputs.node_id) }}" }
+    labels: {node: '${{ string(inputs.node_id) }}'}
     steps:
       - name: squash
         writes: true

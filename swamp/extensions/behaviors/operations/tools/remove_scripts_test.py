@@ -14,16 +14,14 @@ def run(name, replies=()):
     data = {"package": "vendor/package" if name == "composer" else "hello", "user": "orbit",
             "before": {"prefix": "/prefix", "scope_path": "/scope"}}
     source = (ROOT / "mutations" / (name + ".py")).read_text()
-    if name.startswith("apt"):
-        source = source.replace("REMOVE_INPUT = None", "REMOVE_INPUT = json.loads(" + repr(json.dumps(data)) + ")")
-    else:
+    if not name.startswith("apt"):
         source = (ROOT / "queries/support.py").read_text() + "\n" + source.replace("from support import INPUT, query\n", "")
-        source = source.replace("QUERY_INPUT = None", "QUERY_INPUT = " + repr(json.dumps(data)))
     responses = [types.SimpleNamespace(stdout=value) for value in replies] or [types.SimpleNamespace(stdout="")]
     account = types.SimpleNamespace(pw_uid=2000, pw_name="orbit", pw_dir="/home/orbit")
     output = io.StringIO()
     with patch("pwd.getpwnam", return_value=account), patch("os.geteuid", return_value=2000), \
-            patch("subprocess.run", side_effect=responses) as command, contextlib.redirect_stdout(output):
+            patch("subprocess.run", side_effect=responses) as command, patch("sys.argv", ["-c", json.dumps(data)]), \
+            contextlib.redirect_stdout(output):
         exec(compile(source, str(ROOT / "mutations" / (name + ".py")), "exec"), {})  # noqa: S102 -- execute shipped assets against fake subprocesses
     return command.call_args, json.loads(output.getvalue())
 
@@ -42,6 +40,11 @@ class RemovalScripts(unittest.TestCase):
         for row in ("Remv", "Remv --foreign [1]", "Remv hello/foreign [1]"):
             with self.subTest(row=row), self.assertRaises(ValueError):
                 run("apt_plan", [row])
+
+    def test_brew_plan_lists_installed_dependents(self):
+        call, result = run("brew_plan", ["other\nthird\n"])
+        self.assertEqual(call.args[0], ["/prefix/bin/brew", "uses", "--installed", "hello"])
+        self.assertEqual(result, {"packages": ["hello", "other", "third"]})
 
     def test_other_managers_use_only_exact_root_and_observed_scope_without_sudo(self):
         expected = {"composer": ["/usr/bin/composer", "global", "remove", "vendor/package", "--no-interaction", "--no-ansi", "--no-progress", "--no-audit", "--with-all-dependencies"],

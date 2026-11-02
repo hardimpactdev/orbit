@@ -12,6 +12,7 @@ use App\Actions\Schedules\RunScheduleAction;
 use App\Actions\Schedules\ShowScheduleLogsAction;
 use App\Data\Operations\OperationData;
 use App\Data\Schedules\ScheduleData;
+use App\Domain\Schedules\NativeSchedules;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
@@ -119,6 +120,17 @@ final class SchedulesController extends Controller
         ActivateScheduleAction $action,
     ): JsonResponse {
         return $this->operationResponse($request, $action->admit($schedule, $this->caller($request), $request->attributes->getString('orbit.request_id')));
+    }
+
+    #[RequiresNodeAccess(ServingNode::ScheduleOwning)]
+    #[StartsOperation('schedule.disable')]
+    public function disable(
+        EmptyScheduleRequest $request,
+        #[SensitiveParameter]
+        Schedule $schedule,
+        NativeSchedules $schedules,
+    ): JsonResponse {
+        return $this->operationResponse($request, $schedules->disable($schedule, $this->caller($request), $request->attributes->getString('orbit.request_id')));
     }
 
     private function scheduleResponse(Request $request, #[SensitiveParameter] Schedule $schedule): JsonResponse

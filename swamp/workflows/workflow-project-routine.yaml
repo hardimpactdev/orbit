@@ -18,10 +18,7 @@ inputs:
       type: integer
       enum:
       - 209
-    kind:
-      type: string
-      enum:
-      - project.routine
+    kind: {type: string, const: project.routine}
     intent:
       type: object
     execution_secrets:
@@ -33,24 +30,24 @@ reports:
   - '@swamp/workflow-summary'
 jobs:
 - name: routine
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
-  - name: input
-    target: orbit-node-209
+  - name: Read the admitted input
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/project-maintenance-input'
-      behaviorName: ${{ "project-input-" + string(inputs.operation_id) }}
+      behaviorName: project-input
       methodName: read
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
-  - name: select
-    target: orbit-node-209
+  - name: Select this week's routine
+    labels: {role: swamp}
     dependsOn:
-    - step: input
+    - step: Read the admitted input
       condition:
         type: succeeded
     task:
@@ -58,23 +55,23 @@ jobs:
       modelIdOrName: orbit-gateway
       methodName: schedule_project
       inputs:
-        project: ${{ steps.input.outputs.project }}
+        project: ${{ steps["Read the admitted input"].outputs.project }}
         groups: ${{ inputs.intent.groups }}
         admitted_at: ${{ inputs.intent.admitted_at }}
-  - name: result
-    target: orbit-node-209
+  - name: Report the result
+    labels: {role: swamp}
     dependsOn:
-    - step: select
+    - step: Select this week's routine
       condition:
         type: succeeded
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "project-routine-result-" + string(inputs.operation_id) }}
+      behaviorName: project-routine-result
       methodName: execute
       inputs:
         run: 'printf ''%s\n'' "$ORBIT_RESULT"
 
           '
         env:
-          ORBIT_RESULT: ${{ steps.select.outputs.result_json }}
+          ORBIT_RESULT: ${{ steps["Select this week's routine"].outputs.result_json }}

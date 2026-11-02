@@ -13,6 +13,8 @@ use Orbit\Sdk\Requests\Deployments\ListInstanceReleasesRequest;
 use Orbit\Sdk\Requests\Deployments\ResolveAutomaticDeployAdmissionRequest;
 use Orbit\Sdk\Requests\Deployments\RollbackInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\UpdateInstanceDeployStepRequest;
+use Orbit\Sdk\Requests\Instances\DisableInstanceAutoDeployRequest;
+use Orbit\Sdk\Requests\Instances\EnableInstanceAutoDeployRequest;
 use Orbit\Sdk\Requests\Instances\UpdateInstanceRequest;
 use Orbit\Sdk\Responses\Deployments\DeploymentReleasesResponse;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
@@ -58,9 +60,17 @@ describe('deployment requests', function (): void {
     });
 
     it('sends only the Instance fields it changes', function (): void {
-        expect(new UpdateInstanceRequest(17, 'release')->body()->all())->toBe(['branch' => 'release'])
-            ->and(new UpdateInstanceRequest(17, autoDeploy: false)->body()->all())->toBe(['auto_deploy' => false])
-            ->and(new UpdateInstanceRequest(17, 'release', autoDeploy: true)->body()->all())->toBe(['branch' => 'release', 'auto_deploy' => true]);
+        expect(new UpdateInstanceRequest(17, 'release')->body()->all())->toBe(['branch' => 'release']);
+    });
+
+    it('enables and disables automatic deployment through its own bodyless POST requests', function (): void {
+        $enable = new EnableInstanceAutoDeployRequest(17);
+        $disable = new DisableInstanceAutoDeployRequest(17);
+
+        expect($enable->getMethod())->toBe(Method::POST)
+            ->and($enable->resolveEndpoint())->toBe('/api/v1/instances/17/auto-deploy/enable')
+            ->and($disable->getMethod())->toBe(Method::POST)
+            ->and($disable->resolveEndpoint())->toBe('/api/v1/instances/17/auto-deploy/disable');
     });
 
     it('carries no deployment-config or deployment-layout request', function (): void {

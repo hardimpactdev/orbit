@@ -1,5 +1,6 @@
 id: 612ea82d-eaaa-4c4b-807a-60e35822472d
 name: route-lan-migrate
+queueTimeout: 30
 description: One-time approved removal of old Route-tagged rules after official tuple convergence.
 vaults: []
 inputs:
@@ -48,16 +49,16 @@ jobs:
 - name: lan
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-mutation-command'
-      behaviorName: ${{ "route-assets-" + run.id }}
+      behaviorName: '${{ "route-assets" }}'
       methodName: lanMigration
       inputs:
         legacy_router: ${{ has(inputs.intent.rule.legacy_router) && inputs.intent.rule.legacy_router }}
   - name: prepare-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: assets
       condition:
@@ -65,10 +66,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-prepare-assets-" + run.id }}
+      behaviorName: '${{ ("route-ssh-prepare-assets-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &id001
-        name: ${{ "route-ssh-" + run.id }}
+        name: '${{ ("route-ssh-prepare-assets-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -88,7 +89,7 @@ jobs:
         - '0700'
         - ${{ "/tmp/orbit-route-" + run.id }}
   - name: copy-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: prepare-assets
       condition:
@@ -96,7 +97,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-copy-assets-" + run.id }}
+      behaviorName: '${{ ("route-ssh-copy-assets-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: copy
       globalArgs: *id001
       inputs:
@@ -106,11 +107,11 @@ jobs:
         direction: to
         recursive: true
   - name: write
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-write-" + run.id }}
+      behaviorName: '${{ ("route-ssh-write-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -127,7 +128,7 @@ jobs:
       condition:
         type: succeeded
   - name: cleanup-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: write
       condition:
@@ -135,7 +136,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-cleanup-assets-" + run.id }}
+      behaviorName: '${{ ("route-ssh-cleanup-assets-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -145,7 +146,7 @@ jobs:
         - -rf
         - ${{ "/tmp/orbit-route-" + run.id }}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: write
       condition:
@@ -156,7 +157,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/route-mutation-command'
-      behaviorName: ${{ "route-lan-result-" + run.id }}
+      behaviorName: '${{ "route-lan-result" }}'
       methodName: lanMigrationResult
       inputs:
         stdout: ${{ steps.write.outputs.stdout }}

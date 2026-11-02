@@ -123,6 +123,49 @@ jobs:
         run: |
           composer docs-build
           composer docs-lint
+      - name: Check flow charts
+        if: steps.scope.outputs.selected == 'true'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
+        run: node bin/check-flows
+
+  project-check:
+    # The Orbit Project check (bin/review-check) is the task baseline and handoff check. Running it here
+    # keeps one definition of green for tasks and CI. Three shards split its lanes by weight.
+    name: Project check ${{ matrix.shard }}
+    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1/3, 2/3, 3/3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/php
+        with:
+          coverage: none
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - name: Install dependencies and build the API contract
+        run: |
+          cp apps/gateway/.env.example apps/gateway/.env
+          for project in apps/cli apps/docs apps/gateway apps/e2e packages/php-sdk; do
+            composer install --working-dir="$project" --no-interaction --prefer-dist
+          done
+          bun install --cwd apps/web --frozen-lockfile
+          APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= bin/build-api
+      - name: Run the Project check
+        env:
+          APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+        run: |
+          git update-ref refs/remotes/origin/main "$(git rev-parse origin/main 2>/dev/null || git rev-parse HEAD)"
+          if [[ -z "$BASE" || "$BASE" =~ ^0+$ ]]; then BASE=$(git merge-base origin/main HEAD); fi
+          bin/review-check --shard '${{ matrix.shard }}' --base "$BASE"
 
   api-reference:
     name: Generated contracts
@@ -156,7 +199,7 @@ jobs:
           cp apps/gateway/.env.example apps/gateway/.env
           composer install --working-dir=apps/gateway --no-interaction --prefer-dist --no-dev
           bun install --cwd apps/web --frozen-lockfile
-      - name: Boot and validate Operation kinds and intended workflow grants
+      - name: Boot and validate Operation kinds, their flow charts, and intended workflow grants
         if: steps.scope.outputs.selected == 'true'
         env:
           APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
@@ -240,9 +283,6 @@ jobs:
           python3 -m unittest discover -s tools -p 'test_ci_*.py'
           python3 tools/test_swamp_import_base.py
           python3 tools/test_frozen_agent_commands.py
-          python3 -m venv "$RUNNER_TEMP/release-load-tests"
-          "$RUNNER_TEMP/release-load-tests/bin/pip" install --disable-pip-version-check PyYAML==6.0.3
-          "$RUNNER_TEMP/release-load-tests/bin/python" -B -m unittest discover -s platform/swamp-load -p release_load_test.py
       - name: Select changed build inputs
         id: plan
         env:
@@ -274,7 +314,7 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [php, gateway-static, cli, docs, api-reference, web, swamp, gateway-release, changes]
+    needs: [php, gateway-static, cli, docs, api-reference, project-check, web, swamp, gateway-release, changes]
     runs-on: ubuntu-26.04
     steps:
       - name: Require builds and static checks

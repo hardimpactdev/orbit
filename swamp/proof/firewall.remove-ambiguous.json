@@ -1,0 +1,62 @@
+{
+  "kind": "firewall.remove-ambiguous",
+  "workflow": "operation-firewall-direct",
+  "topology": "minimal",
+  "budget_seconds": 300,
+  "expect": {
+    "http_status": 409,
+    "error_code": "firewall.rule_ambiguous"
+  },
+  "phases": [
+    {
+      "name": "assets",
+      "job": "firewall",
+      "step": "assets",
+      "budget_seconds": 60
+    },
+    {
+      "name": "apply",
+      "job": "firewall",
+      "step": "apply",
+      "budget_seconds": 60
+    },
+    {
+      "name": "accepted",
+      "job": "firewall",
+      "step": "accepted",
+      "budget_seconds": 60
+    }
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "nodes/${node.target}/firewall-rules/allow",
+      "body": {
+        "port": "9000",
+        "protocol": "tcp",
+        "source": "192.0.2.3"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "nodes/${node.target}/firewall-rules/allow",
+      "body": {
+        "port": "9000",
+        "protocol": "udp",
+        "source": "192.0.2.3"
+      }
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "nodes/${node.target}/firewall-rules/remove",
+    "body": {
+      "port": "9000"
+    }
+  },
+  "parity": [
+    "swamp/proof/firewall/check.py",
+    "+9000/tcp ALLOW 192.0.2.3",
+    "+9000/udp ALLOW 192.0.2.3"
+  ]
+}

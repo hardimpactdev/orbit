@@ -2,7 +2,7 @@
 title: "Swamp command steps"
 description: "The shared execution-copy and terminal-output contract for native command steps."
 covers:
-  - apps/gateway/app/Infrastructure/Swamp/{StartSwampRun,SwampCommandStep,SwampVaultExecutionCopy,SwampRunSubscriber}.php
+  - apps/gateway/app/Infrastructure/Swamp/{StartSwampRun,SwampCommandStep,SwampVaultExecutionCopy,SwampRunSubscriber,NativeRunResult}.php
   - apps/gateway/app/Jobs/Operations/ProjectSwampTerminal.php
 ---
 
@@ -31,11 +31,28 @@ Upstream fixes go through the orchestrator to Nick. Only official Swamp versions
 
 ## Terminal outputs
 
-A result step prints one public JSON object on stdout. Native `command/shell` stores it in `jobs[].steps[].outputs.stdout`, alongside `exitCode`, `executedAt`, `command`, `durationMs` and `stderr`. Keep secret values out of every output. On official e459 a step that exits nonzero keeps no outputs. An action that refuses prints `{"error_code":"family.code"}`, runs with `ignoreExitCode: true`, and a following `assert` on its `exitCode` fails the run. Native dependencies skip subsequent actions.
+The action that produces public values prints one JSON object on stdout. Native `command/shell` stores it in `jobs[].steps[].outputs.stdout`, alongside `exitCode`, `executedAt`, `command`, `durationMs` and `stderr`. Keep secret values out of every output. On official e459 a step that exits nonzero keeps no outputs. A refusing action fails with its own exit code; the family projector maps the native failure to its public refusal. Native dependencies skip subsequent actions.
 
 The shared subscriber calls `projectTerminal(Operation $operation, array $terminalRun, array{job:string,step:string} $selector): Operation` with the native event's `run` object and the fixed family declaration. The helper makes one `workflow.history.get` request for that exact run, authenticated with the existing `swamp.read_token`. It does not require the separate `swamp.run_token` used to start work. It selects the named job and step and decodes stdout. After the history request finishes, it locks and reloads the Operation, checks its run binding and terminal state again, then calls the existing family `projection.apply`. No history request runs under that row lock. It does not repeat host or domain checks, poll status, resume a run or invoke an effect.
 
-A `completed` event can carry a failed run status. Native `interrupted` remains `interrupted`; it is a terminal non-success status. A failed or cancelled run can have no selected output because the step was skipped. A failed or interrupted run with an empty result projects `{"error_code":"operation.native_failed"}`. This keeps the public result and outer error code consistent for the generic projector without inventing a family failure cause. Cancellation keeps an empty result. A successful run requires its public JSON object. Missing, mismatched or unreadable history leaves the Operation unchanged and raises `swamp.terminal_result_unavailable`; it never triggers resubmission.
+A `completed` event can carry a failed run status. Native `interrupted` remains `interrupted`; it is a terminal non-success status. A failed or cancelled run can have no selected output because the step was skipped. A failed or interrupted run with an empty result, or a selected JSON outcome of `succeeded`, projects `{"error_code":"operation.native_failed"}`. A cleanup failure therefore fails the Operation even when the selected action succeeded. Cancellation keeps an empty result.
+
+A successful run requires its public JSON object; a kind without a result step declares `native` instead (below).
+
+Missing, mismatched or unreadable history leaves the Operation unchanged and raises `swamp.terminal_result_unavailable`; it never triggers resubmission.
+
+### Read Swamp's run data instead of a result step
+
+Flow-tighten rule 14 removes the step that reports a result. A kind without one declares `terminal_result` with `native => true`; `job` and `step` name its real end check, for example `['job' => 'settings', 'step' => 'Check owner and mode', 'native' => true]`. The same single history read then gives the family projector:
+
+- `steps`: each step of the run, keyed by its name. An entry holds `status`, trimmed `stdout` up to 4 KiB, and `exit_code`. Stderr is left out.
+- `summary`: the run status, the step counts by status, and `failed_steps`.
+
+The summary holds the facts of Swamp's `@swamp/workflow-summary` report. It comes from the same history, so there is no second read.
+
+A successful run must show the named step succeeded; otherwise the result is unavailable. `native` passes each step's outputs, so a projector can record values such as a verifier from the step that produced it.
+
+A projector reads one step's status with `NativeRunResult::stepStatus($result, '<step name>')`, which gives null for an absent step. A failed run projects `error_code` `operation.native_failed` with this result, and the shared failure detail names the failed step. `captures` work with `native` too. A declaration without `native` reads the selected action's public JSON. New ports select the action that produces their values or declare `native` for the end check; neither adds a report step.
 
 ### Scheduled observations
 
@@ -46,6 +63,8 @@ The existing shared observer keeps its run-authorized connection for bound-root 
 Before subscribing, the read connection requests each declared scheduled workflow by exact UUID with official `workflow.get` and requires its fixed name. Missing authority, registration or identity refuses discovery without advancing the cursor. A matching `commits.subscribe` batch triggers one history read per referenced root. Nonterminal history remains unprojected until another native commit or one startup/rejoin recovery. Elapsed time never rereads history.
 
 Only verified terminal histories reach the family projector. The workflow UUID/name, selector and public rows must match. Each row carries `operation_id`, `node_id`, `kind`, `root_run_id`, `status` and `result`. Row status is `succeeded` or `failed` for the observation; it does not rewrite the original root. Separate provenance prevents older, duplicate or original-admission replay from replacing newer observations or reopening terminal Operations.
+
+A schedule that belongs to no Operation declares its workflow UUID, name and `terminal_result` in its domain's `scheduled-results.php`, with a `projection` that implements `ScheduledResultProjection`. The projection gets the run and the JSON its result step printed. A failed run passes that JSON too when the step printed one, and an empty result when it did not. `automatic-production-deploy` uses this: its result step prints the fire's events before a failures assert can fail the run, so the Gateway records them anyway.
 
 The shared Gateway cache stores the feed cursor and undelivered root IDs together, keyed by native address and declared workflow UUIDs. A new checkpoint begins at cursor zero; losing the cache replays the available feed. The feed resumes from its last saved cursor. A compacted or unavailable feed refuses discovery; it does not fall back to a family search or a timer. Projection errors remain separate from socket reconnection. The shared observer reads history again only after another native notice or an explicit one-shot recovery; it never retries history on a delivery timer.
 

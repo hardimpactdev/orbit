@@ -18,6 +18,8 @@
             "task_workspace_routed": true,
             "review_and_merge": false,
             "merge_check": null,
+            "php_version": null,
+            "is_laravel": null,
             "excluded_nodes": []
         },
         "meta": {

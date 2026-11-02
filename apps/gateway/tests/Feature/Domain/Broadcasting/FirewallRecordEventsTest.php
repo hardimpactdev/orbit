@@ -37,11 +37,11 @@ describe('FirewallRule record events', function (): void {
         Event::fake([RecordBroadcast::class]);
 
         $data = new StoreFirewallRuleData(
-            name: 'private-web',
             action: FirewallAction::Allow,
             source: '192.0.2.0/24',
             protocol: 'tcp',
             port: '8443',
+            label: 'private web',
         );
 
         $operation = app(StoreFirewallRuleAction::class)->execute($this->node, $data);
@@ -51,32 +51,13 @@ describe('FirewallRule record events', function (): void {
             RecordBroadcast::class,
             fn (RecordBroadcast $event): bool => $event->type === RecordEventType::FirewallCreated
                 && $event->id === $operation->input['rule_id']
-                && $event->data['name'] === 'private-web',
+                && $event->data['label'] === 'private web',
         );
-    });
-
-    it('does not broadcast when re-asserting an existing rule with identical configuration', function (): void {
-        $data = new StoreFirewallRuleData(
-            name: 'private-web',
-            action: FirewallAction::Allow,
-            source: '192.0.2.0/24',
-            protocol: 'tcp',
-            port: '8443',
-        );
-        FirewallProjectionFixture::finish(app(StoreFirewallRuleAction::class)->execute($this->node, $data));
-
-        Event::fake([RecordBroadcast::class]);
-
-        $operation = app(StoreFirewallRuleAction::class)->execute($this->node, $data);
-        FirewallProjectionFixture::finish($operation);
-
-        Event::assertNotDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::FirewallCreated);
     });
 
     it('broadcasts firewall.deleted with a minimal snapshot when a rule is removed', function (): void {
         $rule = FirewallRule::query()->create([
             'node_id' => $this->node->id,
-            'name' => 'private-web',
             'action' => FirewallAction::Allow,
             'source' => '192.0.2.0/24',
             'protocol' => 'tcp',
@@ -92,7 +73,7 @@ describe('FirewallRule record events', function (): void {
             RecordBroadcast::class,
             fn (RecordBroadcast $event): bool => $event->type === RecordEventType::FirewallDeleted
                 && $event->id === $rule->id
-                && $event->data === ['id' => $rule->id, 'name' => 'private-web'],
+                && $event->data === ['id' => $rule->id, 'port' => '8443', 'protocol' => 'tcp', 'source' => '192.0.2.0/24'],
         );
     });
 });

@@ -48,20 +48,20 @@ jobs:
 - name: sweep
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-sweep-input'
-      behaviorName: ${{ "swp-assets-"+run.id }}
+      behaviorName: '${{ "swp-assets" }}'
       methodName: assets
       inputs:
         scope: ${{ inputs.intent.scope }}
   - name: cloud-api
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-lifecycle-input'
-      behaviorName: ${{ "swp-cloud-api-"+run.id }}
+      behaviorName: '${{ "swp-cloud-api" }}'
       methodName: api_assets
       inputs: {}
     dependsOn:
@@ -69,11 +69,11 @@ jobs:
       condition:
         type: succeeded
   - name: cloud-inventory
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "swp-cloud-inventory-"+run.id }}
+      behaviorName: '${{ "swp-cloud-inventory" }}'
       methodName: execute
       inputs:
         run: 'exec python3 -B "$SCRIPT"
@@ -88,11 +88,11 @@ jobs:
       condition:
         type: succeeded
   - name: plan
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-sweep-input'
-      behaviorName: ${{ "swp-plan-"+run.id }}
+      behaviorName: '${{ "swp-plan" }}'
       methodName: plan
       inputs:
         intent: ${{ inputs.intent }}
@@ -103,7 +103,7 @@ jobs:
       condition:
         type: succeeded
   - name: cloud-servers
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: plan
       condition:
@@ -116,7 +116,7 @@ jobs:
         resources: ${{ steps.plan.outputs.servers }}
         execution_secrets: ${{ inputs.execution_secrets }}
   - name: cloud-templates
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: cloud-servers
       condition:
@@ -129,11 +129,11 @@ jobs:
         resources: ${{ steps.plan.outputs.templates }}
         execution_secrets: ${{ inputs.execution_secrets }}
   - name: cloud-after
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "swp-cloud-after-"+run.id }}
+      behaviorName: '${{ "swp-cloud-after" }}'
       methodName: execute
       inputs:
         run: 'exec python3 -B "$SCRIPT"
@@ -148,11 +148,11 @@ jobs:
       condition:
         type: succeeded
   - name: after-plan
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-sweep-input'
-      behaviorName: ${{ "swp-after-plan-"+run.id }}
+      behaviorName: '${{ "swp-after-plan" }}'
       methodName: plan
       inputs:
         intent: ${{ inputs.intent }}
@@ -162,11 +162,11 @@ jobs:
       condition:
         type: succeeded
   - name: format
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-sweep-input'
-      behaviorName: ${{ "swp-format-"+run.id }}
+      behaviorName: '${{ "swp-format" }}'
       methodName: terminal
       inputs:
         observed_names: ${{ steps["after-plan"].outputs.observed_names }}
@@ -176,11 +176,11 @@ jobs:
       condition:
         type: succeeded
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "swp-result-"+run.id }}
+      behaviorName: '${{ "swp-result" }}'
       methodName: execute
       inputs:
         run: 'printf ''%s\n'' "$RESULT"

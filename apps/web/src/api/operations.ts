@@ -19,6 +19,22 @@ export const startDeploy = (instanceId: number): Promise<Operation> =>
 export const readOperation = (id: number): Promise<Operation> =>
     get<Operation>(`/api/v1/operations/${id}`);
 
+/**
+ * Follows a started Operation with `operation:show` until it ends, as the CLI does. Each read waits the
+ * `poll_after_seconds` the previous record named; a record without one waits two seconds.
+ */
+export async function awaitOperation(started: Operation): Promise<Operation> {
+    let operation = started;
+
+    while (!isTerminal(operation)) {
+        const seconds = operation.poll_after_seconds ?? 2;
+        await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+        operation = mergeOperation(operation, await readOperation(operation.id));
+    }
+
+    return operation;
+}
+
 /** The newest operations on one Instance, newest first. `operation.*` events on `orbit` refresh them. */
 export const instanceOperationsQuery = (instanceId: number) =>
     ({

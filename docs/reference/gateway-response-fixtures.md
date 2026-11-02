@@ -30,7 +30,7 @@ Task group fixtures include nullable `vm_power`, separately from task status. CL
 
 Tool scan and adoption fixtures distinguish formula, cask, and Vite+ global identities, registered and informational packages, dependencies, unsupported artifacts, per-manager scan states, inspection time, and failed scans. Scan fixtures also record authorization and unmanaged-node refusals. Adoption fixtures record a created Tool, the same intent, a repaired failure, constraint conflicts and violations, a busy scope, a missing or unsupported package, and authorization failure. The CLI replays those responses for `tool:adopt`.
 
-Doctor fixtures include informational-only healthy reports and mixed reports with drift or unverifiable findings. Node fixtures include an enrolled Mac with empty roles. Web fixtures preserve registered Tools while a live inventory request fails.
+Doctor fixtures record the `202` reply that returns a finished `doctor.inspect` Operation, as a replayed request does. Its `result.report` holds an informational-only healthy report or a mixed report with drift or unverifiable findings. Node fixtures include an enrolled Mac with empty roles. Web fixtures preserve registered Tools while a live inventory request fails.
 
 Node key fixtures under `nodes/node-wireguard-key` record an updated Node, a Gateway-role refusal, and a sanitized hub projection failure. The `node:wireguard-key` CLI tests replay each response in human and JSON modes. Keep the projection failure's error code and step, but never record remote process output or private key material. [WireGuard key recovery](/cli/node#orbit-nodewireguard-key) owns the stored-key and identical-replay behavior; subprocess feature tests cover interrupted publication separately from response fixtures.
 
@@ -40,7 +40,7 @@ Task response fixtures include a `topology` array on each subtask. Default cases
 
 Process response fixtures include `restart_on_deploy`, which defaults to true and preserves an explicit false. They also include `user`, which is null when the Process uses its derived account. When an explicit account is selected, the response includes that name both in `user` and in `runtime_config.user`; see [Node accounts](/reference/processes-and-schedules#node-account).
 
-Instance create, list, and show fixtures include `routes`, every Route of the Instance, and each Route includes `web_root`.
+Instance list and show fixtures include `routes`, every Route of the Instance, and each Route includes `web_root`.
 
 Gateway fixtures record the [desired fleet state](/reference/self-update#desired-fleet-state) with an available, a fallback, and a pending CLI release, and `gateway:status` as an active peer sees it. The Gateway test serves the release-shaped GitHub responses under `apps/gateway/tests/Fixtures/GitHub/CliRelease`. The `self-update` contract downloads the stand-in binaries under `apps/cli/tests/Fixtures/SelfUpdate`, whose checksums those fixtures name.
 

@@ -31,8 +31,7 @@ class ProjectWorkflowsNativeTest(unittest.TestCase):
                 workflow = yaml.safe_load((ROOT / f'workflows/workflow-project-{mode}.yaml').read_text())
                 for job in workflow['jobs']:
                     for step in job['steps']:
-                        self.assertEqual(step.pop('target'), 'orbit-node-209')
-                        self.assertEqual(step.pop('labels'), {'pool': 'migration', 'node': '209'})
+                        self.assertEqual(step.pop('labels'), {'role': 'swamp'})
                         self.assertNotEqual(step['task']['modelType'], '@nckrtl/native-host-method')
                 (workflows / f'workflow-project-{mode}.yaml').write_text(yaml.safe_dump(workflow))
                 (ext / f'{mode}.ts').write_text('''import {z} from "npm:zod@4";

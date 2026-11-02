@@ -2,6 +2,7 @@
 title: "Node provisioning"
 description: "How node:add bootstraps or converges a Node, how roles share and lock a Node, how the Orbit CLI and footprint reach it, and how node:remove hands it back."
 covers:
+  - swamp/extensions/behaviors/operations/node-scripts/assets.ts
   - apps/gateway/app/Actions/{Gateway/BootstrapGatewayAction.php,Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,RemoveNodeRoleAction,AssignRoleAction}.php}
   - apps/gateway/app/Infrastructure/{WireGuard/{NativeGatewayPeerProjectionManager,NativeGatewayVpnConverger}.php,Gateway/{NativeGatewayCaddyInstaller,NativeGatewaySelfAccessConverger}.php,Nodes/{Roles/{CiRunnerRoleBaseline,NativeNodeRoleFirewallManager},CiRunnerHostProgram,NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackage*,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
   - apps/gateway/app/Console/Commands/{ProvisionNodeCommand,ConvergeNodeRecipeCommand}.php
@@ -15,9 +16,9 @@ covers:
 
 `orbit node:add <name> [host]` adds a machine to the fleet. For a Node that already exists, the same command converges it again after you change its TLD, roles, or settings. `orbit node:remove <node>` removes the Node from Orbit and leaves the machine reachable over public SSH. [`node`](/cli/node) lists the options.
 
-Standalone `node.converge` and apps-root `node.settings` run on 209 through official SSH with the Node's stored host keys. They pass their complete public intent at admission and need no target worker. Settings discovers the account and calls the frozen agent's storage command. Converge installs the pinned observer, applies its captured footprint as native steps, and calls existing `agent.configure` without rotating the secret. Neither operation installs a per-Node worker or accepts worker enrollment credentials.
+Standalone `node.converge`, `node.ssh_access_converge`, `node.agent_rekey` and apps-root `node.settings` run on 209 through official SSH with the Node's stored host keys. They pass their complete public intent at admission and need no target worker. Settings, converge and SSH access use official `@swamp/cfgmgmt` behaviors; rekey runs one shipped key script. Converge then runs the fleet recipe's role steps; it calls no agent command and never rotates the secret. Neither operation installs a per-Node worker or accepts worker enrollment credentials.
 
-When executed, frozen `agent.configure` removes an installed per-Node worker service when its observer-only configuration omits that worker. Live rollout must account for that existing side effect and any active work before execution. The Gateway projects the terminal result and records settings or completed footprint artifacts.
+The Gateway projects the terminal result and records settings or completed footprint artifacts.
 
 ### Per-Node Swamp worker
 
@@ -29,7 +30,7 @@ The rollout list records desired workers and permits protected credential stagin
 
 Before configuring a selected worker, the agent requires Linux `MemAvailable` to cover the pinned binary's 403,378,168 bytes plus 256 MiB of headroom. Missing or malformed memory information refuses with `swamp.node_worker_memory_low`. The check precedes agent file changes, downloads, credentials and worker publication, applies when the binary is already installed, and runs again before systemd starts the worker. A small Node must remain outside the worker selection; installation never changes swap or memory limits to make it fit.
 
-Migrated family steps use one selector, `target: orbit-node-209`. Official pinned SSH reaches the admitted effect Node with the approved 209 identity. An unavailable control worker queues until Swamp’s native timeout. Installed per-Node workers remain under their separate runtime-retirement owner; source publication does not retire them.
+Migrated family steps use one selector, `labels: {role: swamp}`, which only the swamp role's workers carry. Official pinned SSH reaches the admitted effect Node with the approved 209 identity at `/etc/orbit/swamp-role-worker/ssh-identity`. An unavailable control worker queues until Swamp’s native timeout. Installed per-Node workers remain under their separate runtime-retirement owner; source publication does not retire them.
 
 Enrollment uses native `swamp worker token create orbit-node-<node_id> --duration 30d`, retaining default single-machine enrollment and `_token-secrets` custody. Nick chose 30 days to match the native access-token lifetime and prevent daily fleet outages. Token-authenticated serve also requires an ungranted `worker:orbit-node-<node_id>` access token with its native 30-day default. No API key is installed on workers.
 
@@ -187,7 +188,7 @@ The command requires an active managed Ubuntu Node on x86_64. Another architectu
 
 The Gateway captures desired pins and the enrolled account without contacting the host. Swamp performs package inventory, origin proof, source retirement, verified downloads, runtime installation and service checks through shipped, linted system programs. Official SSH runs privileged host actions with sudo from 209. The package transaction uses APT’s own locks and removes its temporary restart policy on an ordinary failure. An interrupted write remains uncertain until its native step is assessed; it records no recipe success. The agent remains an observer.
 
-Native preflight refuses Docker CE with `node.recipe_docker_provider` and reason `docker-provider:docker-ce`. Convergence does not stop containers or replace that provider. Follow the [Docker migration runbook](/reference/docker-provider-migration) during a planned window.
+Native preflight refuses Docker CE with `node.recipe_docker_provider` and reason `docker-provider:docker-ce`. Convergence does not stop containers or replace that provider.
 
 The `ci-runner` role selects its recipe tool set through the same role union as other roles. Roleless Nodes use `operator`. Recorded profiles have no effect.
 
@@ -523,7 +524,7 @@ Some roles never share a Node. The Gateway refuses a conflicting role before it 
 | `analytics` | `gateway` |
 | `ci-runner` | `gateway`, `vpn` |
 
-`router`, `metrics`, and `websocket` share a Node with any role. `node:role:add` and `node:role:relocate` answer `validation.failed` with `Role [ROLE] conflicts with assigned role [OTHER].` `node:add` answers `node.role_conflict` (HTTP 422), with `Role [ROLE] conflicts with requested role [OTHER].` when one request names both roles.
+`router`, `metrics`, `websocket`, and `swamp` share a Node with any role. `node:role:add` and `node:role:relocate` answer `validation.failed` with `Role [ROLE] conflicts with assigned role [OTHER].` `node:add` answers `node.role_conflict` (HTTP 422), with `Role [ROLE] conflicts with requested role [OTHER].` when one request names both roles.
 
 Not every role can be added the same way.
 
@@ -533,6 +534,7 @@ Not every role can be added the same way.
 | `gateway` | Yes, as a singleton | Yes, as a singleton |
 | `vpn` | Yes, as a singleton | No |
 | `ingress`, `analytics`, `ci-runner` | No | Yes |
+| `swamp` | No | Yes, as a singleton |
 | `router` | No | No. Use [`cluster:router:set`](/cli/cluster#orbit-clusterrouterset). |
 
 ## Package sources
@@ -562,7 +564,13 @@ Caddy must be at least 2.9.0. A lower release fails the `caddy-package-source` s
 
 Analytics role effects run in their native parent workflow. The Node PHP baseline refuses Analytics. An unported Analytics kind returns `operation.kind_unavailable`.
 
-The roles `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, and `analytics` install Caddy when they converge. AI router publication does the same on its Node. Manual Gateway bootstrap and `php artisan orbit:gateway-web` are unavailable until their native parent workflows are installed. They refuse before any Caddy change. [Caddy configuration](/reference/caddy-configuration) describes how the Gateway builds each Node's Caddyfile.
+The roles `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, `analytics`, and `swamp` install Caddy when they converge. The `swamp` role takes no part in Metrics until the Metrics port (wave 7), so it adds no exporter or scrape target.
+
+The `swamp` role runs Swamp serve as `orbit-swamp-serve.service`, with at most 4 scheduled runs in flight. The Gateway renders serve's unit and the worker template at admission. Official `@swamp/cfgmgmt/systemd` steps write them over SSH from 209, enable the services and start any that is stopped. Their `check` and a native `assert` prove the end state. Convergence never restarts serve or a running worker, so a changed unit takes effect at its next restart. Serve's grants follow the checkout: the release's Swamp load renders them and runs `swamp access reload` ([Load Swamp](/reference/gateway-recovery#load-swamp)).
+
+The role also runs two Swamp workers, `orbit-swamp-worker@a` and `@b`, which reach serve on loopback with 8 dispatch slots each and the labels `role=swamp` and `node=<id>`. Place each worker's enrollment and server tokens at `/etc/orbit/swamp-role-worker/<a|b>/{enrollment,server}.token` (root, `0600`) before adding the role. Nothing reads them first: without them, the worker start fails with `swamp.worker_unit_failed`. The other runtime codes are `swamp.ssh_identity_failed`, `swamp.serve_unit_failed` and `swamp.runtime_check_failed`, at the failed step `runtime`. `node:role:remove` refuses the `swamp` role with `validation.failed`, because serve on its Node runs that removal.
+
+The role also installs the Node's `node-proxy` key as the SSH identity `/etc/orbit/swamp-role-worker/ssh-identity` (`0440`, the serve account's group). An operator bootstraps the first swamp Node, because no worker holds the key before that. The role serves no site itself: `swamp.orbit` is a private custom proxy Route on its Node, with upstream `http://127.0.0.1:9418` ([ADR 0243](/decisions/0243-serve-swamp-through-a-swamp-role)). AI router publication does the same on its Node. Manual Gateway bootstrap and `php artisan orbit:gateway-web` are unavailable until their native parent workflows are installed. They refuse before any Caddy change. [Caddy configuration](/reference/caddy-configuration) describes how the Gateway builds each Node's Caddyfile.
 
 `caddy.install-package` owns package installation for every caller. The Gateway sends the release pins and keeps the operation error mapping. The agent owns the download URL, kernel setting, and obsolete source paths. It checks the pins and host paths before mutation, verifies the downloaded package before apt sees it, and publishes the kernel setting atomically. Package and system commands share the command deadline. Rust tests cover installation, repetition, drift, and refusal; Gateway tests cover intent. `caddy.order-after-vpn` then orders Caddy after WireGuard. Its failure maps to `gateway.caddy_start_failed`.
 

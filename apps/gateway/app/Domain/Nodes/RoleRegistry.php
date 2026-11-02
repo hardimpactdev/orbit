@@ -21,6 +21,7 @@ final readonly class RoleRegistry
             RoleName::WebSocket,
             RoleName::Analytics,
             RoleName::CiRunner,
+            RoleName::Swamp,
         ];
     }
 
@@ -109,6 +110,17 @@ final readonly class RoleRegistry
                 mutable: true,
                 relocatable: false,
                 conflicts: [RoleName::Gateway, RoleName::Vpn],
+            ),
+            // Swamp serve, its workers and the Caddy that serves swamp.orbit (ADR 0243).
+            RoleName::Swamp => new RoleDefinition(
+                name: $role,
+                singleton: true,
+                assignableDuringProvisioning: false,
+                mutable: true,
+                // Serve on the swamp Node runs every Swamp run, so a relocation can't stop it. Live relocation is open.
+                relocatable: false,
+                // Metrics for the swamp Node comes with the Metrics port (wave 7).
+                metrics: false,
             ),
             RoleName::Analytics => new RoleDefinition(
                 name: $role,

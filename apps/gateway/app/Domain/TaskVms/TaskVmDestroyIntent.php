@@ -198,6 +198,7 @@ final readonly class TaskVmDestroyIntent
         }
     }
 
+    /** The sweep selects group-less VMs; cancel selects group VMs. */
     private function available(TaskVm $vm, ?Instance $workspace = null, ?Operation $ownOperation = null): void
     {
         $operations = Operation::query()->whereNotIn('status', OperationStatus::terminalValues())

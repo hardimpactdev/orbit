@@ -20,13 +20,8 @@ class StoreFirewallRuleRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name' => [
-                'required',
-                'string',
-                'max:63',
-                'regex:/\A[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?\z/D',
-            ],
             'source' => ['sometimes', 'string', 'max:255'],
+            'label' => ['sometimes', 'nullable', 'string', 'max:255'],
             'protocol' => ['sometimes', Rule::in(['tcp', 'udp'])],
             'port' => ['required', 'string', 'max:11'],
         ];
@@ -49,15 +44,15 @@ class StoreFirewallRuleRequest extends FormRequest
         $routeAction = $this->route('firewall_action');
 
         return new StoreFirewallRuleData(
-            name: ValidatedData::string($validated['name'] ?? null),
             action: FirewallAction::from(is_string($routeAction) ? $routeAction : ''),
             source: FirewallSource::normalize(ValidatedData::string($validated['source'] ?? 'any')),
-            protocol: ValidatedData::string($validated['protocol'] ?? 'tcp'),
+            protocol: ValidatedData::string($validated['protocol'] ?? 'any'),
             port: FirewallPort::normalize(ValidatedData::string($validated['port'] ?? null)),
+            label: is_string($validated['label'] ?? null) ? $validated['label'] : null,
         );
     }
 
-    private function validateSource(Validator $validator): void
+    protected function validateSource(Validator $validator): void
     {
         $source = $this->input('source', 'any');
 
@@ -72,7 +67,7 @@ class StoreFirewallRuleRequest extends FormRequest
         }
     }
 
-    private function validatePort(Validator $validator): void
+    protected function validatePort(Validator $validator): void
     {
         $port = $this->input('port');
 

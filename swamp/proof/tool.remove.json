@@ -1,0 +1,24 @@
+{
+  "kind": "tool.remove",
+  "workflow": "operation-tool-remove-209",
+  "topology": "minimal",
+  "budget_seconds": 300,
+  "queue_timeout_seconds": 30,
+  "clean_target": [
+    ["sh", "-c", "dpkg --purge tree >/dev/null 2>&1; true"]
+  ],
+  "prepare": [
+    {"method": "POST", "path": "tools", "body": {"node_id": "${node.target}", "manager": "apt", "package": "tree"}},
+    {"method": "GET", "path": "tools?node_id=${node.target}", "operation": false, "bind": "tool", "body": {}, "match": {"package": "tree"}}
+  ],
+  "request": {"method": "DELETE", "path": "tools/${tool.id}", "body": {}},
+  "expect": {"status": "succeeded"},
+  "phases": [
+    {"name": "Plan the removal", "job": "tools", "step": "Plan the removal", "budget_seconds": 60},
+    {"name": "decide", "job": "tools", "step": "decide", "budget_seconds": 30},
+    {"name": "Remove the package", "job": "tools", "step": "Remove the package", "budget_seconds": 120},
+    {"name": "Check it is gone", "job": "tools", "step": "Check it is gone", "budget_seconds": 60},
+    {"name": "result", "job": "tools", "step": "result", "budget_seconds": 30}
+  ],
+  "parity": "swamp/proof/tool.install/parity.py"
+}

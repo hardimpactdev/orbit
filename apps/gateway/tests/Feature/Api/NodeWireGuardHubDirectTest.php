@@ -3,13 +3,11 @@
 declare(strict_types=1);
 
 use App\Domain\Nodes\NodeWireGuardHubProjection;
-use App\Domain\Nodes\NodeWireGuardInput;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
-use App\Infrastructure\Nodes\NodeVpnConfigurationSource;
 use App\Models\Operation;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\Fleet\FleetFixtures;
@@ -33,7 +31,7 @@ beforeEach(function (): void {
     file_put_contents($home.'/wireguard/public.key', base64_encode(str_repeat('h', 32)));
 });
 
-it('admits one idempotent root on logical VPN1 without selecting a worker or reading a private key', function (): void {
+it('admits one idempotent run on VPN1 with the full public intent and never reads a private key', function (): void {
     unlink(config('orbit.home').'/wireguard/private.key');
     $path = "/api/v1/nodes/{$this->hub->id}/wireguard-hub/converge";
     $first = $this->withHeader('Idempotency-Key', 'hub-native-once')->post($path, [], ['Accept' => 'application/json'])
@@ -41,54 +39,39 @@ it('admits one idempotent root on logical VPN1 without selecting a worker or rea
         ->assertJsonPath('data.attempts', 0);
     $this->post($path, [], ['Accept' => 'application/json'])->assertAccepted()->assertJsonPath('data.id', $first->json('data.id'));
     $operation = Operation::query()->sole();
-    expect($this->hub->id)->toBe(1)->and($operation->node_id)->toBe(1)
-        ->and($operation->target_id)->toBe(1)->and($operation->parent_operation_id)->toBeNull()
-        ->and($operation->lock_key)->toBeNull()->and($operation->worker)->toBeNull()
-        ->and($operation->input['participant_node_ids'])->toBe([1])
-        ->and($operation->input['private_bindings']['configuration'])->toBe(['owner_node_id' => 1, 'read_node_ids' => [1], 'write_node_ids' => []])
-        ->and($operation->input['_wireguard'])->toMatchArray(['executor_node_id' => 1, 'hub_id' => 1, 'context_node_id' => 1, 'excluded_node_id' => null]);
+    expect($operation->node_id)->toBe($this->hub->id)->and($operation->target_id)->toBe($this->hub->id)
+        ->and($operation->input['participant_node_ids'])->toBe([$this->hub->id])
+        ->and($operation->input)->not->toHaveKeys(['_wireguard', 'configuration', 'private_bindings'])
+        ->and($operation->input['intent']['hub_id'])->toBe($this->hub->id)
+        ->and($operation->input['intent']['ssh']['target']['host'])->toBe($this->hub->wireguard_ip);
     expect($this->socket->sent)->toHaveCount(1);
     expect($this->socket->sent[0]['payload'])->toMatchArray(['workflowIdOrName' => 'operation-node-wireguard-hub-converge',
-        'inputs' => ['operation_id' => $operation->id, 'node_id' => 1, 'kind' => 'node.wireguard_hub_converge']]);
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $this->hub->id, 'kind' => 'node.wireguard_hub_converge',
+            'intent' => $operation->input['intent'], 'execution_secrets' => (object) []]]);
 });
 
-it('hydrates only the admitted hub and renders fresh peers inside the existing private source', function (): void {
-    $ack = $this->post("/api/v1/nodes/{$this->hub->id}/wireguard-hub/converge", [], ['Accept' => 'application/json'])->assertAccepted();
-    $operation = Operation::query()->findOrFail($ack->json('data.id'));
-    $run = $operation->state['swamp_run_id'];
-    $public = app(NodeWireGuardHubProjection::class)->input($operation);
-    expect($public)->toBe($operation->input['_wireguard'])->not->toHaveKeys(['configuration', 'private_key', 'connection']);
+it('admits a hub that has no Node worker, since Swamp reaches it over SSH from 209', function (): void {
+    $this->hub->update(['architecture' => 'aarch64']);
+    $this->post("/api/v1/nodes/{$this->hub->id}/wireguard-hub/converge", [], ['Accept' => 'application/json'])->assertAccepted();
+    expect(Operation::query()->sole()->input['intent']['hub_id'])->toBe($this->hub->id);
+});
+
+it('renders the hub file and peer file with every other active peer, and no private key', function (): void {
     $fresh = FleetFixtures::node('hub-fresh-peer');
     $fresh->update(['wireguard_public_key' => base64_encode(str_repeat('f', 32))]);
-    $source = app(NodeVpnConfigurationSource::class);
-    expect($source->ownerId($operation))->toBe($this->hub->id);
-    $private = $source->resolve($operation, $this->hub->id, '', 'configuration');
-    expect(array_column($private->value['peers'], 'node_id'))->toContain($fresh->id);
-    expect($private->value)->not->toHaveKey('connection');
-    expect(json_encode($private))->not->toContain(base64_encode(str_repeat('p', 32)));
-    $this->withServerVariables(['REMOTE_ADDR' => $this->hub->wireguard_ip])
-        ->getJson("/api/v1/direct-operations/{$operation->id}?run_id={$run}")->assertOk()
-        ->assertJsonPath('data.input.hub_id', $this->hub->id)->assertJsonMissingPath('data.input.private_key');
-    $this->withServerVariables(['REMOTE_ADDR' => $this->foreign->wireguard_ip])
-        ->getJson("/api/v1/direct-operations/{$operation->id}/private-material?run_id={$run}")->assertForbidden();
+    $leaving = FleetFixtures::node('hub-leaving-peer');
+    $leaving->update(['wireguard_public_key' => base64_encode(str_repeat('l', 32)), 'status' => LifecycleStatus::Removing]);
+    $this->post("/api/v1/nodes/{$this->hub->id}/wireguard-hub/converge", [], ['Accept' => 'application/json'])->assertAccepted();
+    $intent = Operation::query()->sole()->input['intent'];
+    $peer = "\n[Peer]\n# hub-fresh-peer\nPublicKey = {$fresh->wireguard_public_key}\nAllowedIPs = {$fresh->wireguard_ip}/32\n";
+    expect($intent['peer_keys'])->toContain($fresh->wireguard_public_key)->not->toContain($leaving->wireguard_public_key)
+        ->and($intent['config'])->toStartWith("[Interface]\nAddress = {$this->hub->wireguard_ip}/24\nListenPort = 51820\nPostUp = wg set %i private-key /etc/wireguard/orbit.key\n")
+        ->and($intent['config'])->toContain($peer)->not->toContain('PrivateKey', $leaving->wireguard_public_key)
+        // The peers file holds only peer sections; the Node composes its own key and the port in at apply time.
+        ->and($intent['peers'])->toStartWith("\n[Peer]\n# ")->toContain($peer)->not->toContain('[Interface]', 'PrivateKey')
+        ->and($intent['port'])->toBe(51820)
+        ->and(json_encode(Operation::query()->sole()->input))->not->toContain(base64_encode(str_repeat('p', 32)));
 });
-
-it('refuses standalone root or private binding drift without reading material', function (string $case): void {
-    $ack = $this->post("/api/v1/nodes/{$this->hub->id}/wireguard-hub/converge", [], ['Accept' => 'application/json'])->assertAccepted();
-    $operation = Operation::query()->findOrFail($ack->json('data.id'));
-    $input = $operation->input;
-    match ($case) {
-        'target' => $operation->target_id = $this->foreign->id,
-        'root' => $operation->node_id = $this->foreign->id,
-        'context' => $input['_wireguard']['context_node_id'] = $this->foreign->id,
-        'executor' => $input['_wireguard']['executor_node_id'] = $this->gateway->id,
-        'exclude' => $input['_wireguard']['excluded_node_id'] = $this->hub->id,
-        'reader' => $input['private_bindings']['configuration']['read_node_ids'] = [$this->gateway->id],
-    };
-    $operation->input = $input;
-    expect(NodeWireGuardInput::bound($operation))->toBeNull()
-        ->and(app(NodeVpnConfigurationSource::class)->ownerId($operation))->toBeNull();
-})->with(['target', 'root', 'context', 'executor', 'exclude', 'reader']);
 
 it('rejects foreign callers and nonhub targets before intent', function (bool $foreignCaller): void {
     if ($foreignCaller) {
@@ -105,16 +88,12 @@ it('rejects caller programs private keys and placement before intent', function 
     expect(Operation::query()->exists())->toBeFalse()->and($this->socket->sent)->toBe([]);
 })->with(['configuration', 'private_key', 'executor_node_id']);
 
-it('projects bounded native outcomes without mutating peer records and rejects conflicting completion', function (): void {
+it('projects a succeeded run as projected without touching peer records', function (): void {
     $ack = $this->post("/api/v1/nodes/{$this->hub->id}/wireguard-hub/converge", [], ['Accept' => 'application/json'])->assertAccepted();
     $operation = Operation::query()->findOrFail($ack->json('data.id'));
     $before = $this->foreign->refresh()->getAttributes();
     $data = ['run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded', 'started_at' => now()->toISOString(),
-        'finished_at' => now()->toISOString(), 'error_code' => null, 'result' => ['projected' => true, 'private_key' => 'not-a-result']];
-    $projection = app(NodeWireGuardHubProjection::class);
-    expect($projection->apply($operation, $data)->result)->toBe(['projected' => true]);
-    $projection->apply($operation, $data);
+        'finished_at' => now()->toISOString(), 'error_code' => null, 'result' => ['private_key' => 'not-a-result']];
+    expect(app(NodeWireGuardHubProjection::class)->apply($operation, $data)->result)->toBe(['projected' => true]);
     expect($this->foreign->refresh()->getAttributes())->toBe($before);
-    $data['result'] = ['projected' => false];
-    expect(fn () => $projection->apply($operation, $data))->toThrow(ResourceOperationException::class);
 });

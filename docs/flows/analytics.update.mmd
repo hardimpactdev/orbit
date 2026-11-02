@@ -1,0 +1,104 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, rule 5 (merge into node.role_converge: a version pin is a role setting), DECISIONS R1-R4. docs/reference/analytics.md.
+  %% status: draft
+  %% command: analytics:update
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Node 21<br/>analytics role
+  CLI->>GW: analytics:update 3.2.1<br/>Plausible version
+  %%> Command:
+  %%> - `orbit analytics:update 3.2.1`
+  %%> - syntax: `[version] [--json]`
+  %%> Input:
+  %%> - the Plausible Community Edition version as three numbers; the image tag is `v` plus the version
+  %%> - in a terminal the CLI asks for a missing version; with `--json` it refuses (`analytics.version_invalid`)
+  %%> What it does:
+  %%> - changes the `analytics` role's version setting and converges the role
+  Note over GW: Validate the version<br/>role setting · role lock
+  %%> Requirements:
+  %%> - your Node has an access grant to the Gateway Node
+  %%> - a Node has the active `analytics` role (`analytics.role_missing`)
+  %%> - no other change runs for that role; the Gateway holds one lock
+  %%> Decides:
+  %%> - whether the version differs from the one that runs
+  alt same version
+    Note over GW: Nothing to change<br/>R1: no run
+    %%> Result:
+    %%> - nothing changes; no Swamp run starts (R1)
+    GW-->>CLI: Version unchanged<br/>3.2.1 on Node 21
+    %%> What you get:
+    %%> - the final result at once
+  else another version
+    GW->>SW: Start role converge<br/>operation-node-role · analytics
+    %%> What it does:
+    %%> - records task #5128 as `node.role_converge` for Node 21's `analytics` role, with the new version as its setting
+    %%> - pushes the Plausible environment to the Swamp vault after commit (R3) and starts one run on serve (Node 209)
+    %%> Inputs:
+    %%> - the new and the current `plausible` Process definitions, and the vault key name of the environment
+    %%> - Node 21's address and SSH host keys; the SSH identity comes from the `swamp` role
+    %%> Why no own kind:
+    %%> - a version pin is a role setting; the role converge already replaces the Process (rule 5)
+    GW-->>CLI: 202 Accepted<br/>task #5128
+    %%> What you get:
+    %%> - the task number, at once
+    %%> Next:
+    %%> - the CLI follows the task with `operation:show`
+    SW->>N: Prepare the database<br/>createdb · migrate (new image)
+    %%> How:
+    %%> - over SSH from 209 with `@swamp/ssh`, reading the environment with `vault.get`
+    %%> What it does:
+    %%> - runs the new image's `createdb` and `migrate` as one-off containers; the running Process keeps serving
+    %%> If it fails:
+    %%> - the old container keeps running unchanged
+    SW->>N: Replace the Process<br/>same shape as process.update
+    %%> What it does:
+    %%> - removes the old `plausible` container and creates it from the new image, with the same environment and mounts
+    %%> Why it is safe:
+    %%> - Plausible keeps no data in its container
+    SW->>N: Check Plausible is healthy<br/>owned spec · HTTP answers
+    %%> What it does:
+    %%> - checks the container runs the new image and Plausible answers over HTTP
+    alt the check passes
+      N-->>SW: Plausible ready
+      %%> Returns:
+      %%> - Plausible runs the new version
+      SW-->>GW: Run succeeded<br/>terminal event
+      %%> How the Gateway learns it:
+      %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+      Note over GW: Record the version<br/>3.2.1 · task succeeded
+      %%> Result:
+      %%> - the role's version becomes 3.2.1 and the Process definition is updated
+      %%> - task #5128 succeeds
+    else replacing or the check fails
+      N--xSW: exit ≠ 0 or no answer
+      %%> When:
+      %%> - the new container does not start or Plausible does not answer
+      SW->>N: Restore the old Process<br/>previous image and spec
+      %%> What it does:
+      %%> - removes the failed container and creates it again from the captured previous definition, then checks it answers
+      %%> Not reversed:
+      %%> - the database migrations
+      SW--xGW: Run failed<br/>error_code, failed step
+      %%> The Gateway reads:
+      %%> - which step failed, its error code, and whether the restore passed
+      Note over GW: Keep the old version<br/>task failed · rerun after a fix
+      %%> Result:
+      %%> - the role keeps its previous version; task #5128 fails
+      %%> Retry:
+      %%> - run the same command again after fixing the cause
+    end
+    loop every 2 s until terminal
+      CLI->>GW: operation:show #5128
+      %%> What it does:
+      %%> - asks for the task's status every 2 seconds until it has ended
+      GW-->>CLI: status + result
+      %%> Returns:
+      %%> - the current status, and the result once the task has ended
+    end
+  end

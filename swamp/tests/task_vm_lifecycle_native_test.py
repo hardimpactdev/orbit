@@ -2,10 +2,9 @@
 import hashlib
 import json
 import sys
-from pathlib import Path
 
 import yaml
-from native_harness import NativeTestCase, ROOT
+from native_harness import ROOT, NativeTestCase
 
 
 class TaskVmLifecycleFixture(NativeTestCase):
@@ -26,6 +25,14 @@ class TaskVmLifecycleFixture(NativeTestCase):
         (self.guest / ".local/bin").mkdir(parents=True)
         (self.guest / ".local/bin/pi-server").write_bytes(b"fixture-pi")
         fake = self.repo / "ssh"
+        poll_runner = self.repo / "poll-runner.py"
+        poll_runner.write_text("import runpy,subprocess,sys,shlex\n" +
+            "actual_check_output=subprocess.check_output\n" +
+            "def read_host(argv,**kwargs):\n" +
+            "    assert argv[:4]==['/usr/bin/sudo','-n','--','/usr/bin/incus']\n" +
+            "    return actual_check_output([" + repr(str(fake)) + ",shlex.join(argv)],**kwargs)\n" +
+            "subprocess.check_output=read_host\n" +
+            "source=sys.argv.pop(1)\nrunpy.run_path(source,run_name='__main__')\n")
         fake.write_text("#!" + sys.executable + "\n" + '''import json,shlex,subprocess,sys
 from pathlib import Path
 args=shlex.split(sys.argv[-1]);body=sys.stdin.buffer.read()
@@ -43,16 +50,26 @@ if '/usr/bin/incus' in args:
         if '/usr/bin/cat' in args:print('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG')
         raise SystemExit(0)
     if action=='list':
+        if value.get('starting'):
+            remaining=value.get('remaining_start_reads',0)
+            if remaining:value['remaining_start_reads']=remaining-1
+            else:value['status']='Running';value['starting']=False
+            state.write_text(json.dumps(value))
         print(json.dumps([{'name':'tvm-42','type':'virtual-machine','status':value['status']}] if value['exists'] else []))
     else:
         if not Path(PENDING).exists():
-            if action=='start':value['status']='Running'
+            if action=='start':
+                value['starting']=value.get('remaining_start_reads',0)>0
+                value['status']='Stopped' if value['starting'] else 'Running'
             elif action=='stop':value['status']='Stopped'
             elif action=='delete':value['exists']=False
             else:raise SystemExit(9)
             state.write_text(json.dumps(value))
         if Path(LOST).exists():raise SystemExit(255)
     raise SystemExit(0)
+if args[0]=='timeout':
+    Path(POLL_SCRIPT).write_text(args[5])
+    args=[*args[:4],POLL_RUNNER,POLL_SCRIPT,*args[6:]]
 if args[0]=='/usr/bin/python3':
     if 'urllib.request' in args[-1]:print('{"pi_ready":true}');raise SystemExit(0)
     args[-1]=args[-1].replace('/home/orbit',GUEST)
@@ -61,21 +78,22 @@ sys.stdout.buffer.write(result.stdout);sys.stderr.buffer.write(result.stderr)
 raise SystemExit(result.returncode)
 '''.replace("STATE", repr(str(self.state))).replace("CALLS", repr(str(self.calls)))
                         .replace("BLOCK", repr(str(self.block))).replace("PENDING", repr(str(self.pending)))
-                        .replace("LOST", repr(str(self.lost))).replace("GUEST", repr(str(self.guest))))
+                        .replace("LOST", repr(str(self.lost))).replace("GUEST", repr(str(self.guest)))
+                        .replace("POLL_SCRIPT", repr(str(self.repo / "incus-poll.py"))).replace("POLL_RUNNER", repr(str(poll_runner))))
         fake.chmod(0o755)
         for filename in ("workflow-task-vm-provider-power.yaml", "workflow-operation-task-vm-resume.yaml", "workflow-operation-task-park.yaml", "workflow-task-vm-ssh-prepare.yaml"):
             workflow = yaml.safe_load((ROOT / "workflows" / filename).read_text())
             for job in workflow["jobs"]:
-                self.assertEqual(job.pop("target"), "orbit-node-209")
+                self.assertEqual(job.pop("labels"), {"role": "swamp"})
                 self.assertNotIn("labels", job)
                 for step in job["steps"]:
-                    self.assertEqual(step.pop("target"), "orbit-node-209")
+                    self.assertEqual(step.pop("labels"), {"role": "swamp"})
                     self.assertNotIn("labels", step)
                     task = step["task"]
                     if task.get("behaviorType") == "@swamp/ssh":
                         task["globalArgs"]["sshBinary"] = str(fake)
             (self.repo / "workflows" / filename).write_text(yaml.safe_dump(workflow, sort_keys=False))
-        ssh = {"control_node_id": 209, "identity_file": "/run/credentials/orbit-node-worker.service/proxy-ssh-identity", "public_key": "ssh-ed25519 PUBLIC", "target": {"name": "target", "host": "192.0.2.42", "user": "orbit", "port": 22, "host_keys": ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG"]}}
+        ssh = {"control_node_id": 209, "identity_file": "/etc/orbit/swamp-role-worker/ssh-identity", "public_key": "ssh-ed25519 PUBLIC", "target": {"name": "target", "host": "192.0.2.42", "user": "orbit", "port": 22, "host_keys": ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG"]}}
         self.provider = {"task_vm_id": 42, "name": "tvm-42", "provider": "incus", "provider_id": None, "vm": {"project": "tasks", "name": "tvm-42", "pool":"tasks"}, "host_ssh_execution": ssh}
         self.envelope = {"operation_id": 7002, "node_id": 99, "kind": "task_vm.resume", "intent": self.provider, "execution_secrets": {}, "action": "start"}
         self.ssh = ssh
@@ -105,8 +123,20 @@ class TaskVmLifecycleNative(TaskVmLifecycleFixture):
         self.assertEqual(sum("stop" in row for row in calls), 1)
         self.assertEqual(sum("delete" in row for row in calls), 1)
 
-    def test_one_shot_unsettled_fails_and_native_resume_does_not_repeat_start(self):
+    def test_delayed_start_waits_for_running_without_repeating_the_start_write(self):
+        self.state.write_text(json.dumps({'status': 'Stopped', 'exists': True, 'remaining_start_reads': 1}))
+        run = self.run_workflow()
+        self.assertEqual(run['status'], 'succeeded')
+        history = json.loads(self.cli('workflow', 'history', 'get', run['id']).stdout)
+        self.assertTrue(history['jobs'][0]['steps'][-1]['outputs']['running'])
+        calls = [json.loads(row)['argv'] for row in self.calls.read_text().splitlines()]
+        self.assertEqual(sum('start' in row for row in calls), 1)
+        self.assertEqual(json.loads(self.state.read_text())['status'], 'Running')
+
+    def test_start_timeout_fails_and_native_resume_does_not_repeat_start(self):
         self.pending.touch()
+        path = self.repo / 'workflows/workflow-task-vm-provider-power.yaml'
+        path.write_text(path.read_text().replace('"timeout", "120"', '"timeout", "2"'))
         run = self.run_workflow(success=False)
         self.assertEqual(run["status"], "failed")
         self.pending.unlink()

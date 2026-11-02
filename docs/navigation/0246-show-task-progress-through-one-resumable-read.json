@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 246,
+      "pages": [
+        "decisions/0246-show-task-progress-through-one-resumable-read"
+      ]
+    }
+  ]
+}

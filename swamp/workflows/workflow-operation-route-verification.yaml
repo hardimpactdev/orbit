@@ -33,7 +33,7 @@ jobs:
 - name: verification
   steps:
   - name: verify
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: cluster-router-probe
@@ -44,11 +44,11 @@ jobs:
         intent: ${{ inputs.intent }}
         execution_secrets: ${{ inputs.execution_secrets }}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "route-result-" + run.id }}
+      behaviorName: '${{ "route-result-shell" }}'
       methodName: execute
       inputs:
         run: "if [ \"$READY\" = true ]; then\n  printf '%s\\n' '{\"ready\":true}'\n\

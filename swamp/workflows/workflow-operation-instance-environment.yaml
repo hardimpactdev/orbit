@@ -1,25 +1,202 @@
 id: 1aa9bc3f-6c22-4b27-8742-e0a8620da06b
 name: operation-instance-environment
-description: Synchronize one Instance on its exact owning Node without Gateway children.
+description: Write one Instance's Gateway-rendered .env from the vault over official SSH from 209, check it, and refresh a production runtime.
+vaults: [orbit-control-inputs]
+queueTimeout: 30
 inputs:
+  type: object
   properties:
-    operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
-    kind: { type: string, enum: [instance.sync_environment] }
-  required: [operation_id, node_id, kind]
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [instance.sync_environment]}
+    intent:
+      type: object
+      properties:
+        # The public plan the environment script reads: account, directory, key names and the sha256 of each rendered file.
+        environment:
+          type: object
+          properties:
+            instance_id: {type: integer, minimum: 1}
+            environment: {type: string, enum: [development, production]}
+            base: {type: string, pattern: '^/'}
+            user: {type: string, pattern: '^[a-z_][a-z0-9_-]{0,31}$'}
+            maximum: {type: integer, const: 1048576}
+            required_capacity: {type: integer, minimum: 1048576}
+            require_home: {type: boolean}
+            preserve_workload_keys: {type: boolean}
+            keys: {type: array, items: {type: string}}
+            owned_keys: {type: array, items: {type: string}}
+            sha256: {type: string, pattern: '^[a-f0-9]{64}$'}
+            testing: {default: null}  # null, or the managed key names and the sha256 of their sorted lines
+          required: [instance_id, environment, base, user, maximum, required_capacity, require_home, preserve_workload_keys, keys, owned_keys, sha256, testing]
+          additionalProperties: false
+        # Production only: the config cache, the PHP-FPM service and the Processes to restart.
+        runtime: {default: null}
+        ssh_execution: {type: object}
+      required: [environment, runtime, ssh_execution]
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      properties:
+        environment:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^instance-environment-[1-9][0-9]*$'}
+          required: [vault, key]
+          additionalProperties: false
+      required: [environment]
+      additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
 jobs:
-  - name: environment
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: "${{ string(inputs.node_id) }}" }
-    steps:
-      - name: synchronize
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/instance-environment"
-          behaviorName: '${{ "instance-environment-node-" + string(inputs.node_id) }}'
-          methodName: apply
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
+- name: environment
+  labels: {role: swamp}
+  steps:
+  - name: 'Read the scripts'
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-environment-assets'
+      behaviorName: instance-environment-assets
+      methodName: read
+      inputs: {environment: '${{ inputs.intent.environment }}', runtime: '${{ inputs.intent.runtime }}'}
+  - name: 'Check for foreign keys'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Read the scripts', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "instance-environment-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: &ssh
+        name: ${{ "instance-environment-ssh-" + string(inputs.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}
+      inputs:
+        hosts: name:target
+        argv: [/usr/bin/sudo, -n, --user, '${{ inputs.intent.environment.user }}', --, timeout, '30', python3, -I, -c, '${{ steps["Read the scripts"].outputs.environment }}',
+          check, '${{ steps["Read the scripts"].outputs.plan }}']
+        okExitCodes: [0, 1]
+        timeoutSec: 40
+  - name: 'Write .env, .env.testing'
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Check for foreign keys', condition: {type: succeeded}}]
+    guard: ${{ steps["Check for foreign keys"].outputs.exitCode != 0 }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "instance-environment-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        # The rendered files arrive on stdin from the vault, never in argv or native history.
+        argv: [/usr/bin/sudo, -n, --user, '${{ inputs.intent.environment.user }}', --, timeout, '30', python3, -I, -c, '${{ steps["Read the scripts"].outputs.environment }}',
+          write, '${{ steps["Read the scripts"].outputs.plan }}']
+        stdin: ${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}
+        okExitCodes: [0, 1]
+        timeoutSec: 40
+  - name: 'Check the written file'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Write .env, .env.testing', condition: {type: succeeded}}]
+    guard: ${{ steps["Write .env, .env.testing"].outputs.exitCode != 0 }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "instance-environment-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        argv: [/usr/bin/sudo, -n, --user, '${{ inputs.intent.environment.user }}', --, timeout, '30', python3, -I, -c, '${{ steps["Read the scripts"].outputs.environment }}',
+          verify, '${{ steps["Read the scripts"].outputs.plan }}']
+        okExitCodes: [0, 1]
+        timeoutSec: 40
+    # Every production sync refreshes the runtime, also when .env did not change.
+  - name: 'Refresh the runtime'
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Check the written file', condition: {type: succeeded}}]
+    guard: ${{ inputs.intent.environment.environment != "production" || steps["Check the written file"].outputs.exitCode != 0 }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "instance-environment-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '300', python3, -I, -c, '${{ steps["Read the scripts"].outputs.refresh }}', '${{ steps["Read the scripts"].outputs.runtime }}']
+        okExitCodes: [0, 1]
+        timeoutSec: 310
+  - name: 'Report the result'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Check for foreign keys', condition: {type: always}}
+    - {step: 'Write .env, .env.testing', condition: {type: always}}
+    - {step: 'Check the written file', condition: {type: always}}
+    - {step: 'Refresh the runtime', condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: instance-environment-result
+      methodName: execute
+      inputs:
+        run: |
+          python3 -I - <<'PY'
+          import json
+          import os
+          import sys
+
+          result = {}
+          for name in ('CHECKED', 'WRITTEN', 'VERIFIED', 'REFRESHED'):
+              status, stdout = os.environ[name + '_STATUS'], os.environ[name + '_STDOUT']
+              if status == 'skipped':
+                  continue
+              try:
+                  value = json.loads(stdout) if status == 'succeeded' else None
+              except ValueError:
+                  value = None
+              if not isinstance(value, dict):
+                  value = {'error_code': 'env.sync_unconfirmed'}
+              if 'error_code' in value:
+                  print(json.dumps({'error_code': value['error_code'], 'failed_step': name.lower(),
+                                    **({'foreign_keys': value['foreign_keys']} if 'foreign_keys' in value else {})}))
+                  sys.exit(1)
+              value.pop('ready', None)
+              result.update(value)
+          if 'environment_changed' not in result:
+              print(json.dumps({'error_code': 'env.sync_unconfirmed', 'failed_step': 'written'}))
+              sys.exit(1)
+          result.setdefault('runtime_refresh', 'skipped_development')
+          result.setdefault('restarted_process_ids', [])
+          plan = json.loads(os.environ['PLAN'])
+          print(json.dumps({'instance_id': plan['instance_id'], 'changed': result['environment_changed'] or result['testing_status'] == 'written',
+                            'keys': plan['keys'], 'key_count': len(plan['keys']),
+                            'test_database': plan['testing']['test_database'] if plan['testing'] else None, **result}))
+          PY
+        env:
+          PLAN: '${{ "Read the scripts" in steps && steps["Read the scripts"].status == "succeeded" ? steps["Read the scripts"].outputs.plan : "{}" }}'
+          CHECKED_STATUS: '${{ "Check for foreign keys" in steps ? steps["Check for foreign keys"].status : "skipped" }}'
+          CHECKED_STDOUT: '${{ "Check for foreign keys" in steps && steps["Check for foreign keys"].status == "succeeded" ? steps["Check for foreign keys"].outputs.stdout : "" }}'
+          WRITTEN_STATUS: '${{ "Write .env, .env.testing" in steps ? steps["Write .env, .env.testing"].status : "skipped" }}'
+          WRITTEN_STDOUT: '${{ "Write .env, .env.testing" in steps && steps["Write .env, .env.testing"].status == "succeeded" ? steps["Write .env, .env.testing"].outputs.stdout : "" }}'
+          VERIFIED_STATUS: '${{ "Check the written file" in steps ? steps["Check the written file"].status : "skipped" }}'
+          VERIFIED_STDOUT: '${{ "Check the written file" in steps && steps["Check the written file"].status == "succeeded" ? steps["Check the written file"].outputs.stdout : "" }}'
+          REFRESHED_STATUS: '${{ "Refresh the runtime" in steps ? steps["Refresh the runtime"].status : "skipped" }}'
+          REFRESHED_STDOUT: '${{ "Refresh the runtime" in steps && steps["Refresh the runtime"].status == "succeeded" ? steps["Refresh the runtime"].outputs.stdout : "" }}'
+        ignoreExitCode: true
+  - name: 'Fail on an error'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Report the result', condition: {type: succeeded}}]
+    task: {type: assert, expr: 'steps["Report the result"].outputs.exitCode == 0', severity: high, message: The Instance environment did not sync.}

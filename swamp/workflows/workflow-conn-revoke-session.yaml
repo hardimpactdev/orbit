@@ -68,20 +68,20 @@ jobs:
 - name: session
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/conn-revocation-plan'
-      behaviorName: ${{ "conn-" + string(inputs.operation_id) + "-" + run.id + "-assets" }}
+      behaviorName: '${{ "conn-assets" }}'
       methodName: assets
       inputs:
         intent: ${{ inputs.intent }}
   - name: inspect
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "conn-" + string(inputs.operation_id) + "-" + run.id + "-inspect" }}
+      behaviorName: '${{ "conn-inspect" }}'
       methodName: execute
       inputs:
         run: '#!/bin/sh
@@ -100,11 +100,11 @@ jobs:
       condition:
         type: succeeded
   - name: authorize
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/conn-revocation-plan'
-      behaviorName: ${{ "conn-" + string(inputs.operation_id) + "-" + run.id + "-authorize" }}
+      behaviorName: '${{ "conn-authorize" }}'
       methodName: authorize
       inputs:
         stdout: ${{ steps.inspect.outputs.stdout }}
@@ -114,11 +114,11 @@ jobs:
       condition:
         type: succeeded
   - name: revoke
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "conn-" + string(inputs.operation_id) + "-" + run.id + "-revoke" }}
+      behaviorName: '${{ "conn-revoke" }}'
       methodName: execute
       inputs:
         run: '#!/bin/sh
@@ -139,11 +139,11 @@ jobs:
         type: succeeded
     guard: ${{ steps.authorize.outputs.absent }}
   - name: finish
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/conn-revocation-plan'
-      behaviorName: ${{ "conn-" + string(inputs.operation_id) + "-" + run.id + "-finish" }}
+      behaviorName: '${{ "conn-finish" }}'
       methodName: finish
       inputs:
         successful: ${{ steps.all(name, steps[name].status == "succeeded" || steps[name].status

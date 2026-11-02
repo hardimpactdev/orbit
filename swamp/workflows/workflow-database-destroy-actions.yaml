@@ -1,5 +1,6 @@
 id: d452ab9b-bb4d-4414-9324-6149f98086bc
 name: database-destroy-actions
+queueTimeout: 30
 description: Inventory and fence the removal set, drop each resource, restore on refusal and shape one public result.
 writes: true
 vaults: [orbit-control-inputs]
@@ -8,7 +9,7 @@ inputs:
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [database.destroy, database.destroy_owned]}
+    kind: {type: string, enum: [database.destroy_owned]}
     scope: {type: string, pattern: '^(single|server-[1-9][0-9]*)$'}
     intent: {type: object}
     execution_secrets: {type: object, properties: {database_destroy: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^database-(destroy-intent-[1-9][0-9]*|destroy-owned-intent-[1-9][0-9]*-server-[1-9][0-9]*)$'}}, required: [vault, key], additionalProperties: false}}, required: [database_destroy], additionalProperties: false}
@@ -16,19 +17,19 @@ inputs:
   additionalProperties: false
 jobs:
 - name: prepare
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: assets
-    <<: &placed {target: orbit-node-209}
+    <<: &placed {labels: {role: swamp}}
     writes: false
     task:
-      <<: &metadata {type: behavior, behaviorType: '@nckrtl/database-server-command-assets', behaviorName: '${{ "db-destroy-assets-" + run.id }}'}
+      <<: &metadata {type: behavior, behaviorType: '@nckrtl/database-server-command-assets', behaviorName: '${{ "db-destroy-assets" }}'}
       methodName: read
       inputs: {intent: '${{ inputs.intent }}'}
   - name: directory
     <<: *placed
     task:
-      <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "dbd-" + string(inputs.operation_id) + "-" + inputs.scope }}', methodName: exec, globalArgs: &ssh_globals {name: '${{ "dbd-" + string(inputs.operation_id) + "-" + inputs.scope }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity}, hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]}}
+      <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("dbd-" + string(inputs.intent.ssh.host) + "-" + inputs.scope).split(".").join("-") }}', methodName: exec, globalArgs: &ssh_globals {name: '${{ ("dbd-" + string(inputs.intent.ssh.host) + "-" + inputs.scope).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity}, hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]}}
       inputs:
         hosts: name:server
         argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) }}']
@@ -45,7 +46,7 @@ jobs:
         direction: to
         recursive: true
   - name: inventory
-    <<: &command {target: orbit-node-209, allowFailure: true}
+    <<: &command {labels: {role: swamp}, allowFailure: true}
     writes: false
     dependsOn: [{step: copy, condition: {type: succeeded}}, {step: assets, condition: {type: succeeded}}]
     guard: ${{ inputs.intent.driver != "mysql" || size(inputs.intent.test_prefixes) == 0 }}
@@ -68,13 +69,13 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-destroy-plan'
-      behaviorName: ${{ "database-destroy-plan-" + run.id }}
+      behaviorName: '${{ "database-destroy-plan" }}'
       methodName: read
       inputs:
         intent: ${{ inputs.intent }}
         inventory: '${{ (inputs.intent.driver != "mysql" || size(inputs.intent.test_prefixes) == 0) ? "{\"databases\":[]}" : steps.inventory.outputs.stdout }}'
 - name: inspect
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn: [{job: prepare, condition: {type: succeeded}}]
   steps:
   - name: ownership
@@ -136,7 +137,7 @@ jobs:
     dependsOn: [{step: ownership, condition: {type: always}}, {step: ownership_checked, condition: {type: always}}, {step: fence, condition: {type: always}}, {step: fence_checked, condition: {type: always}}, {step: blockers, condition: {type: always}}, {step: acl_snapshot, condition: {type: always}}]
     task: {type: assert, expr: '(inputs.intent.driver == "redis" ? true : (has(steps.blockers) && has(steps.blockers.outputs) && steps.blockers.outputs.exitCode == 0 && steps.blockers.outputs.stdout == "{\"ready\": true}\n")) && (inputs.intent.driver != "redis" ? true : (has(steps.acl_snapshot) && has(steps.acl_snapshot.outputs) && steps.acl_snapshot.outputs.exitCode == 0 && steps.acl_snapshot.outputs.stdout == "{\"ready\": true}\n")) && steps.fence_checked.status == "succeeded"', severity: high, message: Database removal safety check failed.}
 - name: databases
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn: [{job: inspect, condition: {type: succeeded}}, {job: prepare, condition: {type: succeeded}}]
   steps:
   - name: drop_database
@@ -145,8 +146,8 @@ jobs:
     forEach: {item: selected, in: '${{ has(steps.plan) && has(steps.plan.outputs) ? steps.plan.outputs.databases : [] }}'}
     task:
       <<: *ssh
-      behaviorName: ${{ "db-destroy-drop_database-" + string(inputs.operation_id) + "-" + inputs.scope + "-" + string(self._index) }}
-      globalArgs: {<<: *ssh_globals, name: '${{ "db-destroy-drop_database-" + string(inputs.operation_id) + "-" + inputs.scope + "-" + string(self._index) }}'}
+      behaviorName: '${{ ("db-destroy-drop_database-" + string(inputs.intent.ssh.host) + "-" + inputs.scope + "-" + string(self._index)).split(".").join("-") }}'
+      globalArgs: {<<: *ssh_globals, name: '${{ ("db-destroy-drop_database-" + string(inputs.intent.ssh.host) + "-" + inputs.scope + "-" + string(self._index)).split(".").join("-") }}'}
       inputs:
         hosts: name:server
         argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', drop_database, '${{ steps.plan.outputs.json }}', '${{ self.selected }}', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) }}']
@@ -158,7 +159,7 @@ jobs:
     dependsOn: [{step: drop_database, condition: {type: always}}]
     task: {type: assert, expr: '!steps.exists(k, k.startsWith("drop_database-") && (steps[k].status != "succeeded" || steps[k].outputs.exitCode != 0 || steps[k].outputs.stdout != "{\"ready\": true}\n"))', severity: high, message: Database removal safety check failed.}
 - name: users
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn: [{job: databases, condition: {type: succeeded}}, {job: inspect, condition: {type: succeeded}}, {job: prepare, condition: {type: succeeded}}]
   steps:
   - name: drop_user
@@ -167,8 +168,8 @@ jobs:
     forEach: {item: selected, in: '${{ has(steps.plan) && has(steps.plan.outputs) ? steps.plan.outputs.users : [] }}'}
     task:
       <<: *ssh
-      behaviorName: ${{ "db-destroy-drop_user-" + string(inputs.operation_id) + "-" + inputs.scope + "-" + string(self._index) }}
-      globalArgs: {<<: *ssh_globals, name: '${{ "db-destroy-drop_user-" + string(inputs.operation_id) + "-" + inputs.scope + "-" + string(self._index) }}'}
+      behaviorName: '${{ ("db-destroy-drop_user-" + string(inputs.intent.ssh.host) + "-" + inputs.scope + "-" + string(self._index)).split(".").join("-") }}'
+      globalArgs: {<<: *ssh_globals, name: '${{ ("db-destroy-drop_user-" + string(inputs.intent.ssh.host) + "-" + inputs.scope + "-" + string(self._index)).split(".").join("-") }}'}
       inputs:
         hosts: name:server
         argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', drop_user, '${{ steps.plan.outputs.json }}', '${{ self.selected }}', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) }}']
@@ -181,8 +182,8 @@ jobs:
     forEach: {item: selected, in: '${{ has(steps.plan) && has(steps.plan.outputs) ? steps.plan.outputs.users : [] }}'}
     task:
       <<: *ssh
-      behaviorName: ${{ "db-destroy-acl_remove-" + string(inputs.operation_id) + "-" + inputs.scope + "-" + string(self._index) }}
-      globalArgs: {<<: *ssh_globals, name: '${{ "db-destroy-acl_remove-" + string(inputs.operation_id) + "-" + inputs.scope + "-" + string(self._index) }}'}
+      behaviorName: '${{ ("db-destroy-acl_remove-" + string(inputs.intent.ssh.host) + "-" + inputs.scope + "-" + string(self._index)).split(".").join("-") }}'
+      globalArgs: {<<: *ssh_globals, name: '${{ ("db-destroy-acl_remove-" + string(inputs.intent.ssh.host) + "-" + inputs.scope + "-" + string(self._index)).split(".").join("-") }}'}
       inputs:
         hosts: name:server
         argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', acl_remove, '${{ steps.plan.outputs.json }}', '${{ self.selected }}', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) }}']
@@ -210,7 +211,7 @@ jobs:
     dependsOn: [{step: drop_user, condition: {type: always}}, {step: acl_remove, condition: {type: always}}, {step: users_removed, condition: {type: always}}, {step: acl_save, condition: {type: always}}]
     task: {type: assert, expr: '(inputs.intent.driver != "redis" ? true : (has(steps.acl_save) && has(steps.acl_save.outputs) && steps.acl_save.outputs.exitCode == 0 && steps.acl_save.outputs.stdout == "{\"ready\": true}\n")) && steps.users_removed.status == "succeeded"', severity: high, message: Database removal safety check failed.}
 - name: cleanup
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn: [{job: prepare, condition: {type: always}}, {job: inspect, condition: {type: always}}, {job: databases, condition: {type: always}}, {job: users, condition: {type: always}}]
   steps:
   - name: restore
@@ -230,8 +231,8 @@ jobs:
     forEach: {item: selected, in: '${{ has(steps.plan) && has(steps.plan.outputs) ? steps.plan.outputs.users : [] }}'}
     task:
       <<: *ssh
-      behaviorName: ${{ "db-destroy-acl_restore-" + string(inputs.operation_id) + "-" + inputs.scope + "-" + string(self._index) }}
-      globalArgs: {<<: *ssh_globals, name: '${{ "db-destroy-acl_restore-" + string(inputs.operation_id) + "-" + inputs.scope + "-" + string(self._index) }}'}
+      behaviorName: '${{ ("db-destroy-acl_restore-" + string(inputs.intent.ssh.host) + "-" + inputs.scope + "-" + string(self._index)).split(".").join("-") }}'
+      globalArgs: {<<: *ssh_globals, name: '${{ ("db-destroy-acl_restore-" + string(inputs.intent.ssh.host) + "-" + inputs.scope + "-" + string(self._index)).split(".").join("-") }}'}
       inputs:
         hosts: name:server
         argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', acl_restore, '${{ steps.plan.outputs.json }}', '${{ self.selected }}', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) }}']

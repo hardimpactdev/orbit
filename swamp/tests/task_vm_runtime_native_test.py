@@ -33,9 +33,9 @@ else:print('{"ready":true}')
         scp.chmod(0o755)
         workflow = yaml.safe_load((ROOT / "workflows/workflow-task-vm-runtime.yaml").read_text())
         for job in workflow["jobs"]:
-            self.assertEqual(job.pop("target"), "orbit-node-209")
+            self.assertEqual(job.pop("labels"), {"role": "swamp"})
             for step in job["steps"]:
-                self.assertEqual(step.pop("target"), "orbit-node-209")
+                self.assertEqual(step.pop("labels"), {"role": "swamp"})
                 task = step["task"]
                 if task.get("behaviorType") == "@swamp/ssh":
                     task["globalArgs"]["sshBinary"] = str(fake)
@@ -48,7 +48,7 @@ else:print('{"ready":true}')
         self.secrets = (secret,)
         self.native_env.update(FIXTURE_SECRET_SHA=hashlib.sha256(secret.encode()).hexdigest(), FIXTURE_CURRENT="false", FIXTURE_FAIL="false")
         public = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG"
-        ssh = {"control_node_id":209,"identity_file":"/run/credentials/orbit-node-worker.service/proxy-ssh-identity","public_key":public,
+        ssh = {"control_node_id":209,"identity_file":"/etc/orbit/swamp-role-worker/ssh-identity","public_key":public,
                "target":{"name":"target","host":"192.0.2.42","port":22,"user":"orbit","host_keys":[public]}}
         self.inputs = {"operation_id":7005,"node_id":9,"kind":"tasks.provision",
                        "intent":{"task_vm_id":42,"guest_node_id":142,"user":"orbit","ssh_execution":ssh,

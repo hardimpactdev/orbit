@@ -2,6 +2,7 @@ id: a7839446-4acb-4e72-b82f-d188f108a1fc
 name: operation-route-caddy
 description: Official file application, validation and reload with complete public intent.
 vaults: []
+queueTimeout: 30
 inputs:
   type: object
   properties:
@@ -80,26 +81,26 @@ inputs:
   additionalProperties: false
 jobs:
 - name: publication
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: input
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/caddy-public-input'
-      behaviorName: ${{ "input-" + run.id }}
+      behaviorName: '${{ "input-caddy-public-input" }}'
       methodName: prepare
       inputs:
         publication: ${{ inputs.intent.caddy_publication }}
   - name: apply-config
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-apply-config-" + run.id }}
+      behaviorName: '${{ ("route-ssh-apply-config-" + string(inputs.intent.caddy_publication.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &id001
-        name: ${{ "route-ssh-" + run.id }}
+        name: '${{ ("route-ssh-apply-config-" + string(inputs.intent.caddy_publication.connection.nodeHost)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.caddy_publication.connection.nodeUser }}
@@ -128,11 +129,11 @@ jobs:
       condition:
         type: succeeded
   - name: validate
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-validate-" + run.id }}
+      behaviorName: '${{ ("route-ssh-validate-" + string(inputs.intent.caddy_publication.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -147,11 +148,11 @@ jobs:
       condition:
         type: succeeded
   - name: reload
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-reload-" + run.id }}
+      behaviorName: '${{ ("route-ssh-reload-" + string(inputs.intent.caddy_publication.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -166,18 +167,18 @@ jobs:
       condition:
         type: succeeded
 - name: completion
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn:
   - job: publication
     condition:
       type: succeeded
   steps:
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "result-" + run.id }}
+      behaviorName: '${{ "result-shell" }}'
       methodName: execute
       inputs:
         run: printf '{"ready":true,"result":"published","version":"%s"}\n' "$ORBIT_CADDY_VERSION"

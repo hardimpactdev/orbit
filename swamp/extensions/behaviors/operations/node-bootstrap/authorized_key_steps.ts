@@ -1,6 +1,6 @@
 type Fields = Record<string, unknown>;
 const expr = (source: string) => "${{ " + source + " }}";
-const placement = { target: "orbit-node-209", labels: { node: "209" } };
+const placement = { labels: { role: "swamp" } };
 const after = (step: string) => [{ step, condition: { type: "succeeded" } }];
 
 /** The tracked agent footprint and bootstrap share one idempotent authorized-key action. */

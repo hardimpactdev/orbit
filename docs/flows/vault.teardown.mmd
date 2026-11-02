@@ -1,0 +1,94 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, DECISIONS R1 (--keep-items is record-only), R2-R4, swamp-vault-design. Same shape as tool.remove. docs/reference/vaultwarden.md.
+  %% status: draft
+  %% command: vault:teardown
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane VW icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant VW as Vaultwarden<br/>vault.orbit Route
+  CLI->>GW: vault:teardown<br/>--keep-items · --yes
+  %%> Command:
+  %%> - `orbit vault:teardown --yes`
+  %%> - syntax: `[--keep-items] [--yes] [--idempotency-key=KEY] [--json]`
+  %%> Confirmation:
+  %%> - in a terminal the CLI asks a default-No question; without a terminal, or with `--json`, `--yes` is required
+  Note over GW: Validate, lock the vault<br/>task #5169 · 14 items
+  %%> Requirements:
+  %%> - the `vault` extension is on and Vaultwarden is set up, else `vault.not_configured`
+  %%> - no other setup, sync or teardown runs, else `vault.sync_busy`
+  %%> Decides:
+  %%> - whether the published items must leave Vaultwarden, or only the setup goes
+  alt with --keep-items
+    Note over GW: Delete setup and ledger<br/>R1: no run, items stay
+    %%> Result:
+    %%> - the stored account, organization, collection and publishing ledger are deleted
+    %%> - the items stay in Vaultwarden; a later setup on the same collection can adopt them
+    %%> - no Swamp run starts (R1); Vaultwarden is not contacted
+    GW-->>CLI: Torn down<br/>items kept in Vaultwarden
+    %%> What you get:
+    %%> - the final result at once; there is nothing to follow
+  else delete the items
+    GW->>SW: Start run, full intent<br/>operation-vault-teardown
+    %%> What it does:
+    %%> - pushes the account secrets to the Swamp vault as `vault-teardown-5169` after commit (R3), then starts one Swamp run on serve (Node 209)
+    %%> Inputs:
+    %%> - the setup and the ledger of published item IDs and sources, and the vault key names
+    GW-->>CLI: 202 Accepted<br/>task #5169
+    %%> What you get:
+    %%> - the task number, at once
+    %%> Next:
+    %%> - the CLI follows the task with `operation:show`
+    SW->>VW: Log in and unlock<br/>bw login · unlock · sync
+    %%> How:
+    %%> - the official Bitwarden CLI on 209, in a scratch home, trusting only the Orbit root CA
+    SW->>VW: Read the collection<br/>bw list items
+    %%> What it does:
+    %%> - finds the items whose ID and decrypted `orbit.source` still match the ledger
+    %%> Refuses:
+    %%> - before any deletion, when a matching item also belongs to another visible collection: `vault.item_shared`
+    SW->>VW: Delete the items<br/>bw delete --permanent
+    %%> What it does:
+    %%> - deletes each matching item permanently, one per step
+    %%> Leaves:
+    %%> - unrecorded copies and items whose source differs from the ledger
+    SW->>VW: Log out<br/>bw logout · remove scratch home
+    %%> What it does:
+    %%> - logs out and deletes the scratch home, on success and on failure
+    alt every item deleted
+      VW-->>SW: 14 items deleted
+      %%> Returns:
+      %%> - the deleted item IDs
+      SW-->>GW: Run succeeded<br/>terminal event
+      %%> How the Gateway learns it:
+      %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+      Note over GW: Delete setup and ledger<br/>task succeeded
+      %%> Result:
+      %%> - the stored account, organization, collection and publishing ledger are deleted
+      %%> - task #5169 succeeds
+    else a step fails
+      VW--xSW: refused or no answer
+      %%> When:
+      %%> - login fails, Vaultwarden is down, an item is shared, or a delete fails
+      SW--xGW: Run failed<br/>error_code, failed step
+      %%> The Gateway reads:
+      %%> - which step failed and its safe error code
+      Note over GW: Keep the setup<br/>ledger minus deleted items
+      %%> Result:
+      %%> - the setup stays; the ledger drops only the items that were deleted; task #5169 fails
+      %%> Retry:
+      %%> - safe: run the same command again; it deletes only what is still there
+    end
+    loop every 2 s until terminal
+      CLI->>GW: operation:show #5169
+      %%> What it does:
+      %%> - asks for the task's status every 2 seconds until it has ended
+      GW-->>CLI: status + result
+      %%> Returns:
+      %%> - the current status, and the result once the task has ended
+    end
+  end

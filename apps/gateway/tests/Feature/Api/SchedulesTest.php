@@ -21,11 +21,13 @@ use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 use Tests\Support\Schedules\FakeScheduleRuntimeManager;
+use Tests\Support\Schedules\NativeScheduleReplies;
 use Tests\TestCase;
 
 beforeEach(function (): void {
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    $socket->reply = fn (array $request): array => NativeScheduleReplies::for($request)
+        ?? [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'shared.scoped.fixture']);
     $this->gateway = schedules_api_node('gateway', '10.44.0.2');
@@ -43,7 +45,7 @@ beforeEach(function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
 });
 
-it('exposes exactly eight UUID-keyed Schedule routes and returns 404 for unknown identities', function (): void {
+it('exposes exactly nine UUID-keyed Schedule routes and returns 404 for unknown identities', function (): void {
     $routes = collect(Route::getRoutes()->getRoutes())
         ->filter(static fn (RoutingRoute $route): bool => str_starts_with($route->uri(), 'api/v1/schedules'))
         ->mapWithKeys(static fn (RoutingRoute $route): array => [
@@ -58,6 +60,7 @@ it('exposes exactly eight UUID-keyed Schedule routes and returns 404 for unknown
         'schedule:complete' => ['methods' => ['POST'], 'uri' => 'api/v1/schedules/{schedule}/complete'],
         'schedule:create' => ['methods' => ['POST'], 'uri' => 'api/v1/schedules'],
         'schedule:destroy' => ['methods' => ['DELETE'], 'uri' => 'api/v1/schedules/{schedule}'],
+        'schedule:disable' => ['methods' => ['POST'], 'uri' => 'api/v1/schedules/{schedule}/disable'],
         'schedule:enable' => ['methods' => ['POST'], 'uri' => 'api/v1/schedules/{schedule}/activate'],
         'schedule:list' => ['methods' => ['GET', 'HEAD'], 'uri' => 'api/v1/schedules'],
         'schedule:logs' => ['methods' => ['GET', 'HEAD'], 'uri' => 'api/v1/schedules/{schedule}/logs'],
@@ -78,7 +81,7 @@ it('adds lists shows and runs bounded Schedule data without changing disabled ti
     $created->assertHeader('X-Orbit-Request-Id')->assertJsonStructure(['meta' => ['request_id']]);
     $operationId = $created->json('data.id');
     $scheduleId = Operation::query()->findOrFail($operationId)->input['id'];
-    expect(Schedule::query()->findOrFail($scheduleId)->status)->toBe(LifecycleStatus::Provisioning);
+    expect(Schedule::query()->findOrFail($scheduleId)->status)->toBe(LifecycleStatus::Active);
     expect($this->agents->calls)->toBe([]);
     schedules_api_finish($this, $operationId);
 
@@ -276,7 +279,7 @@ it('records seven sanitized operator Activities and no completion Activity', fun
     $created = $this->postJson('/api/v1/schedules', $payload)->assertAccepted()->assertJsonPath('data.kind', 'schedule.create');
     $operationId = $created->json('data.id');
     $scheduleId = Operation::query()->findOrFail($operationId)->input['id'];
-    expect(Schedule::query()->findOrFail($scheduleId)->status)->toBe(LifecycleStatus::Provisioning);
+    expect(Schedule::query()->findOrFail($scheduleId)->status)->toBe(LifecycleStatus::Active);
     expect($this->agents->calls)->toBe([]);
     schedules_api_finish($this, $operationId);
     $this->getJson("/api/v1/schedules/{$scheduleId}")->assertOk();
@@ -377,6 +380,8 @@ function schedules_api_node(string $name, string $ip): Node
         },
         'public_ssh_port' => 22,
         'user' => 'orbit',
+        'ssh_host_key_type' => 'ssh-ed25519',
+        'ssh_host_key' => 'fixture-host-key',
         'wireguard_ip' => $ip,
     ]);
 }
@@ -443,6 +448,9 @@ function schedules_api_payload(
 function schedules_api_finish(TestCase $test, int $id): void
 {
     $operation = Operation::query()->findOrFail($id);
+    if ($operation->status->terminal()) {
+        return;
+    }
     $test->withServerVariables(['REMOTE_ADDR' => Node::query()->findOrFail($operation->node_id)->wireguard_ip]);
     $test->postJson('/api/v1/direct-operations/'.$id.'/result', ['run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded', 'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z', 'result' => ['ready' => true]])->assertOk();
     $test->withServerVariables(['REMOTE_ADDR' => $test->gateway->wireguard_ip]);

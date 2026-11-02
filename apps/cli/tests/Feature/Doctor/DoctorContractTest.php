@@ -52,15 +52,11 @@ describe('doctor discovery contract', function (): void {
 /** @param array<string, mixed> $arguments */
 function run_doctor_operation_contract(string $fixtureName, string $command, array $arguments, string $expected, int $exitCode): void
 {
+    // Each fixture is the Gateway's 202 reply that returns a finished Doctor Operation, as a replayed request does.
     $fixture = gateway_fixture($fixtureName);
-    $response = json_decode($fixture['body'], true, flags: JSON_THROW_ON_ERROR);
-    $operation = [
-        'id' => 41, 'kind' => 'doctor.inspect', 'target_type' => 'node', 'target_id' => 7,
-        'status' => 'succeeded', 'sequence' => 1, 'result' => ['report' => $response['data']],
-    ];
     MockClient::destroyGlobal();
     MockClient::global([
-        RunDoctorRequest::class => MockResponse::make(['data' => $operation, 'meta' => $response['meta']], 202),
+        RunDoctorRequest::class => MockResponse::make($fixture['body'], $fixture['status']),
     ]);
     expect(Artisan::call($command, $arguments))->toBe($exitCode);
     expect_output(Artisan::output(), $expected);

@@ -15,9 +15,9 @@ for (const kind of ["create", "control", "run", "destroy"]) {
     };
     for (const job of workflow.jobs) {
       for (const scope of [job, ...job.steps]) {
-        assertEquals(scope.target, "orbit-node-209");
+        assertEquals(scope.labels, { role: "swamp" });
         assertEquals(["target", "labels"].filter((key) => key in scope), [
-          "target",
+          "labels",
         ]);
       }
     }

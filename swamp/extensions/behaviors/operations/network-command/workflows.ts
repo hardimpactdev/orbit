@@ -1,3 +1,4 @@
+import { dotless } from "../_lib/behavior_name.ts";
 /** The two direct roots share native action assembly, never an execution engine. */
 import { stringify } from "jsr:@std/yaml@1.0.5";
 const expr = (s: string) => "${{ " + s + " }}";
@@ -15,7 +16,7 @@ function steps() {
     ) => {
         list.push({
             name,
-            target: "orbit-node-209",
+            labels: { role: "swamp" },
             ...(list.length
                 ? {
                     dependsOn: list.map((prior) => ({
@@ -37,7 +38,8 @@ function steps() {
     ) => add(name, {
         type: "behavior",
         behaviorType: "@nckrtl/network-command",
-        behaviorName: expr('"' + name + '-"+run.id'),
+        // Named with its type: fixed names such as `result` recur across behavior types.
+        behaviorName: expr(JSON.stringify(name + "-network-command")),
         methodName: method,
         inputs,
     }, guard);
@@ -54,16 +56,16 @@ function steps() {
             type: "behavior",
             behaviorType: "@swamp/ssh",
             behaviorName: expr(
-                (connection === "inputs.intent.hub_ssh"
+                dotless((connection === "inputs.intent.hub_ssh"
                     ? '"network-hub-"'
-                    : '"network-peer-"') + "+run.id",
+                    : '"network-peer-"') + " + string(" + connection + ".target.host)"),
             ),
             methodName: method,
             globalArgs: {
                 name: expr(
-                    (connection === "inputs.intent.hub_ssh"
+                    dotless((connection === "inputs.intent.hub_ssh"
                         ? '"network-hub-"'
-                        : '"network-peer-"') + "+run.id",
+                        : '"network-peer-"') + " + string(" + connection + ".target.host)"),
                 ),
                 transport: {
                     kind: "ssh",
@@ -258,7 +260,7 @@ export function workflow(network: boolean) {
         description:
             "Pinned official SSH from209; full public input and typed terminal output.",
         vaults: [],
-        target: "orbit-node-209",
+        labels: { role: "swamp" },
         inputs: {
             type: "object",
             properties: {

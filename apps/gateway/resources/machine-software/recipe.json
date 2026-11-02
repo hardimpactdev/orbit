@@ -1181,6 +1181,9 @@
             "attr",
             "unzip",
             "php:8.5"
+        ],
+        "swamp": [
+            "caddy"
         ]
     },
     "base": [

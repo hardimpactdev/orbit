@@ -45,6 +45,19 @@ it('publishes full public schedule inputs without admitting an Operation at acti
         ->and(($this->state)()['published'])->toBeTrue();
 });
 
+it('publishes the hourly cadence and republishes an unchanged snapshot whose cadence changed', function (): void {
+    expect($this->socket->sent[0]['payload']['schedule'])->toBe('40 17 * * * *');
+
+    $state = ($this->state)();
+    Setting::query()->where('key', ScheduledProjectMaintenance::StateKey)->update(['value' => json_encode([...$state, 'schedule' => '40 * * * * *'], JSON_THROW_ON_ERROR)]);
+    $this->schedule->publish();
+    $this->schedule->publish();
+
+    expect($this->socket->sent)->toHaveCount(2)
+        ->and($this->socket->sent[1]['payload']['schedule'])->toBe('40 17 * * * *')
+        ->and(($this->state)()['schedule'])->toBe('40 17 * * * *');
+});
+
 it('admits the normal native Project Operation only on a terminal selection and makes restart replay a noop', function (): void {
     $this->schedule->applyScheduled(ScheduledProjectMaintenance::Workflow, $this->run, $this->result);
     app()->forgetInstance(ScheduledProjectMaintenance::class);

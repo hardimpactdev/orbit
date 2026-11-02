@@ -23,17 +23,17 @@ inputs:
   additionalProperties: false
 jobs:
 - name: ssh
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: available
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-ssh-bootstrap-"+run.id }}
+      behaviorName: '${{ ("vm-ssh-bootstrap-" + string((inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution : inputs.intent.ssh_execution).target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &id001
-        name: ${{ "vm-ssh-bootstrap-"+run.id }}
+        name: '${{ ("vm-ssh-bootstrap-" + string((inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution : inputs.intent.ssh_execution).target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution
@@ -56,11 +56,11 @@ jobs:
         sudo: ${{ inputs.intent.provider != "incus" }}
         timeoutSec: 180
   - name: package
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-ssh-bootstrap-"+run.id }}
+      behaviorName: '${{ ("vm-ssh-bootstrap-" + string((inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution : inputs.intent.ssh_execution).target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -77,11 +77,11 @@ jobs:
       condition:
         type: succeeded
   - name: host-keys
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-ssh-bootstrap-"+run.id }}
+      behaviorName: '${{ ("vm-ssh-bootstrap-" + string((inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution : inputs.intent.ssh_execution).target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -95,11 +95,11 @@ jobs:
       condition:
         type: succeeded
   - name: authorize-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-bootstrap-command'
-      behaviorName: ${{ "vm-ssh-authorize-"+run.id }}
+      behaviorName: '${{ "vm-ssh-authorize" }}'
       methodName: authorized_key
       inputs:
         user: ${{ inputs.intent.user }}
@@ -109,11 +109,11 @@ jobs:
       condition:
         type: succeeded
   - name: authorize
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-ssh-bootstrap-"+run.id }}
+      behaviorName: '${{ ("vm-ssh-bootstrap-" + string((inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution : inputs.intent.ssh_execution).target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -129,11 +129,11 @@ jobs:
       condition:
         type: succeeded
   - name: firewall-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-lifecycle-input'
-      behaviorName: ${{ "vm-ssh-input-"+run.id }}
+      behaviorName: '${{ "vm-ssh-input" }}'
       methodName: ssh_firewall
       inputs: {}
     dependsOn:
@@ -141,11 +141,11 @@ jobs:
       condition:
         type: succeeded
   - name: firewall
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-ssh-bootstrap-"+run.id }}
+      behaviorName: '${{ ("vm-ssh-bootstrap-" + string((inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution : inputs.intent.ssh_execution).target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -161,11 +161,11 @@ jobs:
       condition:
         type: succeeded
   - name: sshd
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-ssh-bootstrap-"+run.id }}
+      behaviorName: '${{ ("vm-ssh-bootstrap-" + string((inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution : inputs.intent.ssh_execution).target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -180,11 +180,11 @@ jobs:
       condition:
         type: succeeded
   - name: host-key
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-ssh-bootstrap-"+run.id }}
+      behaviorName: '${{ ("vm-ssh-bootstrap-" + string((inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution : inputs.intent.ssh_execution).target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -199,11 +199,11 @@ jobs:
       condition:
         type: succeeded
   - name: guest
-    target: orbit-node-209
+    labels: {role: swamp}
     task: &id002
       type: behavior
       behaviorType: '@nckrtl/task-vm-ssh-input'
-      behaviorName: ${{ "vm-ssh-guest-"+run.id }}
+      behaviorName: '${{ "vm-ssh-guest" }}'
       methodName: observe
       inputs:
         intent: ${{ inputs.intent }}
@@ -213,14 +213,14 @@ jobs:
       condition:
         type: succeeded
   - name: verify
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-ssh-verify-"+run.id }}
+      behaviorName: '${{ ("vm-ssh-verify-" + string(steps.guest.outputs.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: ${{ "vm-ssh-verify-"+run.id }}
+        name: '${{ ("vm-ssh-verify-" + string(steps.guest.outputs.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ steps.guest.outputs.ssh_execution.target.user }}
@@ -241,7 +241,7 @@ jobs:
       condition:
         type: succeeded
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task: *id002
     dependsOn:
     - step: verify
