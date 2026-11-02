@@ -55,7 +55,7 @@ The removal family uses official cfgmgmt and direct SSH argv, with no shipped sc
 
 | Chart action | Separate pinned operations and candidate question |
 | --- | --- |
-| Install prerequisites | Refresh APT, apply packages, fetch pinned PHP packages, install them in one transaction, check exact versions. Could apt accept verified local package sets and bounded lock options? |
+| Install prerequisites | Check the retained Docker provider, refresh APT, install missing packages through one bounded `--no-remove --no-upgrade` argv, fetch pinned PHP packages and check exact versions. Could apt support these preservation and lock options? |
 | Apply the role runtime | File and directory apply, systemd apply, restart and check remain separate methods. Could systemd restart only when its binary or configuration changes? |
 | Write private files | File apply and check retain only content hashes and metadata. Numeric owners compare against stat's account names, so Grafana needs a named account at UID/GID 472. Could file resolve numeric owners for its compliance check? |
 | Publish the config | File stages a candidate, SSH validates and copies over the live inode, then sends SIGHUP. Could file preserve the inode for single-file Docker bind mounts? |
@@ -87,3 +87,4 @@ The pinned workflow input validator rejects explicit null before inspecting `any
 The pass-3 routine design reads unfinished attempts from native Swamp run history and removes begin/finish notes. Pinned Swamp e459 exposes `queryData` to user behaviors, but that API reads resource data, not unfinished execution records. The extension-author context does not expose the internal `outputRepository`, although the internal worker proxy implements it. Could a supported, scoped run-history query be exposed to user behaviors?
 
 Three native draft runs failed with `project.routine_history_unavailable`; one is `b884a2b0-e122-4f4e-8dc6-59294b51ae46`. A pure test that supplied the internal repository hid this missing capability. The official extension catalog has no native Swamp history reader. The unproven draft remains outside the shipped source; no replacement ledger, filesystem scan, token or wrapper was added. Routine still awaits this capability or an explicit design decision.
+Nested exporter children use forEach concurrency 1 on the shared control worker. Unbounded child starts exhausted the pinned runtime's 30-second worker queue while sibling children still ran. Could the dispatcher apply backpressure before admitting child work, while preserving parallelism across Nodes?

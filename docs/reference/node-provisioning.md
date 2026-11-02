@@ -20,6 +20,8 @@ Standalone `node.converge`, `node.ssh_access_converge`, `node.agent_rekey` and a
 
 The Gateway projects the terminal result and records settings or completed footprint artifacts.
 
+Native role prerequisites retain a complete Docker CE installation instead of installing `docker.io` over it. One bounded APT command installs missing prerequisites with removal and upgrades disabled. The end check verifies the retained provider packages or the normal Ubuntu packages. Exporter children use bounded fan-out so a single control worker does not exhaust their native queue timeout.
+
 Node and standalone role removal also execute from 209. They remove services, files, containers and authorized keys with official cfgmgmt behaviors. Direct commands use SSH argv. No removal script ships to a worker or a Node. Publication withdrawal finishes before runtime removal. Node removal publishes Metrics membership before stopping exporters, updates the full hub configuration, and removes management keys last. Offline consent skips only an unreachable departing Node; other participants still converge.
 
 Removal retains packages, accounts, runtime data and unrelated SSH keys. Explicit role purge removes the admitted WebSocket releases, Metrics volumes, or drained CI resources. A regular CI role removal retains its project, image cache and network. Native resource checks and one assert determine completion; the Gateway records the public result from that run.

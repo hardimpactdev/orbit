@@ -73,6 +73,21 @@ jobs:
           ssh: '${{ inputs.intent.ssh }}', package: '${{ inputs.intent.caddy_package }}'}}}
   dependsOn:
   - {job: phase_1, condition: {type: succeeded}}
+- name: docker_provider
+  labels:
+    role: swamp
+  dependsOn:
+  - {job: phase_2, condition: {type: succeeded}}
+  steps:
+  - name: Inspect Docker CE
+    labels:
+      role: swamp
+    forEach:
+      item: probe
+      in: '${{ "docker.io" in inputs.intent.packages ? [0] : [] }}'
+    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/apt', behaviorName: '${{ "role-add-docker-provider-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: check, globalArgs: {
+        nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file
+          }}', become: true, packages: [docker-ce, docker-ce-cli, containerd.io], ensure: present}, inputs: {}}
 - name: phase_3
   labels:
     role: swamp
@@ -84,8 +99,10 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/cfgmgmt/apt', behaviorName: '${{ "role-add-packages-"+string(inputs.node_id) }}', methodName: refresh, globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host
           }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true},
       inputs: {}}
+    guard: ${{ inputs.intent.packages.filter(p,p != "docker.io" || !("docker.io" in inputs.intent.packages && steps["Inspect Docker CE-0"].outputs.status == "compliant")).size() == 0
+      }}
   dependsOn:
-  - {job: phase_2, condition: {type: succeeded}}
+  - {job: docker_provider, condition: {type: succeeded}}
 - name: phase_4
   labels:
     role: swamp
@@ -94,9 +111,13 @@ jobs:
     labels:
       role: swamp
     writes: true
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/apt', behaviorName: '${{ "role-add-packages-"+string(inputs.node_id) }}', methodName: apply, globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host
-          }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true,
-        packages: '${{ inputs.intent.packages }}', ensure: present}, inputs: {}}
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-prerequisites-"+string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "role-add-prerequisites-"+string(inputs.node_id)
+          }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'},
+        hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target',
+        sudo: true, timeoutSec: 605, argv: '${{ ["timeout","600","env","DEBIAN_FRONTEND=noninteractive","NEEDRESTART_MODE=l","apt-get","-o","DPkg::Lock::Timeout=60","--no-remove","--no-upgrade","install","-y"]
+          + inputs.intent.packages.filter(p,p != "docker.io" || !("docker.io" in inputs.intent.packages && steps["Inspect Docker CE-0"].outputs.status == "compliant")) }}'}}
+    guard: ${{ inputs.intent.packages.filter(p,p != "docker.io" || !("docker.io" in inputs.intent.packages && steps["Inspect Docker CE-0"].outputs.status == "compliant")).size() == 0
+      }}
   dependsOn:
   - {job: phase_3, condition: {type: succeeded}}
 - name: phase_5
@@ -226,7 +247,7 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-php-install-"+string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "role-add-php-install-"+string(inputs.node_id)
           }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'},
         hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target',
-        sudo: true, argv: '${{ ["timeout","900","env","DEBIAN_FRONTEND=noninteractive","NEEDRESTART_MODE=l","apt-get","--no-remove","install","--yes","--no-install-recommends","-o","Dpkg::Options::=--force-confold"]
+        sudo: true, argv: '${{ ["timeout","900","env","DEBIAN_FRONTEND=noninteractive","NEEDRESTART_MODE=l","apt-get","--no-remove","--no-upgrade","install","--yes","--no-install-recommends","-o","Dpkg::Options::=--force-confold"]
           + inputs.intent.php_packages.map(p,p.path) }}', timeoutSec: 910}}
   dependsOn:
   - {job: phase_11, condition: {type: succeeded}}
@@ -1095,6 +1116,7 @@ jobs:
       in: ${{ inputs.intent.exporters }}
     task: {type: workflow, workflowIdOrName: metrics-exporter-node, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ self.exporter.exporter_node_id }}', kind: '${{
           inputs.kind }}', intent: '${{ self.exporter }}'}}
+    concurrency: 1
   dependsOn:
   - {job: phase_56, condition: {type: succeeded}}
 - name: phase_58
@@ -1297,7 +1319,9 @@ jobs:
       role: swamp
     task: {type: behavior, behaviorType: '@swamp/cfgmgmt/apt', behaviorName: '${{ "role-add-packages-check-"+string(inputs.node_id) }}', methodName: check, globalArgs: {nodeHost: '${{
           inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file
-          }}', become: true, packages: '${{ inputs.intent.packages }}', ensure: present}, inputs: {}}
+          }}', become: true, packages: '${{ inputs.intent.packages.filter(p,p != "docker.io" || !("docker.io" in inputs.intent.packages && steps["Inspect Docker CE-0"].outputs.status
+          == "compliant")) + (("docker.io" in inputs.intent.packages && steps["Inspect Docker CE-0"].outputs.status == "compliant") ? ["docker-ce","docker-ce-cli","containerd.io"] :
+          []) }}', ensure: present}, inputs: {}}
   dependsOn:
   - {job: phase_69, condition: {type: succeeded}}
 - name: phase_71

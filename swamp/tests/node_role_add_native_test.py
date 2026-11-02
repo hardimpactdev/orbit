@@ -55,7 +55,21 @@ if a[0]=='show':
 if sys.argv[1:]==['/etc/os-release']:print('ID=ubuntu\\nVERSION_CODENAME=resolute')
 else:sys.exit(subprocess.call(['/bin/cat',*sys.argv[1:]]))
 ''',
-            'apt-get': 'pass\n', 'chown': 'pass\n', 'chgrp': 'pass\n',
+            'dpkg-query': '''import json,os,subprocess,sys
+from pathlib import Path
+if sys.argv[-1] in json.loads(Path(os.environ['STATE']).read_text()).get('packages',[]):print('install ok installed 1.0');sys.exit(0)
+if os.environ.get('DOCKER_CE')=='1':
+ if sys.argv[-1] in ('docker-ce','docker-ce-cli','containerd.io'):print('install ok installed 29.0.0');sys.exit(0)
+ if sys.argv[-1]=='docker.io':sys.exit(1)
+sys.exit(subprocess.call(['/usr/bin/dpkg-query',*sys.argv[1:]]))
+''',
+            'apt-get': '''import json,os,sys
+from pathlib import Path
+p=Path(os.environ['STATE']);s=json.loads(p.read_text());s['calls'].append(['apt-get',*sys.argv[1:]]);p.write_text(json.dumps(s))
+if os.environ.get('DOCKER_CE')=='1' and 'docker.io' in sys.argv:sys.exit(1)
+if 'install' in sys.argv:
+ s['packages']=sys.argv[sys.argv.index('install')+1:];p.write_text(json.dumps(s))
+''', 'chown': 'pass\n', 'chgrp': 'pass\n',
         }
         for name, source in scripts.items():
             path = tools / name
@@ -108,3 +122,23 @@ else:sys.exit(subprocess.call(['/bin/cat',*sys.argv[1:]]))
         history = self.run_role(success=False)
         statuses = {step['name']: step['status'] for job in history['jobs'] for step in job['steps']}
         self.assertEqual(statuses['Check the role'], 'failed')
+
+    def test_healthy_docker_ce_satisfies_the_private_container_prerequisite(self):
+        self.native_env['DOCKER_CE'] = '1'
+        self.state.write_text(json.dumps({'active': True, 'enabled': True, 'calls': []}))
+        self.intent['packages'] = ['docker.io']
+        history = self.run_role()
+        statuses = {step['name']: step['status'] for job in history['jobs'] for step in job['steps']}
+        self.assertEqual(statuses['Check the role'], 'succeeded')
+        self.assertEqual(statuses['Install prerequisites'], 'skipped')
+        self.assertFalse(any('docker.io' in call for call in json.loads(self.state.read_text())['calls']))
+
+    def test_prerequisite_install_cannot_remove_or_upgrade_existing_packages(self):
+        self.intent['packages'] = ['fixture-prerequisite']
+        history = self.run_role()
+        statuses = {step['name']: step['status'] for job in history['jobs'] for step in job['steps']}
+        self.assertEqual(statuses['Check the role'], 'succeeded')
+        install = next(call for call in json.loads(self.state.read_text())['calls'] if call[0] == 'apt-get' and 'install' in call)
+        self.assertIn('--no-remove', install)
+        self.assertIn('--no-upgrade', install)
+        self.assertIn('DPkg::Lock::Timeout=60', install)

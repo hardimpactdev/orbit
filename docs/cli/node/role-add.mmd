@@ -61,8 +61,11 @@ sequenceDiagram
   opt role plan needs this action
   SW->>N: Install Caddy<br/>native child workflow
   end
+  opt Docker is a prerequisite
+  SW->>N: Inspect Docker CE<br/>cfgmgmt apt check
+  end
   SW->>N: Refresh package lists<br/>cfgmgmt apt
-  SW->>N: Install prerequisites<br/>cfgmgmt apt
+  SW->>N: Install prerequisites<br/>bounded SSH argv
   opt role plan needs this action
   SW->>N: Create role folders<br/>cfgmgmt directory
   end
