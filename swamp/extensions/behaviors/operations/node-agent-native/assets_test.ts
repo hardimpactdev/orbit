@@ -5,7 +5,6 @@ import {
     envelope,
     pools,
     result,
-    storage,
 } from "./assets.ts";
 const pin = "a".repeat(64),
     account = {
@@ -15,42 +14,6 @@ const pin = "a".repeat(64),
         home: "/home/orbit",
         shell: "/bin/zsh",
     };
-const planned = {
-    root: null,
-    user: "orbit",
-    create_missing: true,
-    protected_roots: ["/etc"],
-    managed_checkouts: ["/srv/checkouts/project"],
-};
-Deno.test("settings resolves the admitted account and protects home, system and checkout paths", () => {
-    const e = JSON.parse(storage({ storage: planned, account, pin }).stdin);
-    assertEquals(e.input, {
-        root: "/home/orbit/apps",
-        user: "orbit",
-        group: "orbit-group",
-        create_missing: true,
-    });
-    for (
-        const root of [
-            "/home/orbit",
-            "/home",
-            "/home/orbit/.ssh/apps",
-            "/etc/data",
-            "/srv/checkouts/project",
-        ]
-    ) {
-        assertThrows(() =>
-            storage({ storage: { ...planned, root }, account, pin })
-        );
-    }
-    assertThrows(() =>
-        storage({
-            storage: planned,
-            account: { ...account, user: "foreign" },
-            pin,
-        })
-    );
-});
 Deno.test("frozen configure never receives worker credentials; normal convergence cannot rotate", () => {
     const configuration = {
         configuration: "public",
@@ -141,7 +104,6 @@ Deno.test("existing agent commands retain their command-owned execution budgets"
     for (
         const [command, deadline] of Object.entries({
             "account.lookup": 10000,
-            "node.prepare-storage-root": 30000,
             "agent.configure": 420000,
             "agent.install": 180000,
             "caddy.install-package": 600000,

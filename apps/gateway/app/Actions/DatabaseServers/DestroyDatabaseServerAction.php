@@ -6,14 +6,14 @@ namespace App\Actions\DatabaseServers;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\DockerProcessRenderer;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\DatabaseServer;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 
-/** Records Process removal. The named data volume remains on the Node. */
+/** Records Process removal, or removes a server without a Process at once (R1). The data volume remains on the Node. */
 final readonly class DestroyDatabaseServerAction
 {
     public function __construct(private StartOperationAction $operations) {}
@@ -32,27 +32,22 @@ final readonly class DestroyDatabaseServerAction
                     ? 'The server has an unfinished create intent.' : 'The server has an unfinished removal intent.', 409);
             }
             $process = $server->process;
+            $requestId = request()->attributes->getString('orbit.request_id');
+            // R1: a server without a Process has nothing on its Node; the record goes at once.
+            if ($process === null) {
+                $operation = $this->operations->record('database_server.destroy', 'database_server', $server->id, $server->node_id,
+                    ['server_id' => $server->id, 'process_id' => null, 'container' => null], ['backend' => 'absent'], 'operator', $requestId);
+                $server->delete();
+
+                return $operation;
+            }
+            app(SwampSshExecutionInput::class)->forNode($server->node);
             $operation = $this->operations->execute('database_server.destroy', 'database_server', $server->id, $server->node_id,
-                ['server_id' => $server->id, 'process_id' => $process?->id,
-                    'container' => $process === null ? null : (new DockerProcessRenderer)->containerName($process), 'record_only' => $this->preservesAdoption($server)],
-                'operator', request()->attributes->getString('orbit.request_id'));
+                ['server_id' => $server->id, 'process_id' => $process->id, 'container' => (new DockerProcessRenderer)->containerName($process)],
+                'operator', $requestId);
             $server->update(['status' => 'removing']);
 
             return $operation;
         });
-    }
-
-    private function preservesAdoption(DatabaseServer $server): bool
-    {
-        $creates = Operation::query()->where('kind', 'database_server.create')->where('target_type', 'database_server')->where('target_id', $server->id);
-        if ($server->status === LifecycleStatus::Active || (clone $creates)->where(fn ($query) => $query->where('status', 'succeeded')->orWhere('input->was_active', true))->exists()) {
-            return false;
-        }
-        $create = $creates->latest('id')->first();
-        $input = $create->input ?? [];
-
-        return $create?->node_id === $server->node_id
-            && ($input['server_id'] ?? null) === $server->id && ($input['process_id'] ?? null) === $server->process_id
-            && ($input['validate_existing'] ?? false) === true && ($input['was_active'] ?? null) === false;
     }
 }

@@ -12,3 +12,7 @@ instance.destroy
 project.detect
 project.observe
 project.routine
+node.settings
+database_server.create
+database_server.destroy
+node.converge

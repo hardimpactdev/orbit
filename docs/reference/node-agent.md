@@ -8,7 +8,7 @@ covers:
   - apps/gateway/{app/Infrastructure/AgentCommands/**,database/migrations/2027_01_02_000000_add_agent_failed_pin_to_nodes.php}
   - apps/gateway/app/{Http/Controllers/Api/AgentRealtimeController,Actions/Gateway/BootstrapGatewayAction}.php
   - apps/gateway/app/Http/Middleware/RequireNodeAgentSecret.php
-  - apps/gateway/app/{Domain/Nodes/{NodeAgentRekey*,NodeConverge*,NodeSettingsProjection},Actions/Nodes/StartNodeConvergeAction,Console/Commands/RekeyNodeAgentCommand}.php
+  - apps/gateway/app/{Domain/Nodes/{NodeAgentRekey*,NodeConverge*},Actions/Nodes/StartNodeConvergeAction,Console/Commands/RekeyNodeAgentCommand}.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
 ---
 
@@ -401,7 +401,7 @@ Every Unix user on a Node reaches the Gateway from the Node's WireGuard address,
 
 The agent reads the file when it starts. It exits with an error when the file is missing or malformed, and systemd starts it again after 2 seconds. The Gateway compares the hashes in constant time.
 
-Retained enrollment and role configuration sends the stored hash to `agent.configure`. Its existing rotation policy keeps a matching secret and can replace a missing or mismatched secret. Standalone direct footprint convergence sets `allow_secret_rotation=false`: a missing or mismatched secret refuses before writes, and only its public verifier is returned to the native result. Deleting the secret and running standalone `node:converge` does not rotate it. Coordinate planned rotation through the credential owner; there is no scheduled rotation.
+Retained enrollment and role configuration sends the stored hash to `agent.configure`. Its existing rotation policy keeps a matching secret and can replace a missing or mismatched secret. Standalone `node:converge` only compares the secret with the recorded verifier: a missing or mismatched secret refuses before writes. Deleting the secret and running `node:converge` does not rotate it. Coordinate planned rotation through the credential owner; there is no scheduled rotation.
 
 Retained configuration that permits rotation writes the secret file first, then installs the other files, restarts the agent, and stores the new hash last. The running agent reads its secret only when it starts. So a converge that fails at any step leaves the running agent with a secret that the Gateway still accepts. The next converge verifies and repairs any mismatch.
 
@@ -538,9 +538,9 @@ The agent converge writes these files on a Linux Node:
 | Unit | `/etc/systemd/system/orbit-agent.service`, marked `# Managed by Orbit: agent` |
 | Kept binary | `/usr/local/bin/orbit-agent.previous`, the binary before the last replacement |
 
-The converge installs the binary first, through [`agent.install`](#install-on-mismatch) from a staged candidate. It then runs `agent.configure`, which writes the configuration, certificate, secret, and unit, and restarts the agent only when one of them or the binary changed. The Gateway sends the secret hash it recorded. The agent keeps a secret file that matches it and otherwise writes a new one, and answers only the new hash. The Gateway stores that hash after the restart.
+Standalone `node:converge` runs the shipped `agent.py` script over official SSH from 209; it calls no agent command. `Install the Node agent` leaves a binary that matches the pin alone. Otherwise it downloads the release, checks its SHA-256, keeps the old binary as `orbit-agent.previous`, and renames the new one in. Other running services of the old binary restart on the new one.
 
-A failed installation or configuration fails the converge with `agent.install_failed`, and a passing installation clears the Node's recorded failed pin. `agent.remove` stops the agent and removes its unit, binary, and directory.
+`Configure the Node agent` checks that the installed secret matches the verifier the Gateway recorded. A missing or mismatched secret refuses with `agent.secret_mismatch` before any write; [`orbit:node-agent-rekey`](#agent-secret) makes a new one. The step never writes a secret. It writes the configuration, certificate and unit, and restarts the agent only when one of them or the binary changed. `Check the footprint` then reads the agent back. A passing converge clears the Node's recorded failed pin. `agent.remove` stops the agent and removes its unit, binary, and directory.
 
 The unit runs the agent as `root` with `Restart=always` and `RestartSec=2`. It grants no capabilities and sets `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=tmpfs`, `BindReadOnlyPaths=-{Instance root}`, `PrivateTmp=yes`, `MemoryMax=128M`, and `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`. The memory limit also covers the `journalctl` processes of live journal streams.
 
@@ -554,7 +554,7 @@ The Instance root is the Node's [apps root](/reference/node-settings#derive-the-
 
 The Instance root and each checkout must stay world-traversable, mode `0755` as Orbit creates them. Otherwise the agent leaves the checkout out. Orbit removes the world bits from an Instance `.env` when it configures the Laravel URL, after registration or transfer, and on each agent converge. Agent converge independently closes environment permissions for the Instances under the Node's apps root; it does not rely on registration or transfer having run.
 
-For Laravel, it uses the shared [application directory](/reference/projects#application-directory): root `apps/site/public` means `<checkout>/apps/site/.env`, not only `<checkout>/.env`. Root `public` and non-Laravel Instances keep the checkout-root path. It closes only regular environment files, without following symlinks or discovering apps by scanning the repository. The Gateway sends the checkout list to `agent.configure`. A `.env` the agent cannot close is named in its answer, and the converge logs a warning and continues.
+For Laravel, it uses the shared [application directory](/reference/projects#application-directory): root `apps/site/public` means `<checkout>/apps/site/.env`, not only `<checkout>/.env`. Root `public` and non-Laravel Instances keep the checkout-root path. It closes only regular environment files, without following symlinks or discovering apps by scanning the repository. The Gateway sends the checkout list to the converge's configure step, which closes each `.env` it finds.
 
 The Gateway converges the agent at these points.
 

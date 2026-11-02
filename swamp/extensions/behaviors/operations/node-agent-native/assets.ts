@@ -17,7 +17,6 @@ const Account = z.object({
 }).strict();
 const Command = z.enum([
     "account.lookup",
-    "node.prepare-storage-root",
     "agent.configure",
     "agent.install",
     "caddy.install-package",
@@ -28,13 +27,6 @@ const Command = z.enum([
 ]);
 const Envelope = z.object({ command: Command, pin: Sha, input: ObjectInput })
     .strict();
-const Storage = z.object({
-    root: Path.nullable(),
-    user: User,
-    create_missing: z.boolean(),
-    protected_roots: z.array(Path),
-    managed_checkouts: z.array(Path),
-}).strict();
 const Agent = z.object({
     configuration: z.string(),
     certificate: z.string(),
@@ -61,7 +53,6 @@ export function envelope(raw: unknown) {
     const a = Envelope.parse(raw);
     const deadline = {
         "account.lookup": 10000,
-        "node.prepare-storage-root": 30000,
         "agent.configure": 420000,
         "agent.install": 180000,
         "caddy.install-package": 600000,
@@ -78,29 +69,6 @@ export function envelope(raw: unknown) {
             input: a.input,
         }),
     };
-}
-export function storage(raw: unknown) {
-    const a = z.object({ storage: Storage, account: Account, pin: Sha })
-        .strict().parse(raw);
-    const { account, storage: s } = a, root = s.root ?? account.home + "/apps";
-    if (
-        account.user !== s.user || root === account.home ||
-        inside(account.home, root) ||
-        inside(root, account.home) &&
-            root.slice(account.home.length + 1).split("/")[0].startsWith(".") ||
-        s.protected_roots.some((p) => overlaps(root, p)) ||
-        s.managed_checkouts.some((p) => root === p || inside(root, p))
-    ) throw new Error("node.settings_root_failed");
-    return envelope({
-        command: "node.prepare-storage-root",
-        pin: a.pin,
-        input: {
-            root,
-            user: account.user,
-            group: account.group,
-            create_missing: s.create_missing,
-        },
-    });
 }
 export function configure(raw: unknown) {
     const a = Configure.parse(raw), c = a.configuration;
@@ -171,18 +139,13 @@ const output = (steps: z.infer<typeof Steps>, name: string) =>
     steps[name]?.outputs ?? {};
 export function result(raw: unknown) {
     const { kind, intent, steps } = z.object({
-        kind: z.enum(["node.settings", "node.agent_rekey", "node.converge"]),
+        kind: z.enum(["node.agent_rekey", "node.converge"]),
         intent: ObjectInput,
         steps: Steps,
     }).strict().parse(raw);
     const failed = Object.entries(steps).find(([name, s]) =>
         s.status === "failed" && !name.startsWith("residue_")
     );
-    if (kind === "node.settings") {
-        return steps.prepare?.status === "succeeded"
-            ? { prepared: true }
-            : { error_code: "node.settings_root_failed" };
-    }
     if (kind === "node.agent_rekey") {
         const agent = output(steps, "observer");
         return !failed && steps.observer?.status === "succeeded" &&
@@ -249,10 +212,6 @@ export const behavior = {
             pools,
         ),
         envelope: method(Envelope, envelope),
-        storage: method(
-            z.object({ storage: Storage, account: Account, pin: Sha }).strict(),
-            storage,
-        ),
         configure: method(Configure, configure),
         decode: method(
             z.object({ stdout: z.string() }).strict(),
@@ -260,11 +219,7 @@ export const behavior = {
         ),
         result: method(
             z.object({
-                kind: z.enum([
-                    "node.settings",
-                    "node.agent_rekey",
-                    "node.converge",
-                ]),
+                kind: z.enum(["node.agent_rekey", "node.converge"]),
                 intent: ObjectInput,
                 steps: Steps,
             }).strict(),

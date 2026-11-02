@@ -46,12 +46,12 @@ return ['node.worker_known_hosts' => [
     'workflow' => 'operation-node-settings',
     'projection' => NodeSettingsProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'result', 'step' => 'result'],
+    'terminal_result' => ['job' => 'settings', 'step' => 'Check owner and mode'],
 ], 'node.converge' => [
     'workflow' => 'operation-node-converge-direct',
     'projection' => NodeConvergeProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'result', 'step' => 'result'],
+    'terminal_result' => ['job' => 'result', 'step' => 'Report the result'],
 ], 'node.role_add' => [
     'workflow' => 'operation-node-role-add-direct',
     'projection' => NodeRoleDirectProjection::class,

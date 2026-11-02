@@ -15,9 +15,9 @@ covers:
 
 `orbit node:add <name> [host]` adds a machine to the fleet. For a Node that already exists, the same command converges it again after you change its TLD, roles, or settings. `orbit node:remove <node>` removes the Node from Orbit and leaves the machine reachable over public SSH. [`node`](/cli/node) lists the options.
 
-Standalone `node.converge` and apps-root `node.settings` run on 209 through official SSH with the Node's stored host keys. They pass their complete public intent at admission and need no target worker. Settings discovers the account and calls the frozen agent's storage command. Converge installs the pinned observer, applies its captured footprint as native steps, and calls existing `agent.configure` without rotating the secret. Neither operation installs a per-Node worker or accepts worker enrollment credentials.
+Standalone `node.converge` and apps-root `node.settings` run on 209 through official SSH with the Node's stored host keys. They pass their complete public intent at admission and need no target worker. Settings runs the shipped apps folder script over official SSH. Converge runs the shipped agent script for the pinned observer and its files, then the fleet recipe's role steps; it calls no agent command and never rotates the secret. Neither operation installs a per-Node worker or accepts worker enrollment credentials.
 
-When executed, frozen `agent.configure` removes an installed per-Node worker service when its observer-only configuration omits that worker. Live rollout must account for that existing side effect and any active work before execution. The Gateway projects the terminal result and records settings or completed footprint artifacts.
+The Gateway projects the terminal result and records settings or completed footprint artifacts.
 
 ### Per-Node Swamp worker
 
@@ -565,7 +565,7 @@ Analytics role effects run in their native parent workflow. The Node PHP baselin
 
 The roles `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, `analytics`, and `swamp` install Caddy when they converge. The `swamp` role takes no part in Metrics until the Metrics port (wave 7), so it adds no exporter or scrape target.
 
-The `swamp` role runs Swamp serve as `orbit-swamp-serve.service`, with at most 4 scheduled runs in flight and a 5-minute datastore poll. It applies serve's grants from `swamp/config/gateway-workflow-grants.json` and `swamp/config/serve-grants.json` with `swamp access reload`. Convergence starts serve only when nothing serves port 9418 and never restarts a running serve.
+The `swamp` role runs Swamp serve as `orbit-swamp-serve.service`, with at most 4 scheduled runs in flight. It applies serve's grants from `swamp/config/gateway-workflow-grants.json` and `swamp/config/serve-grants.json` with `swamp access reload`. Convergence starts serve only when nothing serves port 9418 and never restarts a running serve.
 
 The role also runs two Swamp workers, `orbit-swamp-worker@a` and `@b`, which reach serve on loopback with 8 dispatch slots each and the labels `role=swamp` and `node=<id>`. Place each worker's enrollment and server tokens at `/etc/orbit/swamp-role-worker/<a|b>/{enrollment,server}.token` (root, `0600`) before adding the role; without them, convergence fails with `swamp.worker_credentials_missing`. It serves no site itself: `swamp.orbit` is a private custom proxy Route on its Node, with upstream `http://127.0.0.1:9418` ([ADR 0243](/decisions/0243-serve-swamp-through-a-swamp-role)). AI router publication does the same on its Node. Manual Gateway bootstrap and `php artisan orbit:gateway-web` are unavailable until their native parent workflows are installed. They refuse before any Caddy change. [Caddy configuration](/reference/caddy-configuration) describes how the Gateway builds each Node's Caddyfile.
 

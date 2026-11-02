@@ -66,7 +66,9 @@ function harness(
     if (method === "POST") {
       // Rebind the recorded DTO to this simulated admitted request. Nested
       // result bytes/fields are unmodified; this is not native execution proof.
-      Object.assign(op, { id: 899, target_id: 7, input: body });
+      // The Gateway stores its admission facts beside the requested fields.
+      const admitted = { group_id: 7, instance_id: 820, node_id: 248 };
+      Object.assign(op, { id: 899, target_id: 7, input: { ...body, ...admitted } });
       if (!accepted) {
         accepted = true;
         if (lost) return Promise.resolve({ status: 0, body: null });

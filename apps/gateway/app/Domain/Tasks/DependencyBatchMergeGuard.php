@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Actions\Instances\ReadInstanceSmokeContextAction;
 use App\Domain\GitHub\GitHubRepository;
+use App\Domain\Instances\InstanceProductionOwnership;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
@@ -20,8 +20,6 @@ use App\Models\TaskCheck;
  */
 final readonly class DependencyBatchMergeGuard
 {
-    public function __construct(private ReadInstanceSmokeContextAction $context) {}
-
     /** @return Intent */
     public function lineage(Task $group, int $publishId, string $head): array
     {
@@ -34,7 +32,7 @@ final readonly class DependencyBatchMergeGuard
         $this->check(is_string($project->default_branch) && $project->default_branch !== '', 'dependency_merge.default_branch_changed');
         $this->check(in_array($project->type->value, ['laravel-app', 'symfony-app'], true), 'dependency_merge.app_required');
         $instance = Instance::query()->where('project_id', $project->id)->whereKey($policy['instance_id'] ?? 0)->first();
-        $ownership = $instance === null ? null : $this->context->ownership($instance);
+        $ownership = $instance === null ? null : InstanceProductionOwnership::of($instance);
         $this->check($ownership?->production === true && $ownership->baseUrls !== [], 'dependency_merge.host_required');
         $this->check($group->parent_id === null && $group->orchestration === TaskOrchestration::External
             && ! in_array($group->status, [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled, TaskGroupStatus::Failed], true)

@@ -95,7 +95,8 @@ final readonly class DocsImpact
                     }
                 }
             }
-            if (preg_match('#(?:^|/)(?:tests?|node_modules)/#', $path) === 1) {
+            // Test inputs need no docs owner; swamp/proof holds the topology proof fixtures and their parity checks.
+            if (preg_match('#(?:^|/)(?:tests?|node_modules)/|^swamp/proof/#', $path) === 1) {
                 continue;
             }
 

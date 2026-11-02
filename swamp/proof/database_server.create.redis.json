@@ -1,0 +1,68 @@
+{
+  "kind": "database_server.create.redis",
+  "workflow": "operation-database-server-create",
+  "topology": "minimal",
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "expect": {
+    "status": "succeeded"
+  },
+  "request": {
+    "method": "POST",
+    "path": "database-servers",
+    "body": {
+      "slug": "proof-redis-${proof.run}",
+      "node_id": "${node.target}",
+      "driver": "redis",
+      "port": 36379
+    }
+  },
+  "phases": [
+    {
+      "name": "Read the scripts",
+      "job": "server",
+      "step": "Read the scripts",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Pull the image",
+      "job": "server",
+      "step": "Pull the image",
+      "budget_seconds": 600
+    },
+    {
+      "name": "Write the ACL file",
+      "job": "server",
+      "step": "Write the ACL file",
+      "budget_seconds": 120
+    },
+    {
+      "name": "Start the container",
+      "job": "server",
+      "step": "Start the container",
+      "budget_seconds": 120
+    },
+    {
+      "name": "Wait until healthy",
+      "job": "server",
+      "step": "Wait until healthy",
+      "budget_seconds": 420
+    },
+    {
+      "name": "Check the admin login",
+      "job": "server",
+      "step": "Check the admin login",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Report the result",
+      "job": "server",
+      "step": "Report the result",
+      "budget_seconds": 30
+    }
+  ],
+  "parity": [
+    "swamp/proof/database_server/parity.py",
+    "running"
+  ]
+}

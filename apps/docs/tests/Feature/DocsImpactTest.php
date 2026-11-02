@@ -470,6 +470,14 @@ it('docs impact resolves planned Doctor files and rejects unknown planned config
         ->and($report['errors'])->toContain('Unable to resolve planned surface [apps/gateway/config/runtime.php]; provide an existing path or a covers: owner.');
 });
 
+it('docs impact needs no owner for planned proof fixtures, which are test inputs', function (): void {
+    $root = docsImpactFixture();
+    $report = new DocsImpact($root)->report(null, ['swamp/proof/metrics.exporter_enable.json', 'swamp/proof/metrics/parity.py']);
+
+    expect($report['errors'])->toBe([])
+        ->and(collect($report['impacted_pages'])->pluck('page'))->not->toContain('unowned');
+});
+
 it('docs impact extracts a deleted surface from the base commit', function (): void {
     $root = docsImpactFixture();
     $path = 'apps/gateway/app/Domain/Tasks/TaskGroupGuard.php';

@@ -20,7 +20,6 @@ use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
-use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Operation;
@@ -60,7 +59,6 @@ final readonly class UpdateNodeSettingsAction
             }
 
             return $this->operations->execute('node.settings', 'node', $node->id, $node->id, [
-                'agent_pin' => app(AgentDelivery::class)->pin($node),
                 'ssh' => app(SwampSshExecutionInput::class)->forNode($node),
                 'node_id' => $node->id, 'caller_node_id' => $caller?->id,
                 ...$storage, 'settings' => $this->normalizer->stored($normalized),

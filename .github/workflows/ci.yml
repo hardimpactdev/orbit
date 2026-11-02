@@ -132,7 +132,6 @@ jobs:
   project-check:
     # The Orbit Project check (bin/review-check) is the task baseline and handoff check. Running it here
     # keeps one definition of green for tasks and CI. Three shards split its lanes by weight.
-    # Not in Required checks until its pre-existing Gateway and CLI failures are fixed on main.
     name: Project check ${{ matrix.shard }}
     runs-on: ubuntu-26.04
     strategy:
@@ -315,7 +314,7 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [php, gateway-static, cli, docs, api-reference, web, swamp, gateway-release, changes]
+    needs: [php, gateway-static, cli, docs, api-reference, project-check, web, swamp, gateway-release, changes]
     runs-on: ubuntu-26.04
     steps:
       - name: Require builds and static checks

@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task + full intent as inputs, R1-R4, single-swamp-node; DECISIONS scope (SQLite only when chosen, Schedules move, cert from destination CSR in-run), 1 (signing is the one step→Gateway call); .env and Processes as in instance.create. docs/reference/instance-transfer.md.
+  %% Target design: ADR 0244 task + full intent as inputs, R1-R4, single-swamp-node; DECISIONS scope (SQLite only when chosen, Schedules move, cert from destination CSR in-run), 1 (signing is the one step→Gateway call), DNS hold retired (PR #2443); tightened by flow-tighten 2026-11-02 (rules 3, 6, 8, 13); .env and Processes as in instance.create. docs/reference/instance-transfer.md.
   %% status: draft
   %% command: instance:transfer
   autonumber
@@ -79,28 +79,22 @@ sequenceDiagram
   %%> - `.env`; the Gateway rendered a new one for Node 15
   %%> Linked worktree:
   %%> - becomes an independent checkout on Node 15; the common repository on Node 12 stays unchanged
-  SW->>D: Copy, extract archive<br/>via 209 scratch · sha256
+  SW->>D: Unpack, write .env, CSR<br/>209 scratch · vault env-5133
   %%> How:
   %%> - copies the archive over `@swamp/ssh` through private scratch space on 209, and checks its hash
   %%> What it does:
   %%> - extracts it into the destination path, as Node 15's managed user
+  %%> - writes the rendered `.env` from the vault into the checkout, readable only by its owner
+  %%> - creates a private key and a certificate signing request for the Route's domain; the key never leaves Node 15
   %%> Refuses:
   %%> - paths or links that escape the checkout
   %%> Cleanup:
   %%> - removes the scratch archives on all three Nodes
-  SW->>D: Write .env<br/>vault.get env-5133
-  %%> What it does:
-  %%> - writes the rendered `.env` from the vault into the checkout, readable only by its owner
   SW->>D: Run Project setup steps<br/>@swamp/ssh · own timeout each
   %%> What it does:
   %%> - runs the Project's setup steps, as in `instance:create`, so dependencies match Node 15
   %%> Typical steps:
   %%> - `composer install`, `vp install`, `php artisan migrate`
-  SW->>D: Make a CSR<br/>key stays on Node 15
-  %%> What it does:
-  %%> - creates a private key and a certificate signing request for the Route's domain
-  %%> Why:
-  %%> - the private key never leaves the Node that serves the Route
   SW->>GW: Sign the CSR<br/>operation:direct:certificate-sign
   %%> Why a call to the Gateway:
   %%> - only the Gateway holds the Orbit CA key
@@ -108,21 +102,18 @@ sequenceDiagram
   GW-->>SW: signed certificate
   %%> Returns:
   %%> - the certificate for the CSR, scoped to task #5133
-  SW->>D: Publish the Route<br/>Caddy site, PHP pool, reload
-  %%> What it does:
-  %%> - installs the certificate, the Caddy site and the PHP pool on Node 15
-  %%> - reloads Caddy; no restart
-  %%> Cutover:
-  %%> - from here Node 15 serves Instance 42
-  Note over SW: Point DNS at Node 15<br/>Node 1 over @swamp/ssh
-  %%> What it does:
-  %%> - points the Route's private DNS record at Node 15, then waits the 31-second grace
-  %%> How:
-  %%> - over SSH from 209 to the VPN Node (Node 1), with the `swamp` role's key
   SW->>D: Create, start Processes<br/>Project definitions · development
   %%> What it does:
   %%> - creates the Instance's Processes on Node 15 from Project 7's definitions for `development`, and starts them
   %%> - Processes recorded as stopped stay stopped
+  SW->>D: Publish the Route<br/>shared Route mutation · reload
+  %%> What it does:
+  %%> - installs the certificate, the Caddy site and the PHP pool on Node 15 through the shared Route mutation, and reloads Caddy; no restart
+  %%> - changes private DNS only when the domain is outside the Cluster TLD; a domain inside it needs no record
+  %%> Why last:
+  %%> - Node 15 becomes reachable only after its Processes run
+  %%> Cutover:
+  %%> - from here Node 15 serves Instance 42
   SW->>D: Check the destination<br/>Vite listens, site answers
   %%> What it does:
   %%> - checks that the Processes run and the Route answers on Node 15

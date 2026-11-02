@@ -98,22 +98,21 @@ describe('database:server commands', function (): void {
     });
 });
 
-it('sends Valkey driver and adoption options', function (): void {
+it('sends the Valkey driver', function (): void {
     $mockClient = MockClient::global(database_server_cli_responses(CreateDatabaseServerRequest::class));
-    $this->artisan('database:server:create', ['slug' => 'cache', '--node' => '7', '--driver' => 'redis', '--process' => '93', '--connection' => 'cache', '--json' => true])->assertExitCode(0);
+    $this->artisan('database:server:create', ['slug' => 'cache', '--node' => '7', '--driver' => 'redis', '--json' => true])->assertExitCode(0);
     $mockClient->assertSent(static fn ($request): bool => $request instanceof CreateDatabaseServerRequest
         && $request->body()->all() === [
-            'slug' => 'cache', 'node_id' => 7, 'driver' => 'redis', 'process_id' => 93, 'connection' => 'cache',
+            'slug' => 'cache', 'node_id' => 7, 'driver' => 'redis',
         ]);
 });
 
-it('refuses invalid server driver or Process before sending', function (array $options): void {
+it('refuses an invalid server driver before sending', function (array $options): void {
     $mockClient = MockClient::global([]);
     $this->artisan('database:server:create', ['slug' => 'cache', '--node' => '7', '--json' => true, ...$options])->assertExitCode(1);
     expect($mockClient->getLastPendingRequest())->toBeNull();
 })->with([
     [['--driver' => 'sqlite']],
-    [['--process' => '0']],
 ]);
 
 it('sends the close request and preserves the Gateway refusal', function (): void {

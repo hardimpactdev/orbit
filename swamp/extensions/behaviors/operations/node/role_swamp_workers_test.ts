@@ -67,11 +67,12 @@ Deno.test("converge runs serve with the role's limits and a 5 minute drain, and 
       "orbit-swamp-serve.service",
       "--max-concurrent-scheduled-runs ' + str(data['scheduled_runs']) + ' --shutdown-drain-timeout 5m'",
       "TimeoutStopSec=360",
-      "' SWAMP_DATASTORE_POLL_INTERVAL=5m'",
       "elif not serving() and not systemctl('enable', '--now', 'orbit-swamp-serve.service')",
     ]
   ) assertEquals(SWAMP_WORKERS_PROGRAM.includes(part), true, part);
   assertEquals(/systemctl\('(restart|reload-or-restart)', [^)]*orbit-swamp-serve/.test(SWAMP_WORKERS_PROGRAM), false);
+  // Swamp's default datastore poll (30 s) applies.
+  assertEquals(SWAMP_WORKERS_PROGRAM.includes("SWAMP_DATASTORE_POLL_INTERVAL"), false);
 });
 
 Deno.test("grants mode renders the Gateway manifest and serve's other grants from the repository", async () => {

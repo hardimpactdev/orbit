@@ -1,6 +1,6 @@
 # Agent operations from 209
 
-`node.agent_rekey`, `node.settings` and `node.converge` use one native root
+`node.agent_rekey` and `node.converge` use one native root
 each. Every step runs on 209. Official SSH uses the approved credential identity
 file and the target's recorded host keys. The Gateway supplies complete public
 intent and projects the terminal result; the workflows make no Gateway callback.
@@ -12,8 +12,7 @@ The agent source is frozen. Its existing configure command removes an installed
 per-Node worker service when the observer-only configuration omits that worker.
 Source publication performs no such action; live execution requires the owner’s
 active-work and retirement coordination. Under the explicit Orchestrator
-boundary decision, these roots invoke existing agent commands over SSH. Settings
-separates account lookup from storage preparation. Converge separates pinned
+boundary decision, these roots invoke existing agent commands over SSH. Converge separates pinned
 binary staging and installation, account lookup, captured footprint actions and
 non-rotating agent configuration. Caddy and network children reuse their native
 family workflows. The agent's existing transaction locks stay inside its

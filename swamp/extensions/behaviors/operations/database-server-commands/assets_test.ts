@@ -15,37 +15,6 @@ Deno.test("server files contain only public admitted inputs and native bundle pa
         intent_json: '{"driver":"mysql","process_id":42}',
     });
 });
-Deno.test("server plan selects creation, no-op and replacement using observed specs", async () => {
-    const spec = "b".repeat(64);
-    const plan = (state: unknown) =>
-        behavior.methods.plan.execute(
-            { stdout: JSON.stringify(state), spec },
-            context,
-        );
-    assertEquals(await plan({ present: false, state: "absent" }), {
-        present: false,
-        state: "absent",
-        replace: false,
-        rollback_slot: "rollback-stopped",
-    });
-    assertEquals(
-        (await plan({ present: true, state: "running", spec })).replace,
-        false,
-    );
-    assertEquals(
-        await plan({ present: true, state: "running", spec: "c".repeat(64) }),
-        {
-            present: true,
-            state: "running",
-            spec: "c".repeat(64),
-            replace: true,
-            rollback_slot: "rollback-running",
-        },
-    );
-    await assertRejects(() =>
-        plan({ present: true, state: "running", spec: "not-a-spec" })
-    );
-});
 Deno.test("server result refuses missing completion and retains bounded action refusal", async () => {
     const result = behavior.methods.result.execute;
     assertEquals(

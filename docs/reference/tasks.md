@@ -241,7 +241,7 @@ The planning owner asserts the complete cumulative inventory before feature runt
 | `complete` | Must be `true`; a partial plan is refused |
 | `paths` | Nonempty list of `{change: add\|modify\|delete, path}` or `{change: rename, from, path}`; rename contributes both endpoints to analysis |
 
-Every path names a file relative to the repository root, encoded in UTF-8 and at most 512 bytes. Reject absolute and drive paths, backslashes, empty, `.` or `..` components, control characters, leading or trailing whitespace, globs, directories, `.git` components, and symlink escapes. Do not trim or repair input. Add paths need not exist; delete and rename-from paths must exist in the base or current tracked inventory. Conflicting or duplicate entries refuse the entire request.
+Every path names a file relative to the repository root, encoded in UTF-8 and at most 512 bytes. Reject absolute and drive paths, backslashes, empty, `.` or `..` components, control characters, leading or trailing whitespace, globs, directories, `.git` components, and symlink escapes. Do not trim or repair input. Add paths need not exist, but each needs a docs owner: a `covers:` glob that also matches a tracked file. Paths under `tests/` and `swamp/proof/` are test inputs and need none. Delete and rename-from paths must exist in the base or current tracked inventory. Conflicting or duplicate entries refuse the entire request.
 
 Entries arrive sorted by `(path, change, from-or-empty)` in UTF-8 byte order. The manifest has at most 256 entries and at most 32 KiB of RFC 8785 canonical JSON. `plan_sha256` hashes that entire canonical manifest; all SHA-256 values use lowercase hex. Shared JSON/hash fixtures fix encoding across native consumers. Overflow refuses the whole inventory; no path is dropped.
 
@@ -252,6 +252,8 @@ Provision observes the initial checkout once after source preparation. It finds 
 Analysis performs no fetch, merge, or base adoption. Use the successful provision operation's [public pin](#public-provision-identity) for `base`, never infer it from `starting_commit` or a later remote ref. This contract exposes no base-update path. Any separately authorized future base-update contract must keep old evidence and require a new plan revision and analysis. After handoff, the candidate HEAD is `check.commit`, not the check result's pre-commit `head`.
 
 Swamp verifies the base object and ancestry and takes fresh HEAD and whole-worktree snapshots before execution and after completion. The existing snapshot includes uncommitted and unignored untracked files without changing the real index; clean HEAD alone is insufficient. Pin repository identity, actual branch, Instance, Node, operation identity, and the fixed entrypoint's tracked content digest. Ignored caches are not candidate evidence. Reports and run metadata live outside candidate paths and must not alter the analyzed tree.
+
+The stored operation input holds every requested field unchanged, plus the Gateway's admission facts: group, Instance, Node, SSH execution and checkout. Swamp checks each requested field against it. The added facts do not make the input differ.
 
 ##### Fixed execution and complete report
 
@@ -598,7 +600,7 @@ Each signal updates one row in `problem_fingerprints`. The fingerprint is unique
 | Column | Meaning |
 | --- | --- |
 | `fingerprint` | Stable key, at most 255 characters |
-| `source` | `doctor`, `activity`, `log`, `assist`, or `release` |
+| `source` | `doctor`, `activity`, `log`, `assist`, `release`, or `swamp` |
 | `first_seen`, `last_seen` | Signal time of the first accepted signal, and of the latest |
 | `occurrences` | How many 5-minute windows were counted, not how many log lines |
 | `evidence` | A small JSON sample |
@@ -650,6 +652,8 @@ Readiness counts these occurrences and their times. It does not count log lines.
 The tests below use only the current episode. That episode is the occurrence history stored on the row: the time and the signal count of each 5-minute window.
 
 Doctor is ready after two of those times at least 10 minutes apart. A miss does not delete the row, and it does not reset the episode.
+
+A `swamp` problem from the [Swamp datastore watch](/reference/operations#swamp-datastore-watch) is ready the same way, after two fires at least 10 minutes apart. The first later fire that does not report it resolves it.
 
 A release alert is ready after one occurrence. A release command raises it once for a deliberate verdict, so there is no noise to wait out.
 
@@ -1411,19 +1415,12 @@ Code decides every fact that code can check. Jev answers only whether the change
 
 The Gateway reads Swamp's own run history rather than recording a second run ledger. This serves the Mission's lean and deterministic-first principles. Exact group inputs already identify maintenance-worker runs, so the driver needs no tagging change. Polling exposes the output that a read-only principal may see. Swamp's `run.attach` requires a `run` grant, so granting execution just to stream a read-only panel is rejected. A worker agent or a direct browser connection would add another credential and network boundary. The snapshot cache bounds repeated reads and preserves useful evidence during an outage without making Orbit a second orchestrator.
 
-## Production smoke ownership
 
-Repository production-smoke browser tests run through GitHub Actions after explicit Swamp baseline admission. The [Gateway smoke API](/reference/deployments#production-smoke) supplies release context and verified execution evidence. It is separate from task workspace checks. Swamp decides what to do when execution evidence is missing or its baseline deadline expires. The Gateway reports pending or unknown for an uncertain send, missing or ambiguous run, or expired artifacts; those states never mean that tests failed.
-
-Only JUnit failures or errors report failed. A clean JUnit report with an unsuccessful GitHub conclusion is unknown; it cannot justify a rollback. No smoke state starts a task, repair, rollback or merge in this slice.
-
-Production smoke recovery uses the [keyed failure block and guarded rollback contract](/reference/deployments#verified-smoke-failure-and-guarded-rollback). It creates no repair Task in this slice. Recovery remains disabled until paired review, the failure-hold integration and an explicitly authorized production proof.
-
-### Dependency batch squash admission
+## Dependency batch squash admission
 
 Dependency batches may use `POST /api/v1/task-groups/{group}/dependency-merge` with a required Idempotency-Key and `{publish_operation_id, head_sha}`. Only the configured Services peer may admit it. The Gateway records a direct `tasks.dependency_merge` Operation on the Swamp configuration Node (209). Swamp owns the GitHub checks, dependency content and version policy, then runs the expected-head squash request. The Gateway records its bounded public result. The existing shared private-material read supplies the `github.dependency_merge` credential for that Project inside the callback that performs the effect. Tokens never enter native arguments, outputs, history or logs. The old PHP command and polled executor path are deleted.
 
-All Projects are disabled: `dependency_merge.projects` is empty and the private project extension's `dependencyAutoMerge` defaults to false. Enabling is a separate change after the live smoke/rollback pilot. Package and unclassified monorepo Projects are ineligible. Admission and private credential resolution use the same owning policy to verify the hosted production Instance, external batch group created by the authenticated Services Node, package deliverable, passed handoff check and exact successful publish receipt. Agent-repaired dependency batches use these same gates. Feature groups and unrelated repair groups have no authority through this endpoint.
+All Projects are disabled: `dependency_merge.projects` is empty and the private project extension's `dependencyAutoMerge` defaults to false. Enabling is a separate change after the live acceptance proof. Package and unclassified monorepo Projects are ineligible. Admission and private credential resolution use the same owning policy to verify the hosted production Instance, external batch group created by the authenticated Services Node, package deliverable, passed handoff check and exact successful publish receipt. Agent-repaired dependency batches use these same gates. Feature groups and unrelated repair groups have no authority through this endpoint.
 
 Fresh GitHub reads must show an open non-draft same-repository `task-{group}` PR into the current Project and repository default branch. Require GitHub Actions' `Required checks` on the exact head. Every enabled policy must name `smoke_workflow`, an exact `.github/workflows/*.yml` or `.yaml` path. Its active workflow and `Production smoke / smoke` are mandatory: the raw `smoke` job must belong to that exact workflow's latest PR suite. Removing or renaming the workflow refuses the merge.
 

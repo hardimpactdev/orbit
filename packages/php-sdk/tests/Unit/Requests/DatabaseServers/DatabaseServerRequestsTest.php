@@ -105,9 +105,9 @@ describe('database server requests', function (): void {
     ]);
 });
 
-it('transports Valkey adoption fields and keeps the close request bodyless', function (): void {
-    expect(new CreateDatabaseServerRequest('cache', 2, driver: 'redis', processId: 93, connection: 'cache')->body()->all())
-        ->toBe(['slug' => 'cache', 'node_id' => 2, 'driver' => 'redis', 'process_id' => 93, 'connection' => 'cache']);
+it('transports the Valkey driver and keeps the close request bodyless', function (): void {
+    expect(new CreateDatabaseServerRequest('cache', 2, driver: 'redis')->body()->all())
+        ->toBe(['slug' => 'cache', 'node_id' => 2, 'driver' => 'redis']);
     $request = new CloseDatabaseServerRequest('cache');
     expect($request->getMethod())->toBe(Method::POST)
         ->and($request->resolveEndpoint())->toBe('/api/v1/database-servers/cache/close')

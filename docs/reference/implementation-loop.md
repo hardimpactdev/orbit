@@ -90,7 +90,7 @@ Orbit CI runs builds and static checks. Swamp changes also run the Operation Den
 | CLI build | Build the existing Linux and macOS CLI binaries through the reusable Orbit CLI Binary workflow |
 | Docs build | Generate the documentation index, check its committed freshness and run strict documentation lint; run `bin/check-flows` on the [flow charts](https://github.com/hardimpactdev/orbit/tree/main/docs/flows) |
 | Generated contracts | Boot the Gateway, load all Operation kinds and check exact workflow run/read intent; check OpenAPI, MCP tools and `apps/web/src/api/schema.d.ts` against their generators |
-| Project check | Run the [candidate gate](#the-candidate-gate), `bin/review-check`, in three shards; not yet in `Required checks` until its Gateway and CLI lanes pass on `main` |
+| Project check | Run the [candidate gate](#the-candidate-gate), `bin/review-check`, on every commit in three shards; the same gate is the Orbit task check |
 | Web build | Build the web app and require `dist/index.html` and `dist/version.json` |
 | Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only changes |
 | Swamp | Validate every workflow, run the Operation Deno tests, enforce the Swamp-shape gate and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/README.md#behavior-names) |
@@ -233,6 +233,8 @@ API ownership matching removes the shared `api/v1` prefix, so a Form Request use
 6. It checks generated API artifacts when their inputs change, as [Generated artifacts](#generated-artifacts) describes.
 7. When the candidate changes the Rust agent, the desktop app, or `.github/workflows/ci.yml`, it runs `cargo fmt --all -- --check` in the matching Rust project.
 8. It runs `bin/check-classification-fakes` on changed test sources. A change to the checker itself checks every project’s tests.
+
+Test inputs need no page: step 1 ignores files under `tests/` and `swamp/proof/`.
 
 When the candidate changes `apps/gateway/resources`, `apps/gateway/tests/Programs`, `apps/gateway/ruff.toml`, or `bin/remote-programs-check`, the gate also runs `bin/remote-programs-check`. See [Remote programs](/reference/remote-programs#lint-and-direct-tests).
 

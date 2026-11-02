@@ -1,193 +1,230 @@
 id: f497279b-80cd-4dc8-82bb-1a6622d977e4
 name: operation-database-server-create
+description: Database server create from 209 in the chart's phases, one shipped script phase per official SSH step.
+vaults: [orbit-control-inputs]
 queueTimeout: 30
-description: Provision and scrub a recorded database server through official SSH from
-  209; project native terminal output.
-writes: true
-vaults:
-- orbit-control-inputs
 inputs:
   type: object
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [database_server.create]}
-    intent: {type: object, properties: {driver: {type: string}, process_id: {type: integer}, container: {type: string}, container_input: {type: object}, spec: {type: string}, scrub_spec: {type: string}, initialize: {type: boolean}, validate_existing: {type: boolean}, was_active: {type: boolean}, default_open: {type: boolean}, host: {type: string}, port: {type: integer}, ssh: {type: object}}, required: [driver, process_id, container, container_input, spec, scrub_spec, initialize, validate_existing, was_active, default_open, host, port, ssh], additionalProperties: true}
-    execution_secrets: {type: object, properties: {server_create: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^database-server-create-intent-[1-9][0-9]*$'}}, required: [vault, key], additionalProperties: false}}, required: [server_create], additionalProperties: false}
+    kind: {type: string, const: database_server.create}
+    intent: {type: object}
+    # Names only: admin (the server's own password key) and, for Valkey, acl (the ACL file).
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^database-server-(create-intent-)?[1-9][0-9]*(-admin)?$'}
+        required: [vault, key]
+        additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
 - name: server
   labels: {role: swamp}
   steps:
-  - name: prepare_database_assets
-    <<: &placed {labels: {role: swamp}}
-    writes: false
-    task:
-      <<: &metadata {type: behavior, behaviorType: '@nckrtl/database-server-command-assets', behaviorName: '${{ "database-server-assets" }}'}
-      methodName: read
-      inputs:
-        intent: ${{ inputs.intent }}
-  - name: prepare_process_assets
-    <<: *placed
-    writes: false
+  - name: 'Read the scripts'
+    labels: {role: swamp}
     task:
       type: behavior
-      behaviorType: '@nckrtl/process-command-assets'
-      behaviorName: '${{ "db-process-assets" }}'
-      methodName: read
+      behaviorType: '@nckrtl/database-node-command'
+      behaviorName: database-server-create-assets
+      methodName: server_create
       inputs:
-        control: {process_id: '${{ inputs.intent.process_id }}', runtime: docker, name: '${{ inputs.intent.container }}', vite: null, on_demand: false}
-  - name: prepare_prepare_directory
-    <<: &remote {labels: {role: swamp}, allowFailure: true}
-    writes: false
+        intent:
+          driver: '${{ inputs.intent.driver }}'
+          process_id: '${{ inputs.intent.process_id }}'
+          container: '${{ inputs.intent.container }}'
+          container_input: '${{ inputs.intent.container_input }}'
+          spec: '${{ inputs.intent.spec }}'
+          scrub_spec: '${{ inputs.intent.scrub_spec }}'
+          initialize: '${{ inputs.intent.initialize }}'
+          password_variable: '${{ inputs.intent.password_variable }}'
+          volume: '${{ inputs.intent.volume }}'
+  - name: 'Pull the image'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Read the scripts', condition: {type: succeeded}}]
     task:
-      <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("database-server-" + string(inputs.intent.ssh.host)).split(".").join("-") }}', globalArgs: {name: '${{ ("database-server-" + string(inputs.intent.ssh.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity}, hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]}, methodName: exec}
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-server-create-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: &ssh
+        name: ${{ "database-server-create-ssh-" + string(inputs.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}
       inputs:
-        hosts: name:server
-        argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) }}']
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '600', python3, -I, -c, '${{ steps["Read the scripts"].outputs.create }}', '${{ steps["Read the scripts"].outputs.intent_json }}', pull]
         okExitCodes: [0, 1]
-  - name: prepare_copy_process
-    <<: *remote
-    dependsOn: [{step: prepare_process_assets, condition: {type: always}}, {step: prepare_prepare_directory, condition: {type: always}}]
-    guard: ${{ !((has(steps.prepare_prepare_directory) && has(steps.prepare_prepare_directory.outputs) && has(steps.prepare_prepare_directory.outputs.exitCode) && steps.prepare_prepare_directory.outputs.exitCode == 0)) }}
-    writes: false
+        timeoutSec: 610
+    # Valkey starts only from its ACL file; the file holds password hashes and comes on stdin.
+  - name: 'Write the ACL file'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Pull the image', condition: {type: succeeded}}]
+    guard: ${{ inputs.intent.driver != "redis" || steps["Pull the image"].outputs.exitCode != 0 }}
     task:
-      <<: *ssh
-      methodName: copy
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-server-create-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *ssh
       inputs:
-        hosts: name:server
-        src: ${{ steps.prepare_process_assets.outputs.scripts_directory + "/." }}
-        dst: ${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/process" }}
-        direction: to
-        recursive: true
-  - name: prepare_copy_database
-    <<: *remote
-    dependsOn: [{step: prepare_database_assets, condition: {type: always}}, {step: prepare_prepare_directory, condition: {type: always}}]
-    guard: ${{ !((has(steps.prepare_prepare_directory) && has(steps.prepare_prepare_directory.outputs) && has(steps.prepare_prepare_directory.outputs.exitCode) && steps.prepare_prepare_directory.outputs.exitCode == 0)) }}
-    writes: false
-    task:
-      <<: *ssh
-      methodName: copy
-      inputs:
-        hosts: name:server
-        src: ${{ steps.prepare_database_assets.outputs.directory + "/." }}
-        dst: ${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database" }}
-        direction: to
-        recursive: true
-  - name: prepare_prepared
-    <<: *placed
-    dependsOn: [{step: prepare_copy_process, condition: {type: always}}, {step: prepare_copy_database, condition: {type: always}}]
-    writes: false
-    task:
-      type: assert
-      expr: 'steps.prepare_prepare_directory.outputs.exitCode == 0 && (has(steps.prepare_copy_process) ? steps.prepare_copy_process.status : "skipped") == "succeeded" && (has(steps.prepare_copy_database) ? steps.prepare_copy_database.status : "skipped") == "succeeded"'
-      severity: high
-      message: Database server action did not complete successfully.
-  - name: policy_inspect_policy
-    <<: *remote
-    dependsOn: [{step: prepare_prepared, condition: {type: succeeded}}]
-    writes: false
-    task:
-      <<: *ssh
-      inputs:
-        hosts: name:server
-        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database/inspect_policy.py" }}', '${{ steps.prepare_database_assets.outputs.intent_json }}']
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '120', python3, -I, -c, '${{ steps["Read the scripts"].outputs.create }}', '${{ steps["Read the scripts"].outputs.intent_json }}', acl]
+        stdin: ${{ vault.get(inputs.execution_secrets.acl.vault, inputs.execution_secrets.acl.key) }}
         okExitCodes: [0, 1]
-        stdin: ${{ vault.get(inputs.execution_secrets.server_create.vault, inputs.execution_secrets.server_create.key) }}
-  - name: policy_policy_checked
-    <<: *placed
-    dependsOn: [{step: policy_inspect_policy, condition: {type: always}}, {step: prepare_prepared, condition: {type: succeeded}}]
-    writes: false
+        timeoutSec: 130
+  - name: 'Start the container'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Pull the image', condition: {type: succeeded}}
+    - {step: 'Write the ACL file', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    guard: '${{ steps["Pull the image"].outputs.exitCode != 0 || ("Write the ACL file" in steps && steps["Write the ACL file"].status == "succeeded" && steps["Write the ACL file"].outputs.exitCode != 0) }}'
     task:
-      type: assert
-      expr: (has(steps.policy_inspect_policy) && has(steps.policy_inspect_policy.outputs) && has(steps.policy_inspect_policy.outputs.exitCode) && steps.policy_inspect_policy.outputs.exitCode == 0)
-      severity: high
-      message: Database server action did not complete successfully.
-  - name: policy_write_acl
-    <<: *remote
-    dependsOn: [{step: policy_policy_checked, condition: {type: always}}, {step: prepare_prepared, condition: {type: succeeded}}]
-    guard: '${{ !((has(steps.policy_policy_checked) ? steps.policy_policy_checked.status : "skipped") == "succeeded" && inputs.intent.driver == "redis" && steps.policy_inspect_policy.outputs.stdout == ''{"rebuild": true}\n'') }}'
-    writes: true
-    task:
-      <<: *ssh
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-server-create-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *ssh
       inputs:
-        hosts: name:server
-        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database/write_acl.py" }}', '${{ steps.prepare_database_assets.outputs.intent_json }}']
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '120', python3, -I, -c, '${{ steps["Read the scripts"].outputs.create }}', '${{ steps["Read the scripts"].outputs.intent_json }}', start]
+        stdin: ${{ vault.get(inputs.execution_secrets.admin.vault, inputs.execution_secrets.admin.key) }}
         okExitCodes: [0, 1]
-        stdin: ${{ vault.get(inputs.execution_secrets.server_create.vault, inputs.execution_secrets.server_create.key) }}
-  - name: policy_acl_written
-    <<: *placed
-    dependsOn: [{step: policy_write_acl, condition: {type: always}}, {step: prepare_prepared, condition: {type: succeeded}}]
-    writes: false
+        timeoutSec: 130
+    # Docker owns the probe; the step reads its health events, bounded by the step timeout.
+  - name: 'Wait until healthy'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Start the container', condition: {type: succeeded}}]
+    guard: ${{ steps["Start the container"].outputs.exitCode != 0 }}
     task:
-      type: assert
-      expr: '(has(steps.policy_policy_checked) ? steps.policy_policy_checked.status : "skipped") == "succeeded" && ((has(steps.policy_write_acl) ? steps.policy_write_acl.status : "skipped") == "skipped" || (has(steps.policy_write_acl) && has(steps.policy_write_acl.outputs) && has(steps.policy_write_acl.outputs.exitCode) && steps.policy_write_acl.outputs.exitCode == 0))'
-      severity: high
-      message: Database server action did not complete successfully.
-  - name: initial
-    <<: *placed
-    dependsOn: [{step: policy_acl_written, condition: {type: succeeded}}]
-    allowFailure: true
-    task:
-      type: workflow
-      workflowIdOrName: database-server-container
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-server-create-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *ssh
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        intent_json: ${{ steps.prepare_database_assets.outputs.intent_json }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        phase: initial
-        spec: ${{ inputs.intent.spec }}
-        scrub: false
-        rebuild_acl: '${{ has(steps.policy_inspect_policy.outputs) && steps.policy_inspect_policy.outputs.stdout == ''{"rebuild": true}\n'' }}'
-  - name: scrub
-    <<: *placed
-    dependsOn: [{step: initial, condition: {type: succeeded}}]
-    guard: ${{ !inputs.intent.initialize || !(has(steps.initial) && has(steps.initial.outputs) && has(steps.initial.outputs.result) && steps.initial.outputs.result.exitCode == 0) }}
-    allowFailure: true
-    task:
-      type: workflow
-      workflowIdOrName: database-server-container
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        intent_json: ${{ steps.prepare_database_assets.outputs.intent_json }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        phase: scrub
-        spec: ${{ inputs.intent.scrub_spec }}
-        scrub: true
-        rebuild_acl: '${{ has(steps.policy_inspect_policy.outputs) && steps.policy_inspect_policy.outputs.stdout == ''{"rebuild": true}\n'' }}'
-  - name: cleanup_sources
-    <<: *remote
-    dependsOn: [{step: initial, condition: {type: always}}, {step: scrub, condition: {type: always}}]
-    guard: ${{ !((has(steps.initial) && has(steps.initial.outputs) && has(steps.initial.outputs.result) && steps.initial.outputs.result.exitCode == 0) && (!inputs.intent.initialize || (has(steps.scrub) && has(steps.scrub.outputs) && has(steps.scrub.outputs.result) && steps.scrub.outputs.result.exitCode == 0))) }}
-    writes: true
-    task:
-      <<: *ssh
-      inputs:
-        hosts: name:server
-        argv: [/usr/bin/rm, -rf, --, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) }}']
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '420', python3, -I, -c, '${{ steps["Read the scripts"].outputs.create }}', '${{ steps["Read the scripts"].outputs.intent_json }}', healthy]
         okExitCodes: [0, 1]
-  - name: result
-    <<: *placed
-    dependsOn: [{step: prepare_database_assets, condition: {type: always}}, {step: prepare_process_assets, condition: {type: always}}, {step: prepare_prepare_directory, condition: {type: always}}, {step: prepare_copy_process, condition: {type: always}}, {step: prepare_copy_database, condition: {type: always}}, {step: prepare_prepared, condition: {type: always}}, {step: policy_inspect_policy, condition: {type: always}}, {step: policy_policy_checked, condition: {type: always}}, {step: policy_write_acl, condition: {type: always}}, {step: policy_acl_written, condition: {type: always}}, {step: initial, condition: {type: always}}, {step: scrub, condition: {type: always}}, {step: cleanup_sources, condition: {type: always}}]
+        timeoutSec: 430
+  - name: 'Check the admin login'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Wait until healthy', condition: {type: succeeded}}]
+    guard: ${{ steps["Wait until healthy"].outputs.exitCode != 0 }}
     task:
-      <<: *metadata
-      methodName: result
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-server-create-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *ssh
       inputs:
-        completed: ${{ (has(steps.initial) && has(steps.initial.outputs) && has(steps.initial.outputs.result) && steps.initial.outputs.result.exitCode == 0) && (!inputs.intent.initialize || (has(steps.scrub) && has(steps.scrub.outputs) && has(steps.scrub.outputs.result) && steps.scrub.outputs.result.exitCode == 0)) }}
-        steps: ${{ steps }}
-  - name: accept_result
-    <<: *placed
-    dependsOn: [{step: result, condition: {type: succeeded}}]
-    writes: false
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '60', python3, -I, -c, '${{ steps["Read the scripts"].outputs.create }}', '${{ steps["Read the scripts"].outputs.intent_json }}', login]
+        stdin: ${{ vault.get(inputs.execution_secrets.admin.vault, inputs.execution_secrets.admin.key) }}
+        okExitCodes: [0, 1]
+        timeoutSec: 70
+    # The data volume keeps the password; the recreated container no longer carries it.
+  - name: 'Remove the first-start env'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Check the admin login', condition: {type: succeeded}}]
+    guard: ${{ inputs.intent.driver == "redis" || steps["Check the admin login"].outputs.exitCode != 0 }}
     task:
-      type: assert
-      expr: steps.result.outputs.exitCode == 0
-      severity: high
-      message: Database server action did not complete successfully.
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-server-create-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '540', python3, -I, -c, '${{ steps["Read the scripts"].outputs.create }}', '${{ steps["Read the scripts"].outputs.intent_json }}', scrub]
+        stdin: ${{ vault.get(inputs.execution_secrets.admin.vault, inputs.execution_secrets.admin.key) }}
+        okExitCodes: [0, 1]
+        timeoutSec: 550
+  - name: 'Report the result'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Read the scripts', condition: {type: always}}
+    - {step: 'Pull the image', condition: {type: always}}
+    - {step: 'Write the ACL file', condition: {type: always}}
+    - {step: 'Start the container', condition: {type: always}}
+    - {step: 'Wait until healthy', condition: {type: always}}
+    - {step: 'Check the admin login', condition: {type: always}}
+    - {step: 'Remove the first-start env', condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: database-server-create-result
+      methodName: execute
+      inputs:
+        run: |
+          python3 -I - <<'PY'
+          import json
+          import os
+          import sys
+
+          # A phase that ran and failed names the failed step; its script's error_code wins over the fallback.
+          phases = [('READ', 'Read the scripts', 'database.server_create_failed'), ('PULL', 'Pull the image', 'database.server_image_pull_failed'),
+                    ('ACL', 'Write the ACL file', 'database.valkey_acl_failed'), ('START', 'Start the container', 'database.server_start_failed'),
+                    ('HEALTHY', 'Wait until healthy', 'database.server_unhealthy'), ('LOGIN', 'Check the admin login', 'database.server_login_failed'),
+                    ('SCRUB', 'Remove the first-start env', 'database.server_scrub_failed')]
+          result = {'backend': 'active'}
+          for name, label, fallback in phases:
+              status, exit_code, stdout = (os.environ[name + suffix] for suffix in ('_STATUS', '_EXIT', '_STDOUT'))
+              if status == 'failed' or (status == 'succeeded' and exit_code not in ('', '0')):
+                  try:
+                      value = json.loads(stdout) if stdout else {}
+                  except ValueError:
+                      value = {}
+                  code = value.get('error_code') if isinstance(value, dict) and isinstance(value.get('error_code'), str) else fallback
+                  result = {'failed_step': label, 'error_code': code}
+                  break
+          if 'error_code' not in result and os.environ['LOGIN_STATUS'] != 'succeeded':
+              result = {'failed_step': None, 'error_code': 'database.server_create_failed'}
+          print(json.dumps(result))
+          sys.exit(0 if 'error_code' not in result else 1)
+          PY
+        env:
+          READ_STATUS: '${{ "Read the scripts" in steps ? steps["Read the scripts"].status : "skipped" }}'
+          READ_EXIT: ''
+          READ_STDOUT: ''
+          PULL_STATUS: '${{ "Pull the image" in steps ? steps["Pull the image"].status : "skipped" }}'
+          PULL_EXIT: '${{ "Pull the image" in steps && steps["Pull the image"].status == "succeeded" ? string(steps["Pull the image"].outputs.exitCode) : "" }}'
+          PULL_STDOUT: '${{ "Pull the image" in steps && steps["Pull the image"].status == "succeeded" ? steps["Pull the image"].outputs.stdout : "" }}'
+          ACL_STATUS: '${{ "Write the ACL file" in steps ? steps["Write the ACL file"].status : "skipped" }}'
+          ACL_EXIT: '${{ "Write the ACL file" in steps && steps["Write the ACL file"].status == "succeeded" ? string(steps["Write the ACL file"].outputs.exitCode) : "" }}'
+          ACL_STDOUT: '${{ "Write the ACL file" in steps && steps["Write the ACL file"].status == "succeeded" ? steps["Write the ACL file"].outputs.stdout : "" }}'
+          START_STATUS: '${{ "Start the container" in steps ? steps["Start the container"].status : "skipped" }}'
+          START_EXIT: '${{ "Start the container" in steps && steps["Start the container"].status == "succeeded" ? string(steps["Start the container"].outputs.exitCode) : "" }}'
+          START_STDOUT: '${{ "Start the container" in steps && steps["Start the container"].status == "succeeded" ? steps["Start the container"].outputs.stdout : "" }}'
+          HEALTHY_STATUS: '${{ "Wait until healthy" in steps ? steps["Wait until healthy"].status : "skipped" }}'
+          HEALTHY_EXIT: '${{ "Wait until healthy" in steps && steps["Wait until healthy"].status == "succeeded" ? string(steps["Wait until healthy"].outputs.exitCode) : "" }}'
+          HEALTHY_STDOUT: '${{ "Wait until healthy" in steps && steps["Wait until healthy"].status == "succeeded" ? steps["Wait until healthy"].outputs.stdout : "" }}'
+          LOGIN_STATUS: '${{ "Check the admin login" in steps ? steps["Check the admin login"].status : "skipped" }}'
+          LOGIN_EXIT: '${{ "Check the admin login" in steps && steps["Check the admin login"].status == "succeeded" ? string(steps["Check the admin login"].outputs.exitCode) : "" }}'
+          LOGIN_STDOUT: '${{ "Check the admin login" in steps && steps["Check the admin login"].status == "succeeded" ? steps["Check the admin login"].outputs.stdout : "" }}'
+          SCRUB_STATUS: '${{ "Remove the first-start env" in steps ? steps["Remove the first-start env"].status : "skipped" }}'
+          SCRUB_EXIT: '${{ "Remove the first-start env" in steps && steps["Remove the first-start env"].status == "succeeded" ? string(steps["Remove the first-start env"].outputs.exitCode) : "" }}'
+          SCRUB_STDOUT: '${{ "Remove the first-start env" in steps && steps["Remove the first-start env"].status == "succeeded" ? steps["Remove the first-start env"].outputs.stdout : "" }}'
+        ignoreExitCode: true
+  - name: 'Fail on an error'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Report the result', condition: {type: succeeded}}]
+    task: {type: assert, expr: 'steps["Report the result"].outputs.exitCode == 0', severity: high, message: The Database server create did not complete.}

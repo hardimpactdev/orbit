@@ -52,20 +52,27 @@ sequenceDiagram
     %%> - the task number, at once
     %%> Next:
     %%> - the CLI follows the task with `operation:show`
-    SW->>N: Inspect the containers<br/>@swamp/ssh · docker inspect
+    Note over SW: Read the scripts<br/>database-node-command assets
+    %%> What it does:
+    %%> - reads the shipped phase script on 209, to send it over SSH in argv
+    SW->>N: Stop and remove them<br/>@swamp/ssh · docker stop, rm
     %%> How:
     %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior
     %%> What it does:
-    %%> - checks every container name of the Process before it changes anything
-    %%> - a container that is already gone counts as removed
-    SW->>N: Stop and remove them<br/>docker stop · docker rm
-    %%> What it does:
-    %%> - stops and removes each container that is present
+    %%> - lists every container of the Process by its `orbit.process.id` label, including slots left by older creates
+    %%> - refuses a container with the server's name that belongs to another Process, before it changes anything
+    %%> - stops and removes each container that is present; one that is already gone counts as removed
     %%> Not removed:
     %%> - the volume `orbit-app-mysql-data`, so the data survives
     SW->>N: Check they are gone<br/>docker inspect
     %%> What it does:
     %%> - checks no container of the Process is left
+    Note over SW: Report the result<br/>backend · failed_step · error_code
+    %%> What it does:
+    %%> - maps the first failed step to its error code, for example `database.server_remove_failed`
+    Note over SW: Fail on an error<br/>assert · exit code 0
+    %%> What it does:
+    %%> - fails the run when the report holds an `error_code`, so the task fails with that code
     alt containers are gone
       N-->>SW: no container left
       %%> Returns:

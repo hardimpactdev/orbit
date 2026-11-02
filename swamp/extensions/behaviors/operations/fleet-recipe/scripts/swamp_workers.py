@@ -112,7 +112,6 @@ def serve_unit(data, home):
         'Environment=HOME=' + home + ' PATH=' + home + '/.local/bin:/usr/local/bin:/usr/bin:/bin'
         ' SWAMP_HOME=' + home + '/.swamp SWAMP_CONFIG_DIR=' + config + ' SWAMP_API_KEY_FILE=' + config + '/api-key'
         ' SWAMP_SERVER_TOKEN_FILE=' + config + '/serve-driver-token SWAMP_REMOTE_ONLY=1 NODE_USE_SYSTEM_CA=1'
-        ' SWAMP_DATASTORE_POLL_INTERVAL=5m'
         ' SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1\n'
         'ExecStart=' + home + '/.local/bin/swamp serve --repo-dir ' + repo + ' --port ' + str(PORT) + ' --host 127.0.0.1'
         ' --auth-mode token --admins user:nckrtl --club-api-key-file ' + config + '/api-key'

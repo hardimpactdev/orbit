@@ -60,6 +60,9 @@ if ($argv[1] === 'seed') {
         node($input['target']['key'], $input['target']['address'], $input['target']['host_key'],
             $input['target']['roles'] ?? [], settings: $input['target']['settings'] ?? []),
     ]);
+    // The verifier of the agent key up.py wrote on the target, as after enrollment.
+    // No WireGuard in this topology: the target is no private DNS peer.
+    $target->forceFill(['agent_secret_hash' => $input['target']['agent_secret_hash'] ?? null, 'wireguard_public_key' => null])->saveQuietly();
     app(GatewayServingHost::class)->remember($gateway);
     $operator->accessibleNodes()->attach([$gateway->id, $target->id]);
     app(WorkerKnownHostsPublisher::class)->publish();

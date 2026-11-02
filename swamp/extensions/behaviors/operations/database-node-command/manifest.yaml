@@ -1,0 +1,11 @@
+manifestVersion: 1
+name: "@nckrtl/database-node-command"
+version: 2026.11.02.2
+visibility: private
+license: MIT
+description: Database family phase scripts, read once for official SSH argv.
+behaviors:
+  - operations/database-node-command/assets.ts
+additionalFiles:
+  - server/create.py
+  - server/destroy.py
