@@ -1,0 +1,53 @@
+{
+  "kind": "node.ssh_access_converge",
+  "workflow": "operation-node-ssh-access-converge",
+  "topology": "minimal",
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "clean_target": [
+    [
+      "sh",
+      "-c",
+      "sed -i '/^# BEGIN Orbit managed keys$/d; /^# END Orbit managed keys$/d; /proof-operator/d' /home/orbit/.ssh/authorized_keys"
+    ]
+  ],
+  "prepare": [],
+  "before_target": [
+    [
+      "sh",
+      "-c",
+      "printf '%s\\n' 'ssh-ed25519 AAAAproof1 proof-operator-1-${proof.run}' 'ssh-ed25519 AAAAproof2 proof-operator-2-${proof.run}' >> /home/orbit/.ssh/authorized_keys"
+    ]
+  ],
+  "request": {
+    "method": "POST",
+    "path": "nodes/${node.target}/ssh-access/converge"
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Write the Orbit block",
+      "job": "ssh_access",
+      "step": "Write the Orbit block",
+      "budget_seconds": 40
+    },
+    {
+      "name": "Read the file back",
+      "job": "ssh_access",
+      "step": "Read the file back",
+      "budget_seconds": 40
+    },
+    {
+      "name": "Log in with Swamp identity",
+      "job": "ssh_access",
+      "step": "Log in with Swamp identity",
+      "budget_seconds": 30
+    }
+  ],
+  "parity": [
+    "swamp/proof/node.ssh_access_converge/parity.py",
+    "written"
+  ]
+}

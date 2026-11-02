@@ -3,7 +3,7 @@ import { assembleFootprint } from "../fleet-recipe/assets.ts";
 
 const ObjectInput = z.record(z.string(), z.unknown());
 const Args = z.object({
-    script: z.enum(["apps_folder", "agent"]),
+    script: z.enum(["apps_folder", "agent", "authorized_keys"]),
     input: ObjectInput,
 }).strict();
 const Assets = z.object({ body: z.string(), input: z.string() }).strict();
@@ -138,7 +138,7 @@ const result = <T>(schema: z.ZodType<T>, build: (a: T) => unknown) => ({
 /** Reads one shipped Node script and the public intent it takes as JSON; official SSH runs it. */
 export const behavior = {
     type: "@nckrtl/node-scripts",
-    version: "2026.11.02.2",
+    version: "2026.11.02.3",
     resources: {
         assets: { schema: Assets, lifetime: "1d", garbageCollection: 10 },
         result: {

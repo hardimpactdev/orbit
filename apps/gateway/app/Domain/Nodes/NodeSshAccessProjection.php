@@ -19,7 +19,7 @@ final readonly class NodeSshAccessProjection implements DirectOperationProjectio
     {
         $target = ValidatedData::object($intent['target']);
 
-        return hash('sha256', json_encode(['target' => $target, 'public_key' => $intent['public_key']], JSON_THROW_ON_ERROR));
+        return hash('sha256', json_encode(['target' => $target, 'keys' => $intent['keys']], JSON_THROW_ON_ERROR));
     }
 
     public function input(Operation $operation): array

@@ -42,16 +42,16 @@ sequenceDiagram
   %%> - the block's lines and digest, and the managed account
   %%> - Node 12's address and SSH host keys
   %%> - the vault key name of Node 12's access identity, never the key itself (R3)
+  %%> Before the run:
+  %%> - the Gateway puts the identity Node 12 already accepts into the Swamp vault
   GW-->>CLI: 202 Accepted<br/>task #5133
   %%> What you get:
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  Note over SW: Read the access identity<br/>vault.get · Node 12 access key
+  Note over SW: Read the scripts<br/>@nckrtl/node-scripts read
   %%> What it does:
-  %%> - reads the identity that Node 12 already accepts from the Swamp vault
-  %%> Why:
-  %%> - the new Swamp identity may not be accepted yet, for example after it was replaced
+  %%> - reads the shipped `authorized_keys.py` script and the block's keys on 209
   SW->>N: Write the Orbit block<br/>authorized_keys · marked block
   %%> What it does:
   %%> - replaces only the lines between `# BEGIN Orbit managed keys` and `# END Orbit managed keys`
@@ -63,16 +63,19 @@ sequenceDiagram
   %%> Refuses:
   %%> - a file with broken markers, such as two BEGIN lines or no END line; then nothing is written
   %%> How:
-  %%> - a tracked script through `@swamp/ssh` from 209, as the managed account
+  %%> - the shipped script through `@swamp/ssh` from 209, as the managed account
+  %%> - logs in with the identity Node 12 already accepts, read with `vault.get`; the new Swamp identity may not be accepted yet
+  %%> Returns:
+  %%> - the digest of the lines outside the block, for the read-back
   SW->>N: Read the file back<br/>block + lines outside it
   %%> What it does:
   %%> - checks that the block holds exactly the intended keys
   %%> - checks that the lines outside the block equal the lines before the write
   %%> Why:
   %%> - proves that no operator key outside the block was lost
-  SW->>N: Log in with Swamp identity<br/>@swamp/ssh exec · true
+  SW->>N: Log in with Swamp identity<br/>@swamp/ssh exec · printf
   %%> What it does:
-  %%> - opens a new SSH session with the `swamp` role identity only, and runs `true`
+  %%> - opens a new SSH session with the `swamp` role identity only, and prints the ready result
   %%> Why:
   %%> - access only counts as ready when the Swamp identity really logs in
   alt login works

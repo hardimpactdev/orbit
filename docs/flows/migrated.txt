@@ -17,3 +17,4 @@ database_server.create
 database_server.destroy
 node.converge
 node.wireguard_hub_converge
+node.ssh_access_converge

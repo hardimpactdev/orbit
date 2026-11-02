@@ -16,7 +16,7 @@ covers:
 
 `orbit node:add <name> [host]` adds a machine to the fleet. For a Node that already exists, the same command converges it again after you change its TLD, roles, or settings. `orbit node:remove <node>` removes the Node from Orbit and leaves the machine reachable over public SSH. [`node`](/cli/node) lists the options.
 
-Standalone `node.converge` and apps-root `node.settings` run on 209 through official SSH with the Node's stored host keys. They pass their complete public intent at admission and need no target worker. Settings runs the shipped apps folder script over official SSH. Converge runs the shipped agent script for the pinned observer and its files, then the fleet recipe's role steps; it calls no agent command and never rotates the secret. Neither operation installs a per-Node worker or accepts worker enrollment credentials.
+Standalone `node.converge`, `node.ssh_access_converge` and apps-root `node.settings` run on 209 through official SSH with the Node's stored host keys, with shipped scripts from `@nckrtl/node-scripts`. They pass their complete public intent at admission and need no target worker. Settings runs the shipped apps folder script over official SSH. Converge runs the shipped agent script for the pinned observer and its files, then the fleet recipe's role steps; it calls no agent command and never rotates the secret. Neither operation installs a per-Node worker or accepts worker enrollment credentials.
 
 The Gateway projects the terminal result and records settings or completed footprint artifacts.
 

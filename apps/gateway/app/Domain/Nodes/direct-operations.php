@@ -22,7 +22,7 @@ return ['node.worker_known_hosts' => [
     'workflow' => 'operation-node-ssh-access-converge',
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^bootstrap-identity-node-14$']],
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'ssh_access', 'step' => 'result'],
+    'terminal_result' => ['job' => 'ssh_access', 'step' => 'Log in with Swamp identity'],
     'projection' => NodeSshAccessProjection::class,
 ], 'node.wireguard_hub_converge' => [
     'workflow' => 'operation-node-wireguard-hub-converge',
