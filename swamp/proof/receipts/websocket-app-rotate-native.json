@@ -1,0 +1,13 @@
+{
+  "kind": "websocket.app_rotate",
+  "topology": "minimal",
+  "topology_version": 11,
+  "source_commit": "e66311cda8d1e007c3465878eb5718ee542593ba",
+  "receipt": "/home/nckrtl/swamp-execution/evidence/proof/websocket.app_rotate/20261102T215444Z-minimal.json",
+  "proof_pass": true,
+  "operation_seconds": 30.24,
+  "run_seconds": 38.9,
+  "budget_seconds": 90,
+  "swamp_run_id": null,
+  "scripts_deleted": 0
+}
