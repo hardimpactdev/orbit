@@ -44,8 +44,6 @@ sequenceDiagram
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
   SW->>G: Withdraw metrics.orbit<br/>Caddy reload · DNS · certificate
-  %%> Open:
-  %%> - the DNS part is under the DNS hold; Nick decides
   %%> What it does:
   %%> - removes the `metrics.orbit` site from the Gateway Node's Caddyfile, validates it, and reloads Caddy gracefully
   %%> - removes the `metrics.orbit` private DNS name through the shared DNS step on the `vpn` Node
