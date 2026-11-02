@@ -4,6 +4,9 @@ up       provision one Project 62 task VM (or keep the held one), stage this com
 run      run kind fixtures in the held topology and write a receipt per kind
 receipt  print the latest receipt path
 down     cancel the task group through the normal API and confirm the VM is destroyed
+
+Before up or run takes a slot, every other session idle for IDLE_SECONDS or older than
+MAX_SECONDS is taken down, so a lane that forgets down cannot hold Shark for hours.
 """
 import argparse
 import fcntl
@@ -26,6 +29,8 @@ SESSION = Path.home() / 'swamp-execution/proof-sessions/minimal.json'
 EVIDENCE = Path.home() / 'swamp-execution/evidence/proof'
 SOURCE = '/home/orbit/swamp-proof/src'
 TERMINAL = {'succeeded', 'failed', 'cancelled', 'interrupted'}
+IDLE_SECONDS = 3600
+MAX_SECONDS = 8 * 3600
 
 
 class ProofError(Exception):
@@ -215,54 +220,68 @@ def run(state, kind):
     destination = EVIDENCE / kind / (datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ') + '-minimal.json')
     save(destination, receipt)
     state['receipts'].append(str(destination))
+    state['last_run_epoch'] = time.time()
     save(SESSION, state)
     return destination, receipt
 
 
-def cancel(gateway, state):
-    """Cancel the proof group, retrying a failed cancel once.
-
-    The Gateway replays an idempotency key's original Operation, so a retry of a failed cancel needs a new key.
-    A cancel that is still running, or whose reply was lost, is followed under its own key.
-    """
+def cancel(gateway, state, session):
+    """Cancel the proof group once; a cancel still running, or whose reply was lost, is followed under its key."""
     vm = state['vm']
-    retried = False
-    while True:
-        operation = gateway.request('GET', f'operations/{vm["cancel_operation_id"]}') if vm.get('cancel_operation_id') else None
-        if operation is not None and operation['status'] in TERMINAL and operation['status'] != 'succeeded':
-            if retried:
-                raise ProofError(f'tasks.cancel operation {operation["id"]} ended {operation["status"]}: {operation.get("error_code")}')
-            retried = True
-            vm['cancel_attempt'] = vm.get('cancel_attempt', 1) + 1
-            operation = None
-        if operation is None:
-            suffix = '' if vm.get('cancel_attempt', 1) == 1 else f'-{vm["cancel_attempt"]}'
-            operation = gateway.request('POST', f'task-groups/{vm["group_id"]}/cancel', {}, f'swamp-proof:{state["nonce"]}:cancel{suffix}')
-            vm['cancel_operation_id'] = operation['id']
-            save(SESSION, state)
-        try:
-            return gateway.wait(operation, 'tasks.cancel', vm['group_id'])
-        except ProofError:
-            # Only a terminal failure earns the one retry; a cancel still running after the wait stops here.
-            if retried or gateway.request('GET', f'operations/{operation["id"]}')['status'] not in TERMINAL:
-                raise
+    operation = gateway.request('GET', f'operations/{vm["cancel_operation_id"]}') if vm.get('cancel_operation_id') else None
+    if operation is None:
+        operation = gateway.request('POST', f'task-groups/{vm["group_id"]}/cancel', {}, f'swamp-proof:{state["nonce"]}:cancel')
+        vm['cancel_operation_id'] = operation['id']
+        save(session, state)
+    return gateway.wait(operation, 'tasks.cancel', vm['group_id'])
 
 
-def down(gateway, state):
+def down(gateway, state, session=None):
+    session = session or SESSION
     vm = state['vm']
     if vm.get('group_id') and not vm.get('destroyed'):
-        cancel(gateway, state)
+        cancel(gateway, state, session)
         group = gateway.request('GET', f'task-groups/{vm["group_id"]}')
         if group['status'] != 'cancelled' or ('task_vm_id' in vm and group.get('vm_power') != 'destroyed'):
             raise ProofError(f'Cancellation did not destroy proof group {vm["group_id"]}.')
         vm.update(destroyed=True, destroyed_at=utc())
     state['ready'] = False
-    save(SESSION, state)
+    save(session, state)
     for path in map(Path, state.get('receipts', [])):
         receipt = json.loads(path.read_text())
         receipt['vm'] = vm
         save(path, receipt)
     return state
+
+
+def expired(state, now):
+    """A held VM whose session ran nothing for IDLE_SECONDS, or that is older than MAX_SECONDS."""
+    vm = state.get('vm', {})
+    if not vm.get('group_id') or vm.get('destroyed'):
+        return False
+    last = max(state.get(key) or 0 for key in ('up_started_epoch', 'last_up_started_epoch', 'ready_epoch', 'last_run_epoch'))
+    return now - last > IDLE_SECONDS or now - (state.get('up_started_epoch') or now) > MAX_SECONDS
+
+
+def reap(gateway, now=None):
+    """Take down every other expired session; a session whose command is running holds its lock and is skipped."""
+    reaped = []
+    for path in sorted(SESSION.parent.glob('*.json')):
+        if path == SESSION:
+            continue
+        with path.with_suffix('.lock').open('a') as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                continue
+            state = json.loads(path.read_text())
+            if expired(state, now or time.time()):
+                try:
+                    down(gateway, state, path)
+                    reaped.append(path.stem)
+                except ProofError as error:
+                    print(f'swamp-proof: expired session {path.stem} is still up: {error}', file=sys.stderr)
+    return reaped
 
 
 def main(argv=None):
@@ -288,6 +307,9 @@ def main(argv=None):
             print('Another swamp-proof command holds the session.', file=sys.stderr)
             return 2
         try:
+            if args.action in ('up', 'run'):
+                for name in reap(Gateway()):
+                    print(f'swamp-proof: took down expired session {name}', file=sys.stderr)
             if args.action == 'up':
                 state = up(Gateway())
                 print(json.dumps({key: state[key] for key in ('topology', 'topology_version', 'commit', 'vm', 'timings')}))

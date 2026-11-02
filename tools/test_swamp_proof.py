@@ -39,7 +39,7 @@ class Refresh(unittest.TestCase):
 
 
 class Down(unittest.TestCase):
-    """down retries a failed cancel once under a new key, then trusts only the Gateway's group record."""
+    """down cancels once, then trusts only the Gateway's group record."""
 
     def run_down(self, outcomes, state=None, group=None):
         posts = []
@@ -69,23 +69,62 @@ class Down(unittest.TestCase):
             swamp_proof.down(Gateway(), state)
         return state, posts
 
-    def test_a_failed_cancel_is_retried_once_under_a_new_key(self):
-        state, posts = self.run_down(['failed', 'succeeded'])
-        self.assertEqual(posts, ['swamp-proof:n:cancel', 'swamp-proof:n:cancel-2'])
+    def test_one_cancel_takes_the_group_down(self):
+        state, posts = self.run_down(['succeeded'])
+        self.assertEqual(posts, ['swamp-proof:n:cancel'])
         self.assertTrue(state['vm']['destroyed'])
 
-    def test_a_cancel_that_failed_in_an_earlier_down_is_not_replayed(self):
-        state, posts = self.run_down(['succeeded'], state={'nonce': 'n', 'vm': {'group_id': 7, 'task_vm_id': 3, 'cancel_operation_id': 50}})
-        self.assertEqual(posts, ['swamp-proof:n:cancel-2'])
-        self.assertTrue(state['vm']['destroyed'])
-
-    def test_a_second_failure_stops_without_marking_the_vm_destroyed(self):
+    def test_a_failed_cancel_stops_without_marking_the_vm_destroyed(self):
         with self.assertRaisesRegex(swamp_proof.ProofError, 'ended failed'):
-            self.run_down(['failed', 'failed'])
+            self.run_down(['failed'])
 
     def test_the_gateway_group_record_must_show_the_vm_gone(self):
         with self.assertRaisesRegex(swamp_proof.ProofError, 'did not destroy'):
             self.run_down(['succeeded'], group={'status': 'cancelled', 'vm_power': 'running'})
+
+
+class Reap(unittest.TestCase):
+    """up and run take down other sessions that are idle for an hour or older than eight hours."""
+
+    def test_only_expired_unlocked_sessions_go_down(self):
+        import fcntl
+        import json
+        import tempfile
+        now = 100_000.0
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            sessions = {
+                'mine': {'vm': {'group_id': 1}, 'up_started_epoch': now - 99_000},
+                'idle': {'vm': {'group_id': 2}, 'up_started_epoch': now - 4000, 'ready_epoch': now - 3700},
+                'busy': {'vm': {'group_id': 3}, 'up_started_epoch': now - 4000, 'last_run_epoch': now - 60},
+                'old': {'vm': {'group_id': 4}, 'up_started_epoch': now - 30_000, 'last_run_epoch': now - 60},
+                'gone': {'vm': {'group_id': 5, 'destroyed': True}, 'up_started_epoch': now - 99_000},
+                'held': {'vm': {'group_id': 6}, 'up_started_epoch': now - 99_000},
+            }
+            for name, state in sessions.items():
+                (folder / f'{name}.json').write_text(json.dumps(state))
+            downed = []
+            with (folder / 'held.lock').open('a') as held, \
+                    patch.object(swamp_proof, 'SESSION', folder / 'mine.json'), \
+                    patch.object(swamp_proof, 'down', side_effect=lambda gateway, state, path: downed.append(path.stem)):
+                fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self.assertEqual(swamp_proof.reap(object(), now), ['idle', 'old'])
+            self.assertEqual(downed, ['idle', 'old'])
+
+    def test_a_failed_takedown_is_reported_and_the_rest_continue(self):
+        import json
+        import tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            for name in ('a', 'b'):
+                (folder / f'{name}.json').write_text(json.dumps({'vm': {'group_id': 1}, 'up_started_epoch': 0}))
+
+            def down(gateway, state, path):
+                if path.stem == 'a':
+                    raise swamp_proof.ProofError('cancel ended failed')
+
+            with patch.object(swamp_proof, 'SESSION', folder / 'mine.json'), patch.object(swamp_proof, 'down', side_effect=down):
+                self.assertEqual(swamp_proof.reap(object(), 100_000.0), ['b'])
 
 
 if __name__ == '__main__':
