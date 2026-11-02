@@ -13,6 +13,21 @@
       "--",
       "php",
       "swamp/proof/node.role_add/prepare.php",
+      "${node.gateway}",
+      "websocket"
+    ],
+    [
+      "systemctl",
+      "stop",
+      "orbit-websocket.service"
+    ],
+    [
+      "runuser",
+      "-u",
+      "orbit",
+      "--",
+      "php",
+      "swamp/proof/node.role_add/prepare.php",
       "${node.metrics}",
       "websocket"
     ],
