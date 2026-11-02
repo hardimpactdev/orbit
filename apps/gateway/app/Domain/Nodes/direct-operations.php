@@ -42,7 +42,7 @@ return ['node.worker_known_hosts' => [
     'workflow' => 'operation-node-agent-rekey',
     'projection' => NodeAgentRekeyProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'result', 'step' => 'result'],
+    'terminal_result' => ['job' => 'rekey', 'step' => 'Check the Node agent'],
 ], 'node.settings' => [
     'workflow' => 'operation-node-settings',
     'projection' => NodeSettingsProjection::class,

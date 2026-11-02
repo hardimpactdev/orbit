@@ -37,7 +37,7 @@ export const behavior = {
                 ctx: Context,
             ) => {
                 const value = {
-                    directory: ctx.extensionFile("scripts/ready.py").replace(
+                    directory: ctx.extensionFile("scripts/server_common.py").replace(
                         /\/[^/]+$/,
                         "",
                     ),

@@ -24,6 +24,7 @@ use App\Models\Operation;
 use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
 
 require getcwd().'/vendor/autoload.php';
 $app = require getcwd().'/bootstrap/app.php';
@@ -118,12 +119,20 @@ if ($argv[1] === 'fires') {
 $started = microtime(true);
 $server = ['REMOTE_ADDR' => $input['caller'], 'HTTPS' => 'on', 'HTTP_HOST' => 'gateway.orbit',
     'HTTP_ACCEPT' => 'application/json', 'CONTENT_TYPE' => 'application/json', 'HTTP_IDEMPOTENCY_KEY' => $input['key']];
-$request = Request::create('https://gateway.orbit/api/v1/'.$input['path'], $input['method'], server: $server,
-    content: json_encode($input['body'] ?? new stdClass, JSON_THROW_ON_ERROR));
-$kernel = $app->make(HttpKernel::class);
-$response = $kernel->handle($request);
-$kernel->terminate($request, $response);
-$body = json_decode((string) $response->getContent(), true);
+if (isset($input['artisan'])) {
+    // An operator command on the Gateway host, such as orbit:node-agent-rekey; it names its Operation in its output.
+    $code = Artisan::call($input['artisan'], $input['arguments'] ?? []);
+    $named = preg_match('/Operation #([1-9][0-9]*)/', Artisan::output(), $match) === 1 ? (int) $match[1] : null;
+    $response = new Illuminate\Http\JsonResponse(['output' => Artisan::output()], $code === 0 && $named !== null ? 202 : 422);
+    $body = ['data' => ['id' => $named]];
+} else {
+    $request = Request::create('https://gateway.orbit/api/v1/'.$input['path'], $input['method'], server: $server,
+        content: json_encode($input['body'] ?? new stdClass, JSON_THROW_ON_ERROR));
+    $kernel = $app->make(HttpKernel::class);
+    $response = $kernel->handle($request);
+    $kernel->terminate($request, $response);
+    $body = json_decode((string) $response->getContent(), true);
+}
 // A record request (a Project, a setup step) starts no Operation; its reply is the result.
 if (($input['operation'] ?? true) === false) {
     echo json_encode(['http_status' => $response->getStatusCode(), 'response' => $body]), PHP_EOL;
