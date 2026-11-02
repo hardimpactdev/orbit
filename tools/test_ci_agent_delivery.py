@@ -2,6 +2,7 @@
 import importlib.machinery
 import importlib.util
 import json
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -34,7 +35,7 @@ class FrozenAgentTest(unittest.TestCase):
         self.assertEqual(original, self.frozen())
 
     def test_mixed_published_releases_are_refused(self):
-        self.manifest['artifacts']['linux-x86_64']['url'] = self.manifest['artifacts']['linux-x86_64']['url'].replace('cli-v0.7261.0', 'cli-v0.1.0')
+        self.manifest['artifacts']['linux-x86_64']['url'] = re.sub(r'cli-v0\.[0-9]+\.0', 'cli-v0.1.0', self.manifest['artifacts']['linux-x86_64']['url'])
         self.path.write_text(json.dumps(self.manifest))
         with self.assertRaises(ValueError):self.frozen()
 
