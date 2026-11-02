@@ -53,6 +53,8 @@ Doctor reports `node.worker_failed` for a failed unit. The Node exporter exposes
 
 After review and fleet agent update, prove each selected Node before announcing it ready. VPN and usexit remain outside the current worker rollout. The canary verifies root-owned agent configuration against the expected Node ID and user, hostname, effective user and `sudo -n`. Record its native run ID and worker instance identity before announcing that Node live. Removing a Node from the rollout and converging disables the unit without waiting on its own worker; credentials and cache remain for recovery. macOS launchd is deferred until implemented and proven.
 
+Unused Gateway-local bootstrap and standalone PHP-package writer scaffolds are removed. `node:add` keeps its existing `operation.kind_unavailable` refusal until its native parent is complete.
+
 Standalone `node.macos_inspect` runs on 209 with the admitted SSH host keys and an execution-copy bootstrap key. It reads only platform, architecture and interface addresses, then uses a native assert. It checks or installs no agent, account, package or runtime on the Mac.
 
 ## Add a Node

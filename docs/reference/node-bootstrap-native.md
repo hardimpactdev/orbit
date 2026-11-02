@@ -2,25 +2,20 @@
 title: "Native Node bootstrap"
 description: "Standalone bootstrap intent, native first contact, candidate accounts, and PHP prerequisites."
 covers:
-  - apps/gateway/app/Actions/Nodes/{AdmitNodeBootstrapAction,StartNodePhpPackagesAction,AdmitWorkerKnownHostsAction,RecordNodeSshHostKeyAction}.php
+  - apps/gateway/app/Actions/Nodes/{AdmitNodeBootstrapAction,AdmitWorkerKnownHostsAction,RecordNodeSshHostKeyAction}.php
+  - swamp/extensions/behaviors/operations/node-bootstrap/**
   - apps/gateway/app/Domain/Nodes/WorkerKnownHosts*.php
   - apps/gateway/app/Infrastructure/Swamp/SwampWorkerKnownHostsInput.php
-  - apps/gateway/app/Domain/Nodes/{NodeBootstrapProjection,NodePhpPackagesInput,NodePhpPackagesProjection,bootstrap-direct-operations}.php
+  - apps/gateway/app/Domain/Nodes/{NodeBootstrapIntent,NodeBootstrapProjection,bootstrap-direct-operations}.php
 ---
 
 # Native Node bootstrap
 
-The Gateway records one Operation for each standalone bootstrap kind. It admits the Node, candidate account, pinned SSH endpoint and published observer artifact. Swamp performs the work and returns a bounded result. Node enrollment composes the same lower actions as native steps in its own root; it creates no child Operations.
+The Gateway records one Operation for the standalone `node.bootstrap_probe` and `node.macos_inspect` reads. It captures the public candidate endpoint and host keys, expected architecture and WireGuard address. Swamp runs official SSH on 209 with the existing Gateway-owned key in an execution vault. The Operation keeps its Gateway identity owner. Neither read needs a worker on that Gateway or its target.
 
-The probe and Mac inspection run on 209 with the existing Gateway-owned SSH identity in a Swamp execution vault. The target Node is an immutable participant. Neither read needs a Gateway or target worker. The other bootstrap kinds still resolve an identity path on the Gateway inside their existing action callback until their script conversion. Public intent and results contain no identity path or credential. Native SSH reads use the admitted public host keys. The retained bootstrap actions compare the admitted host fingerprint.
+The probe reads platform, architecture and host identity. Mac inspection reads platform, architecture and interface addresses. Their projection records public observations without committing a candidate account. Inputs include no installation plan, package selection, identity path or credential bytes. Native inputs and terminal projection replace the private-material and result callbacks.
 
-`node.bootstrap_probe` reads the platform, architecture and host key without installing software. Managed Linux is x86_64 only. macOS supports x86_64 and arm64. A platform or architecture mismatch fails before any download or change. `node.bootstrap_install` verifies the published observer's checksum before atomic delivery. The agent source and published pin remain frozen.
-
-`node.bootstrap_host` prepares the admitted Linux packages, account, SSH access and passwordless sudo. `node.bootstrap_verify` checks the exact candidate login and observer. `node.macos_inspect` checks the platform, architecture and admitted WireGuard address through the existing macOS account. It checks no agent or runtime ownership. It creates no account, packages, DNS, firewall or service. The persisted prior account and other Nodes remain unchanged until the owning enrollment activates its candidate. Projection records observed architecture and host identity only; it does not repeat execution checks or commit an account.
-
-`node.prepare_php_packages` installs the recipe's exact selected PHP builds on the target's worker. It preserves extra extensions and does not restart FPM masters. Its parent deploy or runtime DAG owns subsequent configuration and pool publication. The Gateway keeps version validation and recipe selection; Swamp owns downloads, package effects and recovery.
-
-The probe and Mac inspection have no Gateway callback: native inputs record intent, official SSH steps return public observations, and the Gateway projects the terminal event. The other bootstrap workflows have a separate failure callback on their root Node. It settles the original Operation when native execution fails before the family callback and preserves an already recorded terminal result. The Gateway records native results without step receipts, claims, child admission or execution transports. Frozen Rust action code is left for the final observer pass.
+The unused standalone `node.bootstrap_install`, `node.bootstrap_host`, `node.bootstrap_verify` and `node.prepare_php_packages` scaffolds are removed. They had no production admission caller. `node:add` already refuses with `operation.kind_unavailable` until its complete native execution contract exists; it stays unavailable. Production deploy captures its PHP package plan directly and does not call these admissions. This removal does not port those parent commands or add a replacement executor. The program that installs the observer for roles reports `node.bootstrap_failed` when installation fails; it is not a standalone writer.
 
 ### Mac inspection workflow
 

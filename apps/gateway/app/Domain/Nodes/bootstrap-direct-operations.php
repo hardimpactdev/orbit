@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\NodeBootstrapIntent;
 use App\Domain\Nodes\NodeBootstrapProjection;
-use App\Domain\Nodes\NodePhpPackagesProjection;
 
 $definitions = [];
 foreach (NodeBootstrapIntent::Kinds as $kind) {
@@ -17,13 +16,10 @@ foreach (NodeBootstrapIntent::Kinds as $kind) {
                 'bootstrap_verified' => ['job' => 'bootstrap', 'step' => 'Inspect the Mac', 'field' => 'verified'],
                 'error_code' => ['job' => 'bootstrap', 'step' => 'Inspect the Mac', 'field' => 'error_code']]],
             'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^bootstrap-identity-node-14$']]];
-    } elseif ($kind === 'node.bootstrap_probe') {
+    } else {
         $definitions[$kind] += ['workflow_inputs' => true, 'terminal_result' => ['job' => 'bootstrap', 'step' => 'probe-host'],
             'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^bootstrap-identity-node-14$']]];
-    } else {
-        $definitions[$kind]['private_material'] = ['bootstrap_identity' => 'node.bootstrap_ssh_identity'];
     }
 }
-$definitions['node.prepare_php_packages'] = ['workflow' => 'operation-node-prepare-php-packages', 'projection' => NodePhpPackagesProjection::class];
 
 return $definitions;

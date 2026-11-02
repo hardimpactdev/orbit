@@ -3,6 +3,7 @@ sequenceDiagram
   %% Tightened: flow-tighten 2026-11-02, rules 3, 17, 22 (cfgmgmt apt/user/fetch/file/systemd/authorized_key; Q-WGHUB hub config as file + wg syncconf; DNS record kept: a Node name is not covered by a TLD answer).
   %% Standalone Mac inspection runs on role=swamp: Read Mac platform, Read Mac addresses, Inspect the Mac, Check the Mac. It checks no agent or runtime ownership.
   %% Standalone bootstrap probe also runs on role=swamp, using its admitted SSH target and vault identity.
+  %% Unused standalone Gateway-local bootstrap writers are removed; node:add still awaits its complete native parent.
   %% status: draft
   %% command: node:add
   %% kind: node.add

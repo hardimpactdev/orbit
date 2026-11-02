@@ -1,9 +1,5 @@
-node.bootstrap_host
-node.bootstrap_install
 node.bootstrap_probe
-node.bootstrap_verify
 node.macos_inspect
-node.prepare_php_packages
 node.worker_known_hosts
 process.install_instance_definitions
 route.caddy_converge

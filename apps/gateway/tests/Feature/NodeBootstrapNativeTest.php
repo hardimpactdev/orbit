@@ -3,8 +3,6 @@
 declare(strict_types=1);
 
 use App\Actions\Nodes\AdmitNodeBootstrapAction;
-use App\Actions\Nodes\StartNodePhpPackagesAction;
-use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\NodeBootstrapIntent;
 use App\Domain\Nodes\RoleName;
@@ -18,7 +16,6 @@ use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
-use App\Models\ToolManagerRecord;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
@@ -41,88 +38,11 @@ beforeEach(function (): void {
     config(['swamp.run_token' => 'fixture-token']);
 });
 
-it('admits first contact on its Gateway worker with exact target custody', function (): void {
-    $operation = app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.bootstrap_verify');
-    expect($operation->target_id)->toBe($this->target->id)->and($operation->node_id)->toBe($this->gateway->id);
-    expect($operation->input['participant_node_ids'])->toBe([$this->gateway->id, $this->target->id]);
-    expect($operation->input['private_bindings']['bootstrap_identity'])->toBe(['owner_node_id' => $this->target->id, 'read_node_ids' => [$this->gateway->id], 'write_node_ids' => []]);
-    expect($this->target->fresh()->user)->toBe('prior');
-    expect(json_encode($operation->toArray()))->not->toContain('/private/bootstrap-key-sentinel');
-    $path = '/api/v1/direct-operations/'.$operation->id;
-    $this->getJson($path.'?run_id='.$this->run)->assertOk()->assertJsonMissingPath('data.input.bootstrap_identity')->assertJsonPath('data.input.bootstrap.target.port', 2222);
-    $this->getJson($path.'/private-material?run_id='.$this->run)->assertOk()->assertHeader('Cache-Control', 'no-store, private')->assertJsonPath('data.bootstrap_identity', '/private/bootstrap-key-sentinel');
-    $this->withServerVariables(['REMOTE_ADDR' => $this->target->wireguard_ip]);
-    $this->getJson($path.'/private-material?run_id='.$this->run)->assertForbidden()->assertDontSee('/private/bootstrap-key-sentinel');
-});
-
-it('records native host observations without committing the candidate user or execution receipts', function (): void {
-    $operation = app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.bootstrap_verify');
-    $result = ['probed' => true, 'architecture' => 'x86_64', 'host_type' => 'ssh-ed25519', 'public_key' => 'AAAA', 'host_key_fingerprint' => $this->target->ssh_host_fingerprint, 'user' => 'candidate', 'bootstrap_identity' => 'discard'];
-    $this->postJson('/api/v1/direct-operations/'.$operation->id.'/result', ['run_id' => $this->run, 'status' => 'succeeded', 'started_at' => '2026-10-31T09:00:00.000Z', 'finished_at' => '2026-10-31T09:00:01.000Z', 'result' => $result])->assertOk();
-    expect($this->target->fresh()->user)->toBe('prior')->and($this->target->fresh()->ssh_host_key)->toBe('AAAA');
-    expect($operation->fresh()->status)->toBe(OperationStatus::Succeeded);
-    expect($operation->fresh()->result)->not->toHaveKeys(['user', 'bootstrap_identity']);
-    expect($operation->fresh()->state)->not->toHaveKeys(['executor_runs', 'child_intents']);
-});
-
-it('refuses a foreign target or credential owner before exposing the identity', function (string $change): void {
-    $operation = app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.bootstrap_verify');
-    $input = $operation->input;
-    if ($change === 'target') {
-        $input['bootstrap']['node_id'] = $this->gateway->id;
-    } else {
-        $input['private_bindings']['bootstrap_identity']['owner_node_id'] = $this->gateway->id;
-    }
-    $operation->update(['input' => $input]);
-    $this->getJson('/api/v1/direct-operations/'.$operation->id.'/private-material?run_id='.$this->run)->assertStatus(422)->assertDontSee('/private/bootstrap-key-sentinel');
-})->with(['target', 'owner']);
-
-it('refuses unavailable Gateway and unsupported bootstrap intents without recording work', function (): void {
+it('refuses an unavailable Gateway before recording bootstrap reads', function (): void {
     $this->gateway->update(['status' => LifecycleStatus::Failed]);
-    expect(fn () => app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.bootstrap_verify'))->toThrow(ResourceOperationException::class);
-    expect(fn () => app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.macos_inspect'))->toThrow(ResourceOperationException::class);
+    expect(fn () => app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.bootstrap_probe'))->toThrow(ResourceOperationException::class);
     expect(Operation::query()->count())->toBe(0);
 });
-
-it('keeps PHP package preparation as one direct target with no child admission', function (): void {
-    $operation = app(StartNodePhpPackagesAction::class)->execute($this->target, ['8.5']);
-    expect($operation->kind)->toBe('node.prepare_php_packages')->and($operation->node_id)->toBe($this->target->id);
-    expect($operation->input['packages']['extras'])->toBe('keep')->and($operation->input['packages']['fpm'])->toBe('none');
-    expect(array_keys($operation->input['packages']['versions']))->toBe(['8.5']);
-    expect($operation->input)->not->toHaveKeys(['parent_operation_id', '_php_packages_deadline']);
-});
-
-it('rejects malformed PHP version selection before recording an Operation', function (array $versions): void {
-    expect(fn () => app(StartNodePhpPackagesAction::class)->execute($this->target, $versions))->toThrow(ResourceOperationException::class);
-    expect(Operation::query()->count())->toBe(0);
-})->with([[[]], [['8.5', '8.5']], [['8.5;id']], [['99.1']]]);
-
-it('admits the exact candidate account while preserving the stored prior identity', function (): void {
-    $candidate = new ProvisionNodeData(name: $this->target->name, publicSshHost: $this->target->public_ssh_host,
-        user: 'root', orbitUser: 'candidate', architecture: 'x86_64');
-    $operation = app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.bootstrap_host', $candidate);
-    expect($operation->input['bootstrap']['target']['user'])->toBe('root')
-        ->and($operation->input['bootstrap']['managed_user'])->toBe('candidate')
-        ->and($operation->input['bootstrap']['command']['user'])->toBe('candidate')
-        ->and($this->target->fresh()->user)->toBe('prior')
-        ->and($this->gateway->fresh()->user)->toBe('orbit');
-});
-
-it('records empty successful observations without an empty Node write', function (): void {
-    $operation = app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.bootstrap_verify');
-    $this->postJson('/api/v1/direct-operations/'.$operation->id.'/result', ['run_id' => $this->run,
-        'status' => 'succeeded', 'started_at' => '2026-10-31T09:00:00.000Z', 'finished_at' => '2026-10-31T09:00:01.000Z',
-        'result' => []])->assertOk();
-    expect($operation->fresh()->status)->toBe(OperationStatus::Succeeded)->and($this->target->fresh()->user)->toBe('prior');
-});
-
-it('records apt as a ready Tool Manager once the host bootstrap succeeds', function (string $kind, bool $recorded): void {
-    $operation = app(AdmitNodeBootstrapAction::class)->execute($this->target, $kind);
-    $this->postJson('/api/v1/direct-operations/'.$operation->id.'/result', ['run_id' => $this->run,
-        'status' => 'succeeded', 'started_at' => '2026-10-31T09:00:00.000Z', 'finished_at' => '2026-10-31T09:00:01.000Z',
-        'result' => []])->assertOk();
-    expect(ToolManagerRecord::query()->where('node_id', $this->target->id)->where('name', 'apt')->where('status', 'active')->exists())->toBe($recorded);
-})->with([['node.bootstrap_host', true], ['node.bootstrap_verify', false]]);
 
 it('captures stored public host keys for the official SSH pin policy', function (): void {
     $key = base64_encode(str_repeat('p', 32));
@@ -217,7 +137,7 @@ it('inspects a Mac from 209 with complete intent and projects its native check',
     try {
         $operation = app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.macos_inspect');
         expect($operation->node_id)->toBe($this->gateway->id);
-        expect($operation->input['bootstrap']['artifacts'])->toBe([]);
+        expect($operation->input['bootstrap'])->not->toHaveKeys(['artifacts', 'command', 'firewall']);
         expect($operation->input)->not->toHaveKeys(['bootstrap_identity', 'private_bindings']);
         expect($operation->input['bootstrap']['target']['host_keys'])->toBe(['ssh-ed25519 mac-public-key']);
         $definition = app(DirectOperation::class)->definition($operation->kind);

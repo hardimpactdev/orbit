@@ -30,18 +30,13 @@ final readonly class AdmitNodeBootstrapAction
         }
         $participants = array_values(array_unique([$root->id, $node->id]));
         $operationInput = ['bootstrap' => $input, 'participant_node_ids' => $participants];
-        if (in_array($kind, ['node.bootstrap_probe', 'node.macos_inspect'], true)) {
-            $identity = @file_get_contents($this->keys->privateKeyPath());
-            if (! is_string($identity) || $identity === '') {
-                throw new ResourceOperationException('node.bootstrap_identity_unavailable', 'The bootstrap SSH identity is unavailable.', 503);
-            }
-            $operationInput['execution_secrets'] = ['bootstrap_identity' => $this->steps->executionCopy(
-                'orbit-control-inputs', 'bootstrap-identity-node-'.$root->id, $identity,
-            )];
-        } else {
-            $operationInput['bootstrap_identity'] = ['$secret' => 'node.bootstrap_ssh_identity', 'id' => $node->id];
-            $operationInput['private_bindings'] = ['bootstrap_identity' => ['owner_node_id' => $node->id, 'read_node_ids' => [$root->id], 'write_node_ids' => []]];
+        $identity = @file_get_contents($this->keys->privateKeyPath());
+        if (! is_string($identity) || $identity === '') {
+            throw new ResourceOperationException('node.bootstrap_identity_unavailable', 'The bootstrap SSH identity is unavailable.', 503);
         }
+        $operationInput['execution_secrets'] = ['bootstrap_identity' => $this->steps->executionCopy(
+            'orbit-control-inputs', 'bootstrap-identity-node-'.$root->id, $identity,
+        )];
 
         return $this->operations->execute($kind, 'node', $node->id, $root->id,
             $operationInput,

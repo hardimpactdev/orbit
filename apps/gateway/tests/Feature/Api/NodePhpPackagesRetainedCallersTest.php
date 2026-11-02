@@ -2,13 +2,9 @@
 
 declare(strict_types=1);
 
-use App\Actions\Nodes\StartNodePhpPackagesAction;
-use App\Actions\Operations\StartOperationAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Models\Operation;
@@ -19,7 +15,8 @@ use Tests\Support\PhpBuildAnswers;
 
 it('keeps retained production callers synchronous even when the Node has a queued hold', function (LifecycleStatus $status): void {
     $node = FleetFixtures::node('retained-packages', [RoleName::AppProd], status: $status);
-    $held = app(StartOperationAction::class)->execute('firewall.allow', 'node', $node->id, $node->id, [], 'test', null);
+    $held = Operation::query()->create(['kind' => 'firewall.allow', 'target_type' => 'node', 'target_id' => $node->id,
+        'node_id' => $node->id, 'status' => 'queued', 'input' => [], 'sequence' => 1]);
     $agents = new FakeAgentCommandRunner;
     (new PhpBuildAnswers)->register($agents);
     app()->instance(AgentCommandRunner::class, $agents);
@@ -86,14 +83,4 @@ it('keeps retained stale and deferred FPM warnings', function (): void {
     Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context): bool => $context['masters'] === ['orbit-fpm-a.service'])->once();
     Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context): bool => $context['masters'] === ['orbit-fpm-b.service'])->once();
     Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context): bool => $context['masters'] === ['orbit-fpm-c.service'])->once();
-});
-
-it('refuses standalone package admission and keeps the registry valid without Kit C', function (): void {
-    $node = FleetFixtures::node('standalone-packages', [RoleName::AppProd]);
-    $code = OperationKinds::supports('list_of') ? 'operation.child_forbidden' : 'operation.kind_unavailable';
-
-    expect(fn () => app(StartNodePhpPackagesAction::class)->execute($node, ['8.5']))
-        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe($code));
-    expect(array_key_exists('node.prepare_php_packages', OperationKinds::definitions()))->toBe(OperationKinds::supports('list_of'));
-    $this->assertDatabaseCount('operations', 0);
 });

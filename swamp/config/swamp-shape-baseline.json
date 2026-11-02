@@ -527,27 +527,9 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/node-bootstrap/bootstrap_local.ts",
-      "rule": "inline-script",
-      "count": 32,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node-bootstrap/bootstrap_local.ts",
-      "rule": "multi-action",
-      "count": 5,
-      "evidence": [
-        "/bin/sh",
-        "/sbin/ifconfig",
-        "/usr/bin/id",
-        "/usr/bin/python3",
-        "/usr/bin/uname"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/node-bootstrap/bootstrap_program.ts",
       "rule": "custom-control",
-      "count": 8,
+      "count": 4,
       "evidence": [
         "embedded-control"
       ]
@@ -555,39 +537,8 @@
     {
       "file": "extensions/behaviors/operations/node-bootstrap/bootstrap_program.ts",
       "rule": "inline-script",
-      "count": 187,
+      "count": 45,
       "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node-bootstrap/bootstrap_ssh.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "/usr/bin/ssh-keyscan",
-        "/usr/bin/sudo"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node-bootstrap/direct.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node-bootstrap/direct.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node-bootstrap/packages.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
     },
     {
       "file": "extensions/behaviors/operations/node/agent_configure_system.ts",
