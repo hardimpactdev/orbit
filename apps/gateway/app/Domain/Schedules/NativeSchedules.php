@@ -29,7 +29,7 @@ final readonly class NativeSchedules
     public const Vault = 'orbit-control-inputs';
 
     public function __construct(private SwampScheduleWorkflows $workflows, private ScheduleTargetResolver $targets,
-        private ScheduleOperationAdmission $admission, private StartOperationAction $operations, private RecordEventBroadcaster $broadcaster) {}
+        private StartOperationAction $operations, private RecordEventBroadcaster $broadcaster) {}
 
     public static function workflowName(Schedule $schedule): string
     {
@@ -38,9 +38,9 @@ final readonly class NativeSchedules
 
     public function create(#[SensitiveParameter] Schedule $schedule, bool $created, ?Node $caller, ?string $requestId): Operation
     {
-        $input = $this->admission->inputFor($schedule, 'create', caller: $caller, created: $created);
+        $input = $this->input($schedule, $caller, ['created' => $created]);
         try {
-            $target = $this->targets->forSchedule($schedule);
+            $target = $this->targets->placementOf($schedule);
             app(SwampCommandStep::class)->executionCopy(self::Vault, self::commandKey($schedule), $schedule->command);
             $workflowId = $this->workflows->write($schedule->swamp_workflow_id, self::workflowName($schedule),
                 fn (string $id): string => $this->content($schedule, $target, $id));
@@ -59,7 +59,8 @@ final readonly class NativeSchedules
 
     public function enable(Schedule $schedule, ?Node $caller, ?string $requestId): Operation
     {
-        $input = $this->admission->inputFor($schedule, 'enable', caller: $caller);
+        $this->targets->placementOf($schedule);
+        $input = $this->input($schedule, $caller);
         $this->applyTrigger($schedule, DesiredTimerState::Enabled);
 
         return $this->record($schedule, 'enable', $input, $requestId, ['desired_timer_state' => DesiredTimerState::Enabled], RecordEventType::ScheduleUpdated);
@@ -94,6 +95,17 @@ final readonly class NativeSchedules
 
             throw $exception;
         }
+    }
+
+    /** Public intent of a native change; the command is a secret reference, never its bytes.
+     * @param  array<string,mixed>  $extra
+     * @return array<string,mixed>
+     */
+    private function input(Schedule $schedule, ?Node $caller, array $extra = []): array
+    {
+        return ['id' => $schedule->id, 'node_id' => $schedule->host_node_id, 'caller_node_id' => $caller?->id, ...$extra,
+            'calendar' => $schedule->calendar, 'timeout_seconds' => $schedule->timeout_seconds, 'desired' => $schedule->desired_timer_state->value,
+            'command_hash' => hash('sha256', $schedule->command), 'command' => ['$secret' => 'schedule.command', 'id' => $schedule->target_id]];
     }
 
     public static function owner(Schedule $schedule): string
@@ -132,8 +144,7 @@ final readonly class NativeSchedules
     private function content(#[SensitiveParameter] Schedule $schedule, ScheduleTarget $target, string $workflowId): string
     {
         $intent = ['schedule' => ['id' => $schedule->id, 'command_hash' => hash('sha256', $schedule->command), 'user' => $target->user,
-            'group' => $target->group, 'home' => $target->home, 'shell' => $target->shell, 'working_directory' => $target->workingDirectory,
-            'login_shell' => $target->loginShell, 'timeout_seconds' => $schedule->timeout_seconds],
+            'working_directory' => $target->workingDirectory ?? '', 'login_shell' => $target->loginShell, 'timeout_seconds' => $schedule->timeout_seconds],
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($target->node)];
 
         return json_encode([

@@ -1,6 +1,5 @@
 """Run the production Schedule DAG with official SSH and harmless local transport fixtures."""
 
-import grp
 import hashlib
 import importlib.util
 import json
@@ -111,9 +110,6 @@ raise SystemExit(r.returncode)
                 "schedule": {
                     "id": "123e4567-e89b-42d3-a456-426614174000",
                     "user": account.pw_name,
-                    "group": grp.getgrgid(account.pw_gid).gr_name,
-                    "home": account.pw_dir,
-                    "shell": account.pw_shell,
                     "working_directory": str(self.repo),
                     "login_shell": False,
                     "timeout_seconds": 2,
@@ -194,9 +190,9 @@ class ScheduleRunNative(ScheduleSshFixture):
         self.assertTrue(self.journal.read_text().startswith("schedule-journal-"))
         calls = [json.loads(line) for line in self.calls.read_text().splitlines()]
         execution = next(a for a in calls if "/usr/bin/timeout" in a)
-        self.assertIn("--chdir=" + str(self.repo), execution)
-        self.assertIn("pipefail", execution)
-        self.assertEqual(execution[-1], "-s")
+        self.assertEqual(execution[-2], str(self.repo))
+        self.assertIn("pipefail", execution[execution.index("-c") + 1])
+        self.assertNotIn(self.secrets[0], json.dumps(execution))
         self.assert_private_absent(json.dumps(self.history()), self.calls.read_text())
 
     def test_failed_command_and_timeout_return_bounded_errors_without_business_output(
@@ -235,7 +231,7 @@ class ScheduleRunNative(ScheduleSshFixture):
 
     def test_unavailable_context_or_directory_refuses_before_command(self):
         for field, value in [
-            ("home", "/foreign-home"),
+            ("user", "no-such-schedule-user"),
             ("working_directory", "/does-not-exist"),
         ]:
             with self.subTest(field=field):
@@ -264,4 +260,4 @@ class ScheduleRunNative(ScheduleSshFixture):
             if "/usr/bin/timeout" in line
         )
         self.assertIn("86400s", execution)
-        self.assertEqual(execution[-2:], ["--login", "-s"])
+        self.assertEqual(execution[-1], "1")

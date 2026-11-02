@@ -8,3 +8,4 @@ behaviors:
   - operations/schedule-run/assets.ts
 additionalFiles:
   - scripts/check.py
+  - scripts/run.sh

@@ -26,7 +26,7 @@ export const behavior = {
       garbageCollection: 10,
     },
     assets: {
-      schema: z.object({ script: z.string() }).strict(),
+      schema: z.object({ script: z.string(), runner: z.string() }).strict(),
       lifetime: "infinite",
       garbageCollection: 10,
     },
@@ -45,7 +45,7 @@ export const behavior = {
       },
     },
     read: {
-      description: "Resolve the shipped Schedule check script",
+      description: "Resolve the shipped Schedule check script and command runner",
       arguments: z.object({}).strict(),
       execute: async (_args: Record<string, never>, ctx: {
         extensionFile(name: string): string;
@@ -57,6 +57,7 @@ export const behavior = {
       }) => {
         const assets = {
           script: await Deno.readTextFile(ctx.extensionFile("scripts/check.py")),
+          runner: await Deno.readTextFile(ctx.extensionFile("scripts/run.sh")),
         };
         await ctx.writeResource("assets", "assets", assets);
         return assets;

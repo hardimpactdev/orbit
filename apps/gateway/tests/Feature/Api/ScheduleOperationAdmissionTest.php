@@ -243,3 +243,15 @@ it('moves a Node timer Schedule to its own workflow first and then removes the t
     app(ScheduleOperationCompletion::class)->complete($removal, OperationOutcome::succeeded(['ready' => true]));
     expect($schedule->fresh())->not->toBeNull();
 });
+
+it('creates and runs a Schedule from its Placement without reading the account on the Node', function (): void {
+    $accounts = Mockery::mock(ScheduleRuntimeAccountResolver::class);
+    $accounts->shouldNotReceive('resolve');
+    app()->instance(ScheduleRuntimeAccountResolver::class, $accounts);
+    $this->postJson('/api/v1/schedules', $this->payload)->assertAccepted();
+    $schedule = Schedule::query()->sole();
+    $this->postJson('/api/v1/schedules/'.$schedule->id.'/run')->assertAccepted();
+    $intent = array_last($this->socket->sent)['payload']['inputs']['intent']['schedule'];
+    expect($intent)->toEqualCanonicalizing(['id' => $schedule->id, 'command_hash' => hash('sha256', $this->payload['command']), 'user' => 'orbit',
+        'login_shell' => true, 'timeout_seconds' => 3600, 'working_directory' => '']);
+});

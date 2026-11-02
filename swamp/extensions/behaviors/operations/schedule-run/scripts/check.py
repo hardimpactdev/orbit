@@ -1,6 +1,7 @@
 """Check a Schedule's account, working directory and command copy before the command runs.
 
-argv: user group home shell working_directory command_hash; the command arrives on stdin.
+argv: user working_directory command_hash; an empty working directory is the user's home.
+The command arrives on stdin.
 """
 
 import grp
@@ -11,15 +12,10 @@ import subprocess
 import sys
 
 
-def account(user, group, home, shell):
+def account(user):
     entry = pwd.getpwnam(user)
-    return (
-        entry.pw_name == user
-        and entry.pw_uid > 0
-        and entry.pw_dir == home
-        and entry.pw_shell == shell
-        and grp.getgrnam(group).gr_name == group
-    )
+    grp.getgrgid(entry.pw_gid)
+    return entry.pw_name == user and entry.pw_uid > 0 and entry.pw_dir.startswith("/") and entry.pw_shell.startswith("/")
 
 
 def directory(user, path):
@@ -45,14 +41,15 @@ def command(value, expected):
 
 
 def check(args, stdin):
-    if len(args) != 6:
-        return "the check needs six arguments"
-    user, group, home, shell, path, expected = args
+    if len(args) != 3:
+        return "the check needs three arguments"
+    user, path, expected = args
     try:
-        if not account(user, group, home, shell):
-            return f"the account {user} does not match the Schedule"
+        if not account(user):
+            return f"the account {user} cannot run a Schedule"
+        path = path or pwd.getpwnam(user).pw_dir
     except (KeyError, OSError):
-        return f"the account {user} or group {group} does not exist"
+        return f"the account {user} or its group does not exist"
     if not directory(user, path):
         return f"{user} cannot enter {path}"
     if not command(stdin, expected):

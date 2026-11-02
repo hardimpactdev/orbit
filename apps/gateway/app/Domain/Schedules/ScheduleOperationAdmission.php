@@ -39,6 +39,8 @@ final readonly class ScheduleOperationAdmission
         $target = match ($verb) {
             'create' => $this->targets->forInstallation($schedule),
             'destroy' => $this->targets->forRemoval($schedule),
+            // A run reads the account on the Node itself (task-command-run); only Node timer units need it here.
+            'run' => $this->targets->placementOf($schedule),
             default => $this->targets->forSchedule($schedule),
         };
         $input = ['id' => $schedule->id, 'node_id' => $target->node->id, 'caller_node_id' => $caller?->id, 'created' => $created];

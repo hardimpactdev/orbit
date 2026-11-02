@@ -44,7 +44,7 @@ final readonly class CreateScheduleAction
     public function admit(AddScheduleData $data, ?Node $caller = null, ?string $requestId = null): Operation
     {
         $this->validator->validate($data);
-        $this->targets->resolve($data->targetType, $data->targetId);
+        $this->targets->placement($data->targetType, $data->targetId);
         ['schedule' => $schedule, 'created' => $created] = $this->reserveAdmission($data);
         if ($schedule->trigger === ScheduleTrigger::Swamp) {
             return app(NativeSchedules::class)->create($schedule, $created, $caller, $requestId);
@@ -62,7 +62,7 @@ final readonly class CreateScheduleAction
                 ScheduleTargetType::Instance => Instance::query()->lockForUpdate()->findOrFail($data->targetId),
             };
 
-            return $this->targets->resolve($data->targetType, $model->id);
+            return $this->targets->placement($data->targetType, $model->id);
         });
 
         $admission = DB::transaction(function () use ($data, $target): array {

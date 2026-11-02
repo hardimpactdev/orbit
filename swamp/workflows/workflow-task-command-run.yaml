@@ -20,13 +20,11 @@ inputs:
             id: {type: string, format: uuid}
             command_hash: {type: string, pattern: '^[a-f0-9]{64}$'}
             user: {type: string, pattern: '^[a-z_][a-z0-9_-]{0,255}$'}
-            group: {type: string, pattern: '^[a-z_][a-z0-9_-]{0,255}$'}
-            home: {type: string, pattern: '^/[^\x00-\x1f\x7f]*$', maxLength: 4096}
-            shell: {type: string, pattern: '^/[^\x00-\x1f\x7f]*$', maxLength: 4096}
-            working_directory: {type: string, pattern: '^/[^\x00-\x1f\x7f]*$', maxLength: 4096}
+            # Empty runs in the user's home; the Node's account database supplies home, shell and group.
+            working_directory: {type: string, pattern: '^(?:/[^\x00-\x1f\x7f]*)?$', maxLength: 4096}
             login_shell: {type: boolean}
             timeout_seconds: {type: integer, minimum: 1, maximum: 86400}
-          required: [id, command_hash, user, group, home, shell, working_directory, login_shell, timeout_seconds]
+          required: [id, command_hash, user, working_directory, login_shell, timeout_seconds]
           additionalProperties: false
         ssh_execution: {type: object}
       required: [schedule, ssh_execution]
@@ -80,7 +78,6 @@ jobs:
         hosts: name:target
         sudo: true
         argv: [timeout, '30', python3, -I, -c, '${{ steps["Read the check script"].outputs.script }}', '${{ inputs.intent.schedule.user }}',
-          '${{ inputs.intent.schedule.group }}', '${{ inputs.intent.schedule.home }}', '${{ inputs.intent.schedule.shell }}',
           '${{ inputs.intent.schedule.working_directory }}', '${{ inputs.intent.schedule.command_hash }}']
         stdin: ${{ vault.get(inputs.execution_secrets.command.vault, inputs.execution_secrets.command.key) }}
         timeoutSec: 40
@@ -96,16 +93,11 @@ jobs:
       inputs:
         hosts: name:target
         # The command goes on stdin; its output goes to the Node journal, never into native history.
-        argv: '${{ ["/usr/bin/sudo", "-n", "--user", inputs.intent.schedule.user,
-          "--group", inputs.intent.schedule.group, "--", "/usr/bin/timeout", "--signal=TERM",
-          "--kill-after=5", string(inputs.intent.schedule.timeout_seconds) + "s",
-          "/usr/bin/env", "-i", "--chdir=" + inputs.intent.schedule.working_directory,
-          "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "HOME="
-          + inputs.intent.schedule.home, "SHELL=" + inputs.intent.schedule.shell,
-          "USER=" + inputs.intent.schedule.user, "LOGNAME=" + inputs.intent.schedule.user,
-          "/bin/bash", "-o", "pipefail", "-c", "\"$@\" 2>&1 | /usr/bin/systemd-cat
-          --identifier \"$0\"", "orbit-schedule-" + inputs.intent.schedule.id] + [inputs.intent.schedule.shell]
-          + (inputs.intent.schedule.login_shell ? ["--login"] : []) + ["-s"] }}'
+        # run.sh reads the user's home and shell from the Node's account database when the run starts.
+        argv: ['/usr/bin/sudo', '-n', '--user', '${{ inputs.intent.schedule.user }}', '--', '/usr/bin/timeout', '--signal=TERM', '--kill-after=5',
+          '${{ string(inputs.intent.schedule.timeout_seconds) + "s" }}', '/bin/bash', '-c', '${{ steps["Read the check script"].outputs.runner }}',
+          '${{ "orbit-schedule-" + inputs.intent.schedule.id }}', '${{ inputs.intent.schedule.working_directory }}',
+          '${{ inputs.intent.schedule.login_shell ? "1" : "" }}']
         stdin: ${{ vault.get(inputs.execution_secrets.command.vault, inputs.execution_secrets.command.key) }}
         timeoutSec: ${{ inputs.intent.schedule.timeout_seconds + 10 }}
         captureOutput: false

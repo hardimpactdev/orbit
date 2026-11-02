@@ -51,7 +51,8 @@ final readonly class ScheduleControlProjection implements DirectOperationProject
             $ssh = app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($operation->node_id));
             $command = $source->resolve($operation, $owner, 'command', 'command');
 
-            return ['intent' => ['schedule' => Arr::only($operation->input, ['id', 'command_hash', 'user', 'group', 'home', 'working_directory', 'shell', 'login_shell', 'timeout_seconds']),
+            return ['intent' => ['schedule' => [...Arr::only($operation->input, ['id', 'command_hash', 'user', 'login_shell', 'timeout_seconds']),
+                'working_directory' => $operation->input['working_directory'] ?? ''],
                 'ssh_execution' => $ssh],
                 'execution_secrets' => ['command' => app(SwampCommandStep::class)->executionCopy(
                     'orbit-control-inputs', 'schedule-run-operation-'.$operation->id, ValidatedData::string($command->value),
