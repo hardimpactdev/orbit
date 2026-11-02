@@ -27,12 +27,12 @@ jobs:
     dependsOn: [{step: assets, condition: {type: succeeded}}]
     guard: ${{ !("repository_given" in inputs.intent) || !inputs.intent.repository_given }}
     writes: true
-    task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "tool-key-fetch-the-signing-key-" + string(inputs.node_id) }}', methodName: execute, inputs: {run: timeout 60 curl --fail --silent --show-error --location --proto =https --proto-redir =https --max-time 60 --create-dirs --output "$ORBIT_KEY_FILE.asc" -- "$ORBIT_KEY_URL", timeout: 65000, env: {ORBIT_KEY_FILE: '${{ ".swamp/tool-keys/" + run.id }}', ORBIT_KEY_URL: '${{ steps.assets.outputs.repository.signing_key.url }}'}}}
+    task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "tool-key-fetch-the-signing-key-" + string(inputs.node_id) }}', methodName: execute, inputs: {run: timeout 60 curl --fail --silent --show-error --location --proto =https --proto-redir =https --max-time 60 --create-dirs --output "$ORBIT_KEY_FILE.asc" -- "$ORBIT_KEY_URL", timeout: 65000, env: {ORBIT_KEY_FILE: '${{ "/tmp/orbit-tool-keys/" + run.id }}', ORBIT_KEY_URL: '${{ steps.assets.outputs.repository.signing_key.url }}'}}}
   - name: Read the key fingerprint
     labels: {role: swamp}
     dependsOn: [{step: Fetch the signing key, condition: {type: succeeded}}]
     guard: ${{ !("repository_given" in inputs.intent) || !inputs.intent.repository_given }}
-    task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "tool-key-read-the-key-fingerprint-" + string(inputs.node_id) }}', methodName: execute, inputs: {run: timeout 60 gpg --batch --with-colons --show-keys "$ORBIT_KEY_FILE.asc", timeout: 65000, env: {ORBIT_KEY_FILE: '${{ ".swamp/tool-keys/" + run.id }}'}}}
+    task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "tool-key-read-the-key-fingerprint-" + string(inputs.node_id) }}', methodName: execute, inputs: {run: timeout 60 gpg --batch --with-colons --show-keys "$ORBIT_KEY_FILE.asc", timeout: 65000, env: {ORBIT_KEY_FILE: '${{ "/tmp/orbit-tool-keys/" + run.id }}'}}}
   - name: Assert the key fingerprint
     labels: {role: swamp}
     dependsOn: [{step: Read the key fingerprint, condition: {type: succeeded}}]
@@ -43,7 +43,7 @@ jobs:
     dependsOn: [{step: Assert the key fingerprint, condition: {type: succeeded}}]
     guard: ${{ !("repository_given" in inputs.intent) || !inputs.intent.repository_given }}
     writes: true
-    task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "tool-key-dearmor-the-signing-key-" + string(inputs.node_id) }}', methodName: execute, inputs: {run: timeout 60 gpg --batch --yes --dearmor --output "$ORBIT_KEY_FILE.gpg" "$ORBIT_KEY_FILE.asc", timeout: 65000, env: {ORBIT_KEY_FILE: '${{ ".swamp/tool-keys/" + run.id }}'}}}
+    task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "tool-key-dearmor-the-signing-key-" + string(inputs.node_id) }}', methodName: execute, inputs: {run: timeout 60 gpg --batch --yes --dearmor --output "$ORBIT_KEY_FILE.gpg" "$ORBIT_KEY_FILE.asc", timeout: 65000, env: {ORBIT_KEY_FILE: '${{ "/tmp/orbit-tool-keys/" + run.id }}'}}}
   - name: Prepare apt keyrings
     labels: {role: swamp}
     dependsOn: [{step: Assert the key fingerprint, condition: {type: succeeded}}]
@@ -60,7 +60,7 @@ jobs:
     dependsOn: [{step: Dearmor the signing key, condition: {type: succeeded}}, {step: Prepare apt keyrings, condition: {type: succeeded}}]
     guard: ${{ !("repository_given" in inputs.intent) || !inputs.intent.repository_given }}
     writes: true
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/copy_file', behaviorName: '${{ "publish-the-signing-key-" + string(inputs.node_id) }}', methodName: apply, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', become: true, path: '${{ "/etc/apt/keyrings/orbit-" + steps.assets.outputs.repository.name + ".gpg" }}', mode: '0644', ensure: present, source: '${{ ".swamp/tool-keys/" + run.id + ".gpg" }}', owner: root, group: root}, inputs: {}}
+    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/copy_file', behaviorName: '${{ "publish-the-signing-key-" + string(inputs.node_id) }}', methodName: apply, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', become: true, path: '${{ "/etc/apt/keyrings/orbit-" + steps.assets.outputs.repository.name + ".gpg" }}', mode: '0644', ensure: present, source: '${{ "/tmp/orbit-tool-keys/" + run.id + ".gpg" }}', owner: root, group: root}, inputs: {}}
   - name: Pin repository packages
     labels: {role: swamp}
     dependsOn: [{step: Publish the signing key, condition: {type: succeeded}}]
@@ -81,7 +81,7 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ "update-the-apt-source-" + string(inputs.node_id) }}', methodName: apply, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', become: true, ensure: present, path: '${{ "/etc/apt/sources.list.d/orbit-" + steps.assets.outputs.repository.name + ".sources" }}', content: '${{ "Types: deb\nURIs: " + steps.assets.outputs.repository.uris.join(" ") + "\nSuites: " + steps.assets.outputs.repository.suites.join(" ") + "\nComponents: " + steps.assets.outputs.repository.components.join(" ") + "\nArchitectures: " + ("architectures" in steps.assets.outputs.repository ? steps.assets.outputs.repository.architectures : ["amd64"]).join(" ") + "\nSigned-By: /etc/apt/keyrings/orbit-" + steps.assets.outputs.repository.name + ".gpg\n" }}', owner: root, group: root, mode: '0644'}, inputs: {}}
   - name: Refresh apt source
     labels: {role: swamp}
-    dependsOn: [{step: Assert the key fingerprint, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Add the signed apt source, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Update the apt source, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: Dearmor the signing key, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Prepare apt keyrings, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Publish the signing key, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Pin repository packages, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Assert the key fingerprint, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Add the signed apt source, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Update the apt source, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "refresh-apt-source-" + string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "refresh-apt-source-" + string(inputs.node_id) }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', timeoutSec: 65, argv: '${{ ["timeout", "60"] + steps.assets.outputs.refresh }}', sudo: true}}
     guard: ${{ inputs.intent.manager != "apt" || inputs.intent.repository == null }}
     writes: true
@@ -90,7 +90,7 @@ jobs:
     dependsOn: [{step: Fetch the signing key, condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}, {step: Read the key fingerprint, condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}, {step: Assert the key fingerprint, condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}, {step: Dearmor the signing key, condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}, {step: Publish the signing key, condition: {type: or, conditions: [{type: completed}, {type: skipped}]}}]
     guard: ${{ !("repository_given" in inputs.intent) || !inputs.intent.repository_given }}
     writes: true
-    task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "tool-key-remove-the-staged-key-" + string(inputs.node_id) }}', methodName: execute, inputs: {run: timeout 60 rm --force -- "$ORBIT_KEY_FILE.asc" "$ORBIT_KEY_FILE.gpg", timeout: 65000, env: {ORBIT_KEY_FILE: '${{ ".swamp/tool-keys/" + run.id }}'}}}
+    task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "tool-key-remove-the-staged-key-" + string(inputs.node_id) }}', methodName: execute, inputs: {run: timeout 60 rm --force -- "$ORBIT_KEY_FILE.asc" "$ORBIT_KEY_FILE.gpg", timeout: 65000, env: {ORBIT_KEY_FILE: '${{ "/tmp/orbit-tool-keys/" + run.id }}'}}}
     allowFailure: true
   - name: Read manager version
     labels: {role: swamp}

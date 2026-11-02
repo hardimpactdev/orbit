@@ -1,5 +1,6 @@
 """Native Tool graphs: official SSH argv and cfgmgmt resources, with effects held at the transport boundary."""
 import json
+import os
 import re
 import sys
 import unittest
@@ -76,11 +77,11 @@ class ToolNative(NativeTestCase):
             command = worker / name
             command.write_text('#!' + sys.executable + '\n' + WORKER.replace('STATE', repr(str(self.state))))
             command.chmod(0o700)
-        self.native_env['PATH'] = str(worker) + ':' + __import__('os').environ['PATH']
+        self.native_env['PATH'] = str(worker) + ':' + os.environ['PATH']
         (self.repo / 'extensions/behaviors/fixture.ts').write_text(CONFIG.replace('STATE', json.dumps(str(self.state))).replace('AUDIT', json.dumps(str(self.audit))))
         for name in ('write-209', 'remove-209'):
             path = f'workflows/workflow-operation-tool-{name}.yaml'
-            workflow = yaml.safe_load((ROOT / path).read_text())
+            workflow = yaml.safe_load((ROOT / path).read_text().replace('/tmp/orbit-tool-keys/', str(self.repo / 'worker-keys') + '/'))
             for step in workflow['jobs'][0]['steps']:
                 self.assertEqual(step.pop('labels'), {'role': 'swamp'})
                 task = step['task']
@@ -158,7 +159,7 @@ class ToolNative(NativeTestCase):
         self.assertIsNone(json.loads(self.state.read_text())['installed'])
         self.assertEqual(next(s for s in run['jobs'][0]['steps'] if s['name']=='Publish the signing key')['status'], 'skipped')
         self.assertFalse(self.audit.exists(), 'A mismatched key must not contact the Node, even for cleanup or manager setup')
-        self.assertFalse(list((self.repo / '.swamp/tool-keys').glob('*')), 'Local staged keys must be cleaned after refusal')
+        self.assertFalse(list((self.repo / 'worker-keys').glob('*')), 'Local staged keys must be cleaned after refusal')
 
 
 if __name__ == '__main__': unittest.main()
