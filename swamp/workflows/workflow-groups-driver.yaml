@@ -2,8 +2,9 @@ id: d83a5174-05bf-41ab-8468-f36d5fe30b03
 name: groups-driver
 description: Discover every active group and reconcile independent owning runs.
 trigger:
-  # Discovery and fan-out take 35–47 seconds under the first live load.
-  schedule: "0 * * * * *"
+  # Reconciles software-factory owning runs; each run is long-lived, so discovery only
+  # recovers a lost owner or starts a new work item. Ten minutes of latency is enough.
+  schedule: "0 */10 * * * *"
 reports:
   skip: ["@swamp/workflow-summary"]
 jobs:

@@ -1,9 +1,7 @@
 id: 39da727f-537c-4ff8-8955-ae713f91b20d
 name: task-vm-image-reaper
-description: Every thirty minutes remove image builders older than two hours without active build references.
+description: Remove image builders older than two hours without active build references. Unscheduled until its host steps reach hosts through @swamp/ssh from 209; they still target host-local workers, and beast (Node 9) has none.
 concurrency: 1
-trigger:
-  schedule: "0 */30 * * * *"
 vaults: []
 jobs:
   - name: discover

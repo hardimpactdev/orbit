@@ -14,6 +14,8 @@ jobs:
       inputs:
         candidates: ${{ [data.latest("observation-context-fleet", "context").?attributes.orValue(null)].filter(c, c != null) }}
   - name: reading
+    # doctor.inspect is being removed; fires already queued on serve must not start it.
+    guard: ${{ true }}
     dependsOn:
     - {step: context, condition: {type: succeeded}}
     task:
