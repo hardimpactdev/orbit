@@ -91,10 +91,8 @@ jobs:
     dependsOn: [{step: Remove the apt source, condition: {type: succeeded}}]
     guard: ${{ !steps.assets.outputs.remove_repository }}
     writes: true
-...
     task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ "remove-the-signing-key-" + string(inputs.node_id) }}', methodName: apply, globalArgs: {nodeHost: '${{ inputs.ssh.target.host }}', nodeUser: '${{ inputs.ssh.target.user }}', nodePort: '${{ inputs.ssh.target.port }}', nodeIdentityFile: '${{ inputs.ssh.identity_file }}', become: true, path: '${{ "/etc/apt/keyrings/orbit-" + steps.assets.outputs.repository.name + ".gpg" }}', ensure: absent}, inputs: {}}
     allowFailure: true
-...
   - name: Decode package state
     labels: {role: swamp}
     dependsOn: [{step: Check apt absence, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check Homebrew absence, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check it is gone, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
