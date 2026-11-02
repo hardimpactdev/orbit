@@ -956,7 +956,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ],
         'route:destroy' => [['route'], ['yes' => false, 'offline' => false, 'idempotency-key' => null, 'json' => false]],
         'route:show' => [['route'], ['json' => false]],
-        'route:target:unset' => [['route'], ['yes' => false, 'idempotency-key' => null, 'json' => false]],
+        'route:target:unset' => [['route'], ['yes' => false, 'json' => false]],
         'route:target:set' => [['route', 'target'], ['targets' => [], 'reassign' => [], 'remove' => [], 'idempotency-key' => null, 'json' => false]],
         'route:update' => [['route'], ['domain' => null, 'publication' => null, 'web-root' => null, 'idempotency-key' => null, 'json' => false]],
         'schedule:enable' => [['schedule'], ['idempotency-key' => null, 'json' => false]],

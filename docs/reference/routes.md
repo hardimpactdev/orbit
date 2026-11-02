@@ -730,7 +730,7 @@ A child `route.destroy` request uses `{route_id, offline: false}`. The shared ch
 
 Each parent prepares exact `{stage, key}` child entries. Child-phase and residue result lists allow at most 4,096 entries and use the shared kit's string and whole-result limits. Opening a phase makes only those children eligible. A commit checks each child's stamped parent, admission snapshot and successful result through the shared child proof. Final proof checks the required phases and children again. The parent completion must match that recorded result.
 
-`route.target_unset` clears eligible Project Route associations and records its intent atomically. It starts `operation-route-target-unset` directly on the admitted Node. Swamp confirms the stored empty target set and projects the result. It has no publication, Metrics, child Operation, executor claim or polled writer. Active Instance and replacement guards still apply.
+`route:target:unset` is record-only. The Gateway clears eligible Project Route associations in one transaction and returns the Route. It starts no run and records no Operation. Active Instance and replacement guards still apply.
 
 Target changes broadcast `route.updated` only after the admission transaction commits. A refused preparation leaves the target unchanged and emits no `route.updated` event.
 

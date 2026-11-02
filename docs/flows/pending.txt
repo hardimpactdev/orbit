@@ -21,7 +21,6 @@ route.caddy_converge
 route.lan_remove
 route.private_dns_publish
 route.public_verify
-route.target_unset
 route.withdraw
 route.workload_verify
 schedule.install_instance_definitions

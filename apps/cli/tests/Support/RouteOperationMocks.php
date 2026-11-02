@@ -7,7 +7,6 @@ use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Orbit\Sdk\Requests\Routes\CreateRouteRequest;
 use Orbit\Sdk\Requests\Routes\DestroyRouteRequest;
 use Orbit\Sdk\Requests\Routes\SetRouteTargetRequest;
-use Orbit\Sdk\Requests\Routes\UnsetRouteTargetRequest;
 use Orbit\Sdk\Requests\Routes\UpdateRouteRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -17,7 +16,7 @@ use Saloon\Http\Request;
 function route_operation_mock(array $responses = []): MockClient
 {
     $last = null;
-    foreach ([CreateRouteRequest::class => 'route.create', UpdateRouteRequest::class => 'route.update', DestroyRouteRequest::class => 'route.destroy', SetRouteTargetRequest::class => 'route.target_set', UnsetRouteTargetRequest::class => 'route.target_unset'] as $class => $kind) {
+    foreach ([CreateRouteRequest::class => 'route.create', UpdateRouteRequest::class => 'route.update', DestroyRouteRequest::class => 'route.destroy', SetRouteTargetRequest::class => 'route.target_set'] as $class => $kind) {
         $response = $responses[$class] ?? null;
         if (! $response instanceof MockResponse || $response->status() >= 400) {
             continue;

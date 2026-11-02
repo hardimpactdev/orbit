@@ -87,7 +87,6 @@ Deno.test("Route primitive and shared publication children use one209selector", 
     for (
         const name of [
             "operation-route-verification",
-            "operation-route-target-unset",
             "operation-route-publication",
             "route-dns-publish",
             "route-dns-grace",

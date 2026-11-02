@@ -11,7 +11,6 @@ use Orbit\Sdk\Requests\Clusters\ShowClusterRequest;
 use Orbit\Sdk\Requests\Routes\CreateRouteRequest;
 use Orbit\Sdk\Requests\Routes\DestroyRouteRequest;
 use Orbit\Sdk\Requests\Routes\SetRouteTargetRequest;
-use Orbit\Sdk\Requests\Routes\UnsetRouteTargetRequest;
 use Orbit\Sdk\Requests\Routes\UpdateRouteRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
@@ -51,7 +50,6 @@ it('forwards the retry key and renders the final Route or Router Operation', fun
     'update' => ['route:update', ['route' => '7', '--domain' => 'private-next.test'], UpdateRouteRequest::class, 'route.update'],
     'destroy retry does not inspect the deleted Route' => ['route:destroy', ['route' => '7'], DestroyRouteRequest::class, 'route.destroy'],
     'target set' => ['route:target:set', ['route' => '7', 'target' => '12'], SetRouteTargetRequest::class, 'route.target_set'],
-    'target unset retry skips confirmation and inspection' => ['route:target:unset', ['route' => '7'], UnsetRouteTargetRequest::class, 'route.target_unset'],
     'router unset' => ['cluster:router:unset', ['cluster' => '7', '--force' => true], UnsetClusterRouterRequest::class, 'cluster.router_unset'],
     'router set' => ['cluster:router:set', ['cluster' => '7', 'node' => '3'], SetClusterRouterRequest::class, 'cluster.router_set'],
 ]);

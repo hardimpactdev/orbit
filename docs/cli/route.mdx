@@ -172,10 +172,10 @@ Without pool options, the command sets one target. With them, it sends the compl
 Clear the target and keep the Route, its domain, scope, and publication.
 
 ```bash
-orbit route:target:unset <route> [--yes] [--idempotency-key=KEY]
+orbit route:target:unset <route> [--yes] [--json]
 ```
 
-Clearing an empty Route returns it unchanged. The Gateway returns `route.target_conflict` when clearing would leave an active Instance without a Route. On a [replacement that never activated](/reference/routes#remove-a-replacement-that-never-activated), it returns `route.target_conflict` and names `route:destroy`.
+The Gateway clears the target set and returns the Route at once; no Node changes, so no run starts. Clearing an empty Route returns it unchanged. The Gateway returns `route.target_conflict` when clearing would leave an active Instance without a Route. On a [replacement that never activated](/reference/routes#remove-a-replacement-that-never-activated), it returns `route.target_conflict` and names `route:destroy`.
 
 ## orbit route:destroy
 

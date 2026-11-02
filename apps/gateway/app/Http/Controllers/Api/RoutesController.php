@@ -83,13 +83,9 @@ final class RoutesController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::RouteOwning)]
-    #[StartsOperation('route.target_unset')]
     public function clearTarget(EmptyRouteRequest $request, int $route, AdmitRouteOperationAction $action): JsonResponse
     {
-        $caller = $request->user();
-        $operation = $action->clearTarget(Route::query()->findOrFail($route), $caller instanceof Node ? $caller : null, $request->attributes->getString('orbit.request_id'));
-
-        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
+        return response()->json(['data' => RouteData::fromModel($action->clearTarget(Route::query()->findOrFail($route)))->toArray(), 'meta' => $this->meta($request)]);
     }
 
     #[RequiresNodeAccess(ServingNode::RouteOwning)]

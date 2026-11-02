@@ -29,15 +29,6 @@ final readonly class RouteOperationProjection implements DirectOperationProjecti
 
     public function input(Operation $operation): array
     {
-        if ($operation->kind === 'route.target_unset') {
-            $route = Route::query()->find($operation->target_id);
-            if ($operation->target_type !== 'route' || $operation->node_id === null || $route === null || ! $route->isApp()
-                || $route->id !== ($operation->input['route_id'] ?? null) || $route->targets()->exists()) {
-                throw new ResourceOperationException('route.target_conflict', 'The admitted Route target set is no longer empty.', 409);
-            }
-
-            return ['intent' => ['route_id' => $route->id, 'target_ids' => []], 'execution_secrets' => []];
-        }
         if ($operation->kind === 'route.private_dns_publish') {
             $node = PrivateDnsPublicationNodes::query()->find($operation->node_id);
             if ($node === null) {
