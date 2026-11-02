@@ -31,6 +31,7 @@ use SensitiveParameter;
  * @property bool $task_workspace_routed
  * @property bool $review_and_merge
  * @property string|null $merge_check
+ * @property bool $maintenance
  * @property string|null $php_version
  * @property bool|null $is_laravel
  * @property string|null $source_profile_error
@@ -46,11 +47,12 @@ final class Project extends Model
         'type' => 'laravel-app',
         'source_access' => 'github_app',
         'review_and_merge' => false,
+        'maintenance' => false,
     ];
 
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'review_and_merge', 'merge_check', 'php_version', 'is_laravel', 'source_profile_error', 'source_facts_captured_at'];
+    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'review_and_merge', 'merge_check', 'maintenance', 'php_version', 'is_laravel', 'source_profile_error', 'source_facts_captured_at'];
 
     /** @var list<string> */
     #[\Override]
@@ -167,6 +169,7 @@ final class Project extends Model
             'source_access' => ProjectSourceAccess::class,
             'task_workspace_routed' => 'boolean',
             'review_and_merge' => 'boolean',
+            'maintenance' => 'boolean',
             'is_laravel' => 'boolean',
             'source_facts_captured_at' => 'immutable_datetime',
         ];

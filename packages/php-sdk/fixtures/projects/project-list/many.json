@@ -20,7 +20,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             },
             {
                 "id": 2,
@@ -37,7 +38,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             },
             {
                 "id": 3,
@@ -54,7 +56,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             },
             {
                 "id": 4,
@@ -71,7 +74,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             },
             {
                 "id": 5,
@@ -88,7 +92,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             },
             {
                 "id": 6,
@@ -105,7 +110,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             },
             {
                 "id": 7,
@@ -122,7 +128,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             },
             {
                 "id": 8,
@@ -139,7 +146,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             },
             {
                 "id": 9,
@@ -156,7 +164,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             },
             {
                 "id": 10,
@@ -173,7 +182,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             },
             {
                 "id": 11,
@@ -190,7 +200,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             },
             {
                 "id": 12,
@@ -207,7 +218,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             },
             {
                 "id": 13,
@@ -224,7 +236,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             },
             {
                 "id": 14,
@@ -241,7 +254,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             },
             {
                 "id": 15,
@@ -258,7 +272,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             },
             {
                 "id": 16,
@@ -275,7 +290,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             },
             {
                 "id": 17,
@@ -292,7 +308,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             },
             {
                 "id": 18,
@@ -309,7 +326,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             },
             {
                 "id": 19,
@@ -326,7 +344,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             },
             {
                 "id": 20,
@@ -343,7 +362,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             },
             {
                 "id": 21,
@@ -360,7 +380,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             },
             {
                 "id": 22,
@@ -377,7 +398,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             },
             {
                 "id": 23,
@@ -394,7 +416,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             },
             {
                 "id": 24,
@@ -411,7 +434,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             }
         ],
         "meta": {

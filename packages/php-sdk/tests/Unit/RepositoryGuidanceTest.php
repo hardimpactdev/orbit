@@ -340,6 +340,8 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Instances\\DisableInstanceAutoDeployRequest',
             'Orbit\\Sdk\\Requests\\Projects\\EnableProjectReviewAndMergeRequest',
             'Orbit\\Sdk\\Requests\\Projects\\DisableProjectReviewAndMergeRequest',
+            'Orbit\\Sdk\\Requests\\Projects\\EnableProjectMaintenanceRequest',
+            'Orbit\\Sdk\\Requests\\Projects\\DisableProjectMaintenanceRequest',
         ];
         $lifecycleRequests = [
             RenameInstanceRequest::class,

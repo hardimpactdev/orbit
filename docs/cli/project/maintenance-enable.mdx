@@ -1,0 +1,18 @@
+---
+title: "orbit project:maintenance:enable"
+sidebarTitle: "project:maintenance:enable"
+description: "Turn on dependency maintenance for a Project. Off by default."
+---
+
+Turn on [dependency maintenance](/reference/projects#maintenance) for a Project. Orbit then inspects the Project's default branch for dependency updates and advisories, and opens update groups. Maintenance keeps acting by itself after the command returns, so it is an `enable` and `disable` pair, not a `project:update` option. Every Project starts with maintenance off; leave it off for repositories you do not own.
+
+```bash
+orbit project:maintenance:enable <project> [--json]
+orbit project:maintenance:enable 46
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `project` | yes | Numeric Project ID. |
+
+The Gateway refuses with HTTP 422 `validation.failed` when the Project does not read through the GitHub App, on `source_access`; has no default branch, on `default_branch`; or has no task check, on `task_check`.

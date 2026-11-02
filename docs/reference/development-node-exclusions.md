@@ -37,7 +37,7 @@ Both commands store the same row. A second `add` of the same pair returns the st
 
 In a terminal, an omitted Project or Node opens a searchable selector. JSON and noninteractive calls must name both for `add` and `remove`, and the owner for `list`. `remove` asks for no confirmation, because it moves and stops nothing.
 
-`project:show` includes `excluded_nodes`, and `node:show` includes `excluded_projects`. Each entry has the Project ID and slug, the Node ID and name, and `development_instance_count`: the number of development Instances of the Project already on the Node. Those Instances stay where they are. Use [transfer](/reference/instance-transfer) to move one.
+`project:show` includes `excluded_nodes` beside its other settings, such as `maintenance`, and `node:show` includes `excluded_projects`. Each entry has the Project ID and slug, the Node ID and name, and `development_instance_count`: the number of development Instances of the Project already on the Node. Those Instances stay where they are. Use [transfer](/reference/instance-transfer) to move one.
 
 Removing the `app-dev` role from a Node deletes its rows. Adding the role again does not restore them. Deleting the Node or the Project deletes its rows.
 

@@ -22,7 +22,7 @@ beforeEach(function (): void {
     Node::query()->forceCreate(['id' => 209, 'name' => 'swamp-209', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.15', 'public_ssh_host' => '192.0.2.209']);
     $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
     app(TaskExtensionState::class)->enable();
-    $this->project = Project::query()->create(['name' => 'Launch', 'slug' => 'launch', 'repository_url' => 'https://github.com/nckrtl/launch.git', 'source_access' => 'github_app', 'task_check' => 'composer check', 'default_branch' => 'main']);
+    $this->project = Project::query()->create(['name' => 'Launch', 'slug' => 'launch', 'repository_url' => 'https://github.com/nckrtl/launch.git', 'source_access' => 'github_app', 'task_check' => 'composer check', 'default_branch' => 'main', 'maintenance' => true]);
     config(['swamp.run_token' => 'native-fixture']);
     $this->socket = new FakeRoutePublicationSocket;
     app()->instance(WebSocketClient::class, $this->socket);
@@ -196,4 +196,26 @@ it('retries a capacity-blocked captured group only from a new terminal observati
         ->and($group->fresh()->assistance_reason)->toContain('extension.disabled')
         ->and(Task::topLevel()->count())->toBe(1)
         ->and(Operation::query()->where('kind', 'tasks.provision')->count())->toBe(0);
+});
+
+it('turns maintenance on and off for a Project that meets its requirements, and refuses admission while off', function (): void {
+    $this->project->update(['maintenance' => false]);
+    $url = '/api/v1/projects/'.$this->project->id.'/maintenance';
+    $this->withHeader('Idempotency-Key', 'while-off')->postJson($url.'/routine', [])->assertConflict()->assertJsonPath('error.code', 'project.maintenance_disabled');
+    expect(Operation::query()->count())->toBe(0);
+
+    $this->postJson($url.'/enable')->assertOk()->assertJsonPath('data.maintenance', true);
+    expect($this->project->fresh()->maintenance)->toBeTrue();
+    $this->withHeader('Idempotency-Key', 'while-on')->postJson($url.'/routine', [])->assertAccepted();
+
+    $this->postJson($url.'/disable')->assertOk()->assertJsonPath('data.maintenance', false);
+    expect($this->project->fresh()->maintenance)->toBeFalse();
+});
+
+it('refuses to turn maintenance on without the GitHub App, a default branch or a task check', function (): void {
+    $this->project->update(['maintenance' => false, 'source_access' => 'gh_cli', 'task_check' => null]);
+    $this->postJson('/api/v1/projects/'.$this->project->id.'/maintenance/enable')->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed')->assertJsonPath('error.details.source_access.0', 'Dependency maintenance needs source access through the GitHub App.')
+        ->assertJsonPath('error.details.task_check.0', 'Dependency maintenance needs a task check.')->assertJsonMissingPath('error.details.default_branch');
+    expect($this->project->fresh()->maintenance)->toBeFalse();
 });

@@ -20,7 +20,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             },
             {
                 "id": 2,
@@ -37,7 +38,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             },
             {
                 "id": 3,
@@ -54,7 +56,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             },
             {
                 "id": 4,
@@ -71,7 +74,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             }
         ],
         "meta": {

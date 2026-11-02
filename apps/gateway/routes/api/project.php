@@ -23,6 +23,8 @@ Route::middleware([
     RequireActiveWireGuardPeer::class,
     RequireNodeAccess::class,
 ])->group(function (): void {
+    Route::post('projects/{project}/maintenance/enable', [ProjectMaintenanceController::class, 'enable'])->whereNumber('project')->name('project:maintenance:enable');
+    Route::post('projects/{project}/maintenance/disable', [ProjectMaintenanceController::class, 'disable'])->whereNumber('project')->name('project:maintenance:disable');
     Route::post('projects/{project}/maintenance/detect', [ProjectMaintenanceController::class, 'detect'])->whereNumber('project')->name('project:maintenance:detect');
     Route::post('projects/{project}/maintenance/routine', [ProjectMaintenanceController::class, 'routine'])->whereNumber('project')->name('project:maintenance:routine');
     Route::get('projects/{project}/dependencies', [ProjectDependenciesController::class, 'show'])->whereNumber('project')->name('project:dependencies:show');

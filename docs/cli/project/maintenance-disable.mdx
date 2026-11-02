@@ -1,0 +1,15 @@
+---
+title: "orbit project:maintenance:disable"
+sidebarTitle: "project:maintenance:disable"
+description: "Turn off dependency maintenance for a Project. Open update groups keep running."
+---
+
+Turn off [dependency maintenance](/reference/projects#maintenance) for a Project. The hourly Schedule skips the Project from its next run, and a direct maintenance request fails with `project.maintenance_disabled`. Maintenance task groups that are already open keep running.
+
+```bash
+orbit project:maintenance:disable <project> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `project` | yes | Numeric Project ID. |

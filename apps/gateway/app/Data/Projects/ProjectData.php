@@ -30,6 +30,7 @@ final class ProjectData extends Data
         public ?string $mergeCheck = null,
         public ?string $phpVersion = null,
         public ?bool $isLaravel = null,
+        public bool $maintenance = false,
     ) {}
 
     public static function fromModel(Project $project): self
@@ -50,6 +51,7 @@ final class ProjectData extends Data
             mergeCheck: $project->mergeCheckName(),
             phpVersion: $project->php_version,
             isLaravel: $project->is_laravel,
+            maintenance: $project->maintenance,
         );
     }
 }

@@ -17,7 +17,7 @@ beforeEach(function (): void {
     $this->markAsGateway(Node::query()->create(['name' => 'schedule-gateway', 'public_ssh_host' => '192.0.2.2', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.2', 'status' => 'active']));
     Node::query()->forceCreate(['id' => 209, 'name' => 'swamp', 'public_ssh_host' => '192.0.2.209', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.15', 'status' => 'active']);
     app(TaskExtensionState::class)->enable();
-    $this->project = Project::query()->create(['name' => 'Schedule Project', 'slug' => 'schedule-project', 'source_access' => 'github_app', 'repository_url' => 'https://github.com/example/project.git', 'default_branch' => 'main', 'task_check' => 'composer check']);
+    $this->project = Project::query()->create(['name' => 'Schedule Project', 'slug' => 'schedule-project', 'source_access' => 'github_app', 'repository_url' => 'https://github.com/example/project.git', 'default_branch' => 'main', 'task_check' => 'composer check', 'maintenance' => true]);
     config(['swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/fixture/ca.pem', 'swamp.run_token' => 'fixture.run']);
     $this->socket = new FakeRoutePublicationSocket;
     $this->socket->reply = static function (array $sent): array {
@@ -43,6 +43,13 @@ it('publishes full public schedule inputs without admitting an Operation at acti
         ->and($this->run['inputs']['projects'][0]['id'])->toBe($this->project->id)
         ->and(Operation::query()->count())->toBe(0)
         ->and(($this->state)()['published'])->toBeTrue();
+});
+
+it('leaves a Project without maintenance out of the schedule inputs', function (): void {
+    $this->project->update(['maintenance' => false]);
+    $inputs = ($this->state)()['inputs'];
+    expect($inputs['projects'])->toBe([])
+        ->and(json_encode($this->socket->sent[array_key_last($this->socket->sent)]['payload']['inputs']))->not->toContain('example/project.git');
 });
 
 it('publishes the hourly cadence and republishes an unchanged snapshot whose cadence changed', function (): void {

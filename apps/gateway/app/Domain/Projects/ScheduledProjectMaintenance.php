@@ -175,7 +175,7 @@ final readonly class ScheduledProjectMaintenance implements ScheduledResultProje
     /** @return array<string,mixed> */
     private function capture(): array
     {
-        return ['projects' => Project::query()->where('source_access', ProjectSourceAccess::GitHubApp)->whereNotNull('task_check')
+        return ['projects' => Project::query()->where('maintenance', true)->where('source_access', ProjectSourceAccess::GitHubApp)->whereNotNull('task_check')
             ->where('task_check', '!=', '')->whereNotNull('default_branch')->orderBy('id')
             ->get(['id', 'repository_url', 'default_branch', 'task_check'])->map(static fn (Project $project): array => [
                 'id' => $project->id, 'repository' => $project->repository_url, 'default_branch' => $project->default_branch, 'check' => $project->task_check,

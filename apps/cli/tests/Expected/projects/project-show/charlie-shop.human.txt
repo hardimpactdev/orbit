@@ -25,6 +25,8 @@ Fetching Instances...
 │
 ├  Merge check             —
 │
+├  Maintenance             no
+│
 └  Excluded nodes          —
 
  ┌────┬──────────────────┬─────────┬────────────────────────────────────┬────────┐

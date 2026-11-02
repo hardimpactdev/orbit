@@ -25,6 +25,7 @@ final readonly class ProjectResponse
         public ?bool $taskWorkspaceRouted = null,
         public ?bool $reviewAndMerge = null,
         public ?string $mergeCheck = null,
+        public ?bool $maintenance = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -53,6 +54,7 @@ final readonly class ProjectResponse
             taskWorkspaceRouted: is_bool($data['task_workspace_routed'] ?? null) ? $data['task_workspace_routed'] : null,
             reviewAndMerge: is_bool($data['review_and_merge'] ?? null) ? $data['review_and_merge'] : null,
             mergeCheck: is_string($data['merge_check'] ?? null) ? $data['merge_check'] : null,
+            maintenance: is_bool($data['maintenance'] ?? null) ? $data['maintenance'] : null,
         );
     }
 
@@ -71,6 +73,7 @@ final readonly class ProjectResponse
             'task_check' => $this->taskCheck,
             ...($this->taskWorkspaceRouted === null ? [] : ['task_workspace_routed' => $this->taskWorkspaceRouted]),
             ...($this->reviewAndMerge === null ? [] : ['review_and_merge' => $this->reviewAndMerge, 'merge_check' => $this->mergeCheck]),
+            ...($this->maintenance === null ? [] : ['maintenance' => $this->maintenance]),
             'request_id' => $this->requestId,
             ...($this->excludedNodes === null ? [] : ['excluded_nodes' => $this->excludedNodes]),
         ];

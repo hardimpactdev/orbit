@@ -29,8 +29,11 @@ final readonly class ProjectMaintenanceIntent
 
         return DB::transaction(function () use ($project, $kind, $requestId): Operation {
             $project = Project::query()->lockForUpdate()->findOrFail($project->id);
-            if ($project->source_access !== ProjectSourceAccess::GitHubApp || $project->repository_url === '' || ! is_string($project->task_check) || $project->task_check === '' || ! is_string($project->default_branch) || $project->default_branch === '') {
+            if (ProjectMaintenanceRequirements::missing($project) !== []) {
                 throw new ResourceOperationException('project.maintenance_unavailable', 'Project maintenance requires its GitHub App repository and configured check.', 422);
+            }
+            if (! $project->maintenance) {
+                throw new ResourceOperationException('project.maintenance_disabled', 'Dependency maintenance is off for this Project; turn it on with project:maintenance:enable.', 409);
             }
             $groups = Task::topLevel()->where('project_id', $project->id)->orderBy('id')->get([
                 'id', 'project_id', 'status', 'orchestration', 'brief', 'pr_url', 'watched_pr_url', 'watched_pr_state', 'taskable_id', 'maintenance',

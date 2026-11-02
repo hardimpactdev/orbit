@@ -20,7 +20,8 @@
                 "review_and_merge": false,
                 "merge_check": null,
                 "php_version": null,
-                "is_laravel": null
+                "is_laravel": null,
+                "maintenance": false
             }
         ],
         "meta": {
