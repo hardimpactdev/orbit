@@ -57,21 +57,11 @@ class NativeTurn(harness.NativeTestCase):
         module = self.repo / "extensions/behaviors/operations/tasks/turn.ts"
         module.parent.mkdir(parents=True)
         shutil.copy(ROOT / "extensions/behaviors/operations/tasks/turn.ts", module)
-        official = self.repo / ".swamp/pulled-extensions/@swamp/ssh"
-        official.parent.mkdir(parents=True)
-        shutil.copytree(ROOT / ".swamp/pulled-extensions/@swamp/ssh", official)
-        inventory = self.repo / "extensions/models/upstream_extensions.json"
-        inventory.parent.mkdir(parents=True)
-        inventory.write_text(
-            json.dumps(
-                {
-                    "@swamp/ssh": json.loads(
-                        (
-                            ROOT / "extensions/models/upstream_extensions.json"
-                        ).read_text()
-                    )["@swamp/ssh"]
-                }
-            )
+        inventory = json.loads(
+            (ROOT / "extensions/models/upstream_extensions.json").read_text()
+        )
+        self.cli(
+            "extension", "pull", f"@swamp/ssh@{inventory['@swamp/ssh']['version']}"
         )
         self.workspace = self.repo / "workspace"
         self.workspace.mkdir()
@@ -162,10 +152,8 @@ class NativeTurn(harness.NativeTestCase):
         self.flow["name"] = "task-turn-fixture"
         for job in self.flow["jobs"]:
             self.assertEqual(job.pop("labels"), {"role": "swamp"})
-            self.assertEqual(job.pop("labels"), {"node": "209"})
             for step in job["steps"]:
                 self.assertEqual(step.pop("labels"), {"role": "swamp"})
-                self.assertEqual(step.pop("labels"), {"node": "209"})
                 args = step["task"].get("inputs", {}).get("argv")
                 if args:
                     step["task"]["inputs"]["argv"] = [
@@ -245,12 +233,19 @@ class NativeTurn(harness.NativeTestCase):
         self.assertEqual(result["after_reset"]["head"], self.head)
         self.assertEqual(self.workspace.joinpath("file").read_text(), "original\n")
 
-    def test_moved_candidate_retains_its_public_refusal_without_pi_calls(self):
-        self.inputs["intent"].update(role="reviewer", candidate="f" * 40)
-        run = self.run_workflow(success=False)
-        self.assertEqual(run["status"], "failed")
-        self.assertEqual(self.result(run)["error_code"], "tasks.head_moved")
-        self.assertEqual(self.server.calls, [])
+    def test_snapshots_keep_real_index_unchanged_and_include_untracked_files(self):
+        self.server.role = "consult"
+        self.inputs["intent"]["role"] = "consult"
+        self.workspace.joinpath("untracked").write_text("new file\n")
+        index = self.workspace / ".git/index"
+        original = index.read_bytes()
+        run = self.run_workflow()
+        self.assertEqual(run["status"], "succeeded")
+        self.assertEqual(index.read_bytes(), original)
+        result = self.result(run)
+        self.assertNotEqual(result["before"]["tree"], self.head)
+        self.assertEqual(result["difference"]["summary"]["files"], 1)
+        self.assertFalse(list(self.repo.glob("remote-*/*.index")))
 
     def test_prompt_overflow_retains_its_public_refusal_without_pi_calls(self):
         self.inputs["intent"]["prompt"] = "x" * 100000

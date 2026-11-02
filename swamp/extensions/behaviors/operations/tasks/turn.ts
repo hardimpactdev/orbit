@@ -175,14 +175,10 @@ export const turnDataResources = {
             send_json: z.string(),
         }),
     },
-    candidate: {
+    snapshot: {
         lifetime: "infinite",
         garbageCollection: 10,
-        schema: z.object({
-            admitted: z.boolean(),
-            error_code: z.enum(["tasks.head_moved", "tasks.analysis_stale"])
-                .nullable().default(null),
-        }),
+        schema: z.object({ stdout: z.string() }),
     },
     turnResult: {
         lifetime: "infinite",
@@ -202,25 +198,30 @@ export const turnDataMethods = {
                     "prepared",
                     {
                         ...prepare(args),
-                        directory: ctx.extensionFile("scripts/snapshot.py")
+                        directory: ctx.extensionFile("scripts/observe.py")
                             .replace(/\/[^/]+$/, ""),
                     },
                 ),
             ],
         }),
     },
-    candidate: {
-        description: "Decode public candidate evidence for native branching",
-        arguments: z.object({ value: z.string() }),
-        execute: async (args: { value: string }, ctx: PublicContext) => ({
+    snapshot: {
+        description:
+            "Shape immutable Git object identities from native SSH commands",
+        arguments: z.object({ head: z.string(), tree: z.string() }),
+        execute: async (
+            args: { head: string; tree: string },
+            ctx: PublicContext,
+        ) => ({
             dataHandles: [
-                await ctx.writeResource(
-                    "candidate",
-                    "candidate",
-                    turnDataResources.candidate.schema.parse(
-                        JSON.parse(args.value),
+                await ctx.writeResource("snapshot", "snapshot", {
+                    stdout: JSON.stringify(
+                        Snapshot.parse({
+                            head: args.head.trim(),
+                            tree: args.tree.trim(),
+                        }),
                     ),
-                ),
+                }),
             ],
         }),
     },
