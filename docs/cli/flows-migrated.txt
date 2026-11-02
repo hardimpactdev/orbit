@@ -51,3 +51,5 @@ route.destroy
 cluster.router_set
 cluster.router_unset
 tasks.publish
+metrics.exporter_disable
+metrics.exporter_enable

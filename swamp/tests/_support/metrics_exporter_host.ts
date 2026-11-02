@@ -24,11 +24,17 @@ async function execute(a: Record<string, unknown>, ctx: {
     if (s.fail === step) fail();
     const g = ctx.globalArgs;
     if (step === "candidate") s.candidate = g.content;
-    if (step === "publish") s.published = g.content;
-    if (step === "prometheus") s.loaded = s.published;
-    if (step === "verify" && s.loaded !== s.published) fail();
+    // publish copies the validated candidate over the live file in place.
+    if (step === "publish") {
+        if (s.candidate === null) fail();
+        s.published = s.candidate;
+    }
+    if (step === "remove_candidate") s.candidate = null;
+    // SIGHUP loads the published file; the targets read shows what Prometheus loaded.
+    if (step === "reload") s.loaded = s.published;
     Deno.writeTextFileSync(path, JSON.stringify(s));
-    await ctx.writeResource("output", "result", { stdout: "", ready: true });
+    const stdout = step === "targets" ? String(s.loaded) : "";
+    await ctx.writeResource("output", "result", { stdout, ready: true });
     return {};
 }
 export const behavior = {

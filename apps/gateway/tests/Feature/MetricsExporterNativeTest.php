@@ -40,8 +40,11 @@ it('admits one public immutable native exporter intent without a Grafana executi
     $response->assertAccepted();
     $operation = Operation::query()->sole();
     $intent = $operation->input;
-    expect($intent)->toMatchArray(['exporter_node_id' => $this->target->id, 'enabled' => $enabled, 'metrics_address' => '10.44.0.3']);
+    expect($intent)->toMatchArray(['exporter_node_id' => $this->target->id, 'enabled' => $enabled, 'exporter_address' => '10.44.0.9', 'metrics_address' => '10.44.0.3']);
     expect($intent['ssh_execution']['control_node_id'])->toBe(209);
+    expect(array_slice($intent['scrape_wait'], 0, 4))->toBe(['timeout', '60', 'sh', '-c']);
+    expect(array_slice($intent['scrape_wait'], -2))->toBe(['http://127.0.0.1:9090/api/v1/targets?state=active', '"10.44.0.9:9100"']);
+    expect(str_contains($intent['scrape_wait'][4], '! printf'))->toBe(! $enabled);
     expect($intent['ssh_execution']['target']['host_keys'])->toBe(['ssh-ed25519 fixture-public-key']);
     expect(str_contains($intent['runtime']['configuration'], '10.44.0.9:9100'))->toBe($enabled);
     expect($intent['runtime']['configuration'])->toContain('10.44.0.3:9100');
@@ -56,7 +59,7 @@ it('admits one public immutable native exporter intent without a Grafana executi
     expect($dropin)->toMatchArray(['owner' => 'root', 'group' => 'root', 'mode' => '0644', 'ensure' => $enabled ? 'present' : 'absent']);
     expect($dropin['content'])->toContain('--web.listen-address=10.44.0.9:9100');
     expect($this->socket->sent)->toHaveCount(1);
-    expect($this->socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-metrics-exporter');
+    expect($this->socket->sent[0]['payload']['workflowIdOrName'])->toBe($enabled ? 'operation-metrics-exporter-enable' : 'operation-metrics-exporter-disable');
     expect($this->socket->sent[0]['payload']['inputs']['intent'])->toBe($intent);
     expect(json_encode($operation->toArray()))->not->toContain('never-copy-grafana-secret', '$secret');
     expect(app(ExporterPreferenceRepository::class)->get($this->target->id))->toBe($enabled ? ExporterPreference::Enabled : ExporterPreference::Disabled);
@@ -102,12 +105,12 @@ it('returns the admitted Operation on idempotent replay without changing the des
 it('projects the exact native success through the shared terminal reader', function (): void {
     $this->putJson($this->url)->assertAccepted();
     $op = Operation::query()->sole();
-    $run = ['id' => $op->state['swamp_run_id'], 'workflowName' => 'operation-metrics-exporter', 'status' => 'succeeded',
+    $run = ['id' => $op->state['swamp_run_id'], 'workflowName' => 'operation-metrics-exporter-enable', 'status' => 'succeeded',
         'inputs' => ['operation_id' => $op->id, 'kind' => $op->kind, 'node_id' => $op->node_id],
         'startedAt' => now()->toIso8601String(), 'completedAt' => now()->toIso8601String(),
-        'jobs' => [['name' => 'exporter', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => '{"ready":true}']]]]]];
+        'jobs' => [['name' => 'exporter', 'steps' => [['name' => 'Prove the exporter state', 'status' => 'succeeded']]]]];
     $this->socket->reply = static fn (array $r): array => [['id' => $r['id'], 'type' => 'workflow.history.get', 'payload' => ['data' => $run]]];
-    app(SwampCommandStep::class)->projectTerminal($op, $run, ['job' => 'exporter', 'step' => 'result']);
+    app(SwampCommandStep::class)->projectTerminal($op, $run, ['job' => 'exporter', 'step' => 'Prove the exporter state', 'native' => true]);
     expect($op->fresh()->status->value)->toBe('succeeded');
     expect($op->fresh()->result)->toMatchArray(['node_id' => $this->target->id, 'status' => 'enabled', 'preference_only' => false]);
 });

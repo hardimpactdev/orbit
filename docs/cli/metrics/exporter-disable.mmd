@@ -33,7 +33,7 @@ sequenceDiagram
   %%> - Node 12's exporter preference recorded as `disabled`
   %%> - task #5141 recorded with the full intent
   %%> - nothing has happened on any Node yet
-  GW->>SW: Start run, full intent<br/>operation-metrics-exporter
+  GW->>SW: Start run, full intent<br/>operation-metrics-exporter-disable
   %%> What it does:
   %%> - starts one Swamp run on serve (Node 209)
   %%> Inputs:
@@ -47,7 +47,7 @@ sequenceDiagram
   SW->>M: Publish the config<br/>validate, reload Prometheus
   %%> What it does:
   %%> - validates the configuration without Node 12 with `promtool`
-  %%> - publishes it and tells Prometheus to reload it while running (SIGHUP or its reload endpoint)
+  %%> - copies it over the live file in place (Prometheus bind-mounts the file) and sends Prometheus SIGHUP, so it reloads while running
   %%> - no restart, so collection from every other Node continues without a gap; Grafana keeps running
   %%> When a restart is needed:
   %%> - only when the Prometheus container itself changes, which is a role update, not an exporter change
@@ -62,6 +62,11 @@ sequenceDiagram
   SW->>N: Remove the allows<br/>@swamp/cfgmgmt/firewall absent
   %%> What it does:
   %%> - removes the firewall allows for the Metrics Node on ports 9100 and 9102, with `ensure: absent`
+  Note over SW: Prove the exporter state<br/>end check · assert
+  %%> What it does:
+  %%> - Publish the config already proved that Prometheus no longer lists Node 12's exporter address
+  %%> - requires the exporter removal to have succeeded; it is the operation's end check
+  %%> - with no Metrics Node it passes at once, because only the preference is recorded
   alt all steps pass
     N-->>SW: exporters gone
     %%> Returns:

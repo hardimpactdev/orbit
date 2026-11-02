@@ -75,9 +75,25 @@ final readonly class AdmitMetricsExporterAction
 
             return $this->operations->execute($enabled ? 'metrics.exporter_enable' : 'metrics.exporter_disable', 'metrics', $metrics instanceof Node ? $metrics->id : $node->id,
                 $node->id, ['exporter_node_id' => $node->id, 'enabled' => $enabled,
-                    'ssh_execution' => $this->ssh->forNode($node), 'metrics_address' => $metrics?->wireguard_ip, 'runtime' => $runtime,
+                    'ssh_execution' => $this->ssh->forNode($node), 'exporter_address' => $node->wireguard_ip, 'metrics_address' => $metrics?->wireguard_ip, 'runtime' => $runtime,
+                    'scrape_wait' => $this->scrapeWait((string) $node->wireguard_ip, $enabled),
                     'service' => $metrics instanceof Node ? app(MetricsFleetCapture::class)->forExporter($metrics, $node, $enabled) : null],
                 'operator', request()->attributes->getString('orbit.request_id'));
         });
+    }
+
+    /**
+     * SIGHUP reloads Prometheus in the background and its target list follows a few seconds later, so the end check
+     * waits up to 60 seconds for the list to show the intent, then prints it for the assert.
+     *
+     * @return list<string>
+     */
+    private function scrapeWait(string $address, bool $enabled): array
+    {
+        $script = $enabled
+            ? 'until body=$(curl -fs "$1") && printf %s "$body" | grep -qF -- "$2"; do sleep 1; done; printf %s "$body"'
+            : 'until body=$(curl -fs "$1") && ! printf %s "$body" | grep -qF -- "$2"; do sleep 1; done; printf %s "$body"';
+
+        return ['timeout', '60', 'sh', '-c', $script, 'scrape-wait', 'http://127.0.0.1:9090/api/v1/targets?state=active', '"'.$address.':9100"'];
     }
 }

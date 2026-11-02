@@ -1,0 +1,62 @@
+id: b1f8417f-fd4e-49a3-81f4-34f168e47d30
+name: operation-metrics-exporter-enable
+description: metrics.exporter_enable from captured intent. Install and allow, check the endpoints, then publish the scrape configuration with a reload.
+inputs:
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [metrics.exporter_enable]}
+    intent: {type: object}
+  required: [operation_id, node_id, kind, intent]
+# Without a Metrics Node the operation records only the preference; every Node step skips.
+jobs:
+- name: exporter
+  steps:
+  - name: Install the exporters
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ inputs.intent.runtime == null }}'
+    task: &node
+      type: workflow
+      workflowIdOrName: metrics-exporter-node
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}'}
+  - name: Allow the Metrics Node
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ inputs.intent.runtime == null }}'
+    task:
+      type: workflow
+      workflowIdOrName: metrics-exporter-allows
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}'}
+  - name: Check the endpoints
+    labels: {role: swamp}
+    dependsOn: [{step: Install the exporters, condition: {type: succeeded}}, {step: Allow the Metrics Node, condition: {type: succeeded}}]
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
+    forEach: {item: url, in: '${{ inputs.intent.runtime == null ? [] : inputs.intent.service.checks }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ ("metrics-verify-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
+      globalArgs:
+        name: '${{ ("metrics-verify-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
+        transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}
+        hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]
+      inputs: {hosts: 'name:target', argv: [/usr/bin/curl, --fail, --silent, --output, /dev/null, '${{ self.url }}']}
+  - name: Publish the config
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Check the endpoints, condition: {type: succeeded}}]
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
+    task: &publish
+      type: workflow
+      workflowIdOrName: metrics-prometheus-publish
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}'}
+  - name: Prove the exporter state
+    labels: {role: swamp}
+    dependsOn: [{step: Publish the config, condition: {type: always}}]
+    task:
+      type: assert
+      severity: high
+      expr: 'inputs.intent.runtime == null || ("Publish the config" in steps && steps["Publish the config"].status == "succeeded")'
+      message: The exporter Node is not published to Prometheus.

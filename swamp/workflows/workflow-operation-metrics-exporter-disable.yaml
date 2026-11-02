@@ -1,0 +1,46 @@
+id: 2b47dd2e-5dde-4d21-94ed-365d1932d06d
+name: operation-metrics-exporter-disable
+description: metrics.exporter_disable from captured intent. Prometheus stops scraping first, then the exporters, their package and their allows go.
+inputs:
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [metrics.exporter_disable]}
+    intent: {type: object}
+  required: [operation_id, node_id, kind, intent]
+# Without a Metrics Node the operation records only the preference; every Node step skips.
+jobs:
+- name: exporter
+  steps:
+  - name: Publish the config
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ inputs.intent.runtime == null }}'
+    task:
+      type: workflow
+      workflowIdOrName: metrics-prometheus-publish
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}'}
+  - name: Stop, remove exporters
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Publish the config, condition: {type: succeeded}}]
+    task:
+      type: workflow
+      workflowIdOrName: metrics-exporter-node
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}'}
+  - name: Remove the allows
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Stop, remove exporters', condition: {type: succeeded}}]
+    task:
+      type: workflow
+      workflowIdOrName: metrics-exporter-allows
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}'}
+  - name: Prove the exporter state
+    labels: {role: swamp}
+    dependsOn: [{step: Remove the allows, condition: {type: always}}]
+    task:
+      type: assert
+      severity: high
+      expr: 'inputs.intent.runtime == null || ("Stop, remove exporters" in steps && steps["Stop, remove exporters"].status == "succeeded" && !steps.exists(k, steps[k].status in ["failed", "cancelled"]))'
+      message: The exporter Node still has exporters or is still published.
