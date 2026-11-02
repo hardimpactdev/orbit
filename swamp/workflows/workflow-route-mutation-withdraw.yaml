@@ -1,5 +1,6 @@
 id: ab396849-8327-40c1-bcc0-983a99ca412c
 name: route-mutation-withdraw
+queueTimeout: 30
 labels: {role: swamp}
 description: Canonical Route publications and complete native contribution proof.
 vaults:

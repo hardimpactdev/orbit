@@ -436,6 +436,7 @@ export function mutationWorkflow(
             ? "b2ec4a6d-fc95-4a2c-b6b8-e26c7bf871c7"
             : "f11fa84e-418c-44cf-86d9-a84f46ef0146",
         name: `route-mutation-${mode}`,
+        queueTimeout: 30,
         labels: { role: "swamp" },
         description:
             "Canonical Route publications and complete native contribution proof.",
