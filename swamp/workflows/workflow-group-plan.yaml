@@ -1,0 +1,28 @@
+id: fc3ba349-1ed7-408a-8109-ec246ac097e8
+name: group-plan
+description: >-
+  Record the operator's complete typed plan for a task group parked at the plan stage,
+  with exact consent for that plan. Serve runs remote-only; this is the placed call.
+queueTimeout: 60
+inputs:
+  type: object
+  properties:
+    workItem: { type: string, pattern: '^tg-[1-9][0-9]*$' }
+    plan: { type: object }
+    actor: { type: string, minLength: 1 }
+  required: [workItem, plan, actor]
+reports:
+  skip: ["@swamp/workflow-summary"]
+jobs:
+  - name: group
+    steps:
+      - name: plan
+        labels: { pool: migration, node: "209" }
+        task:
+          type: model_method
+          modelIdOrName: orbit-driver-groups
+          methodName: plan
+          inputs:
+            workItem: '${{ inputs.workItem }}'
+            plan: '${{ inputs.plan }}'
+            actor: '${{ inputs.actor }}'

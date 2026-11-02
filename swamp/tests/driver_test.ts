@@ -1,6 +1,7 @@
 import { recordQuery } from "./fixtures/worker_query.ts";
 // Pure helpers of @nckrtl/orbit-driver: ~/.swamp/deno/deno test tests/
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
+import { planConsentNote } from "../extensions/behaviors/_lib/repository_analysis.ts";
 import { behavior, pendingGateIds, preapprovalName, recordedThisEntry, tickOrder } from "../extensions/behaviors/orbit_driver.ts";
 
 const gate = (type: string, pass: boolean, reasons: string[] = []) => ({ type, pass, reasons });
@@ -94,6 +95,9 @@ Deno.test("parked tick rejects mismatched or pre-reset preapprovals before facto
   await valid.tick();
   assertEquals(valid.calls.map((c) => c.method), ["status", "approve", "assistance"]);
   assertEquals(valid.calls[2].arguments!.parked, false);
+  const exact = parkedDriver({ ...pre, note: "plan-v1:3:abc" });
+  await exact.tick();
+  assertEquals(exact.calls[1].arguments!.note, "plan-v1:3:abc", "a gate that checks the note exactly gets it verbatim");
 });
 
 Deno.test("a group's failed status never aborts the remaining groups and is recorded for retry", async () => {
@@ -161,4 +165,44 @@ Deno.test("start begins exactly one work item in the driver's factory on the wor
   let failed = false;
   await behavior.methods.start.execute({ workItem: "tg-2314" }, refused).catch(() => (failed = true));
   assert(failed, "a refused factory start fails the step");
+});
+
+Deno.test("plan records the operator's plan and its exact consent only at the plan stage", async () => {
+  const plan = {
+    manifest: { id: "tg-2314", revision: 1, source: { brief_id: "tg-2314", revision_sha256: "a".repeat(64) }, asserted_by: "operator",
+      complete: true as const, paths: [{ change: "modify" as const, path: "docs/reference/metrics.md" }] },
+    plan_sha256: "b".repeat(64), base: "c".repeat(40), repository: "github.com/hardimpactdev/orbit", branch: "task-2314", docsSubtask: 2324,
+  };
+  for (const stage of ["plan", "analyze"]) {
+    const calls: { method: string; arguments?: Record<string, unknown> }[] = [];
+    const writes: Record<string, unknown>[] = [];
+    const context = {
+      globalArgs: behavior.globalArguments.parse({ factory: "orbit-groups" }),
+      definition: { name: "orbit-driver-groups" },
+      queryData: recordQuery(() => Promise.resolve([{ started: true, stage: { id: stage, cycle: 2, terminal: false }, unresolvedBindings: [], transitions: [] }])),
+      invokeModel: (call: (typeof calls)[number]) => {
+        calls.push(call);
+        return Promise.resolve({ ok: true });
+      },
+      writeResource: (_spec: string, name: string, data: Record<string, unknown>) => {
+        writes.push(data);
+        return Promise.resolve({ name });
+      },
+      logger: { info: () => {}, warning: () => {} },
+    };
+    const run = behavior.methods.plan.execute({ workItem: "tg-2314", plan, actor: "operator" }, context);
+    if (stage !== "plan") {
+      let refused = false;
+      await run.catch(() => (refused = true));
+      assert(refused, "a plan outside the plan stage is refused");
+      assertEquals(calls.map((c) => c.method), ["status"]);
+      continue;
+    }
+    await run;
+    assertEquals(calls.map((c) => c.method), ["status", "record_artifact"]);
+    assertEquals(calls[1].arguments, { workItem: "tg-2314", name: "plan", payload: plan });
+    assertEquals(writes[0].gateId, "plan-authorized");
+    assertEquals(writes[0].cycle, 2);
+    assertEquals(writes[0].note, planConsentNote(plan));
+  }
 });

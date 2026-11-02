@@ -21,6 +21,7 @@ import { callWorkerModel, type WorkerModelContext } from "./_lib/worker_model.ts
 // method under the dispatch already recorded, so the dispatch guard is not used up.
 import { z } from "npm:zod@4";
 import { reconcileStageLaunch, type StageLaunch as Launch } from "./_lib/stage_launch.ts";
+import { planConsentNote, PlanSchema } from "./_lib/repository_analysis.ts";
 
 const GlobalArgsSchema = z.object({
   factory: z.string().default("orbit-subtask-factory"),
@@ -426,7 +427,8 @@ async function step(ctx: Ctx, workItem: string, killAt?: string): Promise<{ stat
     if (pre === null || pre.appliedAt !== null || pre.workItem !== workItem || pre.gateId !== gateId || pre.stage !== stage || pre.cycle !== cycle ||
       (startedAt === null || !Number.isFinite(Date.parse(startedAt)) || !Number.isFinite(Date.parse(pre.createdAt)) || Date.parse(pre.createdAt) < Date.parse(startedAt))) continue;
     await call(ctx, f, "approve", {
-      workItem, gateId, actor: pre.actor, note: `pre-approved ${pre.createdAt}${pre.note ? `: ${pre.note}` : ""}`,
+      // A gate may check the note exactly (plan-authorized), so a given note passes verbatim.
+      workItem, gateId, actor: pre.actor, note: pre.note ?? `pre-approved ${pre.createdAt}`,
     });
     await ctx.writeResource("preapproval", name, { ...pre, appliedAt: new Date().toISOString() });
     return { status, action: `applied pre-approval ${gateId} by ${pre.actor}`, waiting: null };
@@ -450,7 +452,7 @@ async function step(ctx: Ctx, workItem: string, killAt?: string): Promise<{ stat
 
 export const behavior = {
   type: "@nckrtl/orbit-driver",
-  version: "2026.11.2.1",
+  version: "2026.11.2.2",
   globalArguments: GlobalArgsSchema,
   resources: {
     launch: {
@@ -478,6 +480,28 @@ export const behavior = {
         const ctx = Object.assign(rawCtx, { definitionName: rawCtx.definition.name }) as unknown as Ctx;
         await call(ctx, ctx.globalArgs.factory, "start", { workItem: args.workItem });
         return { dataHandles: [] };
+      },
+    },
+    plan: {
+      outputLifetime: "7d",
+      description: "Record the operator's typed plan for a group parked at the plan stage, with exact consent for that plan",
+      arguments: z.object({ workItem: z.string().regex(/^tg-[1-9][0-9]*$/), plan: PlanSchema, actor: z.string().min(1) }),
+      execute: async (
+        args: { workItem: string; plan: z.infer<typeof PlanSchema>; actor: string },
+        rawCtx: Omit<Ctx, "definitionName"> & { definition: { name: string } },
+      ) => {
+        const ctx = Object.assign(rawCtx, { definitionName: rawCtx.definition.name }) as unknown as Ctx;
+        const f = ctx.globalArgs.factory;
+        await call(ctx, f, "status", { workItem: args.workItem });
+        const status = await latest<Status>(ctx, f, `status-${args.workItem}`);
+        if (status?.stage.id !== "plan") throw new Error(`${args.workItem} is not at the plan stage`);
+        await call(ctx, f, "record_artifact", { workItem: args.workItem, name: "plan", payload: args.plan });
+        const { cycle } = status.stage;
+        const handle = await ctx.writeResource("preapproval", preapprovalName(args.workItem, "plan-authorized", "plan", cycle), {
+          workItem: args.workItem, gateId: "plan-authorized", stage: "plan", cycle, actor: args.actor,
+          note: planConsentNote(args.plan), createdAt: new Date().toISOString(), appliedAt: null,
+        });
+        return { dataHandles: [handle] };
       },
     },
     preapprove: {
