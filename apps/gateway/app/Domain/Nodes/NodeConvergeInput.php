@@ -20,6 +20,7 @@ use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Fleet\Footprint\PhpRuntimeFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
 use App\Infrastructure\Nodes\AgentCaddyPackage;
+use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Nodes\NodePrivateDnsListenerFootprint;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
@@ -59,7 +60,119 @@ final readonly class NodeConvergeInput
         }
 
         return [...$snapshot, 'payloads' => $payloads, 'user' => $node->user,
-            'ssh' => app(SwampSshExecutionInput::class)->forNode($node)];
+            'ssh' => app(SwampSshExecutionInput::class)->forNode($node), 'agent' => $this->agentFiles($node, $payloads)];
+    }
+
+    /**
+     * The Node agent's files as official cfgmgmt writes them: the unit already opens the apps root of the account
+     * Orbit creates (`/home/<user>`), and the Instance checkouts under that root whose `.env` loses its world bits.
+     *
+     * @param  array<string,mixed>  $payloads
+     * @return array{url:?string,files:list<array{path:string,content:string}>,unit:string,checkouts:list<string>}|null
+     */
+    private function agentFiles(Node $node, array $payloads): ?array
+    {
+        if (! isset($payloads['agent'])) {
+            return null;
+        }
+        $agent = ValidatedData::object($payloads['agent']);
+        $root = is_string($agent['apps_root'] ?? null) ? $agent['apps_root'] : ($node->user === 'root' ? '/root' : '/home/'.$node->user).'/apps';
+        $configuration = app(NodeAgentSshExecutor::class)->configurationForRoot($node, $root);
+        $checkouts = array_values(array_filter(is_array($agent['checkouts'] ?? null) ? $agent['checkouts'] : [],
+            static fn (mixed $path): bool => is_string($path) && str_starts_with($path, $root.'/')));
+
+        return ['url' => is_string($agent['url'] ?? null) ? $agent['url'] : null,
+            'files' => [['path' => NodeAgentFootprint::ConfigurationPath, 'content' => $configuration['configuration']],
+                ['path' => NodeAgentFootprint::CertificatePath, 'content' => $configuration['certificate']]],
+            'unit' => $configuration['unit'], 'checkouts' => $checkouts];
+    }
+
+    /**
+     * The role parts in the shape of node.converge's part steps. A part the snapshot does not apply is null; a
+     * Caddyfile the Gateway could not render is null too, and the projection reports it as skipped.
+     *
+     * @param  array<string,mixed>  $payloads
+     * @return array<string,mixed>
+     */
+    public function roles(Node $node, array $payloads): array
+    {
+        $home = $node->user === 'root' ? '/root' : '/home/'.$node->user;
+        $caddy = isset($payloads['caddy']) ? ValidatedData::object($payloads['caddy']) : null;
+        $dns = isset($payloads['private-dns']) ? ValidatedData::object($payloads['private-dns']) : null;
+        $php = [];
+        $configurations = isset($payloads['php-runtime']) ? ValidatedData::object($payloads['php-runtime'])['configurations'] : [];
+        foreach (is_array($configurations) ? $configurations : [] as $configuration) {
+            $configuration = ValidatedData::object($configuration);
+            $php[ValidatedData::string($configuration['version'])] = ValidatedData::string($configuration['runtime_ini']);
+        }
+
+        return ['user' => $node->user, 'home' => $home,
+            'caddy_package' => isset($payloads['caddy-package']) ? AgentCaddyPackage::nativeInput() : null,
+            'caddy' => $caddy === null || isset($caddy['error_code']) ? null : $caddy,
+            'dns' => $dns === null || isset($dns['error_code']) ? null : $this->privateDns($node, $dns),
+            'php' => (object) $php, 'php_versions' => array_keys($php),
+            'tmpfiles' => isset($payloads['tmpfiles']) ? ValidatedData::string(ValidatedData::object($payloads['tmpfiles'])['rule']) : null,
+            'residue' => isset($payloads['route-residue']) ? $this->residueParts($node, ValidatedData::object($payloads['route-residue']), new ManagedUserAccount($node->user, $node->user, $home)) : null];
+    }
+
+    /**
+     * The listener release as folders and files under its release folder, and the address its socket answers on.
+     *
+     * @param  array<string,mixed>  $part
+     * @return array<string,mixed>
+     */
+    private function privateDns(Node $node, array $part): array
+    {
+        $listener = ValidatedData::object($part['listener']);
+        $publication = ValidatedData::object($part['publication']);
+        $release = '/var/lib/orbit/private-dns/releases/'.ValidatedData::string($listener['release_id']);
+        $directories = [$release];
+        $files = [];
+        foreach (is_array($listener['files']) ? $listener['files'] : [] as $file) {
+            $file = ValidatedData::object($file);
+            $path = $release.'/'.ValidatedData::string($file['path']);
+            $directories[] = dirname($path);
+            $files[] = ['path' => $path, 'content' => ValidatedData::string($file['contents'])];
+        }
+        $directories = array_values(array_unique($directories));
+        sort($directories, SORT_STRING);
+        $catalog = ValidatedData::string($publication['catalog']);
+
+        return ['release' => $release, 'directories' => $directories, 'files' => $files, 'service' => $listener['service'], 'socket' => $listener['socket'],
+            'address' => $node->wireguard_ip, 'records' => $publication['records'], 'catalog' => $catalog, 'catalog_sha256' => hash('sha256', $catalog)];
+    }
+
+    /**
+     * Route residue as the residue steps take it: PHP pool files rendered for the Node's own account, one per PHP
+     * version, empty for a version that no longer has a pool.
+     *
+     * @param  array<string,mixed>  $residue
+     * @return array<string,mixed>|null
+     */
+    private function residueParts(Node $node, array $residue, ManagedUserAccount $account): ?array
+    {
+        $rows = is_array($residue['rows']) ? $residue['rows'] : [];
+        if ($rows === []) {
+            return null;
+        }
+        $steps = array_merge(...array_map(static fn (mixed $row): array => ValidatedData::stringList(ValidatedData::object($row)['steps']), $rows));
+        $caddy = in_array('caddy', $steps, true) && is_array($residue['caddy']) && ! isset($residue['caddy']['error_code']) ? $residue['caddy'] : null;
+        $pools = [];
+        if (in_array('php', $steps, true)) {
+            $rendered = [];
+            foreach (app(DevelopmentSiteRepository::class)->forNode($node)->filter(static fn (DevelopmentSite $site): bool => $site->phpVersion !== null && ! $site->isProxy() && ! $site->usesDedicatedPhpRuntime())->groupBy('phpVersion') as $version => $members) {
+                $rendered[(string) $version] = app(DevelopmentPhpFpmConfigRenderer::class)->render($members->values(), $account);
+            }
+            $known = array_map(static fn (array $input): string => ValidatedData::string($input['version']), app(PhpRuntimeFootprintArtifact::class)->inputs($node));
+            $versions = array_unique([...$known, ...array_map(strval(...), array_keys($rendered))]);
+            sort($versions, SORT_STRING);
+            foreach ($versions as $version) {
+                $pools[] = ['version' => $version, 'path' => '/etc/php/'.$version.'/fpm/pool.d/orbit-scopes.conf', 'content' => $rendered[$version] ?? ''];
+            }
+        }
+
+        return ['caddy' => $caddy, 'pools' => $pools, 'certificates' => $residue['certificates'], 'lan' => $residue['lan'] ?? null,
+            'ingress_commands' => $residue['ingress_commands'] ?? null];
     }
 
     /** @return array<string,mixed> */

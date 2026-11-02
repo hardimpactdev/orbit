@@ -102,7 +102,7 @@ A failure stops convergence before Plausible runs and fails the owning Operation
 
 ### Update Plausible
 
-`orbit analytics:update VERSION` captures the public Process definition and returns an Operation. All steps run on209 and use official SSH to the admitted Node with its stored host key. The Gateway pushes the existing environment through the shared execution-copy helper. Workflow inputs contain only the vault and key names; initialization and Process installation read that copy through native vault expressions.
+`orbit analytics:update VERSION` captures the public Process definition and returns an Operation. All steps run on209 and use official SSH to the admitted Node with its stored host key. The Gateway formats the existing environment with the canonical Docker env-file renderer and pushes it through the shared execution-copy helper. Process children write a private cfgmgmt env file, use its path in Docker argv and remove it after creation. Workflow inputs contain only the vault and key names; initialization and Process installation read that copy through native vault expressions.
 
 The workflow checks the owned container, runs `createdb` and `migrate` as separate steps, then uses the shared native Process destroy/create workflows for replacement. A repeated version checks health without replacing an unchanged container. The first update removes an old agent startup wrapper and binary mount. Start a stopped Plausible Process before updating it.
 

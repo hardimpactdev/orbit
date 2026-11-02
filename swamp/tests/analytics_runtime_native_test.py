@@ -36,7 +36,7 @@ class AnalyticsRuntimeNative(NativeTestCase):
             )
         self.secret = "native-runtime-private-" + uuid.uuid4().hex
         self.secrets = (self.secret,)
-        environment = json.dumps({"SECRET_KEY_BASE": self.secret})
+        environment = "SECRET_KEY_BASE=" + self.secret + "\n"
         self.cli("vault", "create", "local_encryption", "orbit-control-inputs")
         self.cli(
             "vault",
@@ -63,7 +63,7 @@ class AnalyticsRuntimeNative(NativeTestCase):
         ).read_text()
         fixture = fixture.replace(
             "FIXTURE_STATE_PATH", json.dumps(str(self.state))
-        ).replace("FIXTURE_ENV_HASH", hashlib.sha256(environment.encode()).hexdigest())
+        ).replace("FIXTURE_ENV_HASH", hashlib.sha256(environment.rstrip("\n").encode()).hexdigest())
         (self.repo / "extensions/behaviors/fixture.ts").write_text(fixture)
         for filename in (
             "workflow-operation-analytics-update-direct.yaml",
@@ -73,7 +73,7 @@ class AnalyticsRuntimeNative(NativeTestCase):
         ):
             workflow = yaml.safe_load((ROOT / "workflows" / filename).read_text())
             for job in workflow["jobs"]:
-                if "target" in job:
+                if "labels" in job:
                     self.assertEqual(job.pop("labels"), {"role": "swamp"})
                 for step in job["steps"]:
                     self.assertEqual(step.pop("labels"), {"role": "swamp"})
@@ -194,25 +194,12 @@ class AnalyticsRuntimeNative(NativeTestCase):
         self.assertTrue(result["rolled_back"])
         self.assertEqual(state["spec"], "a" * 64)
 
-    def test_plain_resume_after_rollback_cannot_pin_the_old_container_as_new(self):
-        history, _, _ = self.run_update("health")
-        state = json.loads(self.state.read_text())
-        state["mode"] = ""
-        self.state.write_text(json.dumps(state))
-        self.cli(
-            "workflow",
-            "resume",
-            "operation-analytics-update-direct",
-            "--run",
-            history["id"],
-            success=False,
-        )
-        resumed = json.loads(
-            self.cli("workflow", "history", "get", history["id"]).stdout
-        )
-        result = next(s for s in resumed["jobs"][0]["steps"] if s["name"] == "result")
-        self.assertNotIn("ready", json.loads(result["outputs"]["stdout"]))
-        self.assertEqual(json.loads(self.state.read_text())["spec"], "a" * 64)
+    def test_normal_rerun_after_recovery_converges_the_requested_definition(self):
+        self.run_update("health")
+        _, result, state = self.run_update(success=True)
+        self.assertTrue(result["ready"])
+        self.assertEqual(state["spec"], "b" * 64)
+        self.assertEqual(state["state"], "running")
 
     def test_partial_removal_failure_restores_original(self):
         _, result, state = self.run_update("partial-remove")

@@ -9,6 +9,7 @@ use App\Domain\Analytics\PlausibleProcess;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Processes\ProcessLifecycleInput;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -156,7 +157,7 @@ it('captures the environment only through the shared native vault copy', functio
     expect($input['intent']['ssh_execution']['control_node_id'])->toBe(209);
     expect($input['intent']['ssh_execution']['target']['host_keys'])->toBe(['ssh-ed25519 '.$this->node->ssh_host_key]);
     $put = $this->socket->sent[0];
-    expect($put['type'])->toBe('vault.put')->and(json_decode($put['payload']['value'], true))->toBe($this->environment);
+    expect($put['type'])->toBe('vault.put')->and($put['payload']['value'])->toBe(app(ProcessLifecycleInput::class)->dockerEnvironment($this->environment));
     expect($this->socket->sent[1]['payload']['inputs'])->toMatchArray($input);
     expect(json_encode([$operation->fresh()->toArray(), Activity::query()->get()->toArray(), $this->socket->sent[1]]))->not->toContain($this->environment['SECRET_KEY_BASE'], '$secret', 'runtime_environment');
 });

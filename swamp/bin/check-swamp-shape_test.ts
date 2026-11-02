@@ -913,6 +913,58 @@ Deno.test("Route private DNS grace allows only the approved file, step and liter
 const officialSshFixture = Deno.readTextFileSync(
   new URL("../tests/fixtures/shape/official-ssh-vault.yaml", import.meta.url),
 );
+Deno.test("a vault value may be the whole content of a 0600 cfgmgmt file on a 209 worker, and nothing else", () => {
+  const vault = "${{ vault.get(inputs.execution_secrets.login.vault, inputs.execution_secrets.login.key) }}";
+  const workflow = {
+    name: "database-login",
+    vaults: ["orbit-control-inputs"],
+    inputs: {
+      type: "object",
+      additionalProperties: false,
+      required: ["execution_secrets"],
+      properties: {
+        execution_secrets: {
+          type: "object",
+          additionalProperties: false,
+          required: ["login"],
+          properties: {
+            login: {
+              type: "object",
+              additionalProperties: false,
+              required: ["vault", "key"],
+              properties: {
+                vault: { type: "string", enum: ["orbit-control-inputs"] },
+                key: { type: "string", pattern: "^login-[1-9][0-9]*$" },
+              },
+            },
+          },
+        },
+      },
+    },
+    jobs: [{
+      name: "login",
+      labels: { role: "swamp" },
+      steps: [{
+        name: "write",
+        task: {
+          type: "behavior",
+          behaviorType: "@swamp/cfgmgmt/file",
+          behaviorName: "login-file",
+          methodName: "apply",
+          globalArgs: { path: "/run/login.env", ensure: "present", content: vault, mode: "0600", nodeHost: "10.0.0.5" },
+          inputs: {},
+        },
+      }],
+    }],
+  };
+  const file = "workflows/workflow-database-login.yaml";
+  const source = JSON.stringify(workflow);
+  assertEquals(analyzeYaml(file, source).findings.filter((f) => f.rule === "vault-placement"), []);
+  for (const changed of [source.replace('"mode":"0600"', '"mode":"0644"'), source.replace(vault, "prefix " + vault)]) {
+    assert(analyzeYaml(file, changed).findings.some((f) => f.rule === "vault-placement"));
+  }
+});
+
 Deno.test("official SSH vault stdin and env require a 209 worker and closed execution descriptors", () => {
   const vault =
     "${{ vault.get(inputs.execution_secrets.material.vault, inputs.execution_secrets.material.key) }}";

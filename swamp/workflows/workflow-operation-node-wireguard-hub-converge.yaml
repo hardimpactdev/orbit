@@ -1,6 +1,6 @@
 id: be0fb735-5420-4c04-aa82-b33a8a9ce8fa
 name: operation-node-wireguard-hub-converge
-description: Publish the peer list on the VPN Node's WireGuard hub over official SSH from 209; the hub keeps its own key.
+description: Write the Gateway-rendered hub files with cfgmgmt and load the peers with wg syncconf over official SSH from 209; the hub private key never leaves the Node.
 vaults: []
 queueTimeout: 30
 inputs:
@@ -14,29 +14,87 @@ inputs:
       properties:
         hub_id: {type: integer, minimum: 1}
         ssh: {type: object}
-        action_json: {type: string, maxLength: 1048576}
-      required: [hub_id, ssh, action_json]
+        config: {type: string, maxLength: 1048576}
+        peers: {type: string, maxLength: 1048576}
+        port: {type: integer, minimum: 1, maximum: 65535}
+        peer_keys: {type: array, items: {type: string, pattern: '^[A-Za-z0-9+/]{43}=$'}}
+      required: [hub_id, ssh, config, peers, port, peer_keys]
       additionalProperties: false
     execution_secrets: {type: object, additionalProperties: false}
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
-- name: hub
+- name: files
   steps:
-  - name: Resolve the hub script
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/node-hub-command'
-      behaviorName: '${{ "node-hub-publish" }}'
-      methodName: publish
-      inputs: {}
-  - name: Apply the hub config
-    # One script on the hub: new peer list under its own Interface, rollback copy, live sync, peer check, restore on failure.
+  - name: Keep the key in a file
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: Resolve the hub script, condition: {type: succeeded}}]
     task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/exec'
+      behaviorName: '${{ ("wireguard-hub-key-" + string(inputs.intent.hub_id)).split(".").join("-") }}'
+      methodName: apply
+      globalArgs:
+        nodeHost: '${{ inputs.intent.ssh.target.host }}'
+        nodeUser: '${{ inputs.intent.ssh.target.user }}'
+        nodePort: '${{ inputs.intent.ssh.target.port }}'
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}'
+        become: true
+        # Once per hub: the running key moves to the file the hub file's PostUp reads; it never leaves the Node.
+        command: umask 077 && wg show orbit private-key > /etc/wireguard/orbit.key
+        notIf: test -s /etc/wireguard/orbit.key
+      inputs: {}
+  - name: Write the hub config
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Keep the key in a file, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ ("wireguard-hub-config-" + string(inputs.intent.hub_id)).split(".").join("-") }}'
+      methodName: apply
+      globalArgs:
+        nodeHost: '${{ inputs.intent.ssh.target.host }}'
+        nodeUser: '${{ inputs.intent.ssh.target.user }}'
+        nodePort: '${{ inputs.intent.ssh.target.port }}'
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}'
+        become: true
+        path: /etc/wireguard/orbit.conf
+        ensure: present
+        content: '${{ inputs.intent.config }}'
+        owner: root
+        group: root
+        mode: '0600'
+      inputs: {}
+  - name: Write the peer list
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Keep the key in a file, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ ("wireguard-hub-peers-" + string(inputs.intent.hub_id)).split(".").join("-") }}'
+      methodName: apply
+      globalArgs:
+        nodeHost: '${{ inputs.intent.ssh.target.host }}'
+        nodeUser: '${{ inputs.intent.ssh.target.user }}'
+        nodePort: '${{ inputs.intent.ssh.target.port }}'
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}'
+        become: true
+        path: /etc/wireguard/orbit-peers.conf
+        ensure: present
+        content: '${{ inputs.intent.peers }}'
+        owner: root
+        group: root
+        mode: '0600'
+      inputs: {}
+- name: apply
+  dependsOn: [{job: files, condition: {type: succeeded}}]
+  steps:
+  - name: Load the peers
+    labels: {role: swamp}
+    writes: true
+    task: &ssh
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: '${{ ("wireguard-hub-" + string(inputs.intent.hub_id)).split(".").join("-") }}'
@@ -49,12 +107,45 @@ jobs:
           port: '${{ inputs.intent.ssh.target.port }}'
           identityFile: '${{ inputs.intent.ssh.identity_file }}'
         hosts: [{name: hub, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}}]
+      # The Node composes the full syncconf input at apply time: its own key file, the port, then the peers file.
+      # syncconf drops the interface key when its input has none, and the key never leaves the Node.
       inputs:
         hosts: 'name:hub'
         sudo: true
-        argv: [timeout, '120', python3, -I, -c, '${{ steps["Resolve the hub script"].outputs.script }}', '${{ inputs.intent.action_json }}']
-        okExitCodes: [0, 1]
-  - name: Confirm the outcome
+        argv: [timeout, '30', bash, -c, 'wg syncconf orbit <(printf "[Interface]\nPrivateKey = %s\nListenPort = %s\n\n" "$(cat "$1")" "$2"; cat "$3")', bash, /etc/wireguard/orbit.key, '${{ string(inputs.intent.port) }}', /etc/wireguard/orbit-peers.conf]
+- name: check
+  dependsOn: [{job: apply, condition: {type: succeeded}}]
+  steps:
+  - name: Check the hub service
     labels: {role: swamp}
-    dependsOn: [{step: Apply the hub config, condition: {type: succeeded}}]
-    task: {type: assert, expr: 'steps["Apply the hub config"].outputs.exitCode == 0', severity: high, message: The hub did not take the new peer list.}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/systemd'
+      behaviorName: '${{ ("wireguard-hub-service-" + string(inputs.intent.hub_id)).split(".").join("-") }}'
+      methodName: check
+      globalArgs:
+        nodeHost: '${{ inputs.intent.ssh.target.host }}'
+        nodeUser: '${{ inputs.intent.ssh.target.user }}'
+        nodePort: '${{ inputs.intent.ssh.target.port }}'
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}'
+        become: true
+        service: wg-quick@orbit
+        ensure: running
+        enabled: true
+      inputs: {}
+  - name: Read the live peers
+    labels: {role: swamp}
+    task:
+      <<: *ssh
+      inputs: {hosts: 'name:hub', sudo: true, argv: [timeout, '15', wg, show, orbit, peers]}
+  - name: Confirm the hub
+    labels: {role: swamp}
+    dependsOn: [{step: Check the hub service, condition: {type: succeeded}}, {step: Read the live peers, condition: {type: succeeded}}]
+    task:
+      type: assert
+      severity: high
+      message: The hub does not run the admitted peer list.
+      expr: >-
+        data.latest(("wireguard-hub-service-" + string(inputs.intent.hub_id)).split(".").join("-"), inputs.intent.ssh.target.host).attributes.status == "compliant"
+        && steps["Read the live peers"].outputs.stdout.split("\n").filter(k, k != "").size() == inputs.intent.peer_keys.size()
+        && inputs.intent.peer_keys.all(k, k in steps["Read the live peers"].outputs.stdout.split("\n"))

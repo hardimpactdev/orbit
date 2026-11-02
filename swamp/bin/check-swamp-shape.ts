@@ -1542,6 +1542,20 @@ export function analyzeYaml(
       field.length === 4 && field[0] === "hosts" && /^\d+$/.test(field[1]) &&
         field[2] === "transport" && field[3] === "identityContent";
   };
+  // Script audit Q-SECRET (Nick, 2026-11-02): official cfgmgmt file writes a vault value as 0600 file content on the Node.
+  // Its data keeps only the content hash, so a whole vault.get may be that content and nothing else.
+  const protectedFileContent = (path: string[]) => {
+    if (
+      !file.startsWith("workflows/") || path.length !== 7 || path[0] !== "jobs" ||
+      path[2] !== "steps" || path[4] !== "task" || path[5] !== "globalArgs" ||
+      path[6] !== "content"
+    ) return false;
+    const jobs = Array.isArray(data.jobs) ? data.jobs : [];
+    const steps = object(jobs[Number(path[1])]).steps;
+    const task = object(object(Array.isArray(steps) ? steps[Number(path[3])] : undefined).task);
+    return task.type === "behavior" && task.behaviorType === "@swamp/cfgmgmt/file" &&
+      task.methodName === "apply" && object(task.globalArgs).mode === "0600" && worker209(path);
+  };
   const wholeVault = (value: unknown) => {
     if (typeof value !== "string") return false;
     const call = /^\s*\$\{\{\s*vault\.get\(([\s\S]*)\)\s*\}\}\s*$/.exec(value);
@@ -1600,7 +1614,7 @@ export function analyzeYaml(
       ) add("secret-env-source");
       if (
         /vault\.get\s*\(/.test(value) &&
-        !((nativeIdentity || nativeStdin) && wholeVault(value)) && !(vaultEnv &&
+        !((nativeIdentity || nativeStdin || protectedFileContent(path)) && wholeVault(value)) && !(vaultEnv &&
           /^\s*\$\{\{\s*vault\.get\([\s\S]*\)\s*\}\}\s*$/.test(
             value,
           ) &&

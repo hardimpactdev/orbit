@@ -35,7 +35,7 @@ class DenoShards(unittest.TestCase):
             files.mkdir(parents=True)
             groups = ((".", 9), ("database", 9), ("process-commands", 9),
                       ("database/local-sql-effects", 2), ("database/read-effects", 2),
-                      ("database/create-effects", 3), ("database/write-effects", 3))
+                      ("database/write-effects", 3))
             identifier = 0
             for path, count in groups:
                 directory = files / path

@@ -32,6 +32,9 @@ final readonly class SwampDatastoreWatch implements ScheduledResultProjection
     /** Grant records are auto-definitions of type swamp/grant, with their own bound. */
     public const int Grants = 500;
 
+    /** Step-lease bookkeeping records; serve keeps them 2 hours, so they plateau near 2 hours of dispatches. */
+    public const int StepLeases = 60000;
+
     public const int ServeCpuPercent = 50;
 
     public function __construct(private ProblemCollector $problems) {}
@@ -84,6 +87,12 @@ final readonly class SwampDatastoreWatch implements ScheduledResultProjection
             $findings['datastore|grants'] = $this->finding($runId, "Swamp serve holds {$grants} grant records",
                 "Swamp serve on Node 209 holds {$grants} grant records, above the bound of ".self::Grants
                 .'. Something creates grants per workflow or per run; serve loads every record into its policy snapshot.', '.swamp/auto-definitions/swamp/grant', $grants, self::Grants);
+        }
+        $leases = $result['step_leases'] ?? null;
+        if (is_int($leases) && $leases > self::StepLeases) {
+            $findings['datastore|step_leases'] = $this->finding($runId, "Swamp serve holds {$leases} step leases",
+                "Swamp serve on Node 209 holds {$leases} step-lease records, above the bound of ".self::StepLeases
+                .'. Bookkeeping retention is 2 hours, so its garbage collection probably does not reap them.', '.swamp/data/swamp/step-lease', $leases, self::StepLeases);
         }
         $cpu = $result['serve_cpu_percent'] ?? null;
         if ((is_int($cpu) || is_float($cpu)) && $cpu > self::ServeCpuPercent) {

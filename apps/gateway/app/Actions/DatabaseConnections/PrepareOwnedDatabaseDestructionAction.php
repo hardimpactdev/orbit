@@ -9,7 +9,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Support\ValidatedData;
 
-/** One aggregate protected database intent owned by the requested lifecycle Instance.
+/** One aggregate database intent owned by the requested lifecycle Instance.
  * @phpstan-import-type Server from DropOwnedDatabasesAction
  * @phpstan-import-type Sqlite from DropOwnedDatabasesAction
  */
@@ -29,10 +29,8 @@ final readonly class PrepareOwnedDatabaseDestructionAction
             throw new ResourceOperationException('database.removal_conflict', 'Database owners must belong to the admitted development removal set.', 409);
         }
         $snapshot = $this->databases->snapshot(array_values($owners->all()));
-        $passwords = $snapshot['passwords'];
-        unset($snapshot['passwords']);
-        $prepared = $this->operations->prepare('instance.destroy', 'instance', $target->id, $target->node_id, $snapshot,
-            ['database-apply' => ['name' => 'database.destroy_owned', 'input' => ['participant_passwords' => $passwords], 'protected' => ['database_material']]]);
+        // The run reads each server's admin login from the server's own vault key, so the intent holds no password.
+        $prepared = $this->operations->prepare('instance.destroy', 'instance', $target->id, $target->node_id, $snapshot, []);
 
         return ['owner_instance_id' => $target->id, 'intent_id' => ValidatedData::integer($prepared->input['intent_id']), ...$snapshot];
     }

@@ -72,17 +72,17 @@ final readonly class ProcessLifecycleInput
             $definition = $input['runtime'] === 'docker' ? ValidatedData::object($material['definition']) : [];
             $environment = $input['runtime'] === 'systemd'
                 ? ValidatedData::string($material['environment'])
-                : json_encode(Arr::pull($definition, 'environment'), JSON_THROW_ON_ERROR);
+                : $this->dockerEnvironment(ValidatedData::object((array) Arr::pull($definition, 'environment')));
             $installation['retired'] = isset($input['retired_runtime'])
                 ? ['runtime' => $input['retired_runtime'], 'name' => $input['retired_name']] : null;
             if ($input['runtime'] === 'systemd') {
                 $installation['unit'] = $material['content'];
-                $installation['environment_path'] = '/etc/orbit/processes/'.$processId.'/'.hash('sha256', $environment).'.env';
                 $installation['has_environment'] = $environment !== '# Orbit Process '.$processId."\n";
             } else {
                 $installation['definition'] = $definition;
-                $installation['has_environment'] = $environment !== '{}';
+                $installation['has_environment'] = $environment !== '';
             }
+            $installation['environment_path'] = '/etc/orbit/processes/'.$processId.'/'.hash('sha256', $environment).'.env';
             $intent['installation'] = $installation;
             $paths = ValidatedData::stringList($installation['required_mount_paths'] ?? []);
             $intent['mounts'] = [];
@@ -99,5 +99,18 @@ final readonly class ProcessLifecycleInput
         }
 
         return ['intent' => $intent, 'execution_secrets' => $copies];
+    }
+
+    /** Docker env files preserve single-line values without shell expansion.
+     * @param  array<string, mixed>  $environment
+     */
+    public function dockerEnvironment(array $environment): string
+    {
+        $lines = [];
+        foreach ($environment as $name => $value) {
+            $lines[] = $name.'='.ValidatedData::string($value);
+        }
+
+        return $lines === [] ? '' : implode("\n", $lines)."\n";
     }
 }

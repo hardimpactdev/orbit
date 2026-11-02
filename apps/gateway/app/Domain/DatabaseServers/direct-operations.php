@@ -6,7 +6,6 @@ use App\Domain\DatabaseServers\DatabaseCleanupProjection;
 use App\Domain\DatabaseServers\DatabaseCloneProjection;
 use App\Domain\DatabaseServers\DatabaseConnectionUpdateProjection;
 use App\Domain\DatabaseServers\DatabaseCreateProjection;
-use App\Domain\DatabaseServers\DatabaseDestroyOwnedProjection;
 use App\Domain\DatabaseServers\DatabaseDestroyProjection;
 use App\Domain\DatabaseServers\DatabaseReadProjection;
 use App\Domain\DatabaseServers\DatabaseServerAdminSecret;
@@ -33,8 +32,9 @@ return ['database.update' => [
     'workflow' => 'operation-database-create',
     'projection' => DatabaseCreateProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'create', 'step' => 'result'],
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-create-intent-[1-9][0-9]*$']],
+    'terminal_result' => ['job' => 'create', 'step' => 'Report the result'],
+    'execution_copies' => [DatabaseServerAdminSecret::EXECUTION_COPY, ['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-create-intent-[1-9][0-9]*$'],
+        ['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-create-owner-[1-9][0-9]*$']],
 ], 'database_server.destroy' => [
     'workflow' => 'operation-database-server-destroy',
     'projection' => DatabaseServerDestroyProjection::class,
@@ -84,12 +84,6 @@ return ['database.update' => [
     'workflow' => 'operation-database-destroy',
     'projection' => DatabaseDestroyProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'result', 'step' => 'result'],
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-destroy-intent-[1-9][0-9]*$']],
-], 'database.destroy_owned' => [
-    'workflow' => 'operation-database-destroy-owned',
-    'projection' => DatabaseDestroyOwnedProjection::class,
-    'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'result', 'step' => 'result'],
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-destroy-owned-intent-[1-9][0-9]*-server-[1-9][0-9]*$']],
+    'terminal_result' => ['job' => 'destroy', 'step' => 'Report the result'],
+    'execution_copies' => [DatabaseServerAdminSecret::EXECUTION_COPY],
 ]];

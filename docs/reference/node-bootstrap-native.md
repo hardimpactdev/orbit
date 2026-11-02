@@ -4,7 +4,7 @@ description: "Standalone bootstrap intent, native first contact, candidate accou
 covers:
   - apps/gateway/app/Actions/Nodes/{AdmitNodeBootstrapAction,StartNodePhpPackagesAction,AdmitWorkerKnownHostsAction,RecordNodeSshHostKeyAction}.php
   - apps/gateway/app/Domain/Nodes/WorkerKnownHosts*.php
-  - {apps/gateway/app/Infrastructure/Swamp/SwampWorkerKnownHostsInput.php,swamp/extensions/behaviors/operations/node-scripts/scripts/authorized_keys*.py}
+  - apps/gateway/app/Infrastructure/Swamp/SwampWorkerKnownHostsInput.php
   - apps/gateway/app/Domain/Nodes/{NodeBootstrapProjection,NodePhpPackagesInput,NodePhpPackagesProjection,bootstrap-direct-operations}.php
 ---
 
@@ -50,17 +50,14 @@ The existing observer recovered the terminal result during normal Gateway releas
 
 `POST /api/v1/nodes/{node}/ssh-access/converge` accepts an empty JSON object and returns one `node.ssh_access_converge` Operation with HTTP 202. The caller needs the normal directed access to the target Node. `Idempotency-Key` reuses the same admission. A matching active or successful publication also returns its existing Operation. The caller cannot select a key, endpoint, credential, command or script. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/node.ssh_access_converge.mmd) shows the steps.
 
-Orbit owns only its marked block in the managed account's `~/.ssh/authorized_keys`, between `# BEGIN Orbit managed keys` and `# END Orbit managed keys`. The block holds the `swamp` role's public key, then each operator key that Orbit records; Orbit records no operator keys yet. Every line outside the block stays exactly as it is, so operator keys that Orbit does not manage keep their access. A key that also sits outside the block stays there.
+Orbit only adds its own keys to the managed account's `~/.ssh/authorized_keys`: the `swamp` role's public key, then each operator key that Orbit records. Orbit records no operator keys yet. It never removes, reorders or changes another line, so operator keys that Orbit does not manage keep their access.
 
-The Gateway captures the stored managed account, WireGuard address and complete SSH host key through the shared `SwampSshExecutionInput`. Before the run, it puts the identity the Node already accepts into `orbit-control-inputs/bootstrap-identity-node-14`, the one key its vault grant allows; the run reads it with `vault.get`, never as an input. Every step runs on 209:
+The Gateway captures the stored managed account, WireGuard address and complete SSH host key through the shared `SwampSshExecutionInput`. The run needs no secret. Every step runs on 209 and connects with the `swamp` role identity:
 
-- `Read the scripts` loads the shipped `authorized_keys.py`.
-- `Write the Orbit block` runs as the managed account with that identity. It replaces only the block, or appends it.
-- The write is one rename of a temporary file with mode `0600`. An identical block writes nothing, and broken markers refuse before any write.
-- `Read the file back` checks that the block holds exactly the keys and that the lines outside it are unchanged.
-- `Log in with Swamp identity` opens a new session with only the `swamp` role identity. Its output is the terminal result.
+- `Add the Orbit keys` runs one official `@swamp/cfgmgmt/authorized_key` per key. It adds a missing line and leaves a present one alone.
+- `Log in with Swamp identity` opens a new session with only that identity. It is the end check, read from Swamp's run data.
 
-The shared subscriber records `ssh_access_ready: true` and the footprint `ssh_access_digest`. A failure keeps the old digest; a written block stays, and a rerun is safe.
+A Node that does not accept the `swamp` role identity yet needs Node bootstrap first; this command cannot add that first key. The shared subscriber records `ssh_access_ready: true` and the footprint `ssh_access_digest`. A failure keeps the old digest; added keys stay, and a rerun is safe.
 
 ## Shared public role prerequisites
 

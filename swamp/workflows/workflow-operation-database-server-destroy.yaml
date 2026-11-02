@@ -1,6 +1,6 @@
 id: 2fb743f6-7bd7-4d0a-8a61-168d30da8a44
 name: operation-database-server-destroy
-description: Database server removal from 209 in the chart's phases; the data volume stays on the Node.
+description: Database server removal from 209, one docker command per official SSH step; the data volume stays.
 vaults: []
 queueTimeout: 30
 inputs:
@@ -17,20 +17,10 @@ jobs:
 - name: server
   labels: {role: swamp}
   steps:
-  - name: 'Read the scripts'
+    # A container that is already gone counts as stopped and removed; the check below proves the end state.
+  - name: 'Stop the container'
     labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/database-node-command'
-      behaviorName: database-server-destroy-assets
-      methodName: server_destroy
-      inputs:
-        intent:
-          process_id: '${{ inputs.intent.process_id }}'
-          container: '${{ inputs.intent.container }}'
-  - name: 'Stop and remove them'
-    labels: {role: swamp}
-    dependsOn: [{step: 'Read the scripts', condition: {type: succeeded}}]
+    writes: true
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -50,13 +40,13 @@ jobs:
       inputs:
         hosts: name:target
         sudo: true
-        argv: [timeout, '300', python3, -I, -c, '${{ steps["Read the scripts"].outputs.destroy }}', '${{ steps["Read the scripts"].outputs.intent_json }}', remove]
+        argv: [timeout, '90', docker, stop, --time, '60', '${{ inputs.intent.container }}']
         okExitCodes: [0, 1]
-        timeoutSec: 310
-  - name: 'Check they are gone'
+        timeoutSec: 100
+  - name: 'Remove the container'
     labels: {role: swamp}
-    dependsOn: [{step: 'Stop and remove them', condition: {type: succeeded}}]
-    guard: ${{ steps["Stop and remove them"].outputs.exitCode != 0 }}
+    writes: true
+    dependsOn: [{step: 'Stop the container', condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -66,15 +56,30 @@ jobs:
       inputs:
         hosts: name:target
         sudo: true
-        argv: [timeout, '60', python3, -I, -c, '${{ steps["Read the scripts"].outputs.destroy }}', '${{ steps["Read the scripts"].outputs.intent_json }}', gone]
+        argv: [timeout, '60', docker, rm, '${{ inputs.intent.container }}']
         okExitCodes: [0, 1]
         timeoutSec: 70
+  - name: 'Check it is gone'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Remove the container', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-server-destroy-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '30', docker, container, inspect, --format, '{{.Id}}', '${{ inputs.intent.container }}']
+        okExitCodes: [0, 1]
+        timeoutSec: 40
   - name: 'Report the result'
     labels: {role: swamp}
     dependsOn:
-    - {step: 'Read the scripts', condition: {type: always}}
-    - {step: 'Stop and remove them', condition: {type: always}}
-    - {step: 'Check they are gone', condition: {type: always}}
+    - {step: 'Stop the container', condition: {type: always}}
+    - {step: 'Remove the container', condition: {type: always}}
+    - {step: 'Check it is gone', condition: {type: always}}
     task:
       type: behavior
       behaviorType: command/shell
@@ -87,34 +92,23 @@ jobs:
           import os
           import sys
 
-          # A phase that ran and failed names the failed step; its script's error_code wins over the fallback.
-          phases = [('READ', 'Read the scripts', 'database.server_remove_failed'), ('REMOVE', 'Stop and remove them', 'database.server_remove_failed'), ('GONE', 'Check they are gone', 'database.server_remove_incomplete')]
-          result = {'backend': 'absent'}
-          for name, label, fallback in phases:
-              status, exit_code, stdout = (os.environ[name + suffix] for suffix in ('_STATUS', '_EXIT', '_STDOUT'))
-              if status == 'failed' or (status == 'succeeded' and exit_code not in ('', '0')):
-                  try:
-                      value = json.loads(stdout) if stdout else {}
-                  except ValueError:
-                      value = {}
-                  code = value.get('error_code') if isinstance(value, dict) and isinstance(value.get('error_code'), str) else fallback
-                  result = {'failed_step': label, 'error_code': code}
-                  break
-          if 'error_code' not in result and os.environ['GONE_STATUS'] != 'succeeded':
-              result = {'failed_step': None, 'error_code': 'database.server_remove_incomplete'}
+          # docker inspect exits 1 for a missing container: that is the removed end state.
+          if os.environ['GONE_EXIT'] == '1':
+              result = {'backend': 'absent'}
+          elif os.environ['GONE_STATUS'] == 'succeeded':
+              result = {'failed_step': 'Check it is gone', 'error_code': 'database.server_remove_incomplete'}
+          else:
+              failed = next((label for label in ('Stop the container', 'Remove the container', 'Check it is gone') if os.environ[label.split()[0].upper() + '_STATUS'] == 'failed'), None)
+              result = {'failed_step': failed, 'error_code': 'database.server_remove_failed'}
           print(json.dumps(result))
-          sys.exit(0 if 'error_code' not in result else 1)
+          sys.exit(0 if 'backend' in result else 1)
           PY
         env:
-          READ_STATUS: '${{ "Read the scripts" in steps ? steps["Read the scripts"].status : "skipped" }}'
-          READ_EXIT: ''
-          READ_STDOUT: ''
-          REMOVE_STATUS: '${{ "Stop and remove them" in steps ? steps["Stop and remove them"].status : "skipped" }}'
-          REMOVE_EXIT: '${{ "Stop and remove them" in steps && steps["Stop and remove them"].status == "succeeded" ? string(steps["Stop and remove them"].outputs.exitCode) : "" }}'
-          REMOVE_STDOUT: '${{ "Stop and remove them" in steps && steps["Stop and remove them"].status == "succeeded" ? steps["Stop and remove them"].outputs.stdout : "" }}'
-          GONE_STATUS: '${{ "Check they are gone" in steps ? steps["Check they are gone"].status : "skipped" }}'
-          GONE_EXIT: '${{ "Check they are gone" in steps && steps["Check they are gone"].status == "succeeded" ? string(steps["Check they are gone"].outputs.exitCode) : "" }}'
-          GONE_STDOUT: '${{ "Check they are gone" in steps && steps["Check they are gone"].status == "succeeded" ? steps["Check they are gone"].outputs.stdout : "" }}'
+          STOP_STATUS: '${{ "Stop the container" in steps ? steps["Stop the container"].status : "skipped" }}'
+          REMOVE_STATUS: '${{ "Remove the container" in steps ? steps["Remove the container"].status : "skipped" }}'
+          CHECK_STATUS: '${{ "Check it is gone" in steps ? steps["Check it is gone"].status : "skipped" }}'
+          GONE_STATUS: '${{ "Check it is gone" in steps ? steps["Check it is gone"].status : "skipped" }}'
+          GONE_EXIT: '${{ "Check it is gone" in steps && steps["Check it is gone"].status == "succeeded" ? string(steps["Check it is gone"].outputs.exitCode) : "" }}'
         ignoreExitCode: true
   - name: 'Fail on an error'
     labels: {role: swamp}

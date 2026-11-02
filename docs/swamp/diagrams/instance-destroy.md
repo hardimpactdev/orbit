@@ -97,7 +97,7 @@ flowchart TD
     S2["publication check: source assets, mint, fetch,<br/>verify per member<br/>7 steps: 3 SSH; mint and fetch skip<br/>for --force or a failed create"]
     S3["runtime: operation-schedule-destroy (6 steps each),<br/>operation-process-destroy (16 steps each)<br/>4 steps: 2 child fan-outs"]
     S4["teardown: assets, copy, destroy-teardown-0..31, ready<br/>35 steps: 33 SSH; unused slots skip"]
-    S5["database: database-owned-sqlite-remove (7 steps each)<br/>2 steps"]
+    S5["database: cfgmgmt file absent per SQLite file,<br/>operation-database-destroy per server<br/>2 steps"]
     S6["Route withdrawal: 15 child steps,<br/>certificates, PHP, LAN, ingress, Caddy, URLs, DNS,<br/>grace, cleanup; about 106 child steps per Route"]
     S7["source: worktree members, then checkout members;<br/>verify and remove each<br/>12 steps: 4 SSH"]
     S8["remove-result, accepted<br/>2 steps"]

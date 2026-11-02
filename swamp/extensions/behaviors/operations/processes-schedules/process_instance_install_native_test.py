@@ -11,14 +11,15 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / "extensions/behaviors/operations/process-commands"))
-from lifecycle_native_test import ProcessLifecycleNative
+from native_test import ProcessFixture
 
 
-class RuntimeMembers(ProcessLifecycleNative):
+class RuntimeMembers(ProcessFixture):
     # Parent tests reuse the host fixture, not the direct-kind test cases.
     def setUp(self):
         super().setUp()
         self.environment_paths = []
+        self.cli("vault", "create", "local_encryption", "orbit-control-inputs")
         workflow = yaml.safe_load((ROOT / "workflows/workflow-operation-process-install-instance-definitions.yaml").read_text())
         for job in workflow["jobs"]:
             self.assertEqual(job.pop("labels"), {"role": "swamp"})
@@ -26,7 +27,7 @@ class RuntimeMembers(ProcessLifecycleNative):
                 self.assertEqual(step.pop("labels"), {"role": "swamp"})
         (self.repo / "workflows/workflow-operation-process-install-instance-definitions.yaml").write_text(yaml.safe_dump(workflow, sort_keys=False))
         # systemd serializes host requests. Serialize the fake's shared state too.
-        systemctl = self.repo / "cfgmgmt-tools/systemctl"
+        systemctl = self.repo / "tools/systemctl"
         systemctl.write_text(systemctl.read_text().replace("import json,sys", "import json,sys,fcntl\nlock=open(" + repr(str(self.host / "systemd.lock")) + ", 'a')\nfcntl.flock(lock,fcntl.LOCK_EX)"))
         self.parent = {"operation_id": 17, "node_id": 9, "kind": "process.install_instance_definitions", "intent": {"instance_id": 4, "members": []}, "execution_secrets": {}}
 
@@ -42,7 +43,7 @@ class RuntimeMembers(ProcessLifecycleNative):
             path = f"/etc/orbit/processes/{process_id}/{digest}.env"
             content += "EnvironmentFile=" + path + "\n"
             installation["environment_path"] = path
-            self.environment_paths.append(self.host_root / f"processes/{process_id}/{digest}.env")
+            self.environment_paths.append(self.host / "orbit" / f"processes/{process_id}/{digest}.env")
             key = f"process-instance-operation-17-member-{process_id}"
             self.cli("vault", "put", "orbit-control-inputs", key, input=environment)
             self.parent["execution_secrets"][f"member_{process_id}"] = {"vault": "orbit-control-inputs", "key": key}
@@ -80,14 +81,14 @@ class RuntimeMembers(ProcessLifecycleNative):
         self.run_parent()
         state = json.loads(self.state.read_text())["units"][unit.name]
         self.assertTrue(unit.exists())
-        self.assertFalse(state["active"])
+        self.assertEqual(state["active"], "inactive")
         self.assertFalse(state["enabled"])
         self.parent["intent"]["members"] = []
         self.run_parent()
 
     def test_failed_child_retains_unit_for_normal_forward_convergence(self):
         unit = self.add_member(7)
-        self.save_state(units={}, calls=[], failures=["start"])
+        self.save(units={}, calls=[], failures=["start"])
         self.run_parent(success=False)
         self.assertTrue(unit.exists())
         self.run_parent()
@@ -98,25 +99,29 @@ class SharedInstallerParents(RuntimeMembers):
     def run_shared(self, family, success=True):
         filename = 'workflow-operation-instance-' + ('deploy-direct' if family == 'deploy' else 'transfer') + '.yaml'
         workflow = yaml.safe_load((ROOT / 'workflows' / filename).read_text())
-        job = next(job for job in workflow['jobs'] if job['name'] == ('deploy' if family == 'deploy' else 'activate-runtime'))
+        job = next(job for job in workflow['jobs'] if job['name'] == 'deploy') if family == 'deploy' else next(job for job in workflow['jobs'] if any(step['name'] == 'activate' for step in job['steps']))
+        if family == 'transfer':
+            job['steps'] = [step for step in job['steps'] if step['name'] in ('activate', 'forward')]
+            for step in job['steps']:
+                step['dependsOn'] = [edge for edge in step.get('dependsOn', []) if edge['step'] == 'activate']
         job.pop('target', None); job.pop('labels', None)
         job.pop('dependsOn', None)
         marker = self.repo / 'parent-completed'
         marker.unlink(missing_ok=True)
         for step in job['steps']:
-            if step['task']['type'] == 'workflow':
+            if step['task']['type'] == 'workflow' and step['task']['workflowIdOrName'] == 'operation-process-create':
                 self.assertEqual(step.pop('labels'), {'role': 'swamp'})
                 self.assertEqual(step['task']['workflowIdOrName'], 'operation-process-create')
             else:
                 step.pop('target', None); step.pop('labels', None)
-                step['task'] = {'type': 'behavior', 'behaviorType': 'command/shell', 'behaviorName': step['name'], 'methodName': 'execute', 'inputs': {'run': 'touch ' + str(marker) if step['name'] in ('finish-production', 'verify-runtime') else 'true'}}
+                step['task'] = {'type': 'behavior', 'behaviorType': 'command/shell', 'behaviorName': step['name'], 'methodName': 'execute', 'inputs': {'run': 'touch ' + str(marker) if step['name'] in ('finish-production', 'verify-runtime', 'forward') else 'true'}}
         workflow['jobs'] = [job]
         workflow['id'] = 'e4aba95a-13dd-4b45-bc5f-ad08d986eeba'
         workflow['name'] = 'shared-parent-proof'
         (self.repo / 'workflows/workflow-shared-parent-proof.yaml').write_text(yaml.safe_dump(workflow, sort_keys=False))
-        members = [{**member, 'node_id': 9} for member in self.parent['intent']['members']]
+        members = [{**member, 'node_id': 9, 'secret_field': 'node_9_member_' + str(member['id'])} for member in self.parent['intent']['members']]
         copies = {'node_9_' + key: value for key, value in self.parent['execution_secrets'].items()}
-        intent = {'deployment': {'variant': 'production'}, 'process_members': members} if family == 'deploy' else {'source_processes': [], 'destination_processes': members}
+        intent = {'deployment': {'variant': 'production'}, 'process_members': members} if family == 'deploy' else {'processes': {'destination': members}}
         inputs = {'operation_id': 17, 'node_id': 9, 'kind': 'instance.' + family, 'intent': intent, 'execution_secrets': copies}
         reply = self.cli('workflow', 'run', 'shared-parent-proof', '--stdin', input=json.dumps(inputs), success=success)
         run = json.JSONDecoder().raw_decode(reply.stdout.lstrip())[0]
@@ -131,13 +136,13 @@ class SharedInstallerParents(RuntimeMembers):
                 self.run_shared(family)
                 state = json.loads(self.state.read_text())['units']
                 self.assertTrue(state['orbit-process-7-proof.service']['active'])
-                self.assertFalse(state['orbit-process-11-proof.service']['active'])
+                self.assertEqual(state['orbit-process-11-proof.service']['active'], 'inactive')
 
     def test_failed_native_install_blocks_both_parent_continuations(self):
         self.add_member(7)
         for family in ('deploy', 'transfer'):
             with self.subTest(family=family):
-                self.save_state(units={}, calls=[], failures=['start'])
+                self.save(units={}, calls=[], failures=['start'])
                 self.run_shared(family, success=False)
 
 

@@ -105,13 +105,25 @@ A resource observation job checks every parked VM once a minute, including group
 
 Provision requires `todo`. A backlog group returns HTTP 409 `tasks.not_todo`; a claimed group returns HTTP 409 `tasks.already_claimed`.
 
+Admission pins the commit the workspace starts from, so a group never starts on a red commit. Before its transaction, the Gateway walks the first-parent history of the Project's default branch from its head through the [GitHub App](/reference/github-app). It pins the newest commit whose Project `merge_check` passed on exactly that commit, by the same rule as the [review-and-merge gate](#handoff-ci): every run of that name comes from GitHub Actions and completed with `success`. It examines at most 20 commits, the bound of [automatic deploy source reads](/reference/deployments).
+
+A Project without a `merge_check` has no gate, so admission pins the branch head, as an automatic deploy does. Admission never falls back to the head of a gated Project:
+
+| Error code | HTTP | When |
+| --- | --- | --- |
+| `tasks.no_green_commit` | 409 | No first-parent commit passed the `merge_check` in the walk. The walk stops after 20 commits or where the branch listing ends. Provision again after a commit turns green. |
+| `tasks.source_unreadable` | 409 | The Project has a `merge_check` but does not read a github.com repository through the GitHub App. |
+| `tasks.source_unavailable` | 502 | GitHub, the App installation, or the branch head could not be read. |
+
+A refusal leaves the group unchanged and records no VM, workspace or Operation. The intent carries the commit as `workspace.start_commit`.
+
 The Gateway records one `tasks.provision` intent and starts one native Swamp run. Its admission transaction captures VM placement, the exact guest Node, enrollment and workspace metadata under the shared model admission fence. It starts no child VM operation. Swamp composes the canonical Task VM provision child for provider creation, bootstrap, WireGuard publication, model-key issue and Pi runtime preparation. Separate steps on Node 209 clone source, copy a Git bundle through official SSH, resolve its profile and run the captured Project setup commands in order. Plain Task VMs have no Swamp worker. No PHP executor or waiting-read loop runs these effects.
 
 Full capacity or a missing promoted image for the current recipe returns HTTP 409 `tasks.capacity_unavailable`, with the placement reason in the message and `details.reason`. It leaves the group unchanged and records no VM, workspace or Operation. The orchestrator can try the same admission key after capacity or the required image becomes available.
 
 The native parent currently supports unrouted workspaces without Project Process or Schedule definitions. Other workspaces return `operation.kind_unavailable` before reserving capacity. It uses the child-observed SSH host key and the captured Node 209 identity; it issues no guest worker credentials.
 
-Success leaves the group `running` and its workspace `source_resolved`. The task branch starts at the Project's default branch. No subtask or check starts. The operation result includes `{ instance_id, node_id, starting_commit, analysis_base }`, naming the workspace Instance, guest Node, start commit and immutable analysis pin. The operation stays running until both VM enrollment and workspace setup finish. A failed native run ends the group `failed`; cancellation ends it `cancelled`. Neither result claims that the VM was destroyed. Cleanup remains a separate native operation.
+Success leaves the group `running` and its workspace `source_resolved`. The task branch starts at the pinned start commit. The workspace step refuses a checkout on any other commit. No subtask or check starts. The operation result includes `{ instance_id, node_id, starting_commit, analysis_base }`, naming the workspace Instance, guest Node, start commit and immutable analysis pin. The operation stays running until both VM enrollment and workspace setup finish. A failed native run ends the group `failed`; cancellation ends it `cancelled`. Neither result claims that the VM was destroyed. Cleanup remains a separate native operation.
 
 ##### Optional Swamp worker
 
@@ -241,13 +253,13 @@ The planning owner asserts the complete cumulative inventory before feature runt
 | `complete` | Must be `true`; a partial plan is refused |
 | `paths` | Nonempty list of `{change: add\|modify\|delete, path}` or `{change: rename, from, path}`; rename contributes both endpoints to analysis |
 
-Every path names a file relative to the repository root, encoded in UTF-8 and at most 512 bytes. Reject absolute and drive paths, backslashes, empty, `.` or `..` components, control characters, leading or trailing whitespace, globs, directories, `.git` components, and symlink escapes. Do not trim or repair input. Add paths need not exist, but each needs a docs owner: a `covers:` glob that also matches a tracked file. Paths under `tests/` and `swamp/proof/` are test inputs and need none. Delete and rename-from paths must exist in the base or current tracked inventory. Conflicting or duplicate entries refuse the entire request.
+Every path names a file relative to the repository root, encoded in UTF-8 and at most 512 bytes. Reject absolute and drive paths, backslashes, empty, `.` or `..` components, control characters, leading or trailing whitespace, globs, directories, `.git` components, and symlink escapes. Do not trim or repair input. Add paths need not exist, but each needs a docs owner: a `covers:` glob that also matches a tracked file. Paths under `tests/` and `swamp/proof/`, and test files such as `*_test.ts` or `test_*.py`, are test inputs and need none. Delete and rename-from paths must exist in the base or current tracked inventory. Conflicting or duplicate entries refuse the entire request.
 
 Entries arrive sorted by `(path, change, from-or-empty)` in UTF-8 byte order. The manifest has at most 256 entries and at most 32 KiB of RFC 8785 canonical JSON. `plan_sha256` hashes that entire canonical manifest; all SHA-256 values use lowercase hex. Shared JSON/hash fixtures fix encoding across native consumers. Overflow refuses the whole inventory; no path is dropped.
 
 `base`, `head`, and `tree` are full Git object IDs in the repository's object format, resolved in the owned task VM, never branch names. The base is the group's recorded initial merge base with the admitted Project default branch, fixed across children.
 
-Provision observes the initial checkout once after source preparation. It finds the merge base of the Instance's starting commit and the local remote ref for the admitted Project default branch. A missing starting commit, local ref, or common ancestor leaves the base unavailable; it never falls back to the current HEAD.
+Provision observes the initial checkout once after source preparation. It finds the merge base of the Instance's starting commit, the pinned start commit, and the local remote ref for the admitted Project default branch. A missing starting commit, local ref, or common ancestor leaves the base unavailable; it never falls back to the current HEAD.
 
 Analysis performs no fetch, merge, or base adoption. Use the successful provision operation's [public pin](#public-provision-identity) for `base`, never infer it from `starting_commit` or a later remote ref. This contract exposes no base-update path. Any separately authorized future base-update contract must keep old evidence and require a new plan revision and analysis. After handoff, the candidate HEAD is `check.commit`, not the check result's pre-commit `head`.
 
@@ -297,7 +309,7 @@ A valid completion stores `{outcome, artifact, provenance}` in the keyed operati
 
 `artifact` is `{sha256, bytes, content}`. Hash and byte length describe the exact UTF-8 stdout bytes; `content` holds those bytes as a JSON string. Verify and parse the complete content, not reserialized JSON or a log tail. Retain the full bounded bytes beside existing operation state, with a response budget large enough for JSON encoding and all bounded fields. Keyed operation and artifact retention survive VM destruction. Existing access checks govern reads; the VM reader addresses only this operation's run record, not arbitrary files. Add no artifact service, durable table, or approval ledger.
 
-Native provenance contains `operation_id`, `group`, `subtask`, repository, branch, `plan_id`, `plan_revision`, `plan_sha256`, `base`, `before: {head, tree}`, `after: {head, tree}`, `instance_id`, `node_id`, `execution_id`, `entrypoint_sha256`, `started_at`, `finished_at`, `duration_ms`, `exit_code`, and `mechanical_llm_calls: 0`. These are typed identities and measurements, not log extraction. Times use ISO 8601 UTC and duration uses a monotonic clock. Record planning, writing, and review calls separately; label unavailable measurements. Claim no savings without a comparable before measurement including checker/repository revision, plan size, elapsed time, calls, and token metrics.
+Native provenance contains `operation_id`, `group`, `subtask`, repository, branch, `plan_id`, `plan_revision`, `plan_sha256`, `base`, the analyzed `head` and `tree` (equal to `before`), `before: {head, tree}`, `after: {head, tree}`, `instance_id`, `node_id`, `execution_id`, `entrypoint_sha256`, `started_at`, `finished_at`, `duration_ms`, `exit_code`, and `mechanical_llm_calls: 0`. These are typed identities and measurements, not log extraction. Times use ISO 8601 UTC and duration uses a monotonic clock. Record planning, writing, and review calls separately; label unavailable measurements. Claim no savings without a comparable before measurement including checker/repository revision, plan size, elapsed time, calls, and token metrics.
 
 ##### Replay, stop, and fencing
 

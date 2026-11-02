@@ -19,7 +19,8 @@ final readonly class NodeWireGuardHubProjection implements DirectOperationProjec
 
     public function apply(Operation $operation, array $data): Operation
     {
+        // The run ends on its own check; a success means the hub runs the admitted peer list.
         return app(DirectOperation::class)->project($operation, $data,
-            array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip(['projected', 'error_code'])));
+            ($data['status'] ?? null) === 'succeeded' ? ['projected' => true] : []);
     }
 }

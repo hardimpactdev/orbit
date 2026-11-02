@@ -11,7 +11,8 @@ foreach (NodeBootstrapIntent::Kinds as $kind) {
     $definitions[$kind] = ['workflow' => 'operation-'.str_replace(['.', '_'], ['-', '-'], $kind),
         'projection' => NodeBootstrapProjection::class];
     if ($kind === 'node.bootstrap_probe') {
-        $definitions[$kind] += ['workflow_inputs' => true, 'terminal_result' => ['job' => 'bootstrap', 'step' => 'probe-host']];
+        $definitions[$kind] += ['workflow_inputs' => true, 'terminal_result' => ['job' => 'bootstrap', 'step' => 'probe-host'],
+            'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^bootstrap-identity-node-14$']]];
     } else {
         $definitions[$kind]['private_material'] = ['bootstrap_identity' => 'node.bootstrap_ssh_identity'];
     }

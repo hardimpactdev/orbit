@@ -27,7 +27,7 @@ final readonly class DatabaseServerDestroyProjection implements DirectOperationP
             $this->invalid();
         }
 
-        return ['intent' => ['process_id' => $input['process_id'], 'container' => $input['container'],
+        return ['intent' => ['container' => $input['container'],
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($operation->node_id))],
             'execution_secrets' => []];
     }

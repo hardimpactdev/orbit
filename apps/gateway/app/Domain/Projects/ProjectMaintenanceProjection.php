@@ -99,7 +99,7 @@ final readonly class ProjectMaintenanceProjection implements DirectOperationProj
                 && $group->status === TaskGroupStatus::Todo && $group->taskable_id === null
                 && ($group->maintenance['admission_pending'] ?? false) === true && ! $group->assistance_requested
                 && ! TaskExecutionHold::active($group)) {
-                $this->startProvision($group);
+                DB::afterCommit(fn () => $this->startProvision($group));
             }
         }
         foreach (array_map(ValidatedData::object(...), Arr::array($result, 'observations', [])) as $observation) {
@@ -185,7 +185,7 @@ final readonly class ProjectMaintenanceProjection implements DirectOperationProj
                     throw new ResourceOperationException('operation.result_invalid', 'The maintenance intent must name its admitted Project.', 422);
                 }
                 $group->update(['maintenance' => [...$maintenance, 'stage' => 'provision'], 'status' => TaskGroupStatus::Todo]);
-                $this->startProvision($group);
+                DB::afterCommit(fn () => $this->startProvision($group));
             }
             $admitted[] = $group->id;
             $operation->forceFill(['state' => [...($operation->state ?? []), 'maintenance_group_id' => $group->id]])->save();

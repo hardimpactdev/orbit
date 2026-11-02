@@ -249,27 +249,43 @@ class InstanceDestroyNative(InstanceNativeFixture):
         run,second = self.destroy()
         self.assertEqual(run['status'],'succeeded'); self.assertEqual(second['source_inspection'],first['source_inspection'])
 
-    def test_destroy_composes_real_owned_sqlite_child_before_source_removal(self):
-        import sqlite3
-        from contextlib import closing
-        self.copy_behaviors('operations/database-server-commands')
-        database = self.application/'owned.sqlite'
-        with closing(sqlite3.connect(database)) as connection:
-            connection.execute('CREATE TABLE proof(value)')
-        workflow = yaml.safe_load((ROOT/'workflows/workflow-database-owned-sqlite-remove.yaml').read_text())
-        workflow = json.loads(json.dumps(workflow).replace('/tmp/orbit-db-owned-', str(self.control)+'/db-owned-').replace('/etc/orbit/swamp-role-worker/ssh-identity',str(self.identity)))
-        for job in workflow['jobs']:
-            job.pop('target', None); job.pop('labels', None)
-            for step in job['steps']:
-                step.pop('target', None); step.pop('labels', None)
-                if step['task'].get('behaviorType') == '@swamp/ssh':
-                    step['task']['globalArgs'].update(sshBinary=str(self.repo/'ssh'),scpBinary=str(self.repo/'scp'))
-        (self.repo/'workflows/workflow-sqlite.yaml').write_text(yaml.safe_dump(workflow,sort_keys=False))
-        self.input['intent']['direct_destroy']['database']['sqlite'] = [{'connection_id':23,'node_id':9,'checkout':str(self.application),'path':str(database)}]
-        run,_ = self.destroy()
-        self.assertEqual(run['status'], 'succeeded')
-        self.assertFalse(database.exists())
+    def dns_publication(self, exit_code):
+        """One VPN DNS publication, served by a stub route-dns-publish child that logs each call and exits with exit_code."""
+        log = self.host/'dns-calls'
+        stub = {'id': '4f1e6d2a-0d55-4c1e-9a3b-7d1c2b8e6a51', 'name': 'route-dns-publish', 'queueTimeout': 30, 'inputs': {'type': 'object'}, 'jobs': [{'name': 'publish', 'steps': [{'name': 'write',
+                'task': {'type': 'behavior', 'behaviorType': 'command/shell', 'behaviorName': 'stub-dns', 'methodName': 'execute',
+                         'inputs': {'run': f'printf x >> {log}; exit {exit_code}'}}}]}]}
+        (self.repo/'workflows/workflow-route-dns-publish.yaml').write_text(yaml.safe_dump(stub, sort_keys=False))
+        artifact = {'node_id': 1, 'records': '# Managed by Orbit.\n', 'catalog': '{}\n', 'digest': 'd'*64}
+        part = {'index': 0, 'node_id': 1, 'user': 'orbit', 'serves_routes': False, 'control_node_id': 209, 'host_keys': [], 'connection': {},
+                'prepared': {'caddy': None, 'php': None, 'dns': 0}, 'withdrawn': {'caddy': None, 'php': None, 'dns': 0},
+                'after': {'caddy': None, 'php': None, 'dns': 0}, 'before': {'caddy': None, 'php': None, 'dns': 0}, 'direction': 'forward'}
+        mutations = self.input['intent']['route_mutations']
+        mutations['forward']['publications'] = [part]
+        mutations['artifacts']['dns'] = [artifact]
+        return log
 
+    def test_a_dns_publication_removes_the_records_on_the_vpn_node_before_the_source(self):
+        log = self.dns_publication(0)
+        run, result = self.destroy()
+        self.assertEqual(run['status'], 'succeeded'); self.assertTrue(result['removed'])
+        self.assertEqual(self.steps['Remove DNS records-0']['status'], 'succeeded')
+        self.assertGreaterEqual(len(log.read_text()), 1)
+        self.assertFalse(self.application.exists())
+
+    def test_no_dns_publication_skips_the_dns_step(self):
+        run, result = self.destroy()
+        self.assertEqual(run['status'], 'succeeded')
+        self.assertFalse(any(name.startswith('Remove DNS records') for name in self.steps))
+
+    def test_destroy_removes_owned_databases_with_official_steps(self):
+        workflow = yaml.safe_load((ROOT/'workflows/workflow-operation-instance-destroy.yaml').read_text())
+        steps = {step['name']: step for step in workflow['jobs'][0]['steps']}
+        sqlite = steps['Remove SQLite files']['task']
+        self.assertEqual((sqlite['behaviorType'], sqlite['globalArgs']['ensure'], sqlite['globalArgs']['become']), ('@swamp/cfgmgmt/file', 'absent', False))
+        servers = steps['Drop owned databases']['task']
+        self.assertEqual((servers['workflowIdOrName'], servers['inputs']['kind']), ('operation-database-destroy', 'database.destroy'))
+        self.assertEqual(list(servers['inputs']['execution_secrets']), ['client_env'])
 
 SSH = '''import os,shlex,subprocess,sys
 if '-O' in sys.argv or '-N' in sys.argv or '-MNf' in sys.argv: sys.exit(0)

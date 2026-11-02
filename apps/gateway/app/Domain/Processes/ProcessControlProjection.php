@@ -52,8 +52,19 @@ final readonly class ProcessControlProjection implements DirectOperationProjecti
         $status = OperationStatus::from(ValidatedData::string($data['status']));
         $code = ValidatedData::nullableString($data['error_code'] ?? null);
         $reported = ValidatedData::object($data['result'] ?? []);
+        $desired = match ($operation->kind) {
+            'process.stop', 'process.destroy' => 'stopped',
+            'process.start', 'process.restart' => 'running',
+            'process.create', 'process.update' => ValidatedData::string($operation->input['desired']),
+            default => throw new \LogicException('A Process lifecycle kind is required.'),
+        };
+        $state = $status === OperationStatus::Succeeded && $operation->kind !== 'process.destroy'
+            ? ($operation->input['runtime'] === 'systemd'
+                ? ($desired === 'running' ? 'active' : 'inactive')
+                : trim(ValidatedData::string($reported['state'])))
+            : null;
         $result = match ($status) {
-            OperationStatus::Succeeded => ['ready' => true, ...($operation->kind === 'process.destroy' ? [] : ['state' => $reported['state'] ?? null])],
+            OperationStatus::Succeeded => ['ready' => true, ...($operation->kind === 'process.destroy' ? [] : ['state' => $state])],
             OperationStatus::Failed, OperationStatus::Interrupted => ['error_code' => $code],
             default => [],
         };

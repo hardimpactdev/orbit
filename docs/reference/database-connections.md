@@ -23,7 +23,12 @@ Each direct declaration names a workflow and a small result projection. There ar
 
 Passwords and SQL use the shared private-material API for the exact root run and admitted Node custody. They remain inside the effect callback. They do not enter Operation public input, results, native JSON resources or logs. The Gateway deletes encrypted intent after the Operation and its 24-hour retry window finish. Public Operation history remains.
 
-Create reserves names and credentials without probing a server. A matching retry reuses them. Swamp checks the live owner and grants before creating or adopting existing names. A MySQL exact grant escapes underscores. Destruction refuses system names and prefixes, attached connections and foreign owners. PostgreSQL destruction fences admission and restores it after a refused or failed drop. Create and user admission refuse while removal targets the same server; removal refuses while creation is unfinished.
+Both database actions refuse a server Node without a stored SSH host key (`swamp.ssh_target_unavailable`) before they record anything. Create and user admission refuse while removal targets the same server; removal refuses while creation is unfinished.
+
+- Create reserves names and credentials without probing a server. A matching retry reuses them.
+- Swamp refuses a database that exists for another owner (`database.name_conflict`) before any change. A MySQL exact grant escapes underscores.
+- The connection becomes active only after the owner logs in with its own password (`database.owner_login_failed` otherwise).
+- Destruction refuses system names and prefixes, names that are not plain identifiers, and attached connections. It refuses blockers before any drop.
 
 ## Instance database steps
 
@@ -37,7 +42,7 @@ Successful projections make bounded record changes: attach a created or cloned c
 
 ## Native database clones
 
-Standalone `database.clone` captures its non-secret source, target and SSH identities at admission. One209 workflow uses official SSH for each action. MySQL creation reuses the native create DAG with one password-only execution copy; a replayable copy action checks the source and target ownership again before resetting the admitted targets and importing. SQLite keeps the local reflink path and consistent-backup alternative. Cross-Node snapshots travel through official SSH copy via a private209 scratch directory, with size and digest verification before installation.
+Standalone `database.clone` captures its non-secret source, target and SSH identities at admission. One209 workflow uses official SSH for each action. MySQL creation runs the clone-only `database-clone-create` child with one password-only execution copy, until `instance.clone` replaces standalone clone; a replayable copy action checks the source and target ownership again before resetting the admitted targets and importing. SQLite keeps the local reflink path and consistent-backup alternative. Cross-Node snapshots travel through official SSH copy via a private209 scratch directory, with size and digest verification before installation.
 
 The native child completes source, incoming-file and209 scratch cleanup before returning its public result. A failed child is retried as a whole by root resume; a successful child is skipped when only terminal projection resumes. Missing outcomes fail without attaching the target. The Gateway stores credentials and projects the final connection and attachment; steps make no Gateway calls. Instance-parent clone and transfer composition remains in its existing parent workflow.
 
@@ -236,6 +241,6 @@ SQLite writes have an engine attachment limit of zero. `ATTACH` and `VACUUM INTO
 
 ### Instance-owned removal
 
-`database.destroy_owned` captures the owned set and SSH identities once. Its native workflow on Node 209 fans out through official SSH: each SQL server reuses the native inventory, ownership, fence, drop and restore DAG; each SQLite file has one shipped removal action under its admitted Node account. Each child has its own SSH model and scratch directory. Password-only execution copies have one key per admitted SQL server; SQLite removal reads no secret.
+`instance:destroy` removes the databases its Instances own inside its own run; there is no separate owned-removal Operation. The Gateway records the owned set once at admission. For each Database server, the run calls the `operation-database-destroy` workflow that `database:destroy` uses, with the server's admin login from its own vault key. The official `@swamp/cfgmgmt/file` behavior removes each owned SQLite file under the Node account; the Gateway admits only paths inside the Instance checkout.
 
-The Gateway creates no child Operations and performs no remote removal. It deletes the owned connection records only after every native child succeeds. An empty set succeeds without SSH or vault reads. Failure, cancellation or interruption keeps those records. If Swamp omits a failed child’s result, the Operation reports `database.destroy_owned_outcome_unknown`. Attached databases outside the owned set still block admission, and participant GET access remains scoped to that Node. Terminal projection resumes from saved results. Instance removal still uses its existing lower API until its parent workflow is rewritten.
+The Gateway deletes the owned connection records only after the whole Instance removal succeeds. Failure or cancellation keeps them. Attached databases outside the owned set still block admission.

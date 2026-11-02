@@ -40,11 +40,9 @@ Deno.test("lifecycle public unit is digest-bound, serializable, and has no priva
             retired: null,
         },
     });
-    const result = await lifecycleAssets(args, "/scripts");
+    const result = await lifecycleAssets(args);
     assertEquals(result.unit, unit);
-    assertEquals(JSON.parse(result.intent_json), {
-        installation: args.installation,
-    });
+    assertEquals(result.container_argv, []);
     await assertRejects(() =>
         lifecycleAssets({
             ...args,
@@ -52,7 +50,7 @@ Deno.test("lifecycle public unit is digest-bound, serializable, and has no priva
                 ...args.installation!,
                 content_hash: "b".repeat(64),
             },
-        }, "/scripts")
+        })
     );
     await assertRejects(() =>
         lifecycleAssets({
@@ -61,7 +59,7 @@ Deno.test("lifecycle public unit is digest-bound, serializable, and has no priva
                 ...args.installation!,
                 retired: { runtime: "systemd", name: control.name },
             },
-        }, "/scripts")
+        })
     );
 });
 Deno.test("Docker public input refuses private environment and shell image syntax before effects", () => {

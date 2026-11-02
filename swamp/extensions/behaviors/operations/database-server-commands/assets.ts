@@ -37,7 +37,7 @@ export const behavior = {
                 ctx: Context,
             ) => {
                 const value = {
-                    directory: ctx.extensionFile("scripts/ready.py").replace(
+                    directory: ctx.extensionFile("scripts/server_common.py").replace(
                         /\/[^/]+$/,
                         "",
                     ),
@@ -123,74 +123,6 @@ export const behavior = {
                 const value = {
                     stdout: JSON.stringify(result) + "\n",
                     exitCode: "error_code" in result ? 1 : 0,
-                };
-                await ctx.writeResource("result", "result", value);
-                return value;
-            },
-        },
-        owned_result: {
-            description:
-                "Aggregate the exact owned removal children from saved public outputs",
-            arguments: z.object({
-                expected: z.array(z.string()),
-                steps: z.record(
-                    z.string(),
-                    z.object({
-                        status: z.string(),
-                        outputs: z.record(z.string(), z.unknown()).optional(),
-                    }).passthrough(),
-                ),
-            }).strict(),
-            execute: async (
-                args: {
-                    expected: string[];
-                    steps: Record<
-                        string,
-                        { status: string; outputs?: Record<string, unknown> }
-                    >;
-                },
-                ctx: Context,
-            ) => {
-                const Schema = z.union([
-                    z.object({ backend: z.literal("absent") }).strict(),
-                    z.object({
-                        error_code: z.string().regex(
-                            /^(?:database|instance)\.[a-z0-9_]{1,80}$/,
-                        ),
-                    }).strict(),
-                ]);
-                let result: z.infer<typeof Schema> = { backend: "absent" };
-                for (const name of args.expected) {
-                    const step = args.steps[name];
-                    const raw = step?.outputs?.result ?? step?.outputs;
-                    const output = raw && typeof raw === "object"
-                        ? raw as Record<string, unknown>
-                        : {};
-                    let parsed: z.infer<typeof Schema> | undefined;
-                    try {
-                        parsed = Schema.parse(
-                            JSON.parse(String(output.stdout)),
-                        );
-                    } catch {
-                        /* Missing child outputs keep the aggregate unknown. */
-                    }
-                    if (parsed && "error_code" in parsed) {
-                        result = parsed;
-                        break;
-                    }
-                    if (
-                        step?.status !== "succeeded" || output.exitCode !== 0 ||
-                        !parsed || !("backend" in parsed)
-                    ) {
-                        result = {
-                            error_code:
-                                "database.destroy_owned_outcome_unknown",
-                        };
-                    }
-                }
-                const value = {
-                    stdout: JSON.stringify(result) + "\n",
-                    exitCode: "backend" in result ? 0 : 1,
                 };
                 await ctx.writeResource("result", "result", value);
                 return value;

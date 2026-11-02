@@ -48,11 +48,24 @@ Deno.test("public plan matches the canonical Process lifecycle schema for before
                 control: child.control,
                 installation: child.installation,
             }),
-            "/shared/scripts",
         );
         assertEquals(
-            JSON.parse(result.intent_json).installation.definition.environment,
-            undefined,
+            result.container_argv.slice(-3),
+            [
+                child.installation.definition.image,
+                ...child.installation.definition.command,
+            ],
+        );
+        assertEquals(result.container_argv.includes("--env-file"), true);
+        assertEquals(
+            result.container_argv.includes(child.installation.environment_path),
+            true,
+        );
+        assertEquals(
+            result.container_argv.some((value) =>
+                value.includes("SECRET_KEY_BASE=")
+            ),
+            false,
         );
     }
     assertEquals(value.control.name, "orbit-process-9-plausible");

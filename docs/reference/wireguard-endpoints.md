@@ -68,17 +68,21 @@ Before that restoration checkpoint, an exact `node.add` parent renders its conte
 
 `node:wireguard-hub:converge <node>` admits one `node.wireguard_hub_converge` Operation for the active VPN owner. The Gateway records the full intent: the public peer list (name, public key and WireGuard address of every other Node that is not being removed) and the hub's SSH target. The hub's private key never leaves the hub; the run carries no secret.
 
-One Swamp run on 209 reaches the hub over official SSH as root and runs one shipped script under the hub's peer lock. The script keeps the hub's own `[Interface]` section and writes the new `[Peer]` sections; an identical, running list writes nothing.
+The hub's private key never leaves the Node (Nick, 2026-11-02). The Gateway renders two public files. `orbit.conf` is the wg-quick file: `Address`, `ListenPort`, `PostUp = wg set %i private-key /etc/wireguard/orbit.key` and one `[Peer]` per Node. `orbit-peers.conf` holds only the `[Peer]` sections.
 
-The script validates the file with `wg-quick strip`, keeps a rollback copy, live-syncs `wg-quick@orbit` with `wg syncconf` (or enables and starts a stopped one), then requires the service active and enabled and `wg show` to list exactly these peers.
+One Swamp run on 209 reaches the hub over SSH as root, with no script on the hub:
 
-When any check fails, the script puts the previous file and service state back and reports one error code:
+1. `@swamp/cfgmgmt/exec` moves the running key into `/etc/wireguard/orbit.key` (0600) once; it skips this when the file exists.
+2. `@swamp/cfgmgmt/file` writes both files (0600, root) side by side.
+3. One `bash -c` command runs `wg syncconf` on input it composes on the Node: `PrivateKey` read from `orbit.key`, the port, then `orbit-peers.conf`.
 
-- `wireguard.hub_config_invalid`: the rendered file has a shell hook or fails `wg-quick strip`.
-- `wireguard.hub_start_failed`: the service did not stay active and enabled, or `wg show` lists other peers.
-- `wireguard.hub_state_unsupported`: the hub has no file of its own; the role's bootstrap creates it.
+The load adds new peers and removes stale ones. Unchanged peers keep their sessions, and the interface keeps its key.
 
-The step uses the behavior name `wireguard-hub-<hub id>`, which task VM enrollment shares, so hub changes run one at a time. The command changes no peer key, address, role or credential.
+`wg syncconf` removes the interface key when its input has none, which the topology proof showed. Composing the key in on the Node keeps it out of the Gateway, the vault and the run history.
+
+The run ends with the official `@swamp/cfgmgmt/systemd` check that `wg-quick@orbit` runs and is enabled, and a native assert that the live peers are exactly the admitted ones.
+
+When a step fails, the run stops and the hub stays as it is; there is no rollback, and a rerun writes and loads the same files again. The command changes no peer key, address, role or credential. The hub must already run its own `wg-quick@orbit`; the role's bootstrap creates it.
 
 The API is `POST /api/v1/nodes/{node}/wireguard-hub/converge` with an empty body. It returns HTTP 202 and an Operation, which the Gateway closes from the run's terminal result. The CLI follows the same Operation and accepts `--idempotency-key=KEY` and `--json`.
 

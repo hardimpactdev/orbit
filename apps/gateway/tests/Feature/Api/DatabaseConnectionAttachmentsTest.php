@@ -198,7 +198,7 @@ it('writes the registry host and port for a same-Node Instance even when a Node 
     expect(stored_env($this->instance)['DB_HOST'])->toBe('10.44.0.201')
         ->and(stored_env($this->instance)['DB_PORT'])->toBe('3306');
 
-    $remote = Node::query()->create([
+    $remote = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND',
         'name' => 'remote-app',
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
@@ -384,7 +384,7 @@ it('refuses an unsupported attach key and an invalid prefix', function (): void 
  */
 function database_attachment_fixture(): array
 {
-    $caller = Node::query()->create([
+    $caller = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND',
         'name' => 'gateway-peer',
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
@@ -393,7 +393,7 @@ function database_attachment_fixture(): array
         'user' => 'orbit',
     ]);
     $caller->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
-    $node = Node::query()->create([
+    $node = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND',
         'name' => 'environment-owner',
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',

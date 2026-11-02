@@ -129,8 +129,6 @@ PLAN F9 rebuilds a kind from its legacy sequence when a supported caller needs i
 | Script | `scripts/sqlite_target_cleanup.py` and its line in `database-server-commands/manifest.yaml` |
 | Tests | The abandon cases in `PrepareSqliteIntentActionTest.php`, the `database.sqlite_seed_abandon` dataset entries in `InstanceSqliteSeedIntentTest.php` and `DatabaseSqliteProjectionTest.php`, and the abandon runs in `sqlite_native_test.py` |
 
-`test_target_cleanup_…` in `sqlite_scripts_test.py` stays. It tests the seed target cleanup mode, which `sqlite_seed_common.py` still supports.
-
 `PrepareSqliteIntentAction::seed` has no product caller either, so `database.sqlite_seed` is canary-only as well. #2341 kept it; it is still registered on main.
 
 If the transfer rebuild restores SQLite, put the cleanup back as a phase of transfer recovery, as legacy had it. These edge cases come with it:

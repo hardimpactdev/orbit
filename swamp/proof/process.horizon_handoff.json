@@ -1,0 +1,74 @@
+{
+  "workflow": "operation-process-horizon-handoff",
+  "topology": "minimal",
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "expect": {
+    "status": "succeeded"
+  },
+  "before_gateway": [
+    [
+      "python3",
+      "swamp/proof/horizon/prepare.py"
+    ]
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "processes",
+      "body": {
+        "target_type": "node",
+        "target_id": "${node.target}",
+        "name": "scheduler-${proof.run}",
+        "runtime": "systemd",
+        "command": [
+          "/usr/bin/php",
+          "artisan",
+          "schedule:work"
+        ],
+        "working_directory": "/opt/proof-horizon",
+        "start": false
+      },
+      "bind": "scheduler"
+    }
+  ],
+  "request": {
+    "method": "INTERNAL",
+    "path": "gateway:release:handoff",
+    "horizon": {
+      "node": "${node.target}",
+      "scheduler": "${scheduler.id}"
+    }
+  },
+  "phases": [
+    {
+      "name": "Inspect the unit",
+      "job": "horizon",
+      "step": "Inspect the unit",
+      "budget_seconds": 20
+    },
+    {
+      "name": "Write and enable unit",
+      "job": "horizon",
+      "step": "Write and enable unit",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Start Horizon",
+      "job": "horizon",
+      "step": "Start Horizon",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Accept Horizon",
+      "job": "horizon",
+      "step": "Accept Horizon",
+      "budget_seconds": 10
+    }
+  ],
+  "parity": [
+    "swamp/proof/horizon/parity.py",
+    "created"
+  ],
+  "kind": "process.horizon_handoff"
+}

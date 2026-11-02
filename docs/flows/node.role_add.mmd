@@ -72,12 +72,40 @@ sequenceDiagram
   %%> - `app-dev`: the `/etc/tmpfiles.d/orbit.conf` rule for `/tmp/orbit-*` and `/dev/shm/orbit-*`
   %%> - `websocket`: the Reverb service
   %%> - `analytics`: Plausible, beside the given storage Processes
-  %%> - `swamp`: Orbit's Caddy and the 2 worker services `orbit-swamp-worker@a` and `@b`
+  %%> - `swamp`: Orbit's Caddy; serve and its workers follow in their own steps
   %%> - `metrics`: Prometheus and Grafana, with the same steps as `metrics:enable`
   %%> How:
   %%> - official `@swamp/cfgmgmt` behaviors (file, systemd, docker) over SSH from 209
   %%> Not included:
   %%> - the Node agent, its files and the Orbit CLI; `node:converge` owns them
+  opt role is swamp
+    SW->>N: Install the SSH identity<br/>@swamp/ssh exec · install
+    %%> What it does:
+    %%> - copies the Node's `node-proxy` key to `/etc/orbit/swamp-role-worker/ssh-identity`, owned by root and readable by the workers' account (`0440`)
+    %%> - one `install` command; repeating it changes nothing
+    %%> Why:
+    %%> - every Swamp step reaches its Node over SSH with this key
+    %%> Requirements:
+    %%> - an operator bootstraps the first swamp Node; until this step has run once, no worker holds the key
+    SW->>N: Run serve and 2 workers<br/>@swamp/cfgmgmt/systemd
+    %%> What it does:
+    %%> - writes `orbit-swamp-serve.service` and the worker template `orbit-swamp-worker@.service` from the role plan; systemd reloads only when one changed
+    %%> - enables serve and the workers `@a` and `@b`, and starts any that is stopped
+    %%> Serve:
+    %%> - `swamp serve` on `127.0.0.1:9418` from the serve checkout, with at most 4 scheduled runs in flight and a 5-minute shutdown drain
+    %%> - never restarted here: a changed serve unit takes effect at serve's next restart, which an operator makes in a quiet window
+    %%> Workers:
+    %%> - each reaches serve on loopback with 8 dispatch slots and the labels `role=swamp` and `node=12`
+    %%> - a running worker is never stopped or restarted here, because runs may be on it; a changed worker unit takes effect at the worker's next restart
+    %%> Requirements:
+    %%> - placed by an operator: the pinned `swamp` binary, each worker's enrollment and server tokens in `/etc/orbit/swamp-role-worker/<a|b>/`, and the serve checkout
+    %%> - nothing reads them first: a missing one fails the start with `swamp.worker_unit_failed` or `swamp.serve_unit_failed`
+    %%> Not included:
+    %%> - serve's grants files and `swamp access reload`: they follow the checkout, so the release's Swamp load applies them (`gateway.swamp_load`)
+    %%> - the datastore watch: a native schedule among the repository's workflows, which serve loads with each release (`swamp.datastore_watch`)
+    %%> How:
+    %%> - `@swamp/cfgmgmt/systemd` with the unit content, over SSH from 209
+  end
   opt role needs a certificate
     SW->>GW: Sign the role certificate<br/>operation:direct:certificate-sign
     %%> When:
@@ -113,6 +141,7 @@ sequenceDiagram
   %%> What it does:
   %%> - checks the role's services are active and answer, such as Caddy, PHP-FPM or Reverb
   %%> - reads each applied file back and compares it with its digest
+  %%> - `swamp`: the `check` of each `@swamp/cfgmgmt/systemd` step and of the identity file, then a native `assert` fails the run on any drift
   %%> Why:
   %%> - the role only counts as active when Node 12 shows it
   alt every step passes

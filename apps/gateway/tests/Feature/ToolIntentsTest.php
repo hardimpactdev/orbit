@@ -16,6 +16,7 @@ use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeRoutePublicationSocket;
+use Tests\Support\ToolNativeRun;
 
 beforeEach(function (): void {
     $gateway = Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.1', 'status' => LifecycleStatus::Active]);
@@ -45,7 +46,7 @@ it('starts a full-input write only after admission commits', function (): void {
 
 it('projects bounded native package data once and rejects another root', function (): void {
     $operation = app(StartToolOperationAction::class)->execute('install', $this->node->id, 'apt', 'jq', null);
-    $data = ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-11-01T04:00:00Z', 'finished_at' => '2026-11-01T04:00:01Z', 'result' => ['manager_version' => 'apt 3.0.0', 'installed_version' => '1.7.1', 'password' => 'discard-sentinel']];
+    $data = ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-11-01T04:00:00Z', 'finished_at' => '2026-11-01T04:00:01Z', 'result' => ToolNativeRun::result(['manager_version' => 'apt 3.0.0', 'installed_version' => '1.7.1', 'password' => 'discard-sentinel'])];
     $projection = app(ToolIntentProjection::class);
     expect(fn () => $projection->apply($operation, [...$data, 'run_id' => 'f4c20822-d85f-4212-a60d-a81a52c30baa']))->toThrow(ResourceOperationException::class);
     $projection->apply($operation, $data);
@@ -57,7 +58,7 @@ it('projects bounded native package data once and rejects another root', functio
 
 it('rejects malformed typed native results without writing Tool state', function (array $result): void {
     $operation = app(StartToolOperationAction::class)->execute('install', $this->node->id, 'apt', 'jq', null);
-    expect(fn () => app(ToolIntentProjection::class)->apply($operation, ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-11-01T04:00:00Z', 'finished_at' => '2026-11-01T04:00:01Z', 'result' => $result]))->toThrow(ResourceOperationException::class);
+    expect(fn () => app(ToolIntentProjection::class)->apply($operation, ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-11-01T04:00:00Z', 'finished_at' => '2026-11-01T04:00:01Z', 'result' => ToolNativeRun::result($result)]))->toThrow(ResourceOperationException::class);
     expect($operation->refresh()->status)->toBe(OperationStatus::Running)
         ->and(Tool::query()->sole()->status)->toBe(ToolStatus::Installing)->and(ToolManagerRecord::query()->sole()->status)->toBe(LifecycleStatus::Provisioning);
 })->with([

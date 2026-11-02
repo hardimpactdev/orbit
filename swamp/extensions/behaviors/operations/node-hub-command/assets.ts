@@ -78,6 +78,12 @@ export function hubPeerAction(raw: unknown) {
         restoring,
         before: restoring ? desired : intent.before,
         after: restoring ? intent.before : desired,
+        // Lets the hub replace a stale peer of a deleted Node at the context address.
+        fleet: intent.inventory.map(({ node_id, address, public_key }) => ({
+            node_id,
+            address,
+            public_key,
+        })),
     };
 }
 const Inventory = z.object({
@@ -127,42 +133,13 @@ type OutputContext = {
 };
 export const behavior = {
     type: "@nckrtl/node-hub-command",
-    version: "2026.11.02.1",
+    version: "2026.10.31.1",
     resources: {
         assets: { schema: Assets, lifetime: "1d", garbageCollection: 10 },
         readiness: { schema: Readiness, lifetime: "1d", garbageCollection: 10 },
         terminal: { schema: Terminal, lifetime: "1d", garbageCollection: 10 },
-        publication: {
-            schema: z.object({ script: z.string() }).strict(),
-            lifetime: "1d",
-            garbageCollection: 10,
-        },
     },
     methods: {
-        publish: {
-            description:
-                "Resolve the shipped whole-hub publication script; the file arrives on its stdin",
-            arguments: z.object({}).strict(),
-            execute: async (
-                _args: Record<string, never>,
-                ctx: {
-                    extensionFile(name: string): string;
-                    writeResource(
-                        spec: string,
-                        name: string,
-                        value: unknown,
-                    ): Promise<unknown>;
-                },
-            ) => {
-                const result = {
-                    script: await Deno.readTextFile(
-                        ctx.extensionFile("scripts/hub_publish.py"),
-                    ),
-                };
-                await ctx.writeResource("publication", "publication", result);
-                return result;
-            },
-        },
         terminal: {
             description:
                 "Expose the public official SSH stdout for the shared terminal projector",

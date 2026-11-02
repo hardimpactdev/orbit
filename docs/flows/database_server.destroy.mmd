@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, single-swamp-node, DECISIONS R1 (record-only change starts no run), R2, R4. Same shape as tool.remove.
+  %% Target design: ADR 0244 task, single-swamp-node, DECISIONS R1 (record-only change starts no run), R2, R4, flow-tighten rule 22 (one docker command per step as exec argv; cfgmgmt docker_container stores its env as sensitive output the swamp role cannot write). Same shape as tool.remove.
   %% status: draft
   %% command: database:server:destroy
   autonumber
@@ -52,21 +52,19 @@ sequenceDiagram
     %%> - the task number, at once
     %%> Next:
     %%> - the CLI follows the task with `operation:show`
-    Note over SW: Read the scripts<br/>database-node-command assets
-    %%> What it does:
-    %%> - reads the shipped phase script on 209, to send it over SSH in argv
-    SW->>N: Stop and remove them<br/>@swamp/ssh · docker stop, rm
+    SW->>N: Stop the container<br/>@swamp/ssh · docker stop --time 60
     %%> How:
-    %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior
+    %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior, one command as argv
     %%> What it does:
-    %%> - lists every container of the Process by its `orbit.process.id` label, including slots left by older creates
-    %%> - refuses a container with the server's name that belongs to another Process, before it changes anything
-    %%> - stops and removes each container that is present; one that is already gone counts as removed
+    %%> - stops the server's container gently; one that is already gone counts as stopped
+    SW->>N: Remove the container<br/>@swamp/ssh · docker rm
+    %%> What it does:
+    %%> - removes the stopped container; one that is already gone counts as removed
     %%> Not removed:
     %%> - the volume `orbit-app-mysql-data`, so the data survives
-    SW->>N: Check they are gone<br/>docker inspect
+    SW->>N: Check it is gone<br/>@swamp/ssh · docker inspect
     %%> What it does:
-    %%> - checks no container of the Process is left
+    %%> - `docker container inspect` must report the container missing; that is the end check
     Note over SW: Report the result<br/>backend · failed_step · error_code
     %%> What it does:
     %%> - maps the first failed step to its error code, for example `database.server_remove_failed`

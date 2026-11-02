@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\ProcessAdmissionLock;
@@ -95,7 +96,7 @@ it('supplies full public Docker intent and only environment values through a nat
         ->and($input['execution_secrets']['environment'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'process-create-operation-'.$operation->id]);
     $puts = array_values(array_filter($this->socket->sent, fn (array $message): bool => $message['type'] === 'vault.put'));
     expect($puts)->toHaveCount(1)
-        ->and(json_decode($puts[0]['payload']['value'], true, flags: JSON_THROW_ON_ERROR))->toBe(['PASSWORD' => $secret]);
+        ->and($puts[0]['payload']['value'])->toBe('PASSWORD='.$secret."\n");
     $runs = array_values(array_filter($this->socket->sent, fn (array $message): bool => $message['type'] === 'workflow.run'));
     expect($runs)->toHaveCount(1)->and($runs[0]['payload']['workflowIdOrName'])->toBe('operation-process-create')
         ->and(json_encode($runs[0], JSON_THROW_ON_ERROR))->not->toContain($secret);
@@ -148,7 +149,7 @@ it('passes public update intent and only environment bytes through its own nativ
         ->and($input['execution_secrets']['environment'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'process-update-operation-'.$operation->id]);
     $puts = array_values(array_filter($this->socket->sent, fn (array $message): bool => $message['type'] === 'vault.put'));
     expect($puts)->toHaveCount(1)
-        ->and(json_decode($puts[0]['payload']['value'], true, flags: JSON_THROW_ON_ERROR))->toBe(['PASSWORD' => $secret]);
+        ->and($puts[0]['payload']['value'])->toBe('PASSWORD='.$secret."\n");
     $runs = array_values(array_filter($this->socket->sent, fn (array $message): bool => $message['type'] === 'workflow.run'));
     expect(end($runs)['payload']['workflowIdOrName'])->toBe('operation-process-create')
         ->and(end($runs)['payload']['inputs']['kind'])->toBe('process.update')
@@ -222,7 +223,7 @@ it('submits complete public control inputs and waits for native completion befor
 
     $socket = app(WebSocketClient::class);
     $request = array_last($socket->sent);
-    expect($request['payload']['workflowIdOrName'])->toBe('operation-process-control');
+    expect($request['payload']['workflowIdOrName'])->toBe('operation-process-'.($verb === 'restart' ? 'control' : $verb));
     expect($request['payload']['inputs']['intent']['control'])->toEqual([
         'process_id' => $process->id, 'runtime' => 'docker',
         'name' => 'orbit-process-'.$process->id.'-throwaway', 'on_demand' => false, 'vite' => null,
@@ -244,11 +245,12 @@ it('projects explicit stop from one terminal history read without a Gateway resu
     $this->postJson('/api/v1/processes/'.$process->id.'/stop')->assertAccepted();
     $operation = Operation::query()->where('kind', 'process.stop')->sole();
     $runId = $operation->state['swamp_run_id'];
-    $history = ['id' => $runId, 'workflowName' => 'operation-process-control', 'status' => $status,
+    $history = ['id' => $runId, 'workflowName' => 'operation-process-stop', 'status' => $status,
         'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
         'startedAt' => '2026-10-31T18:00:00Z', 'completedAt' => '2026-10-31T18:00:01Z',
         'jobs' => [['name' => 'runtime', 'steps' => [
-            ['name' => 'Verify the state', ...($status === 'succeeded' ? ['outputs' => ['stdout' => '{"ready":true,"state":"exited"}']] : ['status' => 'pending'])],
+            ['name' => 'Accept the Process', 'status' => $status === 'succeeded' ? 'succeeded' : 'pending', 'outputs' => []],
+            ['name' => 'Check the container', 'status' => 'succeeded', 'outputs' => ['stdout' => "exited\n"]],
         ]]],
     ];
     $this->socket = $socket = new FakeRoutePublicationSocket;
@@ -256,7 +258,7 @@ it('projects explicit stop from one terminal history read without a Gateway resu
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.read_token' => 'synthetic-native-reader']);
 
-    $terminal = app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $runId, 'status' => $status], ['job' => 'runtime', 'step' => 'Verify the state']);
+    $terminal = app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $runId, 'status' => $status], app(DirectOperation::class)->definition($operation->kind)['terminal_result']);
 
     expect($terminal->status)->toBe(OperationStatus::from($status));
     expect($terminal->lock_key)->toBeNull();
@@ -287,14 +289,15 @@ it('projects lifecycle terminal history and preserves a failed Process for fix f
         'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
         'startedAt' => '2026-11-01T00:00:00Z', 'completedAt' => '2026-11-01T00:00:01Z',
         'jobs' => [['name' => 'process', 'steps' => $status === 'failed' ? [] : [
-            ['name' => 'Report the result', 'outputs' => ['stdout' => $verb === 'destroy' ? '{"ready":true}' : '{"ready":true,"state":"created"}']],
+            ['name' => 'Accept the Process', 'status' => 'succeeded', 'outputs' => []],
+            ['name' => 'Check the container', 'status' => 'succeeded', 'outputs' => ['stdout' => "created\n"]],
         ]]],
     ];
     $socket = new FakeRoutePublicationSocket;
     $socket->reply = fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $history]]];
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.read_token' => 'synthetic-native-reader']);
-    $terminal = app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $run, 'status' => $status], ['job' => 'process', 'step' => 'Report the result']);
+    $terminal = app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $run, 'status' => $status], app(DirectOperation::class)->definition($operation->kind)['terminal_result']);
     expect($terminal->status->value)->toBe($status)
         ->and($socket->sent)->toHaveCount(1)
         ->and($socket->sent[0]['type'])->toBe('workflow.history.get');
@@ -325,3 +328,30 @@ it('keeps activation pending until native acceptance records the rendered unit h
     expect($compliant->input['activation_pending'])->toBeFalse()
         ->and($process->systemd_activation_hash)->toBe($compliant->input['content_hash']);
 });
+
+it('projects a systemd start or restart as active when admission captured a stopped Process', function (string $verb): void {
+    $payload = [...$this->payload, 'runtime' => 'systemd', 'command' => ['/bin/sleep', 'infinity']];
+    unset($payload['image']);
+    $this->postJson('/api/v1/processes', $payload)->assertAccepted();
+    Operation::query()->sole()->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
+    $process = Process::query()->sole();
+    $process->update(['status' => 'active', 'desired_state' => 'stopped']);
+    $this->postJson('/api/v1/processes/'.$process->id.'/'.$verb)->assertAccepted();
+    $operation = Operation::query()->where('kind', 'process.'.$verb)->sole();
+    expect($operation->input['desired'])->toBe('stopped');
+    $runId = $operation->state['swamp_run_id'];
+    $definition = app(DirectOperation::class)->definition($operation->kind);
+    $history = ['id' => $runId, 'workflowName' => $definition['workflow'], 'status' => 'succeeded',
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
+        'startedAt' => '2026-11-02T00:00:00Z', 'completedAt' => '2026-11-02T00:00:01Z',
+        'jobs' => [['name' => 'runtime', 'steps' => [['name' => 'Accept the Process', 'status' => 'succeeded']]]],
+    ];
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $history]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.read_token' => 'synthetic-native-reader']);
+    $terminal = app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $runId, 'status' => 'succeeded'], $definition['terminal_result']);
+    expect($terminal->result)->toBe(['ready' => true, 'state' => 'active'])
+        ->and($process->refresh()->desired_state->value)->toBe('running')
+        ->and($socket->sent)->toHaveCount(1);
+})->with(['start', 'restart']);

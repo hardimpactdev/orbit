@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, DECISIONS R1-R4, 5 (swamp role SSH identity), round 2 bugs (server admin password by its own vault key, cleanup on pass or fail). docs/reference/database-servers.md.
+  %% Target design: ADR 0244 task, DECISIONS R1-R4, 5 (swamp role SSH identity), round 2 bugs (server admin password by its own vault key), flow-tighten, script audit Q-DBAUTH (one docker exec per action, statement on stdin) and Q-SECRET (login files via cfgmgmt file, always removed). docs/reference/database-servers.md.
   %% status: draft
   %% command: database:create
   autonumber
@@ -65,52 +65,52 @@ sequenceDiagram
     %%> - the task number, at once
     %%> Next:
     %%> - the CLI follows the task with `operation:show`
-    SW->>N: Copy the action scripts<br/>@swamp/ssh copy · /tmp/…-5121
+    opt MySQL or Valkey server
+      SW->>N: Write the client login<br/>cfgmgmt file · 0600 env file
+      %%> What it does:
+      %%> - writes the server's admin login, from its vault key `database-server-3-client-env`, to a root-only 0600 file
+      %%> Why:
+      %%> - `docker exec --env-file` hands it to the client; it never enters argv, stdin or a statement
+      %%> Not included:
+      %%> - PostgreSQL uses local trust inside the container and needs no login
+    end
+    SW->>N: Check names are free<br/>docker exec · query on stdin
     %%> How:
-    %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior
-    %%> - the SSH identity is the one the `swamp` role owns, at its one role-defined place
+    %%> - one `docker exec -i` with the statement the Gateway rendered on standard input
     %%> What it does:
-    %%> - copies the shipped action scripts into `/tmp/orbit-database-create-5121`
-    SW->>N: Check names are free<br/>probe owner and databases
-    %%> What it does:
-    %%> - checks that the database names and the owner are unused, or already belong to this connection
+    %%> - finds a planned database that exists for another owner, or a role with superuser-like rights
+    %%> - Valkey: reads the server's database count for `--database`
     %%> Refuses:
-    %%> - a name the server already has for something else (`database.name_conflict`); nothing changes
-    %%> How:
-    %%> - each script runs the fixed `mysql`, `psql` or Valkey client inside the server container
-    %%> - the step reads both passwords with `vault.get` and passes them on standard input, never in argv
-    SW->>N: Create the owner<br/>login with the owner password
+    %%> - `database.name_conflict`, or `database.index_invalid` on Valkey; nothing changes
+    SW->>N: Create owner and databases<br/>docker exec · statement from vault
     %%> What it does:
-    %%> - creates the owner login, or keeps it when it already exists with this password
+    %%> - runs the create statement the Gateway put in the vault, because it carries the owner's password
     %%> Per driver:
-    %%> - MySQL, PostgreSQL: one owner per Instance on a server; a second database for Instance 42 reuses it
-    %%> - Valkey: `ACL SETUSER shop reset on #<hash> resetchannels ~<pattern> -@all +<rule> -@admin -@dangerous -function -script`
-    %%> - Valkey with `--allow=flushdb`: `+flushdb` follows the final deny; give the user its own `--database` index
-    SW->>N: Create the databases<br/>shop, shop_test, test pool
+    %%> - MySQL: `CREATE USER IF NOT EXISTS`, `CREATE DATABASE IF NOT EXISTS`, one grant per database and one for the test prefix
+    %%> - PostgreSQL: the role with a SCRAM verifier, each database with `TEMPLATE template0` and the chosen locale, PUBLIC revoked, the public schema granted
+    %%> - Valkey: `ACL SETUSER shop reset on #<hash> resetchannels ~<pattern> -@all +<rule> -@admin -@dangerous -function -script`, then `ACL SAVE`
+    SW->>N: Write the owner login<br/>cfgmgmt file · 0600 env file
     %%> What it does:
-    %%> - creates the primary database, and with `--instance` the test database
-    %%> Per driver:
-    %%> - PostgreSQL: also `shop_test_test_1` to `_8`, with the chosen locale and `TEMPLATE template0`
-    %%> - Valkey: no database; the connection records index 1, checked against the live server
-    SW->>N: Grant the owner access<br/>only its own databases
+    %%> - writes the owner's own login to a second root-only 0600 file
+    SW->>N: Check the owner login<br/>docker exec · log in as the owner
     %%> What it does:
-    %%> - grants the owner its databases and test databases, nothing else
-    %%> Per driver:
-    %%> - MySQL: one grant per database, plus one for the test prefix
-    %%> - PostgreSQL: revokes PUBLIC access, then grants the public schema to the owner
-    %%> - Valkey: `ACL SAVE`, so the user survives a restart
-    SW->>N: Check the owner login<br/>log in as the owner
-    %%> What it does:
-    %%> - logs in as the owner and checks it reaches each new database
+    %%> - logs in as the owner over TCP with its own password
     %%> Why:
     %%> - the connection only counts as active when the server accepts it
-    SW->>N: Remove the scripts<br/>always runs · rm -rf /tmp/…-5121
+    SW->>N: Remove the owner login<br/>always runs · cfgmgmt file absent
     %%> When:
-    %%> - always, after the steps above, whether they passed or failed
+    %%> - always, whether the steps above passed or failed
+    opt MySQL or Valkey server
+      SW->>N: Remove the client login<br/>always runs · cfgmgmt file absent
+      %%> When:
+      %%> - always, as the last Node step
+    end
+    Note over SW: Report the result<br/>failed_step · error_code
     %%> What it does:
-    %%> - removes `/tmp/orbit-database-create-5121`, so no scripts stay on Node 12
-    %%> If it fails:
-    %%> - the task result does not change; the directory holds no secrets
+    %%> - maps the first failed step to its error code, for example `database.name_conflict`
+    Note over SW: Fail on an error<br/>assert · exit code 0
+    %%> What it does:
+    %%> - fails the run when the report holds an `error_code`, so the task fails with that code
     alt every step passes
       N-->>SW: owner logs in
       %%> Returns:

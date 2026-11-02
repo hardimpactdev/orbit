@@ -6,12 +6,14 @@ use App\Actions\Nodes\AdmitNodeRoleOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\NodeRoleDirectProjection;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
+use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
 use App\Domain\Settings\SettingValueProtection;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\Fleet\FleetFixtures;
 
@@ -82,3 +84,15 @@ it('retains source credentials on failure and deletes only those credentials aft
     expect($settings->get(new SettingScope(SettingScopeType::Node, $this->source->id), $key) === null)->toBe($completed)
         ->and($settings->get(new SettingScope(SettingScopeType::Node, $this->target->id), $key))->toBeString();
 })->with([false, true]);
+
+it('refuses to remove or move the swamp role with a run, because its serve runs that run', function (): void {
+    $swamp = FleetFixtures::node('relocation-swamp', [RoleName::Swamp]);
+    config(['swamp_workers.nodes' => [$this->source->id, $this->target->id, $swamp->id]]);
+
+    expect(fn () => app(AdmitNodeRoleOperationAction::class)->remove($swamp, RoleName::Swamp, true))
+        ->toThrow(NodeRoleValidationException::class, "Role [swamp] runs this removal's Swamp run, so it can't remove itself.")
+        ->and(fn () => app(AdmitNodeRoleOperationAction::class)->relocate($this->target, RoleName::Swamp, true, $swamp))
+        ->toThrow(NodeRoleValidationException::class, 'Role [swamp] cannot be relocated.');
+    expect(Operation::query()->whereIn('kind', ['node.role_remove', 'node.role_relocate'])->exists())->toBeFalse()
+        ->and($swamp->roles()->sole()->node_id)->toBe($swamp->id);
+});

@@ -124,9 +124,11 @@ final readonly class GatewayRuntimeHandoff
             $this->agentView->converge();
             $this->releaseUnits->converge();
         });
-        // Release switching already stopped the source generation; start consumers on the selected release.
+        // Release switching already stopped the source generation; start consumers on the selected release. With no
+        // Horizon running, a start that can't reach serve gets the same bounded recovery as Caddy.
         $horizon = $this->step('horizon', 'gateway.release_units_failed',
-            fn (): array => $this->horizon?->converge($gateway, fn (): Process => $this->scheduler->process($gateway)) ?? ['outcome' => 'none'],
+            fn (): array => $this->horizon === null ? ['outcome' => 'none']
+                : $this->withSwampRecovery(fn (): array => $this->horizon->converge($gateway, fn (): Process => $this->scheduler->process($gateway))),
         );
 
         return [

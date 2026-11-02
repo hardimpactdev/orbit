@@ -3,8 +3,10 @@
 declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\SwampRoleUnits;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Nodes\NodeRoleRuntimeSource;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\Fleet\FleetFixtures;
@@ -50,7 +52,9 @@ it('admits the swamp role as a Caddy role of its own Node and keeps it a singlet
         ->and($snapshot['prerequisites']['packages'])->toContain('caddy')
         ->and($snapshot['metrics_fleet'])->toBeNull()
         ->and($snapshot['runtime'])->toBe(['role' => 'swamp', 'node_id' => $this->node->id, 'assignment_id' => $snapshot['assignment_id'],
-            'agent_sha256' => $snapshot['agent_sha256'], 'user' => $this->node->user, 'workers' => ['a', 'b'], 'concurrency' => 8, 'scheduled_runs' => 4]);
+            'agent_sha256' => $snapshot['agent_sha256'], 'user' => $this->node->user, 'workers' => ['a', 'b'],
+            'units' => SwampRoleUnits::for($this->node->user, $this->node->id),
+            'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($this->node)]);
     expect(app(NodeRoleRuntimeSource::class)->resolveRoleMaterial($snapshot, $this->node->id)->value)->toBeNull();
 
     $other = FleetFixtures::node('role-http-other');

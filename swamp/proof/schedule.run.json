@@ -29,12 +29,6 @@
   },
   "phases": [
     {
-      "name": "Read the check script",
-      "job": "run",
-      "step": "Read the check script",
-      "budget_seconds": 20
-    },
-    {
       "name": "Check user and directory",
       "job": "run",
       "step": "Check user and directory",

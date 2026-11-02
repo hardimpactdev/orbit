@@ -1,0 +1,39 @@
+{
+  "kind": "node.settings.file",
+  "workflow": "operation-node-settings",
+  "topology": "minimal",
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "prepare": [],
+  "before_target": [
+    [
+      "sh",
+      "-c",
+      "mkdir -p /srv/proof-file-${proof.run} && touch /srv/proof-file-${proof.run}/apps"
+    ]
+  ],
+  "request": {
+    "method": "PATCH",
+    "path": "nodes/${node.target}/settings",
+    "body": {
+      "apps": {
+        "path": "/srv/proof-file-${proof.run}/apps"
+      }
+    }
+  },
+  "expect": {
+    "status": "failed"
+  },
+  "phases": [
+    {
+      "name": "Create the apps folder",
+      "job": "settings",
+      "step": "Create the apps folder",
+      "budget_seconds": 40
+    }
+  ],
+  "parity": [
+    "swamp/proof/node.settings/parity.py",
+    "refused"
+  ]
+}

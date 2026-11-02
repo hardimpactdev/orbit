@@ -1,6 +1,6 @@
 id: 2c34c217-ce35-4fde-87ca-1fe4fee45bc7
 name: task-command-run
-description: Run one Schedule command on its Node as the Schedule's user, through official SSH from 209; the command arrives from the vault on stdin.
+description: Run one Schedule command on its Node as a transient systemd unit of the Schedule's user, through official SSH from 209; the command arrives from the vault on stdin.
 vaults: [orbit-control-inputs]
 # A calendar fire may wait for a free scheduled slot; an operator run starts at once.
 queueTimeout: 300
@@ -51,17 +51,8 @@ jobs:
 - name: run
   labels: {role: swamp}
   steps:
-  - name: 'Read the check script'
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/schedule-run-assets'
-      behaviorName: '${{ "schedule-run-assets" }}'
-      methodName: read
-      inputs: {}
   - name: 'Check user and directory'
     labels: {role: swamp}
-    dependsOn: [{step: 'Read the check script', condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -80,13 +71,13 @@ jobs:
           transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}
       inputs:
         hosts: name:target
-        sudo: true
-        argv: [timeout, '30', python3, -I, -c, '${{ steps["Read the check script"].outputs.script }}', '${{ inputs.intent.schedule.user }}',
-          '${{ inputs.intent.schedule.working_directory }}', '${{ inputs.intent.schedule.command_hash }}']
-        stdin: ${{ vault.get(inputs.execution_secrets.command.vault, inputs.execution_secrets.command.key) }}
+        # The user can enter the working directory; an empty one is the user's home.
+        argv: [/usr/bin/sudo, -n, -H, --user, '${{ inputs.intent.schedule.user }}', --, /usr/bin/timeout, '30', /bin/sh, -c, 'cd -- "${1:-$HOME}"',
+          sh, '${{ inputs.intent.schedule.working_directory }}']
         timeoutSec: 40
   - name: 'Run the command'
     labels: {role: swamp}
+    writes: true
     dependsOn: [{step: 'Check user and directory', condition: {type: succeeded}}]
     task:
       type: behavior
@@ -96,12 +87,15 @@ jobs:
       globalArgs: *ssh
       inputs:
         hosts: name:target
-        # The command goes on stdin; its output goes to the Node journal, never into native history.
-        # run.sh reads the user's home and shell from the Node's account database when the run starts.
-        argv: ['/usr/bin/sudo', '-n', '--user', '${{ inputs.intent.schedule.user }}', '--', '/usr/bin/timeout', '--signal=TERM', '--kill-after=5',
-          '${{ string(inputs.intent.schedule.timeout_seconds) + "s" }}', '/bin/bash', '-c', '${{ steps["Read the check script"].outputs.runner }}',
-          '${{ "orbit-schedule-" + inputs.intent.schedule.id }}', '${{ inputs.intent.schedule.working_directory }}',
-          '${{ inputs.intent.schedule.login_shell ? "1" : "" }}', '${{ inputs.intent.schedule.shell }}']
+        # One transient unit as the Schedule's user: the command arrives on stdin, systemd-cat sends its output to the
+        # Node journal, never into native history. An empty working directory is the user's home, an empty shell the
+        # user's own; the unit stops at the admitted timeout and is killed 5 s later.
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/systemd-run, --quiet, --wait, --pipe, --collect, '${{ "--uid=" + inputs.intent.schedule.user }}',
+          -p, '${{ "WorkingDirectory=" + (inputs.intent.schedule.working_directory == "" ? "~" : inputs.intent.schedule.working_directory) }}',
+          -p, '${{ "RuntimeMaxSec=" + string(inputs.intent.schedule.timeout_seconds) }}', -p, TimeoutStopSec=5,
+          /usr/bin/systemd-cat, '${{ "--identifier=orbit-schedule-" + inputs.intent.schedule.id }}',
+          /bin/sh, -c, 'exec "${1:-$SHELL}" ${2:+--login} -s', sh, '${{ inputs.intent.schedule.shell }}',
+          '${{ inputs.intent.schedule.login_shell ? "1" : "" }}']
         stdin: ${{ vault.get(inputs.execution_secrets.command.vault, inputs.execution_secrets.command.key) }}
         timeoutSec: ${{ inputs.intent.schedule.timeout_seconds + 10 }}
         captureOutput: false

@@ -48,42 +48,26 @@ jobs:
 - name: update
   steps:
   - name: plan
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@nckrtl/analytics-runtime'
-      behaviorName: '${{ "analytics-runtime" }}'
+      behaviorName: ${{ "analytics-runtime" }}
       methodName: plan
       inputs:
         intent: ${{ inputs.intent }}
-  - name: process-assets
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/process-command-assets'
-      behaviorName: '${{ "analytics-process-assets" }}'
-      methodName: read
-      inputs:
-        control:
-          process_id: ${{ inputs.intent.process_id }}
-          runtime: docker
-          name: ${{ inputs.intent.before.container }}
-          on_demand: false
-          vite: null
-          expected_spec: ${{ inputs.intent.after.spec }}
-    dependsOn:
-    - step: plan
-      condition:
-        type: succeeded
+    dependsOn: []
   - name: directory
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: ${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
       methodName: exec
       globalArgs: &id001
-        name: '${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+        name: ${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -109,11 +93,12 @@ jobs:
       condition:
         type: succeeded
   - name: copy
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: ${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
       methodName: copy
       globalArgs: *id001
       inputs:
@@ -128,46 +113,13 @@ jobs:
     - step: directory
       condition:
         type: succeeded
-  - name: copy-process
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: copy
-      globalArgs:
-        name: '${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-      inputs:
-        name: scripts
-        hosts:
-        - target
-        direction: to
-        src: ${{ steps["process-assets"].outputs.scripts_directory }}
-        dst: ${{ "/tmp/orbit-analytics-" + run.id + "/process" }}
-        recursive: true
-    dependsOn:
-    - step: copy
-      condition:
-        type: succeeded
-    - step: process-assets
-      condition:
-        type: succeeded
   - name: inspect
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: ${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -185,15 +137,16 @@ jobs:
         - ${{ inputs.intent.before.container }}
         sudo: true
     dependsOn:
-    - step: copy-process
+    - step: copy
       condition:
         type: succeeded
   - name: observation
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@nckrtl/analytics-runtime'
-      behaviorName: '${{ "analytics-runtime" }}'
+      behaviorName: ${{ "analytics-runtime" }}
       methodName: observe
       inputs:
         intent: ${{ inputs.intent }}
@@ -203,11 +156,12 @@ jobs:
       condition:
         type: succeeded
   - name: createdb
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: ${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -234,11 +188,12 @@ jobs:
         type: succeeded
     guard: ${{ !steps.observation.outputs.replace }}
   - name: migrate
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: ${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -265,14 +220,15 @@ jobs:
         type: succeeded
     guard: ${{ !steps.observation.outputs.replace }}
   - name: reinspect
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: ${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: '${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+        name: ${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -308,11 +264,12 @@ jobs:
       condition:
         type: succeeded
   - name: recheck
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@nckrtl/analytics-runtime'
-      behaviorName: '${{ "analytics-runtime" }}'
+      behaviorName: ${{ "analytics-runtime" }}
       methodName: observe
       inputs:
         intent: ${{ inputs.intent }}
@@ -322,7 +279,8 @@ jobs:
       condition:
         type: succeeded
   - name: remove
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: workflow
       workflowIdOrName: operation-process-destroy
@@ -340,7 +298,8 @@ jobs:
         type: succeeded
     guard: ${{ !steps.recheck.outputs.replace }}
   - name: install
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: workflow
       workflowIdOrName: operation-process-create
@@ -362,11 +321,12 @@ jobs:
         type: succeeded
     guard: ${{ !steps.recheck.outputs.replace }}
   - name: health
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: ${{ ("analytics-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -374,11 +334,14 @@ jobs:
         hosts:
         - target
         argv:
-        - /usr/bin/env
-        - ${{ "ORBIT_PROCESS_CONTROL=" + steps["process-assets"].outputs.control_json }}
-        - ${{ "ORBIT_PROCESS_HEALTH_URL=" + inputs.intent.health_url }}
-        - /usr/bin/python3
-        - ${{ "/tmp/orbit-analytics-" + run.id + "/process/scripts/check_health.py" }}
+        - timeout
+        - '20'
+        - curl
+        - --fail
+        - --silent
+        - --output
+        - /dev/null
+        - ${{ inputs.intent.health_url }}
         sudo: true
     dependsOn:
     - step: install
@@ -391,7 +354,8 @@ jobs:
       condition:
         type: succeeded
   - name: recover-remove
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: workflow
       workflowIdOrName: operation-process-destroy
@@ -416,7 +380,8 @@ jobs:
     guard: ${{ !("recheck" in steps && steps.recheck.status == "succeeded" && steps.recheck.outputs.replace && (("remove" in steps && steps.remove.status
       == "failed") || ("install" in steps && steps.install.status == "failed") || ("health" in steps && steps.health.status == "failed"))) }}
   - name: recover-install
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: workflow
       workflowIdOrName: operation-process-create
@@ -431,11 +396,12 @@ jobs:
       condition:
         type: succeeded
   - name: result
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "analytics-result" }}'
+      behaviorName: ${{ "analytics-result" }}
       methodName: execute
       inputs:
         run: printf '%s\n' "$ORBIT_ANALYTICS_RESULT"
@@ -452,11 +418,12 @@ jobs:
       condition:
         type: always
   - name: status
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "analytics-status" }}'
+      behaviorName: ${{ "analytics-status" }}
       methodName: execute
       inputs:
         run: test "$ORBIT_ANALYTICS_READY" = true

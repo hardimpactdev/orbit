@@ -27,7 +27,7 @@ sequenceDiagram
   %%> - task #5130 recorded with the full intent: unit or container name, runtime, on-demand flag, Vite plan
   %%> - Process 417 marked provisioning; its desired state does not change yet
   %%> - nothing has happened on the Node yet
-  GW->>SW: Start run, full intent<br/>operation-process-control
+  GW->>SW: Start run, full intent<br/>operation-process-stop
   %%> What it does:
   %%> - starts one Swamp run on serve (Node 209); every step runs there
   %%> Inputs:
@@ -39,55 +39,29 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>SW: Resolve check assets<br/>@nckrtl/process-command-assets
-  %%> What it does:
-  %%> - validates the intent and finds the shipped Process scripts on Node 209
-  %%> Why:
-  %%> - the scripts check ownership: they act only on the unit or container marked with Process 417
-  SW->>N: Make the asset directory<br/>@swamp/ssh exec · mkdir
-  %%> What it does:
-  %%> - makes a private directory for this run on the Node, under `/tmp`
-  SW->>N: Copy check assets<br/>@swamp/ssh copy
-  %%> What it does:
-  %%> - copies the shipped scripts into that directory
-  %%> How:
-  %%> - Swamp reaches the Node over SSH from 209 with the official `@swamp/ssh` behavior, the `swamp` role SSH identity and the Node's pinned host keys
-  opt start or restart only
-    SW->>N: Check the release<br/>check_release.py
-    %%> Skipped for stop:
-    %%> - the shared workflow checks a production release only before a start or restart
-    SW->>N: Publish the dev route<br/>child operation-process-vite
-    %%> Skipped for stop:
-    %%> - stop needs no Vite traffic preparation
+  alt systemd
+    SW->>N: Apply the unit state<br/>@swamp/cfgmgmt/systemd
+    %%> What it does:
+    %%> - converges boot policy and running state; on-demand starts stay disabled
+    opt explicit stop
+      SW->>N: Stop the unit<br/>@swamp/ssh exec · systemctl stop
+      %%> What it does:
+      %%> - also stops a unit that is activating or deactivating
+    end
+    SW->>N: Check the unit<br/>@swamp/cfgmgmt/systemd check
+    %%> Result:
+    %%> - records the running and boot state for the native end check
+  else docker
+    SW->>N: Control the container<br/>@swamp/ssh exec · docker
+    %%> What it does:
+    %%> - starts, stops or restarts the admitted container once
+    SW->>N: Check the container<br/>@swamp/ssh exec · docker inspect
+    %%> Result:
+    %%> - records the container state for the native end check
   end
-  SW->>N: Set boot policy<br/>systemctl disable
+  SW->>SW: Accept the Process<br/>native assert
   %%> What it does:
-  %%> - disables the systemd unit, so it does not start at boot
-  %%> Skipped:
-  %%> - for Docker, which keeps its own restart policy
-  SW->>N: Control the Process<br/>systemctl stop <unit>
-  %%> What it does:
-  %%> - one `stop` of the exact unit, or `docker container stop` for Docker
-  %%> Requirements:
-  %%> - the unit or container belongs to Process 417; a foreign one is refused (`process.name_collision`)
-  SW->>N: Verify the state<br/>systemctl is-active → inactive
-  %%> What it does:
-  %%> - checks once that the Process is stopped
-  %%> Result:
-  %%> - this step's output is the projected result: `ready` and the observed state
-  opt Vite start or restart only
-    SW->>N: Check the listener<br/>lifecycle_listener.py
-    %%> Skipped for stop:
-    %%> - a stopped Process has no listener to check
-    SW->>N: Mark it awake<br/>install -D <awake marker>
-    %%> Skipped for stop:
-    %%> - only `process:start` marks the Instance awake
-  end
-  SW->>N: Clean up<br/>remove the run directory
-  %%> What it does:
-  %%> - removes the run directory after a successful run
-  %%> On failure:
-  %%> - the directory stays, so a resumed run can reuse the scripts
+  %%> - accepts only the expected runtime and boot state
   alt Process inactive
     N-->>SW: inactive
     %%> Returns:
@@ -102,7 +76,7 @@ sequenceDiagram
   else stop or verify fails
     N--xSW: exit ≠ 0
     %%> When:
-    %%> - SSH fails, the unit is missing or foreign, or the state does not match
+    %%> - SSH fails, the unit is missing, or the state does not match
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
     %%> - which step failed and its error code

@@ -6,7 +6,7 @@ covers:
   - apps/gateway/config/{app,logging,retention}.php
   - apps/gateway/app/Infrastructure/Logging/**
   - apps/gateway/{app/Domain/Gateway/GatewayCacheStore.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,resources/sigstore/trusted_root.json}
-  - apps/gateway/app/Infrastructure/Gateway/GatewayCheckoutAccessConverger.php
+  - "{apps/gateway/app/Infrastructure/Gateway/GatewayCheckoutAccessConverger.php,swamp/extensions/behaviors/operations/fleet-recipe/scripts/swamp_workers.py}"
   - apps/gateway/app/**/GatewayReleases/**
   - apps/gateway/app/**/*GatewayRelease*.php
   - apps/gateway/{app/Domain/Nodes/NodeUpdat*.php,app/Data/Nodes/NodeUpdatingData.php,app/Domain/Fleet/**,app/Infrastructure/Fleet/**,app/Actions/Fleet/**,app/Data/Fleet/**,app/Models/FleetRollout*.php,app/Console/Commands/FleetConvergeCommand.php,app/Http/Controllers/Api/FleetRolloutsController.php,config/fleet.php}
@@ -110,15 +110,17 @@ The Gateway reports its version in `gateway:status`. When `APP_VERSION` is unset
 Swamp serve on Node 209 reads `swamp/` from a Git checkout of the Orbit repository at `/home/orbit/apps/orbit-monorepo-staging/checkout`, and runs with `--hot-reload`. A release loads Swamp in one step, after the migration and before the switch. The release runner records one `gateway.swamp_load` intent with the release commit and waits up to 600 seconds for its native terminal. The `operation-gateway-swamp-load` workflow runs one `command/shell` step on 209:
 
 1. it fetches the commit and checks it out in the serve checkout, fast-forward only;
-2. it renders the swamp role's grants from `swamp/config/gateway-workflow-grants.json` and `swamp/config/serve-grants.json` into `swamp/grants/`;
-3. if an extension manifest's `additionalFiles` differ from those of the commit serve started from, it schedules a serve restart, as described below, and ends;
+2. it renders serve's grants from `swamp/config/gateway-workflow-grants.json` and `swamp/config/serve-grants.json` into `swamp/grants/`;
+3. for a new shipped file, it schedules a serve restart as described below, and ends;
 4. otherwise it asks serve to reload, as hot reload would, and waits for the acknowledgement;
 5. it runs `swamp access reload`, so serve creates, revokes or keeps grants to match the file;
 6. it compares the workflows serve lists with the workflows on disk, leaving out the `schedule-<uuid>` workflows that [Schedules](/reference/schedules) write into serve at any time.
 
 The step prints the commit, the previous commit, and the workflow count. Any failure, or no terminal within the wait, pauses the release with `gateway.release_swamp_load_failed`, and the old release stays live. The record names the Operation. A failed load can leave the checkout on the new commit; fix forward and resume.
 
-Serve's extension reload keeps each manifest's `additionalFiles` list from serve's start ([Lab #4282](https://swamp-club.com/lab/4282)), so a new shipped script reaches workers only after a restart. Only the release load moves the checkout, so its HEAD reflog at serve's start time names the commit serve started from. The step compares the lists of that commit with the release commit's. When they differ, it schedules a serve restart 5 seconds later and reports the commit serve started from and the changed manifests.
+Serve's extension reload keeps each manifest's `additionalFiles` list from serve's start ([Lab #4282](https://swamp-club.com/lab/4282)), so a new shipped script reaches workers only after a restart. Only the release load moves the checkout, so its HEAD reflog at serve's start time names the commit serve started from. The step compares the lists of that commit with the release commit's. When the release commit lists a new file, it schedules a serve restart 5 seconds later and reports the commit serve started from and the manifests with new files.
+
+A removed entry needs no restart, because serve serves a listed file that is gone as missing. Each restart also resets serve's hourly bookkeeping GC, which reaps step leases ([Lab #4287](https://swamp-club.com/lab/4287)).
 
 Serve runs with `--shutdown-drain-timeout 5m`. On stop it takes no new work and waits up to 5 minutes for runs in flight; a run still in flight then is interrupted. The release reads serve's instance id from `https://swamp.orbit/ready` before the load. After a restart report it waits up to 420 seconds for a new instance, then records a second load, which reloads, applies the grants and compares the workflows. The release record keeps the restart report, the first Operation, the new instance and the wait beside the second Operation. This restart goes when Swamp fixes #4282. The step never restarts a worker.
 
@@ -500,7 +502,7 @@ The serving phase:
 
 An unchanged digest records `caddy: unchanged` and a null `caddy_operation_id`, with no Swamp call. A changed configuration submits the Gateway Node's `route.caddy_converge` Operation and records `caddy: submitted` with its ID. The Operation owns publication and its final result. Submission is not a publication claim. The digest comparison reads the actual `/etc/caddy/Caddyfile` managed link, not the last submitted Operation. Release verification still checks live HTTPS.
 
-Only the Gateway release runner has a bounded self-recovery exception: after an explicitly refused or unavailable Caddy start, it waits up to 600 seconds for Swamp's HTTPS health endpoint, using the configured CA. It then makes one fresh submission. If that attempt cannot connect before sending, the runner keeps waiting within the same deadline; a healthy HTTPS response alone does not establish a working WebSocket connection.
+Only the Gateway release runner has a bounded self-recovery exception: after an explicitly refused or unavailable Caddy or Horizon start, it waits up to 600 seconds for Swamp's HTTPS health endpoint, using the configured CA. It then makes one fresh submission. If that attempt cannot connect before sending, the runner keeps waiting within the same deadline; a healthy HTTPS response alone does not establish a working WebSocket connection.
 
 A refusal after healthy serve, an uncertain admission, or another failure still fails the handoff. An uncertain start is never repeated. The existing release failure rules preserve or restore the prior release when safe. This wait is not available to other Operation kinds or Swamp steps.
 

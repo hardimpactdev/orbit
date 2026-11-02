@@ -32,7 +32,7 @@ describe(RoleRegistry::class, function (): void {
             ->and($registry->definition(RoleName::Swamp)->mutable)
             ->toBeTrue()
             ->and($registry->definition(RoleName::Swamp)->relocatable)
-            ->toBeTrue()
+            ->toBeFalse()
             ->and($registry->definition(RoleName::Swamp)->conflicts)
             ->toBe([])
             ->and($registry->definition(RoleName::Swamp)->metrics)

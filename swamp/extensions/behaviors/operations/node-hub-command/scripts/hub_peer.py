@@ -111,8 +111,25 @@ def public_peer(raw, context):
     return {"public_key": raw["public_key"], "address": raw["address"]}
 
 
+def fleet_rows(raw):
+    # Gateway peers with a recorded key; absent in inventory mode and in older intents.
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or len(raw) > 4096:
+        raise Refusal("wireguard.hub_config_invalid")
+    rows = []
+    for row in raw:
+        if not isinstance(row, dict) or set(row) != {"node_id", "address", "public_key"} or type(row["node_id"]) is not int:
+            raise Refusal("wireguard.hub_config_invalid")
+        if not isinstance(row["public_key"], str) or not KEY.fullmatch(row["public_key"]):
+            raise Refusal("wireguard.hub_config_invalid")
+        ipaddress.IPv4Address(row["address"])
+        rows.append(row)
+    return rows
+
+
 def render(text, action):
-    if set(action) != {
+    if set(action) - {"fleet"} != {
         "schema_version",
         "hub_id",
         "hub_address",
@@ -165,6 +182,22 @@ def render(text, action):
             and {k: peer[k] for k in ["public_key", "address"]} == desired
         )
 
+    stale = []
+    fleet = fleet_rows(action.get("fleet"))
+    if fleet is not None and after is not None and not action["restoring"]:
+        # The Gateway gave this address to the context Node alone. A peer that still
+        # holds it under a key no fleet Node owns is residue of a deleted Node.
+        owned_keys = {row["public_key"] for row in fleet}
+        foreign = {row["address"] for row in fleet if row["node_id"] != action["context_node_id"]}
+        stale = [
+            p
+            for p in candidates
+            if p["address"] == action["context_address"]
+            and p["address"] not in foreign
+            and p["public_key"] not in owned_keys
+            and not any(p["public_key"] == q["public_key"] for q in identities)
+        ]
+        candidates = [p for p in candidates if p not in stale]
     if len(candidates) > 1:
         raise Refusal("wireguard.hub_conflict")
     current = candidates[0] if candidates else None
@@ -175,11 +208,12 @@ def render(text, action):
     if current is None and before is not None and after is not None:
         # A missing expected peer may represent a concurrent removal; never resurrect it.
         raise Refusal("wireguard.hub_conflict")
-    if (current is None and after is None) or (
-        current is not None and matches(current, after)
+    if not stale and (
+        (current is None and after is None)
+        or (current is not None and matches(current, after))
     ):
         return text, False
-    remaining = [p for p in peers if p is not current]
+    remaining = [p for p in peers if p is not current and p not in stale]
     output = interface.rstrip() + "\n"
     for peer in remaining:
         output += "\n[Peer]" + peer["raw"]

@@ -34,19 +34,28 @@ it('records a server whose run inputs hold vault key names, never a secret', fun
     expect($server->process->runtime_config['environment'])->toBe([]);
     $input = $this->getJson($path.'?run_id='.$this->runId)->assertJsonMissingPath('error')->assertOk()->json('data.input');
     $intent = $input['intent'];
-    expect($intent['driver'])->toBe($driver);
+    expect([$intent['server_id'], $intent['driver']])->toBe([$server->id, $driver]);
     expect($intent['initialize'])->toBe($driver !== 'redis');
-    expect($intent['password_variable'])->toBe(['mysql' => 'MYSQL_ROOT_PASSWORD', 'pgsql' => 'POSTGRES_PASSWORD', 'redis' => null][$driver]);
-    expect($intent['volume'])->toBe($driver === 'redis' ? 'orbit-proof-data' : null);
-    expect($intent['container_input'])->not->toHaveKey('environment');
+    expect($intent['container_input'])->toBe(['image' => $driver === 'pgsql' ? 'postgres:18' : ($driver === 'redis' ? 'valkey/valkey:8.0' : 'mysql:8.0')]);
     expect($intent['ssh_execution']['target']['host'])->toBe('10.44.0.9');
-    expect($input['execution_secrets']['admin'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'database-server-'.$server->id.'-admin']);
-    expect(array_key_exists('acl', $input['execution_secrets']))->toBe($driver === 'redis');
+    $commands = $intent['commands'];
+    $run = implode(' ', $commands['run_first']);
+    expect(str_contains($run, '--env-file /run/orbit-database-server-create-'.$operation->id.'-first.env'))->toBe($driver !== 'redis');
+    expect($commands['run_final'])->not->toContain('--env-file');
+    expect($run)->toContain('orbit.process.id='.$server->process_id)->toContain('--health-start-period 300s');
+    expect(array_slice($commands['wait'], 0, 5))->toBe(['timeout', '60', 'docker', 'exec', $intent['container']]);
+    expect($commands['acl_path'])->toBe($driver === 'redis' ? '/var/lib/docker/volumes/orbit-proof-data/_data/users.acl' : '');
+    expect(array_keys($input['execution_secrets']))->toBe(['client_env', ...($driver === 'redis' ? ['acl'] : ['first_env'])]);
+    expect($input['execution_secrets']['client_env'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'database-server-'.$server->id.'-client-env']);
     expect(json_encode($input))->not->toContain($server->root_password);
     expect(json_encode($operation->fresh()->toArray()))->not->toContain($server->root_password);
     expect(json_encode($server->process->toArray()))->not->toContain($server->root_password);
     $puts = collect(app(WebSocketClient::class)->sent)->where('type', 'vault.put')->pluck('payload.value', 'payload.key');
-    expect($puts['database-server-'.$server->id.'-admin'])->toBe($server->root_password);
+    $variable = ['mysql' => 'MYSQL_PWD', 'pgsql' => 'PGPASSWORD', 'redis' => 'REDISCLI_AUTH'][$driver];
+    expect($puts['database-server-'.$server->id.'-client-env'])->toBe($variable.'='.$server->root_password."\n");
+    if ($driver !== 'redis') {
+        expect($puts['database-server-'.$server->id.'-first-env'])->toBe(['mysql' => 'MYSQL_ROOT_PASSWORD', 'pgsql' => 'POSTGRES_PASSWORD'][$driver].'='.$server->root_password."\n");
+    }
     if ($driver === 'redis') {
         expect($puts['database-server-create-intent-'.$operation->id])->toStartWith('user default on #');
     }

@@ -35,7 +35,8 @@ def remove(scope):
             if filename and str(caddy) + "/" in filename:
                 raise ValueError("certificate.in_use")
     for folder in certificates.get("load_folders", []):
-        if caddy.is_relative_to(Path(folder)):
+        folder = Path(folder)
+        if caddy.is_relative_to(folder) or folder.is_relative_to(caddy):
             raise ValueError("certificate.in_use")
     for path in (caddy, root):
         if path.exists():

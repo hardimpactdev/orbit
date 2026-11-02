@@ -10,6 +10,7 @@ use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\NativeRunResult;
 use App\Models\AptRepository;
 use App\Models\Operation;
 use App\Models\Tool;
@@ -36,7 +37,10 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
 
     public function apply(Operation $operation, array $data): Operation
     {
-        $result = array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip([
+        $public = ValidatedData::object($data['result'] ?? []);
+        $result = $operation->kind === 'tool.adopt' ? $public : $this->nativeResult($operation, $data, $public);
+        $data['error_code'] = $result['error_code'] ?? ($data['error_code'] ?? null);
+        $result = array_intersect_key($result, array_flip([
             'native_error_code', 'manager_version', 'installed_version', 'outcome', 'block', 'error_code', 'repository_removed',
         ]));
         foreach (['manager_version', 'installed_version'] as $field) {
@@ -66,6 +70,59 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
 
             return $projected;
         });
+    }
+
+    /** @param array<string,mixed> $data
+     * @param  array<string,mixed>  $native
+     * @return array<string,mixed>
+     */
+    private function nativeResult(Operation $operation, array $data, array $native): array
+    {
+        $decision = ValidatedData::object($native['decision'] ?? []);
+        $observation = ValidatedData::object($native['observation'] ?? []);
+        $result = array_intersect_key($decision, array_flip(['manager_version', 'installed_version', 'native_error_code', 'error_code', 'outcome']));
+        $result['installed_version'] = $observation['installed_version'] ?? $decision['installed_version'] ?? $operation->input['installed_version'] ?? null;
+        if (($data['status'] ?? null) === 'succeeded') {
+            if (NativeRunResult::stepStatus($native, 'Assert package state') !== 'succeeded' || ($decision['ready'] ?? false) !== true) {
+                throw new ResourceOperationException('operation.result_invalid', 'The native Tool end check is required.', 422);
+            }
+            if ($operation->kind === 'tool.remove') {
+                $result['installed_version'] = null;
+                $result['outcome'] = 'applied';
+                if (($operation->input['remove_repository'] ?? false) === true) {
+                    $result['repository_removed'] = NativeRunResult::stepStatus($native, 'Remove the apt source') === 'succeeded';
+                }
+            } elseif (array_key_exists('installed_version', $observation)) {
+                $result['outcome'] = $observation['installed_version'] === ($decision['installed_version'] ?? null) ? 'unchanged' : 'applied';
+            }
+        } elseif (($data['status'] ?? null) === 'failed') {
+            $code = $decision['error_code'] ?? 'tool.version_probe_failed';
+            if (NativeRunResult::stepStatus($native, 'Set up the Tool Manager') === 'failed') {
+                $code = 'tool.manager_provision_failed';
+            } elseif (NativeRunResult::stepStatus($native, 'Assert the key fingerprint') === 'failed') {
+                $code = 'tool.repository_key_mismatch';
+            } else {
+                foreach (['Prepare apt keyrings', 'Fetch the signing key', 'Read the key fingerprint', 'Publish the signing key', 'Pin repository packages', 'Add the signed apt source', 'Update the apt source'] as $step) {
+                    if (NativeRunResult::stepStatus($native, $step) === 'failed') {
+                        $code = 'tool.repository_failed';
+                        break;
+                    }
+                }
+                foreach (['Install the package', 'Install Homebrew formula', 'Upgrade the package', 'Remove the package', 'Remove Homebrew formula'] as $step) {
+                    if (NativeRunResult::stepStatus($native, $step) === 'failed') {
+                        $code = $operation->kind.'_failed';
+                        break;
+                    }
+                }
+            }
+            if (NativeRunResult::stepStatus($native, 'Refresh apt source') === 'failed') {
+                $code = 'tool.repository_unavailable';
+            }
+            $result['error_code'] = $code;
+            unset($result['outcome']);
+        }
+
+        return $result;
     }
 
     /**

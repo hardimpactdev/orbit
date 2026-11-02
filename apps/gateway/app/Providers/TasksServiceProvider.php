@@ -29,6 +29,7 @@ use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewReset;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
+use App\Domain\Tasks\TaskStartCommit;
 use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskTurnFetchNotice;
 use App\Domain\Tasks\TaskTurnReceipts;
@@ -44,6 +45,7 @@ use App\Infrastructure\Tasks\GitHubTaskBaseBranchFetcher;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestCheckOutput;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestMerger;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestPublisher;
+use App\Infrastructure\Tasks\GitHubTaskStartCommit;
 use App\Infrastructure\Tasks\HttpTaskPullRequestWatcher;
 use App\Infrastructure\Tasks\JevBriefCoverageLabeler;
 use App\Infrastructure\Tasks\LaravelAiTaskBriefCoverage;
@@ -87,6 +89,7 @@ final class TasksServiceProvider extends ExtensionServiceProvider
         TaskPullRequestCheckOutput::class => GitHubTaskPullRequestCheckOutput::class,
         TaskPullRequestMerger::class => GitHubTaskPullRequestMerger::class,
         TaskBaseBranchFetcher::class => GitHubTaskBaseBranchFetcher::class,
+        TaskStartCommit::class => GitHubTaskStartCommit::class,
         TaskSettleMetricsCollector::class => LocalTaskSettleMetricsCollector::class,
         TaskPullRequestWatcher::class => HttpTaskPullRequestWatcher::class,
         TaskPullRequestUpdater::class => HttpTaskPullRequestWatcher::class,

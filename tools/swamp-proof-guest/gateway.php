@@ -11,19 +11,24 @@ declare(strict_types=1);
  *            subscriber in production, is not part of the minimal topology.
  *   fires    stdin {schedule, seconds}: the same subscriber, with its shared run reader, until a calendar
  *            fire of that Schedule is recorded as a task.
- *   fixture  stdin {roles: {node_id: [role]}, wireguard_keys: {node_id: public key}}: the Node records a kind
- *            fixture needs beyond the seed, such as the VPN hub and peers with keys.
+ *   fixture  stdin {roles: {node_id: [role]}, wireguard_keys: {node_id: public key}, vpn_subnet?, projects: [attributes],
+ *            extensions: [name]}: the records a kind fixture needs beyond the seed, such as the VPN hub, peers with
+ *            keys and the VPN subnet, a Project under the fixed id its Swamp configuration names, or an extension.
  */
 
 use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\WorkerKnownHostsPublisher;
+use App\Domain\Tasks\TaskExtensionState;
+use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Swamp\SwampRunSubscriber;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Project;
 use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
 
 require getcwd().'/vendor/autoload.php';
 $app = require getcwd().'/bootstrap/app.php';
@@ -52,23 +57,29 @@ if ($argv[1] === 'seed') {
     if (Node::query()->exists()) {
         throw new RuntimeException('proof.seed_database_not_empty');
     }
-    // Only the target is reached over SSH; the other two need a well-formed key and no host.
+    // Only the targets are reached over SSH; the other two need a well-formed key and no host.
     $unused = base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).random_bytes(32));
     // Records first, then one known-hosts publication with the complete pin snapshot, as after enrollment.
-    [$gateway, $operator, $target] = Node::withoutEvents(fn (): array => [
+    [$gateway, $operator, $targets] = Node::withoutEvents(fn (): array => [
         // The Gateway hard-codes Node 209 as the Swamp Node; here this VM carries gateway and swamp together (F14).
         node('gateway', $input['gateway'], $input['gateway_host_key'], ['gateway', 'swamp'], 209),
         node('operator', $input['operator'], $unused),
-        node($input['target']['key'], $input['target']['address'], $input['target']['host_key'],
-            $input['target']['roles'] ?? [], settings: $input['target']['settings'] ?? []),
+        array_map(static fn (array $target): Node => node($target['key'], $target['address'], $target['host_key'],
+            $target['roles'] ?? [], settings: $target['settings'] ?? []), $input['targets']),
     ]);
-    // The verifier of the agent key up.py wrote on the target, as after enrollment.
-    // No WireGuard in this topology: the target is no private DNS peer.
-    $target->forceFill(['agent_secret_hash' => $input['target']['agent_secret_hash'] ?? null, 'wireguard_public_key' => null])->saveQuietly();
+    // The verifier of the agent key up.py wrote on each target, as after enrollment.
+    // No WireGuard in this topology: no target is a private DNS peer.
+    foreach ($targets as $index => $target) {
+        $target->forceFill(['agent_secret_hash' => $input['targets'][$index]['agent_secret_hash'], 'wireguard_public_key' => null])->saveQuietly();
+    }
     app(GatewayServingHost::class)->remember($gateway);
-    $operator->accessibleNodes()->attach([$gateway->id, $target->id]);
+    $operator->accessibleNodes()->attach([$gateway->id, ...array_map(static fn (Node $target): int => $target->id, $targets)]);
     app(WorkerKnownHostsPublisher::class)->publish();
-    echo json_encode(['nodes' => ['gateway' => $gateway->id, 'operator' => $operator->id, 'target' => $target->id]]), PHP_EOL;
+    $nodes = ['gateway' => $gateway->id, 'operator' => $operator->id];
+    foreach ($targets as $target) {
+        $nodes[$target->name] = $target->id;
+    }
+    echo json_encode(['nodes' => $nodes]), PHP_EOL;
     exit(0);
 }
 
@@ -78,8 +89,19 @@ if ($argv[1] === 'fixture') {
             Node::query()->findOrFail((int) $id)->roles()->firstOrCreate(['role' => $role], ['status' => 'active']);
         }
     }
+    // Gateway extensions a kind's projection needs, such as tasks for Project maintenance groups.
+    if (in_array('tasks', $input['extensions'] ?? [], true)) {
+        app(TaskExtensionState::class)->enable();
+    }
+    // A Project under a fixed id, for kinds whose Swamp side keys source-owned configuration by Project id.
+    foreach ($input['projects'] ?? [] as $project) {
+        (new Project)->forceFill($project)->save();
+    }
     foreach ($input['wireguard_keys'] ?? [] as $id => $key) {
         Node::query()->findOrFail((int) $id)->update(['wireguard_public_key' => $key]);
+    }
+    if (isset($input['vpn_subnet'])) {
+        app(VpnSettings::class)->configure(subnet: $input['vpn_subnet']);
     }
     exit(0);
 }
@@ -118,12 +140,29 @@ if ($argv[1] === 'fires') {
 $started = microtime(true);
 $server = ['REMOTE_ADDR' => $input['caller'], 'HTTPS' => 'on', 'HTTP_HOST' => 'gateway.orbit',
     'HTTP_ACCEPT' => 'application/json', 'CONTENT_TYPE' => 'application/json', 'HTTP_IDEMPOTENCY_KEY' => $input['key']];
-$request = Request::create('https://gateway.orbit/api/v1/'.$input['path'], $input['method'], server: $server,
-    content: json_encode($input['body'] ?? new stdClass, JSON_THROW_ON_ERROR));
-$kernel = $app->make(HttpKernel::class);
-$response = $kernel->handle($request);
-$kernel->terminate($request, $response);
-$body = json_decode((string) $response->getContent(), true);
+if (isset($input['horizon'])) {
+    // Horizon has no HTTP command: the release runner calls this production admission action.
+    config(['orbit.gateway_queue.connection' => 'proof-horizon']);
+    $submitted = app(App\Infrastructure\Gateway\GatewayHorizon::class)->converge(
+        Node::query()->findOrFail($input['horizon']['node']),
+        fn (): App\Models\Process => App\Models\Process::query()->findOrFail($input['horizon']['scheduler']),
+    );
+    $response = new Illuminate\Http\JsonResponse([], 202);
+    $body = ['data' => ['id' => $submitted['operation_id']]];
+} elseif (isset($input['artisan'])) {
+    // An operator command on the Gateway host, such as orbit:node-agent-rekey; it names its Operation in its output.
+    $code = Artisan::call($input['artisan'], $input['arguments'] ?? []);
+    $named = preg_match('/Operation #([1-9][0-9]*)/', Artisan::output(), $match) === 1 ? (int) $match[1] : null;
+    $response = new Illuminate\Http\JsonResponse(['output' => Artisan::output()], $code === 0 && $named !== null ? 202 : 422);
+    $body = ['data' => ['id' => $named]];
+} else {
+    $request = Request::create('https://gateway.orbit/api/v1/'.$input['path'], $input['method'], server: $server,
+        content: json_encode($input['body'] ?? new stdClass, JSON_THROW_ON_ERROR));
+    $kernel = $app->make(HttpKernel::class);
+    $response = $kernel->handle($request);
+    $kernel->terminate($request, $response);
+    $body = json_decode((string) $response->getContent(), true);
+}
 // A record request (a Project, a setup step) starts no Operation; its reply is the result.
 if (($input['operation'] ?? true) === false) {
     echo json_encode(['http_status' => $response->getStatusCode(), 'response' => $body]), PHP_EOL;
@@ -138,6 +177,8 @@ if (! is_int($id)) {
 $subscriber = app(SwampRunSubscriber::class);
 $subscriber->recover();
 $deadline = $started + (int) $input['seconds'];
+// The last failure of each job class, so a receipt shows why a projection never finished.
+$jobErrors = [];
 do {
     $subscriber->follow($id);
     $subscriber->pass();
@@ -146,8 +187,9 @@ do {
     while (($job = app('queue')->connection(GatewayQueue::Connection)->pop(GatewayQueue::Operations->value)) !== null) {
         try {
             $job->fire();
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
             // As the queue worker does: a failed attempt is released and retried.
+            $jobErrors[$job->resolveName()] = $exception::class.': '.mb_substr($exception->getMessage(), 0, 500);
             $job->release(10);
         }
     }
@@ -161,5 +203,5 @@ $subscriber->close();
 echo json_encode(['http_status' => $response->getStatusCode(), 'operation' => [
     'id' => $operation->id, 'kind' => $operation->kind, 'target_id' => $operation->target_id, 'status' => $operation->status->value, 'error_code' => $operation->error_code,
     'input' => $operation->input, 'result' => $operation->result, 'swamp_run_id' => $operation->state['swamp_run_id'] ?? null,
-], 'admit_seconds' => round($admitted - $started, 2), 'terminal_seconds' => round(microtime(true) - $started, 2)]), PHP_EOL;
+], 'admit_seconds' => round($admitted - $started, 2), 'terminal_seconds' => round(microtime(true) - $started, 2), 'job_errors' => $jobErrors]), PHP_EOL;
 exit($operation->status->terminal() ? 0 : 2);

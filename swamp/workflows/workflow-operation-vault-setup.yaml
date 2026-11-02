@@ -1,0 +1,98 @@
+id: 6a0f42e3-1cd3-4d84-8b26-59ea7e7a321f
+name: operation-vault-setup
+description: Verify the account and collection with the official Bitwarden CLI on a Swamp worker.
+vaults: [orbit-control-inputs]
+queueTimeout: 30
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: vault.setup}
+    intent:
+      type: object
+      properties:
+        url: {type: string}
+        client_id: {type: string, minLength: 1}
+        organization: {type: string, minLength: 1}
+        collection: {type: string, minLength: 1}
+        ca_file: {type: string, pattern: '^/'}
+        published: {type: boolean}
+        refusal_exit_codes:
+          type: object
+          additionalProperties: {type: integer, minimum: 1, maximum: 123}
+        previous:
+          type: object
+          properties:
+            organization_id: {type: string}
+            collection_id: {type: string}
+          required: [organization_id, collection_id]
+          additionalProperties: false
+      required: [url, client_id, organization, collection, ca_file, published, refusal_exit_codes]
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      properties:
+        configuration:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^vault-setup-[a-f0-9-]{36}$'}
+          required: [vault, key]
+          additionalProperties: false
+      required: [configuration]
+      additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+- name: setup
+  steps:
+  - name: Read the scripts
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/vault-sync-plan'
+      behaviorName: vault-setup-assets
+      methodName: setup_assets
+      inputs: {intent: '${{ inputs.intent }}'}
+  - name: Verify the account
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Read the scripts, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: vault-setup-verify
+      methodName: execute
+      inputs:
+        run: timeout 180 python3 -B '${{ steps["Read the scripts"].outputs.scripts.setup }}'
+        env: &environment
+          ORBIT_VAULT_INTENT: '${{ steps["Read the scripts"].outputs.intent_json }}'
+          ORBIT_VAULT_DIRECTORY: '${{ "/tmp/orbit-vault-setup-" + run.id }}'
+          ORBIT_VAULT_CONFIGURATION: '${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key) }}'
+  - name: Clear the session
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Verify the account, condition: {type: completed}}]
+    guard: '${{ !("Read the scripts" in steps) || steps["Read the scripts"].status != "succeeded" }}'
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: vault-setup-cleanup
+      methodName: execute
+      inputs:
+        run: timeout 30 python3 -B '${{ steps["Read the scripts"].outputs.scripts.cleanup }}'
+        env: *environment
+  - name: Confirm the setup
+    labels: {role: swamp}
+    dependsOn:
+    - {step: Clear the session, condition: {type: completed}}
+    - {step: Verify the account, condition: {type: succeeded}}
+    task:
+      type: assert
+      expr: >-
+        steps["Verify the account"].outputs.exitCode == 0 &&
+        steps["Verify the account"].outputs.stdout.contains('"backend":"configured"') &&
+        steps["Clear the session"].status == "succeeded"
+      message: Vault account verification or session cleanup failed.
+      severity: high

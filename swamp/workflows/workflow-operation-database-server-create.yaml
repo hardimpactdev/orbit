@@ -1,6 +1,6 @@
 id: f497279b-80cd-4dc8-82bb-1a6622d977e4
 name: operation-database-server-create
-description: Database server create from 209 in the chart's phases, one shipped script phase per official SSH step.
+description: Database server create from 209, one official cfgmgmt behavior or one docker command per step.
 vaults: [orbit-control-inputs]
 queueTimeout: 30
 inputs:
@@ -10,14 +10,15 @@ inputs:
     node_id: {type: integer, minimum: 1}
     kind: {type: string, const: database_server.create}
     intent: {type: object}
-    # Names only: admin (the server's own password key) and, for Valkey, acl (the ACL file).
+    # Names only: client_env (the admin login), first_env (the first-start password, MySQL and PostgreSQL) and, for
+    # Valkey, acl (the ACL file with password hashes); each one whole value.
     execution_secrets:
       type: object
       additionalProperties:
         type: object
         properties:
           vault: {type: string, enum: [orbit-control-inputs]}
-          key: {type: string, pattern: '^database-server-(create-intent-)?[1-9][0-9]*(-admin)?$'}
+          key: {type: string, pattern: '^database-server-(create-intent-[1-9][0-9]*|[1-9][0-9]*-(client-env|first-env))$'}
         required: [vault, key]
         additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
@@ -26,27 +27,29 @@ jobs:
 - name: server
   labels: {role: swamp}
   steps:
-  - name: 'Read the scripts'
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/database-node-command'
-      behaviorName: database-server-create-assets
-      methodName: server_create
-      inputs:
-        intent:
-          driver: '${{ inputs.intent.driver }}'
-          process_id: '${{ inputs.intent.process_id }}'
-          container: '${{ inputs.intent.container }}'
-          container_input: '${{ inputs.intent.container_input }}'
-          spec: '${{ inputs.intent.spec }}'
-          scrub_spec: '${{ inputs.intent.scrub_spec }}'
-          initialize: '${{ inputs.intent.initialize }}'
-          password_variable: '${{ inputs.intent.password_variable }}'
-          volume: '${{ inputs.intent.volume }}'
   - name: 'Pull the image'
     labels: {role: swamp}
-    dependsOn: [{step: 'Read the scripts', condition: {type: succeeded}}]
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/docker_image'
+      behaviorName: ${{ "database-server-image-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs:
+        image: ${{ inputs.intent.container_input.image }}
+        ensure: present
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+      inputs: {}
+    # Valkey starts only from its ACL file, which lives in its data volume and holds only password hashes.
+  - name: 'Create the volume'
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Pull the image', condition: {type: succeeded}}]
+    guard: '${{ inputs.intent.driver != "redis" }}'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -66,14 +69,65 @@ jobs:
       inputs:
         hosts: name:target
         sudo: true
-        argv: [timeout, '600', python3, -I, -c, '${{ steps["Read the scripts"].outputs.create }}', '${{ steps["Read the scripts"].outputs.intent_json }}', pull]
+        argv: '${{ ["timeout", "60"] + inputs.intent.commands.volume_create }}'
         okExitCodes: [0, 1]
-        timeoutSec: 610
-    # Valkey starts only from its ACL file; the file holds password hashes and comes on stdin.
+        timeoutSec: 70
   - name: 'Write the ACL file'
     labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Create the volume', condition: {type: succeeded}}]
+    guard: '${{ steps["Create the volume"].outputs.exitCode != 0 }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "database-server-login-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs:
+        path: ${{ inputs.intent.commands.acl_path }}
+        ensure: present
+        content: ${{ vault.get(inputs.execution_secrets.acl.vault, inputs.execution_secrets.acl.key) }}
+        owner: root
+        group: root
+        mode: '0600'
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+      inputs: {}
+    # MySQL and PostgreSQL read the root password once, from a 0600 env file the next steps pass and remove.
+  - name: 'Write the first login'
+    labels: {role: swamp}
+    writes: true
     dependsOn: [{step: 'Pull the image', condition: {type: succeeded}}]
-    guard: ${{ inputs.intent.driver != "redis" || steps["Pull the image"].outputs.exitCode != 0 }}
+    guard: '${{ !inputs.intent.initialize }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "database-server-login-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs:
+        path: ${{ inputs.intent.commands.first_login }}
+        ensure: present
+        content: ${{ vault.get(inputs.execution_secrets.first_env.vault, inputs.execution_secrets.first_env.key) }}
+        owner: root
+        group: root
+        mode: '0600'
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+      inputs: {}
+    # A rerun starts over from the data volume; the volume keeps the data and the password.
+  - name: 'Remove the old container'
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: 'Pull the image', condition: {type: succeeded}}
+    - {step: 'Write the ACL file', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: 'Write the first login', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    guard: '${{ ("Create the volume" in steps && steps["Create the volume"].status == "succeeded" && steps["Create the volume"].outputs.exitCode != 0) }}'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -83,16 +137,14 @@ jobs:
       inputs:
         hosts: name:target
         sudo: true
-        argv: [timeout, '120', python3, -I, -c, '${{ steps["Read the scripts"].outputs.create }}', '${{ steps["Read the scripts"].outputs.intent_json }}', acl]
-        stdin: ${{ vault.get(inputs.execution_secrets.acl.vault, inputs.execution_secrets.acl.key) }}
+        argv: '${{ ["timeout", "120"] + inputs.intent.commands.remove_old }}'
         okExitCodes: [0, 1]
         timeoutSec: 130
   - name: 'Start the container'
     labels: {role: swamp}
-    dependsOn:
-    - {step: 'Pull the image', condition: {type: succeeded}}
-    - {step: 'Write the ACL file', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    guard: '${{ steps["Pull the image"].outputs.exitCode != 0 || ("Write the ACL file" in steps && steps["Write the ACL file"].status == "succeeded" && steps["Write the ACL file"].outputs.exitCode != 0) }}'
+    writes: true
+    dependsOn: [{step: 'Remove the old container', condition: {type: succeeded}}]
+    guard: '${{ steps["Remove the old container"].outputs.exitCode != 0 }}'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -102,15 +154,14 @@ jobs:
       inputs:
         hosts: name:target
         sudo: true
-        argv: [timeout, '120', python3, -I, -c, '${{ steps["Read the scripts"].outputs.create }}', '${{ steps["Read the scripts"].outputs.intent_json }}', start]
-        stdin: ${{ vault.get(inputs.execution_secrets.admin.vault, inputs.execution_secrets.admin.key) }}
+        argv: '${{ ["timeout", "120"] + inputs.intent.commands.run_first }}'
         okExitCodes: [0, 1]
         timeoutSec: 130
-    # Docker owns the probe; the step reads its health events, bounded by the step timeout.
-  - name: 'Wait until healthy'
+    # Q-WAIT: one bounded probe loop; the server accepts TCP only after its first-start initialization.
+  - name: 'Wait until ready'
     labels: {role: swamp}
     dependsOn: [{step: 'Start the container', condition: {type: succeeded}}]
-    guard: ${{ steps["Start the container"].outputs.exitCode != 0 }}
+    guard: '${{ steps["Start the container"].outputs.exitCode != 0 }}'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -120,31 +171,15 @@ jobs:
       inputs:
         hosts: name:target
         sudo: true
-        argv: [timeout, '420', python3, -I, -c, '${{ steps["Read the scripts"].outputs.create }}', '${{ steps["Read the scripts"].outputs.intent_json }}', healthy]
-        okExitCodes: [0, 1]
-        timeoutSec: 430
-  - name: 'Check the admin login'
-    labels: {role: swamp}
-    dependsOn: [{step: 'Wait until healthy', condition: {type: succeeded}}]
-    guard: ${{ steps["Wait until healthy"].outputs.exitCode != 0 }}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "database-server-create-ssh-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs: *ssh
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv: [timeout, '60', python3, -I, -c, '${{ steps["Read the scripts"].outputs.create }}', '${{ steps["Read the scripts"].outputs.intent_json }}', login]
-        stdin: ${{ vault.get(inputs.execution_secrets.admin.vault, inputs.execution_secrets.admin.key) }}
+        argv: '${{ inputs.intent.commands.wait }}'
         okExitCodes: [0, 1]
         timeoutSec: 70
-    # The data volume keeps the password; the recreated container no longer carries it.
-  - name: 'Remove the first-start env'
+    # The first container carries the password variable; the final one starts without it on the same volume.
+  - name: 'Stop the first container'
     labels: {role: swamp}
-    dependsOn: [{step: 'Check the admin login', condition: {type: succeeded}}]
-    guard: ${{ inputs.intent.driver == "redis" || steps["Check the admin login"].outputs.exitCode != 0 }}
+    writes: true
+    dependsOn: [{step: 'Wait until ready', condition: {type: succeeded}}]
+    guard: '${{ (inputs.intent.driver == "redis" || !inputs.intent.initialize) || steps["Wait until ready"].outputs.exitCode != 0 }}'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -154,20 +189,161 @@ jobs:
       inputs:
         hosts: name:target
         sudo: true
-        argv: [timeout, '540', python3, -I, -c, '${{ steps["Read the scripts"].outputs.create }}', '${{ steps["Read the scripts"].outputs.intent_json }}', scrub]
-        stdin: ${{ vault.get(inputs.execution_secrets.admin.vault, inputs.execution_secrets.admin.key) }}
+        argv: '${{ ["timeout", "90"] + inputs.intent.commands.stop }}'
         okExitCodes: [0, 1]
-        timeoutSec: 550
+        timeoutSec: 100
+  - name: 'Remove the first container'
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Stop the first container', condition: {type: succeeded}}]
+    guard: '${{ steps["Stop the first container"].outputs.exitCode != 0 }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-server-create-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: '${{ ["timeout", "60"] + inputs.intent.commands.remove }}'
+        okExitCodes: [0, 1]
+        timeoutSec: 70
+  - name: 'Start the final container'
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Remove the first container', condition: {type: succeeded}}]
+    guard: '${{ steps["Remove the first container"].outputs.exitCode != 0 }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-server-create-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: '${{ ["timeout", "120"] + inputs.intent.commands.run_final }}'
+        okExitCodes: [0, 1]
+        timeoutSec: 130
+  - name: 'Wait for the final server'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Start the final container', condition: {type: succeeded}}]
+    guard: '${{ steps["Start the final container"].outputs.exitCode != 0 }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-server-create-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: '${{ inputs.intent.commands.wait }}'
+        okExitCodes: [0, 1]
+        timeoutSec: 70
+  - name: 'Write the client login'
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: 'Wait until ready', condition: {type: succeeded}}
+    - {step: 'Wait for the final server', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    guard: '${{ steps["Wait until ready"].outputs.exitCode != 0 || ("Stop the first container" in steps && steps["Stop the first container"].status == "succeeded" && steps["Stop the first container"].outputs.exitCode != 0) || ("Remove the first container" in steps && steps["Remove the first container"].status == "succeeded" && steps["Remove the first container"].outputs.exitCode != 0) || ("Start the final container" in steps && steps["Start the final container"].status == "succeeded" && steps["Start the final container"].outputs.exitCode != 0) || ("Wait for the final server" in steps && steps["Wait for the final server"].status == "succeeded" && steps["Wait for the final server"].outputs.exitCode != 0) }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "database-server-login-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs:
+        path: ${{ inputs.intent.commands.client_login }}
+        ensure: present
+        content: ${{ vault.get(inputs.execution_secrets.client_env.vault, inputs.execution_secrets.client_env.key) }}
+        owner: root
+        group: root
+        mode: '0600'
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+      inputs: {}
+    # The admin logs in over TCP with the recorded password; only the final server accepts it.
+  - name: 'Check the admin login'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Write the client login', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-server-create-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: '${{ ["timeout", "60"] + inputs.intent.commands.login_client }}'
+        stdin: '${{ inputs.intent.commands.login }}'
+        okExitCodes: [0, 1]
+        timeoutSec: 70
+    # Always: the login files leave the Node whatever happened above.
+  - name: 'Remove the first login'
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: 'Write the first login', condition: {type: completed}}
+    - {step: 'Start the container', condition: {type: always}}
+    guard: ${{ !inputs.intent.initialize }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "database-server-login-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs:
+        path: ${{ inputs.intent.commands.first_login }}
+        ensure: absent
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+      inputs: {}
+  - name: 'Remove the client login'
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: 'Write the client login', condition: {type: completed}}
+    - {step: 'Check the admin login', condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "database-server-login-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs:
+        path: ${{ inputs.intent.commands.client_login }}
+        ensure: absent
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+      inputs: {}
   - name: 'Report the result'
     labels: {role: swamp}
     dependsOn:
-    - {step: 'Read the scripts', condition: {type: always}}
     - {step: 'Pull the image', condition: {type: always}}
+    - {step: 'Create the volume', condition: {type: always}}
     - {step: 'Write the ACL file', condition: {type: always}}
+    - {step: 'Write the first login', condition: {type: always}}
+    - {step: 'Remove the old container', condition: {type: always}}
     - {step: 'Start the container', condition: {type: always}}
-    - {step: 'Wait until healthy', condition: {type: always}}
+    - {step: 'Wait until ready', condition: {type: always}}
+    - {step: 'Stop the first container', condition: {type: always}}
+    - {step: 'Remove the first container', condition: {type: always}}
+    - {step: 'Start the final container', condition: {type: always}}
+    - {step: 'Wait for the final server', condition: {type: always}}
+    - {step: 'Write the client login', condition: {type: always}}
     - {step: 'Check the admin login', condition: {type: always}}
-    - {step: 'Remove the first-start env', condition: {type: always}}
+    - {step: 'Remove the first login', condition: {type: always}}
+    - {step: 'Remove the client login', condition: {type: always}}
     task:
       type: behavior
       behaviorType: command/shell
@@ -180,49 +356,63 @@ jobs:
           import os
           import sys
 
-          # A phase that ran and failed names the failed step; its script's error_code wins over the fallback.
-          phases = [('READ', 'Read the scripts', 'database.server_create_failed'), ('PULL', 'Pull the image', 'database.server_image_pull_failed'),
-                    ('ACL', 'Write the ACL file', 'database.valkey_acl_failed'), ('START', 'Start the container', 'database.server_start_failed'),
-                    ('HEALTHY', 'Wait until healthy', 'database.server_unhealthy'), ('LOGIN', 'Check the admin login', 'database.server_login_failed'),
-                    ('SCRUB', 'Remove the first-start env', 'database.server_scrub_failed')]
+          # The first step that failed, or ran with a non-zero exit, names the failure.
+          steps = [
+              ('PULL_THE_IMAGE', 'Pull the image', False, 'database.server_image_pull_failed'),
+              ('CREATE_THE_VOLUME', 'Create the volume', True, 'database.valkey_acl_failed'),
+              ('WRITE_THE_ACL_FILE', 'Write the ACL file', False, 'database.valkey_acl_failed'),
+              ('WRITE_THE_FIRST_LOGIN', 'Write the first login', False, 'database.server_start_failed'),
+              ('REMOVE_THE_OLD_CONTAINER', 'Remove the old container', True, 'database.server_start_failed'),
+              ('START_THE_CONTAINER', 'Start the container', True, 'database.server_start_failed'),
+              ('WAIT_UNTIL_READY', 'Wait until ready', True, 'database.server_unhealthy'),
+              ('STOP_THE_FIRST_CONTAINER', 'Stop the first container', True, 'database.server_scrub_failed'),
+              ('REMOVE_THE_FIRST_CONTAINER', 'Remove the first container', True, 'database.server_scrub_failed'),
+              ('START_THE_FINAL_CONTAINER', 'Start the final container', True, 'database.server_scrub_failed'),
+              ('WAIT_FOR_THE_FINAL_SERVER', 'Wait for the final server', True, 'database.server_unhealthy'),
+              ('WRITE_THE_CLIENT_LOGIN', 'Write the client login', False, 'database.server_login_failed'),
+              ('CHECK_THE_ADMIN_LOGIN', 'Check the admin login', True, 'database.server_login_failed'),
+              ('REMOVE_THE_FIRST_LOGIN', 'Remove the first login', False, 'database.server_scrub_failed'),
+              ('REMOVE_THE_CLIENT_LOGIN', 'Remove the client login', False, 'database.server_scrub_failed'),
+          ]
           result = {'backend': 'active'}
-          for name, label, fallback in phases:
-              status, exit_code, stdout = (os.environ[name + suffix] for suffix in ('_STATUS', '_EXIT', '_STDOUT'))
-              if status == 'failed' or (status == 'succeeded' and exit_code not in ('', '0')):
-                  try:
-                      value = json.loads(stdout) if stdout else {}
-                  except ValueError:
-                      value = {}
-                  code = value.get('error_code') if isinstance(value, dict) and isinstance(value.get('error_code'), str) else fallback
+          for key, label, exec_step, code in steps:
+              status = os.environ[key + '_STATUS']
+              if status == 'failed' or (exec_step and status == 'succeeded' and os.environ[key + '_EXIT'] != '0'):
                   result = {'failed_step': label, 'error_code': code}
                   break
-          if 'error_code' not in result and os.environ['LOGIN_STATUS'] != 'succeeded':
-              result = {'failed_step': None, 'error_code': 'database.server_create_failed'}
+          expected = 'PONG' if os.environ['DRIVER'] == 'redis' else '1'
+          if 'error_code' not in result and (os.environ['CHECK_THE_ADMIN_LOGIN_STATUS'] != 'succeeded' or os.environ['LOGIN_STDOUT'].strip() != expected):
+              result = {'failed_step': 'Check the admin login', 'error_code': 'database.server_login_failed'}
           print(json.dumps(result))
           sys.exit(0 if 'error_code' not in result else 1)
           PY
         env:
-          READ_STATUS: '${{ "Read the scripts" in steps ? steps["Read the scripts"].status : "skipped" }}'
-          READ_EXIT: ''
-          READ_STDOUT: ''
-          PULL_STATUS: '${{ "Pull the image" in steps ? steps["Pull the image"].status : "skipped" }}'
-          PULL_EXIT: '${{ "Pull the image" in steps && steps["Pull the image"].status == "succeeded" ? string(steps["Pull the image"].outputs.exitCode) : "" }}'
-          PULL_STDOUT: '${{ "Pull the image" in steps && steps["Pull the image"].status == "succeeded" ? steps["Pull the image"].outputs.stdout : "" }}'
-          ACL_STATUS: '${{ "Write the ACL file" in steps ? steps["Write the ACL file"].status : "skipped" }}'
-          ACL_EXIT: '${{ "Write the ACL file" in steps && steps["Write the ACL file"].status == "succeeded" ? string(steps["Write the ACL file"].outputs.exitCode) : "" }}'
-          ACL_STDOUT: '${{ "Write the ACL file" in steps && steps["Write the ACL file"].status == "succeeded" ? steps["Write the ACL file"].outputs.stdout : "" }}'
-          START_STATUS: '${{ "Start the container" in steps ? steps["Start the container"].status : "skipped" }}'
-          START_EXIT: '${{ "Start the container" in steps && steps["Start the container"].status == "succeeded" ? string(steps["Start the container"].outputs.exitCode) : "" }}'
-          START_STDOUT: '${{ "Start the container" in steps && steps["Start the container"].status == "succeeded" ? steps["Start the container"].outputs.stdout : "" }}'
-          HEALTHY_STATUS: '${{ "Wait until healthy" in steps ? steps["Wait until healthy"].status : "skipped" }}'
-          HEALTHY_EXIT: '${{ "Wait until healthy" in steps && steps["Wait until healthy"].status == "succeeded" ? string(steps["Wait until healthy"].outputs.exitCode) : "" }}'
-          HEALTHY_STDOUT: '${{ "Wait until healthy" in steps && steps["Wait until healthy"].status == "succeeded" ? steps["Wait until healthy"].outputs.stdout : "" }}'
-          LOGIN_STATUS: '${{ "Check the admin login" in steps ? steps["Check the admin login"].status : "skipped" }}'
-          LOGIN_EXIT: '${{ "Check the admin login" in steps && steps["Check the admin login"].status == "succeeded" ? string(steps["Check the admin login"].outputs.exitCode) : "" }}'
+          DRIVER: ${{ inputs.intent.driver }}
+          PULL_THE_IMAGE_STATUS: '${{ "Pull the image" in steps ? steps["Pull the image"].status : "skipped" }}'
+          CREATE_THE_VOLUME_STATUS: '${{ "Create the volume" in steps ? steps["Create the volume"].status : "skipped" }}'
+          CREATE_THE_VOLUME_EXIT: '${{ "Create the volume" in steps && steps["Create the volume"].status == "succeeded" ? string(steps["Create the volume"].outputs.exitCode) : "" }}'
+          WRITE_THE_ACL_FILE_STATUS: '${{ "Write the ACL file" in steps ? steps["Write the ACL file"].status : "skipped" }}'
+          WRITE_THE_FIRST_LOGIN_STATUS: '${{ "Write the first login" in steps ? steps["Write the first login"].status : "skipped" }}'
+          REMOVE_THE_OLD_CONTAINER_STATUS: '${{ "Remove the old container" in steps ? steps["Remove the old container"].status : "skipped" }}'
+          REMOVE_THE_OLD_CONTAINER_EXIT: '${{ "Remove the old container" in steps && steps["Remove the old container"].status == "succeeded" ? string(steps["Remove the old container"].outputs.exitCode) : "" }}'
+          START_THE_CONTAINER_STATUS: '${{ "Start the container" in steps ? steps["Start the container"].status : "skipped" }}'
+          START_THE_CONTAINER_EXIT: '${{ "Start the container" in steps && steps["Start the container"].status == "succeeded" ? string(steps["Start the container"].outputs.exitCode) : "" }}'
+          WAIT_UNTIL_READY_STATUS: '${{ "Wait until ready" in steps ? steps["Wait until ready"].status : "skipped" }}'
+          WAIT_UNTIL_READY_EXIT: '${{ "Wait until ready" in steps && steps["Wait until ready"].status == "succeeded" ? string(steps["Wait until ready"].outputs.exitCode) : "" }}'
+          STOP_THE_FIRST_CONTAINER_STATUS: '${{ "Stop the first container" in steps ? steps["Stop the first container"].status : "skipped" }}'
+          STOP_THE_FIRST_CONTAINER_EXIT: '${{ "Stop the first container" in steps && steps["Stop the first container"].status == "succeeded" ? string(steps["Stop the first container"].outputs.exitCode) : "" }}'
+          REMOVE_THE_FIRST_CONTAINER_STATUS: '${{ "Remove the first container" in steps ? steps["Remove the first container"].status : "skipped" }}'
+          REMOVE_THE_FIRST_CONTAINER_EXIT: '${{ "Remove the first container" in steps && steps["Remove the first container"].status == "succeeded" ? string(steps["Remove the first container"].outputs.exitCode) : "" }}'
+          START_THE_FINAL_CONTAINER_STATUS: '${{ "Start the final container" in steps ? steps["Start the final container"].status : "skipped" }}'
+          START_THE_FINAL_CONTAINER_EXIT: '${{ "Start the final container" in steps && steps["Start the final container"].status == "succeeded" ? string(steps["Start the final container"].outputs.exitCode) : "" }}'
+          WAIT_FOR_THE_FINAL_SERVER_STATUS: '${{ "Wait for the final server" in steps ? steps["Wait for the final server"].status : "skipped" }}'
+          WAIT_FOR_THE_FINAL_SERVER_EXIT: '${{ "Wait for the final server" in steps && steps["Wait for the final server"].status == "succeeded" ? string(steps["Wait for the final server"].outputs.exitCode) : "" }}'
+          WRITE_THE_CLIENT_LOGIN_STATUS: '${{ "Write the client login" in steps ? steps["Write the client login"].status : "skipped" }}'
+          CHECK_THE_ADMIN_LOGIN_STATUS: '${{ "Check the admin login" in steps ? steps["Check the admin login"].status : "skipped" }}'
+          CHECK_THE_ADMIN_LOGIN_EXIT: '${{ "Check the admin login" in steps && steps["Check the admin login"].status == "succeeded" ? string(steps["Check the admin login"].outputs.exitCode) : "" }}'
+          REMOVE_THE_FIRST_LOGIN_STATUS: '${{ "Remove the first login" in steps ? steps["Remove the first login"].status : "skipped" }}'
+          REMOVE_THE_CLIENT_LOGIN_STATUS: '${{ "Remove the client login" in steps ? steps["Remove the client login"].status : "skipped" }}'
           LOGIN_STDOUT: '${{ "Check the admin login" in steps && steps["Check the admin login"].status == "succeeded" ? steps["Check the admin login"].outputs.stdout : "" }}'
-          SCRUB_STATUS: '${{ "Remove the first-start env" in steps ? steps["Remove the first-start env"].status : "skipped" }}'
-          SCRUB_EXIT: '${{ "Remove the first-start env" in steps && steps["Remove the first-start env"].status == "succeeded" ? string(steps["Remove the first-start env"].outputs.exitCode) : "" }}'
-          SCRUB_STDOUT: '${{ "Remove the first-start env" in steps && steps["Remove the first-start env"].status == "succeeded" ? steps["Remove the first-start env"].outputs.stdout : "" }}'
         ignoreExitCode: true
   - name: 'Fail on an error'
     labels: {role: swamp}

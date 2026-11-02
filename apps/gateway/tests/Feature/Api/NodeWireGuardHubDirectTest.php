@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Domain\Nodes\NodeWireGuardHubProjection;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -57,18 +56,20 @@ it('admits a hub that has no Node worker, since Swamp reaches it over SSH from 2
     expect(Operation::query()->sole()->input['intent']['hub_id'])->toBe($this->hub->id);
 });
 
-it('lists every other active peer by public key and address, and nothing private', function (): void {
+it('renders the hub file and peer file with every other active peer, and no private key', function (): void {
     $fresh = FleetFixtures::node('hub-fresh-peer');
     $fresh->update(['wireguard_public_key' => base64_encode(str_repeat('f', 32))]);
     $leaving = FleetFixtures::node('hub-leaving-peer');
     $leaving->update(['wireguard_public_key' => base64_encode(str_repeat('l', 32)), 'status' => LifecycleStatus::Removing]);
     $this->post("/api/v1/nodes/{$this->hub->id}/wireguard-hub/converge", [], ['Accept' => 'application/json'])->assertAccepted();
     $intent = Operation::query()->sole()->input['intent'];
-    $action = json_decode($intent['action_json'], true);
-    $names = array_column($action['peers'], 'name');
-    expect($action['hub_id'])->toBe($this->hub->id)
-        ->and($names)->toContain('hub-fresh-peer')->not->toContain('standalone-hub', 'hub-leaving-peer')
-        ->and(array_keys($action['peers'][0]))->toBe(['name', 'public_key', 'address'])
+    $peer = "\n[Peer]\n# hub-fresh-peer\nPublicKey = {$fresh->wireguard_public_key}\nAllowedIPs = {$fresh->wireguard_ip}/32\n";
+    expect($intent['peer_keys'])->toContain($fresh->wireguard_public_key)->not->toContain($leaving->wireguard_public_key)
+        ->and($intent['config'])->toStartWith("[Interface]\nAddress = {$this->hub->wireguard_ip}/24\nListenPort = 51820\nPostUp = wg set %i private-key /etc/wireguard/orbit.key\n")
+        ->and($intent['config'])->toContain($peer)->not->toContain('PrivateKey', $leaving->wireguard_public_key)
+        // The peers file holds only peer sections; the Node composes its own key and the port in at apply time.
+        ->and($intent['peers'])->toStartWith("\n[Peer]\n# ")->toContain($peer)->not->toContain('[Interface]', 'PrivateKey')
+        ->and($intent['port'])->toBe(51820)
         ->and(json_encode(Operation::query()->sole()->input))->not->toContain(base64_encode(str_repeat('p', 32)));
 });
 
@@ -87,16 +88,12 @@ it('rejects caller programs private keys and placement before intent', function 
     expect(Operation::query()->exists())->toBeFalse()->and($this->socket->sent)->toBe([]);
 })->with(['configuration', 'private_key', 'executor_node_id']);
 
-it('projects bounded native outcomes without mutating peer records and rejects conflicting completion', function (): void {
+it('projects a succeeded run as projected without touching peer records', function (): void {
     $ack = $this->post("/api/v1/nodes/{$this->hub->id}/wireguard-hub/converge", [], ['Accept' => 'application/json'])->assertAccepted();
     $operation = Operation::query()->findOrFail($ack->json('data.id'));
     $before = $this->foreign->refresh()->getAttributes();
     $data = ['run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded', 'started_at' => now()->toISOString(),
-        'finished_at' => now()->toISOString(), 'error_code' => null, 'result' => ['projected' => true, 'private_key' => 'not-a-result']];
-    $projection = app(NodeWireGuardHubProjection::class);
-    expect($projection->apply($operation, $data)->result)->toBe(['projected' => true]);
-    $projection->apply($operation, $data);
+        'finished_at' => now()->toISOString(), 'error_code' => null, 'result' => ['private_key' => 'not-a-result']];
+    expect(app(NodeWireGuardHubProjection::class)->apply($operation, $data)->result)->toBe(['projected' => true]);
     expect($this->foreign->refresh()->getAttributes())->toBe($before);
-    $data['result'] = ['projected' => false];
-    expect(fn () => $projection->apply($operation, $data))->toThrow(ResourceOperationException::class);
 });

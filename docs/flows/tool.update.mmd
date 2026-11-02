@@ -41,12 +41,27 @@ sequenceDiagram
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
   opt --repository given
+    SW->>N: Prepare apt keyrings<br/>native directory
+    SW->>N: Fetch the signing key<br/>staging file
+    SW->>N: Read the key fingerprint<br/>gpg --with-colons --show-keys
+    Note over SW: Assert the key fingerprint<br/>one admitted primary key
+    SW->>N: Publish the signing key<br/>verified keyring
+    SW->>N: Pin repository packages<br/>only admitted packages
     SW->>N: Update the apt source<br/>key checked by fingerprint
     %%> When:
     %%> - only for `apt` with `--repository`
     %%> What it does:
     %%> - downloads the signing key and checks its fingerprint
     %%> - replaces the apt source with the new definition
+  end
+  opt signed apt repository
+    SW->>N: Refresh apt source<br/>bounded update of this source
+  end
+  Note over SW: assets<br/>public command arguments
+  SW->>N: Read manager version<br/>one manager command
+  SW->>N: Read installed package<br/>one package query
+  opt macOS Homebrew
+    SW->>N: Read macOS version<br/>bottle compatibility
   end
   SW->>N: Check the candidate<br/>version vs constraint
   %%> What it does:
@@ -64,6 +79,19 @@ sequenceDiagram
   %%> - for `apt`, never removes other packages to make room
   %%> Busy apt lock:
   %%> - when Ubuntu's automatic updates hold the apt lock, it waits within the run's time budget, then fails
+  opt apt
+    SW->>N: Check apt package<br/>official package check
+  end
+  Note over SW: decide<br/>candidate and constraint
+  opt Homebrew formula
+    SW->>N: Check Homebrew formula<br/>official package check
+  end
+  SW->>N: Check the package<br/>native package check
+  Note over SW: Decode package state<br/>typed package observation
+  Note over SW: Assert package state<br/>native end check
+  opt signing key staged
+    SW->>N: Remove the staged key<br/>cleanup on completion
+  end
   alt the run ends normally
     N-->>SW: ripgrep 14.1.1, applied
     %%> Returns:

@@ -6,15 +6,15 @@ use App\Domain\Processes\HorizonOperation;
 use App\Domain\Processes\ProcessControlProjection;
 use App\Domain\Processes\ProcessInstanceOperation;
 
-$control = ['workflow' => 'operation-process-control', 'workflow_inputs' => true, 'terminal_result' => ['job' => 'runtime', 'step' => 'Verify the state'], 'projection' => ProcessControlProjection::class];
+$control = ['workflow' => 'operation-process-control', 'workflow_inputs' => true, 'terminal_result' => ['job' => 'runtime', 'step' => 'Accept the Process', 'native' => true, 'captures' => ['state' => ['job' => 'runtime', 'step' => 'Check the container', 'field' => 'stdout']]], 'projection' => ProcessControlProjection::class];
 
 return [
-    'process.horizon_handoff' => ['workflow' => 'operation-process-horizon-handoff', 'workflow_inputs' => true, 'terminal_result' => ['job' => 'horizon', 'step' => 'result'], 'projection' => HorizonOperation::class],
+    'process.horizon_handoff' => ['workflow' => 'operation-process-horizon-handoff', 'workflow_inputs' => true, 'terminal_result' => ['job' => 'horizon', 'step' => 'Accept Horizon', 'native' => true], 'projection' => HorizonOperation::class],
     'process.install_instance_definitions' => ['workflow' => 'operation-process-install-instance-definitions', 'workflow_inputs' => true, 'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$']], 'terminal_result' => ['job' => 'instance', 'step' => 'result'], 'projection' => ProcessInstanceOperation::class],
-    'process.update' => ['workflow' => 'operation-process-create', 'workflow_inputs' => true, 'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-update-operation-[1-9][0-9]*$']], 'terminal_result' => ['job' => 'process', 'step' => 'Report the result'], 'projection' => ProcessControlProjection::class],
-    'process.create' => ['workflow' => 'operation-process-create', 'workflow_inputs' => true, 'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-create-operation-[1-9][0-9]*$']], 'terminal_result' => ['job' => 'process', 'step' => 'Report the result'], 'projection' => ProcessControlProjection::class],
-    'process.destroy' => ['workflow' => 'operation-process-destroy', 'workflow_inputs' => true, 'terminal_result' => ['job' => 'process', 'step' => 'Report the result'], 'projection' => ProcessControlProjection::class],
+    'process.update' => ['workflow' => 'operation-process-create', 'workflow_inputs' => true, 'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-update-operation-[1-9][0-9]*$']], 'terminal_result' => ['job' => 'process', 'step' => 'Accept the Process', 'native' => true, 'captures' => ['state' => ['job' => 'process', 'step' => 'Check the container', 'field' => 'stdout']]], 'projection' => ProcessControlProjection::class],
+    'process.create' => ['workflow' => 'operation-process-create', 'workflow_inputs' => true, 'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-create-operation-[1-9][0-9]*$']], 'terminal_result' => ['job' => 'process', 'step' => 'Accept the Process', 'native' => true, 'captures' => ['state' => ['job' => 'process', 'step' => 'Check the container', 'field' => 'stdout']]], 'projection' => ProcessControlProjection::class],
+    'process.destroy' => ['workflow' => 'operation-process-destroy', 'workflow_inputs' => true, 'terminal_result' => ['job' => 'process', 'step' => 'Accept the Process', 'native' => true], 'projection' => ProcessControlProjection::class],
     'process.restart' => $control,
-    'process.start' => $control,
-    'process.stop' => $control,
+    'process.start' => [...$control, 'workflow' => 'operation-process-start'],
+    'process.stop' => [...$control, 'workflow' => 'operation-process-stop'],
 ];

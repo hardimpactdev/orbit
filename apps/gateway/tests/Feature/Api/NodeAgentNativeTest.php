@@ -6,17 +6,17 @@ use App\Actions\Nodes\StartNodeConvergeAction;
 use App\Actions\Nodes\UpdateNodeSettingsAction;
 use App\Data\Nodes\NodeStorageAppsData;
 use App\Domain\Certificates\LeafCertificateSigner;
-use App\Domain\Nodes\NodeAgentRekeyInput;
 use App\Domain\Nodes\NodeAgentRekeyProjection;
+use App\Domain\Nodes\NodeConvergeInput;
 use App\Domain\Nodes\NodeSettingsProjection;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsPatch;
 use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Fleet\Footprint\AgentFootprintArtifact;
+use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Models\Operation;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeRoutePublicationSocket;
@@ -54,7 +54,27 @@ it('admits a full converge without a target worker, private material or Node cal
         ->and($inputs['intent']['ssh']['target']['host_keys'])->toBe([$this->node->ssh_host_key_type.' '.$this->node->ssh_host_key])
         ->and($inputs['intent']['verifier_hash'])->toBe(str_repeat('a', 64))
         ->and($op->lock_key)->toBe('node-converge:node:'.$this->node->id)
-        ->and(app(DirectOperation::class)->definition('node.converge'))->not->toHaveKeys(['private_material', 'secret_outputs']);
+        ->and(app(DirectOperation::class)->definition('node.converge'))->not->toHaveKeys(['private_material', 'secret_outputs'])
+        ->and($inputs['intent'])->not->toHaveKey('payloads')
+        ->and($inputs['intent']['roles'])->toMatchArray(['user' => $this->node->user, 'home' => '/home/'.$this->node->user])
+        ->and($inputs['intent']['roles']['php_versions'])->toBe(array_keys((array) $inputs['intent']['roles']['php']));
+});
+
+it('shapes the role parts for their cfgmgmt steps: the pinned Caddy package and a private DNS release under its folder', function (): void {
+    $roles = app(NodeConvergeInput::class)->roles($this->node, ['caddy-package' => [], 'private-dns' => [
+        'listener' => ['release_id' => 'abc', 'service' => 'service', 'socket' => 'socket',
+            'files' => [['path' => 'serve.php', 'contents' => '<?php', 'sha256' => 'x'], ['path' => 'app/Domain/AppDev/A.php', 'contents' => '<?php // a', 'sha256' => 'y']]],
+        'publication' => ['records' => 'records', 'catalog' => "{}\n"]], 'tmpfiles' => ['rule' => 'e /tmp/orbit-* - - - 1d']]);
+    $release = '/var/lib/orbit/private-dns/releases/abc';
+
+    expect($roles['caddy_package'])->toBe(AgentCaddyPackage::nativeInput())
+        ->and($roles['caddy_package']['sha256'])->toMatch('/\A[a-f0-9]{64}\z/')
+        ->and($roles['caddy'])->toBeNull()
+        ->and($roles['dns'])->toMatchArray(['release' => $release, 'directories' => [$release, $release.'/app/Domain/AppDev'],
+            'files' => [['path' => $release.'/serve.php', 'content' => '<?php'], ['path' => $release.'/app/Domain/AppDev/A.php', 'content' => '<?php // a']],
+            'address' => $this->node->wireguard_ip, 'catalog_sha256' => hash('sha256', "{}\n")])
+        ->and($roles['tmpfiles'])->toBe('e /tmp/orbit-* - - - 1d')
+        ->and($roles['residue'])->toBeNull();
 });
 
 it('prepares settings from a public SSH intent and stores them only at terminal success', function (): void {
@@ -62,42 +82,12 @@ it('prepares settings from a public SSH intent and stores them only at terminal 
     expect($op)->toBeInstanceOf(Operation::class)
         ->and($this->node->fresh()->settings['apps']['path'] ?? null)->not->toBe('/srv/new')
         ->and($this->socket->sent[0]['payload']['inputs']['intent']['ssh']['control_node_id'])->toBe(209)
-        ->and($this->socket->sent[0]['payload']['inputs']['intent']['storage'])->toBe(['root' => '/srv/new', 'user' => $this->node->user, 'create_missing' => true])
+        ->and($this->socket->sent[0]['payload']['inputs']['intent']['storage'])->toBe(['root' => '/srv/new', 'user' => $this->node->user, 'group' => $this->node->user])
         ->and($this->agents->calls)->toBe([]);
-    app(NodeSettingsProjection::class)->apply($op, ['run_id' => $this->run, 'status' => 'succeeded', 'result' => ['prepared' => true],
+    app(NodeSettingsProjection::class)->apply($op, ['run_id' => $this->run, 'status' => 'succeeded', 'result' => ['steps' => ['Prove the apps folder' => ['status' => 'succeeded']]],
         'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null]);
     expect($this->node->fresh()->settings['apps']['path'])->toBe('/srv/new');
 });
-
-it('captures recovery from its exact unfinished native source without worker credentials', function (): void {
-    $source = app(StartNodeConvergeAction::class)->execute($this->node, true);
-    expect($source->input['_converge']['payloads']['agent']['user'] ?? $source->input['_converge'])->toBe($this->node->user);
-    $snapshot = $source->input;
-    $snapshot['_converge']['agent_sha256'] = str_repeat('b', 64);
-    $source->update(['input' => $snapshot]);
-    $input = app(NodeAgentRekeyInput::class)->capture($this->node, $source->id);
-    expect($input['configure_operation_id'])->toBe($source->id)
-        ->and($input['agent_sha256'])->toBe(str_repeat('b', 64))
-        ->and($input['ssh']['control_node_id'])->toBe(209)
-        ->and($input)->not->toHaveKeys(['secret_hash', 'worker_credentials'])
-        ->and($this->agents->calls)->toBe([]);
-    $source->update(['status' => OperationStatus::Failed]);
-    expect(fn () => app(NodeAgentRekeyInput::class)->capture($this->node, $source->id))->toThrow(ResourceOperationException::class);
-});
-
-it('refuses foreign, unbound and missing-config sources without changing their outcomes', function (string $case): void {
-    $source = app(StartNodeConvergeAction::class)->execute($this->node, true);
-    if ($case === 'foreign') {
-        $other = FleetFixtures::node('agent-native-foreign');
-        $source->update(['node_id' => $other->id]);
-    } elseif ($case === 'unbound') {
-        $source->update(['state' => []]);
-    } else {
-        $source->update(['input' => []]);
-    }
-    expect(fn () => app(NodeAgentRekeyInput::class)->capture($this->node, $source->id))->toThrow(ResourceOperationException::class);
-    expect($source->fresh()->status)->toBe(OperationStatus::Running);
-})->with(['foreign', 'unbound', 'missing-config']);
 
 it('records only the public verifier on bound terminal success and ignores duplicate delivery', function (): void {
     $op = Operation::query()->create(['kind' => 'node.agent_rekey', 'target_type' => 'node', 'target_id' => $this->node->id,

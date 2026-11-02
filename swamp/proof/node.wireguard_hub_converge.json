@@ -6,18 +6,18 @@
   "queue_timeout_seconds": 30,
   "before_gateway": [
     [
-      "sh",
-      "-c",
-      "printf '%s' \"$1\" | runuser -u orbit -- env -C apps/gateway php ../../tools/swamp-proof-guest/gateway.php fixture",
-      "sh",
-      "{\"roles\": {\"${node.target}\": [\"vpn\"]}, \"wireguard_keys\": {\"${node.gateway}\": \"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=\", \"${node.operator}\": \"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=\"}}"
+      "bash",
+      "tools/swamp-proof-guest/hub-proof.sh",
+      "${node.target}",
+      "${node.gateway}",
+      "${node.operator}"
     ]
   ],
   "clean_target": [
     [
       "sh",
       "-c",
-      "command -v wg-quick >/dev/null || DEBIAN_FRONTEND=noninteractive apt-get install -y -q wireguard-tools >/dev/null; umask 077; mkdir -p /etc/wireguard; rm -f /etc/wireguard/.orbit.conf.rollback; printf '[Interface]\\nAddress = 10.99.0.1/24\\nListenPort = 51820\\nPrivateKey = %s\\n' \"$(wg genkey)\" > /etc/wireguard/orbit.conf; systemctl enable wg-quick@orbit >/dev/null 2>&1; systemctl restart wg-quick@orbit"
+      "command -v wg-quick >/dev/null || DEBIAN_FRONTEND=noninteractive apt-get install -y -q wireguard-tools >/dev/null; umask 077; mkdir -p /etc/wireguard; rm -f /etc/wireguard/orbit.key /etc/wireguard/orbit-peers.conf"
     ]
   ],
   "request": {
@@ -29,21 +29,45 @@
   },
   "phases": [
     {
-      "name": "Resolve the hub script",
-      "job": "hub",
-      "step": "Resolve the hub script",
+      "name": "Keep the key in a file",
+      "job": "files",
+      "step": "Keep the key in a file",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Write the hub config",
+      "job": "files",
+      "step": "Write the hub config",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Write the peer list",
+      "job": "files",
+      "step": "Write the peer list",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Load the peers",
+      "job": "apply",
+      "step": "Load the peers",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Check the hub service",
+      "job": "check",
+      "step": "Check the hub service",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Read the live peers",
+      "job": "check",
+      "step": "Read the live peers",
       "budget_seconds": 15
     },
     {
-      "name": "Apply the hub config",
-      "job": "hub",
-      "step": "Apply the hub config",
-      "budget_seconds": 60
-    },
-    {
-      "name": "Confirm the outcome",
-      "job": "hub",
-      "step": "Confirm the outcome",
+      "name": "Confirm the hub",
+      "job": "check",
+      "step": "Confirm the hub",
       "budget_seconds": 15
     }
   ],

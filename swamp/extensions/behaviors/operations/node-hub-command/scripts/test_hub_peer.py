@@ -81,6 +81,24 @@ class HubPeerTests(unittest.TestCase):
             with self.assertRaises(hub.Refusal):
                 hub.render(current, action(peer(A), peer(C)))
 
+    def test_publish_replaces_a_deleted_nodes_peer_at_the_context_address(self):
+        stale, live = peer(B), peer(C, "10.44.0.3", 3)
+        publish = {**action(None, peer(A)), "fleet": [{"node_id": 3, "address": "10.44.0.3", "public_key": C}]}
+        desired, changed = hub.render(config(stale, live), publish)
+        self.assertTrue(changed)
+        self.assertNotIn(B, desired)
+        self.assertIn(A, desired)
+        self.assertIn(C, desired)
+        self.assertEqual(hub.render(desired, publish), (desired, False))
+
+    def test_publish_refuses_a_fleet_owned_peer_at_the_context_address(self):
+        for fleet in [
+            [{"node_id": 3, "address": "10.44.0.3", "public_key": B}],
+            [{"node_id": 3, "address": "10.44.0.2", "public_key": C}],
+        ]:
+            with self.assertRaises(hub.Refusal):
+                hub.render(config(peer(B)), {**action(None, peer(A)), "fleet": fleet})
+
     def test_foreign_hooks_and_duplicate_peers_refuse(self):
         for current in [
             BASE.replace("[Interface]", "[Interface]\nPostUp = evil"),

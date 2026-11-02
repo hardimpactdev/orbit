@@ -24,18 +24,31 @@ final readonly class DatabaseServerCreateProjection implements DirectOperationPr
     {
         $input = ValidatedData::object($this->intent($operation)->payload['admission']['input'] ?? null);
         $server = DatabaseServer::query()->findOrFail($operation->target_id);
-        $secrets = ['admin' => ['vault' => 'orbit-control-inputs', 'key' => "database-server-{$server->id}-admin"]];
+        $initialize = $input['initialize'] === true;
+        $secrets = ['client_env' => ['vault' => 'orbit-control-inputs', 'key' => "database-server-{$server->id}-client-env"]];
+        if ($initialize) {
+            $secrets['first_env'] = ['vault' => 'orbit-control-inputs', 'key' => "database-server-{$server->id}-first-env"];
+        }
         if ($server->driver === DatabaseDriver::Redis) {
             $secrets['acl'] = ['vault' => 'orbit-control-inputs', 'key' => "database-server-create-intent-{$operation->id}"];
         }
         if (! $operation->status->terminal()) {
-            $secrets['admin'] = DatabaseServerAdminSecret::copy($server);
+            $secrets['client_env'] = DatabaseServerAdminSecret::clientEnvCopy($server);
+            if ($initialize) {
+                $secrets['first_env'] = DatabaseServerAdminSecret::firstEnvCopy($server);
+            }
             if (isset($secrets['acl'])) {
                 $secrets['acl'] = app(SwampCommandStep::class)->executionCopy($secrets['acl']['vault'], $secrets['acl']['key'], ValkeyAcl::file($server));
             }
         }
+        $commands = app(DatabaseServerCommands::class)->render(['driver' => ValidatedData::string($input['driver']),
+            'process_id' => ValidatedData::integer($input['process_id']), 'container' => ValidatedData::string($input['container']),
+            'container_input' => ValidatedData::object($input['container_input']), 'spec' => ValidatedData::string($input['spec']),
+            'scrub_spec' => ValidatedData::string($input['scrub_spec']), 'initialize' => $initialize,
+            'volume' => ValidatedData::nullableString($input['volume'] ?? null)], $operation->id);
 
-        return ['intent' => [...array_intersect_key($input, array_flip(['driver', 'process_id', 'container', 'container_input', 'spec', 'scrub_spec', 'initialize', 'password_variable', 'volume'])),
+        return ['intent' => [...array_intersect_key($input, array_flip(['server_id', 'driver', 'container', 'initialize'])),
+            'container_input' => ['image' => ValidatedData::object($input['container_input'])['image']], 'commands' => $commands,
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($operation->node_id))],
             'execution_secrets' => $secrets];
     }

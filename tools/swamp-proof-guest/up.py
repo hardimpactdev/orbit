@@ -17,7 +17,9 @@ import time
 from pathlib import Path
 
 SOURCE = Path(sys.argv[1]).resolve()
-TOPOLOGY = json.loads((SOURCE / 'swamp/proof/topologies/minimal/topology.json').read_text())
+TOPOLOGY = json.loads((SOURCE / 'swamp/proof/topologies' / (sys.argv[2] if len(sys.argv) > 2 else 'minimal') / 'topology.json').read_text())
+# --fresh replaces the nested Nodes, for a fixture that needs a clean end state on a held VM.
+FRESH = '--fresh' in sys.argv[3:]
 ACCOUNT = 'orbit'
 HOME = Path('/home/orbit')
 STATE = HOME / '.orbit/swamp-proof'
@@ -27,6 +29,7 @@ BINARY = '/usr/local/bin/swamp'
 PORT = 443
 URL = f'wss://swamp.orbit:{PORT}'
 IDENTITY = HOME / '.orbit/ssh/proof_worker_ed25519'
+BOOTSTRAP = HOME / '.orbit/ssh/id_ed25519'
 timings = []
 
 
@@ -79,12 +82,31 @@ def private(path, value):
 
 @step('target')
 def target():
+    """Every Node of the topology; the first is the fixtures' target."""
     run(['bin/e2e-topology-host-setup'], cwd=SOURCE)
     network = TOPOLOGY['network']
-    node = TOPOLOGY['nodes'][0]
     if run(['incus', 'network', 'list', '--format', 'csv', '--columns', 'n']).split().count(network['name']) == 0:
         run(['incus', 'network', 'create', network['name'], f'ipv4.address={network["gateway"]}/{network["prefix"]}',
              'ipv4.nat=true', 'ipv6.address=none'])
+    if not IDENTITY.exists():
+        IDENTITY.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'swamp-proof-worker', '-f', str(IDENTITY)])
+        run(['chown', '-R', 'orbit:orbit', str(IDENTITY.parent)])
+    # The swamp role's worker key path, which every migrated step's SSH uses (ADR 0243).
+    run(['install', '-D', '-o', 'orbit', '-g', 'orbit', '-m', '0400', str(IDENTITY), '/etc/orbit/swamp-role-worker/ssh-identity'])
+    # The Gateway's bootstrap key, which an enrolled Node accepts beside the worker key (version 6).
+    if not BOOTSTRAP.exists():
+        BOOTSTRAP.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'swamp-proof-gateway', '-f', str(BOOTSTRAP)])
+        run(['chown', '-R', f'{ACCOUNT}:{ACCOUNT}', str(BOOTSTRAP.parent)])
+    existing = run(['incus', 'list', '--format', 'csv', '--columns', 'n']).split()
+    for node in TOPOLOGY['nodes']:
+        if FRESH and node['key'] in existing:
+            run(['incus', 'delete', '--force', node['key']])
+    return [prepare(node, network) for node in TOPOLOGY['nodes']]
+
+
+def prepare(node, network):
     # Re-running up on a held VM keeps the target it already made.
     if node['key'] not in run(['incus', 'list', '--format', 'csv', '--columns', 'n']).split():
         run(['incus', 'copy', 'node-template', node['key'], '-c', f'limits.memory={node["memory"]}', '-c', 'limits.cpu=1',
@@ -94,39 +116,36 @@ def target():
     deadline = time.monotonic() + 900
     while subprocess.run(['incus', 'exec', node['key'], '--', 'true'], capture_output=True, check=False).returncode:
         if time.monotonic() > deadline:
-            raise RuntimeError('target agent did not start')
+            raise RuntimeError(f'{node["key"]} agent did not start')
         time.sleep(2)
     # Exit 2 is "done with recoverable errors": the template guest has no Incus datasource.
     if subprocess.run(['incus', 'exec', node['key'], '--', 'cloud-init', 'status', '--wait'],
                       capture_output=True, timeout=600, check=False).returncode not in (0, 2):
-        raise RuntimeError('target cloud-init did not finish')
+        raise RuntimeError(f'{node["key"]} cloud-init did not finish')
     run(['incus', 'file', 'push', str(SOURCE / 'apps/e2e/resources/guest/prepare-node.sh'), f'{node["key"]}/root/prepare-node.sh'])
     run(['incus', 'exec', node['key'], '--', 'bash', '/root/prepare-node.sh', 'configure-runtime'])
-    if not IDENTITY.exists():
-        IDENTITY.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'swamp-proof-worker', '-f', str(IDENTITY)])
-        run(['chown', '-R', 'orbit:orbit', str(IDENTITY.parent)])
-    # The swamp role's worker key path, which every migrated step's SSH uses (ADR 0243).
-    run(['install', '-D', '-o', 'orbit', '-g', 'orbit', '-m', '0400', str(IDENTITY), '/etc/orbit/swamp-role-worker/ssh-identity'])
     public = IDENTITY.with_suffix('.pub').read_text().split()
     run(['incus', 'exec', node['key'], '--', 'bash', '/root/prepare-node.sh', 'gateway-authorize', ' '.join(public[:2])])
-    # The Gateway's bootstrap key, which an enrolled Node accepts beside the worker key (topology version 6).
-    bootstrap = HOME / '.orbit/ssh/id_ed25519'
-    if not bootstrap.exists():
-        bootstrap.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'swamp-proof-gateway', '-f', str(bootstrap)])
-        run(['chown', '-R', f'{ACCOUNT}:{ACCOUNT}', str(bootstrap.parent)])
-    run(['incus', 'exec', node['key'], '--', 'sh', '-c', 'cat >> /home/orbit/.ssh/authorized_keys'],
-        input=' '.join(bootstrap.with_suffix('.pub').read_text().split()[:2]) + ' swamp-proof-gateway\n')
+    bootstrap = ' '.join(BOOTSTRAP.with_suffix('.pub').read_text().split()[:2]) + ' swamp-proof-gateway'
+    run(['incus', 'exec', node['key'], '--', 'sh', '-c', 'grep -qxF "$1" /home/orbit/.ssh/authorized_keys || printf "%s\\n" "$1" >> /home/orbit/.ssh/authorized_keys',
+         'sh', bootstrap])
     # Unmanaged SSH allowance and an active backend: the state an enrolled Node has.
     run(['incus', 'exec', node['key'], '--', 'sh', '-c', 'ufw allow 22/tcp comment proof-ssh && ufw --force enable'])
+    if 'app-dev' in node.get('roles', []):
+        # The web runtime app-dev role convergence leaves: an Orbit-managed Caddyfile, the hibernation log
+        # directory its sites name, and active PHP-FPM masters for the shared pools (version 7, for Route kinds).
+        run(['incus', 'exec', node['key'], '--', 'sh', '-c', 'set -e; printf "%s\\n" "# Managed by Orbit: Node Caddy build" "{" '
+             '"    auto_https disable_certs" "    order abort first" "    metrics {" "        per_host" "    }" "}" > /etc/caddy/Caddyfile; '
+             'chown root:caddy /etc/caddy/Caddyfile; chmod 0640 /etc/caddy/Caddyfile; '
+             'install -d -o caddy -g caddy -m 0750 /data/caddy/orbit/hibernation; '
+             'systemctl enable --now caddy php8.5-fpm php8.4-fpm; systemctl reload-or-restart caddy'])
     host_key = run(['incus', 'exec', node['key'], '--', 'cat', '/etc/ssh/ssh_host_ed25519_key.pub']).split()
     deadline = time.monotonic() + 120
     while subprocess.run(['ssh', '-i', str(IDENTITY), '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=no',
                           '-o', 'UserKnownHostsFile=/dev/null', '-o', 'ConnectTimeout=5', f'orbit@{node["address"]}', 'sudo', '-n', 'true'],
                          capture_output=True, check=False).returncode:
         if time.monotonic() > deadline:
-            raise RuntimeError('target SSH with sudo is not reachable from the Swamp host')
+            raise RuntimeError(f'{node["key"]} SSH with sudo is not reachable from the Swamp host')
         time.sleep(2)
     # An enrolled Node's agent key; the Gateway records only its verifier (topology version 5).
     secret = secrets.token_hex(32)
@@ -237,17 +256,22 @@ def swamp():
 
 
 @step('gateway')
-def gateway(node):
+def gateway(nodes):
     # API contract generation (post-install bin/build-api) is a build output the proof does not use.
     run(['composer', 'install', '--no-interaction', '--no-progress', '--prefer-dist', '--no-dev', '--no-scripts', '--optimize-autoloader'],
         user=ACCOUNT, cwd=GATEWAY, timeout=900)
     run(['php', 'artisan', 'package:discover'], user=ACCOUNT, cwd=GATEWAY)
     # The Orbit public root CA the Node agent's files carry; only its certificate (topology version 5).
     ca = HOME / '.orbit/ca'
+    # Strict TLS clients, such as Python's, refuse a CA without keyUsage; a held VM's older root is replaced (version 8).
+    if (ca / 'root.pem').exists() and 'Certificate Sign' not in subprocess.run(
+            ['openssl', 'x509', '-in', str(ca / 'root.pem'), '-noout', '-ext', 'keyUsage'], capture_output=True, text=True, check=False).stdout:
+        (ca / 'root.pem').unlink()
     if not (ca / 'root.pem').exists():
         ca.mkdir(parents=True, exist_ok=True)
         run(['openssl', 'req', '-x509', '-newkey', 'rsa:4096', '-nodes', '-days', '30', '-subj', '/CN=Orbit proof root CA',
-             '-addext', 'basicConstraints=critical,CA:TRUE', '-keyout', str(ca / 'root.key'), '-out', str(ca / 'root.pem')])
+             '-addext', 'basicConstraints=critical,CA:TRUE', '-addext', 'keyUsage=critical,keyCertSign,cRLSign',
+             '-keyout', str(ca / 'root.key'), '-out', str(ca / 'root.pem')])
         run(['chown', '-R', f'{ACCOUNT}:{ACCOUNT}', str(HOME / '.orbit/ca')])
     # The pinned agent delivery a Gateway release writes from the frozen manifest (topology version 5).
     run(['install', '-D', '-o', ACCOUNT, '-g', ACCOUNT, '-m', '0644', str(GATEWAY / 'resources/agent/frozen-manifest.json'),
@@ -263,26 +287,65 @@ def gateway(node):
         'ORBIT_SWAMP_ADDRESS': '127.0.0.1', 'ORBIT_SWAMP_CA_PATH': str(STATE / 'tls/ca.pem'),
         'ORBIT_SWAMP_RUN_TOKEN': (STATE / 'credentials/gateway').read_text().strip(),
         'ORBIT_SWAMP_READ_TOKEN': (STATE / 'credentials/reader').read_text().strip(),
+        'ORBIT_HOME': str(HOME / '.orbit'),
     }
     environment = GATEWAY / '.env'
     private(environment, '\n'.join(f'{key}={value}' for key, value in settings.items()) + '\n')
     run(['php', 'artisan', 'key:generate', '--force'], user=ACCOUNT, cwd=GATEWAY)
     run(['chown', 'orbit:orbit', str(database)])
     run(['php', 'artisan', 'migrate', '--force'], user=ACCOUNT, cwd=GATEWAY, timeout=600)
+    serve_gateway()
     facts = {'gateway': TOPOLOGY['network']['gateway'], 'gateway_host_key': Path('/etc/ssh/ssh_host_ed25519_key.pub').read_text().split()[1],
-             'operator': TOPOLOGY['operator']['address'], 'target': node}
+             'operator': TOPOLOGY['operator']['address'], 'targets': nodes}
     return json.loads(run(['php', str(SOURCE / 'tools/swamp-proof-guest/gateway.php'), 'seed'], input=json.dumps(facts), user=ACCOUNT, cwd=GATEWAY))
+
+
+def serve_gateway():
+    """gateway.orbit over HTTPS on Node 209's address, with the Orbit root in system trust (version 7).
+
+    A step that signs a CSR calls the Gateway from 209; FastCGI keeps the caller's address, so peer identity holds.
+    """
+    ca = HOME / '.orbit/ca'
+    run(['install', '-m', '0644', str(ca / 'root.pem'), '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt'])
+    run(['update-ca-certificates'])
+    tls = Path('/etc/caddy/proof-gateway-tls')
+    tls.mkdir(exist_ok=True, mode=0o750)
+    run(['openssl', 'req', '-new', '-newkey', 'rsa:2048', '-nodes', '-subj', '/CN=gateway.orbit', '-keyout', str(tls / 'key.pem'), '-out', str(tls / 'leaf.csr')])
+    (tls / 'leaf.ext').write_text('basicConstraints=critical,CA:FALSE\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:gateway.orbit\n')
+    run(['openssl', 'x509', '-req', '-in', str(tls / 'leaf.csr'), '-CA', str(ca / 'root.pem'), '-CAkey', str(ca / 'root.key'),
+         '-CAcreateserial', '-days', '2', '-extfile', str(tls / 'leaf.ext'), '-out', str(tls / 'cert.pem')])
+    run(['chown', '-R', 'root:caddy', str(tls)])
+    run(['chmod', '0640', str(tls / 'key.pem')])
+    address = TOPOLOGY['network']['gateway']
+    # Without this line gateway.orbit resolves through fleet private DNS to the production Gateway; a signing
+    # step would then call production. up fails unless the name resolves to this VM.
+    hosts = Path('/etc/hosts')
+    lines = [line for line in hosts.read_text().splitlines() if 'gateway.orbit' not in line.split()[1:]]
+    hosts.write_text('\n'.join([*lines, f'{address} gateway.orbit']) + '\n')
+    resolved = run(['getent', 'hosts', 'gateway.orbit']).split()
+    if not resolved or resolved[0] != address:
+        raise RuntimeError(f'gateway.orbit resolves to {resolved[:1]}, not this topology Gateway {address}')
+    Path('/etc/php/8.5/fpm/pool.d/proof-gateway.conf').write_text(
+        '[proof-gateway]\nuser = orbit\ngroup = orbit\nlisten = /run/php/proof-gateway.sock\nlisten.owner = caddy\n'
+        'listen.group = caddy\npm = ondemand\npm.max_children = 4\nclear_env = no\n')
+    Path('/etc/caddy/Caddyfile').write_text(
+        f'{{\n    auto_https off\n    admin off\n}}\nhttps://gateway.orbit {{\n    bind {address}\n'
+        f'    tls {tls}/cert.pem {tls}/key.pem\n    rewrite * /index.php?{{query}}\n'
+        f'    reverse_proxy unix//run/php/proof-gateway.sock {{\n        transport fastcgi {{\n            root {GATEWAY}/public\n'
+        f'            split .php\n        }}\n    }}\n}}\n')
+    run(['systemctl', 'enable', 'php8.5-fpm', 'caddy'])
+    run(['systemctl', 'restart', 'php8.5-fpm', 'caddy'])
 
 
 def main():
     if os.geteuid() != 0:
         raise RuntimeError('run as root')
-    node = target()
+    nodes = target()
     swamp()
-    seeded = gateway(node)
+    seeded = gateway(nodes)
     facts = {'ready': True, 'commit': run(['git', '-C', str(SOURCE), 'rev-parse', 'HEAD'], user=ACCOUNT).strip(),
              'topology': TOPOLOGY['name'], 'topology_version': TOPOLOGY['version'], 'nodes': seeded['nodes'],
-             'operator_address': TOPOLOGY['operator']['address'], 'target': node, 'timings': timings}
+             'operator_address': TOPOLOGY['operator']['address'], 'target': nodes[0], 'targets': nodes, 'timings': timings}
     (STATE / 'up.json').write_text(json.dumps(facts))
     print(json.dumps(facts))
 

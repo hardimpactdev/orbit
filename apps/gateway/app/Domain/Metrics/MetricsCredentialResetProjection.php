@@ -30,9 +30,26 @@ final readonly class MetricsCredentialResetProjection implements DirectOperation
             throw new ResourceOperationException('metrics.credentials_missing', 'The admitted Grafana credential copy is unavailable.', 409);
         }
 
-        return ['intent' => $operation->input, 'execution_secrets' => ['credentials' => app(SwampCommandStep::class)->executionCopy(
-            'orbit-control-inputs', 'metrics-credentials-operation-'.$operation->id,
-            json_encode(['active_password' => $active, 'pending_password' => $pending], JSON_THROW_ON_ERROR))]];
+        $secrets = [];
+        foreach (['probe', 'apply', 'confirm'] as $action) {
+            $password = $action === 'apply' ? $active : $pending;
+            $config = 'user = '.self::quote('admin:'.$password)."\n";
+            if ($action === 'apply') {
+                $config .= "request = PUT\nheader = \"Content-Type: application/json\"\ndata = ".self::quote(json_encode([
+                    'oldPassword' => $active, 'newPassword' => $pending, 'confirmNewPassword' => $pending,
+                ], JSON_THROW_ON_ERROR))."\n";
+            }
+            $secrets[$action] = app(SwampCommandStep::class)->executionCopy(
+                'orbit-control-inputs', 'metrics-credentials-operation-'.$operation->id.'-'.$action, $config);
+        }
+
+        return ['intent' => $operation->input, 'execution_secrets' => $secrets];
+    }
+
+    /** curl's configuration quoting keeps credentials in stdin, including quotes and line breaks. */
+    private static function quote(string $value): string
+    {
+        return '"'.strtr($value, ['\\' => '\\\\', '"' => '\\"', "\n" => '\\n', "\r" => '\\r', "\t" => '\\t', "\v" => '\\v']).'"';
     }
 
     public function apply(Operation $operation, array $data): Operation

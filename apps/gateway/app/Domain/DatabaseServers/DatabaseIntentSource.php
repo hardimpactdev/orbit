@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\DatabaseServers;
 
 use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\DirectOperationPrivateBindings;
 use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Shared\ResourceOperationException;
@@ -47,16 +46,6 @@ final readonly class DatabaseIntentSource implements OperationSecretSource
             throw new ResourceOperationException('operation.execution_forbidden', 'The database intent belongs to another target.', 422);
         }
         $intent = DatabaseExecutionIntent::recorded($id);
-        if ($key === '' && $operation->kind === 'instance.destroy' && $parameter === 'database_material'
-            && (app(DirectOperation::class)->definition($operation->kind)['private_material'][$parameter] ?? null) === $this->name()) {
-            $caller = (request()->getUserResolver())();
-            if (! $caller instanceof Node || app(DirectOperationPrivateBindings::class)->ownerNode($operation, $parameter) !== $intent->node_id) {
-                throw new ResourceOperationException('operation.execution_forbidden', 'The database material requires its authenticated participant.', 403);
-            }
-            app(DirectOperationPrivateBindings::class)->readable($operation, [$parameter => $this->name()], $caller->id);
-
-            return app(DatabaseDestroyOwnedMaterial::class)->resolve($operation, $caller->id);
-        }
         if ($key === '' && DirectOperation::owns($operation)
             && (app(DirectOperation::class)->definition($operation->kind)['private_material'][$parameter] ?? null) === $this->name()) {
             app(DirectOperation::class)->projection($operation)->input($operation);

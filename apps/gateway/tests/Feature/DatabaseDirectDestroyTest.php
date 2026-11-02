@@ -38,8 +38,8 @@ it('admits recorded MySQL identity without an execution receipt or PHP probe', f
     expect($prepared->kind)->toBe('database.destroy');
     expect($prepared->input['test_prefixes'])->toBe(['proof_testing']);
     expect($prepared->input['owners']->proof)->toBe('proof');
-    expect($intent->payload['commands']['database-apply']['protected'])->toBe(['password']);
-    expect(array_keys($intent->payload['commands']['database-apply']['input']))->toBe(['password']);
+    // The run reads the admin password from the server's own vault key; the intent records no secret.
+    expect($intent->payload['commands'])->toBe([]);
     expect(Operation::query()->count())->toBe(0);
 });
 
@@ -50,15 +50,13 @@ it('refuses system database prefixes before recording an intent', function (): v
     expect(DatabaseExecutionIntent::query()->count())->toBe(0);
 });
 
-it('holds create admission while a native owned removal includes the server', function (bool $lifecycle): void {
-    $servers = [['server_id' => $this->server->id]];
-    $input = $lifecycle ? ['direct_destroy' => ['database' => ['servers' => $servers]]] : ['servers' => $servers];
-    $operation = Operation::query()->create(['kind' => $lifecycle ? 'instance.destroy' : 'database.destroy_owned', 'target_type' => 'instance', 'target_id' => $this->instance->id,
-        'node_id' => $this->instance->node_id, 'status' => 'running', 'input' => $input]);
+it('holds create admission while an Instance removal drops databases on the server', function (): void {
+    $operation = Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance', 'target_id' => $this->instance->id,
+        'node_id' => $this->instance->node_id, 'status' => 'running', 'input' => ['direct_destroy' => ['database' => ['servers' => [['server_id' => $this->server->id]]]]]]);
     expect(fn () => app(DatabaseDestroySafety::class)->assertAcceptsCreates($this->server))->toThrow(ResourceOperationException::class, 'removal is unfinished');
     $operation->update(['status' => 'succeeded']);
     app(DatabaseDestroySafety::class)->assertAcceptsCreates($this->server);
-})->with([false, true]);
+});
 
 it('refuses destruction while creation on the same server is unfinished', function (): void {
     $connection = DatabaseConnection::query()->create(['slug' => 'proof', 'driver' => 'mysql', 'database_server_id' => $this->server->id, 'database' => 'proof', 'username' => 'proof']);
@@ -89,29 +87,51 @@ it('refuses a recorded system name or prefix when rendering native destroy inten
         ->toThrow(ResourceOperationException::class, 'System databases');
 })->with([[['mysql'], []], [[], ['s']]]);
 
-it('starts native removal with captured intent and a vault descriptor for each engine', function (string $driver): void {
+it('starts removal with rendered statements on stdin and the admin login only as an env file key', function (string $driver): void {
     $this->server->update(['driver' => $driver]);
     $connection = DatabaseConnection::query()->create(['slug' => 'proof', 'driver' => $driver, 'database_server_id' => $this->server->id, 'database' => 'proof', 'username' => 'proof']);
     $operation = app(DropServerDatabaseAction::class)->execute($connection);
-    $inputs = $this->socket->sent[1]['payload']['inputs'];
-    expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'workflow.run']);
-    expect($inputs['intent'])->toMatchArray(['driver' => $driver, 'users' => ['proof']])->not->toHaveKeys(['password', 'payload', 'sql']);
-    expect($inputs['execution_secrets']['database_destroy'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'database-destroy-intent-'.$operation->input['intent_id']]);
-    expect(json_decode($this->socket->sent[0]['payload']['value'], true, flags: JSON_THROW_ON_ERROR))->toBe(['password' => $this->server->root_password]);
+    $start = collect($this->socket->sent)->firstWhere('type', '!==', 'vault.put');
+    $inputs = $start['payload']['inputs'];
+    $intent = $inputs['intent'];
+    expect($intent['driver'])->toBe($driver);
+    expect($intent['login'])->toBe('/run/orbit-database-destroy-'.$operation->id.'.env');
+    expect($intent['client'])->toContain($intent['container']);
+    if ($driver === 'redis') {
+        expect($intent['statements']['drop'])->toBe("ACL DELUSER proof\nACL SAVE\n");
+    } else {
+        expect($intent['statements']['drop'])->toContain('DROP DATABASE IF EXISTS')->toContain('proof');
+        expect($intent['statements']['blockers'])->toStartWith('SELECT DISTINCT blocker');
+    }
+    // PostgreSQL uses local trust in the container; MySQL and Valkey read the admin login from a 0600 env file.
+    if ($driver === 'pgsql') {
+        expect((array) $inputs['execution_secrets'])->toBe([]);
+        expect($intent['client'])->not->toContain('--env-file');
+    } else {
+        $key = 'database-server-'.$this->server->id.'-client-env';
+        expect($inputs['execution_secrets'])->toBe(['client_env' => ['vault' => 'orbit-control-inputs', 'key' => $key]]);
+        $put = collect($this->socket->sent)->firstWhere('type', 'vault.put')['payload'];
+        expect($put['key'])->toBe($key);
+        expect($put['value'])->toBe(($driver === 'redis' ? 'REDISCLI_AUTH=' : 'MYSQL_PWD=').$this->server->root_password."\n");
+    }
     expect(json_encode($inputs, JSON_THROW_ON_ERROR))->not->toContain($this->server->root_password);
     expect(app(DirectOperation::class)->definition('database.destroy'))->not->toHaveKey('private_material');
-    $this->server->update(['port' => 3333, 'root_password' => 'changed-private-root']);
-    expect(app(DirectOperation::class)->workflowInputs($operation))->toEqual($inputs);
     $this->assertDatabaseHas('database_connections', ['id' => $connection->id]);
 })->with(['mysql', 'pgsql', 'redis']);
+
+it('refuses a database name that is not a plain identifier before recording anything', function (): void {
+    $connection = DatabaseConnection::query()->create(['slug' => 'odd', 'driver' => 'mysql', 'database_server_id' => $this->server->id, 'database' => 'odd`name', 'username' => 'proof']);
+    expect(fn () => app(DropServerDatabaseAction::class)->execute($connection))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('database.server_admin_invalid'));
+    expect(Operation::query()->count())->toBe(0);
+});
 
 it('deletes records once from successful native terminal history', function (): void {
     $connection = DatabaseConnection::query()->create(['slug' => 'proof', 'driver' => 'mysql', 'database_server_id' => $this->server->id, 'database' => 'proof', 'username' => 'proof']);
     $operation = app(DropServerDatabaseAction::class)->execute($connection);
-    $inputs = $this->socket->sent[1]['payload']['inputs'];
+    $inputs = collect($this->socket->sent)->firstWhere('type', '!==', 'vault.put')['payload']['inputs'];
     $history = ['id' => $this->runId, 'workflowName' => 'operation-database-destroy', 'status' => 'succeeded', 'inputs' => $inputs,
         'startedAt' => '2026-11-01T00:30:00Z', 'completedAt' => '2026-11-01T00:30:01Z',
-        'jobs' => [['name' => 'result', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => '{"backend":"absent"}']]]]],
+        'jobs' => [['name' => 'destroy', 'steps' => [['name' => 'Report the result', 'outputs' => ['stdout' => '{"backend":"absent"}']]]]],
     ];
     $this->socket->reply = static fn (array $sent): array => [['type' => 'workflow.history.get', 'id' => $sent['id'], 'payload' => ['data' => $history]]];
     config(['swamp.read_token' => 'fake.token']);

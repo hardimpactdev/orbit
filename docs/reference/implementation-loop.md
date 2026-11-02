@@ -100,7 +100,7 @@ Orbit CI runs builds and static checks. Swamp changes also run the Operation Den
 
 Swamp source lives under `swamp/`. Swamp-only changes select the Swamp checks and skip PHP and Gateway builds. Changing `swamp/config/gateway-workflow-grants.json` also selects Generated contracts. That job checks the intended policy against the loaded Gateway declarations. Every main commit builds and uploads Web and becomes a Gateway release, Swamp-only ones too, because the release [loads Swamp](/reference/gateway-recovery#load-swamp).
 
-Swamp checks validate every workflow with the runtime pinned in `swamp/.swamp.yaml` and enforce the Swamp-shape baseline. Operation Deno tests run in parallel shards with four workers per job: four general shards, one per database effect directory, and one for process commands. A shard's directory leaves the matrix when its tests go. `Required checks` remains the single aggregate for all selected jobs.
+Swamp checks validate every workflow with the runtime pinned in `swamp/.swamp.yaml` and enforce the Swamp-shape baseline. Operation Deno tests run in parallel shards with four workers per job: four general shards, one per database effect directory (local SQL, read and write), and one for process commands. A shard's directory leaves the matrix when its tests go. `Required checks` remains the single aggregate for all selected jobs.
 
 Two checks guard the flow charts. Generated contracts requires a chart or a `docs/flows/pending.txt` line for every kind. Docs build runs `bin/check-flows`. Changing `swamp/workflows/` also selects Docs, and changing `docs/flows/` also selects Generated contracts. So both checks see every change they depend on.
 
@@ -236,7 +236,7 @@ API ownership matching removes the shared `api/v1` prefix, so a Form Request use
 7. When the candidate changes the Rust agent, the desktop app, or `.github/workflows/ci.yml`, it runs `cargo fmt --all -- --check` in the matching Rust project.
 8. It runs `bin/check-classification-fakes` on changed test sources. A change to the checker itself checks every project’s tests.
 
-Test inputs need no page: step 1 ignores files under `tests/` and `swamp/proof/`.
+Test inputs need no page: step 1 ignores files under `tests/` and `swamp/proof/`, and test files beside their source (`*_test.ts`, `*_test.py`, `test_*.py`).
 
 When the candidate changes `apps/gateway/resources`, `apps/gateway/tests/Programs`, `apps/gateway/ruff.toml`, or `bin/remote-programs-check`, the gate also runs `bin/remote-programs-check`. See [Remote programs](/reference/remote-programs#lint-and-direct-tests).
 

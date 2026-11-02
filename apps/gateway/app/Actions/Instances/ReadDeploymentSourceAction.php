@@ -12,12 +12,11 @@ use App\Data\Instances\DeploymentSourceHeadData;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppCredentials;
-use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubCheckRun;
 use App\Domain\GitHub\GitHubCommit;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Projects\ProjectEnvironmentTemplateRefresh;
-use App\Domain\Projects\ProjectSourceAccess;
+use App\Domain\Projects\ProjectGitHubSource;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\RemoteBranchHeads;
 use App\Models\Instance;
@@ -25,9 +24,7 @@ use Throwable;
 
 final readonly class ReadDeploymentSourceAction
 {
-    private const int CandidateLimit = 20;
-
-    public function __construct(private RemoteBranchHeads $heads, private GitHubAppStore $store, private GitHubApi $github, private ProjectEnvironmentTemplateRefresh $templates) {}
+    public function __construct(private RemoteBranchHeads $heads, private ProjectGitHubSource $source, private GitHubApi $github, private ProjectEnvironmentTemplateRefresh $templates) {}
 
     public function head(Instance $instance): DeploymentSourceHeadData
     {
@@ -60,7 +57,7 @@ final readonly class ReadDeploymentSourceAction
             $commits = [];
             $reachedBase = $candidate->sha === $base;
             $truncated = false;
-            while ($candidate instanceof GitHubCommit && $candidate->sha !== $base && count($commits) < self::CandidateLimit) {
+            while ($candidate instanceof GitHubCommit && $candidate->sha !== $base && count($commits) < ProjectGitHubSource::CandidateLimit) {
                 $descends = $this->github->compareCommits($token, $repository, $base, $candidate->sha)->headDescendsFromBase();
                 $commits[] = new DeploymentSourceCommitData($candidate->sha, $candidate->parents, $descends);
                 $parent = $candidate->firstParent();
@@ -75,7 +72,7 @@ final readonly class ReadDeploymentSourceAction
                 $candidate = $parent === null ? null : $bySha[$parent];
             }
 
-            return new DeploymentSourceCommitsData($head, $commits, $reachedBase, $truncated || (! $reachedBase && $candidate instanceof GitHubCommit && count($commits) === self::CandidateLimit));
+            return new DeploymentSourceCommitsData($head, $commits, $reachedBase, $truncated || (! $reachedBase && $candidate instanceof GitHubCommit && count($commits) === ProjectGitHubSource::CandidateLimit));
         } catch (GitHubApiException $exception) {
             throw $this->unavailable($exception);
         }
@@ -103,15 +100,9 @@ final readonly class ReadDeploymentSourceAction
     /** @return array{GitHubRepository, GitHubAppCredentials, int} */
     private function access(Instance $instance): array
     {
-        $repository = GitHubRepository::fromOrigin($instance->project->repository_url);
-        if ($instance->project->source_access !== ProjectSourceAccess::GitHubApp || ! $repository instanceof GitHubRepository) {
-            throw new ResourceOperationException('instance.auto_deploy_gate_unreadable', 'The Project must use GitHub App access for source evidence.', 409);
-        }
         try {
-            $credentials = $this->store->credentials() ?? throw new GitHubApiException('The Gateway GitHub App is not registered.');
-            $installation = $this->github->repositoryInstallation($credentials, $repository) ?? throw new GitHubApiException('The repository has no GitHub App installation.');
-
-            return [$repository, $credentials, $installation];
+            return $this->source->access($instance->project)
+                ?? throw new ResourceOperationException('instance.auto_deploy_gate_unreadable', 'The Project must use GitHub App access for source evidence.', 409);
         } catch (GitHubApiException $exception) {
             throw $this->unavailable($exception);
         }

@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, DECISIONS R2-R4, flow-tighten rules 1, 6, 9, single-swamp-node + light-boxes-use-swamp-ssh (vpn Node 1 has no Swamp worker). docs/reference/wireguard-endpoints.md.
+  %% Target design: ADR 0244 task, DECISIONS R2-R4, flow-tighten rules 1, 9, 16, 18, 22, script audit Q-WGHUB, single-swamp-node + light-boxes-use-swamp-ssh (vpn Node 1 has no Swamp worker). docs/reference/wireguard-endpoints.md.
   %% status: draft
   %% command: node:wireguard-hub:converge
   autonumber
@@ -34,7 +34,7 @@ sequenceDiagram
   %%> What it does:
   %%> - starts one Swamp run on serve (Node 209)
   %%> Inputs:
-  %%> - the peer list: name, public key and WireGuard address of every other active Node
+  %%> - the rendered hub file and peer sections, and the port: public key and WireGuard address of every other active Node
   %%> - Node 1's address and SSH host keys; the SSH identity comes from the `swamp` role
   %%> Not included:
   %%> - the hub's private key; it stays on Node 1
@@ -43,25 +43,35 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>SW: Resolve the hub script<br/>@nckrtl/node-hub-command
+  SW->>N: Keep the key in a file<br/>@swamp/cfgmgmt/exec · orbit.key
   %%> What it does:
-  %%> - reads the shipped `hub_publish.py` on the Swamp worker
-  SW->>N: Apply the hub config<br/>@swamp/ssh · hub_publish.py
-  %%> How:
-  %%> - over SSH from 209 with the official `@swamp/ssh` behavior, as root, under the hub's peer lock
-  %%> - Node 1 is a light box: no Swamp binary and no worker on it
+  %%> - once per hub, moves the running private key into `/etc/wireguard/orbit.key` (0600)
+  %%> - skipped when the key file exists; the key never leaves the Node
+  SW->>N: Write the hub config<br/>@swamp/cfgmgmt/file · orbit.conf
   %%> What it does:
-  %%> - keeps the `[Interface]` section and private key, and writes the new `[Peer]` sections; an identical list writes nothing
-  %%> - validates the file with `wg-quick strip`, keeps a rollback copy, then loads it with `wg syncconf`
-  %%> - checks the service is active and enabled, and that `wg show` lists exactly these peers
-  %%> If it fails:
-  %%> - puts the rollback copy back and reloads it, so no Node loses its tunnel
-  %%> - prints a public error code: `wireguard.hub_config_invalid`, `wireguard.hub_start_failed` or `wireguard.hub_state_unsupported`
-  %%> Why one step:
-  %%> - one Node, back to back, with its own rollback: separate steps would add SSH round trips and nothing else
-  Note over SW: Confirm the outcome<br/>assert exit code 0
+  %%> - writes the Gateway-rendered wg-quick file (0600, root); its `PostUp` reads the key file, so the file holds no secret
+  SW->>N: Write the peer list<br/>@swamp/cfgmgmt/file · orbit-peers
   %%> What it does:
-  %%> - fails the run when the apply step reported an error code
+  %%> - writes only the `[Peer]` sections, in the plain `wg` format; runs beside the hub config
+  SW->>N: Load the peers<br/>wg syncconf · key composed on Node
+  %%> What it does:
+  %%> - one command composes the `syncconf` input on the Node at apply time: `PrivateKey` from `orbit.key`, the port, then the peers file
+  %%> - new peers are added and stale ones removed; unchanged peers keep their sessions, and the interface keeps its key
+  %%> Why the key is composed in:
+  %%> - `wg syncconf` drops the interface key when its input has none (proved on the topology, 2026-11-02)
+  %%> Decided by Nick:
+  %%> - the hub private key never leaves the Node: no secret enters the Gateway, the vault or the run history
+  SW->>N: Check the hub service<br/>@swamp/cfgmgmt/systemd check
+  %%> What it does:
+  %%> - checks `wg-quick@orbit` is running and enabled
+  SW->>N: Read the live peers<br/>wg show orbit peers
+  %%> What it does:
+  %%> - reads the live peer list for the end check
+  Note over SW: Confirm the hub<br/>native assert
+  %%> What it does:
+  %%> - fails the run unless the service check is compliant and the live peers are exactly the admitted ones
+  %%> No rollback:
+  %%> - a failed step leaves the hub as it is; a rerun writes and loads the same files again
   alt the hub took the peer list
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
@@ -69,13 +79,13 @@ sequenceDiagram
     Note over GW: Record the result<br/>hub published · task succeeded
     %%> Result:
     %%> - task #5171 succeeds with `projected: true`
-  else the apply step failed
+  else a step or the check failed
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
-    %%> - the error code the apply step printed
+    %%> - which step failed and its exit code
     Note over GW: Mark the task failed<br/>rerun after a fix
     %%> Result:
-    %%> - task #5171 fails; the hub keeps its previous peer list
+    %%> - task #5171 fails; peers set before the failure stay
     %%> Retry:
     %%> - run the same command again after fixing the cause; it is a new task
   end

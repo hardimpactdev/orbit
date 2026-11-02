@@ -1,315 +1,260 @@
 id: b77987fa-6c2a-4ba7-9b35-c1739ef369b1
 name: operation-database-create
-queueTimeout: 30
-description: Create admitted databases and users through native action steps over official SSH from209.
-writes: true
+description: database:create from 209, one docker exec per SQL or Valkey action; the create statement comes from the vault on stdin.
 vaults: [orbit-control-inputs]
+queueTimeout: 30
 inputs:
   type: object
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [database.create, database.clone]}
+    kind: {type: string, const: database.create}
     intent: {type: object}
-    execution_secrets: {type: object, properties: {database_create: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^database-(create|clone)-intent-[1-9][0-9]*$'}}, required: [vault, key], additionalProperties: false}}, required: [database_create], additionalProperties: false}
+    # Names only: client_env (the server's admin login, MySQL and Valkey), statement (the create statement with the
+    # owner's password) and owner_env (the owner's login), each one whole value.
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^database-(server-[1-9][0-9]*-client-env|create-(intent|owner)-[1-9][0-9]*)$'}
+        required: [vault, key]
+        additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
-- name: actions
-  labels: {role: swamp}
-  steps:
-  - name: assets
-    <<: &placed {labels: {role: swamp}}
-    writes: false
-    task:
-      <<: &metadata {type: behavior, behaviorType: '@nckrtl/database-create-command-assets', behaviorName: '${{ "database-create-assets" }}'}
-      methodName: read
-      inputs: {intent: '${{ inputs.intent }}'}
-  - name: directory
-    <<: &remote {labels: {role: swamp}}
-    writes: false
-    task:
-      <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("database-create-" + string(inputs.intent.ssh.host)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("database-create-" + string(inputs.intent.ssh.host)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity}, hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]}}
-      inputs:
-        hosts: name:server
-        argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-database-create-" + string(inputs.operation_id) }}']
-  - name: copy
-    <<: *remote
-    writes: false
-    dependsOn: [{step: assets, condition: {type: succeeded}}, {step: directory, condition: {type: succeeded}}]
-    task:
-      <<: *ssh
-      methodName: copy
-      inputs:
-        hosts: name:server
-        src: ${{ steps.assets.outputs.directory + "/." }}
-        dst: ${{ "/tmp/orbit-database-create-" + string(inputs.operation_id) }}
-        direction: to
-        recursive: true
-  - name: prepared
-    <<: *placed
-    writes: false
-    dependsOn: [{step: copy, condition: {type: always}}]
-    task: {type: assert, expr: 'steps.copy.status == "succeeded"', severity: high, message: Database creation files unavailable.}
-  - name: action_01_sql_probe_user
-    <<: *remote
-    dependsOn: [{step: prepared, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
-    guard: '${{ inputs.intent.driver == "redis" || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_01_sql_probe_user")) && steps[k].status == "failed") }}'
-    task:
-      type: workflow
-      workflowIdOrName: database-create-action
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        intent_json: ${{ steps.assets.outputs.intent_json }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        action: sql_probe_user
-        item: {}
-  - name: action_02_sql_probe_databases
-    <<: *remote
-    dependsOn: [{step: action_01_sql_probe_user, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
-    guard: '${{ inputs.intent.driver == "redis" || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_02_sql_probe_databases")) && steps[k].status == "failed") }}'
-    task:
-      type: workflow
-      workflowIdOrName: database-create-action
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        intent_json: ${{ steps.assets.outputs.intent_json }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        action: sql_probe_databases
-        item: {}
-  - name: action_03_sql_create_user
-    <<: *remote
-    dependsOn: [{step: action_02_sql_probe_databases, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
-    guard: '${{ inputs.intent.driver == "redis" || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_03_sql_create_user")) && steps[k].status == "failed") }}'
-    task:
-      type: workflow
-      workflowIdOrName: database-create-action
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        intent_json: ${{ steps.assets.outputs.intent_json }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        action: sql_create_user
-        item: {}
-  - name: action_04_sql_authenticate
-    <<: *remote
-    dependsOn: [{step: action_03_sql_create_user, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
-    guard: '${{ inputs.intent.driver == "redis" || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_04_sql_authenticate")) && steps[k].status == "failed") }}'
-    task:
-      type: workflow
-      workflowIdOrName: database-create-action
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        intent_json: ${{ steps.assets.outputs.intent_json }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        action: sql_authenticate
-        item: {}
-  - name: action_05_mysql_grant
-    <<: *remote
-    dependsOn: [{step: action_04_sql_authenticate, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
-    guard: '${{ inputs.intent.driver != "mysql" || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_05_mysql_grant")) && steps[k].status == "failed") }}'
-    forEach: {item: selected, in: '${{ inputs.intent.databases }}'}
-    task:
-      type: workflow
-      workflowIdOrName: database-create-action
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        intent_json: ${{ steps.assets.outputs.intent_json }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        action: mysql_grant
-        item: {name: '${{ self.selected }}', wildcard: false}
-  - name: action_06_mysql_grant_prefix
-    <<: *remote
-    dependsOn: [{step: action_05_mysql_grant, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
-    guard: '${{ inputs.intent.driver != "mysql" || inputs.intent.test_prefix == null || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_06_mysql_grant_prefix")) && steps[k].status == "failed") }}'
-    task:
-      type: workflow
-      workflowIdOrName: database-create-action
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        intent_json: ${{ steps.assets.outputs.intent_json }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        action: mysql_grant
-        item: {name: '${{ inputs.intent.test_prefix }}', wildcard: true}
-  - name: action_07_sql_create_database
-    <<: *remote
-    dependsOn: [{step: action_06_mysql_grant_prefix, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
-    guard: '${{ inputs.intent.driver == "redis" || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_07_sql_create_database")) && steps[k].status == "failed") }}'
-    forEach: {item: selected, in: '${{ inputs.intent.databases }}'}
-    task:
-      type: workflow
-      workflowIdOrName: database-create-action
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        intent_json: ${{ steps.assets.outputs.intent_json }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        action: sql_create_database
-        item: {database: '${{ self.selected }}'}
-  - name: action_08_postgres_revoke_database
-    <<: *remote
-    dependsOn: [{step: action_07_sql_create_database, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
-    guard: '${{ inputs.intent.driver != "pgsql" || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_08_postgres_revoke_database")) && steps[k].status == "failed") }}'
-    forEach: {item: selected, in: '${{ inputs.intent.databases }}'}
-    task:
-      type: workflow
-      workflowIdOrName: database-create-action
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        intent_json: ${{ steps.assets.outputs.intent_json }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        action: postgres_revoke_database
-        item: {database: '${{ self.selected }}'}
-  - name: action_09_postgres_revoke_schema
-    <<: *remote
-    dependsOn: [{step: action_08_postgres_revoke_database, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
-    guard: '${{ inputs.intent.driver != "pgsql" || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_09_postgres_revoke_schema")) && steps[k].status == "failed") }}'
-    forEach: {item: selected, in: '${{ inputs.intent.databases }}'}
-    task:
-      type: workflow
-      workflowIdOrName: database-create-action
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        intent_json: ${{ steps.assets.outputs.intent_json }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        action: postgres_revoke_schema
-        item: {database: '${{ self.selected }}'}
-  - name: action_10_postgres_grant_schema
-    <<: *remote
-    dependsOn: [{step: action_09_postgres_revoke_schema, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
-    guard: '${{ inputs.intent.driver != "pgsql" || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_10_postgres_grant_schema")) && steps[k].status == "failed") }}'
-    forEach: {item: selected, in: '${{ inputs.intent.databases }}'}
-    task:
-      type: workflow
-      workflowIdOrName: database-create-action
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        intent_json: ${{ steps.assets.outputs.intent_json }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        action: postgres_grant_schema
-        item: {database: '${{ self.selected }}'}
-  - name: action_11_valkey_index
-    <<: *remote
-    dependsOn: [{step: action_10_postgres_grant_schema, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
-    guard: '${{ inputs.intent.driver != "redis" || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_11_valkey_index")) && steps[k].status == "failed") }}'
-    task:
-      type: workflow
-      workflowIdOrName: database-create-action
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        intent_json: ${{ steps.assets.outputs.intent_json }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        action: valkey_index
-        item: {}
-  - name: action_12_valkey_user
-    <<: *remote
-    dependsOn: [{step: action_11_valkey_index, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
-    guard: '${{ inputs.intent.driver != "redis" || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_12_valkey_user")) && steps[k].status == "failed") }}'
-    task:
-      type: workflow
-      workflowIdOrName: database-create-action
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        intent_json: ${{ steps.assets.outputs.intent_json }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        action: valkey_user
-        item: {}
-  - name: action_13_valkey_set_user
-    <<: *remote
-    dependsOn: [{step: action_12_valkey_user, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
-    guard: '${{ inputs.intent.driver != "redis" || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_13_valkey_set_user")) && steps[k].status == "failed") }}'
-    task:
-      type: workflow
-      workflowIdOrName: database-create-action
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        intent_json: ${{ steps.assets.outputs.intent_json }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        action: valkey_set_user
-        item: {}
-  - name: action_14_valkey_save
-    <<: *remote
-    dependsOn: [{step: action_13_valkey_set_user, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
-    guard: '${{ inputs.intent.driver != "redis" || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_14_valkey_save")) && steps[k].status == "failed") }}'
-    task:
-      type: workflow
-      workflowIdOrName: database-create-action
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        intent_json: ${{ steps.assets.outputs.intent_json }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        action: valkey_save
-        item: {}
-  - name: completed
-    <<: *placed
-    writes: false
-    dependsOn: [{step: action_14_valkey_save, condition: {type: always}}]
-    task: {type: assert, expr: '!steps.exists(k, (k in ["assets","directory","copy","prepared"] || k.startsWith("action_")) && steps[k].status == "failed") && (inputs.intent.driver == "redis" ? steps.action_14_valkey_save.status == "succeeded" : steps.action_04_sql_authenticate.status == "succeeded")', severity: high, message: A database creation action failed.}
 - name: create
   labels: {role: swamp}
-  dependsOn: [{job: actions, condition: {type: always}}]
   steps:
-  - name: result
-    <<: *placed
-    writes: false
+  - name: 'Write the client login'
+    labels: {role: swamp}
+    writes: true
+    guard: ${{ inputs.intent.driver == "pgsql" }}
     task:
-      <<: *metadata
-      methodName: result
-      inputs:
-        completed: ${{ has(steps.completed) && steps.completed.status == "succeeded" }}
-        steps: ${{ steps }}
-  - name: cleanup
-    <<: *remote
-    allowFailure: true
-    dependsOn: [{step: result, condition: {type: succeeded}}]
-    guard: ${{ steps.result.outputs.exitCode != 0 }}
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "database-create-login-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs:
+        path: ${{ inputs.intent.login }}
+        ensure: present
+        content: ${{ vault.get(inputs.execution_secrets.client_env.vault, inputs.execution_secrets.client_env.key) }}
+        owner: root
+        group: root
+        mode: '0600'
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+      inputs: {}
+    # A database that exists with another owner is never granted to the new one: database.name_conflict.
+  - name: 'Check names are free'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Write the client login', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    guard: '${{ !(inputs.intent.driver == "pgsql" || steps["Write the client login"].status == "succeeded") }}'
     task:
-      <<: *ssh
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-create-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: &ssh
+        name: ${{ "database-create-ssh-" + string(inputs.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}
       inputs:
-        hosts: name:server
-        argv: [/usr/bin/rm, -rf, --, '${{ "/tmp/orbit-database-create-" + string(inputs.operation_id) }}']
-  - name: accept_result
-    <<: *placed
-    writes: false
-    dependsOn: [{step: cleanup, condition: {type: always}}, {step: result, condition: {type: succeeded}}]
-    task: {type: assert, expr: steps.result.outputs.exitCode == 0, severity: high, message: Database creation did not complete.}
+        hosts: name:target
+        sudo: true
+        argv: '${{ ["timeout", "60"] + inputs.intent.client }}'
+        stdin: '${{ inputs.intent.statements.probe }}'
+        okExitCodes: [0, 1]
+        timeoutSec: 70
+  - name: 'Create owner and databases'
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: 'Check names are free', condition: {type: succeeded}}
+    guard: '${{ !(steps["Check names are free"].outputs.exitCode == 0 && (inputs.intent.driver == "redis" ? (inputs.intent.index == null || int(steps["Check names are free"].outputs.stdout.split("\n")[1]) > inputs.intent.index) : steps["Check names are free"].outputs.stdout.trim() == "")) }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-create-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: '${{ ["timeout", "300"] + inputs.intent.client }}'
+        stdin: ${{ vault.get(inputs.execution_secrets.statement.vault, inputs.execution_secrets.statement.key) }}
+        okExitCodes: [0, 1]
+        timeoutSec: 310
+  - name: 'Write the owner login'
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: 'Create owner and databases', condition: {type: succeeded}}
+    guard: ${{ steps["Create owner and databases"].outputs.exitCode != 0 }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "database-create-login-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs:
+        path: ${{ inputs.intent.owner_login }}
+        ensure: present
+        content: ${{ vault.get(inputs.execution_secrets.owner_env.vault, inputs.execution_secrets.owner_env.key) }}
+        owner: root
+        group: root
+        mode: '0600'
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+      inputs: {}
+    # The owner logs in over TCP with its own password; only then is the connection usable.
+  - name: 'Check the owner login'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Write the owner login', condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-create-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: '${{ ["timeout", "60"] + inputs.intent.owner_client }}'
+        stdin: '${{ inputs.intent.statements.login }}'
+        okExitCodes: [0, 1]
+        timeoutSec: 70
+    # Always, as the last Node steps: both login files leave the Node whatever happened above.
+  - name: 'Remove the owner login'
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: 'Write the owner login', condition: {type: completed}}
+    - {step: 'Check the owner login', condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "database-create-login-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs:
+        path: ${{ inputs.intent.owner_login }}
+        ensure: absent
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+      inputs: {}
+  - name: 'Remove the client login'
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: 'Write the client login', condition: {type: completed}}
+    - {step: 'Check names are free', condition: {type: always}}
+    - {step: 'Create owner and databases', condition: {type: always}}
+    - {step: 'Remove the owner login', condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "database-create-login-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs:
+        path: ${{ inputs.intent.login }}
+        ensure: absent
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+      inputs: {}
+  - name: 'Report the result'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Write the client login', condition: {type: always}}
+    - {step: 'Check names are free', condition: {type: always}}
+    - {step: 'Create owner and databases', condition: {type: always}}
+    - {step: 'Write the owner login', condition: {type: always}}
+    - {step: 'Check the owner login', condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: database-create-result
+      methodName: execute
+      inputs:
+        run: |
+          python3 -I - <<'PY'
+          import json
+          import os
+          import sys
+
+          # valkey-cli reading stdin exits 0 on an error reply, so its output is read for error lines too.
+          ERRORS = ('ERR', 'WRONGPASS', 'NOAUTH', 'ERROR', 'error:')
+          driver, user, index = os.environ['DRIVER'], os.environ['OWNER'], os.environ['INDEX']
+
+
+          def ran(name):
+              return os.environ[name + '_STATUS'] == 'succeeded'
+
+
+          def broken(name):
+              out = os.environ[name + '_STDOUT']
+              return os.environ[name + '_STATUS'] == 'failed' or (ran(name) and (os.environ[name + '_EXIT'] not in ('', '0') or any(line.startswith(ERRORS) for line in out.splitlines())))
+
+
+          probe = os.environ['PROBE_STDOUT']
+          login = os.environ['LOGIN_STDOUT'].strip()
+          expected = {'mysql': user + '@%', 'pgsql': user}.get(driver)
+          result = {'backend': 'active'}
+          if os.environ['CLIENT_STATUS'] == 'failed':
+              result = {'failed_step': 'Write the client login', 'error_code': 'database.server_command_failed'}
+          elif broken('PROBE'):
+              result = {'failed_step': 'Check names are free', 'error_code': 'database.server_command_failed'}
+          elif driver == 'redis' and index and int((probe.splitlines() + ['', '0'])[1] or 0) <= int(index):
+              result = {'failed_step': 'Check names are free', 'error_code': 'database.index_invalid'}
+          elif driver != 'redis' and probe.strip():
+              result = {'failed_step': 'Check names are free', 'error_code': 'database.name_conflict'}
+          elif broken('CREATE') or not ran('CREATE'):
+              result = {'failed_step': 'Create owner and databases', 'error_code': 'database.server_admin_failed'}
+          elif os.environ['OWNER_STATUS'] != 'succeeded':
+              result = {'failed_step': 'Write the owner login', 'error_code': 'database.server_command_failed'}
+          elif not ran('LOGIN') or os.environ['LOGIN_EXIT'] != '0' or (login != expected if expected else not login.startswith(('PONG', 'NOPERM'))):
+              # A Valkey owner without +ping answers NOPERM after a successful AUTH; a wrong password answers NOAUTH.
+              result = {'failed_step': 'Check the owner login', 'error_code': 'database.owner_login_failed'}
+          print(json.dumps(result))
+          sys.exit(0 if 'backend' in result else 1)
+          PY
+        env:
+          DRIVER: ${{ inputs.intent.driver }}
+          OWNER: ${{ inputs.intent.username }}
+          INDEX: '${{ inputs.intent.index == null ? "" : string(inputs.intent.index) }}'
+          CLIENT_STATUS: '${{ "Write the client login" in steps ? steps["Write the client login"].status : "skipped" }}'
+          OWNER_STATUS: '${{ "Write the owner login" in steps ? steps["Write the owner login"].status : "skipped" }}'
+          PROBE_STATUS: '${{ "Check names are free" in steps ? steps["Check names are free"].status : "skipped" }}'
+          PROBE_EXIT: '${{ "Check names are free" in steps && steps["Check names are free"].status == "succeeded" ? string(steps["Check names are free"].outputs.exitCode) : "" }}'
+          PROBE_STDOUT: '${{ "Check names are free" in steps && steps["Check names are free"].status == "succeeded" ? steps["Check names are free"].outputs.stdout : "" }}'
+          CREATE_STATUS: '${{ "Create owner and databases" in steps ? steps["Create owner and databases"].status : "skipped" }}'
+          CREATE_EXIT: '${{ "Create owner and databases" in steps && steps["Create owner and databases"].status == "succeeded" ? string(steps["Create owner and databases"].outputs.exitCode) : "" }}'
+          CREATE_STDOUT: '${{ "Create owner and databases" in steps && steps["Create owner and databases"].status == "succeeded" ? steps["Create owner and databases"].outputs.stdout : "" }}'
+          LOGIN_STATUS: '${{ "Check the owner login" in steps ? steps["Check the owner login"].status : "skipped" }}'
+          LOGIN_EXIT: '${{ "Check the owner login" in steps && steps["Check the owner login"].status == "succeeded" ? string(steps["Check the owner login"].outputs.exitCode) : "" }}'
+          LOGIN_STDOUT: '${{ "Check the owner login" in steps && steps["Check the owner login"].status == "succeeded" ? steps["Check the owner login"].outputs.stdout : "" }}'
+        ignoreExitCode: true
+  - name: 'Fail on an error'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Report the result', condition: {type: succeeded}}]
+    task: {type: assert, expr: 'steps["Report the result"].outputs.exitCode == 0', severity: high, message: The database create did not complete.}

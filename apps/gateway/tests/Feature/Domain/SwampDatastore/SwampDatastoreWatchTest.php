@@ -39,13 +39,16 @@ it('declares the native schedule as one standalone scheduled result', function (
 it('raises one problem per crossed bound and none within them', function (): void {
     datastoreWatch()->applyScheduled(SwampDatastoreWatch::Workflow, datastoreWatchRun(0), [
         'auto_definitions' => ['@swamp/ssh' => 2001, 'command/shell' => 2000, 'swamp/grant' => 2369], 'outputs' => 50001,
-        'workflow_runs' => 900, 'data' => 10, 'grants' => 2369, 'serve_cpu_percent' => 50.5,
+        'workflow_runs' => 900, 'data' => 10, 'step_leases' => 60001, 'grants' => 2369, 'serve_cpu_percent' => 50.5,
     ]);
 
     // Grant records have their own bound, so their type is not reported twice.
     expect(array_keys(datastoreProblems()))->toEqualCanonicalizing([
-        'swamp|datastore|auto_definitions|@swamp/ssh', 'swamp|datastore|outputs', 'swamp|datastore|grants', 'swamp|serve|cpu',
-    ])->and(datastoreProblems()['swamp|datastore|auto_definitions|@swamp/ssh']->evidence)
+        'swamp|datastore|auto_definitions|@swamp/ssh', 'swamp|datastore|outputs', 'swamp|datastore|step_leases',
+        'swamp|datastore|grants', 'swamp|serve|cpu',
+    ])->and(datastoreProblems()['swamp|datastore|step_leases']->evidence)
+        ->toMatchArray(['observed' => 60001, 'expected' => 60000, 'swamp_entry' => '.swamp/data/swamp/step-lease'])
+        ->and(datastoreProblems()['swamp|datastore|auto_definitions|@swamp/ssh']->evidence)
         ->toMatchArray(['swamp_title' => 'Swamp serve holds 2001 auto-definitions of type @swamp/ssh', 'observed' => 2001, 'expected' => 2000,
             'swamp_entry' => '.swamp/auto-definitions/@swamp/ssh'])
         ->and(datastoreProblems()['swamp|serve|cpu']->evidence['observed'])->toBe(51);

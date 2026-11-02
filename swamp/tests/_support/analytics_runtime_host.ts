@@ -7,11 +7,11 @@ async function execute(
         globalArgs: Record<string, unknown>;
         writeResource(s: string, n: string, v: unknown): Promise<unknown>;
     },
+    method: string,
 ) {
     const state = JSON.parse(Deno.readTextFileSync(path));
     const name = String(args.name ?? "");
     const argv = (args.argv ?? []) as string[];
-    const command = String(ctx.globalArgs.command ?? "");
     let stdout = "";
     const fail = (code: string) => {
         Deno.writeTextFileSync(path, JSON.stringify(state));
@@ -40,50 +40,53 @@ async function execute(
         }
     } else if (name === "health") {
         state.calls.push(name);
-        const control = JSON.parse(
-            argv.find((x) => x.startsWith("ORBIT_PROCESS_CONTROL="))!.slice(
-                "ORBIT_PROCESS_CONTROL=".length,
-            ),
-        );
-        if (control.expected_spec !== state.spec) fail("process.spec_changed");
+        if (!state.present || state.state !== "running") {
+            fail("fixture.endpoint_unavailable");
+        }
         if (["health", "restore"].includes(state.mode)) {
             fail("fixture.health_failed");
         }
+    } else if (argv.includes("ls")) {
+        stdout = state.present ? `fixture ${state.spec}\n` : "";
     } else if (argv.includes("--format")) {
-        stdout = `true\nprocess\n9\n${state.spec}\n${state.state}\n`;
-    } else if (argv.some((x) => x.endsWith("inspect.py"))) {
-        stdout = JSON.stringify({
-            present: state.present,
-            state: state.state,
-            spec: state.spec,
-        });
-    } else if (argv.some((x) => x.endsWith("lifecycle_container.py"))) {
-        const spec = state.intent.installation.spec;
-        const tag = spec[0];
+        stdout = argv.includes("{{.State.Status}}")
+            ? `${state.state}\n`
+            : `true\nprocess\n9\n${state.spec}\n${state.state}\n`;
+    } else if (argv.includes("create")) {
+        const install = {
+            spec: argv.find((value) =>
+                value.startsWith("orbit.process.spec=")
+            )!.split("=")[1],
+        };
+        const tag = install.spec[0];
         state.calls.push("create:" + tag);
         if (
             state.mode === "install" && tag === "b" ||
             state.mode === "restore" && tag === "a"
         ) fail("fixture.create_failed");
-        if (state.present && state.spec !== spec) fail("process.spec_changed");
-        state.spec = spec;
+        state.spec = install.spec;
         state.present = true;
         state.state = "created";
-    } else if (command.includes("container stop")) state.state = "exited";
-    else if (command.includes("container rm")) {
-        state.calls.push("remove");
-        state.present = false;
-        state.state = "absent";
-        if (state.mode === "partial-remove" && !state.removeFailed) {
-            state.removeFailed = true;
-            fail("fixture.remove_reply_lost");
+    } else if (argv.includes("start")) state.state = "running";
+    else if (argv.includes("stop")) state.state = "exited";
+    else if (
+        ctx.globalArgs.ensure === "absent" &&
+        typeof ctx.globalArgs.name === "string"
+    ) {
+        if (method === "apply" && state.present) {
+            state.calls.push("remove");
+            state.present = false;
+            state.state = "absent";
+            if (state.mode === "partial-remove" && !state.removeFailed) {
+                state.removeFailed = true;
+                fail("fixture.remove_reply_lost");
+            }
         }
-    } else if (command.includes("container start")) state.state = "running";
-    else if (argv.some((x) => x.endsWith("verify.py"))) {
-        if (!state.present || state.state !== "running") {
-            fail("fixture.verify_failed");
-        }
-        stdout = '{"ready":true,"state":"running"}';
+        await ctx.writeResource("state", String(ctx.globalArgs.nodeHost), {
+            status: state.present ? "non_compliant" : "compliant",
+            current: { containerExists: state.present },
+            changes: [],
+        });
     }
     Deno.writeTextFileSync(path, JSON.stringify(state));
     const value = { stdout, ready: true };
@@ -95,6 +98,11 @@ export const behavior = {
     version: "2026.11.01.1",
     globalArguments: z.record(z.string(), z.unknown()),
     resources: {
+        state: {
+            schema: z.record(z.string(), z.unknown()),
+            lifetime: "infinite",
+            garbageCollection: 10,
+        },
         result: {
             schema: z.record(z.string(), z.unknown()),
             lifetime: "infinite",
@@ -102,11 +110,14 @@ export const behavior = {
         },
     },
     methods: Object.fromEntries(
-        ["exec", "copy", "apply"].map(
+        ["exec", "copy", "apply", "check"].map(
             (name) => [name, {
                 description: "Disposable host fixture",
                 arguments: z.record(z.string(), z.unknown()),
-                execute,
+                execute: (
+                    args: Record<string, unknown>,
+                    ctx: Parameters<typeof execute>[1],
+                ) => execute(args, ctx, name),
             }],
         ),
     ),

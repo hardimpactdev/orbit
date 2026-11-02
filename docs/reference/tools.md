@@ -2,14 +2,13 @@
 title: "Tools"
 description: "Where Tools run, the supported Tool Managers, how Orbit discovers, adopts, installs, updates, and removes one package, and why the contract stays closed."
 covers:
-  - apps/gateway/app/Providers/ApplicationServiceProvider.php
-  - apps/gateway/app/{Actions,Domain}/Tools/**
+  - swamp/extensions/behaviors/operations/tools/**
+  - swamp/workflows/workflow-operation-tool-{write-209,remove-209,manager-setup}.yaml
+  - apps/gateway/app/{Providers/ApplicationServiceProvider.php,{Actions,Domain}/Tools/**,Data/Tools/**,Actions/Doctor/Intent/RuntimeDoctorIntent.php}
   - apps/gateway/app/Infrastructure/{Tools/**,Nodes/Roles/RolePrerequisites.php}
   - apps/gateway/{app/Models/{Tool,ToolManagerRecord,AptRepository}.php,database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_09_120017_create_apt_repositories_table}.php}
-  - apps/gateway/app/Data/Tools/**
   - apps/agent/src/commands/{vp_store,vp_project,vp_scope,vp_materialize,vp_global,tools_apt,composer_scope,composer_global,homebrew_scope,homebrew,tool_output}{.rs,/**}
   - apps/gateway/app/Http/{Controllers/Api/{ToolsController,ToolManagersController,ToolInventoryController}.php,Requests/Tools/**}
-  - apps/gateway/app/Actions/Doctor/Intent/RuntimeDoctorIntent.php
 ---
 
 # Tools
@@ -26,12 +25,14 @@ Recording a development [Instance branch rename](/cli/instance#orbit-instanceren
 
 Install, update, remove, and adopt return HTTP 202 with an [Operation](/reference/operations). The Gateway validates the request, records immutable intent and the target Node, and starts one native Swamp workflow. CLI writes follow the Operation. List, show, scan and manager list keep their read paths.
 
-Every step runs on control Node 209. Each Node phase is one shipped script, `phase.py`, run through official `@swamp/ssh` as the admitted managed account with the full stored host keys; root work, such as apt or the manager installers, goes through `sudo -n` inside it. The public intent reaches each manager script as argv JSON. Typed steps on 209 make every decision between the Node phases.
+Every step runs on control Node 209. Install, update and removal use official cfgmgmt resources and one bounded SSH argv per manager command. Official package checks supply the installed version or absence. Typed worker steps apply constraints and decode package observations. The Gateway reads the native run and fixed public captures; no result-reporting step runs. Package phases send no Python source to the Node.
+
+A signed apt source stages its key, reads it with one `gpg --with-colons --show-keys` command, and uses a native assert to require exactly the admitted primary fingerprint. Only then does it publish the keyring, package preferences and source. Completion cleanup removes the staging file, including after a failed fingerprint check. Adoption retains its shared scripts. The separate manager setup keeps the pinned bootstrap installers.
 
 | Workflow | Steps |
 | --- | --- |
-| Install, update | `assets`, `setup_assets`, `Set up the Tool Manager`, `Add the signed apt source` (install) or `Update the apt source` (update), `Check the candidate`, `decide`, `Install the package` or `Upgrade the package`, `result`, `accepted` |
-| Remove | `assets`, `Plan the removal`, `decide`, `Remove the package`, `Check it is gone`, `Remove the apt source`, `result`, `accepted` |
+| Install, update | `assets`, optional manager and signed-source setup, parallel manager and package reads, `Check the candidate`, `decide`, `Install the package` or `Upgrade the package`, `Check the package`, `Decode package state`, `Assert package state` |
+| Remove | `assets`, parallel manager and package reads, `Plan the removal`, `decide`, `Remove the package`, `Check it is gone`, optional source and preference removal, `Decode package state`, `Assert package state` |
 | Adopt | `assets`, `query`, `repository`, `result`, `assert`: unchanged until the [observer pass](/swamp/observer-gap) replaces it |
 
 ### Install and update steps
@@ -40,10 +41,10 @@ Node steps carry the labels of the reviewed flow charts ([ADR 0246](/decisions/0
 
 - `Set up the Tool Manager` installs the manager at its pinned version on a Linux first use. A ready manager skips it.
 - `Add the signed apt source` and `Update the apt source` run only with `--repository`. The key is checked by its fingerprint.
-- `Check the candidate` reads the installed package and the version the manager would install.
+- `Read installed package` reads current package state; `Check the candidate` reads the manager's normal candidate. Both are individual commands.
 - `decide` applies the refusals and the constraint before any write. A missing candidate fails the install.
 - On an update, the same version is `unchanged` and a version outside the constraint is `blocked_by_constraint`. Neither writes.
-- `Install the package` or `Upgrade the package` writes the candidate and reads the version back.
+- `Install the package` or `Upgrade the package` writes the candidate. `Check the package` reads its installed state; official apt and Homebrew checks serve as the end check.
 
 The Gateway writes the records:
 
@@ -62,7 +63,7 @@ Removal runs these steps in order. It stops at the first step that fails, except
 2. `decide` refuses a plan that removes any other package, a Composer non-root, or an unsafe cask.
 3. `Remove the package` removes exactly that package: dpkg as root, every other manager as the managed account.
 4. `Check it is gone` must find the package absent.
-5. `Remove the apt source` drops the source, key and preference of a signed repository's last Tool. This step is best-effort.
+5. `Remove the apt source` drops the source and key of a signed repository's last Tool. `Remove repository pins` removes its preference file. Both steps are best-effort.
 
 When the apt source cannot be removed, the removal still succeeds and the Tool is deleted. The apt repository record stays, and the next install from that source reuses it.
 
@@ -568,7 +569,7 @@ For Rex, use this definition. It comes from the [vendor installer](https://pkgs.
 
 Pass the JSON object with `--repository` on `tool:install`, `tool:adopt`, or `tool:update`. The API and MCP take the same object. Repository data is returned on Tool reads. Change `suites` to `["stable"]` in a normal update when the vendor publishes stable. To rotate the vendor's signing key, send a normal update with the new `signing_key.url` and `fingerprint`; Swamp checks the new key first, then replaces the keyring, so the old key is removed. A missing stable InRelease fails; Orbit does not choose another suite.
 
-Swamp verifies the pinned fingerprint before publishing the keyring and deb822 source. It writes `/etc/apt/keyrings/orbit-<name>.gpg`, the apt preference `/etc/apt/preferences.d/orbit-<name>.pref`, and `/etc/apt/sources.list.d/orbit-<name>.sources` with a scoped `Signed-By` field. Apt refreshes only this source, then Orbit selects its candidate, downloads the exact package from that source and installs the local package with normal dependency resolution. A failed refresh restores the previous managed source, preference, and key. No downgrade is allowed. Install refuses an existing unowned package, including the distribution's unrelated `rex`; explicit adoption is still required.
+Swamp verifies the pinned fingerprint before publishing the keyring and deb822 source. It writes `/etc/apt/keyrings/orbit-<name>.gpg`, the apt preference `/etc/apt/preferences.d/orbit-<name>.pref`, and `/etc/apt/sources.list.d/orbit-<name>.sources` with a scoped `Signed-By` field. Apt refreshes only this source, then Orbit selects its candidate, installs that exact version with normal dependency resolution and the repository preference. A failed refresh fails the step; a later run converges the admitted source, preference, and key. No downgrade is allowed. Install refuses an existing unowned package, including the distribution's unrelated `rex`; explicit adoption is still required.
 
 Removal keeps the repository while another Tool references it. The final removal deletes its source, preference, and key after confirming package absence. Adoption changes no files and requires the declared source, the matching preference, and the matching keyring to exist. Scan reports apt packages, registration, and the repository for registered Tools; it does not guess trust definitions for unregistered sources.
 
@@ -577,8 +578,8 @@ Removal keeps the repository while another Tool references it. The final removal
 | `tool.repository_invalid` | Invalid definition or repository input for another manager |
 | `tool.repository_conflict` | The name already has a different definition, or an update changes its name |
 | `tool.repository_key_mismatch` | The downloaded or adopted key does not match the pinned primary fingerprint |
-| `tool.repository_unavailable` | A suite's InRelease cannot be fetched or apt cannot refresh its signed index |
-| `tool.repository_failed` | The managed source or keyring cannot be written or removed |
+| `tool.repository_unavailable` | Adoption cannot read the signed index |
+| `tool.repository_failed` | An official repository step cannot fetch, write, or refresh the managed source or keyring |
 | `tool.repository_adoption_mismatch` | Adoption found a different source or keyring |
 
 ### Repository trust and package identity
