@@ -64,6 +64,7 @@ jobs:
         timeoutSec: 30
   - name: 'Run the setup steps'
     labels: {role: swamp}
+    writes: true
     dependsOn: [{step: 'Check the checkout', condition: {type: succeeded}}]
     task:
       type: behavior

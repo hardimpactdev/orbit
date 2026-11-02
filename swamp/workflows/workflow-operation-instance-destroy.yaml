@@ -106,6 +106,7 @@ jobs:
     # The Project teardown list in each checkout, as the Node account, with create's runner; the first failure stops it.
   - name: 'Run teardown steps'
     labels: {role: swamp}
+    writes: true
     dependsOn:
     - {step: 'Verify the source', condition: {type: succeeded}}
     - {step: 'Check work is pushed', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
@@ -191,6 +192,7 @@ jobs:
         parent_run_id: '${{ run.id }}'
   - name: 'Remove the source'
     labels: {role: swamp}
+    writes: true
     dependsOn: [{step: 'Withdraw the Route', condition: {type: succeeded}}]
     task:
       type: behavior
