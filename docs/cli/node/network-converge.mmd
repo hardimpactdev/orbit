@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R2-R4 and 5, single-swamp-node + light-boxes-use-swamp-ssh, node-wireguard-change-keeps-public-ssh. docs/reference/wireguard-endpoints.md.
+  %% Tightened: flow-tighten 2026-11-02 pass 2, rule 22 (Q-WGHUB: files from the Gateway, key composed on the Node; no snapshot or restore). Hub peers are one file each (race found 2026-11-02).
   %% status: draft
   %% command: node:network:converge
   %% kind: node.network_converge
@@ -44,35 +45,74 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>N: Save config, prepare key<br/>@swamp/ssh · public SSH address
+  SW->>N: Prepare the key<br/>@swamp/ssh exec · wg genkey
   %%> How:
-  %%> - Swamp reaches Node 12 over its public SSH address, not WireGuard, so a tunnel change cannot cut the session
+  %%> - Swamp reaches Node 12 over SSH from 209 with `@swamp/ssh`
   %%> What it does:
-  %%> - saves the current peer config and resolver settings as a backup
-  %%> - creates a key pair only when none exists; the private key never leaves Node 12
-  %%> Returns:
-  %%> - the public key
-  SW->>H: Update the peer on the hub<br/>backup · wg syncconf · wg show
+  %%> - creates `/etc/wireguard/orbit.key` (0600) only when none exists, and prints the public key; the private key never leaves Node 12
+  Note over SW: Check the key<br/>typed check
+  %%> What it does:
+  %%> - refuses a key that differs from the stored one or collides with another Node's key
+  SW->>H: Write the hub peer file<br/>@swamp/cfgmgmt/file · 0600
   %%> How:
-  %%> - over SSH from 209 with `@swamp/ssh`; Node 1 has no Swamp binary and no worker
+  %%> - over SSH from 209; Node 1 has no Swamp binary and no worker
   %%> What it does:
-  %%> - the same hub steps as `node:wireguard-hub:converge`: save the config, write the peers, `wg syncconf`, check `wg show`
-  %%> - every other peer and the `[Interface]` section stay as they are; the tunnel does not restart
-  SW->>N: Write and apply the peer<br/>wg syncconf · enable wg-quick
+  %%> - writes only this Node's `/etc/wireguard/orbit-peers.d/12.conf` on the hub
+  %%> Why one file per peer:
+  %%> - a whole-file render races: two Nodes joining at once would each load a list without the other and drop it
+  SW->>H: Load the hub peer<br/>wg addconf
   %%> What it does:
-  %%> - writes the peer config and loads it into the running tunnel with `wg syncconf`; it starts the tunnel only when it is down
-  %%> - enables the tunnel at boot
-  SW->>N: Trust WireGuard peers<br/>@swamp/cfgmgmt/firewall apply
+  %%> - adds the peer live; every other peer and the hub's interface stay as they are, and the hub does not restart
+  opt the stored key changed
+    SW->>H: Drop the old key<br/>wg set … remove
+    %%> What it does:
+    %%> - removes the Node's old key from the live hub
+  end
+  SW->>N: Write the peer config<br/>@swamp/cfgmgmt/file · 0600
+  %%> What it does:
+  %%> - writes the Gateway-rendered `orbit.conf`; its `PostUp` reads the key file, so the file holds no secret
+  SW->>N: Write the peer list<br/>@swamp/cfgmgmt/file · 0600
+  %%> What it does:
+  %%> - writes the hub `[Peer]` section alone, for `wg syncconf`
+  SW->>N: Start the tunnel<br/>@swamp/cfgmgmt/systemd
+  %%> What it does:
+  %%> - keeps `wg-quick@orbit` enabled and running; it starts it only when it is down
+  SW->>N: Load the peer<br/>wg syncconf · key composed on Node
+  %%> What it does:
+  %%> - loads the peer list into the running tunnel, composing `PrivateKey` from the key file on the Node; no restart
+  SW->>N: Trust WireGuard peers<br/>ufw allow · one argv
   %%> What it does:
   %%> - adds Orbit's managed ufw rule that trusts the WireGuard member range; an identical rule is left as it is
-  SW->>N: Set the resolver policy<br/>resolvectl dns · domain
+  SW->>N: Read the DNS policy<br/>wg show · resolvectl
   %%> What it does:
-  %%> - sends only Orbit names to VPN DNS on the tunnel link; other names keep the normal uplink
-  %%> - clears an old Orbit DNS setting on the uplink and keeps the uplink usable
-  SW->>N: Check tunnel and DNS<br/>handshake · resolve gateway.orbit
+  %%> - one read command prints the public key, resolver servers, `orbit` domains and default route, the DNS marker and the hook line
+  Note over SW: Decide the DNS change<br/>typed check
   %%> What it does:
-  %%> - checks a recent handshake with the hub, and that `gateway.orbit` resolves through the tunnel
-  %%> - checks that an outside name still resolves through the uplink
+  %%> - compares the read with the admitted policy; a match skips the DNS writes below
+  %%> - refuses a live key that is not the prepared one
+  SW->>N: Keep the DNS hook<br/>@swamp/cfgmgmt/line
+  %%> What it does:
+  %%> - keeps the Gateway-rendered `PostUp = resolvectl …` line in `orbit.conf`, so the policy returns when the tunnel starts
+  %%> - leaves every other line of the file as it is
+  SW->>N: Write the DNS marker<br/>@swamp/cfgmgmt/file · 0600
+  %%> What it does:
+  %%> - records the link, server and domains in `/etc/wireguard/orbit.dns-link`
+  SW->>N: Set the DNS policy<br/>resolvectl dns · domain · route
+  %%> What it does:
+  %%> - one command sets the server and routing domains on `orbit` with `default-route no`; only Orbit names go to VPN DNS
+  opt policy was on another link
+    SW->>N: Clear the old link<br/>dns · domains · networkctl
+    %%> When:
+    %%> - only when an earlier release put the policy on another link
+    %%> What it does:
+    %%> - one command clears the old server and domains there, gives the uplink its default route back and reconfigures it
+  end
+  SW->>N: Read the DNS policy again<br/>wg show · resolvectl
+  %%> What it does:
+  %%> - the same read as before, for the end check
+  Note over SW: Check the network<br/>typed check
+  %%> What it does:
+  %%> - requires the admitted DNS policy, the prepared key live, and a usable uplink unless the Node is an operator
   alt the check passes
     N-->>SW: tunnel and DNS ok
     %%> Returns:
@@ -88,12 +128,6 @@ sequenceDiagram
     N--xSW: exit ≠ 0 or no handshake
     %%> When:
     %%> - a write, apply, firewall or resolver step fails, or the check finds no handshake or no DNS answer
-    SW->>N: Restore the saved config<br/>peer config · resolver
-    %%> What it does:
-    %%> - puts the saved peer config and resolver settings back and loads them, then checks the old tunnel works
-    %%> - the hub is restored the same way when its step ran
-    %%> Why:
-    %%> - Node 12 returns to the last network that worked
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
     %%> - which step failed, its error code, and whether the restore passed

@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R1-R4 + 1 (certificate signing is the one step call), metrics.exporter_enable decisions (reload, don't restart), single-swamp-node. docs/reference/metrics.md.
+  %% Tightened: flow-tighten 2026-11-02, rules 6, 9, 22 (configuration and Grafana password in one cfgmgmt file step; health read folded into the start; the end check is metrics.orbit; ordered Grafana rules use firewall.py).
   %% status: draft
   %% command: metrics:enable
   %% kind: metrics.enable
@@ -55,18 +56,16 @@ sequenceDiagram
   %%> What it does:
   %%> - installs `docker.io` when no healthy Docker is present, and keeps it running
   %%> - waits for a busy apt lock within the run's time budget
-  SW->>N: Write the configuration<br/>promtool check, then publish
+  SW->>N: Write the configuration<br/>@swamp/cfgmgmt/file · promtool
   %%> What it does:
   %%> - writes the Prometheus configuration as a candidate and validates it with `promtool` first
   %%> - publishes it and the Grafana provisioning files in `/etc/orbit/metrics`
+  %%> - writes the Grafana password from `vault.get`, mode 0400, in the same step
   %%> How:
   %%> - official `@swamp/cfgmgmt/directory` and `@swamp/cfgmgmt/file` behaviors over SSH from 209
-  SW->>N: Write the Grafana password<br/>vault.get → stdin · mode 0400
-  %%> What it does:
-  %%> - reads the password from the vault and writes the protected password file through stdin
-  %%> Why:
-  %%> - the password never appears in inputs, outputs or logs (R3)
-  SW->>N: Start the containers<br/>Prometheus · Grafana
+  %%> Why one step:
+  %%> - the password file is part of the Grafana configuration; it never appears in inputs, outputs or logs (R3)
+  SW->>N: Start the containers<br/>@swamp/cfgmgmt/docker_container
   %%> What it does:
   %%> - pulls the pinned images and starts `orbit-metrics-prometheus` and `orbit-metrics-grafana`
   %%> - keeps the named data volumes, so a re-enable continues with the old data
@@ -75,9 +74,8 @@ sequenceDiagram
   %%> - a container is recreated only when its spec or image changes
   %%> How:
   %%> - official `@swamp/cfgmgmt` behaviors (docker_image, systemd, docker_container) over SSH from 209
-  SW->>N: Check health once<br/>/-/ready · Grafana /api/user
-  %%> What it does:
-  %%> - checks Prometheus answers ready, and Grafana accepts the `admin` login
+  %%> Read-back:
+  %%> - the `docker_container` check, then one bounded `timeout 60` wait for Prometheus `/-/ready`; the Grafana login is proven by the end check through `metrics.orbit`
   Note over SW: Add the fleet exporters<br/>same steps as exporter:enable
   %%> What it does:
   %%> - for each selected Node: the exporters, their WireGuard listeners and the firewall allows for Node 12
@@ -91,17 +89,19 @@ sequenceDiagram
   GW-->>SW: Signed certificate<br/>leaf + chain
   %%> What happens next:
   %%> - Swamp writes the certificate beside its key on the Gateway Node
-  SW->>N: Allow the Gateway in<br/>ufw · Grafana port 3000
+  SW->>N: Allow the Gateway in<br/>firewall.py · @swamp/ssh exec
   %%> What it does:
   %%> - allows only the Gateway Node to reach Grafana on port 3000, and denies other peers
   %%> - places the allow above the deny, and both above broad WireGuard trust
   %%> How:
-  %%> - official `@swamp/cfgmgmt/firewall` over SSH from 209
-  SW->>G: Publish metrics.orbit<br/>validate, reload Caddy · DNS
+  %%> - `firewall.py`, the one named gap: the allow and deny must sit above the managed WireGuard trust, and `@swamp/cfgmgmt/firewall` has no insert position
+  SW->>G: Publish metrics.orbit<br/>@swamp/cfgmgmt/file · reload
   %%> What it does:
   %%> - adds the `metrics.orbit` site to the Gateway Node's Caddyfile, validates it, and reloads Caddy gracefully
   %%> - Caddy asks the Gateway to authorize each request, then proxies over WireGuard to Grafana
   %%> - publishes `metrics.orbit` to the Gateway's WireGuard address through the shared DNS step on the `vpn` Node
+  %%> Why a record:
+  %%> - `metrics.orbit` names one service on the Gateway Node; no Cluster or Node TLD answer covers it
   alt every step passes
     G-->>SW: metrics.orbit answers
     %%> Returns:

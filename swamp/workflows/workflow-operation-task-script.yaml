@@ -1,7 +1,8 @@
 id: 71e40e98-b4dc-4ce1-b4cb-8c328e581a78
 name: operation-task-script
-description: Run the admitted repository script on Node 209 through official SSH to the owned task VM.
+description: Run the admitted repository script on Node 209 as official SSH exec argv in the owned task VM workspace.
 vaults: []
+queueTimeout: 30
 inputs:
   type: object
   properties:
@@ -31,19 +32,19 @@ jobs:
 - name: script
   labels: {role: swamp}
   steps:
-  - name: assets
+  - name: prepare
     labels: {role: swamp}
     task:
       type: behavior
-      behaviorType: '@nckrtl/task-repository-assets'
-      methodName: read
+      behaviorType: '@nckrtl/task-repository-program'
+      behaviorName: '${{ "task-repository-program" }}'
+      methodName: prepare
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
-      behaviorName: '${{ "task-repository-assets-task-repository-assets" }}'
-  - name: prepare-assets
+  - name: inspect
     labels: {role: swamp}
     task:
       type: behavior
@@ -64,33 +65,20 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
+        okExitCodes: any
         argv:
-        - mkdir
-        - -p
-        - ${{ "/tmp/orbit-task-repository-" + run.id }}
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - ls-tree
+        - HEAD
+        - --
+        - ${{ inputs.intent.script }}
     dependsOn:
-    - step: assets
+    - step: prepare
       condition:
         type: succeeded
-  - name: copy-assets
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: copy
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        src: ${{ steps.assets.outputs.directory }}
-        dst: ${{ "/tmp/orbit-task-repository-" + run.id + "/" }}
-        recursive: true
-        direction: to
-    dependsOn:
-    - step: prepare-assets
-      condition:
-        type: succeeded
-  - name: inspect
+  - name: snapshot-before-index
     labels: {role: swamp}
     task:
       type: behavior
@@ -101,34 +89,18 @@ jobs:
       inputs:
         hosts: name:target
         argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-task-repository-" + run.id + "/scripts/inspect.py" }}
-        stdin: ${{ steps.assets.outputs.input_json }}
-    dependsOn:
-    - step: copy-assets
-      condition:
-        type: succeeded
-  - name: snapshot-before
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-task-repository-" + run.id + "/scripts/snapshot.py" }}
-        stdin: ${{ steps.assets.outputs.input_json }}
+        - env
+        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-index-" + run.id }}
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - read-tree
+        - HEAD
     dependsOn:
     - step: inspect
       condition:
         type: succeeded
-  - name: execute
+  - name: snapshot-before-add
     labels: {role: swamp}
     task:
       type: behavior
@@ -139,18 +111,18 @@ jobs:
       inputs:
         hosts: name:target
         argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-task-repository-" + run.id + "/scripts/execute_script.py" }}
-        - ${{ steps.inspect.outputs.stdout }}
-        - ${{ steps["snapshot-before"].outputs.stdout }}
-        stdin: ${{ steps.assets.outputs.input_json }}
-        timeoutSec: 3600
+        - env
+        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-index-" + run.id }}
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - add
+        - --all
     dependsOn:
-    - step: snapshot-before
+    - step: snapshot-before-index
       condition:
         type: succeeded
-  - name: snapshot-after
+  - name: snapshot-before-tree
     labels: {role: swamp}
     task:
       type: behavior
@@ -161,37 +133,212 @@ jobs:
       inputs:
         hosts: name:target
         argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-task-repository-" + run.id + "/scripts/snapshot.py" }}
-        stdin: ${{ steps.assets.outputs.input_json }}
+        - env
+        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-index-" + run.id }}
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - write-tree
+    dependsOn:
+    - step: snapshot-before-add
+      condition:
+        type: succeeded
+  - name: snapshot-before-head
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        argv:
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - rev-parse
+        - HEAD
+    dependsOn:
+    - step: snapshot-before-tree
+      condition:
+        type: succeeded
+  - name: gate
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-repository-program'
+      behaviorName: '${{ "task-repository-program" }}'
+      methodName: gate
+      inputs:
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        entrypoint: ${{ steps.prepare.outputs.entrypoint }}
+        steps: ${{ steps }}
+    dependsOn:
+    - step: snapshot-before-head
+      condition:
+        type: succeeded
+  - name: execute
+    labels: {role: swamp}
+    guard: '${{ steps.gate.outputs.error_code != "" }}'
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        okExitCodes: any
+        timeoutSec: 3600
+        argv: ${{ steps.prepare.outputs.argv }}
+    dependsOn:
+    - step: gate
+      condition:
+        type: succeeded
+  - name: snapshot-after-index
+    labels: {role: swamp}
+    guard: '${{ steps.gate.outputs.error_code != "" }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-index-" + run.id }}
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - read-tree
+        - HEAD
     dependsOn:
     - step: execute
       condition:
-        type: succeeded
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+  - name: snapshot-after-add
+    labels: {role: swamp}
+    guard: '${{ steps.gate.outputs.error_code != "" }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-index-" + run.id }}
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - add
+        - --all
+    dependsOn:
+    - step: snapshot-after-index
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+  - name: snapshot-after-tree
+    labels: {role: swamp}
+    guard: '${{ steps.gate.outputs.error_code != "" }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-index-" + run.id }}
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - write-tree
+    dependsOn:
+    - step: snapshot-after-add
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+  - name: snapshot-after-head
+    labels: {role: swamp}
+    guard: '${{ steps.gate.outputs.error_code != "" }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        argv:
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - rev-parse
+        - HEAD
+    dependsOn:
+    - step: snapshot-after-tree
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+  - name: shape
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-repository-program'
+      behaviorName: '${{ "task-repository-program" }}'
+      methodName: result
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        gate: ${{ steps.gate.outputs }}
+        execution_id: ${{ steps.prepare.outputs.execution_id }}
+        steps: ${{ steps }}
+    dependsOn:
+    - step: snapshot-after-head
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
   - name: result
     labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
+      behaviorName: '${{ "task-repository-result" }}'
       methodName: execute
       inputs:
         run: |
-          python3 -B "$ORBIT_RESULT_SCRIPT"
+          printf '%s\n' "$ORBIT_RESULT"
         env:
-          ORBIT_INPUT: ${{ steps.assets.outputs.input_json }}
-          ORBIT_PREPARED: ${{ steps.inspect.outputs.stdout }}
-          ORBIT_BEFORE: ${{ steps["snapshot-before"].outputs.stdout }}
-          ORBIT_AFTER: ${{ steps["snapshot-after"].outputs.stdout }}
-          ORBIT_EXECUTION: ${{ steps.execute.outputs.stdout }}
-          ORBIT_RESULT_SCRIPT: ${{ steps.assets.outputs.result_script }}
-      behaviorName: '${{ "task-repository-result" }}'
+          ORBIT_RESULT: ${{ steps.shape.outputs.result_json }}
     dependsOn:
-    - step: snapshot-after
+    - step: shape
       condition:
         type: succeeded
-  - name: cleanup-assets
+  - name: cleanup-index
     labels: {role: swamp}
+    allowFailure: true
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -202,31 +349,20 @@ jobs:
         hosts: name:target
         argv:
         - rm
-        - -rf
+        - -f
         - --
-        - ${{ "/tmp/orbit-task-repository-" + run.id }}
-    allowFailure: true
+        - ${{ "/tmp/orbit-task-index-" + run.id }}
     dependsOn:
-    - step: result
+    - step: shape
       condition:
-        type: succeeded
+        type: always
   - name: outcome
     labels: {role: swamp}
     task:
-      type: behavior
-      behaviorType: command/shell
-      methodName: execute
-      inputs:
-        run: |
-          python3 - <<'PYTHON'
-          import json
-          import os
-
-          raise SystemExit(1 if json.loads(os.environ['ORBIT_RESULT']).get('error_code') else 0)
-          PYTHON
-        env:
-          ORBIT_RESULT: ${{ steps.result.outputs.stdout }}
-      behaviorName: '${{ "task-repository-outcome" }}'
+      type: assert
+      expr: '!steps.shape.outputs.failed'
+      message: The repository script was refused or failed.
+      severity: high
     dependsOn:
     - step: result
       condition:

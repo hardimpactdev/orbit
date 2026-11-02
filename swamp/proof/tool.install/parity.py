@@ -32,4 +32,11 @@ else:
     check(installed and result.get('installed_version') == version, 'the recorded version is the dpkg version')
     expected = {'tool.install': 'applied', 'tool.update': 'unchanged', 'tool.adopt': 'applied'}[kind]
     check(result.get('outcome') == expected, 'outcome ' + expected)
+    repository = operation['input'].get('repository')
+    if repository:
+        key = '/etc/apt/keyrings/orbit-' + repository['name'] + '.gpg'
+        fingerprint = subprocess.run(['incus', 'exec', os.environ['PROOF_TARGET'], '--', 'gpg', '--batch', '--with-colons', '--show-keys', key], capture_output=True, text=True, check=True).stdout
+        check([row.split(':')[9] for row in fingerprint.splitlines() if row.startswith('fpr:')][0] == repository['signing_key']['fingerprint'], 'the published binary key has the admitted fingerprint')
+        source = subprocess.run(['incus', 'exec', os.environ['PROOF_TARGET'], '--', 'cat', '/etc/apt/sources.list.d/orbit-' + repository['name'] + '.sources'], capture_output=True, text=True, check=True).stdout
+        check('Signed-By: ' + key in source and all(uri in source for uri in repository['uris']), 'deb822 uses the verified key and admitted source')
 print(f'parity: {kind} {status} {package}={version}')

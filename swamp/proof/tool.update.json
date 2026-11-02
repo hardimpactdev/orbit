@@ -5,15 +5,17 @@
   "budget_seconds": 300,
   "queue_timeout_seconds": 60,
   "clean_target": [
-    ["sh", "-c", "dpkg --purge tree >/dev/null 2>&1; true"]
+    ["sh", "-c", "dpkg --purge rex >/dev/null 2>&1; true"]
   ],
   "prepare": [
-    {"method": "POST", "path": "tools", "body": {"node_id": "${node.target}", "manager": "apt", "package": "tree"}},
-    {"method": "GET", "path": "tools?node_id=${node.target}", "operation": false, "bind": "tool", "body": {}, "match": {"package": "tree"}}
+    {"method": "POST", "path": "tools", "body": {"node_id": "${node.target}", "manager": "apt", "package": "rex", "repository": {"name": "rex", "uris": ["https://pkgs.superlogical.com/rex/apt"], "suites": ["preview"], "components": ["main"], "signing_key": {"url": "https://pkgs.superlogical.com/rex/keys/rex-archive-keyring.gpg", "fingerprint": "E28636AC71905C6DDE40C1EDFAA6B80F641307A7"}}}},
+    {"method": "GET", "path": "tools?node_id=${node.target}", "operation": false, "bind": "tool", "body": {}, "match": {"package": "rex"}}
   ],
-  "request": {"method": "POST", "path": "tools/${tool.id}/update", "body": {}},
+  "request": {"method": "POST", "path": "tools/${tool.id}/update", "body": {"repository": {"name": "rex", "uris": ["https://pkgs.superlogical.com/rex/apt"], "suites": ["preview"], "components": ["main"], "signing_key": {"url": "https://pkgs.superlogical.com/rex/keys/rex-archive-keyring.gpg", "fingerprint": "E28636AC71905C6DDE40C1EDFAA6B80F641307A7"}}}},
   "expect": {"status": "succeeded"},
   "phases": [
+    {"name": "Assert the key fingerprint", "job": "tools", "step": "Assert the key fingerprint", "budget_seconds": 10},
+    {"name": "Publish the signing key", "job": "tools", "step": "Publish the signing key", "budget_seconds": 60},
     {"name": "Check the candidate", "job": "tools", "step": "Check the candidate", "budget_seconds": 120},
     {"name": "decide", "job": "tools", "step": "decide", "budget_seconds": 30},
     {"name": "Assert package state", "job": "tools", "step": "Assert package state", "budget_seconds": 10}

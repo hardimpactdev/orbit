@@ -17,7 +17,7 @@
     [
       "sh",
       "-c",
-      "command -v wg-quick >/dev/null || DEBIAN_FRONTEND=noninteractive apt-get install -y -q wireguard-tools >/dev/null; umask 077; mkdir -p /etc/wireguard; rm -f /etc/wireguard/orbit.key /etc/wireguard/orbit-peers.conf"
+      "command -v wg-quick >/dev/null || DEBIAN_FRONTEND=noninteractive apt-get install -y -q wireguard-tools >/dev/null; umask 077; mkdir -p /etc/wireguard; rm -rf /etc/wireguard/orbit.key /etc/wireguard/orbit-peers.conf /etc/wireguard/orbit-peers.d"
     ]
   ],
   "request": {
@@ -41,15 +41,21 @@
       "budget_seconds": 30
     },
     {
-      "name": "Write the peer list",
+      "name": "Write the peer files",
       "job": "files",
-      "step": "Write the peer list",
+      "step": "Write the peer files-0",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Remove stale peer files",
+      "job": "files",
+      "step": "Remove stale peer files",
       "budget_seconds": 30
     },
     {
-      "name": "Load the peers",
+      "name": "Apply the peers",
       "job": "apply",
-      "step": "Load the peers",
+      "step": "Apply the peers",
       "budget_seconds": 30
     },
     {
@@ -59,9 +65,9 @@
       "budget_seconds": 30
     },
     {
-      "name": "Read the live peers",
+      "name": "Read the peers again",
       "job": "check",
-      "step": "Read the live peers",
+      "step": "Read the peers again",
       "budget_seconds": 15
     },
     {

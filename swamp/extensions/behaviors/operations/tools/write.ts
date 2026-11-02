@@ -64,7 +64,7 @@ export function decide(input: Input, phase: Phase): Decision {
   }
 }
 export const behavior = {
-  type: "@nckrtl/tool-write-command", version: "2026.11.02.6",
+  type: "@nckrtl/tool-write-command", version: "2026.11.02.7",
   resources: { assets: { schema: Public, lifetime: "1d", garbageCollection: 10 }, decision: { schema: Public, lifetime: "1d", garbageCollection: 10 }, observation: { schema: Public, lifetime: "1d", garbageCollection: 10 } },
   methods: {
     assets: { description: "Shape public command argv for the admitted manager", arguments: z.object({ input: WriteInput }),

@@ -109,6 +109,11 @@ Lane 26 adds one row for each receipt from the topology loop ([F13](/swamp/porti
 
 | Receipt | Kinds | Topology and version | Result | What the proof caught | Fault | Lesson |
 | --- | --- | --- | --- | --- | --- | --- |
+| `evidence/proof/tool.install/20261102T132512Z-minimal.json` | `tool.install` | minimal@8, `ec4559fee4` | Pass: 26.71 s | Worker key verification, binary publication and deb822 source | None | Verify the key before any Node contact |
+| `evidence/proof/tool.update/20261102T132600Z-minimal.json` | `tool.update` | minimal@8, `ec4559fee4` | Pass: 20.61 s | Signed source update and unchanged package | None | Official file resources publish key and source |
+| `evidence/proof/tool.remove/20261102T132633Z-minimal.json` | `tool.remove` | minimal@8, `ec4559fee4` | Pass: 16.58 s | Distribution package removal after signed writes | None | Scoped refresh must preserve other indexes |
+| `evidence/proof/tool.remove.source-failure/20261102T132717Z-minimal.json` | `tool.remove` | minimal@8, `ec4559fee4` | Pass: 12.59 s | Package removed despite immutable source | None | Source cleanup remains best effort |
+| `evidence/proof/tool.install.constraint-blocked/20261102T132756Z-minimal.json` | `tool.install` | minimal@8, `ec4559fee4` | Pass: 6.48 s | Candidate refusal leaves package absent | None | The native decision retains the refusal code |
 | `evidence/proof/tool.install/20261102T124136Z-minimal.json` | `tool.install` | minimal@7, `4d1065e2cc` | Pass: 12.55 s | Native end state and legacy public parity | None | Official resources or bounded argv replace package scripts |
 | `evidence/proof/tool.update/20261102T124202Z-minimal.json` | `tool.update` | minimal@7, `4d1065e2cc` | Pass: 8.49 s | Native end state and legacy public parity | None | Official resources or bounded argv replace package scripts |
 | `evidence/proof/tool.remove/20261102T124227Z-minimal.json` | `tool.remove` | minimal@7, `4d1065e2cc` | Pass: 12.47 s | Native end state and legacy public parity | None | Official resources or bounded argv replace package scripts |
@@ -144,13 +149,17 @@ Before this retro, the Orbit change is +884 lines. Swamp grows by 763: behaviors
 
 ### Tools package scripts
 
-The package conversion deletes 15 scripts and their manifest entries. Frozen adoption keeps nine shared query, repository and setup files. The observer pass owns adoption; node-bootstrap owns the remaining pinned manager installers. Those boundaries remain under Nick's earlier freeze. No new script gap is added, and the whole Tools family is not yet marked rule 22 done.
+The package conversion deletes 15 scripts and their manifest entries. Nine shared files remain: frozen adoption uses the query and repository files; first-use manager setup uses the dispatcher and node-bootstrap's pinned installers. The observer pass owns adoption. No new script gap is added, and the whole Tools family is not yet marked rule 22 done.
 
-Homebrew uses bounded argv because the official resource cannot set the bottle flag, managed prefix or environment. APT uses its official package check. Typed observations and a native assert replace the result reporter. The repository resource writes its source without refreshing its index, so one bounded argv refreshes only that source before reading its candidate. The managed Linux Vite+ launcher selects the actual recipe store. A failed refresh reports `tool.repository_unavailable`; a failed fingerprint assert keeps `tool.repository_key_mismatch`.
+Homebrew uses bounded argv because the official resource cannot set the bottle flag, managed prefix or environment. APT uses its official package check. Typed observations and a native assert replace the result reporter. The worker downloads and verifies the repository key before contacting the Node. cfgmgmt `copy_file` publishes the binary key and `file` writes the deb822 source; one bounded argv refreshes that source before reading its candidate, retaining other repositories' indexes. The managed Linux Vite+ launcher selects the actual recipe store. A failed refresh reports `tool.repository_unavailable`; a failed fingerprint assert keeps `tool.repository_key_mismatch`.
 
 All six Tools fixtures pass on minimal@7 at `4d1065e2cc`: install, unchanged update, exact removal, constraint refusal, failed source cleanup and Vite+ first use. Their run times are 12.55, 8.49, 12.47, 6.49, 14.57 and 28.80 seconds. The observed nearest-rank p95 is 28.80 seconds for this six-fixture sample. Budgets are 300 seconds, except first use at 900; queue timeout is 60 seconds. Seven native graph tests, 25 Deno tests and 81 targeted Gateway tests pass.
 
-Before this receipt update, the Tools commits remove 119 net Orbit lines. In `swamp/`, behaviors add 60 lines for typed argv and observations, workflows remove 27, scripts remove 259, and tests/fixtures remove 95. The proof caught the missing scoped apt refresh and the assumed Vite+ store path. Its transport fixture also needed atomic state writes because independent reads run in parallel. The topology uses disposable Nodes and the proof CA, with no production data or scale.
+The earlier Tools push removed 100 net Orbit lines. This follow-up adds 40 Swamp lines: workflows +6, transport tests +22 and proof fixtures +12; custom behaviors and scripts add none. It adds 69 Orbit lines overall, leaving 31 net lines removed across the Tools conversion. The proof caught the missing scoped apt refresh and the assumed Vite+ store path. Its transport fixture also needed atomic state writes because independent reads run in parallel. The topology uses disposable Nodes and the proof CA, with no production data or scale.
+
+Decision 7 passes on shared minimal@8 at `ec4559fee4`: signed install 26.71 s, signed unchanged update 20.61 s, ordinary apt removal after the signed writes 16.58 s, failed source cleanup 12.59 s and constraint refusal 6.48 s. The observed p95 is 26.71 s for these five runs, each with a 300-second budget and 60-second queue timeout. The proof caught source directories isolated between dispatched steps and a scoped apt refresh deleting other repositories' indexes. Worker staging now uses a run-specific absolute path, and the scoped refresh disables list cleanup.
+
+Seven native graph tests prove a fingerprint mismatch makes zero Node calls; 25 Deno tests and 74 Gateway cases pass. Update and removal have no script steps; the setup of a Tool Manager on first use still runs scripts, so it is not yet rule 22 done. No new named script gap is added.
 
 ### Metrics and AI-router
 
@@ -158,7 +167,7 @@ Metrics removed its Python HTTP action. Its final minimal@7 receipt at `4d1065e2
 
 ### Proof VM cleanup
 
-Group 2511 completed the proofs. Cancel Operation 7792 destroyed task VM 266 and reported the provider absent and settled. The earlier lane VMs are destroyed. Group 2507 remains held under the explicit one-topology instruction: provision Operation 7755 accepted cancellation but has not settled, and group cancellation returns `operation.target_busy`. No serve restart or reload was used to recover that production lifecycle fault.
+Group 2511 completed the earlier proofs. Cancel Operation 7792 destroyed task VM 266 and reported the provider absent and settled. Group 2507 then hosted the Decision 7 proofs on task VM 264; its normal teardown is Cancel Operation 7835. No production serve restart or reload was used.
 
 ## Rule 22 Process and Horizon follow-up
 
@@ -169,3 +178,16 @@ The final Process/Horizon proof passed all twelve fixtures on minimal@7 at `93eb
 Horizon start and active handoff took 19.5 and 20.2 s within 120 s. The Horizon fixture exercises a PHP artisan boundary without a Redis job engine. 
 
 Live development Process 168 on Beast restarted successfully as Operation 7796 at 12:54:05–08Z. The proof VM was destroyed through `bin/swamp-proof down`, with Incus absence verified. The earlier WebSocket 429 and capacity failures left no passing receipts and were cleaned up before this proof.
+
+
+### Task turn Git actions and private data copies (rule 22, partial)
+
+Task turn removes three Node scripts (`candidate`, `snapshot`, `restore`) and their manifest entries. The admitted workspace and analysis evidence replace runtime ownership and provenance checks, as the audit directs. Git snapshots copy the real index first, then use two `GIT_INDEX_FILE` argv calls. This preserves ignored tracked files and leaves the real index unchanged. Reviewer cleanup uses quiet reset and clean.
+
+Diff argv writes files on the Node. Official SSH copy brings only data files to a private worker directory. Existing worker scripts redact receipt and diff text before producing history. Ten native cases, six action cases, eight data tests and four Gateway tests pass.
+
+The shared minimal@8 receipt is `~/swamp-execution/evidence/proof/tasks.turn/20261102T131318Z-minimal.json`, source `a4e77c1627`, Gateway operation 3, native run `65faf379-c831-4952-9b74-730135552b09`. One sample takes 53.49 seconds; p95 equals the sample. The budget is 180 seconds and queue timeout is 60 seconds. The proof uses real Gateway, vault, SSH and Git, with a synthetic Pi server. It makes no model request and uses no production data. Provisioning first failed on SSH before staging; restaging succeeded.
+
+This is not rule 22 done. Only `receipt_prepare.py` and its agent-facing `receipt_helper.py` still reach the Node, pending a way to install the tool in the image. No new shipped script was added. The task-turn chart is still pending. The assigned tighten2 charts follow this conversion.
+
+Orbit grows by 788 lines. Swamp grows by 775: workflows +569 declare Git commands, data copies and cleanup; proof fixtures +290 exercise the Gateway and real SSH without model calls. Behavior metadata and documentation grow by 51 lines to expose public hashes and name the remaining gap. Scripts shrink by 122 lines and tests by 13, removing replaced actions and their mirrored tests. TypeScript still only shapes public data.

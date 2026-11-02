@@ -36,12 +36,13 @@ return ['node.worker_known_hosts' => [
     'workflow' => 'operation-node-network-converge',
     'projection' => NodeNetworkProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'network', 'step' => 'result'],
+    'terminal_result' => ['job' => 'network', 'step' => 'Check the network'],
 ], 'node.agent_rekey' => [
     'workflow' => 'operation-node-agent-rekey',
     'projection' => NodeAgentRekeyProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'rekey', 'step' => 'Check the Node agent'],
+    'terminal_result' => ['job' => 'rekey', 'step' => 'Prove the new key', 'native' => true],
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^node-agent-rekey-[1-9][0-9]*-[1-9][0-9]*$']],
 ], 'node.settings' => [
     'workflow' => 'operation-node-settings',
     'projection' => NodeSettingsProjection::class,

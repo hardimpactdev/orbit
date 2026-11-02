@@ -1,0 +1,65 @@
+{
+  "kind": "database.update",
+  "workflow": "operation-database-connection-update",
+  "topology": "minimal",
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "expect": {
+    "status": "succeeded"
+  },
+  "clean_target": [
+    [
+      "sh",
+      "-c",
+      "docker ps --all --quiet --filter name=-proof- | xargs -r docker rm --force"
+    ]
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "database-servers",
+      "body": {
+        "slug": "proof-updsrv-${proof.run}",
+        "node_id": "${node.target}",
+        "driver": "redis",
+        "port": 36395
+      },
+      "bind": "server"
+    },
+    {
+      "method": "POST",
+      "path": "database-connections",
+      "body": {
+        "slug": "proof-upd-${proof.run}",
+        "server": "proof-updsrv-${proof.run}",
+        "database": 1,
+        "patterns": [
+          "proof:*"
+        ],
+        "allow": [
+          "@read",
+          "@write"
+        ]
+      },
+      "bind": "connection"
+    }
+  ],
+  "request": {
+    "method": "PATCH",
+    "path": "database-connections/proof-upd-${proof.run}",
+    "body": {
+      "database": "3"
+    }
+  },
+  "phases": [
+    {
+      "name": "Check the index fits",
+      "job": "update",
+      "step": "Check the index fits",
+      "budget_seconds": 30
+    }
+  ],
+  "parity": [
+    "swamp/proof/database/update_parity.py"
+  ]
+}

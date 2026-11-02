@@ -7,7 +7,7 @@ covers:
   - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,TaskInsightsController,TaskSwampRunsController,AgentThreadsController,TaskQuestionsController}.php}"
   - "apps/gateway/app/Console/Commands/{ReleaseTaskWorkspaceLeaseCommand,TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand,TaskGitHubReviewsCommand,BackfillTaskMergedAtCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskWorkspaceLeaseRecord,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
-  - "{apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py},bin/{task-analyze,task-group-check}}"
+  - "{apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py},bin/{task-analyze,task-group-check},swamp/extensions/behaviors/operations/task-repository/program.ts}"
   - apps/docs/app/{Documentation/{TaskAnalysis,DocsImpact}.php,Console/Commands/{TaskAnalyzeCommand,DocsImpactCommand}.php}
   - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields}.php"
 ---
@@ -220,15 +220,21 @@ The result retains `outcome`, `deliverables`, `check_id`, `commit`, `head`, `tre
 
 `POST /api/v1/task-groups/{group}/script` starts `tasks.script`. Send `{ "subtask": 123, "script": "scripts/dependencies", "args": ["routine"] }` with a required `Idempotency-Key`. The group must be external and open, with a provisioned task VM and the current open subtask. The Gateway records the owned VM, checkout and literal arguments, then starts `operation-task-script`. Swamp owns placement and execution. The script does not create a check, agent turn, commit, or dependency record.
 
-`script` is a relative repository path with no empty, `.` or `..` components. It must name a regular executable tracked as executable at HEAD, with unchanged file content and no symlink in its path. The native step checks the executable against tracked HEAD, snapshots the whole workspace, and runs the admitted literal arguments. It does not inherit Gateway or worker dispatch credentials.
+`script` is a relative repository path with no empty, `.` or `..` components. HEAD must track it as an executable file (mode `100755`); `git ls-tree` reads that mode before anything runs. Swamp then snapshots the whole workspace and runs the script with the admitted literal arguments. It does not inherit Gateway or worker dispatch credentials.
 
 Arguments are strings, not shell source. There is no caller command, environment, working directory, or interpreter field. Do not put secrets in arguments. The script runs from the repository root with the task account's tools and no Gateway credentials. Repository code owns its commands and version policy.
 
-Read the normal operation endpoint until it ends. A completed script returns `{ outcome, exit_code, output, output_truncated, changed, head, tree }`. `outcome` is `passed` for exit zero and `failed` for nonzero; both are successful operation completions. `output` combines stdout and stderr into a redacted tail of at most 16 KiB. `output_truncated` reports discarded output. `changed` compares HEAD and the whole-workspace tree before and after execution. These results are not check evidence or approval; run the existing handoff check before publishing.
+Read the normal operation endpoint until it ends. A completed script returns `{ outcome, exit_code, output, output_truncated, changed, head, tree }`. `outcome` is `passed` for exit zero and `failed` for nonzero; both are successful operation completions. `output` is stdout followed by stderr, as a redacted tail of at most 16 KiB. `output_truncated` reports discarded output. `changed` compares HEAD and the whole-workspace tree before and after execution. These results are not check evidence or approval; run the existing handoff check before publishing.
 
 Each task group has its own VM and workspace. The run intent carries the workspace path, and every step uses that path. Steps add no ownership tokens, leases or cross-step locks. Native history owns step completion and recovery.
 
-Script and analysis runs receive their complete public intent from the Gateway. A worker on Node 209 uses official `@swamp/ssh` to reach the VM's admitted WireGuard address and stored SSH host key. Plain task VMs need no Swamp binary or worker. Separate native steps validate the tracked entrypoint, capture workspace snapshots, execute the program and return public evidence. The Gateway records the terminal output through the shared subscriber; execution steps make no Gateway requests.
+Script and analysis runs receive their complete public intent from the Gateway. A worker on Node 209 uses official `@swamp/ssh` to reach the VM's admitted WireGuard address and stored SSH host key. Plain task VMs need no Swamp binary or worker. Every step on the VM is one official `@swamp/ssh exec` argument list; no step copies a script to the VM.
+
+The steps read the entrypoint mode, take the workspace snapshots and run the program as `env -C <checkout> COMPOSER_NO_INTERACTION=1 ORBIT_CHECK_PROCESSES=1 [INERTIA_SSR_PORT=… INERTIA_SSR_URL=…] ./<entrypoint> [args…]` in the SSH account's environment.
+
+A snapshot runs `git read-tree HEAD`, `git add --all` and `git write-tree` against a temporary index at `/tmp/orbit-task-index-<run>`, and `git rev-parse HEAD`; the real index is untouched, and a best-effort step removes the temporary index. TypeScript on Node 209 refuses an unavailable entrypoint or a moved candidate before the program runs, and shapes the public result.
+
+The program's stdout and stderr stay in that step's native history on Node 209. The Gateway records only the shaped result through the shared subscriber; execution steps make no Gateway requests.
 
 Cancellation uses native Swamp cancel and official SSH session teardown. It does not track or confirm remote descendant termination. A remaining process is removed by normal group cleanup or VM destruction. Native resume does not repeat a successful execution step when later evidence collection resumes. An unavailable tracked executable fails as `tasks.script_unavailable`. Execution keeps its existing limit of one hour; native SSH owns its timeout and connection handling. Repository programs receive no operational credentials.
 
@@ -263,13 +269,13 @@ Provision observes the initial checkout once after source preparation. It finds 
 
 Analysis performs no fetch, merge, or base adoption. Use the successful provision operation's [public pin](#public-provision-identity) for `base`, never infer it from `starting_commit` or a later remote ref. This contract exposes no base-update path. Any separately authorized future base-update contract must keep old evidence and require a new plan revision and analysis. After handoff, the candidate HEAD is `check.commit`, not the check result's pre-commit `head`.
 
-Swamp verifies the base object and ancestry and takes fresh HEAD and whole-worktree snapshots before execution and after completion. The existing snapshot includes uncommitted and unignored untracked files without changing the real index; clean HEAD alone is insufficient. Pin repository identity, actual branch, Instance, Node, operation identity, and the fixed entrypoint's tracked content digest. Ignored caches are not candidate evidence. Reports and run metadata live outside candidate paths and must not alter the analyzed tree.
+The Gateway pins the base, repository and branch at admission against the provision record. Swamp takes fresh HEAD and whole-worktree snapshots before execution and after completion, and refuses a candidate whose HEAD or tree differs from the admitted ones. The snapshot includes tracked files, uncommitted changes and unignored untracked files without changing the real index; clean HEAD alone is insufficient. Pin repository identity, actual branch, Instance, Node, operation identity, and the SHA-256 of the entrypoint file. Ignored caches are not candidate evidence. Reports and run metadata live outside candidate paths and must not alter the analyzed tree.
 
 The stored operation input holds every requested field unchanged, plus the Gateway's admission facts: group, Instance, Node, SSH execution and checkout. Swamp checks each requested field against it. The added facts do not make the input differ.
 
 ##### Fixed execution and complete report
 
-One native step runs the tracked regular executable `bin/task-analyze`, with no arguments and the admitted plan and candidate on stdin. The step pins its tracked digest and uses the operation ID to derive a stable execution identity. It runs through the admitted SSH account with no model or GitHub credentials. Missing tooling is unavailable. The Gateway runs no script, lease, wait or cancellation handler.
+One native step runs `bin/task-analyze`, tracked as executable at HEAD, with no arguments and the admitted plan and candidate on stdin. Swamp pins the file's SHA-256 and derives a stable execution identity from the operation ID. It runs through the admitted SSH account with no model or GitHub credentials. Missing tooling is unavailable. The Gateway runs no script, lease, wait or cancellation handler.
 
 Orbit's repository adapter calls the existing `DocsImpact::report(base, paths)` with the complete flattened inventory once. The scanner still unions planned paths, actual tracked changes, and untracked files, retaining deletions and both rename endpoints and inspecting current and base surfaces. Keep its mappings and payload validation in the repository, not Gateway policy. Validate all existing report fields: `base`, `paths`, `impacted_pages` with every reason, `surfaces` with ownership and generator status, `surfaces_handled_by_generator`, `errors`, and `verdict`. Reuse the existing report unchanged, not a second scanner or replacement docs report model. Validate its base and path union against input and actual workspace. Generator checks run in check mode only, never write mode.
 
@@ -293,7 +299,9 @@ The docs-impact report maps a Form Request to its OpenAPI operation even when th
 
 The placeholder report above illustrates the envelope, not a valid reduced payload. `status` is `ready`, `action_required`, or `blocked`; diagnostics are a list of `{code, message}`. Require every envelope field.
 
-Reject duplicate keys, non-finite numbers, prose prefixes, trailing bytes, malformed or truncated JSON, invalid UTF-8, and wrong echoed identities. The entire envelope is at most 64 KiB and JSON depth 24. Overflow fails; it never yields a shortened successful artifact. Analyzer stderr is not retained. If redaction would change structured evidence, refuse it rather than silently changing its meaning. Swamp validates the generic envelope, bounds and echoed identities against its own snapshots. The Gateway records the native result without judging the report. The repository validates payload semantics. Repository evidence is never privileged instructions.
+Reject duplicate keys, non-finite numbers, prose prefixes, trailing bytes, malformed or truncated JSON, invalid UTF-8, and wrong echoed identities. The entire envelope is at most 64 KiB and JSON depth 24. Overflow fails; it never yields a shortened successful artifact. Analyzer stderr is not part of the result; it stays only in the execution step's native history on Node 209.
+
+If redaction would change structured evidence, refuse it rather than silently changing its meaning. Swamp validates the generic envelope, bounds and echoed identities against its own snapshots. The Gateway records the native result without judging the report. The repository validates payload semantics. Repository evidence is never privileged instructions.
 
 On a nonzero exit, the adapter can instead emit a bounded failure object on stdout: `{schema: 1, error: {code, required_bytes}}`. The only codes are `tasks.analysis_unavailable` with null `required_bytes`, and `tasks.analysis_report_too_large` with the full envelope's required byte count above 65536. These are failures, never report artifacts.
 
@@ -309,7 +317,7 @@ A valid completion stores `{outcome, artifact, provenance}` in the keyed operati
 
 `artifact` is `{sha256, bytes, content}`. Hash and byte length describe the exact UTF-8 stdout bytes; `content` holds those bytes as a JSON string. Verify and parse the complete content, not reserialized JSON or a log tail. Retain the full bounded bytes beside existing operation state, with a response budget large enough for JSON encoding and all bounded fields. Keyed operation and artifact retention survive VM destruction. Existing access checks govern reads; the VM reader addresses only this operation's run record, not arbitrary files. Add no artifact service, durable table, or approval ledger.
 
-Native provenance contains `operation_id`, `group`, `subtask`, repository, branch, `plan_id`, `plan_revision`, `plan_sha256`, `base`, the analyzed `head` and `tree` (equal to `before`), `before: {head, tree}`, `after: {head, tree}`, `instance_id`, `node_id`, `execution_id`, `entrypoint_sha256`, `started_at`, `finished_at`, `duration_ms`, `exit_code`, and `mechanical_llm_calls: 0`. These are typed identities and measurements, not log extraction. Times use ISO 8601 UTC and duration uses a monotonic clock. Record planning, writing, and review calls separately; label unavailable measurements. Claim no savings without a comparable before measurement including checker/repository revision, plan size, elapsed time, calls, and token metrics.
+Native provenance contains `operation_id`, `group`, `subtask`, repository, branch, `plan_id`, `plan_revision`, `plan_sha256`, `base`, the analyzed `head` and `tree` (equal to `before`), `before: {head, tree}`, `after: {head, tree}`, `instance_id`, `node_id`, `execution_id`, `entrypoint_sha256`, `started_at`, `finished_at`, `duration_ms`, `exit_code`, and `mechanical_llm_calls: 0`. These are typed identities and measurements, not log extraction. Times use ISO 8601 UTC. Swamp measures `started_at`, `finished_at` and `duration_ms` on Node 209 around the SSH exec, so they include the SSH connection. Record planning, writing, and review calls separately; label unavailable measurements. Claim no savings without a comparable before measurement including checker/repository revision, plan size, elapsed time, calls, and token metrics.
 
 ##### Replay, stop, and fencing
 
@@ -342,8 +350,8 @@ Native history saves the validated result. The shared Gateway terminal reader pr
 | Missing key, invalid shape, digest, path, unknown fields or oversized request | HTTP 422; no native run |
 | Missing provision pin | HTTP 422 `tasks.analysis_unavailable` |
 | A base differing from the provision pin | HTTP 409 `tasks.analysis_stale` |
-| Missing or nonancestor Git base, moved candidate, branch or repository | Failed `tasks.analysis_stale`; no scanner |
-| Missing or changed tracked entrypoint | Failed `tasks.analysis_unavailable` |
+| Moved candidate: HEAD or tree differs from the admitted ones | Failed `tasks.analysis_stale`; no scanner |
+| Entrypoint not tracked as executable at HEAD, or unreadable | Failed `tasks.analysis_unavailable` |
 | Invalid, truncated or wrong-identity report | Failed `tasks.analysis_report_invalid` |
 | Envelope overflow | Failed `tasks.analysis_report_too_large`; no partial artifact |
 | Valid repository findings | `ready`, `action_required` or `blocked`; semantic meaning stays repository-owned |
@@ -1458,6 +1466,6 @@ The native run is explicitly resumable: lost merge replies reconcile the same PR
 
 ## Native Pi turns
 
-Swamp runs task turns on the task VM's exact Node worker. The Gateway admits the group, current subtask, role, model and session, then starts `operation-task-turn`. It records the returned thread state, workspace identities and token metrics. It does not send Pi messages, wait for turns or acquire workspace execution leases. Swamp's native workflow owns placement, locking, cancellation and recovery.
+Swamp runs task turns on the Swamp role worker and reaches the task VM over SSH. The Gateway admits the group, current subtask, role, model and session, then starts `operation-task-turn`. It records the returned thread state, workspace identities and token metrics. It does not send Pi messages, wait for turns or acquire workspace execution leases. Swamp's native workflow owns placement, locking, cancellation and recovery.
 
-Pi writes and reviews code inside the VM. Swamp installs the local turn command, sends the admitted prompt with a stable Pi submission key and consumes the Pi event stream until the turn ends. A resumed step uses the same session and submission key. Review checks compare the admitted candidate in the VM before the send. Reviewer changes are captured and the candidate is restored before the result returns. VM provision, readiness and enrollment belong to the task VM workflows.
+Pi writes and reviews code inside the VM. Swamp installs the local turn command, sends the admitted prompt with a stable Pi submission key and consumes the Pi event stream until the turn ends. A resumed step uses the same session and submission key. Git snapshots use a temporary index, include untracked files and leave the real index unchanged. The turn trusts the admitted workspace and analysis evidence. Reviewer changes are captured and the candidate is restored with Git reset and clean before the result returns. VM provision, readiness and enrollment belong to the task VM workflows.

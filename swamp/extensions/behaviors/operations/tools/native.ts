@@ -26,7 +26,7 @@ export function commands(input: Input) {
     prefix, home, scope, remove_repository: input.remove_repository, repository_packages: input.repository_packages,
     repository: input.repository ?? { name: "unused", uris: [], suites: [], components: [], signing_key: { url: "https://unused.invalid/key", fingerprint: "" } },
     version: run("--version"),
-    refresh: [...env, "/usr/bin/apt-get", ...aptOptions, "update", "--error-on=any"],
+    refresh: [...env, "/usr/bin/apt-get", ...aptOptions, "-o", "APT::Get::List-Cleanup=false", "update", "--error-on=any"],
     inventory: input.manager === "apt" ? [...env, "/usr/bin/dpkg-query", "--show", "--showformat=${Package}\t${Status}\t${Version}\n", "--", input.package] : brew ? run("info", "--json=v2", formula, "--installed") : input.manager === "composer" ? run("global", "show", "--direct", "--format=json", "--no-ansi") : run("list", "-g", "--json"),
     candidate: input.manager === "apt" ? [...env, "/usr/bin/apt-cache", ...aptOptions, "policy", "--", input.package] : brew ? run("info", "--json=v2", formula, qualified) : input.manager === "composer" ? run(...composer, "--dry-run") : run("info", input.package, "version", "--json"),
     plan: input.manager === "apt" ? run("--simulate", "remove", "--", input.package) : input.manager === "brew" ? run("uses", "--installed", input.package) : run("--version"),
