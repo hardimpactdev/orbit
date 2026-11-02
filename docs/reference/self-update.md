@@ -18,7 +18,7 @@ covers:
 
 ## Desired fleet state
 
-Fleet rollout and `fleet.cli_converge` do not call `orbit self-update` or an agent command. Swamp publishes the release from Node 209 over SSH with the native [`node-cli-install`](/reference/node-provisioning#orbit-cli) child: `@swamp/cfgmgmt` fetches the binary with its checksum, checks its version, and switches the same link that `orbit self-update` keeps. A Node that runs a newer release or a commit build keeps it.
+Fleet rollout and `fleet.cli_converge` do not call `orbit self-update` or an agent command. Swamp publishes the release from Node 209 over SSH with the native [`node-cli-install`](/reference/node-provisioning#orbit-cli) child: `@swamp/cfgmgmt` fetches the binary with its checksum, checks its version, and switches the same link that `orbit self-update` keeps. A Node that runs a newer release or a commit build keeps it. A rollout run that fails before it reaches any Node settles as failed and leaves every Node pending, so the next admission tries them again.
 
 The desired fleet state names what every machine should run for the Gateway's commit. The Gateway separately converges the [Orbit footprint](/reference/node-provisioning#converge-the-orbit-footprint); `self-update` does not apply those artifacts or remove files left by deleted artifacts.
 
