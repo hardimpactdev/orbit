@@ -106,7 +106,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ ("analytics-probe-" + string(self.probe.node_id) + "-" + self.probe.domain.split("/").join("-")).split(".").join("-") }}'
+      behaviorName: '${{ ("analytics-probe-" + string(self.probe.node_id)).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: "timeout 20 openssl s_client -connect \"$ORBIT_PROBE_ADDRESS:443\" -servername \"$ORBIT_PROBE_DOMAIN\" -verify_hostname \"$ORBIT_PROBE_DOMAIN\" -verify_return_error -CAfile /usr/local/share/ca-certificates/orbit-managed-root-ca.crt </dev/null"
