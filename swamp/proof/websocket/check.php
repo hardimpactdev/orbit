@@ -17,13 +17,17 @@ chdir(dirname(__DIR__, 3).'/apps/gateway');
 require 'vendor/autoload.php';
 $app = require 'bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+set_exception_handler(static function (Throwable $error): void {
+    fwrite(STDERR, 'parity: unexpected '.get_class($error)."\n");
+    exit(1);
+});
 umask(0077);
 
 function verify(bool $condition, string $message): void
 {
     if (! $condition) {
         fwrite(STDERR, 'parity: '.$message."\n");
-        exit(1);
+        throw new RuntimeException('parity check failed');
     }
 }
 
@@ -77,7 +81,7 @@ if ($mode === 'seed-rotation') {
     $project = Project::query()->firstOrCreate(['slug' => 'proof-websocket-rotation'], ['name' => 'Proof WebSocket rotation',
         'repository_url' => 'https://example.test/proof-websocket.git', 'default_branch' => 'main', 'root' => 'public']);
     Instance::query()->firstOrNew(['id' => 7001])->forceFill(['id' => 7001, 'project_id' => $project->id, 'node_id' => (int) $argv[3], 'name' => 'default',
-        'environment' => 'development', 'checkout_path' => '/home/orbit/apps/proof-websocket/default', 'source_is_laravel' => true,
+        'checkout_path' => '/home/orbit/apps/proof-websocket/default', 'source_is_laravel' => true,
         'status' => 'active', 'provisioning_step' => 'active'])->save();
     exit(0);
 }
