@@ -31,6 +31,6 @@ check(result.get('head') == START and result.get('head_before') == START and res
 check(result.get('tree') == result.get('tree_before') and result.get('changed_paths') == [], 'the Project check changed nothing')
 check(all(item.get('outcome') == 'not_checked' for item in result.get('deliverables', [])), 'a baseline checks no deliverable')
 check(target('cat', f'{workspace}/setup.txt') == b'new', 'setup ran in the checkout')
-check(target('git', '-C', workspace, 'status', '--porcelain') == b'?? setup.txt\n', 'only the setup output is new; nothing was staged')
+check(target('runuser', '-u', 'orbit', '--', 'git', '-C', workspace, 'status', '--porcelain') == b'?? setup.txt\n', 'only the setup output is new; nothing was staged')
 check(target('sh', '-c', 'ls -d /tmp/orbit-task-check-* 2>/dev/null') == b'', 'the run scratch directory is removed')
 print('parity: tasks.check baseline passed, setup ran first, no candidate and a clean index')
