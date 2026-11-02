@@ -86,7 +86,7 @@ The Gateway records the result and the admitted key names from the terminal run.
 
 The admission freezes the environment, account and application path from stored placement. Development uses the configured Node account. Production uses the Instance production account. Caller input cannot choose an account or a Node. The file steps run as that account through `sudo -u`; the production runtime refresh runs as root. There is no Gateway child, agent relay, receipt protocol or polled writer.
 
-The foreign-key check refuses a file with keys that neither stored configuration nor Orbit's previous owned-key set includes. A missing file is allowed. The raw file limit remains 1 MiB. Production synchronization refreshes the config cache, PHP-FPM and opted-in Processes after the file writes. Development synchronization only writes the files.
+The foreign-key check refuses a file with keys that neither stored configuration nor Orbit's previous owned-key set includes. A missing file is allowed. The raw file limit remains 1 MiB. Production synchronization refreshes the config cache, PHP-FPM and opted-in Processes after the file writes, in that order. Swamp records each refresh action separately. A failed action fails the Operation with `env.runtime_refresh_failed`; the written files remain in place. Development synchronization only writes the files.
 
 ## Parent environment steps
 
