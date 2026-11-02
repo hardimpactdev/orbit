@@ -46,7 +46,7 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>N: Run the command<br/>@swamp/ssh exec · sudo -u
+  SW->>N: Run the command<br/>@swamp/ssh exec · systemd-run
   %%> How:
   %%> - one `@swamp/ssh exec`: `sudo systemd-run --uid=<user> --wait --pipe --collect` with the admitted directory and timeout
   %%> - reads the command with `vault.get` and sends it to Node 12 on stdin, never in argv; systemd-cat journals output on the Node
@@ -56,9 +56,9 @@ sequenceDiagram
   %%> Timeout:
   %%> - the Schedule's timeout is the run's time budget
   alt exit 0 in time
-    N-->>SW: exit 0, output
+    N-->>SW: exit 0
     %%> Returns:
-    %%> - the exit code; the output stays in the Swamp step
+    %%> - the exit code; command output stays in the Node journal
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
     %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway

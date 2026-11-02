@@ -52,5 +52,8 @@ if expected == 'disabled':
 if expected == 'present':
     check(override.get('schedule') == detail[0], f'the trigger is {override.get("schedule")!r}')
 if expected == 'ran':
+    if operation['kind'] == 'schedule.run':
+        calendar = operation['input']['calendar'] if operation['input']['desired'] == 'enabled' else None
+        check(override.get('schedule') == calendar, 'a manual run preserves the trigger')
     check(target('test', '-f', detail[0]).returncode == 0, f'the command touched {detail[0]}')
 print(f'parity: {operation["kind"]} leaves {workflow} {expected}')

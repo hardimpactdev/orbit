@@ -16,7 +16,8 @@
         "name": "run-${proof.run}",
         "calendar": "0 3 1 1 *",
         "command": "touch /tmp/proof-schedule-${proof.run}",
-        "timeout_seconds": 60
+        "timeout_seconds": 60,
+        "start": false
       }
     }
   ],
