@@ -41,6 +41,19 @@ Deno.test("a consent gate that reads its own approval waits on that human gate, 
   assertEquals(pendingGateIds(status), ["plan-authorized"], "a CEL gate on another gate's key still blocks");
 });
 
+Deno.test("a later plan cycle waits on its consent gate once an earlier cycle's approval exists", () => {
+  const later = "awaiting human approval 'plan-authorized' with note=planConsentNote(fresh plan payload): the latest decision of this cycle must authorize this exact plan";
+  const status = {
+    transitions: [
+      { name: "authorized", to: "analyze", manual: false, satisfied: false, cycleLimitBlocked: false,
+        gates: [gate("artifact-exists", true), gate("human-approval", false, [awaiting("plan-authorized")]), gate("cel", false, [later])] },
+      { name: "other", to: "analyze", manual: false, satisfied: false, cycleLimitBlocked: false,
+        gates: [gate("human-approval", false, [awaiting("other-gate")]), gate("cel", false, [later])] },
+    ],
+  };
+  assertEquals(pendingGateIds(status), ["plan-authorized"], "a CEL gate awaiting another gate still blocks");
+});
+
 Deno.test("evidence counts for the current entry only when it was recorded in this run's era", () => {
   const ev = { stageId: "provision", cycle: 1, recordedAt: "2026-10-23T08:00:00Z" };
   assert(recordedThisEntry(ev, "provision", 1, "2026-10-23T07:00:00Z"));
