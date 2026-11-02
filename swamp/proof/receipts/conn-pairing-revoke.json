@@ -1,0 +1,56 @@
+{
+  "kind": "conn.pairing_revoke",
+  "topology": "minimal@10",
+  "execution_commit": "bd9af9de1b08f4045b03d7a727dd8589ccb635b0",
+  "runtime_files_identical_after_rebase": true,
+  "vm": {
+    "group_id": 2701,
+    "provision_operation_id": 8201,
+    "task_vm_id": 344,
+    "node_id": 372,
+    "name": "tvm-344",
+    "host_node_id": 9,
+    "seed": "d1d4fd779b55efcd9284f04bb5d7310a88ff72e7477e6c6c5ac4f05ebc939d46",
+    "provisioned_at": "2026-11-02T19:14:58Z",
+    "cancel_operation_id": 8222
+  },
+  "script_files_deleted": 0,
+  "removed_workflows": [
+    "conn-revoke-session"
+  ],
+  "script_gap": null,
+  "receipts": [
+    {
+      "case": "conn.pairing_revoke",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/conn.pairing_revoke/20261102T192331Z-minimal.json",
+      "seconds": 10.45,
+      "sample": 1,
+      "p95_seconds": 10.45,
+      "budget_seconds": 1800,
+      "queue_timeout_seconds": 30,
+      "native_run": "d9b90bb7-7228-4545-8ca7-f508f2d39e05"
+    },
+    {
+      "case": "conn.pairing_revoke-partial",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/conn.pairing_revoke-partial/20261102T192346Z-minimal.json",
+      "seconds": 11.47,
+      "sample": 1,
+      "p95_seconds": 11.47,
+      "budget_seconds": 1800,
+      "queue_timeout_seconds": 30,
+      "native_run": "9d847cf7-03fc-40da-ae13-deba920d6490"
+    },
+    {
+      "case": "conn.pairing_revoke-invalid-list",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/conn.pairing_revoke-invalid-list/20261102T192306Z-minimal.json",
+      "seconds": 6.34,
+      "sample": 1,
+      "p95_seconds": 6.34,
+      "budget_seconds": 1800,
+      "queue_timeout_seconds": 30,
+      "native_run": "ddc82972-f488-49fd-8e59-8d6b9f4ce81b"
+    }
+  ],
+  "limits": "Two sessions and links on a disposable T3 HTTP contract fixture, real Gateway and Swamp; no production T3 server, TLS or scale.",
+  "native_resume_limit": "Terminal cleanup removes private replies; a fresh command reconciles remaining work. Direct native resume at an HTTP step has no scratch directory."
+}

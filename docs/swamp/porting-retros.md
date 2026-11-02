@@ -301,3 +301,19 @@ Task VM 330 was destroyed by cancellation 8164 after both proofs. Before receipt
 Three fresh minimal@10 receipts at `412ee26b39` cover enabled creation and a successful fire, a failed fire, and disabled Node creation. Admission takes 0.18, 0.20 and 0.17 seconds; its observed p95 is 0.20 seconds for three samples. Calendar waits take 52.46 and 58.56 seconds, and the native root fires take 1.93 and 1.34 seconds. The failed fire records `schedule.run_failed`. Fixtures keep a 150-second budget and the shared child's 300-second queue timeout. Every parity reader uses `PROOF_OPERATION_FILE`, verifies no Node units, and checks the workflow and trigger. The receipt index is `swamp/proof/receipts/schedule-create-native.json`.
 
 The local checks pass: 58 Gateway cases, 73 CLI cases, six native command cases, charts, registry, docs and PHP analysis. The proof uses disposable Linux Nodes, a proof CA and test commands, with no production data, load or serve restart.
+
+## Conn pairing revocation uses native HTTP steps
+
+`conn.pairing_revoke` follows its command chart with nine native action labels. One bounded curl request lists the T3 sessions, native fan-out revokes the admitted sessions and links, and typed data methods read private replies. The session child, duplicate ownership reads and result-reporting method are gone. Stable indexed behavior slots avoid the 60-second shared behavior lock; their input bounds prevent per-run definition growth. Every step runs on the Swamp role. No script, Node contact or new transport is added.
+
+When a link fails, the Gateway records only pairings whose session phase and link reply completed. The remaining pairings stay open. Admission freezes the links and labels, refuses an expired admin session and locks one environment at a time. A fresh command reconciles missing sessions and incomplete links. Mandatory cleanup removes private replies, so a direct native resume at an HTTP step cannot reuse the deleted directory. This limitation is explicit in the command reference; no custom recovery chain is added.
+
+Three minimal@10 receipts pass at `bd9af9de1b08f4045b03d7a727dd8589ccb635b0`. Each case has one sample, so its observed time is its nearest-rank p95. The fixture covers two sessions and links against a disposable T3 HTTP contract server, a real Gateway and Swamp. It checks partial projection, the current admin, foreign labels, private output filtering and cleanup. It does not exercise a production T3 server, TLS or scale. The initial budget remains 1,800 seconds, with queueTimeout 30 seconds.
+
+| Case | Receipt under `evidence/proof/` | Seconds |
+| --- | --- | --- |
+| Success | `conn.pairing_revoke/20261102T192331Z-minimal.json` | 10.45 |
+| Partial link failure | `conn.pairing_revoke-partial/20261102T192346Z-minimal.json` | 11.47 |
+| Invalid inventory | `conn.pairing_revoke-invalid-list/20261102T192306Z-minimal.json` | 6.34 |
+
+Eleven native workflow tests, three typed data tests and 108 Gateway tests pass. PHPStan, Pint, registry, chart, documentation, shape, naming and placement checks pass. The proof first exposed unexpanded phase names in the fixture; corrected fixtures produced the receipts above. A failed provision used an old parent against the new workspace input; the normal Gateway release resolved that mismatch. A later status-read failure was confirmed succeeded before the proof tool reused that same provision. No production serve restart or reload was used.
