@@ -89,6 +89,8 @@ def setup(case):
     port = int((STATE / 'port').read_text())
     php = r'''require 'vendor/autoload.php'; $app = require 'bootstrap/app.php'; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 $v = json_decode(stream_get_contents(STDIN), true, flags: JSON_THROW_ON_ERROR);
+Orbit\Extensions\Conn\Models\ConnPairing::query()->delete();
+Orbit\Extensions\Conn\Models\ConnEnvironment::query()->delete();
 $env = Orbit\Extensions\Conn\Models\ConnEnvironment::query()->create(['environment_id'=>'revoke-proof','label'=>'proof','node_id'=>209,'url'=>$v['url'],'admin_session'=>$v['admin'],'admin_session_expires_at'=>now()->addDay(),'registered_at'=>now()]);
 foreach ([['first','first-link'],['second','second-link']] as [$label,$link]) { Orbit\Extensions\Conn\Models\ConnPairing::query()->create(['node_id'=>$v['owner'],'conn_environment_id'=>$env->id,'client_label'=>$label,'pairing_link_id'=>$link,'credential'=>$v['private']]); }
 Orbit\Extensions\Conn\Models\ConnPairing::query()->create(['node_id'=>$v['other'],'conn_environment_id'=>$env->id,'client_label'=>'foreign','pairing_link_id'=>'foreign-link','credential'=>$v['private']]);'''

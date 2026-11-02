@@ -2,7 +2,7 @@
   "kind": "conn.pairing_revoke",
   "workflow": "operation-conn-pairing-revoke",
   "topology": "minimal",
-  "clean": true,
+  "clean": false,
   "budget_seconds": 1800,
   "queue_timeout_seconds": 30,
   "before_gateway": [
@@ -50,9 +50,15 @@
       "budget_seconds": 60
     },
     {
-      "name": "Revoke the sessions",
+      "name": "Revoke the sessions-0",
       "job": "sessions",
-      "step": "Revoke the sessions",
+      "step": "Revoke the sessions-0",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Revoke the sessions-1",
+      "job": "sessions",
+      "step": "Revoke the sessions-1",
       "budget_seconds": 60
     },
     {
@@ -62,9 +68,15 @@
       "budget_seconds": 60
     },
     {
-      "name": "Revoke unused links",
+      "name": "Revoke unused links-0",
       "job": "links",
-      "step": "Revoke unused links",
+      "step": "Revoke unused links-0",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Revoke unused links-1",
+      "job": "links",
+      "step": "Revoke unused links-1",
       "budget_seconds": 60
     },
     {
