@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Operations\FailNativeOperationAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Data\Tasks\StartTaskAnalysisData;
 use App\Domain\Certificates\LeafCertificateSigner;
@@ -186,6 +187,17 @@ it('ends a failed, interrupted or cancelled native provision without claiming VM
         ->and($this->group->fresh()->reserved_at)->toBeNull()
         ->and($this->vm->fresh()->state)->not->toBe(TaskVmState::Destroyed);
 })->with(['failed', 'interrupted', 'cancelled']);
+
+it('ends the group when a history read observes the failed native provision first', function (): void {
+    $operation = app(StartTaskProvisionAction::class)->execute($this->group, 'fixture', null);
+    // A reader such as the stage's operation poll sees the failed run before the subscriber does (op 7473).
+    app(FailNativeOperationAction::class)->execute($operation, $operation->state['swamp_run_id'], OperationStatus::Failed,
+        ['failed_step' => 'observe-vm', 'detail' => 'Invalid behavior name.', 'stderr_recorded' => false], '2026-11-02T08:15:18.000Z');
+    expect($operation->fresh()->status)->toBe(OperationStatus::Failed)
+        ->and($this->group->fresh()->status->value)->toBe('failed')
+        ->and($this->group->fresh()->reserved_at)->toBeNull()
+        ->and($this->vm->fresh()->state)->toBe(TaskVmState::Failed);
+});
 
 it('retains confirmed VM readiness when terminal source preparation fails', function (): void {
     $operation = app(StartTaskProvisionAction::class)->execute($this->group, 'fixture', null);
