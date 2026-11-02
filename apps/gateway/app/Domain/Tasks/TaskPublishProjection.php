@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\OperationStatus;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Support\ValidatedData;
@@ -23,11 +24,26 @@ final readonly class TaskPublishProjection implements DirectOperationProjection
     public function apply(Operation $operation, array $data): Operation
     {
         return DB::transaction(function () use ($operation, $data): Operation {
+            $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
             $terminal = $operation->status->terminal();
-            $result = $data['result'] = self::receipt(ValidatedData::object($data['result'] ?? []));
-            if (in_array($data['status'], ['failed', 'interrupted'], true) && is_string($result['error_code'] ?? null)) {
-                $data['error_code'] = $result['error_code'];
+            $native = ValidatedData::object($data['result'] ?? []);
+            $status = OperationStatus::from(ValidatedData::string($data['status']));
+            if ($status === OperationStatus::Succeeded) {
+                $pull = isset($native['pull_receipt']) ? ValidatedData::object(json_decode(ValidatedData::string($native['pull_receipt']), true, flags: JSON_THROW_ON_ERROR)) : [];
+                $result = ['branch' => $operation->input['branch'], 'commit' => $operation->input['commit'],
+                    'pull_request_number' => $pull['pull_request_number'] ?? null, 'pull_request_url' => $pull['pull_request_url'] ?? null];
+            } elseif (in_array($status, [OperationStatus::Failed, OperationStatus::Interrupted], true)) {
+                $failure = ValidatedData::object($data['failure'] ?? []);
+                $detail = $failure['detail'] ?? null;
+                $step = $failure['failed_step'] ?? null;
+                $code = in_array($detail, ['tasks.head_moved', 'tasks.not_fast_forward', 'tasks.workflows_permission', 'tasks.push_failed', 'tasks.publish_failed', 'tasks.repository_execution_unknown'], true)
+                    ? $detail : ($step === 'Push the branch' ? 'tasks.push_failed' : (in_array($step, ['Init the bare repo', 'Import the bundle', 'Read bundle contents'], true) ? 'tasks.repository_execution_unknown' : 'tasks.publish_failed'));
+                $data['error_code'] = $code;
+                $result = ['error_code' => $code];
+            } else {
+                $result = [];
             }
+            $data['result'] = $result;
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if (! $terminal && $projected->status->value === 'succeeded' && isset($result['pull_request_url'])) {
                 Task::topLevel()->whereKey($operation->target_id)->update([
@@ -42,21 +58,4 @@ final readonly class TaskPublishProjection implements DirectOperationProjection
         });
     }
 
-    /**
-     * The last step prints the receipt and fails on its error code; a failed step keeps no stdout,
-     * so the receipt then comes from the pull request step, which always ends with it.
-     *
-     * @param  array<string,mixed>  $result
-     * @return array<string,mixed>
-     */
-    private static function receipt(array $result): array
-    {
-        $captured = $result['receipt'] ?? null;
-        unset($result['receipt']);
-        if ($result === [] && is_array($captured) && is_string($captured['result_json'] ?? null)) {
-            return ValidatedData::object(json_decode($captured['result_json'], true, flags: JSON_THROW_ON_ERROR));
-        }
-
-        return $result;
-    }
 }

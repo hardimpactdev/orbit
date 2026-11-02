@@ -91,22 +91,6 @@ export function pushed(item: Run) {
     return { pushed: false, error_code };
 }
 
-/** Typed public inputs for the workflow steps. */
-export function prepare(raw: unknown) {
-    const args = z.object({ intent: PublishInput, node_id: Id }).parse(raw);
-    const input = args.intent;
-    if (
-        input.node_id !== args.node_id ||
-        input.branch !== `task-${input.group_id}`
-    ) {
-        throw new Error("Wrong task publication target");
-    }
-    return {
-        ...pushTarget(input.repository, input.commit, input.branch),
-        pull_head: `${input.repository.split("/")[0]}:${input.branch}`,
-    };
-}
-
 /** HEAD and the whole working tree must still equal the checked candidate. */
 export function verify(raw: unknown) {
     const { input, steps } = z.object({
@@ -138,7 +122,6 @@ const PullRow = z.object({
     base: z.object({ ref: z.string() }).passthrough(),
     head: z.object({
         ref: z.string(),
-        sha: z.string(),
         repo: z.object({ full_name: z.string() }).passthrough().nullable(),
     }).passthrough(),
 }).passthrough();
@@ -182,8 +165,7 @@ export function pullPlan(raw: unknown) {
     }
     const row = matches[0];
     if (
-        row.state !== "open" || row.base.ref !== input.base ||
-        row.head.sha !== input.commit
+        row.state !== "open" || row.base.ref !== input.base
     ) return { ...none, error_code: "tasks.head_moved" };
     return {
         method: "PATCH",
@@ -191,83 +173,5 @@ export function pullPlan(raw: unknown) {
         body: JSON.stringify(input.pull_request),
         number: row.number,
         error_code: "",
-    };
-}
-
-/** The PR number one write returned; an update must keep its number. */
-function written(item: Run, expected: number): number | null {
-    const reply = z.object({ number: Id }).passthrough().safeParse(
-        json(item.stdout),
-    );
-    if (item.exitCode !== 0 || !reply.success) return null;
-    return expected === 0 || reply.data.number === expected
-        ? reply.data.number
-        : null;
-}
-
-/**
- * Each publication step of the parent run is a child workflow; the parent sees
- * a child's step outputs under its own step. This lifts them to one flat map
- * keyed by the child step names that `run` reads.
- */
-export function flatten(parent: Steps): Steps {
-    const flat: Steps = {};
-    for (const step of Object.values(parent)) {
-        const outputs = ObjectValue.safeParse(
-            ObjectValue.safeParse(step).data?.outputs,
-        );
-        for (const [name, value] of Object.entries(outputs.data ?? {})) {
-            if (ObjectValue.safeParse(value).success) {
-                flat[name] = { outputs: value };
-            }
-        }
-    }
-    return flat;
-}
-
-/** The public terminal result, recomputed from the raw step outputs. */
-export function finish(raw: unknown) {
-    const { input, steps } = z.object({
-        input: PublishInput,
-        steps: ObjectValue,
-    }).parse(raw);
-    const outcome = ((): { error_code: string } | { number: number | null } => {
-        const checked = verify({ input, steps });
-        if (!checked.admitted) {
-            return {
-                error_code: run(steps, "snapshot-head").exitCode === undefined
-                    ? "tasks.publish_failed"
-                    : checked.error_code,
-            };
-        }
-        const bundle = imported(run(steps, "import"), input.commit, input.tree);
-        if (!bundle.imported) {
-            return { error_code: bundle.error_code || "tasks.publish_failed" };
-        }
-        const push = pushed(run(steps, "push"));
-        if (!push.pushed) {
-            return { error_code: push.error_code || "tasks.push_failed" };
-        }
-        if (input.pull_request === null) return { number: null };
-        const plan = pullPlan({ input, steps });
-        if (plan.error_code) return { error_code: plan.error_code };
-        const number = plan.method
-            ? written(run(steps, "write_pull"), plan.number)
-            : null;
-        return number === null
-            ? { error_code: "tasks.publish_failed" }
-            : { number };
-    })();
-    const result = "error_code" in outcome ? outcome : {
-        branch: input.branch,
-        commit: input.commit,
-        pull_request_number: outcome.number,
-        pull_request_url: outcome.number === null
-            ? null
-            : `https://github.com/${input.repository}/pull/${outcome.number}`,
-    };
-    return {
-        result_json: JSON.stringify(result),
-        failed: "error_code" in result,
     };
 }

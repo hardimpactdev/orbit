@@ -6,6 +6,7 @@ their requests to a local HTTP server. Every step argv stays as written.
 """
 
 import hashlib
+import base64
 import importlib.util
 import json
 import os
@@ -70,7 +71,8 @@ class NativePublicationFixture(harness.NativeTestCase):
 
     def setUp(self):
         super().setUp()
-        self.secrets = (TOKEN,)
+        self.authorization = "AUTHORIZATION: basic " + base64.b64encode(("x-access-token:" + TOKEN).encode()).decode()
+        self.secrets = (TOKEN, self.authorization)
         source = ROOT / "extensions/behaviors/operations/task-repository"
         target = self.repo / "extensions/behaviors/operations/task-repository"
         shutil.copytree(
@@ -145,18 +147,16 @@ class NativePublicationFixture(harness.NativeTestCase):
             'import shutil,sys\nfrom pathlib import Path\ndef local(v):return v.split(":",1)[1] if ":" in v else v\nsrc=Path(local(sys.argv[-2]));dst=Path(local(sys.argv[-1]))\nif src.is_dir():shutil.copytree(src,dst/src.name,dirs_exist_ok=True)\nelse:shutil.copy2(src,dst)\n',
         )
         # Git asks `gh auth git-credential` for the token; it is never in argv.
-        digest = hashlib.sha256(TOKEN.encode()).hexdigest()
+        digest = hashlib.sha256(self.authorization.encode()).hexdigest()
         real_git = shutil.which("git")
         tool(
             tools / "git",
-            f"""import hashlib,os,subprocess,sys
+            f"""import hashlib,os,sys
 url="https://github.com/acme/shop.git"
 args=sys.argv[1:]
 if url in args:
-    fill=subprocess.run([{real_git!r},"credential","fill"],input="protocol=https\\nhost=github.com\\n\\n",capture_output=True,text=True)
-    password=dict(line.split("=",1) for line in fill.stdout.splitlines() if "=" in line).get("password","")
-    if hashlib.sha256(password.encode()).hexdigest()!={digest!r} or password in " ".join(args):
-        raise SystemExit(97)
+    authorization=os.environ.get("GIT_CONFIG_VALUE_3","")
+    if hashlib.sha256(authorization.encode()).hexdigest()!={digest!r} or authorization in " ".join(args):raise SystemExit(97)
     args=[{str(self.remote)!r} if a==url else a for a in args]
     os.environ["GIT_ALLOW_PROTOCOL"]="file"
 os.execv({real_git!r},["git",*args])
@@ -164,7 +164,7 @@ os.execv({real_git!r},["git",*args])
         )
         tool(
             tools / "gh",
-            f"""import os,sys,urllib.parse,urllib.request
+            f"""import os,sys,urllib.parse,urllib.request,pathlib
 args=sys.argv[1:]
 assert os.environ["GH_TOKEN"] not in " ".join(args)
 if args[:2]==["auth","git-credential"]:
@@ -177,7 +177,7 @@ i=1
 while i<len(args):
     if args[i]=="--method":method=args[i+1];i+=2
     elif args[i]=="-f":fields.append(tuple(args[i+1].split("=",1)));i+=2
-    elif args[i]=="--input":body=sys.stdin.buffer.read();i+=2
+    elif args[i]=="--input":body=sys.stdin.buffer.read() if args[i+1]=="-" else pathlib.Path(args[i+1]).read_bytes();i+=2
     else:path=args[i];i+=1
 url={api!r}+"/"+path.lstrip("/")
 if fields:url+=("&" if "?" in url else "?")+urllib.parse.urlencode(fields)
@@ -209,11 +209,13 @@ except Exception as error:
             "task-publish-token-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
             input=TOKEN,
         )
+        self.cli('vault','put','orbit-control-inputs','task-publish-token-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',input=self.authorization)
         self.inputs = {
             "operation_id": 15,
             "node_id": 30,
             "kind": "tasks.publish",
             "execution_secrets": {
+                "git_authorization": {"vault": "orbit-control-inputs", "key": "task-publish-token-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"},
                 "github_token": {
                     "vault": "orbit-control-inputs",
                     "key": "task-publish-token-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -230,14 +232,21 @@ except Exception as error:
                 "repository": "acme/shop",
                 "base": "main",
                 "branch": "task-1",
+                "remote": "https://github.com/acme/shop.git",
+                "refspec": self.head + ":refs/heads/task-1",
+                "object_format": "sha1",
+                "pull_head": "acme:task-1",
                 "pull_request": {
                     "title": "Export",
                     "body": "User prose $(touch inert).",
                 },
                 "ssh_execution": {
+                    "control_node_id": 209,
+                    "public_key": "synthetic-public-key",
                     "identity_file": "/dev/null",
                     "target": {
                         "user": "orbit",
+                        "name": "target",
                         "host": "192.0.2.30",
                         "port": 22,
                         "host_keys": [
@@ -252,13 +261,6 @@ except Exception as error:
         (self.repo / "workflows/workflow-task-publication-fixture.yaml").write_text(
             yaml.safe_dump(flow, sort_keys=False)
         )
-        # Each chart step of the publication is a child workflow.
-        for child in ("check", "export", "import", "push", "pull-request"):
-            name = "workflow-task-publication-" + child + ".yaml"
-            (self.repo / "workflows" / name).write_text(
-                yaml.safe_dump(self.copy_flow(name), sort_keys=False)
-            )
-
     def copy_flow(self, name):
         """The workflow as written, with only its scratch roots under the fixture."""
         flow = yaml.safe_load((ROOT / "workflows" / name).read_text())
@@ -299,15 +301,15 @@ except Exception as error:
         return json.loads(raw)
 
     def result(self, run):
-        """The receipt as the Gateway reads it: the last step's stdout, else the PR step's."""
+        """Read public metadata or the native failed step, as the Gateway does."""
         history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
-        steps = {step["name"]: step for step in history["jobs"][0]["steps"]}
-        last = steps["Revoke the token"]
-        if last["status"] == "succeeded":
-            return json.loads(last["outputs"]["stdout"])
-        return json.loads(
-            steps["Open or update the PR"]["outputs"]["shape_result"]["result_json"]
-        )
+        steps = {step['name']: step for job in history['jobs'] for step in job['steps']}
+        if history['status'] != 'succeeded':
+            failure = next(step for step in steps.values() if step['status'] == 'failed')
+            return {'error_code': failure.get('error')}
+        if self.inputs['intent']['pull_request'] is None:
+            return {'pull_request_url': None, 'pull_request_number': None}
+        return json.loads(steps['Read PR result']['outputs']['stdout'])
 
     def scratch(self):
         return sorted(path.name for path in self.repo.glob("publish-*"))
@@ -362,6 +364,7 @@ class NativePublication(NativePublicationFixture):
             self.workspace, "rev-parse", "HEAD^{tree}"
         )
         self.inputs["operation_id"] = 16
+        self.inputs["intent"]["refspec"] = self.inputs["intent"]["commit"] + ":refs/heads/task-1"
         run = self.run_workflow(success=False)
         self.assertEqual(self.result(run), {"error_code": "tasks.not_fast_forward"})
         self.assertEqual(

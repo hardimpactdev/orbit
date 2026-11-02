@@ -1,8 +1,6 @@
-import { assertEquals, assertThrows } from "jsr:@std/assert@1";
+import { assertEquals } from "jsr:@std/assert@1";
 import {
-    finish,
     imported,
-    prepare,
     PublishInput,
     pullPlan,
     pushed,
@@ -58,30 +56,6 @@ function steps(withPr = true): Record<string, unknown> {
             : {}),
     };
 }
-const result = (input: unknown, values: Record<string, unknown>) =>
-    JSON.parse(finish({ input, steps: values }).result_json);
-
-Deno.test("prepare builds the push target and PR head and refuses a wrong target", () => {
-    const input = publishInput();
-    assertEquals(prepare({ intent: input, node_id: 3 }), {
-        remote: "https://github.com/acme/shop.git",
-        refspec: `${"a".repeat(40)}:refs/heads/task-1`,
-        object_format: "sha1",
-        pull_head: "acme:task-1",
-    });
-    assertEquals(
-        prepare({
-            intent: { ...input, commit: "c".repeat(64) },
-            node_id: 3,
-        }).object_format,
-        "sha256",
-    );
-    assertThrows(() => prepare({ intent: input, node_id: 4 }), Error);
-    assertThrows(
-        () => prepare({ intent: { ...input, branch: "task-2" }, node_id: 3 }),
-        Error,
-    );
-});
 Deno.test("a moved HEAD or working tree is refused before export", () => {
     const input = publishInput();
     assertEquals(verify({ input, steps: steps() }), {
@@ -172,17 +146,17 @@ Deno.test("an open PR is updated, otherwise one is opened, with caller prose unc
     );
     assertEquals(JSON.parse(update.body), input.pull_request);
 });
-Deno.test("a PR on another candidate, a duplicate or a failed lookup refuses the write", () => {
+Deno.test("a duplicate, wrong base or failed lookup refuses the write", () => {
     const input = publishInput();
     const plan = (stdout: string, code = 0) =>
         pullPlan({
             input,
             steps: { ...steps(), read_pull: out(code, stdout) },
         });
-    assertEquals(
-        plan(JSON.stringify([open("f".repeat(40))])).error_code,
-        "tasks.head_moved",
-    );
+    assertEquals(plan(JSON.stringify([open("f".repeat(40))])).method, "PATCH");
+    const wrongBase = open();
+    wrongBase.base.ref = "other";
+    assertEquals(plan(JSON.stringify([wrongBase])).error_code, "tasks.head_moved");
     assertEquals(
         plan(JSON.stringify([open(), open()])).error_code,
         "tasks.publish_failed",
@@ -191,60 +165,4 @@ Deno.test("a PR on another candidate, a duplicate or a failed lookup refuses the
     const other = open();
     other.head.repo.full_name = "fork/shop";
     assertEquals(plan(JSON.stringify([other])).method, "POST");
-});
-Deno.test("terminal publication returns the public PR result and push-only null fields", () => {
-    assertEquals(result(publishInput(), steps()), {
-        branch: "task-1",
-        commit: "a".repeat(40),
-        pull_request_number: 12,
-        pull_request_url: "https://github.com/acme/shop/pull/12",
-    });
-    assertEquals(result(publishInput(false), steps(false)), {
-        branch: "task-1",
-        commit: "a".repeat(40),
-        pull_request_number: null,
-        pull_request_url: null,
-    });
-});
-Deno.test("public refusal codes survive snapshot, import, push and PR failures", () => {
-    const input = publishInput();
-    for (
-        const [name, value, error_code] of [
-            ["snapshot-tree", out(0, "f".repeat(40)), "tasks.head_moved"],
-            ["import", out(128), "tasks.repository_execution_unknown"],
-            ["push", out(1, "", "(fetch first)"), "tasks.not_fast_forward"],
-            [
-                "read_pull",
-                out(0, JSON.stringify([open("f".repeat(40))])),
-                "tasks.head_moved",
-            ],
-            ["write_pull", out(1, ""), "tasks.publish_failed"],
-        ] as const
-    ) {
-        assertEquals(result(input, { ...steps(), [name]: value }), {
-            error_code,
-        });
-    }
-});
-Deno.test("missing completion proof never becomes successful publication", () => {
-    const input = publishInput();
-    const without = (name: string) => {
-        const values = steps();
-        delete values[name];
-        return result(input, values);
-    };
-    assertEquals(without("snapshot-head"), {
-        error_code: "tasks.publish_failed",
-    });
-    assertEquals(without("import"), { error_code: "tasks.publish_failed" });
-    assertEquals(without("push"), { error_code: "tasks.push_failed" });
-    assertEquals(without("write_pull"), { error_code: "tasks.publish_failed" });
-    assertEquals(
-        result(input, {
-            ...steps(),
-            read_pull: out(0, JSON.stringify([open()])),
-            write_pull: out(0, JSON.stringify({ number: 13 })),
-        }),
-        { error_code: "tasks.publish_failed" },
-    );
 });

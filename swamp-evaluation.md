@@ -62,3 +62,11 @@ The bounded digest argv checks the binary, recorded key and public files togethe
 Curl always records stdout, so an unknown response credential needs a private file, a typed reader and explicit cleanup. Could a native HTTP or command output spec store a response as sensitive data and return only its locator? That could remove private-directory progress steps while preserving one visible API action.
 
 Sensitive-field keys include the resource instance. A fixed instance shared across pairing issues reused its credential key; pairing-specific instances keep unread outputs separate. Could remote `writeResource` handles expose their exact sensitive-field locators? The pinned runtime omits attributes, so the data type currently derives that locator from its documented model, method, resource, instance and field names.
+
+## Task publication native command candidates
+
+Git bundle export, SSH copy, bare initialization, import and commit/tree reads remain separate native operations. Could a native artifact transfer preserve the admitted commit and tree without extra command dispatches?
+
+Pinned e459 discards outputs from failed command steps. Publication captures bounded Git and GitHub replies in private files and uses an immediate typed reader for public refusal codes. The command permits a nonzero exit so that reader can preserve `tasks.not_fast_forward` and `tasks.workflows_permission`; the reader then fails natively. Could failed command output specs retain only a typed public error or a sensitive locator? That could remove these reader steps without exposing raw CLI replies. No final report or wrapper executor is added.
+
+The pinned workflow input validator rejects explicit null before inspecting `anyOf`. `default: null` admits the push-only PR option. Could nullable schemas validate directly while preserving required-field checks?

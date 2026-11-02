@@ -1,0 +1,61 @@
+{
+  "kind": "tasks.publish",
+  "topology": "minimal@11",
+  "execution_commit": "b27f2ad40daaf67aaad7d1d32c9fbb14ad75b072",
+  "runtime_files_identical_after_rebase": true,
+  "vm": {
+    "group_id": 2739,
+    "provision_operation_id": 8297,
+    "task_vm_id": 363,
+    "node_id": 391,
+    "name": "tvm-363",
+    "host_node_id": 9,
+    "seed": "d1d4fd779b55efcd9284f04bb5d7310a88ff72e7477e6c6c5ac4f05ebc939d46",
+    "provisioned_at": "2026-11-02T20:55:45Z",
+    "cancel_operation_id": 8321,
+    "destroyed": true,
+    "destroyed_at": "2026-11-02T21:14:01Z"
+  },
+  "script_files_deleted": 0,
+  "removed_workflows": [
+    "task-publication-check",
+    "task-publication-export",
+    "task-publication-import",
+    "task-publication-push",
+    "task-publication-pull-request"
+  ],
+  "script_gap": null,
+  "receipts": [
+    {
+      "case": "tasks.publish",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/tasks.publish/20261102T210948Z-minimal.json",
+      "seconds": 22.9,
+      "sample": 1,
+      "p95_seconds": 22.9,
+      "budget_seconds": 1800,
+      "queue_timeout_seconds": 30,
+      "native_run": "45903b31-5a2e-43b8-a80d-eba05f4ff0f3"
+    },
+    {
+      "case": "tasks.publish-push-only",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/tasks.publish-push-only/20261102T211011Z-minimal.json",
+      "seconds": 18.58,
+      "sample": 1,
+      "p95_seconds": 18.58,
+      "budget_seconds": 1800,
+      "queue_timeout_seconds": 30,
+      "native_run": "036c731e-6ee8-4ac2-ac9f-66b53924a534"
+    },
+    {
+      "case": "tasks.publish-moved",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/tasks.publish-moved/20261102T211026Z-minimal.json",
+      "seconds": 10.9,
+      "sample": 1,
+      "p95_seconds": 10.9,
+      "budget_seconds": 1800,
+      "queue_timeout_seconds": 30,
+      "native_run": "b4da0c88-91b0-40be-9ce1-1923fe746fcb"
+    }
+  ],
+  "limits": "Real Gateway, pinned Swamp, SSH and Git on one disposable topology. HTTPS GitHub contract service uses the proof CA and a local bare hardimpactdev/orbit repository. No production GitHub, hosted CI request or scale; admission consumes recorded passed CI."
+}

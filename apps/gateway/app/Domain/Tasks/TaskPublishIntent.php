@@ -9,6 +9,8 @@ use App\Data\Tasks\StartTaskPublishData;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Infrastructure\Swamp\SwampCommandStep;
@@ -18,6 +20,8 @@ use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskVm;
+use App\Support\ValidatedData;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /** Records the exact checked candidate. Swamp owns Git and GitHub effects. */
@@ -30,7 +34,17 @@ final readonly class TaskPublishIntent
         if (($existing = $this->idempotency->replay('tasks.publish')) !== null) {
             return $existing;
         }
+
+        return app(TaskExecutionLock::class)->synchronized($group->id, fn (): Operation => $this->admit($group, $input, $caller, $request));
+    }
+
+    private function admit(Task $group, StartTaskPublishData $input, string $caller, ?string $request): Operation
+    {
+        if (($existing = $this->idempotency->replay('tasks.publish')) !== null) {
+            return $existing;
+        }
         $group->refresh()->load('taskable', 'project');
+        $this->assertIdle($group);
         if (in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
             throw new ResourceOperationException('tasks.group_closed', 'This task group has ended.', 409);
         }
@@ -49,16 +63,43 @@ final readonly class TaskPublishIntent
             throw new ResourceOperationException('tasks.publish_failed', 'The Project requires a GitHub repository and valid default branch.', 422);
         }
 
-        $ssh = app(SwampSshExecutionInput::class)->forNode($instance->node);
         $token = app(RepositoryPullRequestAccess::class)->token($repository);
-        $copy = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'task-publish-token-'.Str::uuid(), $token);
+        $copy = ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()];
+        $authorization = ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()];
 
-        return $this->start->execute('tasks.publish', 'task_group', $group->id, $instance->node_id, [
-            ...$input->toArray(), 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
-            'checkout_path' => $instance->checkout_path, 'commit' => $check->commit_sha, 'tree' => $check->tree_after,
-            'repository' => $repository->owner.'/'.$repository->name, 'base' => $base, 'branch' => 'task-'.$group->id,
-            'ssh_execution' => $ssh,
-            'execution_secrets' => ['github_token' => $copy],
-        ], $caller, $request);
+        return DB::transaction(function () use ($group, $instance, $check, $repository, $base, $token, $copy, $authorization, $input, $caller, $request): Operation {
+            Task::topLevel()->whereKey($group->id)->lockForUpdate()->firstOrFail();
+            if (($existing = $this->idempotency->replay('tasks.publish')) !== null) {
+                return $existing;
+            }
+            $this->assertIdle($group);
+            $branch = 'task-'.$group->id;
+            $commit = ValidatedData::string($check->commit_sha);
+            $tree = ValidatedData::string($check->tree_after);
+            $operation = $this->start->execute('tasks.publish', 'task_group', $group->id, $instance->node_id, [
+                ...$input->toArray(), 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
+                'checkout_path' => $instance->checkout_path, 'commit' => $commit, 'tree' => $tree,
+                'repository' => $repository->owner.'/'.$repository->name, 'base' => $base, 'branch' => $branch,
+                'remote' => 'https://github.com/'.$repository->owner.'/'.$repository->name.'.git',
+                'refspec' => $commit.':refs/heads/'.$branch,
+                'object_format' => strlen($commit) === 64 ? 'sha256' : 'sha1',
+                'pull_head' => $repository->owner.':'.$branch, 'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
+                'execution_secrets' => ['github_token' => $copy, 'git_authorization' => $authorization],
+            ], $caller, $request, lockKey: OperationStore::lockKey('task_group', $group->id));
+            if ($operation->wasRecentlyCreated) {
+                app(SwampCommandStep::class)->executionCopy($copy['vault'], $copy['key'], $token);
+                app(SwampCommandStep::class)->executionCopy($authorization['vault'], $authorization['key'], 'AUTHORIZATION: basic '.base64_encode('x-access-token:'.$token));
+            }
+
+            return $operation;
+        });
+    }
+
+    private function assertIdle(Task $group): void
+    {
+        if (Operation::query()->where('target_type', 'task_group')->where('target_id', $group->id)
+            ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
+            throw new ResourceOperationException('operation.target_busy', 'Another Task Operation owns this group.', 409);
+        }
     }
 }

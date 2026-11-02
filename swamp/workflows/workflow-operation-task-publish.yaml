@@ -12,9 +12,135 @@ inputs:
     node_id:
       type: integer
       minimum: 1
-    kind: {type: string, const: tasks.publish}
+    kind: {type: string, enum: [tasks.publish]}
     intent:
       type: object
+      properties:
+        group_id:
+          type: integer
+          minimum: 1
+        instance_id:
+          type: integer
+          minimum: 1
+        node_id:
+          type: integer
+          minimum: 1
+        check:
+          type: integer
+          minimum: 1
+        checkout_path:
+          type: string
+          minLength: 1
+        base:
+          type: string
+          minLength: 1
+        remote:
+          type: string
+          minLength: 1
+        refspec:
+          type: string
+          minLength: 1
+        pull_head:
+          type: string
+          minLength: 1
+        commit:
+          type: string
+          pattern: ^(?:[a-f0-9]{40}|[a-f0-9]{64})$
+        tree:
+          type: string
+          pattern: ^(?:[a-f0-9]{40}|[a-f0-9]{64})$
+        repository:
+          type: string
+          pattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
+        branch:
+          type: string
+          pattern: ^task-[1-9][0-9]*$
+        object_format:
+          type: string
+          enum:
+          - sha1
+          - sha256
+        pull_request:
+          default: null
+          anyOf:
+          - type: 'null'
+          - type: object
+            properties:
+              title:
+                type: string
+                minLength: 1
+                maxLength: 256
+              body:
+                type: string
+                maxLength: 65536
+            required:
+            - title
+            - body
+            additionalProperties: false
+        ssh_execution:
+          type: object
+          properties:
+            target:
+              type: object
+              properties:
+                host:
+                  type: string
+                  minLength: 1
+                port:
+                  type: integer
+                  minimum: 1
+                  maximum: 65535
+                user:
+                  type: string
+                  minLength: 1
+                host_keys:
+                  type: array
+                  items:
+                    type: string
+                    minLength: 1
+                  minItems: 1
+                name:
+                  type: string
+                  enum:
+                  - target
+              required:
+              - host
+              - port
+              - user
+              - host_keys
+              - name
+              additionalProperties: false
+            control_node_id:
+              type: integer
+              enum:
+              - 209
+            public_key:
+              type: string
+              minLength: 1
+          required:
+          - identity_file
+          - target
+          - control_node_id
+          - public_key
+          additionalProperties: true
+      required:
+      - group_id
+      - instance_id
+      - node_id
+      - check
+      - checkout_path
+      - base
+      - remote
+      - refspec
+      - pull_head
+      - commit
+      - tree
+      - repository
+      - branch
+      - object_format
+      - pull_request
+      - ssh_execution
+      additionalProperties: false
     execution_secrets:
       type: object
       properties:
@@ -32,8 +158,23 @@ inputs:
           - vault
           - key
           additionalProperties: false
+        git_authorization:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^task-publish-token-[a-f0-9-]{36}$
+          required:
+          - vault
+          - key
+          additionalProperties: false
       required:
       - github_token
+      - git_authorization
       additionalProperties: false
   required:
   - operation_id
@@ -44,148 +185,571 @@ inputs:
   additionalProperties: false
 jobs:
 - name: publish
-  labels: {role: swamp}
+  labels:
+    role: swamp
   steps:
-  - name: Check the workspace
-    labels: {role: swamp}
-    task:
-      type: workflow
-      workflowIdOrName: task-publication-check
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        scratch: ${{ "/tmp/orbit-task-publish-" + run.id }}
-  - name: Export the commit
-    labels: {role: swamp}
-    guard: ${{ !steps["Check the workspace"].outputs.verify.admitted }}
-    task:
-      type: workflow
-      workflowIdOrName: task-publication-export
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        scratch: ${{ "/tmp/orbit-task-publish-" + run.id }}
-    dependsOn:
-    - step: Check the workspace
-      condition:
-        type: always
-  - name: Import into a bare repo
-    labels: {role: swamp}
-    guard: ${{ !steps["Check the workspace"].outputs.verify.admitted }}
-    task:
-      type: workflow
-      workflowIdOrName: task-publication-import
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        scratch: ${{ "/tmp/orbit-task-publish-" + run.id }}
-        prepared: ${{ steps["Check the workspace"].outputs.prepare }}
-    dependsOn:
-    - step: Check the workspace
-      condition:
-        type: always
-    - step: Export the commit
-      condition:
-        type: always
-  - name: Push the branch
-    labels: {role: swamp}
-    guard: '${{ !("Import into a bare repo" in steps && steps["Import into a bare repo"].outputs.import_result.imported) }}'
-    task:
-      type: workflow
-      workflowIdOrName: task-publication-push
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        scratch: ${{ "/tmp/orbit-task-publish-" + run.id }}
-        prepared: ${{ steps["Check the workspace"].outputs.prepare }}
-    dependsOn:
-    - step: Check the workspace
-      condition:
-        type: always
-    - step: Export the commit
-      condition:
-        type: always
-    - step: Import into a bare repo
-      condition:
-        type: always
-  - name: Open or update the PR
-    labels: {role: swamp}
-    task:
-      type: workflow
-      workflowIdOrName: task-publication-pull-request
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        scratch: ${{ "/tmp/orbit-task-publish-" + run.id }}
-        prepared: ${{ steps["Check the workspace"].outputs.prepare }}
-        pushed: '${{ ("Push the branch" in steps && steps["Push the branch"].outputs.push_result.pushed) }}'
-        observed: ${{ steps }}
-    dependsOn:
-    - step: Check the workspace
-      condition:
-        type: always
-    - step: Export the commit
-      condition:
-        type: always
-    - step: Import into a bare repo
-      condition:
-        type: always
-    - step: Push the branch
-      condition:
-        type: always
-  - name: Revoke the token
-    labels: {role: swamp}
-    # Revokes the token, removes the 209 scratch files, prints the receipt and fails on its error code.
-    # A failed step keeps no stdout, so the Gateway then reads the receipt from the PR step.
+  - name: Create publication scratch
+    labels:
+      role: swamp
+    queueTimeout: 30
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "task-publication-revoke" }}'
+      behaviorName: ${{ "task-publish-scratch-" + string(inputs.intent.node_id) }}
       methodName: execute
       inputs:
-        run: |
-          gh api --method DELETE installation/token >/dev/null 2>&1 || printf 'token revoke failed; it expires within one hour\n' >&2
-          rm -rf -- "$ORBIT_SCRATCH-candidate.bundle" "$ORBIT_SCRATCH.git" "$GH_CONFIG_DIR"
-          printf '%s\n' "$ORBIT_RESULT"
-          test "$ORBIT_FAILED" = false
-        timeout: 60000
+        run: timeout 5 mktemp -d /tmp/orbit-task-publish-XXXXXXXX
+    writes: true
+  - name: Read the index
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-publish-index-" + string(inputs.intent.node_id) }}
+      methodName: exec
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '60'
+        - env
+        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-publish-" + run.id + ".index" }}
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - read-tree
+        - HEAD
+        timeoutSec: 70
+      globalArgs:
+        name: ${{ "task-publish-index-" + string(inputs.intent.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+    dependsOn:
+    - step: Create publication scratch
+      condition:
+        type: succeeded
+    writes: true
+  - name: Add workspace files
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-publish-add-" + string(inputs.intent.node_id) }}
+      methodName: exec
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '60'
+        - env
+        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-publish-" + run.id + ".index" }}
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - add
+        - --all
+        timeoutSec: 70
+      globalArgs:
+        name: ${{ "task-publish-add-" + string(inputs.intent.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+    dependsOn:
+    - step: Read the index
+      condition:
+        type: succeeded
+    writes: true
+  - name: Read workspace tree
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-publish-tree-" + string(inputs.intent.node_id) }}
+      methodName: exec
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '60'
+        - env
+        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-publish-" + run.id + ".index" }}
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - write-tree
+        timeoutSec: 70
+      globalArgs:
+        name: ${{ "task-publish-tree-" + string(inputs.intent.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+    dependsOn:
+    - step: Add workspace files
+      condition:
+        type: succeeded
+    writes: true
+  - name: Read workspace HEAD
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-publish-head-" + string(inputs.intent.node_id) }}
+      methodName: exec
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '10'
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - rev-parse
+        - HEAD
+        timeoutSec: 70
+      globalArgs:
+        name: ${{ "task-publish-head-" + string(inputs.intent.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+    dependsOn:
+    - step: Read workspace tree
+      condition:
+        type: succeeded
+  - name: Check the workspace
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-publication-data'
+      behaviorName: ${{ "task-publish-verify-" + string(inputs.intent.node_id) }}
+      methodName: verify
+      inputs:
+        input: ${{ inputs.intent }}
+        "steps":
+          snapshot-head: ${{ steps["Read workspace HEAD"] }}
+          snapshot-tree: ${{ steps["Read workspace tree"] }}
+    dependsOn:
+    - step: Read workspace HEAD
+      condition:
+        type: succeeded
+  - name: Export the commit
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-publish-export-" + string(inputs.intent.node_id) }}
+      methodName: exec
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '60'
+        - git
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - bundle
+        - create
+        - ${{ "/tmp/orbit-task-publish-" + run.id + ".bundle" }}
+        - HEAD
+        timeoutSec: 70
+      globalArgs:
+        name: ${{ "task-publish-export-" + string(inputs.intent.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+    dependsOn:
+    - step: Check the workspace
+      condition:
+        type: succeeded
+    writes: true
+  - name: Copy the bundle
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-publish-copy-" + string(inputs.intent.node_id) }}
+      methodName: copy
+      inputs:
+        hosts: name:target
+        src: ${{ "/tmp/orbit-task-publish-" + run.id + ".bundle" }}
+        dst: ${{ steps["Create publication scratch"].outputs.stdout.trim() + "/candidate.bundle" }}
+        direction: from
+      globalArgs:
+        name: ${{ "task-publish-copy-" + string(inputs.intent.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+    dependsOn:
+    - step: Export the commit
+      condition:
+        type: succeeded
+  - name: Init the bare repo
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-publish-init-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 30 git init --quiet --bare --template= --object-format="$ORBIT_OBJECT_FORMAT" "$ORBIT_REPOSITORY"
+        env:
+          GIT_CONFIG_GLOBAL: /dev/null
+          GIT_CONFIG_NOSYSTEM: '1'
+          ORBIT_OBJECT_FORMAT: ${{ inputs.intent.object_format }}
+          ORBIT_REPOSITORY: ${{ steps["Create publication scratch"].outputs.stdout.trim() + "/repository.git" }}
+    dependsOn:
+    - step: Copy the bundle
+      condition:
+        type: succeeded
+    writes: true
+  - name: Import the bundle
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-publish-import-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 60 git -C "$ORBIT_REPOSITORY" fetch --quiet --no-tags "$ORBIT_BUNDLE" HEAD:refs/heads/candidate
+        env:
+          GIT_CONFIG_GLOBAL: /dev/null
+          GIT_CONFIG_NOSYSTEM: '1'
+          ORBIT_BUNDLE: ${{ steps["Create publication scratch"].outputs.stdout.trim() + "/candidate.bundle" }}
+          ORBIT_REPOSITORY: ${{ steps["Create publication scratch"].outputs.stdout.trim() + "/repository.git" }}
+    dependsOn:
+    - step: Init the bare repo
+      condition:
+        type: succeeded
+    writes: true
+  - name: Read bundle contents
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-publish-bundle-read-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 10 git -C "$ORBIT_REPOSITORY" rev-parse refs/heads/candidate 'refs/heads/candidate^{tree}'
+        env:
+          GIT_CONFIG_GLOBAL: /dev/null
+          GIT_CONFIG_NOSYSTEM: '1'
+          ORBIT_REPOSITORY: ${{ steps["Create publication scratch"].outputs.stdout.trim() + "/repository.git" }}
+    dependsOn:
+    - step: Import the bundle
+      condition:
+        type: succeeded
+  - name: Check imported commit
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-publication-data'
+      behaviorName: ${{ "task-publish-imported-" + string(inputs.intent.node_id) }}
+      methodName: imported
+      inputs:
+        input: ${{ inputs.intent }}
+        "steps":
+          import: ${{ steps["Read bundle contents"] }}
+    dependsOn:
+    - step: Read bundle contents
+      condition:
+        type: succeeded
+  - name: Push the branch
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-publish-push-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 60 git -C "$ORBIT_REPOSITORY" push --porcelain -- "$ORBIT_REMOTE" "$ORBIT_REFSPEC" >"$ORBIT_DIRECTORY/push.stdout" 2>"$ORBIT_DIRECTORY/push.stderr"
+        env:
+          GIT_CONFIG_GLOBAL: /dev/null
+          GIT_CONFIG_NOSYSTEM: '1'
+          GIT_TERMINAL_PROMPT: '0'
+          GIT_ALLOW_PROTOCOL: https
+          GIT_CONFIG_COUNT: '4'
+          GIT_CONFIG_KEY_0: credential.helper
+          GIT_CONFIG_VALUE_0: ''
+          GIT_CONFIG_KEY_1: core.hooksPath
+          GIT_CONFIG_VALUE_1: /dev/null
+          GIT_CONFIG_KEY_2: http.followRedirects
+          GIT_CONFIG_VALUE_2: 'false'
+          GIT_CONFIG_KEY_3: http.https://github.com/.extraheader
+          GIT_CONFIG_VALUE_3: ${{ vault.get(inputs.execution_secrets.git_authorization.vault, inputs.execution_secrets.git_authorization.key) }}
+          ORBIT_REPOSITORY: ${{ steps["Create publication scratch"].outputs.stdout.trim() + "/repository.git" }}
+          ORBIT_DIRECTORY: ${{ steps["Create publication scratch"].outputs.stdout.trim() }}
+          ORBIT_REMOTE: ${{ inputs.intent.remote }}
+          ORBIT_REFSPEC: ${{ inputs.intent.refspec }}
+        ignoreExitCode: true
+    dependsOn:
+    - step: Check imported commit
+      condition:
+        type: succeeded
+    writes: true
+  - name: Read push result
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-publication-data'
+      behaviorName: ${{ "task-publish-pushed-" + string(inputs.intent.node_id) }}
+      methodName: pushed
+      inputs:
+        directory: ${{ steps["Create publication scratch"].outputs.stdout.trim() }}
+        exit_code: ${{ steps["Push the branch"].outputs.exitCode }}
+    dependsOn:
+    - step: Push the branch
+      condition:
+        type: succeeded
+  - name: Read open PRs
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-publish-pull-read-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 30 gh api --method GET "$ORBIT_PATH" -f state=open -f head="$ORBIT_HEAD" -f per_page=100 >"$ORBIT_DIRECTORY/pulls.json" 2>/dev/null
         env:
           GH_TOKEN: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
           GH_CONFIG_DIR: ${{ "/tmp/orbit-task-publish-" + run.id + "-gh" }}
           GH_PROMPT_DISABLED: '1'
           GH_NO_UPDATE_NOTIFIER: '1'
-          ORBIT_SCRATCH: ${{ "/tmp/orbit-task-publish-" + run.id }}
-          ORBIT_RESULT: '${{ "Open or update the PR" in steps && "outputs" in steps["Open or update the PR"] && "shape_result" in steps["Open or update the PR"].outputs ? steps["Open or update the PR"].outputs.shape_result.result_json : "{\"error_code\":\"tasks.publish_failed\"}" }}'
-          ORBIT_FAILED: '${{ "Open or update the PR" in steps && "outputs" in steps["Open or update the PR"] && "shape_result" in steps["Open or update the PR"].outputs ? string(steps["Open or update the PR"].outputs.shape_result.failed) : "true" }}'
+          ORBIT_DIRECTORY: ${{ steps["Create publication scratch"].outputs.stdout.trim() }}
+          ORBIT_PATH: ${{ "repos/" + inputs.intent.repository + "/pulls" }}
+          ORBIT_HEAD: ${{ inputs.intent.pull_head }}
+        ignoreExitCode: true
     dependsOn:
-    - step: Check the workspace
+    - step: Read push result
       condition:
-        type: always
-    - step: Export the commit
+        type: succeeded
+    guard: ${{ inputs.intent.pull_request == null }}
+  - name: Plan the PR
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-publication-data'
+      behaviorName: ${{ "task-publish-pull-plan-" + string(inputs.intent.node_id) }}
+      methodName: pull
+      inputs:
+        input: ${{ inputs.intent }}
+        directory: ${{ steps["Create publication scratch"].outputs.stdout.trim() }}
+        exit_code: ${{ steps["Read open PRs"].outputs.exitCode }}
+    dependsOn:
+    - step: Read open PRs
       condition:
-        type: always
-    - step: Import into a bare repo
+        type: succeeded
+    guard: ${{ inputs.intent.pull_request == null }}
+  - name: Write the PR
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-publish-pull-write-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 30 gh api --method "$ORBIT_METHOD" "$ORBIT_PATH" --input "$ORBIT_BODY_FILE" >"$ORBIT_DIRECTORY/pull.json" 2>/dev/null
+        env:
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-task-publish-" + run.id + "-gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
+          ORBIT_DIRECTORY: ${{ steps["Create publication scratch"].outputs.stdout.trim() }}
+          ORBIT_METHOD: ${{ steps["Plan the PR"].outputs.method }}
+          ORBIT_PATH: ${{ steps["Plan the PR"].outputs.path }}
+          ORBIT_BODY_FILE: ${{ steps["Plan the PR"].outputs.body_file }}
+        ignoreExitCode: true
+    dependsOn:
+    - step: Plan the PR
       condition:
-        type: always
-    - step: Push the branch
+        type: succeeded
+    writes: true
+    guard: ${{ inputs.intent.pull_request == null }}
+  - name: Read PR result
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-publication-data'
+      behaviorName: ${{ "task-publish-pull-result-" + string(inputs.intent.node_id) }}
+      methodName: written
+      inputs:
+        input: ${{ inputs.intent }}
+        directory: ${{ steps["Create publication scratch"].outputs.stdout.trim() }}
+        exit_code: ${{ steps["Write the PR"].outputs.exitCode }}
+        number: ${{ steps["Plan the PR"].outputs.number }}
+    dependsOn:
+    - step: Write the PR
       condition:
-        type: always
-    - step: Open or update the PR
+        type: succeeded
+    guard: ${{ inputs.intent.pull_request == null }}
+- name: cleanup
+  labels:
+    role: swamp
+  dependsOn:
+  - job: publish
+    condition:
+      type: completed
+  steps:
+  - name: Revoke the token
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-publish-revoke-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 30 gh api --method DELETE installation/token 2>/dev/null
+        env:
+          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
+          GH_CONFIG_DIR: ${{ "/tmp/orbit-task-publish-" + run.id + "-gh" }}
+          GH_PROMPT_DISABLED: '1'
+          GH_NO_UPDATE_NOTIFIER: '1'
+    allowFailure: true
+    writes: true
+  - name: Remove remote scratch
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-publish-remote-cleanup-" + string(inputs.intent.node_id) }}
+      methodName: exec
+      inputs:
+        hosts: name:target
+        argv:
+        - timeout
+        - '10'
+        - rm
+        - -f
+        - --
+        - ${{ "/tmp/orbit-task-publish-" + run.id + ".index" }}
+        - ${{ "/tmp/orbit-task-publish-" + run.id + ".bundle" }}
+        timeoutSec: 70
+      globalArgs:
+        name: ${{ "task-publish-remote-cleanup-" + string(inputs.intent.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+    allowFailure: true
+    writes: true
+  - name: Remove local scratch
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-publish-local-cleanup-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 10 rm -rf -- "$ORBIT_DIRECTORY" "$ORBIT_GH_DIRECTORY"
+        env:
+          ORBIT_DIRECTORY: '${{ "Create publication scratch" in steps && steps["Create publication scratch"].status == "succeeded" ? steps["Create publication scratch"].outputs.stdout.trim()
+            : "" }}'
+          ORBIT_GH_DIRECTORY: ${{ "/tmp/orbit-task-publish-" + run.id + "-gh" }}
+    writes: true
+  - name: Confirm publication
+    labels:
+      role: swamp
+    queueTimeout: 30
+    dependsOn:
+    - step: Revoke the token
       condition:
-        type: always
-queueTimeout: 60
+        type: completed
+    - step: Remove remote scratch
+      condition:
+        type: completed
+    - step: Remove local scratch
+      condition:
+        type: completed
+    task:
+      type: assert
+      expr: '"Read push result" in steps && steps["Read push result"].status == "succeeded" && (inputs.intent.pull_request == null || ("Read PR result" in steps && steps["Read PR result"].status
+        == "succeeded")) && steps["Remove local scratch"].status == "succeeded"'
+      message: Task publication or scratch cleanup failed.
+      severity: high

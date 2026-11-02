@@ -1,91 +1,71 @@
 import { z } from "npm:zod@4.4.3";
-import {
-    finish,
-    flatten,
-    imported,
-    prepare,
-    PublishInput,
-    pullPlan,
-    pushed,
-    run,
-    verify,
-} from "../tasks/publish.ts";
+import { imported, PublishInput, pullPlan, pushed, run, verify } from "../tasks/publish.ts";
 
-type Context = {
-    writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
-};
+type Context = { writeResource(spec: string, name: string, value: unknown): Promise<unknown> };
 const Args = z.record(z.string(), z.unknown());
-const Observed = z.object({ input: Args, steps: Args });
-const data = async (ctx: Context, value: unknown) => ({
-    dataHandles: [await ctx.writeResource("public", "output", value)],
-});
+const Observed = z.object({ input: PublishInput, steps: Args });
+const PrivateReply = z.object({ directory: z.string().startsWith("/"), exit_code: z.number().int() });
+const save = async (ctx: Context, value: unknown) => ({ dataHandles: [await ctx.writeResource("public", "output", value)] });
+async function read(directory: string, name: string): Promise<string> {
+    try {
+        const path = `${directory}/${name}`;
+        if ((await Deno.stat(path)).size > 4194304) throw new Error();
+        return await Deno.readTextFile(path);
+    } catch { throw new Error("tasks.publish_failed"); }
+}
+const requireResult = <T extends { error_code: string }>(value: T): T => {
+    if (value.error_code) throw new Error(value.error_code);
+    return value;
+};
 
-/** Pure input and result shaping for tasks.publish; no execution, HTTP or credentials. */
+function requireSuccess<T extends { error_code: string }>(value: T, key: keyof T, fallback: string): T {
+    if (value[key] !== true) throw new Error(value.error_code || fallback);
+    return value;
+}
+
+/** Typed comparisons and private CLI reply shaping only; no execution or HTTP. */
 export const behavior = {
     type: "@nckrtl/task-publication-data",
-    version: "2026.11.02.2",
-    resources: {
-        public: {
-            description: "Public publication inputs and observations",
-            schema: z.record(z.string(), z.unknown()),
-            lifetime: "infinite",
-            garbageCollection: 10,
-        },
-    },
+    version: "2026.11.02.3",
+    resources: { public: { description: "Public publication observations", schema: z.record(z.string(), z.unknown()), lifetime: "infinite", garbageCollection: 10 } },
     methods: {
-        prepare: {
-            description: "Build the push target and PR lookup from the intent",
-            arguments: Args,
-            execute: (args: Record<string, unknown>, ctx: Context) =>
-                data(ctx, prepare(args)),
-        },
         verify: {
-            description:
-                "Compare the observed workspace to the admitted candidate",
+            description: "Compare the observed workspace with the admitted candidate",
             arguments: Observed,
-            execute: (args: unknown, ctx: Context) => data(ctx, verify(args)),
+            execute: (args: z.infer<typeof Observed>, ctx: Context) => save(ctx, requireSuccess(verify(args), "admitted", "tasks.repository_execution_unknown")),
         },
         imported: {
-            description: "Compare the imported bundle to the admitted commit",
+            description: "Compare the imported bundle with the admitted commit and tree",
             arguments: Observed,
-            execute: (args: z.infer<typeof Observed>, ctx: Context) => {
-                const input = PublishInput.parse(args.input);
-                return data(
-                    ctx,
-                    imported(
-                        run(args.steps, "import"),
-                        input.commit,
-                        input.tree,
-                    ),
-                );
-            },
+            execute: (args: z.infer<typeof Observed>, ctx: Context) => save(ctx, requireSuccess(imported(run(args.steps, "import"), args.input.commit, args.input.tree), "imported", "tasks.repository_execution_unknown")),
         },
         pushed: {
-            description: "Map the push without force to its public outcome",
-            arguments: Observed,
-            execute: (args: z.infer<typeof Observed>, ctx: Context) =>
-                data(ctx, pushed(run(args.steps, "push"))),
+            description: "Read private push replies and keep only the public outcome",
+            arguments: PrivateReply,
+            execute: async (args: z.infer<typeof PrivateReply>, ctx: Context) => save(ctx, requireSuccess(pushed({ exitCode: args.exit_code, stdout: await read(args.directory, "push.stdout"), stderr: await read(args.directory, "push.stderr") }), "pushed", "tasks.push_failed")),
         },
         pull: {
-            description: "Plan one PR update or creation from the open lookup",
-            arguments: Observed,
-            execute: (args: unknown, ctx: Context) => data(ctx, pullPlan(args)),
+            description: "Plan one PR write and materialize its unchanged JSON input",
+            arguments: PrivateReply.extend({ input: PublishInput }),
+            execute: async (args: z.infer<typeof PrivateReply> & { input: z.infer<typeof PublishInput> }, ctx: Context) => {
+                const plan = requireResult(pullPlan({ input: args.input, steps: { read_pull: { outputs: { exitCode: args.exit_code, stdout: await read(args.directory, "pulls.json") } } } }));
+                const path = `${args.directory}/pull-body.json`;
+                await Deno.writeTextFile(path, plan.body, { mode: 0o600 });
+                return save(ctx, { method: plan.method, path: plan.path, number: plan.number, body_file: path });
+            },
         },
-        result: {
-            description:
-                "Shape the public terminal publication result from the parent run's steps and this step's own",
-            arguments: Observed.extend({ parent: Args.default({}) }),
-            execute: (
-                args: z.infer<typeof Observed> & { parent: Record<string, unknown> },
-                ctx: Context,
-            ) =>
-                data(
-                    ctx,
-                    finish({
-                        input: args.input,
-                        steps: { ...flatten(args.parent), ...args.steps },
-                    }),
-                ),
+        written: {
+            description: "Read the PR write reply and keep only its public publication metadata",
+            arguments: PrivateReply.extend({ input: PublishInput, number: z.number().int().min(0) }),
+            execute: async (args: z.infer<typeof PrivateReply> & { input: z.infer<typeof PublishInput>; number: number }, ctx: Context) => {
+                if (args.exit_code !== 0) throw new Error("tasks.publish_failed");
+                let number: number;
+                try {
+                    number = z.object({ number: z.number().int().positive() }).parse(JSON.parse(await read(args.directory, "pull.json"))).number;
+                } catch { throw new Error("tasks.publish_failed"); }
+                if (args.number !== 0 && number !== args.number) throw new Error("tasks.publish_failed");
+                return save(ctx, { stdout: JSON.stringify({ pull_request_number: number, pull_request_url: `https://github.com/${args.input.repository}/pull/${number}` }) });
+            },
         },
     },
 };

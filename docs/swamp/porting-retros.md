@@ -360,3 +360,25 @@ Cancellation 8268 destroyed task VM 356 at 2026-11-02T20:08:43Z. The lane holds 
 Two fresh receipts at `f42b8ba0e9` prove ordinary removal in 0.12 seconds and removal after the trigger and workflow are already gone in 0.35 seconds. Both verify the command key is gone, with no Node units or control run. The observed p95 is 0.35 seconds for two samples; each fixture has a 60-second budget and the shared fire child's queue timeout of 300. `swamp/proof/receipts/schedule-destroy-native.json` indexes both receipts. Forty-four Gateway cases, PHP analysis, formatting, registry, charts and docs pass; the name and missing-resource regressions failed before the fix. No script is added or removed.
 
 The proof uses a test calendar and proof CA, without production data, load or scale.
+
+## Task publication uses native Git commands and terminal projection
+
+`tasks.publish` keeps its workflow identity. Official SSH argv builds an alternate index and exports the commit; separate worker Git commands initialize and import a private bare repository. The Gateway freezes public execution inputs, supplies small token/header execution copies, and takes the group lock before minting. The task VM receives no token. The Gateway reads PR metadata from its producer and status from the native end assert. Five ordering-only child workflows and result programs are removed; shared `tasks.check` helpers remain.
+
+F9 deviation: the successful non-force push establishes the admitted tip, so PR planning drops its redundant head-SHA comparison. Base and duplicate-PR refusals remain. Pinned e459 drops failed command outputs, so private CLI replies pass immediately to typed readers that fail with public refusal codes. Raw replies stay out of history. Nullable intent also needs `default: null`, even with `anyOf`. Both native limitations are open candidates in `swamp-evaluation.md`.
+
+When cleanup removes scratch, callers start a new command. Native resume cannot recreate the directory from a completed step. The new run gets a fresh token, safely repeats the push and looks up an existing PR. Revocation and remote cleanup are best effort; local cleanup is required. No rollback or runtime ownership check is added.
+
+Three minimal@11 receipts at `b27f2ad40d` pass:
+
+- PR publication: 22.90 seconds; unchanged caller prose and watched fields.
+- Push-only publication: 18.58 seconds; no PR call or watched PR.
+- Moved workspace: 10.90 seconds; `tasks.head_moved` before export or push.
+
+The observed nearest-rank p95 is 22.90 seconds for three samples, one per branch. The initial run budget is 1,800 seconds and queue timeout is 30. `swamp/proof/receipts/tasks-publish.json` indexes the receipts. Real SSH and Git use a local HTTPS GitHub contract server, a one-file repository and the proof CA. CI is recorded evidence; no production GitHub or scale is exercised. Parity also proves token revocation, scratch removal and the unchanged real Git index.
+
+Eight native publication tests, nine Gateway tests and nine shared data tests pass. Fifty related Gateway tests cover maintenance, dependency merge and workflow grants. PHP analysis, native validation, shape, naming, placement, registry, chart and docs checks pass. Fixture retries exposed Project uniqueness, task-VM ownership, TLS framing and the top-level Task scope; the workflow needed no change.
+
+Cancellation 8321 destroyed task VM 363 at 2026-11-02T21:14:01Z. The lane holds no VM. The publication workflow, data, admission, projection and shared terminal/SSH helpers match the proven source after rebase.
+
+Orbit grows by 190 lines, including the proof index. Runtime code shrinks by 270. Swamp grows by 82: behaviors shrink by 116, workflows by 193 and tests by 79; proof declarations, parity fixtures and the receipt index add 470. The growth proves real SSH, Git and TLS behavior without writing to an external repository. No shipped script is added or removed.

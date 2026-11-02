@@ -1,7 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS 1 (token minted at admission, vault) and R2-R4, swamp-tasks-model. docs/reference/tasks.md#publish-an-external-group.
   %% Tightened: flow-tighten 2026-11-02, rule 16 (no tip read: a push without force refuses a divergent tip and pushes nothing for an identical one); rule 22 (no shipped scripts: task VM work is `@swamp/ssh exec` argv, 209 work is inline `git` and `gh api`; one workspace check, since import checks the bundled commit and tree).
-  %% status: draft
+  %% status: migrated
   %% command: tasks:publish
   %% kind: tasks.publish
   autonumber
@@ -30,7 +30,7 @@ sequenceDiagram
   %%> - no other task runs on group 42; the Gateway holds one lock per group
   %%> What it does:
   %%> - captures the repository, default branch, commit, checked tree and the task VM's SSH target
-  %%> - mints a token for that one repository with `contents: write`, `pull_requests: write` and `workflows: write`, and pushes it to the vault as `task-publish-5165` after commit (R3)
+  %%> - mints a token for that one repository with `contents: write`, `pull_requests: write` and `workflows: write`, and pushes it to the vault under two `task-publish-token-<uuid>` keys after commit (R3)
   %%> Result:
   %%> - task #5165 recorded with the full intent
   GW->>SW: Start run, full intent<br/>operation-task-publish
@@ -38,50 +38,80 @@ sequenceDiagram
   %%> - starts one Swamp run on serve (Node 209)
   %%> Inputs:
   %%> - the commit, tree, branch `task-42`, default branch and the optional title and body
-  %%> - the vault key name of the token, never the token
+  %%> - the vault key names of the token and Git authorization header, never their values
   GW-->>CLI: 202 Accepted<br/>task #5165
   %%> What you get:
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>N: Check the workspace<br/>HEAD + tree = check 17
+  Note over SW: Create publication scratch
   %%> How:
-  %%> - Swamp reaches the task VM over SSH from 209, with `@swamp/ssh exec` argv: `git read-tree HEAD`, `git add --all` and `git write-tree` on a per-run index file, then `git rev-parse HEAD`
-  %%> What it does:
-  %%> - checks that HEAD and the whole working tree still equal the checked candidate; the real index is not touched
-  %%> Refuses:
-  %%> - a moved candidate: `tasks.head_moved`; nothing is pushed
-  SW->>N: Export the commit<br/>git bundle · copy to 209
-  %%> What it does:
-  %%> - runs `git bundle create <file> HEAD` as one `@swamp/ssh exec` argv and copies the file to 209 with `@swamp/ssh copy`
-  %%> Why:
-  %%> - the task VM never gets a GitHub token, and its Git configuration is never loaded
-  Note over SW: Import into a bare repo<br/>scratch repository on 209
-  %%> What it does:
-  %%> - `git init --bare`, `git fetch` of the bundle and `git rev-parse` in one inline shell step on 209; only this repository uses the token
-  %%> Refuses:
-  %%> - a bundle whose HEAD or tree is not the checked candidate: `tasks.head_moved`
-  SW->>GH: Push the branch<br/>git push task-42 · no force
-  %%> What it does:
-  %%> - pushes the checked commit to `task-42` without force, with the token from `vault.get`
-  %%> - the token reaches Git only as an extra header in the environment, never in argv or run history
-  %%> - an identical tip pushes nothing
-  %%> Refuses:
-  %%> - a divergent tip: git refuses the push by itself, mapped to `tasks.not_fast_forward`; no tip read runs first
-  %%> - an installation without `Workflows` write when the commit changes `.github/workflows/`: `tasks.workflows_permission`
+  %%> - a private worker directory holds the bundle, bare repository and bounded CLI replies
+  SW->>N: Read the index
+  %%> How:
+  %%> - one bounded native Git command, with an isolated alternate index on the task VM
+  SW->>N: Add workspace files
+  %%> How:
+  %%> - one bounded native Git command, with an isolated alternate index on the task VM
+  SW->>N: Read workspace tree
+  %%> How:
+  %%> - one bounded native Git command, with an isolated alternate index on the task VM
+  SW->>N: Read workspace HEAD
+  %%> How:
+  %%> - one bounded native Git command, with an isolated alternate index on the task VM
+  Note over SW: Check the workspace
+  %%> How:
+  %%> - typed data compares HEAD and the complete tree to the admitted candidate; a mismatch refuses before export
+  SW->>N: Export the commit
+  %%> How:
+  %%> - one bounded native command on the worker; no shipped script
+  SW->>N: Copy the bundle
+  %%> How:
+  %%> - official SSH copy reads the bundle onto the worker; no code is copied to the task VM
+  Note over SW: Init the bare repo
+  %%> How:
+  %%> - one bounded native command on the worker; no shipped script
+  Note over SW: Import the bundle
+  %%> How:
+  %%> - one bounded native command on the worker; no shipped script
+  Note over SW: Read bundle contents
+  %%> How:
+  %%> - one bounded native command on the worker; no shipped script
+  Note over SW: Check imported commit
+  %%> How:
+  %%> - typed data compares the imported commit and tree without a second workspace observation
+  SW->>GH: Push the branch
+  %%> How:
+  %%> - one bounded push without force; authorization is a vault-backed extra header in the environment
+  Note over SW: Read push result
+  %%> How:
+  %%> - typed data reads private replies and preserves fast-forward and Workflows refusal codes
   opt with --title and --body
-    SW->>GH: Open or update the PR<br/>task-42 → default branch
-    %%> What it does:
-    %%> - looks for an open pull request from `task-42` with `gh api`; updates its title and body when found, else opens one
-    %%> - the title and body go to `gh api` on stdin, unchanged
-    %%> Not included:
-    %%> - no reviewers, no brief coverage, no board status change
+  SW->>GH: Read open PRs
+  %%> How:
+  %%> - one bounded native command on the worker; no shipped script
+  Note over SW: Plan the PR
+  %%> How:
+  %%> - typed data selects an open PR or creation and writes unchanged caller prose into a JSON input file
+  SW->>GH: Write the PR
+  %%> How:
+  %%> - one bounded native command on the worker; no shipped script
+  Note over SW: Read PR result
+  %%> How:
+  %%> - typed data keeps only the PR number and URL
   end
-  SW->>GH: Revoke the token<br/>DELETE /installation/token
-  %%> What it does:
-  %%> - revokes the token with `gh api`, and removes the scratch files on the task VM and on 209, on success and on failure
-  %%> If it fails:
-  %%> - the run still reports its result; the token expires within one hour
+  SW->>GH: Revoke the token
+  %%> How:
+  %%> - one bounded gh api call; a refused revoke is best effort and the token expires within an hour
+  SW->>N: Remove remote scratch
+  %%> How:
+  %%> - one bounded SSH argv removes this run's index and bundle after failure too
+  Note over SW: Remove local scratch
+  %%> How:
+  %%> - one bounded command removes the private worker directory and CLI configuration
+  Note over SW: Confirm publication
+  %%> How:
+  %%> - the native assert requires the push, optional PR reply and worker cleanup to be complete
   alt pushed
     GH-->>SW: PR #57 · head sha
     %%> Returns:
