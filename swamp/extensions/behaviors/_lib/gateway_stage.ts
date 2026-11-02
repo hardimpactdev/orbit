@@ -298,9 +298,16 @@ function turnInputIdentity(input: unknown): string {
     : input);
 }
 
+/** The Gateway adds its admission facts (workspace, Node, SSH execution) to the stored input; every requested field must come back unchanged. */
+function admittedRequest(input: unknown, body: Record<string, unknown> | undefined): boolean {
+  if (body === undefined || input === null || typeof input !== "object" || Array.isArray(input)) return false;
+  const stored = input as Record<string, unknown>;
+  return Object.keys(body).every((k) => k in stored && canonical(stored[k]) === canonical(body[k]));
+}
+
 function requireOperation(job: Job, op: Record<string, unknown>): void {
   if (op.id !== job.operationId || op.kind !== `tasks.${job.stage}` || op.target_type !== "task_group" || op.target_id !== job.group ||
-    (job.stage === "analyze" && canonical(op.input) !== canonical(job.request?.body))) throw new Error("operation differs from the admitted group/request identity");
+    (job.stage === "analyze" && !admittedRequest(op.input, job.request?.body))) throw new Error("operation differs from the admitted group/request identity");
 }
 
 function failureMetadata(job: Job, op: Record<string, unknown>): Record<string, unknown> {

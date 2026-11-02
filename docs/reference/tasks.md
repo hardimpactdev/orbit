@@ -253,6 +253,8 @@ Analysis performs no fetch, merge, or base adoption. Use the successful provisio
 
 Swamp verifies the base object and ancestry and takes fresh HEAD and whole-worktree snapshots before execution and after completion. The existing snapshot includes uncommitted and unignored untracked files without changing the real index; clean HEAD alone is insufficient. Pin repository identity, actual branch, Instance, Node, operation identity, and the fixed entrypoint's tracked content digest. Ignored caches are not candidate evidence. Reports and run metadata live outside candidate paths and must not alter the analyzed tree.
 
+The stored operation input holds every requested field unchanged, plus the Gateway's admission facts: group, Instance, Node, SSH execution and checkout. Swamp checks each requested field against it. The added facts do not make the input differ.
+
 ##### Fixed execution and complete report
 
 One native step runs the tracked regular executable `bin/task-analyze`, with no arguments and the admitted plan and candidate on stdin. The step pins its tracked digest and uses the operation ID to derive a stable execution identity. It runs through the admitted SSH account with no model or GitHub credentials. Missing tooling is unavailable. The Gateway runs no script, lease, wait or cancellation handler.
