@@ -90,6 +90,8 @@ The agent reports facts the Gateway stores and answers reads from, such as Docto
 | `host` | `os`, `arch`, and the `mount`, `size` and `free` bytes of each data filesystem (ext2–4, XFS, Btrfs, ZFS, F2FS; no snap mounts; at most 64) | every 60 seconds |
 | `units` | `docker` (`available` or `absent`), and each `orbit-process-*` unit, each Process container, and each role service from the [watch list](#watch-list), with its `runtime` and `state`. A role service that is not installed reads `not-found`. | every 10 seconds |
 
+The Gateway stores a host's `free` bytes rounded down to 256 MiB. Free space moves with every log line, so without the rounding each `host` report would write a row.
+
 The agent sends a fact when it changed, and again every 10 minutes. The Gateway answers `204`. It stores one row per Node and kind in `node_facts`, with the agent's `observed_at` and its own `received_at`. A report whose content is unchanged reads one row and writes nothing. A change compares and writes in one short transaction with no remote call inside. A request over 1 MiB fails with `agent.fact_too_large` (413), and invalid data fails with `validation.failed` (422).
 
 ## Task workspaces

@@ -21,6 +21,7 @@ final readonly class RecordNodeFactAction
     /** @param array<string, mixed> $data */
     public function execute(Node $node, NodeFactKind $kind, CarbonImmutable $observedAt, array $data): bool
     {
+        $data = $kind->stored($data);
         $encoded = json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $digest = hash('sha256', $kind->value."\0".$encoded);
         $stored = static fn (): ?string => ValidatedData::nullableString(

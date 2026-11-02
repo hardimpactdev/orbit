@@ -16,6 +16,9 @@ enum NodeFactKind: string
     /** Systemd units and Docker containers the watch list names or the agent owns, with their state. */
     case Units = 'units';
 
+    /** Free space is stored in whole steps of this size, so ordinary disk use is not a change to write. */
+    public const int FreeStepBytes = 268_435_456;
+
     /** @return array<string, list<string>|string> */
     public function rules(): array
     {
@@ -36,5 +39,27 @@ enum NodeFactKind: string
                 'units.*.state' => ['required', 'string', 'max:32', 'regex:/\A[a-z-]+\z/'],
             ],
         };
+    }
+
+    /**
+     * The data as the Gateway stores it. A host's free space moves with every log line, so it is rounded down to
+     * {@see self::FreeStepBytes}; the digest of the rounded data then changes only when the space really changes.
+     *
+     * @param  array<string, mixed>  $data  validated by {@see self::rules()}
+     * @return array<string, mixed>
+     */
+    public function stored(array $data): array
+    {
+        if ($this !== self::Host || ! is_array($data['filesystems'] ?? null)) {
+            return $data;
+        }
+        $data['filesystems'] = array_map(
+            static fn (mixed $filesystem): mixed => is_array($filesystem) && is_int($filesystem['free'] ?? null)
+                ? array_replace($filesystem, ['free' => intdiv($filesystem['free'], self::FreeStepBytes) * self::FreeStepBytes])
+                : $filesystem,
+            $data['filesystems'],
+        );
+
+        return $data;
     }
 }

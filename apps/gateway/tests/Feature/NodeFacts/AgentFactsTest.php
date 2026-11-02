@@ -21,13 +21,14 @@ describe('agent facts and liveness', function (): void {
     });
     afterEach(fn () => Carbon::setTestNow());
 
-    $host = static fn (int $free = 40): array => ['kind' => 'host', 'observed_at' => '2026-11-02T18:00:00Z',
-        'data' => ['os' => 'linux', 'arch' => 'x86_64', 'filesystems' => [['mount' => '/', 'size' => 100, 'free' => $free]]]];
+    $gib = 1_073_741_824;
+    $host = static fn (int $free = 40 * 1_073_741_824): array => ['kind' => 'host', 'observed_at' => '2026-11-02T18:00:00Z',
+        'data' => ['os' => 'linux', 'arch' => 'x86_64', 'filesystems' => [['mount' => '/', 'size' => 100 * 1_073_741_824, 'free' => $free]]]];
 
-    it('stores a changed fact once and writes nothing for an unchanged report', function () use ($host): void {
+    it('stores a changed fact once and writes nothing for an unchanged report', function () use ($host, $gib): void {
         $this->postJson('/api/v1/agent/facts', $host())->assertNoContent();
         $first = NodeFact::query()->sole();
-        expect($first->data['filesystems'][0]['free'])->toBe(40)->and($first->observed_at->toIso8601ZuluString())->toBe('2026-11-02T18:00:00Z');
+        expect($first->data['filesystems'][0]['free'])->toBe(40 * $gib)->and($first->observed_at->toIso8601ZuluString())->toBe('2026-11-02T18:00:00Z');
 
         $writes = 0;
         $transactions = 0;
@@ -42,8 +43,12 @@ describe('agent facts and liveness', function (): void {
         $this->postJson('/api/v1/agent/facts', $host())->assertNoContent();
         expect($writes)->toBe(0)->and($transactions)->toBe(0);
 
-        $this->postJson('/api/v1/agent/facts', $host(39))->assertNoContent();
-        expect($writes)->toBe(1)->and($transactions)->toBe(1)->and(NodeFact::query()->sole()->data['filesystems'][0]['free'])->toBe(39);
+        // Free space that moves by less than one step is no change: the disk fills with logs all the time.
+        $this->postJson('/api/v1/agent/facts', $host(40 * $gib + 200_000_000))->assertNoContent();
+        expect($writes)->toBe(0)->and($transactions)->toBe(0);
+
+        $this->postJson('/api/v1/agent/facts', $host(39 * $gib + 5))->assertNoContent();
+        expect($writes)->toBe(1)->and($transactions)->toBe(1)->and(NodeFact::query()->sole()->data['filesystems'][0]['free'])->toBe(39 * $gib);
     });
 
     it('refuses an unknown kind, malformed data and a body over 1 MiB', function () use ($host): void {
