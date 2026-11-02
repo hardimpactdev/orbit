@@ -1056,7 +1056,8 @@ jobs:
     - step: model
       condition:
         type: always
-    guard: ${{ steps["provider-plan"].outputs.provider == "incus" && !(steps.model.status in ["succeeded","failed","cancelled"])
+    # A model step that never started has no entry in steps; it still needs the revoke.
+    guard: ${{ "provider-plan" in steps && steps["provider-plan"].outputs.provider == "incus" && !("model" in steps && steps.model.status in ["succeeded","failed","cancelled"])
       }}
   - name: hub-restore-assets
     labels: {role: swamp}
