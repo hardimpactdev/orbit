@@ -143,6 +143,9 @@ class LegacyCreatePhases(unittest.TestCase):
 
     def run_setup(self, steps):
         runner = (Path(__file__).parent / 'scripts/run_project_step.py').read_text()
+        reader = (Path(__file__).parent.parent / 'task-repository/scripts/project_environment.py').read_text()
+        runner = reader + '\n' + runner.replace(
+            'from project_environment import ProjectEnvironmentRefusal, load_project_environment\n', '')
         return module('setup').setup(runner, steps)
 
     def test_setup_keeps_legacy_missing_command_and_timeout_codes(self):
@@ -159,7 +162,11 @@ class LegacyCreatePhases(unittest.TestCase):
         setup = module('setup')
         setup.pwd = type('pwd', (), {'getpwuid': staticmethod(lambda uid: type('entry', (), {'pw_dir': str(home)}))})
         steps = self.setup_steps('test "$VP_HOME" = ' + str(home / '.vite-plus'))
-        self.assertTrue(setup.setup((Path(__file__).parent / 'scripts/run_project_step.py').read_text(), steps)['ready'])
+        runner = (Path(__file__).parent / 'scripts/run_project_step.py').read_text()
+        reader = (Path(__file__).parent.parent / 'task-repository/scripts/project_environment.py').read_text()
+        runner = reader + '\n' + runner.replace(
+            'from project_environment import ProjectEnvironmentRefusal, load_project_environment\n', '')
+        self.assertTrue(setup.setup(runner, steps)['ready'])
 
 
 if __name__ == '__main__':

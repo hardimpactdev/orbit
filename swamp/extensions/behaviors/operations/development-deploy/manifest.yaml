@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/development-deploy'
-version: 2026.11.01.2
+version: 2026.11.02.1
 visibility: private
 license: MIT
 description: Public development deployment metadata and target-local one-action scripts.

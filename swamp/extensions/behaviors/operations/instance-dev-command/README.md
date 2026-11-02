@@ -4,4 +4,6 @@ The Project step runner retains only bounded failure stderr. It normalizes inval
 
 The runner keeps complete trailing lines within 4096 bytes and drops known eight-byte fragments. If the newest line alone exceeds the limit, it retains nothing. Command stdout is discarded. This changes diagnostics only; command execution, exit status, workflow inputs and budgets stay unchanged.
 
+`task-repository/scripts/project_environment.py` is the sole dotenv parser. Its public source is bundled into create and destroy runner assets, following the existing deploy import contract. The runner reads an owned file once for redaction; it does not export those Node values into its command environment. A refused file runs no command, returns only the fixed error code and keeps unparsed noncomment lines private.
+
 The bounded coverage mask fixes L17-PR-2370-01. The runner remains a retained script pending the current Instance phase port; this patch adds no Node script or execution path.

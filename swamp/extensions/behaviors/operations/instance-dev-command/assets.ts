@@ -1,4 +1,7 @@
 import { z } from "npm:zod@4.4.3";
+import projectEnvironmentRuntime from "../task-repository/scripts/project_environment.py" with {
+    type: "text",
+};
 import { createResult, Step } from "./result.ts";
 const ObjectValue = z.record(z.string(), z.unknown());
 type Context = {
@@ -7,7 +10,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/instance-dev-command",
-    version: "2026.11.02.2",
+    version: "2026.11.02.3",
     resources: {
         result: { schema: ObjectValue, lifetime: "1d", garbageCollection: 10 },
     },
@@ -33,7 +36,9 @@ export const behavior = {
                     remove: await read("destroy/remove.py"),
                     gone: await read("destroy/gone.py"),
                     setup: await read("create/setup.py"),
-                    runner: await read("scripts/run_project_step.py"),
+                    runner: projectRunner(
+                        await read("scripts/run_project_step.py"),
+                    ),
                 };
                 await ctx.writeResource("result", "destroy-assets", value);
                 return value;
@@ -55,7 +60,9 @@ export const behavior = {
                     source: await read("create/source.py"),
                     environment: await read("scripts/write_environment.py"),
                     setup: await read("create/setup.py"),
-                    runner: await read("scripts/run_project_step.py"),
+                    runner: projectRunner(
+                        await read("scripts/run_project_step.py"),
+                    ),
                 };
                 await ctx.writeResource("result", "create-assets", value);
                 return value;
@@ -90,3 +97,10 @@ export const behavior = {
         },
     },
 };
+
+function projectRunner(source: string): string {
+    return projectEnvironmentRuntime + "\n" + source.replace(
+        /^from project_environment import ProjectEnvironmentRefusal, load_project_environment\n/m,
+        "",
+    );
+}

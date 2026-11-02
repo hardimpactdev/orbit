@@ -110,6 +110,18 @@ class DevelopmentScripts(unittest.TestCase):
         self.assertEqual(result, {"ready": True, "exit_code": 0, "timed_out": False, "warning": False})
         self.assertEqual((self.repo / "proof").read_text(), "ok")
 
+    def test_app_receives_an_actual_multiline_pem_from_the_shared_reader(self):
+        pem = subprocess.run(['openssl', 'genpkey', '-algorithm', 'ED25519'],
+                             check=True, capture_output=True, text=True).stdout
+        expected = hashlib.sha256(pem.encode()).hexdigest()
+        (self.repo / '.env').write_text('JWT_PRIVATE_KEY="' + pem + '"\n')
+        (self.repo / '.env').chmod(0o600)
+        command = ('python3 -c \'import hashlib,os; '
+                   'assert hashlib.sha256(os.environ["JWT_PRIVATE_KEY"].encode()).hexdigest()=="' + expected + '"\'')
+        result = self.action('app', command)
+        self.assertEqual(result, {"ready": True, "exit_code": 0, "timed_out": False, "warning": False})
+        self.assertNotIn(pem, json.dumps(result))
+
     def test_required_optional_digest_and_deadline_outcomes(self):
         self.assertEqual(self.action("app", "exit 7")["error_code"], "deployment.step_failed")
         optional = self.action("app", "exit 7", required=False)

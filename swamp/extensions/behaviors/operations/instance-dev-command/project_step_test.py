@@ -9,15 +9,28 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).parent / 'scripts/run_project_step.py'
+READER = Path(__file__).parent.parent / 'task-repository/scripts/project_environment.py'
 
 
 class ProjectStep(unittest.TestCase):
     def run_step(self, directory, command):
-        return subprocess.run([sys.executable, str(SCRIPT)], input=json.dumps({
+        program = READER.read_text() + '\n' + SCRIPT.read_text().replace(
+            'from project_environment import ProjectEnvironmentRefusal, load_project_environment\n', '')
+        return subprocess.run([sys.executable, '-I', '-c', program], input=json.dumps({
             'command':command,'sha256':hashlib.sha256(command.encode()).hexdigest(),
             'directory':str(directory),'instance_id':17,'instance_name':'proof',
             'seed_path':'/captured/default','seed_commit':'a'*40,
         }), text=True, capture_output=True, check=False)
+
+    def test_invalid_dotenv_never_runs_a_command_or_exposes_its_unparsed_line(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)
+            (path / '.env').write_text('APP_KEY="valid-synthetic"\nunparsed-private-line\n')
+            result = self.run_step(path, 'touch command-ran; exit 7')
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(json.loads(result.stdout), {'exitCode': 1, 'stderr': 'instance.step_not_admitted'})
+            self.assertNotIn('unparsed-private-line', result.stdout + result.stderr)
+            self.assertFalse((path / 'command-ran').exists())
 
     def test_bash_features_and_captured_seed_at_checkout_root(self):
         with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:

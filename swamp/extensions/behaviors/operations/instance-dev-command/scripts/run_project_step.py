@@ -3,62 +3,11 @@ import hashlib
 import json
 import os
 import re
-import stat
 import subprocess
 import sys
 from pathlib import Path
 
-ESCAPES = {'n': '\n', 'r': '\r', 't': '\t', 'f': '\f', 'v': '\v', '\\': '\\', '"': '"', '$': '$'}
-
-
-def unescape(value: str) -> str:
-    # phpdotenv reads these escapes in double-quoted values.
-    return re.sub(r'\\([nrtfv\\"$])', lambda match: ESCAPES[match[1]], value)
-
-
-def closing_quote(text: str, quote: str) -> int:
-    escaped = False
-    for index, character in enumerate(text):
-        if escaped:
-            escaped = False
-        elif character == '\\' and quote == '"':
-            escaped = True
-        elif character == quote:
-            return index
-    return -1
-
-
-def dotenv_secrets(text: str) -> set[str]:
-    """Every value phpdotenv could read from .env, read conservatively so no real value is missed."""
-    found: set[str] = set()
-    lines = re.split(r'\r\n|\n|\r', text)  # phpdotenv splits only on these, not on U+2028 and friends
-    index = 0
-    while index < len(lines):
-        line = lines[index]
-        index += 1
-        stripped = line.strip()
-        if not stripped or stripped.startswith('#'):
-            continue
-        if '=' not in line:
-            found.add(stripped)  # backstop: an unparsed line may still be part of a value
-            continue
-        value = line.split('=', 1)[1].strip()
-        found.add(value)
-        if value[:1] in ('"', "'"):
-            quote, body = value[0], value[1:]
-            while closing_quote(body, quote) < 0 and index < len(lines):
-                body += '\n' + lines[index]  # multi-line quoted value, such as a PEM key
-                index += 1
-            end = closing_quote(body, quote)
-            inner = body[:end] if end >= 0 else body
-            for item in (inner, unescape(inner) if quote == '"' else inner):
-                found.update([item, *item.splitlines(), *re.split(r'\r\n|\n|\r', item)])
-        else:
-            # phpdotenv ends an unquoted value at any whitespace or '#'.
-            found.add(re.split(r'[\s#]', value, maxsplit=1)[0])
-    found.discard('')
-    return found
-
+from project_environment import ProjectEnvironmentRefusal, load_project_environment
 
 value = json.load(sys.stdin)
 command = value['command']
@@ -73,17 +22,16 @@ redactions = {command}
 for key, item in environment.items():
     if re.search(r'TOKEN|SECRET|PASSWORD|CREDENTIAL|(?:^|_)KEY$', key, re.IGNORECASE) and item:
         redactions.add(item)
-# Only collect strings for redaction. This does not load the Node file into the command's environment.
+# Read once through the canonical parser; file values stay out of the process environment.
 try:
-    descriptor = os.open('.env', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-except FileNotFoundError:
-    pass
-else:
-    with os.fdopen(descriptor, 'r', encoding='utf-8') as stream:
-        info = os.fstat(stream.fileno())
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_size > 1048576:
-            raise SystemExit(1)
-        redactions.update(dotenv_secrets(stream.read()))
+    values = load_project_environment(directory)
+except ProjectEnvironmentRefusal as error:
+    # The reader retains unparsed noncomment lines privately; a refused file runs no command.
+    redactions.update(error.redaction_targets)
+    print(json.dumps({'exitCode': 1, 'stderr': str(error)}))
+    raise SystemExit(1) from None
+for item in values.values():
+    redactions.update([item, *item.splitlines(), *re.split(r'\r\n|\n|\r', item)])
 redactions.discard('')
 secrets = sorted((item.encode() for item in redactions), key=len, reverse=True)
 # Fragment checks cover secret values only, not the command text, which is redacted whole.

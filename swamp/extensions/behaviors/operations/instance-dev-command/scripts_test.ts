@@ -6,6 +6,7 @@ for (
         "source_actions_test.py",
         "project_step_test.py",
         "create_phases_test.py",
+        "../task-repository/project_environment_test.py",
     ]
 ) {
     Deno.test(
