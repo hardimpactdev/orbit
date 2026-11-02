@@ -102,7 +102,7 @@ The awake markers live in `/dev/shm`, so a reboot clears them. Development Proce
 
 ## Host directories
 
-The `app-dev` role calls `hibernation.prepare-directories` through the Node agent before Caddy reloads. Each marker write uses the same native directory setup before Caddy reads a marker. The agent checks both directory paths and resolves the Caddy group before changing either directory.
+Native `app-dev` role addition creates the marker and access-log directories with cfgmgmt directory resources before publishing Caddy sites. Each marker write uses the shared directory setup before Caddy reads a marker. The marker writer checks both directory paths and resolves the Caddy group before changing either directory.
 
 | Path | Owner | Mode | Use |
 | --- | --- | --- | --- |
