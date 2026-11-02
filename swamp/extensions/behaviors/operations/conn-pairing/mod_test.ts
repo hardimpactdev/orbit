@@ -1,83 +1,39 @@
-import {
-    assertEquals,
-    assertFalse,
-    assertRejects,
-} from "jsr:@std/assert@1.0.19";
+import { assertEquals, assertFalse, assertRejects } from "jsr:@std/assert@1.0.19";
 import { issue } from "./mod.ts";
-const args = {
-    intent: {
-        url: "http://t3.test/base/",
-        pairing_id: 7,
-        label: "phone via Orbit",
-    },
-    env: { ORBIT_CONN_ADMIN_SESSION: "private-admin-sentinel" },
-};
 const credential = "private-issued-sentinel";
-Deno.test("one typed request writes a native sensitive resource then exposes only a vault locator", async () => {
-    const writes: { spec: string; data: unknown }[] = [];
-    const request = ((url: unknown, init: RequestInit) => {
-        assertEquals(url, "http://t3.test/base/api/auth/pairing-token");
-        assertEquals(init.redirect, "error");
-        assertEquals(
-            new Headers(init.headers).get("authorization"),
-            "Bearer private-admin-sentinel",
-        );
-        assertEquals(JSON.parse(String(init.body)).label, args.intent.label);
-        return Promise.resolve(
-            new Response(
-                JSON.stringify({
-                    id: "link",
-                    credential,
-                    expiresAt: "2026-11-01T01:00:00Z",
-                }),
-            ),
-        );
-    }) as typeof fetch;
-    await issue(args, {
-        modelId: "00000000-0000-4000-8000-000000000001",
-        writeResource: async (spec, _name, data) => {
-            writes.push({ spec, data });
-            return {};
-        },
-    }, request);
-    assertEquals(writes.map((x) => x.spec), ["issued", "terminal"]);
-    const terminal = JSON.stringify(writes[1].data);
-    assertFalse(terminal.includes(credential));
-    assertFalse(terminal.includes(args.env.ORBIT_CONN_ADMIN_SESSION));
-    assertEquals(
-        JSON.parse((writes[1].data as { stdout: string }).stdout).credential_ref
-            .key,
-        "nckrtl-conn-pairing-00000000-0000-4000-8000-000000000001-issue-issued-issued-credential",
-    );
-});
-for (const mode of ["transport", "refusal", "malformed", "echo"]) {
-    Deno.test(`uncertain ${mode} response writes no native token and performs no retry`, async () => {
-        let calls = 0, writes = 0;
-        const request = (() => {
-            calls++;
-            if (mode === "transport") throw new Error(credential);
-            return Promise.resolve(
-                new Response(
-                    mode === "malformed" ? "not-json" : JSON.stringify({
-                        id: mode === "echo" ? credential : "link",
-                        credential,
-                        expiresAt: "2026-11-01T01:00:00Z",
-                    }),
-                    { status: mode === "refusal" ? 503 : 200 },
-                ),
-            );
-        }) as typeof fetch;
-        const error = await assertRejects(() =>
-            issue(args, {
-                modelId: "00000000-0000-4000-8000-000000000001",
-                writeResource: () => {
-                    writes++;
-                    return Promise.resolve({});
-                },
-            }, request)
-        );
+const admin = "private-admin-sentinel";
+async function fixture(run: (directory: string) => Promise<void>) {
+    const directory = await Deno.makeTempDir({ prefix: "orbit-conn-pairing.", dir: "/tmp" });
+    try { await run(directory); } finally { await Deno.remove(directory, { recursive: true }); }
+}
+function args(directory: string, status = "200", id = 7) {
+    return { intent: { url: "http://t3.test", pairing_id: id, label: "phone", request_body: '{"label":"phone"}' }, directory, http_status: status, env: { ORBIT_CONN_ADMIN_SESSION: admin } };
+}
+Deno.test("private reply writes a pairing-specific native sensitive resource and only a public locator", () => fixture(async (directory) => {
+    await Deno.writeTextFile(`${directory}/reply.json`, JSON.stringify({ id: "link", credential, expiresAt: "2026-11-01T01:00:00Z" }));
+    const writes: { spec: string; name: string; data: unknown }[] = [];
+    const context = { modelId: "00000000-0000-4000-8000-000000000001", writeResource: async (spec: string, name: string, data: unknown) => { writes.push({ spec, name, data }); return {}; } };
+    await issue(args(directory), context);
+    await issue(args(directory, "200", 8), context);
+    assertEquals(writes.map((x) => x.name), ["pairing-7", "terminal", "pairing-8", "terminal"]);
+    for (const [index, id] of [[1, 7], [3, 8]]) {
+        const terminal = JSON.stringify(writes[index].data);
+        assertFalse(terminal.includes(credential));
+        assertFalse(terminal.includes(admin));
+        assertEquals(JSON.parse((writes[index].data as { stdout: string }).stdout).credential_ref.key,
+            `nckrtl-conn-pairing-00000000-0000-4000-8000-000000000001-issue-issued-pairing-${id}-credential`);
+    }
+}));
+for (const mode of ["401", "503", "malformed", "echo", "admin-echo"]) {
+    Deno.test(`${mode} keeps diagnostics public and stores no credential`, () => fixture(async (directory) => {
+        let writes = 0;
+        await Deno.writeTextFile(`${directory}/reply.json`, mode === "malformed" ? "not-json" : JSON.stringify({ id: mode === "echo" ? credential : mode === "admin-echo" ? admin : "link", credential, expiresAt: "2026-11-01T01:00:00Z" }));
+        const error = await assertRejects(() => issue(args(directory, ["401", "503"].includes(mode) ? mode : "200"), {
+            modelId: "00000000-0000-4000-8000-000000000001",
+            writeResource: () => { writes++; return Promise.resolve({}); },
+        }));
         assertFalse(String(error).includes(credential));
-        assertEquals(calls, 1);
+        assertFalse(String(error).includes(admin));
         assertEquals(writes, 0);
-    });
+    }));
 }

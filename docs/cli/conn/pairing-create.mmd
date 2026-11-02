@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R1 (an external API call is an effect, so it is a run), R2-R4, env_import vault pattern. docs/reference/conn.md#pairing-operations.
-  %% status: draft
+  %% status: migrated
   %% command: none · Conn API (conn-pairing-create)
   %% kind: conn.pairing_create
   autonumber
@@ -41,16 +41,28 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the caller waits on the task and shows its progress; the run takes about a second
+  Note over SW: Create private reply
+  %%> How:
+  %%> - mktemp creates a private directory for the T3 response
   SW->>T3: Mint a pairing link<br/>POST /api/auth/pairing-token
   %%> How:
   %%> - one HTTPS request from 209, with the admin session from `vault.get`
   %%> What it does:
   %%> - asks T3 for a one-time pairing token with T3's administrative scopes and the admitted client label
-  Note over SW: Store the link in vault<br/>conn-pairing-url-5170
+  Note over SW: Store the link in vault
+  %%> How:
+  %%> - a typed data method reads the private response and publishes the credential as a native sensitive field
+  %%> - its resource instance is unique to pairing 7, so concurrent pairings have different vault keys
   %%> What it does:
-  %%> - writes the `pairing_url` to the vault key `conn-pairing-url-5170`
+  %%> - writes the credential to the native key for pairing 7 and returns only public metadata and its key name
   %%> Not included:
   %%> - the link never goes into step outputs, the run's result or a log
+  Note over SW: Remove private reply
+  %%> How:
+  %%> - declared completed or skipped dependencies clean up after failure too
+  Note over SW: Confirm pairing
+  %%> Check:
+  %%> - the native assert requires a stored sensitive output and successful cleanup
   alt T3 returned a link
     T3-->>SW: one-time token · 5 min
     %%> Returns:
@@ -62,7 +74,7 @@ sequenceDiagram
     %%> - only public metadata: the expiry
     Note over GW: Read the link once<br/>empty the key · task done
     %%> What it does:
-    %%> - reads `conn-pairing-url-5170` once, keeps the link encrypted on pairing 7, then deletes the key with the native `vault.delete` frame
+    %%> - reads pairing 7's native credential key once, keeps the link encrypted on pairing 7, then deletes the key with the native `vault.delete` frame
     %%> Result:
     %%> - pairing 7 gets its issued and expiry times; task #5170 succeeds
   else T3 refuses or no reply

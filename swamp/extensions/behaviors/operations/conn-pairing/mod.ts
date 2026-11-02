@@ -5,6 +5,7 @@ const Intent = z.object({
     url: z.string().url(),
     pairing_id: z.number().int().positive(),
     label: z.string().min(1).max(1024),
+    request_body: z.string().min(1),
 }).strict();
 const Issued = z.object({
     id: Id,
@@ -17,6 +18,8 @@ const Issued = z.object({
 const Terminal = z.object({ stdout: z.string() });
 const Args = z.object({
     intent: Intent,
+    directory: z.string().regex(/^\/tmp\/orbit-conn-pairing\.[A-Za-z0-9]+$/),
+    http_status: z.string(),
     env: z.object({ ORBIT_CONN_ADMIN_SESSION: z.string().min(1) }),
 });
 type Context = {
@@ -28,67 +31,23 @@ type Context = {
         data: unknown,
     ): Promise<unknown>;
 };
-const Scopes = [
-    "orchestration:read",
-    "orchestration:operate",
-    "settings:write",
-    "providers:manage",
-    "environment:maintain",
-    "preview:operate",
-    "diagnostics:read",
-    "terminal:read",
-    "terminal:operate",
-    "source-control:write",
-    "filesystem:read",
-    "filesystem:write",
-    "relay:read",
-    "access:read",
-    "access:write",
-    "relay:write",
-];
 export async function issue(
     args: z.infer<typeof Args>,
     ctx: Context,
-    request: typeof fetch = fetch,
 ) {
     // Core sensitive-field keys use model type/id, method, resource, instance,
     // and field. Remote DataHandles omit attributes; do not read the secret back.
     const modelId = z.string().uuid().parse(ctx.modelId);
     const credentialKey =
-        `nckrtl-conn-pairing-${modelId}-issue-issued-issued-credential`;
-    let response: Response;
-    try {
-        response = await request(
-            args.intent.url.replace(/\/+$/, "") + "/api/auth/pairing-token",
-            {
-                method: "POST",
-                redirect: "error",
-                signal: ctx.signal,
-                headers: {
-                    authorization: "Bearer " +
-                        args.env.ORBIT_CONN_ADMIN_SESSION,
-                    "content-type": "application/json",
-                },
-                body: JSON.stringify({
-                    label: args.intent.label,
-                    scopes: Scopes,
-                }),
-            },
-        );
-    } catch {
-        throw new Error("conn.pairing_outcome_unknown");
-    }
-    if (!response.ok) {
-        await response.body?.cancel();
-        throw new Error(
-            response.status === 401
-                ? "conn.session_rejected"
-                : "conn.pairing_outcome_unknown",
-        );
+        `nckrtl-conn-pairing-${modelId}-issue-issued-pairing-${args.intent.pairing_id}-credential`;
+    if (args.http_status.trim() !== "200") {
+        throw new Error(args.http_status.trim() === "401" ? "conn.session_rejected" : "conn.pairing_outcome_unknown");
     }
     let issued: z.infer<typeof Issued>;
     try {
-        issued = Issued.parse(JSON.parse(await response.text()));
+        const file = `${args.directory}/reply.json`;
+        if ((await Deno.stat(file)).size > 4194304) throw new Error();
+        issued = Issued.parse(JSON.parse(await Deno.readTextFile(file)));
     } catch {
         throw new Error("conn.pairing_outcome_unknown");
     }
@@ -98,7 +57,7 @@ export async function issue(
             value.includes(args.env.ORBIT_CONN_ADMIN_SESSION)
         )
     ) throw new Error("conn.response_invalid");
-    const handle = await ctx.writeResource("issued", "issued", issued);
+    const handle = await ctx.writeResource("issued", `pairing-${args.intent.pairing_id}`, issued);
     const result = {
         backend: "issued",
         pairing_id: args.intent.pairing_id,
@@ -113,7 +72,7 @@ export async function issue(
 }
 export const behavior = {
     type: "@nckrtl/conn-pairing",
-    version: "2026.11.01.1",
+    version: "2026.11.02.1",
     resources: {
         issued: { schema: Issued, lifetime: "infinite", garbageCollection: 10 },
         terminal: {
@@ -125,7 +84,7 @@ export const behavior = {
     methods: {
         issue: {
             description:
-                "Create one pairing token; native sensitive output stores its credential",
+                "Read one private pairing reply and store its unique native sensitive credential",
             arguments: Args,
             execute: issue,
         },

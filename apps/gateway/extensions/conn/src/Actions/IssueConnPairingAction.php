@@ -18,6 +18,13 @@ use Orbit\Extensions\Conn\Models\ConnPairing;
 
 final readonly class IssueConnPairingAction
 {
+    private const array Scopes = [
+        'orchestration:read', 'orchestration:operate', 'settings:write', 'providers:manage',
+        'environment:maintain', 'preview:operate', 'diagnostics:read', 'terminal:read',
+        'terminal:operate', 'source-control:write', 'filesystem:read', 'filesystem:write',
+        'relay:read', 'access:read', 'access:write', 'relay:write',
+    ];
+
     public function __construct(private StartOperationAction $operations, private NodeAccessAuthorizer $nodes) {}
 
     public function admit(Node $node, ConnEnvironment $environment): Operation
@@ -32,7 +39,8 @@ final readonly class IssueConnPairingAction
 
             $reference = ['vault' => 'orbit-control-inputs', 'key' => 'conn-pairing-create-'.Str::uuid()];
             $operation = $this->operations->execute('conn.pairing_create', 'conn_pairing', $pairing->id, $gateway,
-                ['conn_environment_id' => $environment->id, 'intent' => ['url' => $environment->url, 'pairing_id' => $pairing->id, 'label' => $pairing->client_label],
+                ['conn_environment_id' => $environment->id, 'intent' => ['url' => $environment->url, 'pairing_id' => $pairing->id, 'label' => $pairing->client_label,
+                    'request_body' => json_encode(['label' => $pairing->client_label, 'scopes' => self::Scopes], JSON_THROW_ON_ERROR)],
                     'execution_secrets' => ['admin_session' => $reference],
                     'pairing_ids' => [$pairing->id], 'caller_node_id' => $node->id], 'operator', null);
             if ($operation->wasRecentlyCreated) {

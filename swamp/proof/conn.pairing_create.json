@@ -1,0 +1,68 @@
+{
+  "kind": "conn.pairing_create",
+  "workflow": "operation-conn-pairing-create",
+  "topology": "minimal",
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "before_gateway": [
+    [
+      "python3",
+      "-I",
+      "swamp/proof/conn/pairing_fixture.py",
+      "setup",
+      "success"
+    ]
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "extensions/conn/enable",
+      "body": {},
+      "operation": false
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "conn/environments/pairing-proof/pairings",
+    "body": {}
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Create private reply",
+      "job": "pairing",
+      "step": "Create private reply",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Mint a pairing link",
+      "job": "pairing",
+      "step": "Mint a pairing link",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Store the link in vault",
+      "job": "pairing",
+      "step": "Store the link in vault",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Remove private reply",
+      "job": "cleanup",
+      "step": "Remove private reply",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Confirm pairing",
+      "job": "cleanup",
+      "step": "Confirm pairing",
+      "budget_seconds": 60
+    }
+  ],
+  "parity": [
+    "swamp/proof/conn/pairing_fixture.py",
+    "parity"
+  ]
+}

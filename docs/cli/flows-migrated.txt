@@ -44,3 +44,4 @@ vault.teardown
 tasks.provision
 task_vm.fill_package_cache
 conn.pairing_revoke
+conn.pairing_create

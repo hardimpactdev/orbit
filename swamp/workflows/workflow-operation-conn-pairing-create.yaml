@@ -1,6 +1,6 @@
 id: 85fb12d7-c3a6-4d70-a2a8-c2a497374fc8
 name: operation-conn-pairing-create
-description: Create one Conn pairing with a native sensitive credential and public terminal metadata.
+description: Mint one pairing through native curl, store its unique native sensitive field, then clean up and assert.
 vaults:
 - orbit-control-inputs
 inputs:
@@ -12,9 +12,7 @@ inputs:
     node_id:
       type: integer
       minimum: 1
-    kind:
-      type: string
-      const: conn.pairing_create
+    kind: {type: string, const: conn.pairing_create}
     intent:
       type: object
       properties:
@@ -24,10 +22,14 @@ inputs:
           type: integer
         label:
           type: string
+        request_body:
+          type: string
+          minLength: 1
       required:
       - url
       - pairing_id
       - label
+      - request_body
       additionalProperties: false
     execution_secrets:
       type: object
@@ -59,15 +61,91 @@ inputs:
 jobs:
 - name: pairing
   steps:
-  - name: issue
-    labels: {role: swamp}
+  - name: Create private reply
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "conn-pairing-directory" }}
+      methodName: execute
+      inputs:
+        run: timeout 5 mktemp -d /tmp/orbit-conn-pairing.XXXXXXXX
+    writes: true
+  - name: Mint a pairing link
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "conn-pairing-request" }}
+      methodName: execute
+      inputs:
+        run: 'timeout 15 curl --silent --max-time 10 --max-filesize 4194304 --variable %ORBIT_CONN_ADMIN_SESSION --expand-header ''Authorization: Bearer {{ORBIT_CONN_ADMIN_SESSION}}''
+          --header ''Content-Type: application/json'' --data "$ORBIT_CONN_BODY" --output "$ORBIT_CONN_DIRECTORY/reply.json" --write-out ''%{http_code}'' "${ORBIT_CONN_URL%/}/api/auth/pairing-token"
+          2>/dev/null'
+        env:
+          ORBIT_CONN_URL: ${{ inputs.intent.url }}
+          ORBIT_CONN_BODY: ${{ inputs.intent.request_body }}
+          ORBIT_CONN_ADMIN_SESSION: ${{ vault.get(inputs.execution_secrets.admin_session.vault, inputs.execution_secrets.admin_session.key) }}
+          ORBIT_CONN_DIRECTORY: ${{ steps["Create private reply"].outputs.stdout.trim() }}
+    dependsOn:
+    - step: Create private reply
+      condition:
+        type: succeeded
+    writes: true
+  - name: Store the link in vault
+    labels:
+      role: swamp
+    queueTimeout: 30
     task:
       type: behavior
       behaviorType: '@nckrtl/conn-pairing'
-      behaviorName: '${{ "conn-pairing" }}'
+      behaviorName: ${{ "conn-pairing" }}
       methodName: issue
       inputs:
         intent: ${{ inputs.intent }}
+        directory: ${{ steps["Create private reply"].outputs.stdout.trim() }}
+        http_status: ${{ steps["Mint a pairing link"].outputs.stdout }}
         env:
-          ORBIT_CONN_ADMIN_SESSION: ${{ vault.get(inputs.execution_secrets.admin_session.vault, inputs.execution_secrets.admin_session.key)
-            }}
+          ORBIT_CONN_ADMIN_SESSION: ${{ vault.get(inputs.execution_secrets.admin_session.vault, inputs.execution_secrets.admin_session.key) }}
+    dependsOn:
+    - step: Mint a pairing link
+      condition:
+        type: succeeded
+- name: cleanup
+  dependsOn:
+  - job: pairing
+    condition:
+      type: completed
+  steps:
+  - name: Remove private reply
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "conn-pairing-cleanup" }}
+      methodName: execute
+      inputs:
+        run: timeout 5 rm -rf -- "$ORBIT_CONN_DIRECTORY"
+        env:
+          ORBIT_CONN_DIRECTORY: ${{ steps["Create private reply"].outputs.stdout.trim() }}
+    writes: true
+    guard: ${{ !("Create private reply" in steps) || steps["Create private reply"].status != "succeeded" }}
+  - name: Confirm pairing
+    labels:
+      role: swamp
+    queueTimeout: 30
+    dependsOn:
+    - step: Remove private reply
+      condition:
+        type: succeeded
+    task:
+      type: assert
+      expr: '"Store the link in vault" in steps && steps["Store the link in vault"].status == "succeeded"'
+      message: conn.pairing_outcome_unknown
+      severity: high

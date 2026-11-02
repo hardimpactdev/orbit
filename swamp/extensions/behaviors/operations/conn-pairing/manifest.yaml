@@ -1,8 +1,8 @@
 manifestVersion: 1
 name: "@nckrtl/conn-pairing"
-version: 2026.11.01.1
+version: 2026.11.02.1
 visibility: private
 license: MIT
-description: One T3 pairing request with native schema-sensitive credential storage.
+description: Typed private T3 reply data and unique native sensitive credential storage.
 behaviors:
   - operations/conn-pairing/mod.ts

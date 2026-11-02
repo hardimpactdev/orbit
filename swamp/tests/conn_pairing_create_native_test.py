@@ -25,7 +25,8 @@ class ConnPairingNative(NativeTestCase):
         self.copy_behaviors("operations/conn-pairing")
         self.admin = "native-admin-secret-924318"
         self.credential = "native-issued-secret-482619"
-        self.secrets = (self.admin, self.credential)
+        self.second_credential = "native-issued-secret-905174"
+        self.secrets = (self.admin, self.credential, self.second_credential)
         self.calls = 0
         self.mode = ""
         owner = self
@@ -40,20 +41,21 @@ class ConnPairingNative(NativeTestCase):
                 if (
                     self.path != "/api/auth/pairing-token"
                     or self.headers.get("Authorization") != "Bearer " + owner.admin
-                    or body["label"] != "fixture phone"
+                    or body["label"] not in ["fixture phone", "second phone"]
                 ):
                     self.send_response(401)
                     self.end_headers()
                     return
+                credential = owner.second_credential if body["label"] == "second phone" else owner.credential
                 self.send_response(503 if owner.mode == "refusal" else 200)
                 self.end_headers()
                 self.wfile.write(
                     json.dumps(
                         {
-                            "id": owner.credential
+                            "id": credential
                             if owner.mode == "echo"
                             else "public-link",
-                            "credential": owner.credential,
+                            "credential": credential,
                             "expiresAt": "2026-11-01T02:00:00Z",
                         }
                     ).encode()
@@ -69,10 +71,9 @@ class ConnPairingNative(NativeTestCase):
         workflow = yaml.safe_load(
             (ROOT / "workflows/workflow-operation-conn-pairing-create.yaml").read_text()
         )
-        self.assertEqual(
-            workflow["jobs"][0]["steps"][0].pop("labels"), {"role": "swamp"}
-        )
-        self.assertNotIn("labels", workflow["jobs"][0]["steps"][0])
+        for job in workflow['jobs']:
+            for step in job['steps']:
+                self.assertEqual(step.pop('labels'), {'role': 'swamp'})
         (self.repo / "workflows/workflow-conn-pairing.yaml").write_text(
             yaml.safe_dump(workflow, sort_keys=False)
         )
@@ -84,6 +85,7 @@ class ConnPairingNative(NativeTestCase):
                 "url": "http://127.0.0.1:" + str(self.server.server_port),
                 "pairing_id": 17,
                 "label": "fixture phone",
+                "request_body": json.dumps({"label": "fixture phone", "scopes": ["access:write"]}),
             },
             "execution_secrets": {
                 "admin_session": {"vault": "orbit-control-inputs", "key": self.key}
@@ -106,7 +108,11 @@ class ConnPairingNative(NativeTestCase):
                 success=success,
             ).stdout
         )
-        return json.loads(self.cli("workflow", "history", "get", reply["id"]).stdout)
+        run = json.loads(self.cli("workflow", "history", "get", reply["id"]).stdout)
+        steps = {step['name']: step for job in run['jobs'] for step in job['steps']}
+        self.assertEqual(steps['Remove private reply']['status'], 'succeeded')
+        self.assertFalse(Path(steps['Create private reply']['outputs']['stdout'].strip()).exists())
+        return run
 
     def test_native_sensitive_output_has_only_reference_and_its_vault_value_matches(
         self,
@@ -115,13 +121,13 @@ class ConnPairingNative(NativeTestCase):
         run = self.run_create()
         self.assertEqual(run["status"], "succeeded")
         self.assertEqual(self.calls, 1)
-        output = run["jobs"][0]["steps"][0]["outputs"]
+        output = next(step for job in run["jobs"] for step in job["steps"] if step["name"] == "Store the link in vault")["outputs"]
         result = json.loads(output["stdout"])
         self.assertEqual(result["pairing_id"], 17)
         self.assertEqual(result["pairing_link_id"], "public-link")
         self.assertRegex(
             result["credential_ref"]["key"],
-            r"^nckrtl-conn-pairing-[a-f0-9-]+-issue-issued-issued-credential$",
+            r"^nckrtl-conn-pairing-[a-f0-9-]+-issue-issued-pairing-17-credential$",
         )
         self.assertEqual(
             output["credential"],
@@ -129,10 +135,14 @@ class ConnPairingNative(NativeTestCase):
             + result["credential_ref"]["key"]
             + "') }}",
         )
-        # Intentional private test read: verify bytes in memory, never pass them to
-        # argv, a fixture file, an assertion diagnostic or normal native outputs.
+        self.assertTrue(self.read_credential(result['credential_ref']['key']) == self.credential,
+                        'Native sensitive vault value did not match')
+        self.assert_private_absent(json.dumps(run))
+
+    def read_credential(self, key):
+        # Intentional private read stays in memory and out of assertion diagnostics.
         env = dict(os.environ, SWAMP_NO_UPDATE_CHECK="1", SWAMP_NO_TELEMETRY="1")
-        for key in (
+        for env_name in (
             "SWAMP_SERVER_URL",
             "SWAMP_SERVE_URL",
             "SWAMP_SERVER_TOKEN",
@@ -141,14 +151,14 @@ class ConnPairingNative(NativeTestCase):
             "SWAMP_CA_CERT",
             "SWAMP_EXTENSIONS_DIR",
         ):
-            env.pop(key, None)
+            env.pop(env_name, None)
         read = subprocess.run(
             [
                 os.environ.get("SWAMP_BIN", "swamp"),
                 "vault",
                 "read-secret",
                 "orbit-control-inputs",
-                result["credential_ref"]["key"],
+                key,
                 "--json",
             ],
             cwd=self.repo,
@@ -156,19 +166,29 @@ class ConnPairingNative(NativeTestCase):
             capture_output=True,
             text=True,
             check=True,
+            timeout=30,
         )
-        self.assertTrue(
-            json.loads(read.stdout)["value"] == self.credential,
-            "Native sensitive vault value did not match",
-        )
-        self.assert_private_absent(json.dumps(run))
+        return json.loads(read.stdout)["value"]
+
+    def test_later_issue_does_not_overwrite_an_unread_credential(self):
+        first = self.run_create()
+        first_step = next(step for job in first['jobs'] for step in job['steps'] if step['name'] == 'Store the link in vault')
+        first_key = json.loads(first_step['outputs']['stdout'])['credential_ref']['key']
+        self.inputs['intent'].update(pairing_id=18, label='second phone', request_body=json.dumps({'label': 'second phone', 'scopes': ['access:write']}))
+        second = self.run_create()
+        second_step = next(step for job in second['jobs'] for step in job['steps'] if step['name'] == 'Store the link in vault')
+        second_key = json.loads(second_step['outputs']['stdout'])['credential_ref']['key']
+        self.assertNotEqual(first_key, second_key)
+        self.assertTrue(self.read_credential(first_key) == self.credential, 'First unread credential was overwritten')
+        self.assertTrue(self.read_credential(second_key) == self.second_credential, 'Second credential was not isolated')
+        self.assertEqual(self.calls, 2)
 
     def test_refused_issue_never_reports_a_credential_or_retries(self):
         self.mode = "refusal"
         run = self.run_create(False)
         self.assertEqual(run["status"], "failed")
         self.assertEqual(self.calls, 1)
-        self.assertNotIn("stdout", run["jobs"][0]["steps"][0].get("outputs", {}))
+        self.assertNotIn("stdout", next(step for job in run["jobs"] for step in job["steps"] if step["name"] == "Store the link in vault").get("outputs", {}))
 
     def test_secret_echo_in_public_metadata_refuses_before_native_persistence(self):
         self.mode = "echo"
@@ -178,7 +198,7 @@ class ConnPairingNative(NativeTestCase):
         self.assertFalse(
             [
                 row
-                for row in run["jobs"][0]["steps"][0].get("dataArtifacts", [])
+                for row in next(step for job in run["jobs"] for step in job["steps"] if step["name"] == "Store the link in vault").get("dataArtifacts", [])
                 if row.get("tags", {}).get("type") == "resource"
             ]
         )
@@ -187,8 +207,10 @@ class ConnPairingNative(NativeTestCase):
         self.native_timeout = 120
         path = self.repo / "workflows/workflow-conn-pairing.yaml"
         workflow = yaml.safe_load(path.read_text())
-        workflow["jobs"][0]["steps"][0].pop("labels", None)
-        workflow["jobs"][0]["steps"][0]["target"] = "orbit-node-209"
+        for job in workflow['jobs']:
+            for step in job['steps']:
+                step.pop('labels', None)
+                step['target'] = 'orbit-node-209'
         path.write_text(yaml.safe_dump(workflow, sort_keys=False))
         self.cli(
             "access", "token", "mint", "fixture-admin", "--principal", "user:fixture"
@@ -318,13 +340,13 @@ class ConnPairingNative(NativeTestCase):
                     self.cli("workflow", "history", "get", result["id"], *flags).stdout
                 )
                 self.assertEqual(history["status"], "succeeded")
-                output = json.loads(history["jobs"][0]["steps"][0]["outputs"]["stdout"])
+                output = json.loads(next(step for job in history["jobs"] for step in job["steps"] if step["name"] == "Store the link in vault")["outputs"]["stdout"])
                 self.assertEqual(output["pairing_id"], 17)
                 self.assertTrue(
                     output["credential_ref"]["key"].startswith("nckrtl-conn-pairing-")
                 )
                 self.assertEqual(
-                    history["jobs"][0]["steps"][0]["outputs"]["credential"],
+                    next(step for job in history["jobs"] for step in job["steps"] if step["name"] == "Store the link in vault")["outputs"]["credential"],
                     "${{ vault.get('orbit-control-inputs', '"
                     + output["credential_ref"]["key"]
                     + "') }}",
