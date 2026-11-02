@@ -17,7 +17,7 @@
     [
       "sh",
       "-c",
-      "command -v wg-quick >/dev/null || DEBIAN_FRONTEND=noninteractive apt-get install -y -q wireguard-tools >/dev/null; umask 077; mkdir -p /etc/wireguard; rm -f /etc/wireguard/.orbit.conf.rollback; printf '[Interface]\\nAddress = 10.99.0.1/24\\nListenPort = 51820\\nPrivateKey = %s\\n' \"$(wg genkey)\" > /etc/wireguard/orbit.conf; systemctl enable wg-quick@orbit >/dev/null 2>&1; systemctl restart wg-quick@orbit"
+      "command -v wg-quick >/dev/null || DEBIAN_FRONTEND=noninteractive apt-get install -y -q wireguard-tools >/dev/null; umask 077; mkdir -p /etc/wireguard; printf '[Interface]\\nAddress = 10.99.0.1/24\\nListenPort = 51820\\nPrivateKey = %s\\n\\n[Peer]\\nPublicKey = AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=\\nAllowedIPs = 10.99.0.99/32\\n' \"$(wg genkey)\" > /etc/wireguard/orbit.conf; systemctl enable wg-quick@orbit >/dev/null 2>&1; systemctl restart wg-quick@orbit"
     ]
   ],
   "request": {
@@ -29,21 +29,45 @@
   },
   "phases": [
     {
-      "name": "Resolve the hub script",
-      "job": "hub",
-      "step": "Resolve the hub script",
+      "name": "Read the live peers",
+      "job": "read",
+      "step": "Read the live peers",
       "budget_seconds": 15
     },
     {
-      "name": "Apply the hub config",
-      "job": "hub",
-      "step": "Apply the hub config",
-      "budget_seconds": 60
+      "name": "Set the peers",
+      "job": "apply",
+      "step": "Set the peers",
+      "budget_seconds": 30
     },
     {
-      "name": "Confirm the outcome",
-      "job": "hub",
-      "step": "Confirm the outcome",
+      "name": "Remove stale peers",
+      "job": "apply",
+      "step": "Remove stale peers",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Save the config",
+      "job": "apply",
+      "step": "Save the config",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Check the hub service",
+      "job": "check",
+      "step": "Check the hub service",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Read the peers again",
+      "job": "check",
+      "step": "Read the peers again",
+      "budget_seconds": 15
+    },
+    {
+      "name": "Confirm the hub",
+      "job": "check",
+      "step": "Confirm the hub",
       "budget_seconds": 15
     }
   ],

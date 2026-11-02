@@ -8,7 +8,7 @@ from pathlib import Path
 
 operation = json.loads(os.environ['PROOF_OPERATION'])
 outputs = Path(os.environ['PROOF_OUTPUTS']).read_text()
-action = json.loads(operation['input']['intent']['action_json'])
+keys = set(operation['input']['intent']['peer_keys'])
 
 
 def target(*argv):
@@ -23,11 +23,12 @@ def check(condition, message):
 config = target('cat', '/etc/wireguard/orbit.conf').stdout
 key = target('wg', 'show', 'orbit', 'private-key').stdout.strip()
 check(operation['result'] == {'projected': True}, 'the task result is projected: true')
-check(len(action['peers']) == 2, 'the fixture peers are in the intent')
-check(set(target('wg', 'show', 'orbit', 'peers').stdout.split()) == {peer['public_key'] for peer in action['peers']}, 'live peers equal the intent')
+check(len(keys) == 2, 'the fixture peers are in the intent')
+check(set(target('wg', 'show', 'orbit', 'peers').stdout.split()) == keys, 'live peers equal the intent')
+check(all(key in config for key in keys), 'the saved config holds the peers')
+check('AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=' not in config, 'the stale peer is gone from the saved config')
 check(config.count('[Interface]') == 1 and f'PrivateKey = {key}' in config, 'the hub kept its own key')
 check(target('systemctl', 'is-active', '--quiet', 'wg-quick@orbit').returncode == 0, 'the hub service is active')
 check(target('systemctl', 'is-enabled', '--quiet', 'wg-quick@orbit').returncode == 0, 'the hub service is enabled')
-check(target('test', '-e', '/etc/wireguard/.orbit.conf.rollback').returncode != 0, 'no rollback copy is left')
 check(key not in outputs and key not in json.dumps(operation), 'the private key stayed on the hub')
 print('parity: peers, key, service and secrecy match the legacy hub contract')

@@ -1,6 +1,6 @@
 id: be0fb735-5420-4c04-aa82-b33a8a9ce8fa
 name: operation-node-wireguard-hub-converge
-description: Publish the peer list on the VPN Node's WireGuard hub over official SSH from 209; the hub keeps its own key.
+description: Set the peer list on the VPN Node's WireGuard hub with wg commands over official SSH from 209; the hub keeps its own key.
 vaults: []
 queueTimeout: 30
 inputs:
@@ -14,29 +14,19 @@ inputs:
       properties:
         hub_id: {type: integer, minimum: 1}
         ssh: {type: object}
-        action_json: {type: string, maxLength: 1048576}
-      required: [hub_id, ssh, action_json]
+        peer_keys: {type: array, items: {type: string, pattern: '^[A-Za-z0-9+/]{43}=$'}}
+        peer_args: {type: array, items: {type: string}}
+      required: [hub_id, ssh, peer_keys, peer_args]
       additionalProperties: false
     execution_secrets: {type: object, additionalProperties: false}
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
-- name: hub
+- name: read
   steps:
-  - name: Resolve the hub script
+  - name: Read the live peers
     labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/node-hub-command'
-      behaviorName: '${{ "node-hub-publish" }}'
-      methodName: publish
-      inputs: {}
-  - name: Apply the hub config
-    # One script on the hub: new peer list under its own Interface, rollback copy, live sync, peer check, restore on failure.
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: Resolve the hub script, condition: {type: succeeded}}]
-    task:
+    task: &ssh
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: '${{ ("wireguard-hub-" + string(inputs.intent.hub_id)).split(".").join("-") }}'
@@ -49,12 +39,66 @@ jobs:
           port: '${{ inputs.intent.ssh.target.port }}'
           identityFile: '${{ inputs.intent.ssh.identity_file }}'
         hosts: [{name: hub, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}}]
-      inputs:
-        hosts: 'name:hub'
-        sudo: true
-        argv: [timeout, '120', python3, -I, -c, '${{ steps["Resolve the hub script"].outputs.script }}', '${{ inputs.intent.action_json }}']
-        okExitCodes: [0, 1]
-  - name: Confirm the outcome
+      inputs: {hosts: 'name:hub', sudo: true, argv: [timeout, '15', wg, show, orbit, peers]}
+- name: apply
+  dependsOn: [{job: read, condition: {type: succeeded}}]
+  steps:
+  - name: Set the peers
+    # One wg set adds or updates every admitted peer in the running hub; the hub's key and interface stay.
     labels: {role: swamp}
-    dependsOn: [{step: Apply the hub config, condition: {type: succeeded}}]
-    task: {type: assert, expr: 'steps["Apply the hub config"].outputs.exitCode == 0', severity: high, message: The hub did not take the new peer list.}
+    writes: true
+    task:
+      <<: *ssh
+      inputs: {hosts: 'name:hub', sudo: true, argv: '${{ ["timeout", "30", "wg", "set", "orbit"] + inputs.intent.peer_args }}'}
+  - name: Remove stale peers
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Set the peers, condition: {type: succeeded}}]
+    # Live peers the intent no longer admits; none skips the step.
+    guard: '${{ steps["Read the live peers"].outputs.stdout.split("\n").filter(k, k != "" && !(k in inputs.intent.peer_keys)).size() == 0 }}'
+    task:
+      <<: *ssh
+      inputs: {hosts: 'name:hub', sudo: true, argv: '${{ ["timeout", "15", "wg", "set", "orbit"] + steps["Read the live peers"].outputs.stdout.split("\n").filter(k, k != "" && !(k in inputs.intent.peer_keys)).map(k, "peer " + k + " remove").join(" ").split(" ") }}'}
+  - name: Save the config
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Remove stale peers, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Set the peers, condition: {type: succeeded}}]
+    task:
+      <<: *ssh
+      inputs: {hosts: 'name:hub', sudo: true, argv: [timeout, '30', wg-quick, save, orbit]}
+- name: check
+  dependsOn: [{job: apply, condition: {type: succeeded}}]
+  steps:
+  - name: Check the hub service
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/systemd'
+      behaviorName: '${{ ("wireguard-hub-service-" + string(inputs.intent.hub_id)).split(".").join("-") }}'
+      methodName: check
+      globalArgs:
+        nodeHost: '${{ inputs.intent.ssh.target.host }}'
+        nodeUser: '${{ inputs.intent.ssh.target.user }}'
+        nodePort: '${{ inputs.intent.ssh.target.port }}'
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}'
+        become: true
+        service: wg-quick@orbit
+        ensure: running
+        enabled: true
+      inputs: {}
+  - name: Read the peers again
+    labels: {role: swamp}
+    task:
+      <<: *ssh
+      inputs: {hosts: 'name:hub', sudo: true, argv: [timeout, '15', wg, show, orbit, peers]}
+  - name: Confirm the hub
+    labels: {role: swamp}
+    dependsOn: [{step: Check the hub service, condition: {type: succeeded}}, {step: Read the peers again, condition: {type: succeeded}}]
+    task:
+      type: assert
+      severity: high
+      message: The hub does not run the admitted peer list.
+      expr: >-
+        data.latest(("wireguard-hub-service-" + string(inputs.intent.hub_id)).split(".").join("-"), inputs.intent.ssh.target.host).attributes.status == "compliant"
+        && steps["Read the peers again"].outputs.stdout.split("\n").filter(k, k != "").size() == inputs.intent.peer_keys.size()
+        && inputs.intent.peer_keys.all(k, k in steps["Read the peers again"].outputs.stdout.split("\n"))

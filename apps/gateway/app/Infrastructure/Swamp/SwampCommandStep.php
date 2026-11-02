@@ -100,7 +100,7 @@ final readonly class SwampCommandStep
 
     /** Called by the shared native terminal subscriber, never by a family step or a poller.
      * @param  array<string,mixed>  $terminalRun  Native event.run, or its bound id after a late attach miss.
-     * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>}  $selector  The fixed family terminal_result declaration.
+     * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,outputs?:false}  $selector  The fixed family terminal_result declaration.
      */
     public function projectTerminal(Operation $operation, array $terminalRun, array $selector, bool $atDeadline = false): Operation
     {
@@ -319,12 +319,13 @@ final readonly class SwampCommandStep
     }
 
     /** @param array<string,mixed> $run
-     * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>}  $selector
+     * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,outputs?:false}  $selector
      * @return array<string,mixed>
      */
     private function terminalOutput(array $run, array $selector): array
     {
         $stdout = null;
+        $selected = null;
         $jobs = $run['jobs'] ?? [];
         if (! is_array($jobs)) {
             throw $this->unavailable();
@@ -343,8 +344,17 @@ final readonly class SwampCommandStep
                 if (($step['name'] ?? null) === $selector['step']) {
                     $outputs = $step['outputs'] ?? [];
                     $stdout = is_array($outputs) ? ($outputs['stdout'] ?? null) : null;
+                    $selected = $step['status'] ?? null;
                 }
             }
+        }
+        if (($selector['outputs'] ?? true) === false) {
+            // The selected end check prints nothing; a succeeded run must still show it succeeded.
+            if ($run['status'] === 'succeeded' && $selected !== 'succeeded') {
+                throw $this->unavailable();
+            }
+
+            return [];
         }
         $result = [];
         if (is_string($stdout) && trim($stdout) !== '') {

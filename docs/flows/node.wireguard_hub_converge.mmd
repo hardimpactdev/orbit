@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, DECISIONS R2-R4, flow-tighten rules 1, 6, 9, single-swamp-node + light-boxes-use-swamp-ssh (vpn Node 1 has no Swamp worker). docs/reference/wireguard-endpoints.md.
+  %% Target design: ADR 0244 task, DECISIONS R2-R4, flow-tighten rules 1, 9, 16, 18, 22, single-swamp-node + light-boxes-use-swamp-ssh (vpn Node 1 has no Swamp worker). docs/reference/wireguard-endpoints.md.
   %% status: draft
   %% command: node:wireguard-hub:converge
   autonumber
@@ -43,25 +43,34 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>SW: Resolve the hub script<br/>@nckrtl/node-hub-command
-  %%> What it does:
-  %%> - reads the shipped `hub_publish.py` on the Swamp worker
-  SW->>N: Apply the hub config<br/>@swamp/ssh · hub_publish.py
+  SW->>N: Read the live peers<br/>@swamp/ssh · wg show orbit peers
   %%> How:
-  %%> - over SSH from 209 with the official `@swamp/ssh` behavior, as root, under the hub's peer lock
-  %%> - Node 1 is a light box: no Swamp binary and no worker on it
+  %%> - over SSH from 209 with the official `@swamp/ssh` behavior, as root; Node 1 has no Swamp worker
+  %%> Why a read first:
+  %%> - it picks the stale peers to remove; one `wg` argument list cannot both list and remove
+  SW->>N: Set the peers<br/>wg set orbit peer … allowed-ips
   %%> What it does:
-  %%> - keeps the `[Interface]` section and private key, and writes the new `[Peer]` sections; an identical list writes nothing
-  %%> - validates the file with `wg-quick strip`, keeps a rollback copy, then loads it with `wg syncconf`
-  %%> - checks the service is active and enabled, and that `wg show` lists exactly these peers
-  %%> If it fails:
-  %%> - puts the rollback copy back and reloads it, so no Node loses its tunnel
-  %%> - prints a public error code: `wireguard.hub_config_invalid`, `wireguard.hub_start_failed` or `wireguard.hub_state_unsupported`
-  %%> Why one step:
-  %%> - one Node, back to back, with its own rollback: separate steps would add SSH round trips and nothing else
-  Note over SW: Confirm the outcome<br/>assert exit code 0
+  %%> - one `wg set` command adds or updates every admitted peer in the running hub
+  %%> - the hub's own key and interface stay; unchanged peers keep their sessions
+  opt a live peer is no longer admitted
+    SW->>N: Remove stale peers<br/>wg set orbit peer K remove …
+    %%> What it does:
+    %%> - one `wg set` command removes every live peer that is no longer admitted
+  end
+  SW->>N: Save the config<br/>wg-quick save orbit
   %%> What it does:
-  %%> - fails the run when the apply step reported an error code
+  %%> - writes the running hub, with its own key, back to `/etc/wireguard/orbit.conf`, so a reboot keeps it
+  SW->>N: Check the hub service<br/>@swamp/cfgmgmt/systemd check
+  %%> What it does:
+  %%> - checks `wg-quick@orbit` is running and enabled
+  SW->>N: Read the peers again<br/>wg show orbit peers
+  %%> What it does:
+  %%> - reads the live peer list for the end check
+  Note over SW: Confirm the hub<br/>native assert
+  %%> What it does:
+  %%> - fails the run unless the service check is compliant and the live peers are exactly the admitted ones
+  %%> No rollback:
+  %%> - a failed step leaves the hub as it is; a rerun sets the same list again
   alt the hub took the peer list
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
@@ -69,13 +78,13 @@ sequenceDiagram
     Note over GW: Record the result<br/>hub published · task succeeded
     %%> Result:
     %%> - task #5171 succeeds with `projected: true`
-  else the apply step failed
+  else a step or the check failed
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
-    %%> - the error code the apply step printed
+    %%> - which step failed and its exit code
     Note over GW: Mark the task failed<br/>rerun after a fix
     %%> Result:
-    %%> - task #5171 fails; the hub keeps its previous peer list
+    %%> - task #5171 fails; peers set before the failure stay
     %%> Retry:
     %%> - run the same command again after fixing the cause; it is a new task
   end

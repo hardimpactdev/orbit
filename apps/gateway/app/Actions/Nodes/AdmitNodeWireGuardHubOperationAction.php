@@ -13,7 +13,7 @@ use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Operation;
 
-/** Records the hub's public peer list as full intent. The hub keeps its own key; the run replaces only its peers. */
+/** Records the hub's public peer list as full intent. The hub keeps its own key; the run sets only its peers. */
 final readonly class AdmitNodeWireGuardHubOperationAction
 {
     public function __construct(private StartOperationAction $operations) {}
@@ -26,11 +26,11 @@ final readonly class AdmitNodeWireGuardHubOperationAction
             throw new ResourceOperationException('node.network_unsupported', 'Hub convergence requires its exact active managed VPN Node.', 422);
         }
         $peers = Node::query()->whereKeyNot($node->id)->whereNotNull('wireguard_public_key')->whereNotNull('wireguard_ip')
-            ->where('status', '!=', LifecycleStatus::Removing)->orderBy('id')->get()
-            ->map(static fn (Node $peer): array => ['name' => $peer->name, 'public_key' => $peer->wireguard_public_key, 'address' => $peer->wireguard_ip])
-            ->all();
+            ->where('status', '!=', LifecycleStatus::Removing)->orderBy('id')->get();
+        // The run passes peer_args straight to one `wg set orbit` argv; peer_keys picks stale peers and checks the result.
         $intent = ['hub_id' => $node->id, 'ssh' => app(SwampSshExecutionInput::class)->forNode($node),
-            'action_json' => json_encode(['hub_id' => $node->id, 'peers' => $peers], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)];
+            'peer_keys' => $peers->pluck('wireguard_public_key')->values()->all(),
+            'peer_args' => $peers->flatMap(static fn (Node $peer): array => ['peer', (string) $peer->wireguard_public_key, 'allowed-ips', $peer->wireguard_ip.'/32'])->values()->all()];
 
         return $this->operations->execute('node.wireguard_hub_converge', 'node', $node->id, $node->id,
             ['intent' => $intent, 'participant_node_ids' => [$node->id]], 'operator', $requestId);
