@@ -1,6 +1,6 @@
 {
   "name": "minimal",
-  "version": 2,
+  "version": 3,
   "gateway": "task-vm",
   "network": {"name": "oeproof", "gateway": "10.231.0.1", "prefix": 24},
   "operator": {"address": "10.231.0.2"},

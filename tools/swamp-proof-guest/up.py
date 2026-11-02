@@ -146,6 +146,11 @@ def swamp():
             raise RuntimeError('the image swamp binary differs from the committed runtime pin')
     STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
     run(['chown', '-R', 'orbit:orbit', str(STATE), str(REPO)])
+    # A v3 datastore, as on 209: its commit log feeds the Gateway's shared run reader. Each up starts it empty.
+    # A restage stops the old serve first; it would write the old datastore while it is replaced.
+    subprocess.run(['systemctl', 'stop', 'orbit-node-worker', 'orbit-swamp-serve'], capture_output=True, check=False)
+    run(['rm', '-rf', str(STATE / 'datastore')])
+    native('datastore', 'setup', 'filesystem', '--path', str(STATE / 'datastore'), '--format', '3', '--skip-migration')
     for name, entry in json.loads((REPO / 'extensions/models/upstream_extensions.json').read_text()).items():
         native('extension', 'pull', name + '@' + entry['version'], timeout=300)
     manifest = json.loads((REPO / 'config/gateway-workflow-grants.json').read_text())
@@ -184,7 +189,7 @@ def swamp():
                               + f'WorkingDirectory={REPO}\nAmbientCapabilities=CAP_NET_BIND_SERVICE\n'
                               + f'ExecStart={BINARY} serve --repo-dir {REPO} --port {PORT} --host 127.0.0.1 --auth-mode token '
                               + f'--admins user:proof-operator --club-api-key-file {club} --trusted-hosts swamp.orbit,swamp.orbit:{PORT} '
-                              + '--dispatch-env-allow=, --remote-only --hot-reload --no-schedule '
+                              + '--dispatch-env-allow=, --remote-only --hot-reload '
                               + f'--cert-file {tls}/cert.pem --key-file {tls}/key.pem --grants-file {STATE}/grants.yaml\n'),
         # 209's worker unit: the Node SSH key arrives as the proxy-ssh-identity credential.
         'orbit-node-worker': ('[Unit]\nDescription=Proof Swamp worker orbit-node-209\nAfter=orbit-swamp-serve.service\n[Service]\n' + common
@@ -195,6 +200,10 @@ def swamp():
     }
     for name, contents in units.items():
         Path(f'/etc/systemd/system/{name}.service').write_text(contents)
+    # Serve schedules as 209 does, so a Schedule's own workflow fires; the checked-in schedules stay paused,
+    # because a proof exercises one kind, not fleet upkeep. A pause is kept in the datastore across restarts.
+    for row in native('workflow', 'schedule', 'list')['schedules']:
+        native('workflow', 'schedule', 'pause', row['workflowId'], '--reason', 'proof topology')
     run(['systemctl', 'daemon-reload'])
     run(['systemctl', 'restart', *units])
     deadline = time.monotonic() + 180

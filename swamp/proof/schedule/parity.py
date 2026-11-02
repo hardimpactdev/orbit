@@ -17,7 +17,7 @@ STATE = '/home/orbit/.orbit/swamp-proof'
 
 def native(*argv):
     env = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/home/orbit', 'SWAMP_HOME': STATE + '/home', 'SWAMP_CONFIG_DIR': STATE + '/config',
-           'SWAMP_NO_UPDATE_CHECK': '1', 'SWAMP_NO_TELEMETRY': '1'}
+           'SWAMP_NO_UPDATE_CHECK': '1', 'SWAMP_NO_TELEMETRY': '1', 'SWAMP_API_KEY_FILE': '/home/orbit/.config/swamp/club-api-key'}
     out = subprocess.run(['/usr/sbin/runuser', '-u', 'orbit', '--', 'swamp', *argv, '--server', 'wss://swamp.orbit:443', '--token-file',
                           STATE + '/credentials/operator', '--ca-cert', STATE + '/tls/ca.pem', '--json'],
                          capture_output=True, text=True, env=env, cwd='/', check=False, timeout=60)

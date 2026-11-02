@@ -149,6 +149,9 @@ def main():
         receipt['proof_pass'] = (not operation and reply.get('http_status') == fixture['expect']['http_status']
                                  and error.get('code') == refusal and receipt['parity']['exit'] == 0)
         return receipt
+    if fixture['expect'].get('run') is False and not operation:
+        receipt.update(proof_pass=False, error='the request recorded no Operation', reply=reply)
+        return receipt
     if fixture['expect'].get('run') is False:
         # R1: the change touches no Node, so the Operation has ended with no run. A Schedule fire, when
         # expected, is its own root run; the shared run reader records it as a task.
