@@ -1,0 +1,44 @@
+{
+  "kind": "fleet.recipe",
+  "workflow": "operation-fleet-recipe-direct",
+  "topology": "minimal",
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 60,
+  "request": {
+    "method": "POST",
+    "path": "fleet/nodes/${node.target}/recipe",
+    "body": {
+      "automatic": true
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Signed packages",
+      "job": "packages",
+      "step": "packages",
+      "budget_seconds": 1800
+    },
+    {
+      "name": "Observer files",
+      "job": "observer",
+      "step": "observer",
+      "budget_seconds": 1800
+    },
+    {
+      "name": "PHP runtime",
+      "job": "footprint",
+      "step": "php_runtime-0",
+      "budget_seconds": 1800
+    },
+    {
+      "name": "Delivery proof",
+      "job": "delivery",
+      "step": "delivery",
+      "budget_seconds": 1800
+    }
+  ],
+  "parity": "swamp/proof/fleet.recipe/parity.py"
+}
