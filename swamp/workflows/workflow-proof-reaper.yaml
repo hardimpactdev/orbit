@@ -1,0 +1,67 @@
+id: c18de5dc-de46-401f-a452-a3d3096c3613
+name: proof-reaper
+description: Choose Project 62 proof groups that are idle for an hour or superseded by a newer group of their lane (F11); the Gateway cancels them.
+labels: {role: swamp}
+concurrency: 1
+queueTimeout: 300
+vaults: []
+trigger:
+  # The Gateway publishes this cadence with the open groups as inputs: every ten minutes, off the :00 and :30 marks.
+  schedule: '0 7-59/10 * * * *'
+inputs:
+  type: object
+  required: [revision, groups, targets]
+  additionalProperties: false
+  properties:
+    revision: {type: integer, minimum: 1}
+    groups: {type: array, items: {type: object}}
+    targets: {type: array, items: {type: object}}
+reports:
+  skip: ["@swamp/workflow-summary"]
+jobs:
+  - name: heartbeats
+    steps:
+      # stat exits 1 for a missing heartbeat and SSH 255 for an unreachable VM; decide tells them apart.
+      - name: heartbeat
+        labels: {role: swamp}
+        forEach:
+          item: target
+          in: '${{ inputs.targets }}'
+        allowFailure: true
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "proof-heartbeat-" + string(self.target.node_id) }}'
+          methodName: exec
+          globalArgs:
+            name: '${{ "proof-heartbeat-" + string(self.target.node_id) }}'
+            transport:
+              kind: ssh
+              user: '${{ self.target.user }}'
+              port: '${{ self.target.port }}'
+              identityFile: '${{ self.target.identity_file }}'
+            hosts:
+              - name: target
+                address: '${{ self.target.host }}'
+                transport:
+                  hostKeys: '${{ self.target.host_keys }}'
+          inputs:
+            hosts: name:target
+            okExitCodes: any
+            timeoutSec: 30
+            argv: [stat, -c, '%Y', /home/orbit/swamp-proof-activity]
+  - name: reap
+    dependsOn: [{job: heartbeats, condition: {type: always}}]
+    steps:
+      - name: decide
+        labels: {role: swamp}
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/proof-reaper'
+          behaviorName: proof-reaper
+          methodName: decide
+          inputs:
+            revision: '${{ inputs.revision }}'
+            groups: '${{ inputs.groups }}'
+            targets: '${{ inputs.targets }}'
+            steps: '${{ steps }}'

@@ -122,6 +122,54 @@ class Reuse(unittest.TestCase):
         self.assertEqual(ups[0][-1], '--fresh')
 
 
+class Lifecycle(unittest.TestCase):
+    """The proof-reaper schedule needs each group's lane in its title and a fresh guest heartbeat."""
+
+    def test_the_group_title_names_this_machine_and_session_as_its_lane(self):
+        bodies = []
+
+        class Gateway:
+            def request(self, method, path, body=None, key=None):
+                bodies.append(body)
+                return {'id': 41, 'user': 'orbit', 'wireguard_ip': '10.44.0.9'}
+
+        state = {'topology': 'minimal', 'topology_version': 8, 'vm': {'task_vm_id': 1, 'host_node_id': 9, 'name': 'tvm-5'}}
+        with patch.object(swamp_proof, 'SESSION', Path('/tmp/sessions/lane-a.json')), patch.object(swamp_proof, 'save'), \
+                patch.object(swamp_proof.socket, 'gethostname', return_value='beast'):
+            swamp_proof.provision(Gateway(), state)
+        self.assertEqual(bodies[0]['title'], 'swamp-proof beast:lane-a minimal@8')
+        self.assertEqual(state['vm']['group_id'], 41)
+
+    def test_up_and_run_touch_the_heartbeat_at_their_start_and_end(self):
+        calls = []
+
+        class Guest:
+            def __init__(self, *_):
+                pass
+
+            def call(self, argv, input=None, timeout=120):
+                calls.append(argv)
+                return '{"ready": true, "commit": "c", "timings": []}' if argv[2].endswith('up.py') else '{"proof_pass": true}'
+
+        touch = ['runuser', '-u', 'orbit', '--', 'touch', swamp_proof.HEARTBEAT]
+        state = {'topology': 'minimal', 'vm': {}, 'receipts': []}
+        with patch.object(swamp_proof, 'git', return_value=''), patch.object(swamp_proof, 'save'), \
+                patch.object(swamp_proof.subprocess, 'run', side_effect=lambda argv, **_: type('R', (), {'stdout': '' if 'status' in argv else 'c'})()), \
+                patch.object(swamp_proof, 'topology', return_value={'name': 'minimal', 'version': 8}), \
+                patch.object(swamp_proof.SESSION.__class__, 'is_file', return_value=False), \
+                patch.object(swamp_proof, 'provision', return_value=Guest()), patch.object(swamp_proof, 'stage', return_value=1.0):
+            state = swamp_proof.up(object())
+            self.assertEqual([calls[0], calls[-1]], [touch, touch])
+            calls.clear()
+            state.update(guest_host='h', vm={'name': 'tvm-5'}, timings=[])
+            with patch.object(swamp_proof, 'Guest', Guest), patch.object(swamp_proof, 'refresh'), \
+                    patch.object(Path, 'read_text', return_value='{}'):
+                swamp_proof.run(state, 'kind')
+        self.assertEqual([calls[0], calls[-1]], [touch, touch])
+        self.assertTrue(calls[1][2].endswith('run.py'))
+        self.assertFalse(swamp_proof.HEARTBEAT.startswith('/home/orbit/swamp-proof/'), 'stage replaces that tree')
+
+
 class Reap(unittest.TestCase):
     """up and run take down other sessions that are idle for an hour or older than eight hours."""
 

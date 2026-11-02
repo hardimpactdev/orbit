@@ -52,6 +52,7 @@
   "workflows": [
     {"workflow": "*", "actions": ["run", "read"]},
     {"workflow": "maintenance-projects", "publishes_inputs": true, "actions": ["run", "read", "write"]},
+    {"workflow": "proof-reaper", "publishes_inputs": true, "actions": ["run", "read", "write"]},
     {"workflow": "schedule-*", "schedule_workflows": true, "actions": ["run", "read", "write"]}
   ]
 }

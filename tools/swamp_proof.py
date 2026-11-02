@@ -5,8 +5,10 @@ run      run kind fixtures in the held topology and write a receipt per kind
 receipt  print the latest receipt path
 down     cancel the task group through the normal API and confirm the VM is destroyed
 
-Before up or run takes a slot, every other session idle for IDLE_SECONDS or older than
-MAX_SECONDS is taken down, so a lane that forgets down cannot hold a host for hours.
+Each group's title names its lane (`swamp-proof <host>:<session>`), and up and run touch HEARTBEAT on
+the guest at their start and end. The proof-reaper Swamp schedule cancels a group whose heartbeat is
+older than an hour, or that a newer open group of its lane superseded. Before up or run takes a slot,
+every other local session idle for IDLE_SECONDS or older than MAX_SECONDS is also taken down.
 """
 import argparse
 import fcntl
@@ -14,6 +16,7 @@ import json
 import re
 import secrets
 import shlex
+import socket
 import ssl
 import subprocess
 import sys
@@ -28,6 +31,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SESSION = Path.home() / 'swamp-execution/proof-sessions/minimal.json'
 EVIDENCE = Path.home() / 'swamp-execution/evidence/proof'
 SOURCE = '/home/orbit/swamp-proof/src'
+# Outside the staged tree, which every up replaces; the proof-reaper schedule reads its mtime.
+HEARTBEAT = '/home/orbit/swamp-proof-activity'
 TERMINAL = {'succeeded', 'failed', 'cancelled', 'interrupted'}
 IDLE_SECONDS = 3600
 MAX_SECONDS = 8 * 3600
@@ -102,6 +107,15 @@ class Guest:
         return result.stdout.decode()
 
 
+def lane():
+    """This machine and session: one held VM at a time, so a newer open group of the lane supersedes an older one."""
+    return f'{socket.gethostname()}:{SESSION.stem}'
+
+
+def heartbeat(guest):
+    guest.call(['runuser', '-u', 'orbit', '--', 'touch', HEARTBEAT])
+
+
 def last_json(text):
     return json.loads(text.strip().splitlines()[-1])
 
@@ -114,7 +128,7 @@ def provision(gateway, state):
     vm = state['vm']
     if 'group_id' not in vm:
         group = gateway.request('POST', 'task-groups', {
-            'project_id': 62, 'title': f'topology {state["topology"]}@{state["topology_version"]} {ROOT.name}',
+            'project_id': 62, 'title': f'swamp-proof {lane()} {state["topology"]}@{state["topology_version"]}',
             'brief': f'Disposable {state["topology"]} proof topology. No product work, publication or merge.',
             'orchestration': 'external', 'status': 'todo',
             'tasks': [{'title': 'Host the proof topology', 'brief': 'Run kind fixtures and keep their receipts.',
@@ -158,6 +172,7 @@ def up(gateway, name='minimal'):
     state.update(commit=commit, topology_version=topology(name)['version'], ready=False, last_up_started_at=utc(), last_up_started_epoch=time.time())
     save(SESSION, state)
     guest = provision(gateway, state)
+    heartbeat(guest)
     staged = stage(guest, commit)
     bring_up(guest, state, commit, [{'step': 'stage', 'seconds': round(staged, 1)}])
     return state
@@ -187,6 +202,7 @@ def bring_up(guest, state, commit, timings, fresh=False):
     state.update(ready=True, ready_at=utc(), ready_epoch=time.time(), facts=facts, runs_since_up=0,
                  timings=[*timings, *facts['timings']])
     save(SESSION, state)
+    heartbeat(guest)
 
 
 FIXTURE_ONLY = ('swamp/proof/', 'tools/swamp-proof-guest/run.py', 'tools/swamp-proof-guest/gateway.php', 'tools/swamp_proof.py')
@@ -224,6 +240,7 @@ def run(state, kind):
     if fixture.get('topology', 'minimal') != state['topology']:
         raise ProofError(f'{kind} needs topology {fixture.get("topology", "minimal")}; this session holds {state["topology"]}.')
     guest = Guest(state['guest_host'], state['vm']['name'])
+    heartbeat(guest)
     refresh(guest, state)
     # Consecutive kinds share one up. A fixture that needs a clean end state gets fresh Nodes and a fresh
     # Gateway database on the same VM, but only when an earlier fixture ran since the last up.
@@ -234,6 +251,7 @@ def run(state, kind):
         bring_up(guest, state, state['commit'], [{'step': 'clean restage', 'seconds': round(staged, 1)}], fresh=True)
     started = time.time()
     body = last_json(guest.call(['python3', '-I', f'{SOURCE}/tools/swamp-proof-guest/run.py', SOURCE, kind], timeout=3600))
+    heartbeat(guest)
     receipt = {'kind': kind, 'proof_pass': body.get('proof_pass') is True, 'topology': state['topology'],
                'topology_version': state['topology_version'], 'commit': state['commit'], 'vm': state['vm'],
                'refreshed': state.get('refreshed', []),

@@ -7,7 +7,7 @@ covers:
   - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,TaskInsightsController,TaskSwampRunsController,AgentThreadsController,TaskQuestionsController}.php}"
   - "apps/gateway/app/Console/Commands/{ReleaseTaskWorkspaceLeaseCommand,TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand,TaskGitHubReviewsCommand,BackfillTaskMergedAtCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,TaskWorkspaceLeaseRecord,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
-  - "{apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py},bin/{task-analyze,task-group-check},swamp/extensions/behaviors/operations/task-repository/program.ts}"
+  - "{apps/gateway/resources/{tasks/**,remote/gateway/task-workspace-owner.py},bin/{task-analyze,task-group-check},swamp/extensions/behaviors/operations/{task-repository/program.ts,proof-reaper/**},swamp/workflows/workflow-proof-reaper.yaml}"
   - apps/docs/app/{Documentation/{TaskAnalysis,DocsImpact}.php,Console/Commands/{TaskAnalyzeCommand,DocsImpactCommand}.php}
   - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields}.php"
 ---
@@ -812,6 +812,10 @@ Each group run is one bounded generation. Its drive starts the next generation, 
 - A gate that checks an approval's note, such as `plan-authorized`, counts as waiting on that approval in every cycle.
 - So a stored consent applies at once.
 - `groups-driver` runs every 10 minutes. It only restarts a group whose run chain broke.
+
+The `proof-reaper` schedule also runs every 10 minutes, at minute 7, 17 and so on. It touches only Project 62 proof groups. `ProofReaper` publishes the open groups as the schedule's inputs: id, title, start time, and each running VM's pinned SSH target. It publishes again after a group or its task VM changes, and after each run.
+
+Swamp reads each VM's heartbeat and chooses the groups. A group is chosen when its heartbeat is more than an hour old, or when a newer open group of the same lane exists. The Gateway's scheduled-result projection cancels each chosen group with the normal cancel intent, once per group and run. The [Swamp proof topology](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/README.md) page describes the heartbeat and the lane titles.
 
 ## Workspace lease
 
