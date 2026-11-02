@@ -228,8 +228,8 @@ jobs:
       globalArgs: *id001
       inputs:
         hosts: name:target
-        # Q-WAIT: one bounded command waits while the VM is Stopped or Starting, then prints the observation.
-        argv: '${{ inputs.action == "start" ? ["timeout", "120", "/bin/sh", "-c", "while s=$(/usr/bin/sudo -n -- /usr/bin/incus --project \"$1\" list --format json -- \"$2\" | jq -r \".[0].status\"); [ \"$s\" = Stopped ] || [ \"$s\" = Starting ]; do sleep 1; done; exec /usr/bin/sudo -n -- /usr/bin/incus --project \"$1\" list --format json -- \"$2\"", "sh", inputs.intent.vm.project, inputs.intent.name] : steps.input.outputs.observe_argv }}'
+        # Q-WAIT: Incus's own bounded wait for the guest agent, so the next step can run commands in it; then one observation.
+        argv: '${{ inputs.action == "start" ? ["timeout", "130", "/bin/sh", "-c", "/usr/bin/sudo -n -- /usr/bin/incus --project \"$1\" wait \"$2\" agent --timeout 120 --interval 1 && exec /usr/bin/sudo -n -- /usr/bin/incus --project \"$1\" list --format json -- \"$2\"", "sh", inputs.intent.vm.project, inputs.intent.name] : steps.input.outputs.observe_argv }}'
         timeoutSec: 180
     queueTimeout: 10
     guard: ${{ inputs.intent.provider != "incus" }}

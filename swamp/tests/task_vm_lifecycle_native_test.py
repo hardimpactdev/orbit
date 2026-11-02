@@ -45,6 +45,10 @@ if '/usr/bin/incus' in args:
     if action=='exec':
         if '/usr/bin/cat' in args:print('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG')
         raise SystemExit(0)
+    if action=='wait':
+        # Incus's agent wait: a starting VM finishes booting.
+        if value.get('starting'):value['status']='Running';value['starting']=False;state.write_text(json.dumps(value))
+        raise SystemExit(0 if value['exists'] and value['status']=='Running' else 1)
     if action=='list':
         if value.get('starting'):
             remaining=value.get('remaining_start_reads',0)
