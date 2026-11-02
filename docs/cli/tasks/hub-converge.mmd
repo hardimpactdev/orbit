@@ -1,6 +1,9 @@
 sequenceDiagram
-  %% status: reviewed
-  %% command: none · task VM hub policy convergence
+  %% Target design: swamp/workflows/workflow-operation-task-vm-hub-converge.yaml, apps/gateway/app/Infrastructure/TaskVms/TaskVmHubPolicy.php, docs/reference/compute-drivers.md (task VM filter on the hub), docs/cli/README.md design rules R2-R4.
+  %% Tightened: flow-tighten 2026-11-02, rules 6 (the two file writes, daemon-reload, enable and restart are one action: write and load the filter), 9 (the read-back folds into that step and one native `assert` is the end check), 14 (no `result` decode; the Gateway builds the result from its intent after the end check), 18 (the control and Router UFW rules are one forEach, run one at a time so UFW never runs twice at once), 11 (behavior names by Node and step family; the forEach keeps a per-index name, as the shape gate requires), 8 (the UFW rules that make the range reachable come after the filter loads), 10 (restart of the oneshot unit is one atomic `nft -f`; there is no gentler action), 3 (no default loads the filter at boot: nftables.service flushes the whole ruleset, which UFW owns).
+  %% Kept: `Check the new ruleset` (rule 1): it proves the hub's own nft parses the file before any visible change; it is a Node check, not an input check (rule 15).
+  %% status: draft
+  %% command: none · task-vms:prepare-hub on the Gateway host
   %% kind: task_vm.hub_converge
   autonumber
   %% lane GW icon=gateway pill=intent tone=blue
@@ -8,40 +11,60 @@ sequenceDiagram
   %% lane N icon=server pill=target tone=amber
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant N as VPN hub<br/>reached over ssh
-  GW->>SW: Admit the hub policy
-  %%> What it does:
-  %%> - capture the hub SSH target, nft filter, unit and exact control and router rules
-  SW->>N: validate
-  %%> What it does:
-  %%> - uses @swamp/ssh.exec
-  SW->>N: filter
-  %%> What it does:
-  %%> - uses @swamp/ssh.exec; one install argv writes the admitted content from stdin
-  SW->>N: unit
-  %%> What it does:
-  %%> - uses @swamp/ssh.exec; one install argv writes the admitted content from stdin
-  SW->>N: control_ssh
-  %%> What it does:
-  %%> - uses @swamp/ssh.exec
-  SW->>N: router_web
-  %%> What it does:
-  %%> - uses @swamp/ssh.exec
-  SW->>N: reload
-  %%> What it does:
-  %%> - uses @swamp/ssh.exec
-  SW->>N: enable
-  %%> What it does:
-  %%> - uses @swamp/ssh.exec
-  SW->>N: activate
-  %%> What it does:
-  %%> - uses @swamp/ssh.exec
-  SW->>N: observe
-  %%> What it does:
-  %%> - uses @swamp/ssh.exec
-  SW->>SW: result
-  %%> What it does:
-  %%> - uses @nckrtl/task-vm-hub-result.decode
-  GW-->>GW: Project terminal result
+  participant N as vpn Node 1<br/>WireGuard hub
+  Note over GW: Admit the hub filter<br/>task-vms:prepare-hub · #5190
+  %%> Started by:
+  %%> - an operator runs `php artisan task-vms:prepare-hub` on the Gateway host, once and again when a captured value changes
+  %%> Requirements:
+  %%> - exactly one active `vpn`, `gateway` and `websocket` Node, each with a WireGuard address
+  %%> - the task VM Cluster has an active Router; no Node other than a task VM holds an address in the reserved range
+  %%> - Node 209 is active with an IPv4 address outside the range; Node 1 has stored SSH host keys
+  %%> Builds:
+  %%> - the complete nft file and its systemd unit, the UFW rules for 209 SSH and Router web, and the exact live rule lines the end check expects
   %%> Result:
-  %%> - only the exact observed nft rules can report the hub ready
+  %%> - task #5190 recorded with the full public intent; the command prints `Operation #5190`
+  GW->>SW: Start run, full intent<br/>operation-task-vm-hub-converge
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - the nft file, the unit, the UFW argv lists and the expected live rule lines
+  %%> - Node 1's address and SSH host keys; the SSH identity comes from the `swamp` role
+  SW->>N: Check the new ruleset<br/>nft --check · file on stdin
+  %%> What it does:
+  %%> - `nft --check --file -` parses the whole file on Node 1 and changes nothing
+  %%> Why:
+  %%> - a file the hub's nft refuses never reaches the disk, so a reboot never loads a broken filter
+  SW->>N: Write and load the filter<br/>install · systemctl · nft list
+  %%> What it does:
+  %%> - writes `/etc/orbit/task-vms/hub.nft` (0600) from stdin and the unit `orbit-task-vms-hub.service` (0644)
+  %%> - reloads systemd, enables the unit and restarts it; the unit runs `nft -f`, which replaces the table in one transaction
+  %%> - lists the live `forward` chain of `inet orbit_task_vms` for the end check
+  %%> On the Node:
+  %%> - the unit loads the filter at boot, before `wg-quick@orbit`
+  SW->>N: Allow 209 SSH, Router web<br/>ufw route allow · forEach
+  %%> What it does:
+  %%> - one `ufw route allow` per rule: TCP 22 from Node 209 and TCP 80 and 443 from each Cluster Router into the range
+  %%> How:
+  %%> - `concurrency: 1`: the rules run one at a time, so UFW never runs twice at once; UFW skips a rule that exists
+  Note over SW: Confirm the filter<br/>native assert
+  %%> What it does:
+  %%> - fails the run unless every expected control and Router rule is a line of the live chain
+  %%> No rollback:
+  %%> - a failed step leaves the hub as it is; a rerun writes and loads the same file again
+  alt the hub runs the filter
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event and reads the end check's status; Swamp never calls the Gateway
+    Note over GW: Record the hub ready<br/>exact rules observed
+    %%> Result:
+    %%> - task #5190 succeeds with `ready`, the 209 SSH source and the Router sources from its intent
+  else a step or the check failed
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its exit code
+    Note over GW: Mark the task failed<br/>rerun after a fix
+    %%> Result:
+    %%> - task #5190 fails; the hub is never reported ready
+    %%> Retry:
+    %%> - run `task-vms:prepare-hub` again after fixing the cause; it is a new task
+  end
