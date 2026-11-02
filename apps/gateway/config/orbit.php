@@ -80,7 +80,7 @@ return [
     'websocket' => [
         'repository' => env(key: 'ORBIT_WEBSOCKET_REPOSITORY', default: 'https://github.com/hardimpactdev/orbit-reverb.git'),
         // Role convergence installs this Gateway release's server, never a moving branch.
-        'ref' => 'f15545c04a30ef26cf3a11dd675668ced217f394',
+        'ref' => '713bceace83d314cbafc707c341e4f8d5e19c3aa',
         'install_path' => env(key: 'ORBIT_WEBSOCKET_INSTALL_PATH', default: '/opt/orbit/websocket'),
         'port' => max(1, (int) env('ORBIT_WEBSOCKET_PORT', 8790)),
     ],

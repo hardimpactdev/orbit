@@ -148,6 +148,8 @@ To withdraw public Reverb, remove the attachment, confirm the Caddy rebuild succ
 
 [orbit-reverb](https://github.com/hardimpactdev/orbit-reverb) contains the integration with Orbit. It has no separately versioned manager package. It uses Reverb's application provider and stock Pusher protocol. The server's protected environment holds its registry address and restricted machine credentials. It holds no static app list.
 
+The Gateway pins a Reverb commit that starts with the registry URL, process ID and registry token. Notification hints are optional; role add supplies no notification token. Native role add writes the protected environment through cfgmgmt, publishes the release link, then starts Reverb once through its systemd restart method. It checks the local listener before publishing the site.
+
 The Gateway owns the encrypted app secrets and a versioned registry. After commit, each process fetches the full snapshot through its existing 30-second reconciliation check. A process report confirms application. The Gateway closes waiting Operations from fresh reports without a Swamp run or Reverb restart.
 
 Each process registers a fresh boot identity before loading the registry. A report from an old boot cannot certify a replacement. Confirmation includes every serving process, including both ends of a role move. An absent or stale report keeps the operation pending. Each entry in operation `processes` includes the latest safe registry `error` code, or null after recovery or a new boot. The Gateway does not store connection measurements.
