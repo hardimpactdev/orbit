@@ -39,7 +39,7 @@ final readonly class ProjectMaintenanceIntent
             return $this->start->execute($kind, 'project', $project->id, 209, [
                 'project' => ['id' => $project->id, 'repository' => $project->repository_url,
                     'default_branch' => $project->default_branch, 'check' => $project->task_check],
-                'groups' => $groups, 'admitted_at' => now()->toIso8601String(),
+                'groups' => $groups, 'admitted_at' => now()->toIso8601ZuluString(),
             ], 'project-maintenance', $requestId);
         });
     }

@@ -33,6 +33,8 @@ it('captures Project settings and the complete group snapshot without executing 
     expect($operation->kind)->toBe('project.routine')->and($operation->node_id)->toBe(209)
         ->and($operation->input['project'])->toBe(['id' => $this->project->id, 'repository' => 'https://github.com/nckrtl/launch.git', 'default_branch' => 'main', 'check' => 'composer check'])
         ->and($operation->input['groups'][0]['id'])->toBe($group->id)
+        // Swamp validates admitted_at as a Zulu ISO datetime; an offset fails the run's first step.
+        ->and($operation->input['admitted_at'])->toMatch('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/')
         ->and(Task::topLevel()->count())->toBe(1)
         ->and(app(DirectOperation::class)->definition('project.routine')['terminal_result'])->toBe(['job' => 'routine', 'step' => 'Report the result']);
     $this->project->update(['task_check' => 'new check']);
