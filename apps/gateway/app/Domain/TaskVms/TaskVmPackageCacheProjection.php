@@ -34,8 +34,9 @@ final readonly class TaskVmPackageCacheProjection implements DirectOperationProj
     /** One agent request stays below the agent's 4 MiB envelope limit. */
     public const int BatchArtifacts = 4096;
 
-    /** Every batch reply is read from one native history read, which the shared reader bounds at 8 MiB. */
-    public const int MaximumBatches = 8;
+    /** The batch requests travel in the run inputs and their replies in its history, which the shared reader reads once
+     * within its 8 MiB bound: about 1.4 MB of request and 0.7 MB of reply per full batch. */
+    public const int MaximumBatches = 2;
 
     /** Each batch request runs inside this agent deadline; the step's literal `timeout 1530` bounds it on the host. */
     public const int BatchDeadlineMilliseconds = 1_500_000;
@@ -67,7 +68,7 @@ final readonly class TaskVmPackageCacheProjection implements DirectOperationProj
         return $batches === [] ? [[]] : $batches;
     }
 
-    /** Public intent only: the host's pinned SSH target, the batch numbers and the integrity conflicts. */
+    /** Public intent only: the host's pinned SSH target, each batch's agent request up to its token, and the integrity conflicts. */
     public function input(Operation $operation): array
     {
         $input = $operation->input;
@@ -76,31 +77,39 @@ final readonly class TaskVmPackageCacheProjection implements DirectOperationProj
             throw new ResourceOperationException('operation.execution_forbidden', 'Cache intent requires its exact admitted host.', 422);
         }
         $this->settings->host(ValidatedData::integer($operation->node_id));
+        $node = Node::query()->findOrFail($operation->node_id);
+        $pin = app(AgentDelivery::class)->pin($node);
+        $requests = [];
+        foreach (self::batches(TaskVmInputs::artifacts($input['artifacts'])) as $items) {
+            // The agent reads one JSON line; the step appends the vault's github_token member and request_end.
+            $request = json_encode(['agent_sha256' => $pin, 'deadline_ms' => self::BatchDeadlineMilliseconds, 'input' => [
+                'operation' => 'fill', 'artifacts' => $items, 'max_bytes' => ValidatedData::integer($input['max_bytes']), 'github_token' => null,
+            ]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+            $requests[] = substr($request, 0, -strlen('"github_token":null}}'));
+        }
 
         return ['intent' => [
-            'ssh_execution' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($operation->node_id)),
-            'batches' => array_keys(self::batches(TaskVmInputs::artifacts($input['artifacts']))),
+            'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($node),
+            'batches' => array_keys($requests),
+            'requests' => $requests,
+            'request_end' => "}}\n",
             'conflicts' => (object) ValidatedData::stringMap($input['conflicts']),
         ], 'execution_secrets' => []];
     }
 
-    /** The run start writes each batch's whole agent request, with the minted GitHub token, into the vault. */
+    /** The vault holds only the request's `github_token` member, with the minted token or null; the public request bytes stay in the inputs.
+     * Serve redacts each vault value it reads with a pattern built from the value, so the value must stay small and distinctive.
+     */
     public function workflowInput(Operation $operation): array
     {
         $input = $this->input($operation);
-        $node = Node::query()->findOrFail($operation->node_id);
-        $artifacts = TaskVmInputs::artifacts($operation->input['artifacts']);
-        $token = $this->githubToken($operation, $artifacts);
-        $pin = app(AgentDelivery::class)->pin($node);
-        $secrets = [];
-        foreach (self::batches($artifacts) as $batch => $items) {
-            $request = json_encode(['agent_sha256' => $pin, 'deadline_ms' => self::BatchDeadlineMilliseconds, 'input' => [
-                'operation' => 'fill', 'artifacts' => $items, 'max_bytes' => ValidatedData::integer($operation->input['max_bytes']), 'github_token' => $token,
-            ]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
-            $secrets['batch_'.$batch] = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'task-vm-cache-fill-'.$node->id.'-'.$batch, $request);
+        $token = $this->githubToken($operation, TaskVmInputs::artifacts($operation->input['artifacts']));
+        if ($token !== null && preg_match('/\A[A-Za-z0-9_]{1,255}\z/D', $token) !== 1) {
+            throw new ResourceOperationException('task_vm.package_cache_failed', 'The GitHub installation token has an unexpected form.', 502);
         }
 
-        return [...$input, 'execution_secrets' => $secrets];
+        return [...$input, 'execution_secrets' => ['github_token' => app(SwampCommandStep::class)->executionCopy(
+            'orbit-control-inputs', 'task-vm-cache-fill-github-'.$operation->node_id, '"github_token":'.json_encode($token, JSON_THROW_ON_ERROR))]];
     }
 
     /** A metadata-read installation token for Composer archives on GitHub; npm archives need none.

@@ -1018,6 +1018,31 @@ Deno.test("official SSH vault stdin and env require a 209 worker and closed exec
     analyzeYaml(file, source.replace(vault, "public input")).findings,
     [],
   );
+  // One small vault value framed by public run inputs (Operation 8235: serve redacts each vault value as a pattern).
+  const call = "vault.get(inputs.execution_secrets.material.vault, inputs.execution_secrets.material.key)";
+  const framed = "${{ inputs.intent.requests[self.batch] + " + call + " + inputs.intent.request_end }}";
+  assertEquals(analyzeYaml(file, source.replace(vault, framed)).findings, []);
+  for (
+    const refused of [
+      "${{ inputs.intent.requests[self.batch] + " + call + ' + "}}" }}',
+      "${{ string(inputs.intent.requests) + " + call + " }}",
+      "${{ " + call + " + " + call + " }}",
+      "${{ inputs.intent.head " + call + " }}",
+      "prefix ${{ inputs.intent.head + " + call + " }}",
+      "${{ inputs.intent.head + vault.get(inputs.execution_secrets.material.vault, inputs.execution_secrets.other.key) }}",
+    ]
+  ) {
+    assert(
+      analyzeYaml(file, source.replace(vault, JSON.stringify(refused).slice(1, -1))).findings.some((f) =>
+        f.rule === "vault-placement"
+      ),
+      refused,
+    );
+  }
+  const framedEnv = JSON.parse(source.replace(vault, framed));
+  framedEnv.jobs[0].steps[0].task.inputs.env = { MATERIAL: framedEnv.jobs[0].steps[0].task.inputs.stdin };
+  delete framedEnv.jobs[0].steps[0].task.inputs.stdin;
+  assert(analyzeYaml(file, JSON.stringify(framedEnv)).findings.some((f) => f.rule === "vault-placement"));
   const labelled = JSON.parse(source);
   delete labelled.jobs[0].target;
   labelled.jobs[0].labels = { node: "209" };

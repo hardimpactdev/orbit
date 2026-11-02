@@ -42,7 +42,7 @@ return ['task_vm.hub_converge' => [
     'workflow_inputs' => true,
     // No result step: the projector reads each batch reply and the run's step statuses; the native assert is the end check.
     'terminal_result' => ['job' => 'fill', 'step' => 'Check every archive', 'native' => true, 'captures' => TaskVmPackageCacheProjection::captures()],
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-cache-fill-[1-9][0-9]*-[0-7]$']],
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-cache-fill-github-[1-9][0-9]*$']],
 ], 'task_vm.image_build' => [
     'workflow' => 'operation-task-vm-image-build',
     'projection' => TaskVmImageProjection::class,

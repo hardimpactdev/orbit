@@ -588,7 +588,11 @@ An unchanged commit reuses its snapshot. Changed or removed lock blobs replace t
 
 Cache initialization, read-only mounting and guest seeding compose as steps of their owning native Task workflow. The Gateway refuses `task_vm.prepare_package_cache`; workspace setup does not admit a separate cache Operation.
 
-The `builds` queue records one `task_vm.fill_package_cache` intent with the observed lockfile inventory. The intent holds at most 8 batches of 4,096 archives; a larger inventory is refused with `task_vm.package_cache_invalid_result`. At the run start the Gateway mints a GitHub installation token with metadata read access when a Composer archive needs one. It writes each batch as one whole agent request, token included, into the Swamp vault as `task-vm-cache-fill-<node>-<batch>`. The workflow inputs hold only the batch numbers, the integrity conflicts, the host's SSH target and the vault key names. The token never enters argv, environment variables, files, workflow inputs or run history.
+The `builds` queue records one `task_vm.fill_package_cache` intent with the observed lockfile inventory. The intent holds at most 2 batches of 4,096 archives, so the requests and the replies fit the run's one terminal read; a larger inventory is refused with `task_vm.package_cache_invalid_result`.
+
+At the run start the Gateway mints a GitHub installation token with metadata read access when a Composer archive needs one. The vault holds only the request's `github_token` member, as `task-vm-cache-fill-github-<node>`: the token, or null. Serve redacts every vault value it reads with a pattern built from that value, so vault values stay small.
+
+The workflow inputs hold each batch's public agent request up to that member, the batch numbers, the integrity conflicts, the host's SSH target and the vault key name. The step's stdin is the request, the vault member and the closing braces. The token never enters argv, environment variables, files, workflow inputs or run history.
 
 One native Swamp run, `operation-task-vm-cache-fill`, runs every step on a `role: swamp` worker. Its `Fill the package cache` step sends the batches to the host one at a time, because the agent holds one lock on the cache. Its `Check every archive` step is a native assert: it passes only when every batch reply is `ok`, no archive was refused and admission found no integrity conflict. The run has a 2,100-second budget, so an unclaimed or stuck run fails instead of hanging.
 

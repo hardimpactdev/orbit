@@ -1572,6 +1572,20 @@ export function analyzeYaml(
     }
     return !quote && depth === 0;
   };
+  // Official SSH stdin may frame one small vault value, such as a token inside a public request line, with public
+  // run inputs: `${{ inputs.intent.a[self.i] + vault.get(<descriptor>) + inputs.intent.b }}`. Serve redacts each
+  // vault value it reads with a pattern built from the value, so large public bytes must stay out of the vault.
+  const framedVault = (value: unknown) => {
+    if (typeof value !== "string") return false;
+    const body = /^\s*\$\{\{([\s\S]*)\}\}\s*$/.exec(value)?.[1];
+    const call = body === undefined ? null :
+      /(^|\+)\s*vault\.get\(\s*inputs\.execution_secrets\.(\w+)\.vault\s*,\s*inputs\.execution_secrets\.\2\.key\s*\)\s*(?=\+|$)/
+        .exec(body);
+    if (!body || !call || (body.match(/vault\.get/g) ?? []).length !== 1) return false;
+    const parts = body.replace(call[0], call[1] + " ").split("+").map((part) => part.trim()).filter((part) => part !== "");
+    return parts.length > 0 &&
+      parts.every((part) => /^inputs\.intent(?:\.\w+|\[self\.\w+\])+$/.test(part));
+  };
   const walk = (value: unknown, path: string[]) => {
     const nativeIdentity = sshIdentity(path);
     const sshTask = officialSshTask(path);
@@ -1614,7 +1628,7 @@ export function analyzeYaml(
       ) add("secret-env-source");
       if (
         /vault\.get\s*\(/.test(value) &&
-        !((nativeIdentity || nativeStdin || protectedFileContent(path)) && wholeVault(value)) && !(vaultEnv &&
+        !((nativeIdentity || nativeStdin || protectedFileContent(path)) && wholeVault(value)) && !(nativeStdin && framedVault(value)) && !(vaultEnv &&
           /^\s*\$\{\{\s*vault\.get\([\s\S]*\)\s*\}\}\s*$/.test(
             value,
           ) &&

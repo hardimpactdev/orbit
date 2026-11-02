@@ -75,28 +75,36 @@ function cacheFillTerminal(Operation $op, string $status, array $replies): Opera
         'failure' => $status === 'failed' ? ['failed_step' => 'Check every archive', 'detail' => 'task_vm.package_cache_failed'] : null]);
 }
 
-it('starts one native run on role swamp with the full intent and one vault request per batch', function (): void {
+it('starts one native run on role swamp with the public requests as inputs and only the token member in the vault', function (): void {
     $artifacts = array_map(cacheFillArtifact(...), array_map(static fn (int $i): string => 'archive-'.$i, range(0, 4096)));
     $op = cacheFillAdmission($artifacts);
     expect(app(StartTaskVmPackageCacheOperationAction::class)->execute($op->node_id)->id)->toBe($op->id)
         ->and(app(OperationKinds::class)->directOnly($op->kind))->toBeTrue()->and(DirectOperation::owns($op))->toBeTrue()
         ->and(app(DirectOperation::class)->definition($op->kind))->not->toHaveKey('private_material')
         ->and($op->input)->not->toHaveKey('github_token');
-    expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'vault.put', 'workflow.run']);
-    $requests = array_map(static fn (array $frame): array => json_decode($frame['payload']['value'], true, flags: JSON_THROW_ON_ERROR), array_slice($this->socket->sent, 0, 2));
-    expect(array_column(array_column(array_slice($this->socket->sent, 0, 2), 'payload'), 'key'))->toBe(['task-vm-cache-fill-'.$op->node_id.'-0', 'task-vm-cache-fill-'.$op->node_id.'-1'])
+    expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'workflow.run'])
+        ->and($this->socket->sent[0]['payload'])->toMatchArray(['key' => 'task-vm-cache-fill-github-'.$op->node_id, 'value' => '"github_token":null']);
+    $inputs = $this->socket->sent[1]['payload']['inputs'];
+    expect($inputs['intent']['batches'])->toBe([0, 1])
+        ->and($inputs['intent']['ssh_execution']['target'])->toMatchArray(['host' => '10.44.0.7', 'host_keys' => ['ssh-ed25519 fixture-host-pin']])
+        ->and($inputs['execution_secrets'])->toBe(['github_token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-vm-cache-fill-github-'.$op->node_id]]);
+    // The step's stdin: the public request, the vault member, then request_end; the agent reads it as one JSON line.
+    $member = $this->socket->sent[0]['payload']['value'];
+    $requests = array_map(static fn (string $request): array => json_decode($request.$member.$inputs['intent']['request_end'], true, flags: JSON_THROW_ON_ERROR),
+        $inputs['intent']['requests']);
+    expect($inputs['intent']['request_end'])->toBe("}}\n")
         ->and($requests[0]['agent_sha256'])->toBe(str_repeat('a', 64))
         ->and($requests[0]['input'])->toMatchArray(['operation' => 'fill', 'github_token' => null])
         ->and(count($requests[0]['input']['artifacts']))->toBe(4096)
         ->and(array_column($requests[1]['input']['artifacts'], 'key'))->toBe(['archive-4096']);
-    $inputs = $this->socket->sent[2]['payload']['inputs'];
-    expect($inputs['intent']['batches'])->toBe([0, 1])
-        ->and($inputs['intent']['ssh_execution']['target'])->toMatchArray(['host' => '10.44.0.7', 'host_keys' => ['ssh-ed25519 fixture-host-pin']])
-        ->and($inputs['execution_secrets'])->toBe([
-            'batch_0' => ['vault' => 'orbit-control-inputs', 'key' => 'task-vm-cache-fill-'.$op->node_id.'-0'],
-            'batch_1' => ['vault' => 'orbit-control-inputs', 'key' => 'task-vm-cache-fill-'.$op->node_id.'-1'],
-        ]);
     expect(OperationRunBudgets::seconds($op->fresh()))->toBe(2100);
+});
+
+it('keeps every vault value small, because serve redacts each value it reads with a pattern built from it', function (): void {
+    // Operation 8235: a whole agent request as a vault value failed the step before SSH with "Invalid regular expression".
+    cacheFillAdmission(array_map(cacheFillArtifact(...), array_map(static fn (int $i): string => 'archive-'.$i, range(0, 2404))));
+    $values = array_column(array_column(array_filter($this->socket->sent, static fn (array $frame): bool => $frame['type'] === 'vault.put'), 'payload'), 'value');
+    expect($values)->not->toBeEmpty()->and(max(array_map(strlen(...), $values)))->toBeLessThanOrEqual(300);
 });
 
 it('refuses oversized artifact keys and inventories past the batch bound before recording intent', function (array $artifacts, string $message): void {
@@ -106,7 +114,7 @@ it('refuses oversized artifact keys and inventories past the batch bound before 
     Queue::assertNothingPushed();
 })->with([
     'key' => [[cacheFillArtifact(str_repeat('a', 1025))], 'cache key exceeds'],
-    'inventory' => [array_map(static fn (int $i): array => cacheFillArtifact('a-'.$i), range(0, 8 * 4096)), 'batch bound'],
+    'inventory' => [array_map(static fn (int $i): array => cacheFillArtifact('a-'.$i), range(0, 2 * 4096)), 'batch bound'],
 ]);
 
 it('records verified archives from the batch replies when a refused archive fails the run', function (): void {

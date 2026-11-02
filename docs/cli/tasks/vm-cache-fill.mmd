@@ -18,27 +18,28 @@ sequenceDiagram
   %%> Requirements:
   %%> - Node 13 is an active, configured task VM host with a recorded SSH host key
   %%> - no other fill runs for Node 13; a second request returns the running task
-  %%> - every cache key fits its 1,024-byte limit, and the inventory fits 8 batches of 4,096 archives
+  %%> - every cache key fits its 1,024-byte limit, and the inventory fits 2 batches of 4,096 archives, so the requests and replies fit the run's one terminal read
   %%> Result:
   %%> - task #5182 recorded with the archives, the integrity conflicts and the byte budget
   %%> - nothing has happened on Node 13 yet
-  GW->>SW: Push the fill batches<br/>vault: task-vm-cache-fill-13-0
+  GW->>SW: Push the GitHub token<br/>task-vm-cache-fill-github-13
   %%> What it does:
-  %%> - at the run start, splits the archives into batches of at most 4,096
-  %%> - writes each batch as one agent request into the Swamp vault
+  %%> - at the run start, mints a GitHub installation token with metadata read access when a Composer archive needs one
+  %%> - writes only the request's `github_token` member into the Swamp vault: the token, or null
   %%> Why:
-  %%> - a batch holds the GitHub installation token for Composer downloads; it is minted here and goes Gateway → vault → step
-  %%> - one batch stays below the agent's 4 MiB request limit
+  %%> - secrets go Gateway → vault → step; the public request bytes stay in the run inputs
+  %%> - serve redacts every vault value it reads with a pattern built from that value, so a vault value stays small
   GW->>SW: Start run, full intent<br/>operation-task-vm-cache-fill
   %%> What it does:
   %%> - starts one Swamp run on serve (Node 209)
   %%> Inputs:
   %%> - Node 13's address, user and SSH host key; the SSH identity comes from the `swamp` role
-  %%> - the batch numbers, the integrity conflicts, and the vault key name of each batch, never its content
+  %%> - each batch's agent request up to its `github_token` member: at most 4,096 archives, below the agent's 4 MiB request limit
+  %%> - the batch numbers, the integrity conflicts, and the token's vault key name, never the token
   SW->>H: Fill the package cache<br/>ssh exec · package-cache.host
   %%> How:
   %%> - Swamp reaches Node 13 over SSH from 209 with the pinned host key
-  %%> - one argv per batch: `timeout 1530 sudo -n -- orbit-agent command package-cache.host`, with the batch on stdin
+  %%> - one argv per batch: `timeout 1530 sudo -n -- orbit-agent command package-cache.host`, with the batch's request, the vault member and the closing braces on stdin
   %%> - batches run one after another; the agent holds one lock on the cache
   %%> What it does:
   %%> - checks each archive identity, downloads approved HTTPS URLs, checks lockfile integrity and the byte budget

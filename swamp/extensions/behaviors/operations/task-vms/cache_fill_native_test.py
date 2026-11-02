@@ -3,6 +3,7 @@
 The fake `ssh` answers like the pinned agent's package-cache.host on the host. No host or fleet mutation.
 """
 import json
+import re
 import shutil
 import sys
 import unittest
@@ -29,7 +30,7 @@ body = sys.stdin.read()
 call = {'argv': argv}
 if body:
     request = json.loads(body)
-    call['token_matches'] = request['input'].pop('github_token') == os.environ['FIXTURE_TOKEN']
+    call['token_matches'] = (request['input'].pop('github_token') or '') == os.environ['FIXTURE_TOKEN']
     call['stdin'] = request
 with Path(CALLS).open('a') as log:
     log.write(json.dumps(call) + '\n')
@@ -90,21 +91,26 @@ class CacheFillNative(NativeTestCase):
                 'integrity': None, 'key': key}
 
     def run_fill(self, success=True):
-        secrets = {}
-        for index, artifacts in enumerate(self.batches):
-            key = f'task-vm-cache-fill-13-{index}'
-            request = {'agent_sha256': 'd' * 64, 'deadline_ms': 1500000,
-                       'input': {'operation': 'fill', 'artifacts': artifacts, 'max_bytes': 1000000, 'github_token': self.token}}
-            self.cli('vault', 'put', 'orbit-control-inputs', key, '--force', input=json.dumps(request) + '\n')
-            secrets[f'batch_{index}'] = {'vault': 'orbit-control-inputs', 'key': key}
+        # As the Gateway admits it: public request bytes in the inputs, only the token's JSON literal in the vault.
+        member = '"github_token":' + json.dumps(self.token or None)
+        self.cli('vault', 'put', 'orbit-control-inputs', 'task-vm-cache-fill-github-13', '--force', input=member)
+        secrets = {'github_token': {'vault': 'orbit-control-inputs', 'key': 'task-vm-cache-fill-github-13'}}
+        requests = [json.dumps({'agent_sha256': 'd' * 64, 'deadline_ms': 1500000, 'input': {
+            'operation': 'fill', 'artifacts': artifacts, 'max_bytes': 1000000, 'github_token': None}}, separators=(',', ':'))[:-len('"github_token":null}}')]
+            for artifacts in self.batches]
         ssh = {'control_node_id': 209, 'identity_file': '/etc/orbit/swamp-role-worker/ssh-identity', 'public_key': 'ssh-ed25519 PUBLIC',
                'target': {'name': 'target', 'host': '192.0.2.13', 'user': 'orbit', 'port': 22,
                           'host_keys': ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG']}}
         self.cli('workflow', 'validate', WORKFLOW)
-        run = json.JSONDecoder().raw_decode(self.cli('workflow', 'run', WORKFLOW, '--input', json.dumps({
+        # A full batch exceeds one argv string, so the inputs go through a file as they go through a frame on serve.
+        inputs = self.repo / 'inputs.json'
+        inputs.write_text(json.dumps({
             'operation_id': 7, 'node_id': 13, 'kind': 'task_vm.fill_package_cache',
-            'intent': {'ssh_execution': ssh, 'batches': list(range(len(self.batches))), 'conflicts': self.conflicts},
-            'execution_secrets': secrets}), success=success).stdout.lstrip())[0]
+            'intent': {'ssh_execution': ssh, 'batches': list(range(len(requests))), 'requests': requests,
+                       'request_end': '}}\n', 'conflicts': self.conflicts},
+            'execution_secrets': secrets}))
+        run = json.JSONDecoder().raw_decode(self.cli('workflow', 'run', WORKFLOW, '--input-file', str(inputs),
+                                                     success=success).stdout.lstrip())[0]
         history = json.JSONDecoder().raw_decode(self.cli('workflow', 'history', 'get', run['id']).stdout.lstrip())[0]
         steps = {step['name']: step for job in history['jobs'] for step in job['steps']}
         calls = [json.loads(line) for line in self.calls.read_text().splitlines()] if self.calls.exists() else []
@@ -131,6 +137,23 @@ class CacheFillNative(NativeTestCase):
         self.assertEqual(steps['Fill the package cache-0']['status'], 'succeeded')
         reply = json.loads(steps['Fill the package cache-0']['outputs']['stdout'])
         self.assertEqual(reply['data']['failures'], {self.batches[0][0]['key']: 'Archive checksum mismatch'})
+
+    def test_a_full_batch_without_a_token_sends_null_from_the_small_vault_member(self):
+        self.token = ''
+        self.native_env.update(FIXTURE_TOKEN='')
+        self.secrets = ()
+        self.batches = [[self.artifact(f'npm/{index:064x}.tgz') for index in range(4096)]]
+        run, _steps, calls = self.run_fill()
+        self.assertEqual(run['status'], 'succeeded')
+        self.assertEqual(len(calls[0]['stdin']['input']['artifacts']), 4096)
+        self.assertTrue(calls[0]['token_matches'])
+
+    def test_the_vault_is_read_only_for_the_github_token(self):
+        # Serve redacts every vault value it reads with a RegExp built from the value; a whole agent request
+        # as a vault value fails the step before SSH (Operation 8235). Only the small token may come from the vault.
+        source = (ROOT / 'workflows' / f'workflow-{WORKFLOW}.yaml').read_text()
+        reads = re.findall(r'vault\.get\(([^)]*)\)', source)
+        self.assertEqual(reads, ['inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key'])
 
     def test_an_admitted_integrity_conflict_fails_the_end_check(self):
         self.batches = [self.batches[0]]

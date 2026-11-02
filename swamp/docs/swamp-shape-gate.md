@@ -143,6 +143,13 @@ uses stdin for its public script body and has no separate stdin argument. Use
 `exec` to run a shipped script when it needs a vault value on stdin; private
 values do not belong in argv or the script body.
 
+The same `exec` stdin also accepts one small vault value framed by public run
+inputs: `${{ inputs.intent.<a>[self.<i>] + vault.get(inputs.execution_secrets.<x>.vault, inputs.execution_secrets.<x>.key) + inputs.intent.<b> }}`.
+Serve redacts every vault value it reads with a pattern built from that value, so
+a large value fails the step before SSH (Operation 8235). The vault then holds only
+the secret, such as a token inside a public agent request line. Literals, function
+calls, a second vault read and `env` stay `vault-placement` findings.
+
 Each `forEach` behavior or model-method step uses a per-item model name: a CEL expression referencing `self._index` or its `self.<item>` binding. A shared name serializes execution on Swamp's model lock and can lose receipts. Existing `foreach-shared-identity` findings are grandfathered in the baseline; new findings or increased caps fail. Node removal serving and certificate-restoration loops use a separate model name for each run, phase and iteration. Node, worker and SSH workflows have no remaining allowance for shared iteration identities. Workflow-child and non-model tasks have no model identity and are outside this check.
 
 Route workload preparation and Vault sync deletion use a separate model for each iteration. Neither workflow has a shared-iteration allowance.

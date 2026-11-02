@@ -14,24 +14,34 @@ inputs:
       type: object
       properties:
         ssh_execution: {type: object}
+        # Each batch's public agent request up to its github_token member; the step appends that member from the vault, then request_end.
+        # The batch numbers name the fill steps (Fill the package cache-0, -1) that the Gateway reads.
         batches:
           type: array
-          items: {type: integer, minimum: 0, maximum: 7}
+          items: {type: integer, minimum: 0, maximum: 1}
           minItems: 1
-          maxItems: 8
+          maxItems: 2
+        requests:
+          type: array
+          items: {type: string}
+          minItems: 1
+          maxItems: 2
+        request_end: {type: string, const: "}}\n"}
         conflicts: {type: object}
-      required: [ssh_execution, batches, conflicts]
+      required: [ssh_execution, batches, requests, request_end, conflicts]
+    # Only the request's github_token member (the token or null): vault values stay small, because serve redacts each one.
     execution_secrets:
       type: object
-      minProperties: 1
-      maxProperties: 8
-      additionalProperties:
-        type: object
-        properties:
-          vault: {type: string, enum: [orbit-control-inputs]}
-          key: {type: string, pattern: '^task-vm-cache-fill-[1-9][0-9]*-[0-7]$'}
-        required: [vault, key]
-        additionalProperties: false
+      properties:
+        github_token:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^task-vm-cache-fill-github-[1-9][0-9]*$'}
+          required: [vault, key]
+          additionalProperties: false
+      required: [github_token]
+      additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
@@ -64,7 +74,7 @@ jobs:
         hosts: name:target
         argv: [timeout, '1530', /usr/bin/sudo, -n, --, /usr/local/bin/orbit-agent, command, package-cache.host]
         timeoutSec: 1560
-        stdin: ${{ vault.get(inputs.execution_secrets["batch_" + string(self.batch)].vault, inputs.execution_secrets["batch_" + string(self.batch)].key) }}
+        stdin: ${{ inputs.intent.requests[self.batch] + vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) + inputs.intent.request_end }}
   - name: Check every archive
     labels: {role: swamp}
     dependsOn:
