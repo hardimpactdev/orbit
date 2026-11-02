@@ -74,12 +74,14 @@ Deno.test("converge runs serve with the role's limits and a 5 minute drain, and 
   assertEquals(/systemctl\('(restart|reload-or-restart)', [^)]*orbit-swamp-serve/.test(SWAMP_WORKERS_PROGRAM), false);
 });
 
-Deno.test("grants mode renders every manifest grant for the Gateway principal", async () => {
+Deno.test("grants mode renders the Gateway manifest and serve's other grants from the repository", async () => {
   const repo = await Deno.makeTempDir();
   try {
     await Deno.mkdir(`${repo}/config`);
     const manifest = new URL("../../../../config/gateway-workflow-grants.json", import.meta.url);
     await Deno.copyFile(manifest, `${repo}/config/gateway-workflow-grants.json`);
+    const serve = new URL("../../../../config/serve-grants.json", import.meta.url);
+    await Deno.copyFile(serve, `${repo}/config/serve-grants.json`);
     const result = await new Deno.Command("python3", {
       args: ["-I", new URL("../fleet-recipe/scripts/swamp_workers.py", import.meta.url).pathname, "grants", repo],
     }).output();
@@ -96,6 +98,9 @@ Deno.test("grants mode renders every manifest grant for the Gateway principal", 
       grants.some((grant: { condition?: string }) => grant.condition?.includes("^schedule-command-")),
       true,
     );
+    const others = JSON.parse(await Deno.readTextFile(`${repo}/grants/orbit-serve.yaml`)).grants;
+    assertEquals(others, JSON.parse(await Deno.readTextFile(serve)).grants);
+    assertEquals(others.some((grant: { subject: string }) => grant.subject === "user:orbit-gateway"), false);
   } finally {
     await Deno.remove(repo, { recursive: true });
   }

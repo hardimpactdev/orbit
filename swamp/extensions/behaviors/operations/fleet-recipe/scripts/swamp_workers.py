@@ -28,6 +28,8 @@ PORT = 9418
 CHECKOUT = '/apps/orbit-monorepo-staging/checkout/swamp'
 GRANTS_MANIFEST = 'config/gateway-workflow-grants.json'
 GRANTS_FILE = 'grants/orbit-gateway.yaml'
+SERVE_GRANTS = 'config/serve-grants.json'
+SERVE_GRANTS_FILE = 'grants/orbit-serve.yaml'
 
 
 def done(value):
@@ -73,6 +75,12 @@ def grants(repo):
     result += [{'subject': manifest['principal'], 'effect': 'allow', 'actions': entry['actions'],
                 'resource': 'workflow:' + entry['workflow']} for entry in manifest['workflows']]
     return (json.dumps({'grants': result}, indent=2) + '\n').encode()
+
+
+def serve_grants(repo):
+    """Serve's other grants, kept in the repository in serve's grants file format."""
+    with open(os.path.join(repo, SERVE_GRANTS)) as handle:
+        return (json.dumps({'grants': json.load(handle)['grants']}, indent=2) + '\n').encode()
 
 
 def unit(data):
@@ -158,6 +166,8 @@ def converge(data):
     changed = publish(IDENTITY, identity, 0o440, account.pw_gid)
     changed = publish(home + CHECKOUT + '/' + GRANTS_FILE, grants(home + CHECKOUT), 0o640, account.pw_gid,
                       account.pw_uid) or changed
+    changed = publish(home + CHECKOUT + '/' + SERVE_GRANTS_FILE, serve_grants(home + CHECKOUT), 0o640, account.pw_gid,
+                      account.pw_uid) or changed
     serve_changed = publish(SERVE_UNIT, serve_unit(data, home), 0o644)
     unit_changed = publish(UNIT, unit(data), 0o644)
     if (serve_changed or unit_changed) and not systemctl('daemon-reload'):
@@ -240,6 +250,7 @@ if len(sys.argv) == 3 and sys.argv[1] == 'release-restart':
     release_restart(sys.argv[2])
 if len(sys.argv) == 3 and sys.argv[1] == 'grants':
     publish(os.path.join(sys.argv[2], GRANTS_FILE), grants(sys.argv[2]), 0o640, os.getgid(), os.getuid())
+    publish(os.path.join(sys.argv[2], SERVE_GRANTS_FILE), serve_grants(sys.argv[2]), 0o640, os.getgid(), os.getuid())
     sys.exit(0)
 if os.geteuid() != 0:
     sys.exit(1)
