@@ -12,3 +12,4 @@ instance.destroy
 project.detect
 project.observe
 project.routine
+node.settings

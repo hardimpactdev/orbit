@@ -69,8 +69,7 @@ async function execute(
             (x) => x.toString(16).padStart(2, "0"),
         ).join("");
         data = { secret_hash: hash, restarted: true, unclosed: [] };
-    } else if (command === "node.prepare-storage-root") data = {};
-    else if (command === "caddy.install-package") {
+    } else if (command === "caddy.install-package") {
         data = { changed: false, version: "2.10.2" };
     } else if (command === "node.install-private-dns-listener") {
         data = { installed: true, changed: false };
@@ -91,7 +90,7 @@ async function execute(
         const out = {
             stdout: JSON.stringify({
                 ok: false,
-                error: { code: "node.storage_root_unusable" },
+                error: { code: "agent.synthetic_refusal" },
             }),
         };
         await ctx.writeResource("output", "output", out);

@@ -28,7 +28,7 @@ sequenceDiagram
   %%> - no other settings change runs for Node 12; the Gateway holds one lock per Node
   %%> Checks for `apps.path`:
   %%> - absolute and normalized: not `/`, no trailing or repeated `/`, no `.` or `..` part
-  %%> - not the managed user's home or an ancestor of it, and not inside a hidden folder of that home
+  %%> - the managed home checks run on Node 12 in the create step, where the home is known
   %%> - not overlapping `/boot`, `/dev`, `/etc`, `/proc`, `/run`, `/sys`, `/usr`, `/opt/orbit`, `/var/lib/orbit`, `/var/www`, or the Gateway checkout and release layout
   %%> - not equal to, or inside, an existing Instance checkout on Node 12
   %%> Checks for `task_vms`:
@@ -67,16 +67,24 @@ sequenceDiagram
     %%> - the task number, at once
     %%> Next:
     %%> - the CLI follows the task with `operation:show`
-    SW->>N: Create the apps folder<br/>@swamp/cfgmgmt/file directory
+    Note over SW: Read the scripts<br/>@nckrtl/node-scripts read
     %%> What it does:
+    %%> - reads the shipped `apps_folder.py` script and the public intent on 209
+    %%> Why:
+    %%> - one tracked, linted script does both Node steps; the next steps pass it to Node 12
+    SW->>N: Create the apps folder<br/>apps_folder.py create
+    %%> What it does:
+    %%> - with no apps path, uses the managed user's home plus `/apps`
+    %%> - refuses the managed home, an ancestor of it, a hidden folder inside it, or a symlink on the way; then nothing is written
     %%> - creates each missing folder of `/srv/apps`, owned by the managed user and group, mode `0755`
     %%> - leaves an existing folder as it is; it never changes the owner or mode of an existing folder
     %%> How:
-    %%> - Swamp reaches Node 12 over SSH from 209, with the official `@swamp/cfgmgmt/file` behavior
+    %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior and sudo
+    %%> - a shipped script, not `@swamp/cfgmgmt/directory`: that behavior would change an existing folder's owner and mode
     %%> Not included:
     %%> - existing Instances don't move; their checkouts stay where they are
     %%> - new development Instances use `/srv/apps/<project>/<instance>`
-    SW->>N: Check owner and mode<br/>stat /srv/apps
+    SW->>N: Check owner and mode<br/>apps_folder.py check
     %%> What it does:
     %%> - reads the folder back: a real folder, not a symlink
     %%> - owned by the managed user and group, with read, write and execute for the owner

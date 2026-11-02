@@ -1,0 +1,10 @@
+manifestVersion: 1
+name: "@nckrtl/node-scripts"
+version: 2026.11.02.1
+visibility: private
+license: MIT
+description: Shipped Node scripts for settings, SSH access and agent rekey; transport is official SSH.
+behaviors:
+  - operations/node-scripts/assets.ts
+additionalFiles:
+  - scripts/apps_folder.py
