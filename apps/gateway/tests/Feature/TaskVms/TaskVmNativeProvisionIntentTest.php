@@ -149,6 +149,9 @@ it('captures Gateway-owned UpCloud bootstrap only through the shared vault write
         ->and($this->vm->fresh()->provider_bootstrap['private'])->toBe('PRIVATE-BOOTSTRAP-FIXTURE')
         ->and($this->vm->fresh()->getRawOriginal('provider_bootstrap'))->not->toContain('PRIVATE-BOOTSTRAP-FIXTURE')
         ->and(json_encode($input))->not->toContain('PRIVATE-BOOTSTRAP-FIXTURE')->not->toContain('PRIVATE-UPCLOUD-FIXTURE');
+    // curl expands the vault value straight into the create body, so the copy holds the private key alone.
+    $copies = array_values(array_filter(app(WebSocketClient::class)->sent, static fn (array $message): bool => ($message['payload']['key'] ?? null) === 'task-vm-provider-bootstrap-'.test()->vm->id));
+    expect($copies)->toHaveCount(1)->and($copies[0]['payload']['value'])->toBe('PRIVATE-BOOTSTRAP-FIXTURE');
     $again = app(TaskVmProvisionIntent::class)->capture($this->vm->fresh());
     expect($again['bootstrap_host_key'])->toBe($public)->and($again['execution_secrets']['bootstrap'])->toBe($input['execution_secrets']['bootstrap']);
 });

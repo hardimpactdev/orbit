@@ -17,22 +17,21 @@ class UpCloudCompositionNative(unittest.TestCase):
         self.vm = composition.TaskVmProvisionComposition()
         self.vm.setUp()
         self.addCleanup(self.vm.doCleanups)
-        for script in ('upcloud.py', 'upcloud_create.py'):
-            shutil.copy(self.cloud.repo / 'extensions/behaviors/operations/task-vm-lifecycle/scripts' / script,
-                        self.vm.repo / 'extensions/behaviors/operations/task-vm-lifecycle/scripts' / script)
+        # The provider fixture's curl reaches its disposable UpCloud API.
+        self.vm.native_env['PATH'] = self.cloud.native_env['PATH']
         for name in ('task-vm-provider-upcloud', 'task-vm-provider-power'):
             shutil.copy(self.cloud.repo / f'workflows/workflow-{name}.yaml', self.vm.repo / f'workflows/workflow-{name}.yaml')
         workflow = yaml.safe_load((ROOT / 'workflows/workflow-task-vm-destroy.yaml').read_text())
         for job in workflow['jobs']:
-            job.pop('target')
+            job.pop('labels', None)
             for step in job['steps']:
-                step.pop('target')
+                step.pop('labels', None)
                 if step['task'].get('behaviorType') == '@swamp/ssh':
                     step['task']['globalArgs']['sshBinary'] = str(self.vm.repo / 'ssh')
         (self.vm.repo / 'workflows/workflow-task-vm-destroy.yaml').write_text(yaml.safe_dump(workflow, sort_keys=False))
         self.vm.cli('vault', 'create', 'local_encryption', 'orbit-control-inputs')
         self.vm.cli('vault', 'put', 'orbit-control-inputs', 'task-vm-upcloud-token', input=self.cloud.token)
-        self.vm.cli('vault', 'put', 'orbit-control-inputs', 'task-vm-provider-bootstrap-42', input=json.dumps({'private': self.cloud.private, 'public': self.cloud.public}))
+        self.vm.cli('vault', 'put', 'orbit-control-inputs', 'task-vm-provider-bootstrap-42', input=self.cloud.private)
         self.vm.secrets = self.cloud.secrets
         self.vm.intent.update(self.cloud.intent)
         self.vm.inputs['node_id'] = 14
@@ -68,9 +67,9 @@ class UpCloudCompositionNative(unittest.TestCase):
         scp.chmod(0o755)
         workflow = yaml.safe_load((ROOT / 'workflows/workflow-task-vm-runtime.yaml').read_text())
         for job in workflow['jobs']:
-            job.pop('target')
+            job.pop('labels', None)
             for step in job['steps']:
-                step.pop('target')
+                step.pop('labels', None)
                 if step['task'].get('behaviorType') == '@swamp/ssh':
                     step['task']['globalArgs']['sshBinary'] = str(fake)
                     step['task']['globalArgs']['scpBinary'] = str(scp)

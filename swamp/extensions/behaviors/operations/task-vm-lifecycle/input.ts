@@ -52,6 +52,42 @@ export const ProviderReceipt = z.object({
     settled: z.literal(true),
 }).strict();
 
+/**
+ * Decode one UpCloud detail read: curl prints the body, then the HTTP status
+ * on its own last line. 404 is the documented absence; any other non-2xx
+ * status fails, so a provider error never supplies a missing-VM observation.
+ */
+export function cloudRead(stdout: string): unknown {
+    const text = stdout.trimEnd();
+    const end = text.lastIndexOf("\n");
+    const status = text.slice(end + 1);
+    if (status === "404") return {};
+    if (end < 0 || !/^2[0-9][0-9]$/.test(status)) {
+        throw new Error("task_vm.upcloud_failed");
+    }
+    return JSON.parse(text.slice(0, end));
+}
+
+/** The one UpCloud power request for an admitted UUID; delete removes storage and backups. */
+export function cloudRequest(intent: ProviderIntent, action: PowerAction) {
+    if (
+        intent.provider !== "upcloud" || intent.provider_id === null ||
+        action === "inspect"
+    ) return null;
+    const server = `server/${intent.provider_id}`;
+    if (action === "delete") {
+        return { path: `${server}?storages=1&backups=delete`, data: null };
+    }
+    return {
+        path: `${server}/${action}`,
+        data: JSON.stringify(
+            action === "start" ? { server: {} } : {
+                stop_server: { stop_type: "soft", timeout: "120" },
+            },
+        ),
+    };
+}
+
 /** Decode one observation; the native provider phase owns any bounded state wait. */
 export function observation(
     intent: ProviderIntent,
@@ -80,9 +116,12 @@ export function observation(
                 : "pending";
         }
     } else {
-        const value = z.object({ server: z.unknown().optional() }).parse(
-            JSON.parse(stdout),
-        );
+        // An unknown UUID was already proven absent by the label list.
+        const value = intent.provider_id === null
+            ? {}
+            : z.object({ server: z.unknown().optional() }).parse(
+                cloudRead(stdout),
+            );
         if (!value.server) state = "absent";
         else {
             const row = z.object({

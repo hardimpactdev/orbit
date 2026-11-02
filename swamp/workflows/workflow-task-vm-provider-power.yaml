@@ -1,6 +1,6 @@
 id: 5343cf76-d595-4d65-a0db-c22ca1962b28
 name: task-vm-provider-power
-description: One provider power action and one postcondition;209 official SSH for Incus, HTTPS for UpCloud.
+description: One provider power action and one postcondition; 209 official SSH for Incus, inline curl for UpCloud.
 vaults:
 - orbit-control-inputs
 inputs:
@@ -69,14 +69,12 @@ jobs:
       behaviorName: '${{ "vm-cloud" }}'
       methodName: execute
       inputs:
-        run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" discover
-
-          '
+        run: |
+          curl --silent --show-error --fail --proto =https --max-redirs 0 --max-time 60 \
+            --variable %ORBIT_UPCLOUD_TOKEN --expand-header 'Authorization: Bearer {{ORBIT_UPCLOUD_TOKEN}}' \
+            --header 'Accept: application/json' 'https://api.upcloud.com/1.3/server?label=orbit-task-vm'
         env:
-          ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
-          ORBIT_PROVIDER_INTENT: ${{ steps.input.outputs.input_json }}
-          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key)
-            }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault, inputs.execution_secrets.upcloud.key) }}
     dependsOn:
     - step: input
       condition:
@@ -136,25 +134,26 @@ jobs:
     guard: ${{ inputs.intent.provider != "incus" }}
   - name: cloud-before
     labels: {role: swamp}
-    task:
+    task: &cloud_detail
       type: behavior
       behaviorType: command/shell
       behaviorName: '${{ "vm-cloud" }}'
       methodName: execute
       inputs:
-        run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" observe
-
-          '
+        run: |
+          # 404 is absence: curl prints the status on the last line and cloudRead decodes it.
+          curl --silent --show-error --proto =https --max-redirs 0 --max-time 60 \
+            --variable %ORBIT_UPCLOUD_TOKEN --expand-header 'Authorization: Bearer {{ORBIT_UPCLOUD_TOKEN}}' \
+            --header 'Accept: application/json' --write-out '\n%{http_code}\n' \
+            "https://api.upcloud.com/1.3/server/$ORBIT_UUID"
         env:
-          ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
-          ORBIT_PROVIDER_INTENT: ${{ steps.discovery.outputs.input_json }}
-          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key)
-            }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault, inputs.execution_secrets.upcloud.key) }}
+          ORBIT_UUID: ${{ steps.discovery.outputs.intent.provider_id }}
     dependsOn:
     - step: discovery
       condition:
         type: succeeded
-    guard: ${{ inputs.intent.provider != "upcloud" }}
+    guard: ${{ inputs.intent.provider != "upcloud" || steps.discovery.outputs.intent.provider_id == null }}
   - name: before
     labels: {role: swamp}
     task:
@@ -166,8 +165,8 @@ jobs:
         intent: '${{ inputs.intent.provider == "upcloud" ? steps.discovery.outputs.intent : inputs.intent
           }}'
         action: ${{ inputs.action }}
-        stdout: '${{ inputs.intent.provider == "incus" ? steps["incus-before"].outputs.stdout : steps["cloud-before"].outputs.stdout
-          }}'
+        stdout: '${{ inputs.intent.provider == "incus" ? steps["incus-before"].outputs.stdout : steps.discovery.outputs.intent.provider_id
+          == null ? "" : steps["cloud-before"].outputs.stdout }}'
     dependsOn:
     - step: input
       condition:
@@ -196,27 +195,51 @@ jobs:
         type: succeeded
     guard: ${{ inputs.intent.provider != "incus" || !steps.before.outputs.change }}
     allowFailure: true
-  - name: cloud-action
+  - name: cloud-power
     labels: {role: swamp}
+    writes: true
     task:
       type: behavior
       behaviorType: command/shell
       behaviorName: '${{ "vm-cloud" }}'
       methodName: execute
       inputs:
-        run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" action
-
-          '
+        run: |
+          curl --silent --show-error --fail --proto =https --max-redirs 0 --max-time 60 \
+            --variable %ORBIT_UPCLOUD_TOKEN --expand-header 'Authorization: Bearer {{ORBIT_UPCLOUD_TOKEN}}' \
+            --request POST --header 'Content-Type: application/json' --data "$ORBIT_DATA" --output /dev/null \
+            "https://api.upcloud.com/1.3/$ORBIT_PATH"
         env:
-          ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
-          ORBIT_PROVIDER_INTENT: ${{ steps.discovery.outputs.input_json }}
-          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key)
-            }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault, inputs.execution_secrets.upcloud.key) }}
+          ORBIT_PATH: ${{ steps.discovery.outputs.request.path }}
+          ORBIT_DATA: ${{ steps.discovery.outputs.request.data }}
     dependsOn:
     - step: before
       condition:
         type: succeeded
-    guard: ${{ inputs.intent.provider != "upcloud" || !steps.before.outputs.change }}
+    guard: ${{ inputs.intent.provider != "upcloud" || !steps.before.outputs.change || inputs.action == "delete" }}
+    allowFailure: true
+  - name: cloud-delete
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "vm-cloud" }}'
+      methodName: execute
+      inputs:
+        run: |
+          curl --silent --show-error --fail --proto =https --max-redirs 0 --max-time 60 \
+            --variable %ORBIT_UPCLOUD_TOKEN --expand-header 'Authorization: Bearer {{ORBIT_UPCLOUD_TOKEN}}' \
+            --request DELETE --output /dev/null "https://api.upcloud.com/1.3/$ORBIT_PATH"
+        env:
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault, inputs.execution_secrets.upcloud.key) }}
+          ORBIT_PATH: ${{ steps.discovery.outputs.request.path }}
+    dependsOn:
+    - step: before
+      condition:
+        type: succeeded
+    guard: ${{ inputs.intent.provider != "upcloud" || !steps.before.outputs.change || inputs.action != "delete" }}
     allowFailure: true
   - name: incus-after
     labels: {role: swamp}
@@ -240,26 +263,16 @@ jobs:
     - step: incus-action
       condition:
         type: always
-    - step: cloud-action
+    - step: cloud-power
+      condition:
+        type: always
+    - step: cloud-delete
       condition:
         type: always
   - name: cloud-after
     labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "vm-cloud" }}'
-      methodName: execute
-      inputs:
-        run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" observe
-
-          '
-        env:
-          ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
-          ORBIT_PROVIDER_INTENT: ${{ steps.discovery.outputs.input_json }}
-          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key)
-            }}
-    guard: ${{ inputs.intent.provider != "upcloud" }}
+    task: *cloud_detail
+    guard: ${{ inputs.intent.provider != "upcloud" || steps.discovery.outputs.intent.provider_id == null }}
     dependsOn:
     - step: before
       condition:
@@ -267,7 +280,10 @@ jobs:
     - step: incus-action
       condition:
         type: always
-    - step: cloud-action
+    - step: cloud-power
+      condition:
+        type: always
+    - step: cloud-delete
       condition:
         type: always
   - name: result
@@ -281,8 +297,8 @@ jobs:
         intent: '${{ inputs.intent.provider == "upcloud" ? steps.discovery.outputs.intent : inputs.intent
           }}'
         action: ${{ inputs.action }}
-        stdout: '${{ inputs.intent.provider == "incus" ? steps["incus-after"].outputs.stdout : steps["cloud-after"].outputs.stdout
-          }}'
+        stdout: '${{ inputs.intent.provider == "incus" ? steps["incus-after"].outputs.stdout : steps.discovery.outputs.intent.provider_id
+          == null ? "" : steps["cloud-after"].outputs.stdout }}'
     dependsOn:
     - step: before
       condition:

@@ -440,17 +440,6 @@ Deno.test("poll proofs follow only sibling shipped modules and reject tolerant h
     .replace("        return json.loads(raw)", "            return json.loads(raw)\n    except Exception:\n        return {'state': 'maintenance'}");
   assert((await findings(source, tolerant)).length > 0);
 });
-Deno.test("the shipped UpCloud strict sibling read passes; its tolerant API cannot poll", async () => {
-  const helper = Deno.readTextFileSync(new URL("../extensions/behaviors/operations/task-vm-lifecycle/scripts/upcloud.py", import.meta.url));
-  const waiting = externalPoll.slice(externalPoll.indexOf("def wait_started"));
-  const findings = (method: string) => phaseControls(new Map([
-    ["workflows/phase.yaml", phaseWorkflow(["timeout 30 python3 scripts/poll.py"])],
-    ["scripts/upcloud.py", helper],
-    [pollFile, `import time\nfrom upcloud import ${method}\n` + waiting.replace("api('GET', 'server/example')['state']", method === "poll_read" ? "poll_read('server/example')['server']['state']" : "api('GET', 'server/example')['server']['state']")],
-  ]));
-  assertEquals(await findings("poll_read"), []);
-  assert((await findings("api")).length > 0);
-});
 Deno.test("an enclosing context manager cannot suppress a failed poll", async () => {
   const start = externalPoll.indexOf("def wait_started():");
   const header = externalPoll.slice(0, start) + "from contextlib import suppress\n\n";

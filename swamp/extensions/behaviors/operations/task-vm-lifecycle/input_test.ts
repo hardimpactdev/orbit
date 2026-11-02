@@ -1,9 +1,14 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.14";
-import { observation, ProviderInput, receipt } from "./input.ts";
+import {
+    cloudRead,
+    cloudRequest,
+    observation,
+    ProviderInput,
+    receipt,
+} from "./input.ts";
 const ssh = {
     control_node_id: 209,
-    identity_file:
-        "/etc/orbit/swamp-role-worker/ssh-identity",
+    identity_file: "/etc/orbit/swamp-role-worker/ssh-identity",
     public_key: "ssh-ed25519 public",
     target: {
         name: "target",
@@ -30,6 +35,9 @@ const cloud = ProviderInput.parse({
     vm: null,
     host_ssh_execution: null,
 });
+/** curl prints the body, then --write-out '\n%{http_code}\n'. */
+const reply = (value: unknown, status = 200) =>
+    JSON.stringify(value) + "\n" + status + "\n";
 const vm = (status: string) =>
     JSON.stringify([{ name: "tvm-42", type: "virtual-machine", status }]);
 const server = (state = "started") => ({
@@ -80,7 +88,7 @@ Deno.test("delete admits absence and stopped power, never another named object",
 });
 Deno.test("UpCloud observation proves UUID title hostname label and sole disk", () => {
     assertEquals(
-        receipt(cloud, "start", JSON.stringify(server())).running,
+        receipt(cloud, "start", reply(server())).running,
         true,
     );
     for (
@@ -100,16 +108,67 @@ Deno.test("UpCloud observation proves UUID title hostname label and sole disk", 
         const row = server();
         mutate(row);
         assertThrows(
-            () => observation(cloud, "start", JSON.stringify(row)),
+            () => observation(cloud, "start", reply(row)),
             "task_vm.provider_identity_invalid",
         );
     }
     assertThrows(
-        () =>
-            observation(cloud, "start", JSON.stringify(server("maintenance"))),
+        () => observation(cloud, "start", reply(server("maintenance"))),
         "task_vm.not_settled",
     );
-    assertEquals(receipt(cloud, "delete", "{}").absent, true);
+    assertEquals(
+        receipt(
+            cloud,
+            "delete",
+            reply({ error: { error_code: "SERVER_NOT_FOUND" } }, 404),
+        )
+            .absent,
+        true,
+    );
+});
+Deno.test("UpCloud detail read: 404 is absence, every other failure refuses", () => {
+    assertEquals(cloudRead(reply(server())), server());
+    assertEquals(cloudRead(reply({}, 404)), {});
+    for (const status of [401, 403, 409, 429, 500, 503]) {
+        assertThrows(
+            () => cloudRead(reply({ error: {} }, status)),
+            "task_vm.upcloud_failed",
+        );
+    }
+    assertThrows(() => cloudRead(""), "task_vm.upcloud_failed");
+    assertThrows(() => cloudRead("200"), "task_vm.upcloud_failed");
+    // A failed read never becomes absence, so stop/start refuse a missing VM.
+    assertThrows(
+        () => observation(cloud, "stop", reply({}, 500)),
+        "task_vm.upcloud_failed",
+    );
+    assertThrows(
+        () => observation(cloud, "stop", reply({}, 404)),
+        "task_vm.vm_missing",
+    );
+});
+Deno.test("an unknown UUID is absent from the label list without a detail read", () => {
+    const unknown = { ...cloud, provider_id: null };
+    assertEquals(receipt(unknown, "delete", "").absent, true);
+    assertEquals(observation(unknown, "inspect", "").state, "absent");
+    assertThrows(() => observation(unknown, "start", ""), "task_vm.vm_missing");
+    assertEquals(cloudRequest(unknown, "delete"), null);
+});
+Deno.test("UpCloud power requests target the admitted UUID only", () => {
+    assertEquals(cloudRequest(cloud, "start"), {
+        path: `server/${serverId}/start`,
+        data: '{"server":{}}',
+    });
+    assertEquals(cloudRequest(cloud, "stop"), {
+        path: `server/${serverId}/stop`,
+        data: '{"stop_server":{"stop_type":"soft","timeout":"120"}}',
+    });
+    assertEquals(cloudRequest(cloud, "delete"), {
+        path: `server/${serverId}?storages=1&backups=delete`,
+        data: null,
+    });
+    assertEquals(cloudRequest(cloud, "inspect"), null);
+    assertEquals(cloudRequest(incus, "stop"), null);
 });
 Deno.test("provider input retains original VM and canonical209 SSH", () => {
     assertThrows(() => ProviderInput.parse({ ...incus, name: "other" }));

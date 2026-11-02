@@ -1,6 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 import {
     Action,
+    cloudRequest,
     discoverProvider,
     observation,
     ProviderInput,
@@ -10,22 +11,25 @@ import {
 const Args = z.object({ intent: ProviderInput, action: Action }).strict();
 const ObservedArgs = Args.extend({ stdout: z.string() });
 type Context = {
-    extensionFile(path: string): string;
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
 };
 export const behavior = {
     type: "@nckrtl/task-vm-lifecycle-input",
-    version: "2026.11.02.1",
+    version: "2026.11.02.2",
     resources: {
         provider_input: {
-            schema: z.object({ intent: ProviderInput, input_json: z.string() }),
+            schema: z.object({
+                intent: ProviderInput,
+                request: z.object({
+                    path: z.string(),
+                    data: z.string().nullable(),
+                }).nullable(),
+            }),
             lifetime: "infinite",
             garbageCollection: 10,
         },
         input: {
             schema: z.object({
-                input_json: z.string(),
-                script: z.string(),
                 observe_argv: z.array(z.string()),
                 action_argv: z.array(z.string()),
             }),
@@ -72,10 +76,7 @@ export const behavior = {
                             "provider_input",
                             {
                                 intent,
-                                input_json: JSON.stringify({
-                                    ...intent,
-                                    action: args.action,
-                                }),
+                                request: cloudRequest(intent, args.action),
                             },
                         ),
                     ],
@@ -106,8 +107,6 @@ export const behavior = {
                 return {
                     dataHandles: [
                         await ctx.writeResource("input", "input", {
-                            input_json: JSON.stringify({ ...intent, action }),
-                            script: ctx.extensionFile("scripts/upcloud.py"),
                             observe_argv: [
                                 ...prefix,
                                 "list",

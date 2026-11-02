@@ -1,5 +1,10 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.14";
-import { cloudChoice, cloudObservation, cloudResult } from "./cloud_input.ts";
+import {
+    BootstrapVariable,
+    cloudChoice,
+    cloudObservation,
+    cloudResult,
+} from "./cloud_input.ts";
 import { discoverProvider } from "./input.ts";
 const image = "00000000-0000-4000-8000-000000000001",
     uuid = "bb757fe7-0d7f-497e-b160-b545075e2cba";
@@ -179,5 +184,83 @@ Deno.test("cloud UUID and owner are proven by detail after label-less discovery"
     );
     assertThrows(() =>
         cloudObservation(intent, JSON.stringify({ server: listed }), uuid)
+    );
+});
+
+/** What curl sends for `{{NAME:json:json}}`: the value JSON-escaped twice. */
+function expand(template: string, value: string) {
+    const once = JSON.stringify(value).slice(1, -1);
+    return template.replace(
+        `{{${BootstrapVariable}:json:json}}`,
+        JSON.stringify(once).slice(1, -1),
+    );
+}
+Deno.test("create body is public intent; curl adds only the vault private host key", () => {
+    const empty = JSON.stringify({ servers: { server: [] } });
+    const template = cloudChoice(intent, empty, plans).create_data!;
+    assertEquals(template.split("{{").length, 2);
+    const key =
+        '-----BEGIN OPENSSH PRIVATE KEY-----\nfix"ture\\key\n-----END OPENSSH PRIVATE KEY-----';
+    const server = JSON.parse(expand(template, key)).server;
+    assertEquals(server.title, "tvm-42");
+    assertEquals(server.hostname, "tvm-42");
+    assertEquals(server.plan, "test");
+    assertEquals(server.labels.label, [
+        { key: "orbit-task-vm", value: "42" },
+        { key: "orbit-task-vm-image", value: image },
+    ]);
+    assertEquals(server.storage_devices.storage_device, [{
+        action: "clone",
+        storage: image,
+        title: "tvm-42-disk",
+        size: 20,
+        tier: "standard",
+    }]);
+    assertEquals(
+        server.networking.interfaces.interface,
+        [{
+            type: "public",
+            ip_addresses: { ip_address: [{ family: "IPv4" }] },
+        }],
+    );
+    assertEquals(server.remote_access_enabled, "no");
+    assertEquals(server.firewall, "off");
+    assertEquals(server.user_data.startsWith("#cloud-config\n"), true);
+    const config = JSON.parse(server.user_data.slice("#cloud-config\n".length));
+    assertEquals(config.ssh_keys, {
+        ed25519_private: key,
+        ed25519_public: intent.bootstrap_host_key,
+    });
+    assertEquals(config.users[0].ssh_authorized_keys, [
+        intent.ssh_identity.public_key,
+    ]);
+    assertEquals(config.disable_root, true);
+    // No private material is in the template itself.
+    assertEquals(template.includes("BEGIN OPENSSH"), false);
+});
+Deno.test("an existing VM gets no create body; after create the VM must exist", () => {
+    const listed = JSON.stringify({ servers: { server: [row()] } });
+    assertEquals(cloudChoice(intent, listed, plans).create_data, null);
+    assertEquals(cloudChoice(intent, listed, plans, true).provider_id, uuid);
+    assertThrows(
+        () =>
+            cloudChoice(
+                intent,
+                JSON.stringify({ servers: { server: [] } }),
+                plans,
+                true,
+            ),
+        "task_vm.upcloud_failed",
+    );
+});
+Deno.test("public text that opens a curl expansion is refused", () => {
+    assertThrows(
+        () =>
+            cloudChoice(
+                { ...intent, upcloud: { ...intent.upcloud, zone: "{{X}}" } },
+                JSON.stringify({ servers: { server: [] } }),
+                plans,
+            ),
+        "task_vm.upcloud_invalid",
     );
 });

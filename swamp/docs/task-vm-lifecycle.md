@@ -1,6 +1,6 @@
 # Task VM lifecycle
 
-Task VM provider actions run on Swamp Node209. Incus commands reach the admitted host through official `@swamp/ssh`. UpCloud HTTPS requests run on209 with a descriptor from the shared vault copy. Plain Task VMs have no Swamp worker or token.
+Task VM provider actions run on Swamp Node209. Incus commands reach the admitted host through official `@swamp/ssh`. Each UpCloud HTTPS request is one inline `curl` on 209; the token comes from the shared vault copy into curl's environment and reaches the request through `--variable`, never argv. TypeScript builds the request bodies and decodes the answers; no script ships. Plain Task VMs have no Swamp worker or token.
 
 `task-vm-provider-power` accepts the authoritative `operation_id`, `node_id`, `kind`, full public provider `intent`, descriptor-only `execution_secrets`, and an `action` of `inspect`, `start`, `stop` or `delete`. The public provider intent binds `task_vm_id`, `name`, `provider`, `provider_id`, `vm` and `host_ssh_execution`. Incus uses the recorded project/name; UpCloud uses the recorded UUID, title and `orbit-task-vm` label.
 

@@ -1429,6 +1429,16 @@ UpCloud has no trusted host that can read the guest's SSH host key, as Incus doe
 
 Swamp renders cloud-init from the staged pair and the admitted Gateway public key. No connection trusts a key on first use. Root login stays off. Swamp reads cloud-init over pinned SSH as `orbit` at the public address, and enrollment needs no jump Node.
 
+No UpCloud step ships a script. Each provider request in `task-vm-provider-upcloud` and `task-vm-provider-power` is one inline `curl` on Node209. The API token and the bootstrap private key reach curl only from its environment, through `--variable`; they are never in argv or expanded by the shell. TypeScript on Node209 (`task-vm-lifecycle`) selects the server, builds each request body, and checks each answer.
+
+Create lists the servers labelled `orbit-task-vm` and the plans, then posts one create body. The body is public intent with one curl expansion, `{{ORBIT_BOOTSTRAP_PRIVATE_KEY:json:json}}`. curl escapes the key twice, because cloud-init's user data is JSON inside a JSON string. The Gateway's vault copy `task-vm-provider-bootstrap-<id>` therefore holds the private key alone.
+
+The create answer is discarded. The label list finds the server again, also after a lost answer. A server that is still missing then fails with `task_vm.upcloud_failed`. One server detail read checks the UUID, title, hostname, labels and the single public IPv4 address. A stopped server gets one start request and one more detail read.
+
+A power action reads the label list and then the server detail. curl prints the HTTP status on the last line of the detail read. `404` is absence. Any other failed status fails with `task_vm.upcloud_failed`, so a provider error never supplies a missing-VM observation. A server with an unknown UUID that the label list does not show is absent without a detail read.
+
+Start and stop are one `POST` each; a stop is soft with a 120-second timeout. Delete is one `DELETE` with `storages=1&backups=delete`. One more detail read checks the result.
+
 A park stops the server cleanly, and a hard stop follows after 150 seconds. UpCloud bills a stopped server for its storage only. A destroy stops the server, deletes it with its disk, and waits until it is gone.
 
 Swamp owns UpCloud image cleanup and orphan sweeps. Both native workflows use the Gateway worker and callback-local credentials. These workflows stop a server before deletion and confirm absence afterward. An unported Task VM kind returns `operation.kind_unavailable`; it has no polled executor.

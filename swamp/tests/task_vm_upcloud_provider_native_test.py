@@ -1,6 +1,14 @@
-"""Real official e459 graphs and HTTP requests against a disposable provider API."""
+"""Real official e459 graphs and HTTP requests against a disposable provider API.
+
+A `curl` fixture first on PATH checks that no vault value is in its argv, drops
+`--proto =https`, points the fixed UpCloud origin at the local server and runs
+the real curl, so its own `--variable` expansion builds the requests.
+"""
 import http.server
 import json
+import os
+import shutil
+import sys
 import threading
 import unittest
 
@@ -21,6 +29,7 @@ class UpCloudProviderNative(NativeTestCase):
         self.exists, self.state, self.lost_create, self.foreign = False, 'stopped', False, False
         self.calls, self.create_documents = [], []
         self.omit_list_labels, self.wrong_detail_uuid, self.wrong_detail_image = False, False, False
+        self.detail_status = None
         owner = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -36,8 +45,7 @@ class UpCloudProviderNative(NativeTestCase):
                 return {'uuid': owner.provider_id, 'title': 'tvm-42', 'hostname': 'tvm-42', 'state': owner.state,
                         'labels': {'label': [{'key': 'orbit-task-vm', 'value': '43' if owner.foreign else '42'}, {'key': 'orbit-task-vm-image', 'value': owner.image}]},
                         'storage_devices': {'storage_device': [{'type': 'disk', 'storage': '3476acd6-23c5-4f77-baf8-56d812e6fbb4'}]},
-                        'ip_addresses': {'ip_address': [{'access': 'public', 'family': 'IPv4', 'address': '93.184.216.34'}]},
-                        'user_data': owner.private, 'root_password': owner.token}
+                        'ip_addresses': {'ip_address': [{'access': 'public', 'family': 'IPv4', 'address': '93.184.216.34'}]}}
 
             def do_GET(self):
                 owner.calls.append(('GET', self.path))
@@ -50,6 +58,8 @@ class UpCloudProviderNative(NativeTestCase):
                     if owner.omit_list_labels:
                         row.pop('labels')
                     return self.answer(200, {'servers': {'server': [row] if owner.exists else []}})
+                if owner.detail_status:
+                    return self.answer(owner.detail_status, {'error': {'error_code': 'FIXTURE'}})
                 row = self.row()
                 if owner.wrong_detail_image:
                     row['labels']['label'][1]['value'] = 'foreign-image'
@@ -68,6 +78,7 @@ class UpCloudProviderNative(NativeTestCase):
                 elif self.path.endswith('/start'):
                     owner.state = 'started'
                 elif self.path.endswith('/stop'):
+                    assert body == {'stop_server': {'stop_type': 'soft', 'timeout': '120'}}, body
                     owner.state = 'stopped'
                 return self.answer(200, {'server': {'uuid': owner.provider_id}})
 
@@ -82,8 +93,23 @@ class UpCloudProviderNative(NativeTestCase):
         self.addCleanup(thread.join)
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
-        script = self.repo / 'extensions/behaviors/operations/task-vm-lifecycle/scripts/upcloud.py'
-        script.write_text(script.read_text().replace('https://api.upcloud.com/1.3', f'http://127.0.0.1:{server.server_port}/1.3'))
+        tools = self.repo / 'tools'
+        tools.mkdir()
+        curl = tools / 'curl'
+        curl.write_text('#!' + sys.executable + f'''
+import os,sys
+args=sys.argv[1:]
+# Vault values reach curl only from its environment, through --variable.
+assert args[args.index("--variable")+1]=="%ORBIT_UPCLOUD_TOKEN",args
+for name in ("ORBIT_UPCLOUD_TOKEN","ORBIT_BOOTSTRAP_PRIVATE_KEY"):
+    if os.environ.get(name):assert os.environ[name] not in " ".join(args),name
+i=args.index("--proto");assert args[i+1]=="=https",args;del args[i:i+2]
+assert args[-1].startswith("https://api.upcloud.com/1.3/"),args
+args[-1]=args[-1].replace("https://api.upcloud.com/1.3","http://127.0.0.1:{server.server_port}/1.3")
+os.execv({shutil.which("curl")!r},["curl",*args])
+''')
+        curl.chmod(0o755)
+        self.native_env.update(PATH=str(tools) + ':' + os.environ['PATH'])
         for name in ('task-vm-provider-upcloud', 'task-vm-provider-power'):
             value = yaml.safe_load((ROOT / f'workflows/workflow-{name}.yaml').read_text())
             for job in value['jobs']:
@@ -93,7 +119,7 @@ class UpCloudProviderNative(NativeTestCase):
             (self.repo / f'workflows/workflow-{name}.yaml').write_text(yaml.safe_dump(value, sort_keys=False))
         self.cli('vault', 'create', 'local_encryption', 'orbit-control-inputs')
         self.cli('vault', 'put', 'orbit-control-inputs', 'task-vm-upcloud-token', input=self.token)
-        self.cli('vault', 'put', 'orbit-control-inputs', 'task-vm-provider-bootstrap-42', input=json.dumps({'private': self.private, 'public': self.public}))
+        self.cli('vault', 'put', 'orbit-control-inputs', 'task-vm-provider-bootstrap-42', input=self.private)
         self.secrets = (self.token, 'fixture-secret-host-key')
         self.intent = {'task_vm_id': 42, 'node_id': 14, 'host_node_id': None, 'guest_node_id': 142,
                        'gateway_node_id': 14, 'model_router_node_id': 6, 'provider': 'upcloud', 'provider_id': None, 'name': 'tvm-42',
@@ -157,6 +183,34 @@ class UpCloudProviderNative(NativeTestCase):
         self.assertFalse(self.exists)
         self.assertEqual(sum(method == 'DELETE' for method, _ in self.calls), 1)
         self.assertTrue(any('storages=1&backups=delete' in path for method, path in self.calls if method == 'DELETE'))
+        self.assert_private_absent()
+
+    def power(self, action, success=True):
+        inputs = {'operation_id': 7007, 'node_id': 14, 'kind': 'task_vm.destroy',
+                  'intent': {'task_vm_id': 42, 'name': 'tvm-42', 'provider': 'upcloud', 'provider_id': self.provider_id, 'vm': None, 'host_ssh_execution': None},
+                  'execution_secrets': {'upcloud': self.copies['upcloud']}, 'action': action}
+        return json.loads(self.cli('workflow', 'run', 'task-vm-provider-power', '--input', json.dumps(inputs), success=success).stdout)
+
+    def test_failed_detail_read_is_never_absence(self):
+        self.exists, self.state = True, 'stopped'
+        for status in (500, 403):
+            self.detail_status = status
+            self.assertEqual(self.power('delete', False)['status'], 'failed')
+        self.assertTrue(self.exists)
+        self.assertFalse(any(method != 'GET' for method, _ in self.calls))
+        self.detail_status = None
+        self.assertEqual(self.power('delete')['status'], 'succeeded')
+        self.assertFalse(self.exists)
+
+    def test_known_uuid_soft_stops_then_reads_404_as_deleted(self):
+        self.exists, self.state = True, 'started'
+        self.assertEqual(self.power('stop')['status'], 'succeeded')
+        self.assertEqual(self.state, 'stopped')
+        self.assertIn(('POST', f'/1.3/server/{self.provider_id}/stop'), self.calls)
+        self.assertEqual(self.power('delete')['status'], 'succeeded')
+        self.assertEqual([path for method, path in self.calls if method == 'DELETE'],
+                         [f'/1.3/server/{self.provider_id}?storages=1&backups=delete'])
+        self.assertEqual(self.power('inspect')['status'], 'succeeded')
         self.assert_private_absent()
 
 

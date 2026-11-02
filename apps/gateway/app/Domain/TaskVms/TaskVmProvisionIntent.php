@@ -56,7 +56,7 @@ final readonly class TaskVmProvisionIntent
                 'max_vms' => $cloud->maxVms, 'source_template' => $vm->image_fingerprint];
             $input['execution_secrets'] = [...ValidatedData::object($input['execution_secrets']),
                 'upcloud' => $this->shared->executionCopy('orbit-control-inputs', 'task-vm-upcloud-token', $this->upcloud->token()),
-                'bootstrap' => $this->shared->executionCopy('orbit-control-inputs', 'task-vm-provider-bootstrap-'.$vm->id, json_encode($bootstrap, JSON_THROW_ON_ERROR))];
+                'bootstrap' => $this->shared->executionCopy('orbit-control-inputs', 'task-vm-provider-bootstrap-'.$vm->id, $bootstrap['private'])];
 
             return $input;
         }

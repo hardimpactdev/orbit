@@ -24,7 +24,6 @@ const Provider = z.object({
     ssh_host_key: z.string().startsWith("ssh-ed25519 "),
 }).strict();
 type Context = {
-    extensionFile(path: string): string;
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
 };
 
@@ -43,7 +42,91 @@ const Rows = z.object({
         ),
     }),
 });
-export function cloudChoice(raw: unknown, stdout: string, plansStdout = "{}") {
+/** The curl variable that carries the vault bootstrap private key into the body. */
+export const BootstrapVariable = "ORBIT_BOOTSTRAP_PRIVATE_KEY";
+const Placeholder = "@@ORBIT_BOOTSTRAP_PRIVATE_KEY@@";
+
+/**
+ * The create body as a curl --expand-data template. The private host key is
+ * the only expansion: user_data is JSON inside a JSON string, so curl escapes
+ * the vault value twice (`:json:json`). Everything else is public intent.
+ */
+export function createData(
+    intent: z.infer<typeof Intent>,
+    storageTier: string | null,
+) {
+    const cloud = intent.upcloud;
+    const disk = {
+        action: "clone",
+        storage: cloud.source_template,
+        title: intent.name + "-disk",
+        size: cloud.disk_gb,
+        ...(storageTier === null ? {} : { tier: storageTier }),
+    };
+    const user = {
+        name: "orbit",
+        lock_passwd: true,
+        shell: "/bin/bash",
+        sudo: "ALL=(ALL) NOPASSWD:ALL",
+        ssh_authorized_keys: [intent.ssh_identity.public_key],
+    };
+    const config = {
+        users: [user],
+        disable_root: true,
+        ssh_deletekeys: true,
+        ssh_genkeytypes: [],
+        ssh_keys: {
+            ed25519_private: Placeholder,
+            ed25519_public: intent.bootstrap_host_key,
+        },
+    };
+    const body = JSON.stringify({
+        server: {
+            zone: cloud.zone,
+            title: intent.name,
+            hostname: intent.name,
+            plan: cloud.plan,
+            metadata: "yes",
+            firewall: "off",
+            remote_access_enabled: "no",
+            labels: {
+                label: [
+                    { key: "orbit-task-vm", value: String(intent.task_vm_id) },
+                    {
+                        key: "orbit-task-vm-image",
+                        value: cloud.source_template,
+                    },
+                ],
+            },
+            networking: {
+                interfaces: {
+                    interface: [{
+                        type: "public",
+                        ip_addresses: { ip_address: [{ family: "IPv4" }] },
+                    }],
+                },
+            },
+            storage_devices: { storage_device: [disk] },
+            login_user: {
+                username: "root",
+                ssh_keys: { ssh_key: [intent.ssh_identity.public_key] },
+            },
+            user_data: "#cloud-config\n" + JSON.stringify(config) + "\n",
+        },
+    });
+    // Public text must not open a curl expansion of its own.
+    if (body.includes("{{") || body.split(Placeholder).length !== 2) {
+        throw new Error("task_vm.upcloud_invalid");
+    }
+    return body.replace(Placeholder, `{{${BootstrapVariable}:json:json}}`);
+}
+
+export function cloudChoice(
+    raw: unknown,
+    stdout: string,
+    plansStdout = "{}",
+    existing = false,
+) {
     const intent = Intent.parse(raw);
     const rows = Rows.parse(JSON.parse(stdout)).servers.server.filter((v) =>
         v.title === intent.name
@@ -76,12 +159,14 @@ export function cloudChoice(raw: unknown, stdout: string, plansStdout = "{}") {
     }).parse(JSON.parse(plansStdout));
     const plan = plans.plans.plan.find((v) => v.name === intent.upcloud.plan);
     if (!plan) throw new Error("task_vm.upcloud_invalid");
-    const choice = {
+    // After create the labelled server must exist; a missing one is a failed create.
+    if (existing && !row) throw new Error("task_vm.upcloud_failed");
+    const storageTier = plan.storage_tier ?? null;
+    return {
         provider_id: row?.uuid ?? null,
-        storage_tier: plan.storage_tier ?? null,
-        state: null,
+        storage_tier: storageTier,
+        create_data: row ? null : createData(intent, storageTier),
     };
-    return { ...choice, input_json: JSON.stringify(choice) };
 }
 export function cloudObservation(
     raw: unknown,
@@ -127,14 +212,12 @@ export function cloudObservation(
     if (addresses.length !== 1) {
         throw new Error("task_vm.provider_identity_invalid");
     }
-    const observed = {
+    return {
         provider_id: row.uuid,
         address: z.ipv4().parse(addresses[0].address),
         image_fingerprint: intent.image_fingerprint,
         state: row.state,
-        storage_tier: null,
     };
-    return { ...observed, input_json: JSON.stringify(observed) };
 }
 export function cloudResult(raw: unknown, stdout: string, providerId: string) {
     const intent = Intent.parse(raw),
@@ -150,17 +233,16 @@ export function cloudResult(raw: unknown, stdout: string, providerId: string) {
     });
 }
 
-/** Public intent, a shipped script path and a typed provider receipt only. */
+/** Public intent, curl request bodies and a typed provider receipt only. */
 export const behavior = {
     type: "@nckrtl/task-vm-cloud-input",
-    version: "2026.11.01.2",
+    version: "2026.11.02.1",
     resources: {
         choice: {
             schema: z.object({
                 provider_id: z.uuid().nullable(),
                 storage_tier: z.string().nullable(),
-                state: z.string().nullable(),
-                input_json: z.string(),
+                create_data: z.string().nullable(),
             }),
             lifetime: "infinite",
             garbageCollection: 10,
@@ -170,15 +252,8 @@ export const behavior = {
                 provider_id: z.uuid(),
                 address: z.ipv4(),
                 image_fingerprint: z.string(),
-                state: z.string(),
-                storage_tier: z.null(),
-                input_json: z.string(),
+                state: z.enum(["started", "stopped"]),
             }),
-            lifetime: "infinite",
-            garbageCollection: 10,
-        },
-        input: {
-            schema: z.object({ input_json: z.string(), script: z.string() }),
             lifetime: "infinite",
             garbageCollection: 10,
         },
@@ -191,14 +266,20 @@ export const behavior = {
     methods: {
         choose: {
             description:
-                "Select the exact admitted VM and plan from public provider lists",
+                "Select the exact admitted VM and plan; shape the create body",
             arguments: z.object({
                 intent: Intent,
                 stdout: z.string(),
                 plans_stdout: z.string(),
+                existing: z.boolean().default(false),
             }),
             async execute(
-                args: { intent: unknown; stdout: string; plans_stdout: string },
+                args: {
+                    intent: unknown;
+                    stdout: string;
+                    plans_stdout: string;
+                    existing?: boolean;
+                },
                 ctx: Context,
             ) {
                 return {
@@ -210,6 +291,7 @@ export const behavior = {
                                 args.intent,
                                 args.stdout,
                                 args.plans_stdout,
+                                args.existing ?? false,
                             ),
                         ),
                     ],
@@ -238,24 +320,6 @@ export const behavior = {
                                 args.provider_id,
                             ),
                         ),
-                    ],
-                };
-            },
-        },
-        read: {
-            description: "Capture the public UpCloud create command input",
-            arguments: z.object({ intent: Intent }),
-            async execute(args: { intent: unknown }, ctx: Context) {
-                return {
-                    dataHandles: [
-                        await ctx.writeResource("input", "input", {
-                            input_json: JSON.stringify(
-                                Intent.parse(args.intent),
-                            ),
-                            script: ctx.extensionFile(
-                                "scripts/upcloud_create.py",
-                            ),
-                        }),
                     ],
                 };
             },
