@@ -46,13 +46,14 @@ final readonly class InstanceCloneProjection implements DirectOperationProjectio
             ? app(InstanceEnvironmentContextResolver::class)->resolveForClone($instance, true)
             : app(InstanceEnvironmentContextResolver::class)->resolve($instance, true);
         $values = app(InstanceEnvironmentStore::class)->values($instance);
-        $material = json_encode(['content' => app(InstanceEnvironmentRenderer::class)->render($context, $values), 'keys' => array_keys($values)], JSON_THROW_ON_ERROR);
-        $git = ['git_read' => InstanceGitHubReadTokens::reference($operation)];
+        $git = ['git_read' => app(InstanceGitHubReadTokens::class)->start($operation),
+            'git_credential' => InstanceGitHubReadTokens::credentialReference($operation)];
 
         return ['intent' => [...$plan, 'ssh_execution' => $ssh->forNode($instance->node), 'environment_path' => $context->path,
-            'candidate' => [...$candidate, 'ssh_execution' => $ssh->forNode(Node::query()->findOrFail(ValidatedData::integer($candidate['node_id'])))],
-            'execution_references_json' => json_encode($git, JSON_THROW_ON_ERROR)],
-            'execution_secrets' => [...$git, 'environment' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'instance-clone-environment-operation-'.$operation->id, $material)]];
+            'environment_keys' => array_keys($values),
+            'candidate' => [...$candidate, 'ssh_execution' => $ssh->forNode(Node::query()->findOrFail(ValidatedData::integer($candidate['node_id'])))]],
+            'execution_secrets' => [...$git, 'environment' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'instance-clone-environment-operation-'.$operation->id,
+                app(InstanceEnvironmentRenderer::class)->render($context, $values))]];
     }
 
     public function apply(Operation $operation, array $data): Operation

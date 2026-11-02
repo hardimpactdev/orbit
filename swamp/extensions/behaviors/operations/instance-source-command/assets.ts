@@ -5,7 +5,6 @@ import { classifyProvisioningProfile } from "../instance-lifecycle/source_profil
 const ObjectInput = z.record(z.string(), z.unknown());
 const Output = z.record(z.string(), z.unknown());
 type Context = {
-    extensionFile(path: string): string;
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
 };
 const observation = z.object({ stdout: z.string() }).passthrough();
@@ -34,6 +33,81 @@ export function branchAvailable(
         : { available: true };
 }
 
+/** The checkout read: its digest line, then the artisan entry point and composer.json for an application. */
+export function checkoutRead(stdout: string, projectType: string) {
+    const [digest, entryPoint, ...composer] = stdout.split("\n");
+    z.string().regex(/^[a-f0-9]{64}$/).parse(digest);
+    if (projectType === "monorepo" || entryPoint === undefined) {
+        return { digest, profile: { kind: "none" } };
+    }
+    const json = composer.join("\n");
+    if (json.trim() === "") return { digest, profile: { kind: "none" } };
+    if (new TextEncoder().encode(json).length > 1048576) {
+        throw new Error("app-dev.source_metadata_unsafe");
+    }
+    const source = z.record(z.string(), z.unknown()).parse(JSON.parse(json));
+    const kept: Record<string, Record<string, unknown>> = {};
+    for (const section of ["require", "require-dev"]) {
+        const row = source[section] ?? {};
+        if (typeof row !== "object" || row === null || Array.isArray(row)) {
+            throw new Error("app-dev.php_version_unsupported");
+        }
+        kept[section] = Object.fromEntries(
+            Object.entries(row).filter(([key]) =>
+                key === "php" || key === "laravel/framework"
+            ),
+        );
+    }
+    return {
+        digest,
+        profile: {
+            kind: "composer",
+            composer: btoa(JSON.stringify(kept)),
+            entry_point: z.enum(["unsafe", "regular", "absent"]).parse(
+                entryPoint,
+            ),
+        },
+    };
+}
+
+/** The clone profile read: the entry point, the composer.json state, then its content when it is a regular file. */
+export function profileRead(stdout: string, intent: Record<string, unknown>) {
+    if (intent.skip_profile || intent.project_type === "monorepo") {
+        return { kind: "none" };
+    }
+    const [entry, state, ...rest] = stdout.split("\n");
+    if (state === "missing") {
+        return { kind: entry === "absent" ? "none" : "partial" };
+    }
+    const json = rest.join("\n");
+    if (state !== "file" || new TextEncoder().encode(json).length > 1048576) {
+        return { kind: "unsafe" };
+    }
+    const source = z.record(z.string(), z.unknown()).parse(JSON.parse(json));
+    const kept: Record<string, Record<string, unknown>> = {};
+    for (const section of ["require", "require-dev"]) {
+        const row = source[section] ?? {};
+        if (typeof row !== "object" || row === null || Array.isArray(row)) {
+            throw new Error("app-dev.php_version_unsupported");
+        }
+        kept[section] = Object.fromEntries(
+            Object.entries(row).filter(([key]) =>
+                ["php", "laravel/framework", "symfony/framework-bundle"]
+                    .includes(key)
+            ),
+        );
+    }
+    return {
+        kind: "composer",
+        composer: btoa(JSON.stringify(kept)),
+        entry_point: entry === "unsafe"
+            ? "unsafe"
+            : entry === "regular"
+            ? "regular"
+            : "absent",
+    };
+}
+
 /** Compare public facts only. Native SSH owns every read and effect. */
 export function sourceResult(
     kind: string,
@@ -53,7 +127,11 @@ export function sourceResult(
     if (trees.length !== 1 || trees[0] !== `worktree ${checkout}`) {
         throw new Error("instance.registration_conflict");
     }
-    if (repositoryIdentity(text(facts.origin)) !== intent.repository_identity) {
+    // The read step masks embedded credentials; a masked origin is refused, as before.
+    if (
+        text(facts.origin).includes("REDACTED@") ||
+        repositoryIdentity(text(facts.origin)) !== intent.repository_identity
+    ) {
         throw new Error("instance.source_identity_invalid");
     }
     const branch = text(facts.branch) || null;
@@ -66,10 +144,10 @@ export function sourceResult(
     const commit = z.string().regex(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/).parse(
         text(facts.commit),
     );
-    const inspected = z.object({
-        digest: z.string().regex(/^[a-f0-9]{64}$/),
-        profile: z.unknown(),
-    }).parse(JSON.parse(text(facts.filesystem)));
+    const inspected = checkoutRead(
+        text(facts.filesystem),
+        z.string().parse(intent.project_type),
+    );
     const profile = classifyProvisioningProfile(inspected.profile, {
         php_versions: z.array(z.string()).min(1).parse(intent.php_versions),
         project_type: z.string().parse(intent.project_type),
@@ -93,55 +171,11 @@ export function sourceResult(
 }
 export const behavior = {
     type: "@nckrtl/instance-source-command",
-    version: "2026.11.01.2",
+    version: "2026.11.02.1",
     resources: {
-        assets: {
-            schema: z.object({ script_body: z.string() }),
-            lifetime: "infinite",
-            garbageCollection: 10,
-        },
         result: { schema: Output, lifetime: "infinite", garbageCollection: 10 },
     },
     methods: {
-        read: {
-            description:
-                "Resolve one public source script for the official SSH method",
-            arguments: z.object({
-                action: z.enum([
-                    "inspect",
-                    "origin",
-                    "protect_environment",
-                    "prepare_directory",
-                    "mark_source",
-                    "transfer_probe",
-                    "transfer_archive",
-                    "transfer_install",
-                    "transfer_remove",
-                    "profile",
-                ]),
-                input: ObjectInput,
-            }),
-            async execute(
-                args: { action: string; input: Record<string, unknown> },
-                ctx: Context,
-            ) {
-                const source = await Deno.readTextFile(
-                    ctx.extensionFile(`scripts/${args.action}.py`),
-                );
-                const result = {
-                    script_body: source.replace(
-                        "SOURCE_INPUT = None",
-                        "SOURCE_INPUT = json.loads(" +
-                            JSON.stringify(JSON.stringify(args.input)) + ")",
-                    ),
-                };
-                return {
-                    dataHandles: [
-                        await ctx.writeResource("assets", "assets", result),
-                    ],
-                };
-            },
-        },
         cloneResult: {
             description:
                 "Compare candidate and target commits and expose one terminal clone result",
@@ -149,7 +183,6 @@ export const behavior = {
                 intent: ObjectInput,
                 source: ObjectInput,
                 candidate: z.unknown(),
-                environment: z.unknown(),
                 vp: z.object({
                     ready: z.literal(true),
                     runtime: z.record(z.string(), z.unknown()).nullable(),
@@ -160,7 +193,6 @@ export const behavior = {
                     intent: Record<string, unknown>;
                     source: Record<string, unknown>;
                     candidate: unknown;
-                    environment: unknown;
                     vp: {
                         ready: true;
                         runtime: Record<string, unknown> | null;
@@ -179,15 +211,16 @@ export const behavior = {
                     admitted.branch === source.branch &&
                     source.commit !== candidate.commit
                 ) throw new Error("instance.clone_candidate_changed");
-                const environment = z.object({ keys: z.array(z.string()) })
-                    .parse(JSON.parse(text(args.environment)));
+                const environmentKeys = z.array(z.string()).parse(
+                    args.intent.environment_keys,
+                );
                 const result = {
                     instance_id: args.intent.instance_id,
                     ready: true,
                     ...source,
                     candidate_commit: candidate.commit,
                     vp_environment: args.vp.runtime,
-                    environment_keys: environment.keys,
+                    environment_keys: environmentKeys,
                 };
                 return {
                     dataHandles: [
@@ -424,7 +457,7 @@ export const behavior = {
                     commit: z.string().regex(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/)
                         .parse(text(args.commit)),
                     ...classifyProvisioningProfile(
-                        JSON.parse(text(args.profile)),
+                        profileRead(text(args.profile), args.intent),
                         {
                             php_versions: z.array(z.string()).min(1).parse(
                                 args.intent.php_versions,
@@ -502,27 +535,6 @@ export const behavior = {
                     throw new Error("instance.source_git_failed");
                 }
                 const result = { branch, reference };
-                return {
-                    dataHandles: [
-                        await ctx.writeResource("result", "result", result),
-                    ],
-                };
-            },
-        },
-        paths: {
-            description:
-                "Resolve shipped Git action assets for official SSH copy",
-            arguments: z.object({ intent: ObjectInput }),
-            async execute(
-                _args: { intent: Record<string, unknown> },
-                ctx: Context,
-            ) {
-                const result = {
-                    directory: ctx.extensionFile("scripts/fetch.py").replace(
-                        /\/[^/]+$/,
-                        "",
-                    ),
-                };
                 return {
                     dataHandles: [
                         await ctx.writeResource("result", "result", result),

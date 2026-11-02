@@ -65,10 +65,11 @@ it('admits stored source intent and one native root without Gateway source or ac
         ->and($operation->input['source_pending'])->toBeTrue()
         ->and($operation->input['members'][0]['origin'])->toBeNull()
         ->and($operation->input['members'][0]['worktree_inventory'])->toBeNull()
-        ->and(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'workflow.run'])
+        // A source fetch mints the read token, which also writes its credential line; a forced destroy fetches nothing.
+        ->and(array_column($this->socket->sent, 'type'))->toBe($force ? ['vault.put', 'workflow.run'] : ['vault.put', 'vault.put', 'workflow.run'])
         ->and($this->socket->sent[0]['payload']['key'])->toBe('instance-git-operation-'.$id)
-        ->and($this->socket->sent[1]['payload']['workflowIdOrName'])->toBe('operation-instance-destroy')
-        ->and($this->socket->sent[1]['payload']['inputs']['execution_secrets']['git_read']['key'])->toBe('instance-git-operation-'.$id)
+        ->and(collect($this->socket->sent)->last()['payload']['workflowIdOrName'])->toBe('operation-instance-destroy')
+        ->and(collect($this->socket->sent)->last()['payload']['inputs']['execution_secrets']['git_read']['key'])->toBe('instance-git-operation-'.$id)
         ->and($this->instance->refresh()->status)->toBe(InstanceState::Removing)
         ->and(InstanceRemoval::query()->count())->toBe(1);
     Queue::assertNothingPushed();

@@ -76,7 +76,7 @@ sequenceDiagram
   %%> - leaves `current` absent until the first deploy
   SW->>N: Write .env, prepare Vite+<br/>@swamp/cfgmgmt/file · vp install
   %%> What it does:
-  %%> - writes the rendered `.env` from `vault.get env-5152` with `@swamp/cfgmgmt/file`, mode `0640`
+  %%> - writes the rendered `.env` from `vault.get env-5152` with `@swamp/cfgmgmt/file`, mode `0600`
   %%> - installs and checks the pinned Vite+ runtime; a Project without one skips this
   opt SQLite chosen or a database attached
     SW->>C: Snapshot the database<br/>SQLite export · dump

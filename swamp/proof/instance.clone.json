@@ -1,0 +1,99 @@
+{
+  "kind": "instance.clone",
+  "workflow": "operation-instance-clone",
+  "topology": "minimal",
+  "budget_seconds": 240,
+  "queue_timeout_seconds": 30,
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "projects",
+      "operation": false,
+      "bind": "project",
+      "body": {
+        "slug": "proof-clone",
+        "name": "Proof clone",
+        "type": "node-package",
+        "root": ".",
+        "repository_url": "https://github.com/laravel/laravel.git",
+        "default_branch": "12.x"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "instances",
+      "bind": "candidate",
+      "body": {
+        "project_id": "${project.id}",
+        "node_id": "${node.target}",
+        "name": "c-${proof.run}",
+        "branch": "12.x"
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "instances/${candidate.id}/environment/PROOF_SECRET",
+      "operation": false,
+      "body": {
+        "value": "proof-private-${proof.run}"
+      }
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "instances/${candidate.id}/clone",
+    "body": {
+      "node_id": "${node.target}",
+      "name": "k-${proof.run}",
+      "preview_name": "k-${proof.run}"
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "source-prepare-read",
+      "job": "prepare",
+      "step": "source-prepare-read",
+      "budget_seconds": 10
+    },
+    {
+      "name": "source-origin-read",
+      "job": "prepare",
+      "step": "source-origin-read",
+      "budget_seconds": 10
+    },
+    {
+      "name": "source-credential",
+      "job": "prepare",
+      "step": "source-credential",
+      "budget_seconds": 15
+    },
+    {
+      "name": "source-fetch",
+      "job": "prepare",
+      "step": "source-fetch",
+      "budget_seconds": 120
+    },
+    {
+      "name": "source-credential-remove",
+      "job": "prepare",
+      "step": "source-credential-remove",
+      "budget_seconds": 15
+    },
+    {
+      "name": "source-profile-read",
+      "job": "prepare",
+      "step": "source-profile-read",
+      "budget_seconds": 10
+    },
+    {
+      "name": "environment",
+      "job": "prepare",
+      "step": "environment",
+      "budget_seconds": 15
+    }
+  ],
+  "parity": "swamp/proof/instance.clone/parity.py"
+}

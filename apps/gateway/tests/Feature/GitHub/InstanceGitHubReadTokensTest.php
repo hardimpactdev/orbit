@@ -116,6 +116,8 @@ it('mints the create read scope when the run starts, as the legacy Gateway did b
     Http::fake(['*/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response(['token' => 'private-instance-sentinel', 'expires_at' => now()->addHour()->format('Y-m-d\TH:i:s\Z'), 'permissions' => ['contents' => 'read', 'metadata' => 'read']], 201), '*/installation/repositories*' => Http::response(['total_count' => 1, 'repositories' => [['full_name' => 'hardimpactdev/orbit']]])]);
     expect(app(InstanceGitHubReadTokens::class)->start($this->operation))->toBe(InstanceGitHubReadTokens::reference($this->operation))
         ->and($this->socket->sent[0]['payload']['value'])->toBe('{"github_token":"private-instance-sentinel"}')
+        ->and($this->socket->sent[1]['payload'])->toMatchArray(['key' => 'instance-git-credential-'.$this->operation->id,
+            'value' => "https://x-access-token:private-instance-sentinel@github.com\n"])
         ->and(json_encode($this->operation->fresh()->toArray()))->not->toContain('private-instance-sentinel');
 });
 

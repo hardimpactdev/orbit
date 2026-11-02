@@ -2,7 +2,7 @@ id: 6c413eaa-2e25-43c8-b146-f6c8e103c00d
 name: operation-instance-clone
 description: Clone committed development source through official209 SSH and one terminal projection.
 vaults:
-  - orbit-control-inputs
+- orbit-control-inputs
 inputs:
   type: object
   properties:
@@ -15,7 +15,7 @@ inputs:
     kind:
       type: string
       enum:
-        - instance.clone
+      - instance.clone
     intent:
       type: object
     execution_secrets:
@@ -27,13 +27,13 @@ inputs:
             vault:
               type: string
               enum:
-                - orbit-control-inputs
+              - orbit-control-inputs
             key:
               type: string
-              pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$'
+              pattern: ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$
           required:
-            - vault
-            - key
+          - vault
+          - key
           additionalProperties: false
         environment:
           type: object
@@ -41,1157 +41,1099 @@ inputs:
             vault:
               type: string
               enum:
-                - orbit-control-inputs
+              - orbit-control-inputs
             key:
               type: string
-              pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$'
+              pattern: ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$
           required:
-            - vault
-            - key
+          - vault
+          - key
+          additionalProperties: false
+        git_credential:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$
+          required:
+          - vault
+          - key
           additionalProperties: false
       required:
-        - git_read
-        - environment
+      - git_read
+      - environment
+      - git_credential
       additionalProperties: false
   required:
-    - operation_id
-    - node_id
-    - kind
-    - intent
-    - execution_secrets
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
   additionalProperties: false
 jobs:
-  - name: prepare
-    labels: {role: swamp}
-    steps:
-      - name: paths
-        labels: {role: swamp}
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "icl-0" }}'
-          methodName: paths
-          inputs:
-            intent: '${{ inputs.intent }}'
-      - name: mint
-        labels: {role: swamp}
-        dependsOn:
-          - step: paths
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: command/shell
-          behaviorName: '${{ "icl-1" }}'
-          methodName: execute
-          inputs:
-            run: python3 -B "$ORBIT_MINT"
-            env:
-              ORBIT_MINT: '${{ steps.paths.outputs.directory + "/mint.py" }}'
-              ORBIT_OPERATION_ID: '${{ string(inputs.operation_id) }}'
-              ORBIT_RUN_ID: '${{ run.id }}'
-              ORBIT_GIT_REFERENCES: '${{ inputs.intent.execution_references_json }}'
-      - name: candidate-branch
-        labels: {role: swamp}
-        dependsOn:
-          - step: mint
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("icl-2-" + string(inputs.intent.candidate.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs: &ref_2
-            name: '${{ ("icl-2-" + string(inputs.intent.candidate.ssh_execution.target.host)).split(".").join("-") }}'
-            transport:
-              kind: ssh
-              user: '${{ inputs.intent.candidate.ssh_execution.target.user }}'
-              port: '${{ inputs.intent.candidate.ssh_execution.target.port }}'
-              identityFile: '${{ inputs.intent.candidate.ssh_execution.identity_file }}'
-            hosts:
-              - name: target
-                address: '${{ inputs.intent.candidate.ssh_execution.target.host }}'
-                transport:
-                  hostKeys: '${{ inputs.intent.candidate.ssh_execution.target.host_keys }}'
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/git
-              - '-c'
-              - core.hooksPath=/dev/null
-              - '-c'
-              - core.fsmonitor=false
-              - '-C'
-              - '${{ inputs.intent.candidate.checkout }}'
-              - branch
-              - '--show-current'
-      - name: candidate-commit
-        labels: {role: swamp}
-        dependsOn:
-          - step: candidate-branch
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("icl-3-" + string(inputs.intent.candidate.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs: *ref_2
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/git
-              - '-c'
-              - core.hooksPath=/dev/null
-              - '-c'
-              - core.fsmonitor=false
-              - '-C'
-              - '${{ inputs.intent.candidate.checkout }}'
-              - rev-parse
-              - '--verify'
-              - 'HEAD^{commit}'
-      - name: candidate-status
-        labels: {role: swamp}
-        dependsOn:
-          - step: candidate-commit
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("icl-4-" + string(inputs.intent.candidate.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs: *ref_2
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/git
-              - '-c'
-              - core.hooksPath=/dev/null
-              - '-c'
-              - core.fsmonitor=false
-              - '-C'
-              - '${{ inputs.intent.candidate.checkout }}'
-              - status
-              - '--porcelain'
-              - '--untracked-files=all'
-      - name: candidate-submodules
-        labels: {role: swamp}
-        dependsOn:
-          - step: candidate-status
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("icl-5-" + string(inputs.intent.candidate.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs: *ref_2
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/git
-              - '-c'
-              - core.hooksPath=/dev/null
-              - '-c'
-              - core.fsmonitor=false
-              - '-C'
-              - '${{ inputs.intent.candidate.checkout }}'
-              - submodule
-              - status
-              - '--recursive'
-      - name: candidate-origin-assets
-        labels: {role: swamp}
-        dependsOn:
-          - step: candidate-submodules
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "icl-6" }}'
-          methodName: read
-          inputs:
-            action: origin
-            input: '${{ inputs.intent.candidate }}'
-      - name: candidate-origin
-        labels: {role: swamp}
-        dependsOn:
-          - step: candidate-origin-assets
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("icl-7-" + string(inputs.intent.candidate.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: script
-          globalArgs: *ref_2
-          inputs:
-            hosts: 'name:target'
-            interpreter: python3
-            script: '${{ steps["candidate-origin-assets"].outputs.script_body }}'
-      - name: candidate
-        labels: {role: swamp}
-        dependsOn:
-          - step: candidate-origin
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "icl-8" }}'
-          methodName: cloneCandidate
-          inputs:
-            intent: '${{ inputs.intent.candidate }}'
-            origin: '${{ steps["candidate-origin"].outputs }}'
-            branch: '${{ steps["candidate-branch"].outputs }}'
-            commit: '${{ steps["candidate-commit"].outputs }}'
-            status: '${{ steps["candidate-status"].outputs }}'
-            submodules: '${{ steps["candidate-submodules"].outputs }}'
-      - name: source-worktrees
-        labels: {role: swamp}
-        guard: >-
-          ${{ steps.exists(key, steps[key].status == "failed") || (!(inputs.intent.source.seed_repository != null && inputs.intent.resolve.seed_commit != null)
-          || (inputs.intent.retained_source != null)) }}
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("src-0-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs: &ref_3
-            name: '${{ ("src-0-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-            transport:
-              kind: ssh
-              user: '${{ inputs.intent.ssh_execution.target.user }}'
-              port: '${{ inputs.intent.ssh_execution.target.port }}'
-              identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'
-            hosts:
-              - name: target
-                address: '${{ inputs.intent.ssh_execution.target.host }}'
-                transport:
-                  hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/git
-              - '-c'
-              - core.hooksPath=/dev/null
-              - '-C'
-              - '${{ inputs.intent.source.seed_repository == null ? inputs.intent.source.checkout : inputs.intent.source.seed_repository }}'
-              - worktree
-              - list
-              - '--porcelain'
-        dependsOn:
-          - step: candidate
-            condition:
-              type: succeeded
-      - name: source-branch-available
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-worktrees
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-1" }}'
-          methodName: branchAvailable
-          inputs:
-            resolve: '${{ inputs.intent.resolve }}'
-            checkout: '${{ inputs.intent.source.checkout }}'
-            worktrees: >-
-              ${{ inputs.intent.source.seed_repository != null && inputs.intent.resolve.seed_commit != null && !(inputs.intent.retained_source != null) ?
-              steps["source-worktrees"].outputs : {"stdout":""} }}
-      - name: source-branch-accepted
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-branch-available
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: assert
-          expr: 'steps["source-branch-available"].outputs.available'
-          severity: high
-          message: instance.branch_in_use
-      - name: source-prepare-assets
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-branch-accepted
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-3" }}'
-          methodName: read
-          inputs:
-            action: prepare_directory
-            input: '${{ inputs.intent }}'
-      - name: source-prepare-read
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-prepare-assets
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("src-4-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: script
-          globalArgs: *ref_3
-          inputs:
-            hosts: 'name:target'
-            interpreter: python3
-            script: '${{ steps["source-prepare-assets"].outputs.script_body }}'
-      - name: source-prepared
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-prepare-read
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-5" }}'
-          methodName: decode
-          inputs:
-            observation: '${{ steps["source-prepare-read"].outputs }}'
-      - name: source-init
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-prepared
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-        guard: >-
-          ${{ steps.exists(key, steps[key].status == "failed") || (!steps["source-prepared"].outputs.created || (inputs.intent.source.seed_repository != null &&
-          inputs.intent.resolve.seed_commit != null)) }}
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("src-6-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs: *ref_3
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/git
-              - '-c'
-              - core.hooksPath=/dev/null
-              - '-c'
-              - core.fsmonitor=false
-              - '-C'
-              - '${{ inputs.intent.source.checkout }}'
-              - init
-              - '--quiet'
-      - name: source-worktree
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-init
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-        guard: >-
-          ${{ steps.exists(key, steps[key].status == "failed") || (!steps["source-prepared"].outputs.created || !(inputs.intent.source.seed_repository != null
-          && inputs.intent.resolve.seed_commit != null)) }}
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("src-7-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs: *ref_3
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/git
-              - '-c'
-              - core.hooksPath=/dev/null
-              - '-C'
-              - '${{ inputs.intent.source.seed_repository == null ? inputs.intent.source.checkout : inputs.intent.source.seed_repository }}'
-              - worktree
-              - add
-              - '--no-checkout'
-              - '--detach'
-              - '--'
-              - '${{ inputs.intent.source.checkout }}'
-              - '${{ inputs.intent.resolve.seed_commit == null ? "HEAD" : inputs.intent.resolve.seed_commit }}'
-      - name: source-origin-assets
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-worktree
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-8" }}'
-          methodName: read
-          inputs:
-            action: origin
-            input:
-              checkout: '${{ inputs.intent.source.checkout }}'
-              allow_empty: '${{ steps["source-prepared"].outputs.owned }}'
-      - name: source-origin-read
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-origin-assets
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("src-9-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: script
-          globalArgs: *ref_3
-          inputs:
-            hosts: 'name:target'
-            interpreter: python3
-            script: '${{ steps["source-origin-assets"].outputs.script_body }}'
-      - name: source-origin-proof
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-origin-read
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-10" }}'
-          methodName: origin
-          inputs:
-            expected: '${{ inputs.intent.source.repository }}'
-            observation: '${{ steps["source-origin-read"].outputs }}'
-            allow_empty: '${{ steps["source-prepared"].outputs.owned }}'
-      - name: source-origin-configure
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-origin-proof
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-        guard: '${{ steps.exists(key, steps[key].status == "failed") || (steps["source-origin-read"].outputs.stdout != "") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("src-11-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs: *ref_3
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/git
-              - '-c'
-              - core.hooksPath=/dev/null
-              - '-c'
-              - core.fsmonitor=false
-              - '-C'
-              - '${{ inputs.intent.source.checkout }}'
-              - config
-              - remote.origin.url
-              - '${{ inputs.intent.source.repository }}'
-      - name: source-git-directory
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-origin-configure
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("src-12-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs: *ref_3
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/git
-              - '-c'
-              - core.hooksPath=/dev/null
-              - '-c'
-              - core.fsmonitor=false
-              - '-C'
-              - '${{ inputs.intent.source.checkout }}'
-              - rev-parse
-              - '--absolute-git-dir'
-      - name: source-marker-assets
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-git-directory
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-13" }}'
-          methodName: read
-          inputs:
-            action: mark_source
-            input:
-              checkout: '${{ inputs.intent.source.checkout }}'
-              prepare_id: '${{ inputs.intent.source.prepare_id }}'
-              git_directory: '${{ steps["source-git-directory"].outputs.stdout }}'
-      - name: source-marker-read
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-marker-assets
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("src-14-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: script
-          globalArgs: *ref_3
-          inputs:
-            hosts: 'name:target'
-            interpreter: python3
-            script: '${{ steps["source-marker-assets"].outputs.script_body }}'
-      - name: source-paths
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-marker-read
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-15" }}'
-          methodName: paths
-          inputs:
-            intent: '${{ inputs.intent }}'
-      - name: source-scripts-directory
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-paths
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("src-16-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs: *ref_3
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/mkdir
-              - '-p'
-              - '${{ "/tmp/orbit-source-" + run.id + "-source" }}'
-      - name: source-scripts-copy
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-scripts-directory
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("source-copy-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: copy
-          globalArgs: *ref_3
-          inputs:
-            hosts: 'name:target'
-            src: '${{ steps["source-paths"].outputs.directory }}'
-            dst: '${{ "/tmp/orbit-source-" + run.id + "-source/" }}'
-            recursive: true
-            direction: to
-      - name: source-fetch
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-scripts-copy
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-        guard: '${{ steps.exists(key, steps[key].status == "failed") || (!inputs.intent.resolve.network || (inputs.intent.retained_source != null)) }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("src-18-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs: *ref_3
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-source-" + run.id + "-source/scripts/fetch.py" }}'
-              - '${{ inputs.intent.source.checkout }}'
-              - '${{ inputs.intent.source.repository }}'
-            stdin: '${{ vault.get(inputs.execution_secrets.git_read.vault,inputs.execution_secrets.git_read.key) }}'
-      - name: source-refs
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-fetch
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("src-19-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs: *ref_3
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/git
-              - '-c'
-              - core.hooksPath=/dev/null
-              - '-c'
-              - core.fsmonitor=false
-              - '-C'
-              - '${{ inputs.intent.source.checkout }}'
-              - for-each-ref
-              - '--format=%(refname)'
-              - refs/heads
-              - refs/remotes/origin
-      - name: source-selected
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-refs
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-20" }}'
-          methodName: select
-          inputs:
-            resolve: '${{ inputs.intent.resolve }}'
-            refs: '${{ steps["source-refs"].outputs }}'
-      - name: source-checkout
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-selected
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-        guard: '${{ steps.exists(key, steps[key].status == "failed") || (inputs.intent.retained_source != null) }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("src-21-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs: *ref_3
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/git
-              - '-c'
-              - core.hooksPath=/dev/null
-              - '-c'
-              - core.fsmonitor=false
-              - '-C'
-              - '${{ inputs.intent.source.checkout }}'
-              - checkout
-              - '--quiet'
-              - '--no-track'
-              - '-B'
-              - '${{ steps["source-selected"].outputs.branch }}'
-              - '${{ steps["source-selected"].outputs.reference }}'
-      - name: source-commit
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-checkout
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("src-22-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs: *ref_3
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/git
-              - '-c'
-              - core.hooksPath=/dev/null
-              - '-c'
-              - core.fsmonitor=false
-              - '-C'
-              - '${{ inputs.intent.source.checkout }}'
-              - rev-parse
-              - '--verify'
-              - 'HEAD^{commit}'
-      - name: source-profile-assets
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-commit
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-23" }}'
-          methodName: read
-          inputs:
-            action: profile
-            input: '${{ inputs.intent }}'
-      - name: source-profile-read
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-profile-assets
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("src-24-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: script
-          globalArgs: *ref_3
-          inputs:
-            hosts: 'name:target'
-            interpreter: python3
-            script: '${{ steps["source-profile-assets"].outputs.script_body }}'
-      - name: source-result
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-profile-read
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-25" }}'
-          methodName: provisioningResult
-          inputs:
-            intent: '${{ inputs.intent }}'
-            profile: '${{ steps["source-profile-read"].outputs }}'
-            branch: '${{ steps["source-selected"].outputs.branch }}'
-            commit: '${{ steps["source-commit"].outputs }}'
-      - name: environment
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-result
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("icl-35-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs:
-            name: '${{ ("icl-35-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-            transport:
-              kind: ssh
-              user: '${{ inputs.intent.ssh_execution.target.user }}'
-              port: '${{ inputs.intent.ssh_execution.target.port }}'
-              identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'
-            hosts:
-              - name: target
-                address: '${{ inputs.intent.ssh_execution.target.host }}'
-                transport:
-                  hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/python3
-              - '-B'
-              - '${{ "/tmp/orbit-source-" + run.id + "-source/scripts/write_environment.py" }}'
-              - '${{ inputs.intent.environment_path }}'
-            stdin: '${{ vault.get(inputs.execution_secrets.environment.vault,inputs.execution_secrets.environment.key) }}'
-  - name: clone-vp-capture
-    labels: {role: swamp}
+- name: prepare
+  labels:
+    role: swamp
+  steps:
+  - name: candidate-branch
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("icl-2-" + string(inputs.intent.candidate.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: &id001
+        name: ${{ ("icl-2-" + string(inputs.intent.candidate.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.candidate.ssh_execution.target.user }}
+          port: ${{ inputs.intent.candidate.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.candidate.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.candidate.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.candidate.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - -c
+        - core.hooksPath=/dev/null
+        - -c
+        - core.fsmonitor=false
+        - -C
+        - ${{ inputs.intent.candidate.checkout }}
+        - branch
+        - --show-current
+  - name: candidate-commit
+    labels:
+      role: swamp
     dependsOn:
-      - job: prepare
-        condition:
-          type: succeeded
-    steps:
-      - name: clone-vp-local-directory
-        labels: {role: swamp}
-        task:
-          type: behavior
-          behaviorType: command/shell
-          behaviorName: '${{ "vp-local" }}'
-          methodName: execute
-          inputs:
-            run: umask 077; mkdir -p -- "$ORBIT_DIRECTORY"
-            env:
-              ORBIT_DIRECTORY: '${{ "/tmp/orbit-instance-"+run.id }}'
-      - name: clone-vp-project-asset
-        labels: {role: swamp}
-        dependsOn:
-          - step: clone-vp-local-directory
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-vp-assets'
-          behaviorName: '${{ "idm-clone-1" }}'
-          methodName: read
-          inputs:
-            action: project_material
-            input:
-              application: '${{ inputs.intent.application }}'
-              destination: '${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}'
-      - name: clone-vp-project
-        labels: {role: swamp}
-        dependsOn:
-          - step: clone-vp-project-asset
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("ids-clone-2-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: script
-          globalArgs: &ref_4
-            name: '${{ ("ids-clone-2-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-            transport:
-              kind: ssh
-              user: '${{ inputs.intent.ssh_execution.target.user }}'
-              port: '${{ inputs.intent.ssh_execution.target.port }}'
-              identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'
-            hosts:
-              - name: target
-                address: '${{ inputs.intent.ssh_execution.target.host }}'
-                transport:
-                  hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'
-          inputs:
-            hosts: 'name:target'
-            interpreter: python3
-            script: '${{ steps["clone-vp-project-asset"].outputs.script_body }}'
-      - name: clone-vp-private-copy
-        labels: {role: swamp}
-        dependsOn:
-          - step: clone-vp-project
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("ids-clone-3-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: copy
-          globalArgs: *ref_4
-          inputs:
-            hosts: 'name:target'
-            src: '${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}'
-            dst: '${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}'
-            direction: from
-      - name: clone-vp-requirements
-        labels: {role: swamp}
-        dependsOn:
-          - step: clone-vp-private-copy
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-vp-requirements'
-          behaviorName: '${{ "idm-clone-4" }}'
-          methodName: capture
-          inputs:
-            path: '${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}'
+    - step: candidate-branch
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("icl-3-" + string(inputs.intent.candidate.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - -c
+        - core.hooksPath=/dev/null
+        - -c
+        - core.fsmonitor=false
+        - -C
+        - ${{ inputs.intent.candidate.checkout }}
+        - rev-parse
+        - --verify
+        - HEAD^{commit}
+  - name: candidate-status
+    labels:
+      role: swamp
+    dependsOn:
+    - step: candidate-commit
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("icl-4-" + string(inputs.intent.candidate.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - -c
+        - core.hooksPath=/dev/null
+        - -c
+        - core.fsmonitor=false
+        - -C
+        - ${{ inputs.intent.candidate.checkout }}
+        - status
+        - --porcelain
+        - --untracked-files=all
+  - name: candidate-submodules
+    labels:
+      role: swamp
+    dependsOn:
+    - step: candidate-status
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("icl-5-" + string(inputs.intent.candidate.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - -c
+        - core.hooksPath=/dev/null
+        - -c
+        - core.fsmonitor=false
+        - -C
+        - ${{ inputs.intent.candidate.checkout }}
+        - submodule
+        - status
+        - --recursive
+  - name: candidate-origin
+    labels:
+      role: swamp
+    dependsOn:
+    - step: candidate-submodules
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("icl-7-" + string(inputs.intent.candidate.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/timeout
+        - '60'
+        - /bin/sh
+        - -c
+        - /usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$1" config --get remote.origin.url | sed -E "s#^([a-z+]+://)[^/@]*:[^/@]*@#\1REDACTED@#;
+          s#^(https?://)[^/@]+@#\1REDACTED@#"
+        - sh
+        - ${{ inputs.intent.candidate.checkout }}
+  - name: candidate
+    labels:
+      role: swamp
+    dependsOn:
+    - step: candidate-origin
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-source-command'
+      behaviorName: ${{ "icl-8" }}
+      methodName: cloneCandidate
+      inputs:
+        intent: ${{ inputs.intent.candidate }}
+        origin: ${{ steps["candidate-origin"].outputs }}
+        branch: ${{ steps["candidate-branch"].outputs }}
+        commit: ${{ steps["candidate-commit"].outputs }}
+        status: ${{ steps["candidate-status"].outputs }}
+        submodules: ${{ steps["candidate-submodules"].outputs }}
+  - name: source-worktrees
+    labels:
+      role: swamp
+    guard: ${{ steps.exists(key, steps[key].status == "failed") || (!(inputs.intent.source.seed_repository != null && inputs.intent.resolve.seed_commit != null) ||
+      (inputs.intent.retained_source != null)) }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("src-0-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: &id002
+        name: ${{ ("src-0-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - -c
+        - core.hooksPath=/dev/null
+        - -C
+        - '${{ inputs.intent.source.seed_repository == null ? inputs.intent.source.checkout : inputs.intent.source.seed_repository }}'
+        - worktree
+        - list
+        - --porcelain
+    dependsOn:
+    - step: candidate
+      condition:
+        type: succeeded
+  - name: source-branch-available
+    labels:
+      role: swamp
+    dependsOn:
+    - step: source-worktrees
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-source-command'
+      behaviorName: ${{ "src-1" }}
+      methodName: branchAvailable
+      inputs:
+        resolve: ${{ inputs.intent.resolve }}
+        checkout: ${{ inputs.intent.source.checkout }}
+        worktrees: '${{ inputs.intent.source.seed_repository != null && inputs.intent.resolve.seed_commit != null && !(inputs.intent.retained_source != null) ? steps["source-worktrees"].outputs
+          : {"stdout":""} }}'
+  - name: source-branch-accepted
+    labels:
+      role: swamp
+    dependsOn:
+    - step: source-branch-available
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    task:
+      type: assert
+      expr: steps["source-branch-available"].outputs.available
+      severity: high
+      message: instance.branch_in_use
+  - name: source-prepare-read
+    labels:
+      role: swamp
+    dependsOn:
+    - step: source-branch-accepted
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("src-4-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/timeout
+        - '60'
+        - /bin/sh
+        - -c
+        - if [ -e "$1/.git" ]; then c=false; elif [ "$2" = true ]; then mkdir -p -- "$(dirname -- "$1")"; c=true; else mkdir -p -- "$1"; c=true; fi; printf "{\"created\":%s,\"owned\":%s}\n"
+          "$c" "$3"
+        - sh
+        - ${{ inputs.intent.source.checkout }}
+        - '${{ inputs.intent.source.seed_repository != null && inputs.intent.resolve.seed_commit != null ? "true" : "false" }}'
+        - '${{ inputs.intent.source.prepare_id != null ? "true" : "false" }}'
+    writes: true
+  - name: source-prepared
+    labels:
+      role: swamp
+    dependsOn:
+    - step: source-prepare-read
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-source-command'
+      behaviorName: ${{ "src-5" }}
+      methodName: decode
+      inputs:
+        observation: ${{ steps["source-prepare-read"].outputs }}
+  - name: source-init
+    labels:
+      role: swamp
+    dependsOn:
+    - step: source-prepared
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.exists(key, steps[key].status == "failed") || (!steps["source-prepared"].outputs.created || (inputs.intent.source.seed_repository != null &&
+      inputs.intent.resolve.seed_commit != null)) }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("src-6-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - -c
+        - core.hooksPath=/dev/null
+        - -c
+        - core.fsmonitor=false
+        - -C
+        - ${{ inputs.intent.source.checkout }}
+        - init
+        - --quiet
+  - name: source-worktree
+    labels:
+      role: swamp
+    dependsOn:
+    - step: source-init
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.exists(key, steps[key].status == "failed") || (!steps["source-prepared"].outputs.created || !(inputs.intent.source.seed_repository != null &&
+      inputs.intent.resolve.seed_commit != null)) }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("src-7-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - -c
+        - core.hooksPath=/dev/null
+        - -C
+        - '${{ inputs.intent.source.seed_repository == null ? inputs.intent.source.checkout : inputs.intent.source.seed_repository }}'
+        - worktree
+        - add
+        - --no-checkout
+        - --detach
+        - --
+        - ${{ inputs.intent.source.checkout }}
+        - '${{ inputs.intent.resolve.seed_commit == null ? "HEAD" : inputs.intent.resolve.seed_commit }}'
+  - name: source-origin-read
+    labels:
+      role: swamp
+    dependsOn:
+    - step: source-worktree
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("src-9-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/timeout
+        - '60'
+        - /bin/sh
+        - -c
+        - /usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$1" config --get remote.origin.url | sed -E "s#^([a-z+]+://)[^/@]*:[^/@]*@#\1REDACTED@#;
+          s#^(https?://)[^/@]+@#\1REDACTED@#" || true
+        - sh
+        - ${{ inputs.intent.source.checkout }}
+  - name: source-origin-proof
+    labels:
+      role: swamp
+    dependsOn:
+    - step: source-origin-read
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-source-command'
+      behaviorName: ${{ "src-10" }}
+      methodName: origin
+      inputs:
+        expected: ${{ inputs.intent.source.repository }}
+        observation: ${{ steps["source-origin-read"].outputs }}
+        allow_empty: ${{ steps["source-prepared"].outputs.owned }}
+  - name: source-origin-configure
+    labels:
+      role: swamp
+    dependsOn:
+    - step: source-origin-proof
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.exists(key, steps[key].status == "failed") || (steps["source-origin-read"].outputs.stdout != "") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("src-11-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - -c
+        - core.hooksPath=/dev/null
+        - -c
+        - core.fsmonitor=false
+        - -C
+        - ${{ inputs.intent.source.checkout }}
+        - config
+        - remote.origin.url
+        - ${{ inputs.intent.source.repository }}
+  - name: source-git-directory
+    labels:
+      role: swamp
+    dependsOn:
+    - step: source-origin-configure
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("src-12-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - -c
+        - core.hooksPath=/dev/null
+        - -c
+        - core.fsmonitor=false
+        - -C
+        - ${{ inputs.intent.source.checkout }}
+        - rev-parse
+        - --absolute-git-dir
+  - name: source-credential
+    labels:
+      role: swamp
+    writes: true
+    dependsOn:
+    - step: source-git-directory
+      condition: &id003
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.exists(key, steps[key].status == "failed") || (!inputs.intent.resolve.network || (inputs.intent.retained_source != null)) }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ ("instance-clone-credential-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: apply
+      globalArgs:
+        path: ${{ "/tmp/orbit-git-credential-" + run.id }}
+        ensure: present
+        mode: '0600'
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        content: ${{ vault.get(inputs.execution_secrets.git_credential.vault, inputs.execution_secrets.git_credential.key) }}
+      inputs: {}
+  - name: source-fetch
+    labels:
+      role: swamp
+    dependsOn:
+    - step: source-credential
+      condition: *id003
+    guard: ${{ steps.exists(key, steps[key].status == "failed") || (!inputs.intent.resolve.network || (inputs.intent.retained_source != null)) }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("src-18-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/timeout
+        - '300'
+        - /usr/bin/env
+        - GIT_TERMINAL_PROMPT=0
+        - GIT_CONFIG_NOSYSTEM=1
+        - GIT_CONFIG_GLOBAL=/dev/null
+        - /usr/bin/git
+        - -c
+        - core.hooksPath=/dev/null
+        - -c
+        - core.fsmonitor=false
+        - -c
+        - credential.helper=
+        - -c
+        - ${{ "credential.helper=store --file=/tmp/orbit-git-credential-" + run.id }}
+        - -c
+        - protocol.allow=never
+        - -c
+        - protocol.https.allow=always
+        - -c
+        - http.followRedirects=false
+        - -c
+        - 'url.https://github.com/.insteadOf=git@github.com:'
+        - -c
+        - url.https://github.com/.insteadOf=ssh://git@github.com/
+        - -C
+        - ${{ inputs.intent.source.checkout }}
+        - fetch
+        - --quiet
+        - --no-tags
+        - --prune
+        - --
+        - ${{ inputs.intent.source.repository }}
+        - +refs/heads/*:refs/remotes/origin/*
+    writes: true
+  - name: source-credential-remove
+    labels:
+      role: swamp
+    writes: true
+    dependsOn:
+    - step: source-fetch
+      condition:
+        type: always
+    guard: ${{ !inputs.intent.resolve.network || (inputs.intent.retained_source != null) }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ ("instance-clone-credential-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: apply
+      globalArgs:
+        path: ${{ "/tmp/orbit-git-credential-" + run.id }}
+        ensure: absent
+        mode: '0600'
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+      inputs: {}
+  - name: source-refs
+    labels:
+      role: swamp
+    dependsOn:
+    - step: source-credential-remove
+      condition: *id003
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("src-19-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - -c
+        - core.hooksPath=/dev/null
+        - -c
+        - core.fsmonitor=false
+        - -C
+        - ${{ inputs.intent.source.checkout }}
+        - for-each-ref
+        - --format=%(refname)
+        - refs/heads
+        - refs/remotes/origin
+  - name: source-selected
+    labels:
+      role: swamp
+    dependsOn:
+    - step: source-refs
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-source-command'
+      behaviorName: ${{ "src-20" }}
+      methodName: select
+      inputs:
+        resolve: ${{ inputs.intent.resolve }}
+        refs: ${{ steps["source-refs"].outputs }}
+  - name: source-checkout
+    labels:
+      role: swamp
+    dependsOn:
+    - step: source-selected
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.exists(key, steps[key].status == "failed") || (inputs.intent.retained_source != null) }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("src-21-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - -c
+        - core.hooksPath=/dev/null
+        - -c
+        - core.fsmonitor=false
+        - -C
+        - ${{ inputs.intent.source.checkout }}
+        - checkout
+        - --quiet
+        - --no-track
+        - -B
+        - ${{ steps["source-selected"].outputs.branch }}
+        - ${{ steps["source-selected"].outputs.reference }}
+  - name: source-commit
+    labels:
+      role: swamp
+    dependsOn:
+    - step: source-checkout
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("src-22-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - -c
+        - core.hooksPath=/dev/null
+        - -c
+        - core.fsmonitor=false
+        - -C
+        - ${{ inputs.intent.source.checkout }}
+        - rev-parse
+        - --verify
+        - HEAD^{commit}
+  - name: source-profile-read
+    labels:
+      role: swamp
+    dependsOn:
+    - step: source-commit
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("src-24-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/timeout
+        - '60'
+        - /bin/sh
+        - -c
+        - cd -- "$1" 2>/dev/null || { echo absent; echo missing; exit 0; }; if [ -L "$2" ]; then echo unsafe; elif [ -f "$2" ]; then echo regular; elif [ -e "$2"
+          ]; then echo other; else echo absent; fi; if [ -L composer.json ]; then echo unsafe; elif [ ! -e composer.json ]; then echo missing; elif [ -f composer.json
+          ]; then echo file; head -c 1048577 composer.json; else echo unsafe; fi
+        - sh
+        - ${{ inputs.intent.application }}
+        - '${{ has(inputs.intent.entry_point) && inputs.intent.entry_point != null ? inputs.intent.entry_point : "artisan" }}'
+  - name: source-result
+    labels:
+      role: swamp
+    dependsOn:
+    - step: source-profile-read
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-source-command'
+      behaviorName: ${{ "src-25" }}
+      methodName: provisioningResult
+      inputs:
+        intent: ${{ inputs.intent }}
+        profile: ${{ steps["source-profile-read"].outputs }}
+        branch: ${{ steps["source-selected"].outputs.branch }}
+        commit: ${{ steps["source-commit"].outputs }}
+  - name: environment
+    labels:
+      role: swamp
+    dependsOn:
+    - step: source-result
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ ("instance-clone-environment-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: apply
+      globalArgs:
+        path: ${{ inputs.intent.environment_path + "/.env" }}
+        ensure: present
+        mode: '0600'
+        content: ${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+      inputs: {}
+    writes: true
+- name: clone-vp-capture
+  labels:
+    role: swamp
+  dependsOn:
+  - job: prepare
+    condition:
+      type: succeeded
+  steps:
+  - name: clone-vp-local-directory
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "vp-local" }}
+      methodName: execute
+      inputs:
+        run: umask 077; mkdir -p -- "$ORBIT_DIRECTORY"
+        env:
+          ORBIT_DIRECTORY: ${{ "/tmp/orbit-instance-"+run.id }}
+  - name: clone-vp-project-asset
+    labels:
+      role: swamp
+    dependsOn:
+    - step: clone-vp-local-directory
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-vp-assets'
+      behaviorName: ${{ "idm-clone-1" }}
+      methodName: read
+      inputs:
+        action: project_material
+        input:
+          application: ${{ inputs.intent.application }}
+          destination: ${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}
+  - name: clone-vp-project
+    labels:
+      role: swamp
+    dependsOn:
+    - step: clone-vp-project-asset
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("ids-clone-2-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: script
+      globalArgs: &id004
+        name: ${{ ("ids-clone-2-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        interpreter: python3
+        script: ${{ steps["clone-vp-project-asset"].outputs.script_body }}
+  - name: clone-vp-private-copy
+    labels:
+      role: swamp
+    dependsOn:
+    - step: clone-vp-project
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("ids-clone-3-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: copy
+      globalArgs: *id004
+      inputs:
+        hosts: name:target
+        src: ${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}
+        dst: ${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}
+        direction: from
+  - name: clone-vp-requirements
+    labels:
+      role: swamp
+    dependsOn:
+    - step: clone-vp-private-copy
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-vp-requirements'
+      behaviorName: ${{ "idm-clone-4" }}
+      methodName: capture
+      inputs:
+        path: ${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}
+- name: clone-vp-install
+  labels:
+    role: swamp
+  dependsOn:
+  - job: clone-vp-capture
+    condition:
+      type: succeeded
+  steps:
+  - name: clone-vp-manager-assets
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-tool-setup-assets'
+      behaviorName: ${{ "idm-clone-0-" + string(self._index) }}
+      methodName: read
+      inputs:
+        setup: ${{ inputs.intent.vp_setup }}
+    forEach: &id005
+      item: runtime
+      in: '${{ steps["clone-vp-requirements"].outputs.manager_required ? (steps["clone-vp-requirements"].outputs.runtime == null ? [] : [steps["clone-vp-requirements"].outputs.runtime])
+        : [] }}'
+  - name: clone-vp-manager
+    labels:
+      role: swamp
+    dependsOn:
+    - step: clone-vp-manager-assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("ids-clone-1-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}
+      methodName: script
+      globalArgs: &id006
+        name: ${{ ("ids-clone-1-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        interpreter: python3
+        script: ${{ steps["clone-vp-manager-assets-0"].outputs.manager_body }}
+        sudo: true
+    forEach: *id005
+  - name: clone-vp-manager-ready
+    labels:
+      role: swamp
+    dependsOn:
+    - step: clone-vp-manager-assets
+      condition:
+        type: always
+    - step: clone-vp-manager
+      condition:
+        type: always
+    task:
+      type: assert
+      expr: '!(steps["clone-vp-requirements"].outputs.manager_required && steps["clone-vp-requirements"].outputs.runtime != null) || ("clone-vp-manager-0" in steps
+        && steps["clone-vp-manager-0"].status == "succeeded")'
+      severity: high
+      message: The admitted VP manager was not prepared.
+  - name: clone-vp-cli
+    labels:
+      role: swamp
+    dependsOn:
+    - step: clone-vp-manager-ready
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("ids-clone-3-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id006
+      inputs:
+        hosts: name:target
+        argv:
+        - ${{ self.runtime.store+"/bin/vp" }}
+        - --version
+        env: &id008
+          VP_HOME: ${{ self.runtime.store }}
+    forEach: &id007
+      item: runtime
+      in: '${{ steps["clone-vp-requirements"].outputs.runtime == null ? [] : [steps["clone-vp-requirements"].outputs.runtime] }}'
+  - name: clone-vp-cli-ready
+    labels:
+      role: swamp
+    dependsOn:
+    - step: clone-vp-cli
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-vp-requirements'
+      behaviorName: ${{ "idm-clone-4-" + string(self._index) }}
+      methodName: cli
+      inputs:
+        runtime: ${{ self.runtime }}
+        observation: ${{ steps["clone-vp-cli-0"].outputs }}
+    forEach: *id007
   - name: clone-vp-install
-    labels: {role: swamp}
+    labels:
+      role: swamp
     dependsOn:
-      - job: clone-vp-capture
-        condition:
-          type: succeeded
-    steps:
-      - name: clone-vp-manager-assets
-        labels: {role: swamp}
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/node-tool-setup-assets'
-          behaviorName: '${{ "idm-clone-0-" + string(self._index) }}'
-          methodName: read
-          inputs:
-            setup: '${{ inputs.intent.vp_setup }}'
-        forEach: &ref_0
-          item: runtime
-          in: >-
-            ${{ steps["clone-vp-requirements"].outputs.manager_required ? (steps["clone-vp-requirements"].outputs.runtime == null ? [] :
-            [steps["clone-vp-requirements"].outputs.runtime]) : [] }}
-      - name: clone-vp-manager
-        labels: {role: swamp}
-        dependsOn:
-          - step: clone-vp-manager-assets
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("ids-clone-1-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
-          methodName: script
-          globalArgs: &ref_5
-            name: '${{ ("ids-clone-1-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
-            transport:
-              kind: ssh
-              user: '${{ inputs.intent.ssh_execution.target.user }}'
-              port: '${{ inputs.intent.ssh_execution.target.port }}'
-              identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'
-            hosts:
-              - name: target
-                address: '${{ inputs.intent.ssh_execution.target.host }}'
-                transport:
-                  hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'
-          inputs:
-            hosts: 'name:target'
-            interpreter: python3
-            script: '${{ steps["clone-vp-manager-assets-0"].outputs.manager_body }}'
-            sudo: true
-        forEach: *ref_0
-      - name: clone-vp-manager-ready
-        labels: {role: swamp}
-        dependsOn:
-          - step: clone-vp-manager-assets
-            condition:
-              type: always
-          - step: clone-vp-manager
-            condition:
-              type: always
-        task:
-          type: assert
-          expr: >-
-            !(steps["clone-vp-requirements"].outputs.manager_required && steps["clone-vp-requirements"].outputs.runtime != null) || ("clone-vp-manager-0" in
-            steps && steps["clone-vp-manager-0"].status == "succeeded")
-          severity: high
-          message: The admitted VP manager was not prepared.
-      - name: clone-vp-cli
-        labels: {role: swamp}
-        dependsOn:
-          - step: clone-vp-manager-ready
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("ids-clone-3-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs: *ref_5
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - '${{ self.runtime.store+"/bin/vp" }}'
-              - '--version'
-            env: &ref_6
-              VP_HOME: '${{ self.runtime.store }}'
-        forEach: &ref_1
-          item: runtime
-          in: '${{ steps["clone-vp-requirements"].outputs.runtime == null ? [] : [steps["clone-vp-requirements"].outputs.runtime] }}'
-      - name: clone-vp-cli-ready
-        labels: {role: swamp}
-        dependsOn:
-          - step: clone-vp-cli
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-vp-requirements'
-          behaviorName: '${{ "idm-clone-4-" + string(self._index) }}'
-          methodName: cli
-          inputs:
-            runtime: '${{ self.runtime }}'
-            observation: '${{ steps["clone-vp-cli-0"].outputs }}'
-        forEach: *ref_1
-      - name: clone-vp-install
-        labels: {role: swamp}
-        dependsOn:
-          - step: clone-vp-cli-ready
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("ids-clone-5-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs: *ref_5
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - '${{ self.runtime.store+"/bin/vp" }}'
-              - '-C'
-              - '${{ inputs.intent.application }}'
-              - env
-              - install
-              - '${{ "node@"+self.runtime.node_version }}'
-              - >-
-                ${{
-                self.runtime.package_manager+"@"+self.runtime.package_manager_version+(self.runtime.package_manager_hash==null?"":"+"+self.runtime.package_manager_hash)
-                }}
-            env: *ref_6
-        forEach: *ref_1
-      - name: clone-vp-inventory
-        labels: {role: swamp}
-        dependsOn:
-          - step: clone-vp-install
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("ids-clone-6-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs: *ref_5
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - '${{ self.runtime.store+"/bin/vp" }}'
-              - '-C'
-              - '${{ inputs.intent.application }}'
-              - env
-              - list
-              - '--json'
-            env: *ref_6
-        forEach: *ref_1
-      - name: clone-vp-verify
-        labels: {role: swamp}
-        dependsOn:
-          - step: clone-vp-inventory
-            condition:
-              type: succeeded
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-vp-requirements'
-          behaviorName: '${{ "idm-clone-7-" + string(self._index) }}'
-          methodName: verify
-          inputs:
-            runtime: '${{ self.runtime }}'
-            inventory: '${{ steps["clone-vp-inventory-0"].outputs }}'
-        forEach: *ref_1
-      - name: clone-vp-result
-        labels: {role: swamp}
-        dependsOn:
-          - step: clone-vp-manager-assets
-            condition:
-              type: always
-          - step: clone-vp-manager
-            condition:
-              type: always
-          - step: clone-vp-manager-ready
-            condition:
-              type: always
-          - step: clone-vp-cli
-            condition:
-              type: always
-          - step: clone-vp-cli-ready
-            condition:
-              type: always
-          - step: clone-vp-install
-            condition:
-              type: always
-          - step: clone-vp-inventory
-            condition:
-              type: always
-          - step: clone-vp-verify
-            condition:
-              type: always
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-vp-requirements'
-          behaviorName: '${{ "idm-clone-8" }}'
-          methodName: result
-          inputs:
-            name: clone-vp
-            steps: '${{ steps }}'
-  - name: clone
-    labels: {role: swamp}
+    - step: clone-vp-cli-ready
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("ids-clone-5-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id006
+      inputs:
+        hosts: name:target
+        argv:
+        - ${{ self.runtime.store+"/bin/vp" }}
+        - -C
+        - ${{ inputs.intent.application }}
+        - env
+        - install
+        - ${{ "node@"+self.runtime.node_version }}
+        - ${{ self.runtime.package_manager+"@"+self.runtime.package_manager_version+(self.runtime.package_manager_hash==null?"":"+"+self.runtime.package_manager_hash)
+          }}
+        env: *id008
+    forEach: *id007
+  - name: clone-vp-inventory
+    labels:
+      role: swamp
     dependsOn:
-      - job: clone-vp-install
-        condition:
-          type: succeeded
-    steps:
-      - name: result
-        labels: {role: swamp}
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "icl-36" }}'
-          methodName: cloneResult
-          inputs:
-            intent: '${{ inputs.intent }}'
-            source: '${{ steps["source-result"].outputs }}'
-            candidate: '${{ steps.candidate.outputs }}'
-            environment: '${{ steps.environment.outputs }}'
-            vp: '${{ steps["clone-vp-result"].outputs }}'
+    - step: clone-vp-install
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("ids-clone-6-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id006
+      inputs:
+        hosts: name:target
+        argv:
+        - ${{ self.runtime.store+"/bin/vp" }}
+        - -C
+        - ${{ inputs.intent.application }}
+        - env
+        - list
+        - --json
+        env: *id008
+    forEach: *id007
+  - name: clone-vp-verify
+    labels:
+      role: swamp
+    dependsOn:
+    - step: clone-vp-inventory
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-vp-requirements'
+      behaviorName: ${{ "idm-clone-7-" + string(self._index) }}
+      methodName: verify
+      inputs:
+        runtime: ${{ self.runtime }}
+        inventory: ${{ steps["clone-vp-inventory-0"].outputs }}
+    forEach: *id007
+  - name: clone-vp-result
+    labels:
+      role: swamp
+    dependsOn:
+    - step: clone-vp-manager-assets
+      condition:
+        type: always
+    - step: clone-vp-manager
+      condition:
+        type: always
+    - step: clone-vp-manager-ready
+      condition:
+        type: always
+    - step: clone-vp-cli
+      condition:
+        type: always
+    - step: clone-vp-cli-ready
+      condition:
+        type: always
+    - step: clone-vp-install
+      condition:
+        type: always
+    - step: clone-vp-inventory
+      condition:
+        type: always
+    - step: clone-vp-verify
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-vp-requirements'
+      behaviorName: ${{ "idm-clone-8" }}
+      methodName: result
+      inputs:
+        name: clone-vp
+        steps: ${{ steps }}
+- name: clone
+  labels:
+    role: swamp
+  dependsOn:
+  - job: clone-vp-install
+    condition:
+      type: succeeded
+  steps:
+  - name: result
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-source-command'
+      behaviorName: ${{ "icl-36" }}
+      methodName: cloneResult
+      inputs:
+        intent: ${{ inputs.intent }}
+        source: ${{ steps["source-result"].outputs }}
+        candidate: ${{ steps.candidate.outputs }}
+        vp: ${{ steps["clone-vp-result"].outputs }}

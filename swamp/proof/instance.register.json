@@ -1,0 +1,84 @@
+{
+  "kind": "instance.register",
+  "workflow": "operation-instance-register",
+  "topology": "minimal",
+  "budget_seconds": 90,
+  "queue_timeout_seconds": 30,
+  "before_node": {
+    "target": [
+      [
+        "runuser",
+        "-u",
+        "orbit",
+        "--",
+        "sh",
+        "-c",
+        "mkdir -p /home/orbit/apps/proof-source && git clone -q https://github.com/octocat/Hello-World.git /home/orbit/apps/proof-source/$1 && printf 'SECRET=proof-private-%s\\n' $1 > /home/orbit/apps/proof-source/$1/.env && chmod 644 /home/orbit/apps/proof-source/$1/.env",
+        "sh",
+        "r-${proof.run}"
+      ]
+    ]
+  },
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "projects",
+      "operation": false,
+      "bind": "project",
+      "body": {
+        "slug": "proof-source",
+        "name": "Proof source",
+        "type": "node-package",
+        "root": ".",
+        "repository_url": "https://github.com/octocat/Hello-World.git",
+        "default_branch": "master"
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "nodes/${node.target}/access/${node.target}",
+      "operation": false
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "instances/register",
+    "bind": "instance",
+    "body": {
+      "source_path": "/home/orbit/apps/proof-source/r-${proof.run}",
+      "project_id": "${project.id}",
+      "instance_name": "r-${proof.run}"
+    },
+    "caller": "target"
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "filesystem",
+      "job": "source",
+      "step": "filesystem",
+      "budget_seconds": 20
+    },
+    {
+      "name": "origin",
+      "job": "source",
+      "step": "origin",
+      "budget_seconds": 10
+    },
+    {
+      "name": "result",
+      "job": "source",
+      "step": "result",
+      "budget_seconds": 10
+    },
+    {
+      "name": "protect-environment",
+      "job": "source",
+      "step": "protect-environment",
+      "budget_seconds": 10
+    }
+  ],
+  "parity": "swamp/proof/instance.register/parity.py"
+}

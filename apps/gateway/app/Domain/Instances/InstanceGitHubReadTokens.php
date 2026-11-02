@@ -31,6 +31,14 @@ final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
         return ['vault' => 'orbit-control-inputs', 'key' => 'instance-git-operation-'.$operation->id];
     }
 
+    /** The same token as one git credential-store line, for a fetch that reads a 0600 credential file.
+     * @return array{vault:string,key:string}
+     */
+    public static function credentialReference(Operation $operation): array
+    {
+        return ['vault' => 'orbit-control-inputs', 'key' => 'instance-git-credential-'.$operation->id];
+    }
+
     public function issue(Operation $operation, int $callerNodeId, string $runId): array
     {
         $authority = $this->authorize($operation, $callerNodeId, $runId);
@@ -73,8 +81,12 @@ final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
                 throw new ResourceOperationException('operation.github_token_forbidden', 'The admitted repository changed during minting.', 409);
             }
             $reference = self::reference($operation);
+            $line = self::credentialReference($operation);
+            $token = $credential?->reveal();
+            $copy = $this->step->executionCopy($reference['vault'], $reference['key'], json_encode(['github_token' => $token], JSON_THROW_ON_ERROR));
+            $this->step->executionCopy($line['vault'], $line['key'], $token === null ? '' : 'https://x-access-token:'.$token."@github.com\n");
 
-            return $this->step->executionCopy($reference['vault'], $reference['key'], json_encode(['github_token' => $credential?->reveal()], JSON_THROW_ON_ERROR));
+            return $copy;
         } catch (\Throwable $exception) {
             if ($credential !== null && ! $this->github->revokeInstallationToken($credential)) {
                 Log::warning('operation.github_token_revoke_failed');

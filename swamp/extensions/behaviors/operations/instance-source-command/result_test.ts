@@ -1,5 +1,10 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1";
-import { branchAvailable, sourceResult } from "./assets.ts";
+import {
+    branchAvailable,
+    checkoutRead,
+    profileRead,
+    sourceResult,
+} from "./assets.ts";
 const intent = {
     checkout: "/srv/apps/project/main",
     repository_identity: "github.com/example/project",
@@ -20,9 +25,7 @@ const facts = {
     branch: out("main\n"),
     commit: out("a".repeat(40)),
     default: out("refs/remotes/origin/main"),
-    filesystem: out(
-        JSON.stringify({ digest: "b".repeat(64), profile: { kind: "none" } }),
-    ),
+    filesystem: out("b".repeat(64)),
 };
 Deno.test("registration retains admitted checkout, detached state, profile and source digest", () => {
     assertEquals(sourceResult("instance.register", intent, facts), {
@@ -150,4 +153,41 @@ Deno.test("source refuses occupied branches before target preparation and keeps 
     } finally {
         await Deno.remove(root, { recursive: true });
     }
+});
+
+Deno.test("the checkout read keeps only the PHP and Laravel requirements of an application", () => {
+    const composer = JSON.stringify({
+        require: { php: "^8.4", "laravel/framework": "^12", other: "1" },
+    });
+    const read = checkoutRead(
+        ["c".repeat(64), "regular", composer].join("\n"),
+        "laravel-app",
+    );
+    assertEquals(read.digest, "c".repeat(64));
+    assertEquals(
+        JSON.parse(atob((read.profile as { composer: string }).composer)),
+        {
+            require: { php: "^8.4", "laravel/framework": "^12" },
+            "require-dev": {},
+        },
+    );
+    assertEquals(checkoutRead("c".repeat(64), "monorepo").profile, {
+        kind: "none",
+    });
+});
+Deno.test("the clone profile read reports partial, unsafe and composer checkouts", () => {
+    const intent = { project_type: "laravel-app" };
+    assertEquals(profileRead("regular\nmissing", intent), { kind: "partial" });
+    assertEquals(profileRead("absent\nmissing", intent), { kind: "none" });
+    assertEquals(profileRead("regular\nunsafe", intent), { kind: "unsafe" });
+    assertEquals(
+        (profileRead('regular\nfile\n{"require":{"php":"^8.4"}}', intent) as {
+            kind: string;
+        }).kind,
+        "composer",
+    );
+    assertEquals(
+        profileRead("regular\nfile\n{}", { project_type: "monorepo" }),
+        { kind: "none" },
+    );
 });

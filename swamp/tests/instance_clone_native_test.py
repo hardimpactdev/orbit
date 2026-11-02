@@ -12,11 +12,10 @@ class InstanceCloneNative(NativeTestCase):
 
     def setUp(self):
         super().setUp()
-        self.cli('extension', 'pull', '@swamp/ssh@2026.10.23.1')
+        inventory = json.loads((ROOT / 'extensions/models/upstream_extensions.json').read_text())
+        for package in ['@swamp/ssh', '@swamp/cfgmgmt']:
+            self.cli('extension', 'pull', f"{package}@{inventory[package]['version']}")
         self.copy_behaviors('operations/instance-source-command', 'operations/instance-lifecycle', 'operations/tools', 'operations/instance-vp-command', 'operations/node-bootstrap', 'operations/instance-deploy')
-        # The fixture replaces HTTPS with a disposable local repository and sends no token.
-        fetch = self.repo/'extensions/behaviors/operations/instance-source-command/scripts/fetch.py'
-        fetch.write_text(fetch.read_text().replace('"protocol.https.allow=always"', '"protocol.https.allow=always", "protocol.file.allow=always"').replace('"GIT_ALLOW_PROTOCOL": "https"', '"GIT_ALLOW_PROTOCOL": "https:file"'))
         self.candidate = self.repo / 'candidate'
         self.candidate.mkdir()
         self.git('init', '-q')
@@ -32,8 +31,10 @@ class InstanceCloneNative(NativeTestCase):
         ssh = self.repo / 'ssh'
         ssh.write_text('#!' + sys.executable + '\n' + '''import os,shlex,subprocess,sys
 argv=shlex.split(sys.argv[-1])
-if 'fetch.py' in ' '.join(argv):
-    argv[-1]=os.environ['FIXTURE_REPOSITORY']
+# The fetch reads a disposable local repository instead of HTTPS.
+if 'fetch' in argv and '--prune' in argv:
+    argv[argv.index('--')+1]=os.environ['FIXTURE_REPOSITORY']
+    argv[argv.index('protocol.allow=never')]='protocol.allow=always'
 result=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)
 sys.stdout.buffer.write(result.stdout)
 sys.stderr.buffer.write(result.stderr)
@@ -53,6 +54,24 @@ elif source.resolve() != destination.resolve():shutil.copyfile(source,destinatio
 ''')
         scp.chmod(0o755)
         self.native_env['FIXTURE_REPOSITORY'] = str(self.candidate)
+        # The official file behavior runs ssh and scp from PATH.
+        tools = self.repo / 'tools'
+        tools.mkdir()
+        (tools / 'ssh').write_text('#!' + sys.executable + '\n' + '''import subprocess,sys
+if '-M' in sys.argv or '-O' in sys.argv: sys.exit(0)
+sys.exit(subprocess.call(['/bin/sh','-c',sys.argv[-1]]))
+''')
+        (tools / 'scp').write_text('#!' + sys.executable + '\n' + '''import shutil,sys
+shutil.copyfile(sys.argv[-2],sys.argv[-1].split(':',1)[1])
+''')
+        for tool in ('chown', 'chgrp'):
+            (tools / tool).write_text('#!/bin/sh\nexit 0\n')
+        for tool in ('ssh', 'scp', 'chown', 'chgrp'):
+            (tools / tool).chmod(0o755)
+        self.native_env['PATH'] = str(tools) + ':' + __import__('os').environ['PATH']
+        self.cli('vault', 'create', 'local_encryption', 'orbit-control-inputs')
+        self.cli('vault', 'put', 'orbit-control-inputs', 'environment', 'PRIVATE_FIXTURE=retained\n')
+        self.cli('vault', 'put', 'orbit-control-inputs', 'credential', 'https://x-access-token:fixture@github.com\n')
         self.workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-instance-clone.yaml').read_text())
         for job in self.workflow['jobs']:
             self.assertEqual(job.pop('labels'), {'role': 'swamp'})
@@ -61,12 +80,6 @@ elif source.resolve() != destination.resolve():shutil.copyfile(source,destinatio
                 task = step['task']
                 if task.get('behaviorType') == '@swamp/ssh':
                     task['globalArgs'].update(sshBinary=str(ssh), scpBinary=str(scp))
-                if step['name'] == 'mint':
-                    task['inputs'] = {'run': 'true'}  # Existing mint primitive has separate authorization tests.
-                if step['name'] == 'source-fetch':
-                    task['inputs']['stdin'] = '{}'
-                if step['name'] == 'environment':
-                    task['inputs']['stdin'] = json.dumps({'content': 'PRIVATE_FIXTURE=retained\n', 'keys': ['PRIVATE_FIXTURE']})
         self.workflow_path = self.repo / 'workflows/workflow-operation-instance-clone.yaml'
         self.workflow_path.write_text(yaml.safe_dump(self.workflow, sort_keys=False))
         connection = {'identity_file': '/fixture/key', 'target': {'host': '192.0.2.9', 'port': 22, 'user': 'orbit',
@@ -76,7 +89,7 @@ elif source.resolve() != destination.resolve():shutil.copyfile(source,destinatio
                 'prepare_id': '4a2ae14b-93e3-4b16-97df-35f2e33e6027', 'seed_repository': None},
             'resolve': {'instance_name': 'clone', 'default_branch': 'main', 'branch_override': 'main', 'require_branch': True, 'seed_commit': None, 'network': True},
             'application': str(self.target), 'project_type': 'monorepo', 'php_versions': ['8.5'], 'skip_profile': True, 'retained_source': None,
-            'vp_setup': None, 'environment_path': str(self.target), 'execution_references_json': '{}',
+            'vp_setup': None, 'environment_path': str(self.target), 'environment_keys': ['PRIVATE_FIXTURE'],
             'candidate': {'checkout': str(self.candidate), 'repository_identity': 'github.com/example/project', 'branch': 'main', 'ssh_execution': connection}}
 
     def git(self, *args):
@@ -86,6 +99,7 @@ elif source.resolve() != destination.resolve():shutil.copyfile(source,destinatio
         argv = ['workflow', 'run', 'operation-instance-clone']
         for key, value in {'operation_id': 7004, 'node_id': 9, 'kind': 'instance.clone', 'intent': self.intent,
                            'execution_secrets': {'git_read': {'vault': 'orbit-control-inputs', 'key': 'git'},
+                               'git_credential': {'vault': 'orbit-control-inputs', 'key': 'credential'},
                                'environment': {'vault': 'orbit-control-inputs', 'key': 'environment'}}}.items():
             argv += ['--input', key + '=' + (value if isinstance(value, str) else json.dumps(value))]
         run = json.loads(self.cli(*argv, success=success).stdout)
@@ -96,13 +110,15 @@ elif source.resolve() != destination.resolve():shutil.copyfile(source,destinatio
         self.assertEqual(run['status'], 'succeeded')
         self.assertEqual((self.target / 'tracked').read_text(), 'committed\n')
         self.assertEqual((self.target / '.env').read_text(), 'PRIVATE_FIXTURE=retained\n')
-        self.assertEqual((self.target / '.env').stat().st_mode & 0o777, 0o640)
+        self.assertEqual((self.target / '.env').stat().st_mode & 0o777, 0o600)
         self.assertTrue((self.target / '.git').is_dir())
         result = json.loads(history['jobs'][-1]['steps'][-1]['outputs']['stdout'])
         self.assertEqual(result['commit'], self.git('rev-parse', 'HEAD'))
         self.assertEqual(result['candidate_commit'], result['commit'])
         self.assertTrue(result['ready'])
         self.assertFalse((self.candidate / '.env').exists())
+        self.assertEqual(result['environment_keys'], ['PRIVATE_FIXTURE'])
+        self.assertEqual(list(__import__('pathlib').Path('/tmp').glob('orbit-git-credential-' + run['id'])), [])
 
     def test_missing_requested_branch_refuses_without_falling_back_or_writing_environment(self):
         self.intent['resolve']['branch_override'] = 'missing-branch'

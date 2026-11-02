@@ -91,6 +91,7 @@ it('supplies full public clone intent and only named private execution copies', 
     expect($input['intent']['candidate']['checkout'])->toBe($this->candidate->checkout_path)
         ->and($input['intent']['candidate']['ssh_execution']['target']['host_keys'])->toBe([$this->source->ssh_host_key_type.' '.$this->source->ssh_host_key])
         ->and($input['execution_secrets'])->toBe(['git_read' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-git-operation-'.$operation->id],
+            'git_credential' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-git-credential-'.$operation->id],
             'environment' => ['vault' => 'orbit-control-inputs', 'key' => 'instance-clone-environment-operation-'.$operation->id]])
         ->and($input)->not->toHaveKeys(['private_bindings', 'private_material'])
         ->and(app(DirectOperation::class)->definition('instance.clone')['terminal_result'])->toBe(['job' => 'clone', 'step' => 'result']);

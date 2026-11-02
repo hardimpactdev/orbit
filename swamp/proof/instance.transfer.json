@@ -1,0 +1,105 @@
+{
+  "kind": "instance.transfer",
+  "workflow": "operation-instance-transfer",
+  "topology": "minimal",
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "before_gateway": [
+    [
+      "sh",
+      "-c",
+      "printf '%s' \"$1\" | runuser -u orbit -- env -C apps/gateway php ../../tools/swamp-proof-guest/gateway.php fixture",
+      "sh",
+      "{\"clusters\": [{\"name\": \"proof\", \"node_ids\": [\"${node.target}\", \"${node.peer}\"], \"router_node_id\": \"${node.target}\"}]}"
+    ]
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "projects",
+      "operation": false,
+      "bind": "project",
+      "body": {
+        "slug": "proof-move",
+        "name": "Proof move",
+        "type": "monorepo",
+        "root": "public",
+        "repository_url": "https://github.com/laravel/laravel.git",
+        "default_branch": "13.x"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "instances",
+      "bind": "instance",
+      "body": {
+        "project_id": "${project.id}",
+        "node_id": "${node.target}",
+        "name": "t-${proof.run}"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "routes",
+      "body": {
+        "instance_id": "${instance.id}",
+        "domain": "t-${proof.run}.proof.test"
+      }
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "instances/${instance.id}/transfer",
+    "body": {
+      "node_id": "${node.peer}"
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "destination-ready",
+      "job": "transfer",
+      "step": "destination-ready",
+      "budget_seconds": 10
+    },
+    {
+      "name": "source-filesystem",
+      "job": "transfer",
+      "step": "source-filesystem",
+      "budget_seconds": 10
+    },
+    {
+      "name": "origin",
+      "job": "transfer",
+      "step": "origin",
+      "budget_seconds": 10
+    },
+    {
+      "name": "archive",
+      "job": "transfer",
+      "step": "archive",
+      "budget_seconds": 30
+    },
+    {
+      "name": "install",
+      "job": "transfer",
+      "step": "install",
+      "budget_seconds": 30
+    },
+    {
+      "name": "environment-permissions",
+      "job": "transfer",
+      "step": "environment-permissions",
+      "budget_seconds": 10
+    },
+    {
+      "name": "retire-source",
+      "job": "transfer",
+      "step": "retire-source",
+      "budget_seconds": 30
+    }
+  ],
+  "parity": "swamp/proof/instance.transfer/parity.py"
+}

@@ -125,9 +125,15 @@ def main():
             made = {}
         if isinstance(made, dict) and isinstance(made.get('secrets'), dict):
             context |= {'secret.' + name: value for name, value in made['secrets'].items()}
+    # A request names the Node it comes from by key, such as `register`, which the app-dev Node sends itself.
+    addresses = {node['key']: node['address'] for node in up['targets']}
+
+    def caller(request):
+        return addresses[request.pop('caller')] if 'caller' in request else operator
+
     for index, raw in enumerate(fixture.get('prepare', [])):
         request = bind(raw, context)
-        reply = gateway({**request, 'caller': operator, 'key': f'proof-{run_id}-prepare-{index}'}, fixture['budget_seconds'])
+        reply = gateway({**request, 'caller': caller(request), 'key': f'proof-{run_id}-prepare-{index}'}, fixture['budget_seconds'])
         if request.get('operation', True) is False:
             # A record request; `bind` names its reply so later requests can use `${<bind>.id}`.
             receipt['prepare'].append({'path': request['path'], 'http_status': reply.get('http_status')})
@@ -151,7 +157,8 @@ def main():
             context[request['bind'] + '.id'] = reply['operation']['input'][field] if field else reply['operation']['target_id']
     for argv in fixture.get('before_target', []):
         on_target(up['target']['key'], bind(argv, context))
-    reply = gateway({**bind(fixture['request'], context), 'caller': operator, 'key': f'proof-{run_id}-request'}, fixture['budget_seconds'])
+    request = bind(fixture['request'], context)
+    reply = gateway({**request, 'caller': caller(request), 'key': f'proof-{run_id}-request'}, fixture['budget_seconds'])
     operation = reply.get('operation') or {}
     receipt.update(http_status=reply.get('http_status'), operation=operation, admit_seconds=reply.get('admit_seconds'),
                    total_seconds=reply.get('terminal_seconds'), job_errors=reply.get('job_errors') or {})

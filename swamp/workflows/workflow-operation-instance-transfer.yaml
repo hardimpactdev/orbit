@@ -1,11 +1,9 @@
 id: d58dd3f3-ed2f-44ad-bdce-128aa2399481
 name: operation-instance-transfer
-description: >-
-  Move one captured development checkout through native209 SSH, Process and
-  Route children.
+description: Move one captured development checkout through native209 SSH, Process and Route children.
 queueTimeout: 30
 vaults:
-  - orbit-control-inputs
+- orbit-control-inputs
 inputs:
   type: object
   properties:
@@ -18,7 +16,7 @@ inputs:
     kind:
       type: string
       enum:
-        - instance.transfer
+      - instance.transfer
     intent:
       type: object
     execution_secrets:
@@ -29,852 +27,755 @@ inputs:
           vault:
             type: string
             enum:
-              - orbit-control-inputs
+            - orbit-control-inputs
           key:
             type: string
-            pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$'
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$
         required:
-          - vault
-          - key
+        - vault
+        - key
         additionalProperties: false
   required:
-    - operation_id
-    - node_id
-    - kind
-    - intent
-    - execution_secrets
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
   additionalProperties: false
 jobs:
-  - name: transfer
-    labels: {role: swamp}
-    steps:
-      - name: destination-ready-assets
-        labels: {role: swamp}
-        dependsOn: []
-        guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "itr-0" }}'
-          methodName: read
-          inputs:
-            action: transfer_probe
-            input:
-              path: '${{ inputs.intent.destination.destination }}'
-              root: '${{ inputs.intent.destination.root }}'
-              destination: true
-      - name: destination-ready
-        labels: {role: swamp}
-        dependsOn:
-          - step: destination-ready-assets
-            condition:
-              type: always
-        guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("itr-1-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: script
-          globalArgs: &ref_1
-            name: '${{ ("itr-1-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}'
-            transport:
-              kind: ssh
-              user: '${{ inputs.intent.destination.ssh_execution.target.user }}'
-              port: '${{ inputs.intent.destination.ssh_execution.target.port }}'
-              identityFile: '${{ inputs.intent.destination.ssh_execution.identity_file }}'
-            hosts:
-              - name: target
-                address: '${{ inputs.intent.destination.ssh_execution.target.host }}'
-                transport:
-                  hostKeys: >-
-                    ${{ inputs.intent.destination.ssh_execution.target.host_keys
-                    }}
-          inputs:
-            hosts: 'name:target'
-            interpreter: python3
-            script: '${{ steps["destination-ready-assets"].outputs.script_body }}'
-      - name: source-filesystem-assets
-        labels: {role: swamp}
-        dependsOn:
-          - step: destination-ready
-            condition:
-              type: always
-        guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "itr-2" }}'
-          methodName: read
-          inputs:
-            action: transfer_probe
-            input:
-              path: '${{ inputs.intent.source.source }}'
-              destination: false
-      - name: source-filesystem
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-filesystem-assets
-            condition:
-              type: always
-        guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("itr-3-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: script
-          globalArgs: &ref_0
-            name: '${{ ("itr-3-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}'
-            transport:
-              kind: ssh
-              user: '${{ inputs.intent.source.ssh_execution.target.user }}'
-              port: '${{ inputs.intent.source.ssh_execution.target.port }}'
-              identityFile: '${{ inputs.intent.source.ssh_execution.identity_file }}'
-            hosts:
-              - name: target
-                address: '${{ inputs.intent.source.ssh_execution.target.host }}'
-                transport:
-                  hostKeys: '${{ inputs.intent.source.ssh_execution.target.host_keys }}'
-          inputs:
-            hosts: 'name:target'
-            interpreter: python3
-            script: '${{ steps["source-filesystem-assets"].outputs.script_body }}'
-      - name: top
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-filesystem
-            condition:
-              type: always
-        guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("itr-4-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs: *ref_0
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/git
-              - '-c'
-              - core.hooksPath=/dev/null
-              - '-c'
-              - core.fsmonitor=false
-              - '-C'
-              - '${{ inputs.intent.source.source }}'
-              - rev-parse
-              - '--show-toplevel'
-      - name: git-directory
-        labels: {role: swamp}
-        dependsOn:
-          - step: top
-            condition:
-              type: always
-        guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("itr-5-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs: *ref_0
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/git
-              - '-c'
-              - core.hooksPath=/dev/null
-              - '-c'
-              - core.fsmonitor=false
-              - '-C'
-              - '${{ inputs.intent.source.source }}'
-              - rev-parse
-              - '--absolute-git-dir'
-      - name: common
-        labels: {role: swamp}
-        dependsOn:
-          - step: git-directory
-            condition:
-              type: always
-        guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("itr-6-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs: *ref_0
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/git
-              - '-c'
-              - core.hooksPath=/dev/null
-              - '-c'
-              - core.fsmonitor=false
-              - '-C'
-              - '${{ inputs.intent.source.source }}'
-              - rev-parse
-              - '--path-format=absolute'
-              - '--git-common-dir'
-      - name: origin-assets
-        labels: {role: swamp}
-        dependsOn:
-          - step: common
-            condition:
-              type: always
-        guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "itr-7" }}'
-          methodName: read
-          inputs:
-            action: origin
-            input:
-              checkout: '${{ inputs.intent.source.source }}'
-      - name: origin
-        labels: {role: swamp}
-        dependsOn:
-          - step: origin-assets
-            condition:
-              type: always
-        guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("itr-8-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: script
-          globalArgs: *ref_0
-          inputs:
-            hosts: 'name:target'
-            interpreter: python3
-            script: '${{ steps["origin-assets"].outputs.script_body }}'
-      - name: source-proof
-        labels: {role: swamp}
-        dependsOn:
-          - step: origin
-            condition:
-              type: always
-        guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "itr-9" }}'
-          methodName: transferSource
-          inputs:
-            identity: '${{ inputs.intent.source.repository_identity }}'
-            path: '${{ inputs.intent.source.source }}'
-            top: '${{ steps["top"].outputs }}'
-            origin: '${{ steps["origin"].outputs }}'
-            git_directory: '${{ steps["git-directory"].outputs }}'
-            common: '${{ steps["common"].outputs }}'
-            filesystem: '${{ steps["source-filesystem"].outputs }}'
-      - name: pause
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-proof
-            condition:
-              type: always
-        guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
-        forEach:
-          item: member
-          in: '${{ inputs.intent.processes.source }}'
-        task:
-          type: workflow
-          workflowIdOrName: operation-process-control
-          inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: process.stop
-            intent: '${{ self.member.stop_intent }}'
-            execution_secrets: {}
-      - name: archive-assets
-        labels: {role: swamp}
-        dependsOn:
-          - step: source-proof
-            condition:
-              type: always
-          - step: pause
-            condition:
-              type: always
-        guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "itr-11" }}'
-          methodName: read
-          inputs:
-            action: transfer_archive
-            input:
-              path: '${{ inputs.intent.source.source }}'
-              common: '${{ steps["source-proof"].outputs.common }}'
-              git_directory: '${{ steps["source-proof"].outputs.git_directory }}'
-              archive: '${{ "/tmp/orbit-transfer-" + run.id + ".tar" }}'
-      - name: archive
-        labels: {role: swamp}
-        dependsOn:
-          - step: archive-assets
-            condition:
-              type: always
-        guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("itr-12-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: script
-          globalArgs: *ref_0
-          inputs:
-            hosts: 'name:target'
-            interpreter: python3
-            script: '${{ steps["archive-assets"].outputs.script_body }}'
-      - name: download
-        labels: {role: swamp}
-        dependsOn:
-          - step: archive
-            condition:
-              type: always
-        guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("itr-13-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: copy
-          globalArgs: *ref_0
-          inputs:
-            hosts: 'name:target'
-            src: '${{ "/tmp/orbit-transfer-" + run.id + ".tar" }}'
-            dst: '${{ "/tmp/orbit-transfer-" + run.id + ".download.tar" }}'
-            direction: from
-      - name: upload
-        labels: {role: swamp}
-        dependsOn:
-          - step: download
-            condition:
-              type: always
-        guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("itr-14-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: copy
-          globalArgs: *ref_1
-          inputs:
-            hosts: 'name:target'
-            src: '${{ "/tmp/orbit-transfer-" + run.id + ".download.tar" }}'
-            dst: '${{ "/tmp/orbit-transfer-" + run.id + ".install.tar" }}'
-            direction: to
-            mode: '0600'
-            atomic: true
-      - name: install-assets
-        labels: {role: swamp}
-        dependsOn:
-          - step: upload
-            condition:
-              type: always
-        guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "itr-15" }}'
-          methodName: read
-          inputs:
-            action: transfer_install
-            input:
-              path: '${{ inputs.intent.destination.destination }}'
-              archive: '${{ "/tmp/orbit-transfer-" + run.id + ".install.tar" }}'
-      - name: install
-        labels: {role: swamp}
-        dependsOn:
-          - step: install-assets
-            condition:
-              type: always
-        guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("itr-16-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: script
-          globalArgs: *ref_1
-          inputs:
-            hosts: 'name:target'
-            interpreter: python3
-            script: '${{ steps["install-assets"].outputs.script_body }}'
-      - name: destination-proof
-        labels: {role: swamp}
-        dependsOn:
-          - step: install
-            condition:
-              type: always
-        guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "itr-17" }}'
-          methodName: decode
-          inputs:
-            observation: '${{ steps["install"].outputs }}'
-      - name: standalone
-        labels: {role: swamp}
-        dependsOn:
-          - step: destination-proof
-            condition:
-              type: always
-        guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("itr-18-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs: *ref_1
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/git
-              - '-C'
-              - '${{ inputs.intent.destination.destination }}'
-              - config
-              - core.bare
-              - 'false'
-      - name: worktree-config
-        labels: {role: swamp}
-        dependsOn:
-          - step: standalone
-            condition:
-              type: always
-        guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("itr-19-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs: *ref_1
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/git
-              - '-C'
-              - '${{ inputs.intent.destination.destination }}'
-              - config
-              - '--unset-all'
-              - core.worktree
-            okExitCodes:
-              - 0
-              - 5
-      - name: environment-permissions-assets
-        labels: {role: swamp}
-        dependsOn:
-          - step: worktree-config
-            condition:
-              type: always
-        guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "itr-20" }}'
-          methodName: read
-          inputs:
-            action: protect_environment
-            input:
-              application: '${{ inputs.intent.destination.application }}'
-      - name: environment-permissions
-        labels: {role: swamp}
-        dependsOn:
-          - step: environment-permissions-assets
-            condition:
-              type: always
-        guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("itr-21-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: script
-          globalArgs: *ref_1
-          inputs:
-            hosts: 'name:target'
-            interpreter: python3
-            script: '${{ steps["environment-permissions-assets"].outputs.script_body }}'
-      - name: workloads
-        labels: {role: swamp}
-        dependsOn:
-          - step: environment-permissions
-            condition:
-              type: always
-        guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
-        forEach:
-          item: workload
-          in: '${{ inputs.intent.workloads }}'
-        task:
-          type: workflow
-          workflowIdOrName: instance-route-workload
-          inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent: '${{ self.workload }}'
-            execution_secrets: {}
-      - name: activate
-        labels: {role: swamp}
-        dependsOn:
-          - step: environment-permissions
-            condition:
-              type: always
-          - step: workloads
-            condition:
-              type: always
-        guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
-        forEach:
-          item: member
-          in: '${{ inputs.intent.processes.destination }}'
-        task:
-          type: workflow
-          workflowIdOrName: operation-process-create
-          inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: process.create
-            intent: '${{ self.member.intent }}'
-            execution_secrets: >-
-              ${{ self.member.secret_field in inputs.execution_secrets ?
-              {"environment":inputs.execution_secrets[self.member.secret_field]}
-              : {} }}
-      - name: forward
-        labels: {role: swamp}
-        dependsOn:
-          - step: environment-permissions
-            condition:
-              type: always
-          - step: workloads
-            condition:
-              type: always
-          - step: activate
-            condition:
-              type: always
-        guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
-        allowFailure: true
-        task:
-          type: workflow
-          workflowIdOrName: route-mutation-forward
-          inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent: '${{ inputs.intent }}'
-            execution_secrets: '${{ inputs.execution_secrets }}'
-            parent_run_id: '${{ run.id }}'
-      - name: restore
-        labels: {role: swamp}
-        dependsOn:
-          - step: forward
-            condition:
-              type: always
-        guard: >-
-          ${{ (("forward" in steps) && steps["forward"].status == "succeeded" &&
-          steps.forward.outputs.result.ready) || !("destination-proof" in steps)
-          || steps["destination-proof"].status != "succeeded" }}
-        allowFailure: true
-        task:
-          type: workflow
-          workflowIdOrName: route-mutation-restore
-          inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: '${{ inputs.kind }}'
-            intent: '${{ inputs.intent }}'
-            execution_secrets: '${{ inputs.execution_secrets }}'
-            parent_run_id: '${{ run.id }}'
-      - name: restore-source-runtime
-        labels: {role: swamp}
-        dependsOn:
-          - step: restore
-            condition:
-              type: always
-        guard: >-
-          ${{ ("forward" in steps) && steps["forward"].status == "succeeded" &&
-          steps.forward.outputs.result.ready }}
-        forEach:
-          item: member
-          in: '${{ inputs.intent.processes.source }}'
-        task:
-          type: workflow
-          workflowIdOrName: operation-process-create
-          inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: process.create
-            intent: '${{ self.member.intent }}'
-            execution_secrets: >-
-              ${{ self.member.secret_field in inputs.execution_secrets ?
-              {"environment":inputs.execution_secrets[self.member.secret_field]}
-              : {} }}
-      - name: discard-destination-runtime
-        labels: {role: swamp}
-        dependsOn:
-          - step: restore
-            condition:
-              type: always
-          - step: restore-source-runtime
-            condition:
-              type: always
-        guard: >-
-          ${{ ("forward" in steps) && steps["forward"].status == "succeeded" &&
-          steps.forward.outputs.result.ready || !("destination-proof" in steps)
-          || steps["destination-proof"].status != "succeeded" || !(("restore" in
-          steps) && steps["restore"].status == "succeeded" &&
-          steps.restore.outputs.result.ready) ||
-          steps.exists(n,n.startsWith("restore-source-runtime-") &&
-          steps[n].status == "failed") }}
-        forEach:
-          item: member
-          in: '${{ inputs.intent.processes.destination }}'
-        task:
-          type: workflow
-          workflowIdOrName: operation-process-destroy
-          inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: process.destroy
-            intent: '${{ self.member.control_intent }}'
-            execution_secrets: {}
-      - name: discard-assets
-        labels: {role: swamp}
-        dependsOn:
-          - step: restore
-            condition:
-              type: always
-          - step: restore-source-runtime
-            condition:
-              type: always
-          - step: discard-destination-runtime
-            condition:
-              type: always
-        guard: >-
-          ${{ ("forward" in steps) && steps["forward"].status == "succeeded" &&
-          steps.forward.outputs.result.ready || !("destination-proof" in steps)
-          || steps["destination-proof"].status != "succeeded" || !(("restore" in
-          steps) && steps["restore"].status == "succeeded" &&
-          steps.restore.outputs.result.ready) || steps.exists(n,
-          (n.startsWith("restore-source-runtime-") ||
-          n.startsWith("discard-destination-runtime-")) && steps[n].status ==
-          "failed") }}
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "itr-28" }}'
-          methodName: read
-          inputs:
-            action: transfer_remove
-            input:
-              proof: '${{ steps["destination-proof"].outputs }}'
-      - name: discard
-        labels: {role: swamp}
-        dependsOn:
-          - step: discard-assets
-            condition:
-              type: always
-        guard: >-
-          ${{ ("forward" in steps) && steps["forward"].status == "succeeded" &&
-          steps.forward.outputs.result.ready || !("destination-proof" in steps)
-          || steps["destination-proof"].status != "succeeded" || !(("restore" in
-          steps) && steps["restore"].status == "succeeded" &&
-          steps.restore.outputs.result.ready) || steps.exists(n,
-          (n.startsWith("restore-source-runtime-") ||
-          n.startsWith("discard-destination-runtime-")) && steps[n].status ==
-          "failed") }}
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("itr-29-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: script
-          globalArgs: *ref_1
-          inputs:
-            hosts: 'name:target'
-            interpreter: python3
-            script: '${{ steps["discard-assets"].outputs.script_body }}'
-      - name: result
-        labels: {role: swamp}
-        dependsOn:
-          - step: discard
-            condition:
-              type: always
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "itr-30" }}'
-          methodName: transferResult
-          inputs:
-            cutover: >-
-              ${{ ("forward" in steps) && steps["forward"].status == "succeeded"
-              && steps.forward.outputs.result.ready }}
-            restored: >-
-              ${{ ("restore" in steps) && steps["restore"].status == "succeeded"
-              && steps.restore.outputs.result.ready }}
-            transfer_id: '${{ inputs.intent.transfer_id }}'
-            outcomes: '${{ steps }}'
-      - name: retire-runtime
-        labels: {role: swamp}
-        dependsOn:
-          - step: result
-            condition:
-              type: always
-        guard: >-
-          ${{ !(("forward" in steps) && steps["forward"].status == "succeeded"
-          && steps.forward.outputs.result.ready) || !("result" in steps) ||
-          steps.result.status != "succeeded" }}
-        forEach:
-          item: member
-          in: '${{ inputs.intent.processes.source }}'
-        task:
-          type: workflow
-          workflowIdOrName: operation-process-destroy
-          inputs:
-            operation_id: '${{ inputs.operation_id }}'
-            node_id: '${{ inputs.node_id }}'
-            kind: process.destroy
-            intent: '${{ self.member.control_intent }}'
-            execution_secrets: {}
-      - name: retire-source-assets
-        labels: {role: swamp}
-        dependsOn:
-          - step: result
-            condition:
-              type: always
-          - step: retire-runtime
-            condition:
-              type: always
-        guard: >-
-          ${{ !(("forward" in steps) && steps["forward"].status == "succeeded"
-          && steps.forward.outputs.result.ready) || !("result" in steps) ||
-          steps.result.status != "succeeded" ||
-          steps.exists(n,n.startsWith("retire-runtime-") && steps[n].status ==
-          "failed") }}
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "itr-32" }}'
-          methodName: read
-          inputs:
-            action: transfer_remove
-            input:
-              proof: '${{ steps["source-proof"].outputs }}'
-      - name: retire-source
-        labels: {role: swamp}
-        dependsOn:
-          - step: retire-source-assets
-            condition:
-              type: always
-        guard: >-
-          ${{ !(("forward" in steps) && steps["forward"].status == "succeeded"
-          && steps.forward.outputs.result.ready) || !("result" in steps) ||
-          steps.result.status != "succeeded" ||
-          steps.exists(n,n.startsWith("retire-runtime-") && steps[n].status ==
-          "failed") }}
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("itr-33-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: script
-          globalArgs: *ref_0
-          inputs:
-            hosts: 'name:target'
-            interpreter: python3
-            script: '${{ steps["retire-source-assets"].outputs.script_body }}'
-      - name: prune-worktree
-        labels: {role: swamp}
-        dependsOn:
-          - step: retire-source
-            condition:
-              type: always
-        guard: >-
-          ${{ !(("forward" in steps) && steps["forward"].status == "succeeded"
-          && steps.forward.outputs.result.ready) || !("result" in steps) ||
-          steps.result.status != "succeeded" ||
-          steps["source-proof"].outputs.common ==
-          steps["source-proof"].outputs.git_directory }}
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("itr-34-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs: *ref_0
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/git
-              - '--git-dir'
-              - '${{ steps["source-proof"].outputs.common }}'
-              - worktree
-              - prune
-      - name: remove-source-archive
-        labels: {role: swamp}
-        dependsOn:
-          - step: prune-worktree
-            condition:
-              type: always
-        guard: >-
-          ${{ ! ("archive" in steps) || steps["archive"].status != "succeeded"
-          }}
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("itr-35-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs: *ref_0
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/rm
-              - '-f'
-              - '--'
-              - '${{ "/tmp/orbit-transfer-" + run.id + ".tar" }}'
-      - name: remove-destination-archive
-        labels: {role: swamp}
-        dependsOn:
-          - step: remove-source-archive
-            condition:
-              type: always
-        guard: '${{ ! ("upload" in steps) || steps["upload"].status != "succeeded" }}'
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("itr-36-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: exec
-          globalArgs: *ref_1
-          inputs:
-            hosts: 'name:target'
-            argv:
-              - /usr/bin/rm
-              - '-f'
-              - '--'
-              - '${{ "/tmp/orbit-transfer-" + run.id + ".install.tar" }}'
-      - name: remove-local-archive
-        labels: {role: swamp}
-        dependsOn:
-          - step: remove-destination-archive
-            condition:
-              type: always
-        guard: >-
-          ${{ ! ("download" in steps) || steps["download"].status != "succeeded"
-          }}
-        task:
-          type: behavior
-          behaviorType: command/shell
-          behaviorName: '${{ "itr-37" }}'
-          methodName: execute
-          inputs:
-            run: rm -f -- "$ARCHIVE"
-            env:
-              ARCHIVE: '${{ "/tmp/orbit-transfer-" + run.id + ".download.tar" }}'
-      - name: complete
-        labels: {role: swamp}
-        dependsOn:
-          - step: remove-local-archive
-            condition:
-              type: always
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "itr-38" }}'
-          methodName: complete
-          inputs:
-            cutover: >-
-              ${{ ("forward" in steps) && steps["forward"].status == "succeeded"
-              && steps.forward.outputs.result.ready }}
-            outcomes: '${{ steps }}'
+- name: transfer
+  labels:
+    role: swamp
+  steps:
+  - name: destination-ready
+    labels:
+      role: swamp
+    guard: ${{ steps.exists(n, steps[n].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("itr-1-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: &id002
+        name: ${{ ("itr-1-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.destination.ssh_execution.target.user }}
+          port: ${{ inputs.intent.destination.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.destination.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.destination.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.destination.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/timeout
+        - '60'
+        - /bin/sh
+        - -c
+        - '[ ! -e "$1" ] && [ ! -L "$1" ] || { echo instance.transfer_destination_exists >&2; exit 3; }'
+        - sh
+        - ${{ inputs.intent.destination.destination }}
+  - name: source-filesystem
+    labels:
+      role: swamp
+    dependsOn:
+    - step: destination-ready
+      condition:
+        type: always
+    guard: ${{ steps.exists(n, steps[n].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("itr-3-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: &id001
+        name: ${{ ("itr-3-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.source.ssh_execution.target.user }}
+          port: ${{ inputs.intent.source.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.source.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.source.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.source.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/timeout
+        - '60'
+        - /bin/sh
+        - -c
+        - stat -c "{\"device\":%d,\"inode\":%i,\"path\":\"%n\"}" -- "$1"
+        - sh
+        - ${{ inputs.intent.source.source }}
+  - name: top
+    labels:
+      role: swamp
+    dependsOn:
+    - step: source-filesystem
+      condition:
+        type: always
+    guard: ${{ steps.exists(n, steps[n].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("itr-4-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - -c
+        - core.hooksPath=/dev/null
+        - -c
+        - core.fsmonitor=false
+        - -C
+        - ${{ inputs.intent.source.source }}
+        - rev-parse
+        - --show-toplevel
+  - name: git-directory
+    labels:
+      role: swamp
+    dependsOn:
+    - step: top
+      condition:
+        type: always
+    guard: ${{ steps.exists(n, steps[n].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("itr-5-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - -c
+        - core.hooksPath=/dev/null
+        - -c
+        - core.fsmonitor=false
+        - -C
+        - ${{ inputs.intent.source.source }}
+        - rev-parse
+        - --absolute-git-dir
+  - name: common
+    labels:
+      role: swamp
+    dependsOn:
+    - step: git-directory
+      condition:
+        type: always
+    guard: ${{ steps.exists(n, steps[n].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("itr-6-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - -c
+        - core.hooksPath=/dev/null
+        - -c
+        - core.fsmonitor=false
+        - -C
+        - ${{ inputs.intent.source.source }}
+        - rev-parse
+        - --path-format=absolute
+        - --git-common-dir
+  - name: origin
+    labels:
+      role: swamp
+    dependsOn:
+    - step: common
+      condition:
+        type: always
+    guard: ${{ steps.exists(n, steps[n].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("itr-8-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/timeout
+        - '60'
+        - /bin/sh
+        - -c
+        - /usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$1" config --get remote.origin.url | sed -E "s#^([a-z+]+://)[^/@]*:[^/@]*@#\1REDACTED@#;
+          s#^(https?://)[^/@]+@#\1REDACTED@#"
+        - sh
+        - ${{ inputs.intent.source.source }}
+  - name: source-proof
+    labels:
+      role: swamp
+    dependsOn:
+    - step: origin
+      condition:
+        type: always
+    guard: ${{ steps.exists(n, steps[n].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-source-command'
+      behaviorName: ${{ "itr-9" }}
+      methodName: transferSource
+      inputs:
+        identity: ${{ inputs.intent.source.repository_identity }}
+        path: ${{ inputs.intent.source.source }}
+        top: ${{ steps["top"].outputs }}
+        origin: ${{ steps["origin"].outputs }}
+        git_directory: ${{ steps["git-directory"].outputs }}
+        common: ${{ steps["common"].outputs }}
+        filesystem: ${{ steps["source-filesystem"].outputs }}
+  - name: pause
+    labels:
+      role: swamp
+    dependsOn:
+    - step: source-proof
+      condition:
+        type: always
+    guard: ${{ steps.exists(n, steps[n].status == "failed") }}
+    forEach:
+      item: member
+      in: ${{ inputs.intent.processes.source }}
+    task:
+      type: workflow
+      workflowIdOrName: operation-process-control
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: process.stop
+        intent: ${{ self.member.stop_intent }}
+        execution_secrets: {}
+  - name: archive
+    labels:
+      role: swamp
+    dependsOn:
+    - step: source-proof
+      condition:
+        type: always
+    - step: pause
+      condition:
+        type: always
+    guard: ${{ steps.exists(n, steps[n].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("itr-12-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/timeout
+        - '600'
+        - /bin/sh
+        - -c
+        - set -e; [ ! -e "$2/objects/info/alternates" ] || { echo instance.transfer_source_invalid >&2; exit 3; }; if [ "$3" = "$2" ] && [ -n "$(ls -A -- "$2/worktrees"
+          2>/dev/null)" ]; then echo instance.transfer_source_shared >&2; exit 3; fi; cd -- "$1"; tar --exclude=./.git -cf "$4" .; cd -- "$2"; tar --exclude=./worktrees
+          --exclude=./commondir --exclude=./gitdir --exclude=./config.worktree --exclude="*.lock" --transform "s,^\.,.git," -rf "$4" .; if [ "$3" != "$2" ]; then
+          cd -- "$3"; for f in HEAD index ORIG_HEAD logs/HEAD; do [ ! -f "$f" ] || tar --transform "s,^,.git/," -rf "$4" "$f"; done; fi; chmod 600 -- "$4"
+        - sh
+        - ${{ inputs.intent.source.source }}
+        - ${{ steps["source-proof"].outputs.common }}
+        - ${{ steps["source-proof"].outputs.git_directory }}
+        - ${{ "/tmp/orbit-transfer-" + run.id + ".tar" }}
+    writes: true
+  - name: download
+    labels:
+      role: swamp
+    dependsOn:
+    - step: archive
+      condition:
+        type: always
+    guard: ${{ steps.exists(n, steps[n].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("itr-13-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: copy
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        src: ${{ "/tmp/orbit-transfer-" + run.id + ".tar" }}
+        dst: ${{ "/tmp/orbit-transfer-" + run.id + ".download.tar" }}
+        direction: from
+  - name: upload
+    labels:
+      role: swamp
+    dependsOn:
+    - step: download
+      condition:
+        type: always
+    guard: ${{ steps.exists(n, steps[n].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("itr-14-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: copy
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        src: ${{ "/tmp/orbit-transfer-" + run.id + ".download.tar" }}
+        dst: ${{ "/tmp/orbit-transfer-" + run.id + ".install.tar" }}
+        direction: to
+        mode: '0600'
+        atomic: true
+  - name: install
+    labels:
+      role: swamp
+    dependsOn:
+    - step: upload
+      condition:
+        type: always
+    guard: ${{ steps.exists(n, steps[n].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("itr-16-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/timeout
+        - '600'
+        - /bin/sh
+        - -c
+        - set -e; [ ! -e "$1" ] && [ ! -L "$1" ] || { echo instance.transfer_destination_exists >&2; exit 3; }; mkdir -p -- "$(dirname -- "$1")"; t=$(mktemp -d "$(dirname
+          -- "$1")/.orbit-transfer-XXXXXX"); tar -xf "$2" -C "$t" --no-same-owner; chmod 750 -- "$t"; mv -T -- "$t" "$1"; stat -c "{\"device\":%d,\"inode\":%i,\"path\":\"%n\"}"
+          -- "$1"
+        - sh
+        - ${{ inputs.intent.destination.destination }}
+        - ${{ "/tmp/orbit-transfer-" + run.id + ".install.tar" }}
+    writes: true
+  - name: destination-proof
+    labels:
+      role: swamp
+    dependsOn:
+    - step: install
+      condition:
+        type: always
+    guard: ${{ steps.exists(n, steps[n].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-source-command'
+      behaviorName: ${{ "itr-17" }}
+      methodName: decode
+      inputs:
+        observation: ${{ steps["install"].outputs }}
+  - name: standalone
+    labels:
+      role: swamp
+    dependsOn:
+    - step: destination-proof
+      condition:
+        type: always
+    guard: ${{ steps.exists(n, steps[n].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("itr-18-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - -C
+        - ${{ inputs.intent.destination.destination }}
+        - config
+        - core.bare
+        - 'false'
+  - name: worktree-config
+    labels:
+      role: swamp
+    dependsOn:
+    - step: standalone
+      condition:
+        type: always
+    guard: ${{ steps.exists(n, steps[n].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("itr-19-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - -C
+        - ${{ inputs.intent.destination.destination }}
+        - config
+        - --unset-all
+        - core.worktree
+        okExitCodes:
+        - 0
+        - 5
+  - name: environment-permissions
+    labels:
+      role: swamp
+    dependsOn:
+    - step: worktree-config
+      condition:
+        type: always
+    guard: ${{ steps.exists(n, steps[n].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("itr-21-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/timeout
+        - '60'
+        - /bin/sh
+        - -c
+        - '[ ! -f "$1/.env" ] || [ -L "$1/.env" ] || chmod o-rwx -- "$1/.env"'
+        - sh
+        - ${{ inputs.intent.destination.application }}
+    writes: true
+  - name: workloads
+    labels:
+      role: swamp
+    dependsOn:
+    - step: environment-permissions
+      condition:
+        type: always
+    guard: ${{ steps.exists(n, steps[n].status == "failed") }}
+    forEach:
+      item: workload
+      in: ${{ inputs.intent.workloads }}
+    task:
+      type: workflow
+      workflowIdOrName: instance-route-workload
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ self.workload }}
+        execution_secrets: {}
+  - name: activate
+    labels:
+      role: swamp
+    dependsOn:
+    - step: environment-permissions
+      condition:
+        type: always
+    - step: workloads
+      condition:
+        type: always
+    guard: ${{ steps.exists(n, steps[n].status == "failed") }}
+    forEach:
+      item: member
+      in: ${{ inputs.intent.processes.destination }}
+    task:
+      type: workflow
+      workflowIdOrName: operation-process-create
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: process.create
+        intent: ${{ self.member.intent }}
+        execution_secrets: '${{ self.member.secret_field in inputs.execution_secrets ? {"environment":inputs.execution_secrets[self.member.secret_field]} : {} }}'
+  - name: forward
+    labels:
+      role: swamp
+    dependsOn:
+    - step: environment-permissions
+      condition:
+        type: always
+    - step: workloads
+      condition:
+        type: always
+    - step: activate
+      condition:
+        type: always
+    guard: ${{ steps.exists(n, steps[n].status == "failed") }}
+    allowFailure: true
+    task:
+      type: workflow
+      workflowIdOrName: route-mutation-forward
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        parent_run_id: ${{ run.id }}
+  - name: restore
+    labels:
+      role: swamp
+    dependsOn:
+    - step: forward
+      condition:
+        type: always
+    guard: ${{ (("forward" in steps) && steps["forward"].status == "succeeded" && steps.forward.outputs.result.ready) || !("destination-proof" in steps) || steps["destination-proof"].status
+      != "succeeded" }}
+    allowFailure: true
+    task:
+      type: workflow
+      workflowIdOrName: route-mutation-restore
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        parent_run_id: ${{ run.id }}
+  - name: restore-source-runtime
+    labels:
+      role: swamp
+    dependsOn:
+    - step: restore
+      condition:
+        type: always
+    guard: ${{ ("forward" in steps) && steps["forward"].status == "succeeded" && steps.forward.outputs.result.ready }}
+    forEach:
+      item: member
+      in: ${{ inputs.intent.processes.source }}
+    task:
+      type: workflow
+      workflowIdOrName: operation-process-create
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: process.create
+        intent: ${{ self.member.intent }}
+        execution_secrets: '${{ self.member.secret_field in inputs.execution_secrets ? {"environment":inputs.execution_secrets[self.member.secret_field]} : {} }}'
+  - name: discard-destination-runtime
+    labels:
+      role: swamp
+    dependsOn:
+    - step: restore
+      condition:
+        type: always
+    - step: restore-source-runtime
+      condition:
+        type: always
+    guard: ${{ ("forward" in steps) && steps["forward"].status == "succeeded" && steps.forward.outputs.result.ready || !("destination-proof" in steps) || steps["destination-proof"].status
+      != "succeeded" || !(("restore" in steps) && steps["restore"].status == "succeeded" && steps.restore.outputs.result.ready) || steps.exists(n,n.startsWith("restore-source-runtime-")
+      && steps[n].status == "failed") }}
+    forEach:
+      item: member
+      in: ${{ inputs.intent.processes.destination }}
+    task:
+      type: workflow
+      workflowIdOrName: operation-process-destroy
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: process.destroy
+        intent: ${{ self.member.control_intent }}
+        execution_secrets: {}
+  - name: discard
+    labels:
+      role: swamp
+    dependsOn:
+    - step: restore
+      condition:
+        type: always
+    - step: restore-source-runtime
+      condition:
+        type: always
+    - step: discard-destination-runtime
+      condition:
+        type: always
+    guard: ${{ ("forward" in steps) && steps["forward"].status == "succeeded" && steps.forward.outputs.result.ready || !("destination-proof" in steps) || steps["destination-proof"].status
+      != "succeeded" || !(("restore" in steps) && steps["restore"].status == "succeeded" && steps.restore.outputs.result.ready) || steps.exists(n, (n.startsWith("restore-source-runtime-")
+      || n.startsWith("discard-destination-runtime-")) && steps[n].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("itr-29-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/timeout
+        - '300'
+        - /bin/sh
+        - -c
+        - rm -rf -- "$1"
+        - sh
+        - ${{ inputs.intent.destination.destination }}
+    writes: true
+  - name: result
+    labels:
+      role: swamp
+    dependsOn:
+    - step: discard
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-source-command'
+      behaviorName: ${{ "itr-30" }}
+      methodName: transferResult
+      inputs:
+        cutover: ${{ ("forward" in steps) && steps["forward"].status == "succeeded" && steps.forward.outputs.result.ready }}
+        restored: ${{ ("restore" in steps) && steps["restore"].status == "succeeded" && steps.restore.outputs.result.ready }}
+        transfer_id: ${{ inputs.intent.transfer_id }}
+        outcomes: ${{ steps }}
+  - name: retire-runtime
+    labels:
+      role: swamp
+    dependsOn:
+    - step: result
+      condition:
+        type: always
+    guard: ${{ !(("forward" in steps) && steps["forward"].status == "succeeded" && steps.forward.outputs.result.ready) || !("result" in steps) || steps.result.status
+      != "succeeded" }}
+    forEach:
+      item: member
+      in: ${{ inputs.intent.processes.source }}
+    task:
+      type: workflow
+      workflowIdOrName: operation-process-destroy
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: process.destroy
+        intent: ${{ self.member.control_intent }}
+        execution_secrets: {}
+  - name: retire-source
+    labels:
+      role: swamp
+    dependsOn:
+    - step: result
+      condition:
+        type: always
+    - step: retire-runtime
+      condition:
+        type: always
+    guard: ${{ !(("forward" in steps) && steps["forward"].status == "succeeded" && steps.forward.outputs.result.ready) || !("result" in steps) || steps.result.status
+      != "succeeded" || steps.exists(n,n.startsWith("retire-runtime-") && steps[n].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("itr-33-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/timeout
+        - '300'
+        - /bin/sh
+        - -c
+        - rm -rf -- "$1"
+        - sh
+        - ${{ inputs.intent.source.source }}
+    writes: true
+  - name: prune-worktree
+    labels:
+      role: swamp
+    dependsOn:
+    - step: retire-source
+      condition:
+        type: always
+    guard: ${{ !(("forward" in steps) && steps["forward"].status == "succeeded" && steps.forward.outputs.result.ready) || !("result" in steps) || steps.result.status
+      != "succeeded" || steps["source-proof"].outputs.common == steps["source-proof"].outputs.git_directory }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("itr-34-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - --git-dir
+        - ${{ steps["source-proof"].outputs.common }}
+        - worktree
+        - prune
+  - name: remove-source-archive
+    labels:
+      role: swamp
+    dependsOn:
+    - step: prune-worktree
+      condition:
+        type: always
+    guard: ${{ ! ("archive" in steps) || steps["archive"].status != "succeeded" }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("itr-35-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/rm
+        - -f
+        - --
+        - ${{ "/tmp/orbit-transfer-" + run.id + ".tar" }}
+  - name: remove-destination-archive
+    labels:
+      role: swamp
+    dependsOn:
+    - step: remove-source-archive
+      condition:
+        type: always
+    guard: ${{ ! ("upload" in steps) || steps["upload"].status != "succeeded" }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("itr-36-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/rm
+        - -f
+        - --
+        - ${{ "/tmp/orbit-transfer-" + run.id + ".install.tar" }}
+  - name: remove-local-archive
+    labels:
+      role: swamp
+    dependsOn:
+    - step: remove-destination-archive
+      condition:
+        type: always
+    guard: ${{ ! ("download" in steps) || steps["download"].status != "succeeded" }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "itr-37" }}
+      methodName: execute
+      inputs:
+        run: rm -f -- "$ARCHIVE"
+        env:
+          ARCHIVE: ${{ "/tmp/orbit-transfer-" + run.id + ".download.tar" }}
+  - name: complete
+    labels:
+      role: swamp
+    dependsOn:
+    - step: remove-local-archive
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-source-command'
+      behaviorName: ${{ "itr-38" }}
+      methodName: complete
+      inputs:
+        cutover: ${{ ("forward" in steps) && steps["forward"].status == "succeeded" && steps.forward.outputs.result.ready }}
+        outcomes: ${{ steps }}

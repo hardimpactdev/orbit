@@ -89,3 +89,15 @@ raise SystemExit(result.returncode)
         self.assertEqual(run["status"], "failed")
         self.assertNotIn("PRIVATE_ORIGIN_SENTINEL", json.dumps(history))
         self.assertEqual((self.checkout / ".env").stat().st_mode & 0o777, 0o644)
+
+    def test_register_reads_the_laravel_profile_from_composer_json(self):
+        (self.checkout / "composer.json").write_text(json.dumps({"require": {"php": "^8.4", "laravel/framework": "^12.0", "other/pkg": "1"}}))
+        (self.checkout / "artisan").write_text("#!/usr/bin/env php\n")
+        self.git("add", "composer.json", "artisan")
+        self.git("commit", "-qm", "laravel")
+        self.intent["project_type"] = "laravel-app"
+        run, history = self.run_source("register")
+        self.assertEqual(run["status"], "succeeded")
+        result = json.loads(next(step["outputs"]["stdout"] for step in history["jobs"][0]["steps"] if step["name"] == "result"))
+        self.assertEqual(result["php_version"], "8.5")
+        self.assertRegex(result["digest"], "^[a-f0-9]{64}$")

@@ -33,15 +33,17 @@ The CLI calls `POST /api/v1/instances/{candidate}/clone`. The caller needs acces
 
 The candidate must be active, have a recorded source profile, and keep its recorded branch checked out. Native read steps verify the repository identity, branch, commit, clean working tree and absence of submodules before changing target source. Git hooks and filesystem monitors are disabled. An origin containing credentials is rejected on the Node before its value can enter native history.
 
-Swamp fetches committed source from the admitted Project repository. Working files, dependency directories and logs from the candidate are not copied. When the candidate and target use the same branch, their commits must match. Source preparation records the existing preparation ID with the directory's device and inode; an identical failed attempt can reuse only that owned directory.
+Swamp fetches committed source from the admitted Project repository. Working files, dependency directories and logs from the candidate are not copied. When the candidate and target use the same branch, their commits must match. An existing checkout directory is reused; a retry continues in it.
 
 ## Configuration and result
 
 The shared native VP preparation jobs capture the checkout's pinned requirements, prepare the manager only when absent, and install and verify the admitted runtime through the stock VP CLI. A project without VP requirements skips installation. The final clone result requires those jobs to succeed before the Gateway activates the target.
 
-The target receives independently encrypted stored candidate values, excluding `DB_*` and candidate WebSocket app credentials. The Gateway publishes the rendered environment as a named vault execution copy. Official SSH resolves it only for the environment write; private values never enter workflow inputs or public results. The file is written atomically with mode `0640`.
+The target receives independently encrypted stored candidate values, excluding `DB_*` and candidate WebSocket app credentials. The Gateway publishes the rendered environment as a named vault execution copy. The official `@swamp/cfgmgmt/file` behavior resolves it only for the environment write; private values never enter workflow inputs or public results. The file has mode `0600`.
 
-The existing scoped GitHub App mint primitive supplies repository read access. When GitHub reports no App installation for the repository, the descriptor contains no token and Git reads use anonymous access. Authentication and service errors still refuse the read. Its root key stays in the Gateway. All other steps use captured inputs and native outputs; no step reads intent or reports progress through Gateway HTTP.
+When the run starts, the Gateway mints a scoped GitHub App read token for the repository and pushes it into the vault. The fetch step writes it as a temporary credential file with mode `0600`, Git reads it from there, and the next step removes it; the token never enters argv.
+
+When GitHub reports no App installation for the repository, the file is empty and Git reads use anonymous access. Authentication and service errors still refuse the read. Its root key stays in the Gateway. All other steps use captured inputs and native outputs; no step reads intent or reports progress through Gateway HTTP.
 
 ### Terminal projection and retries
 

@@ -13,7 +13,8 @@ declare(strict_types=1);
  *            fire of that Schedule is recorded as a task.
  *   fixture  stdin {roles: {node_id: [role]}, wireguard_keys: {node_id: public key}, vpn_subnet?, projects: [attributes],
  *            extensions: [name], task_groups: [attributes + subtasks: [attributes] + taskable?: {instance: id}],
- *            instances: [attributes], task_vms: [attributes], operations: [attributes]}: the records a kind fixture
+ *            instances: [attributes], task_vms: [attributes], operations: [attributes],
+ *            clusters: [{name, tld?, node_ids, router_node_id}]}: the records a kind fixture
  *            needs beyond the seed, such as the VPN hub, peers with keys and the VPN subnet, a Project under the fixed
  *            id its Swamp configuration names, an extension, or a task group's owned workspace (the group and its
  *            subtasks, its Instance, its task VM and its provision Operation) for kinds that run in it.
@@ -25,6 +26,7 @@ use App\Domain\Nodes\WorkerKnownHostsPublisher;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Swamp\SwampRunSubscriber;
+use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -137,6 +139,15 @@ if ($argv[1] === 'fixture') {
     }
     if (isset($input['vpn_subnet'])) {
         app(VpnSettings::class)->configure(subnet: $input['vpn_subnet']);
+    }
+    // An active Cluster with its member Nodes and its Router, for kinds that move work between Nodes, such as transfer.
+    foreach ($input['clusters'] ?? [] as $spec) {
+        $cluster = Cluster::query()->create(['name' => $spec['name'], 'tld' => $spec['tld'] ?? null, 'state' => 'active']);
+        foreach ($spec['node_ids'] as $id) {
+            Node::query()->findOrFail((int) $id)->forceFill(['cluster_id' => $cluster->id])->save();
+        }
+        Node::query()->findOrFail((int) $spec['router_node_id'])->roles()
+            ->updateOrCreate(['role' => 'router'], ['status' => 'active', 'cluster_id' => $cluster->id]);
     }
     exit(0);
 }

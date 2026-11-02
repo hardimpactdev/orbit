@@ -1,7 +1,6 @@
 id: 5e65a942-d0c8-4b9a-8f3b-6855888af30a
 name: operation-instance-rename
-description: Read admitted development source through official SSH from209; project
-  its terminal result.
+description: Read admitted development source through official SSH from209; project its terminal result.
 vaults: []
 inputs:
   type: object
@@ -30,31 +29,19 @@ inputs:
   additionalProperties: false
 jobs:
 - name: source
-  labels: {role: swamp}
+  labels:
+    role: swamp
   steps:
-  - name: inspect-assets
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/instance-source-command'
-      behaviorName: '${{ "ren-inspect-assets" }}'
-      methodName: read
-      inputs:
-        action: inspect
-        input: ${{ inputs.intent }}
-  - name: filesystem
-    labels: {role: swamp}
-    dependsOn:
-    - step: inspect-assets
-      condition:
-        type: succeeded
+  - name: top
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("ren-filesystem-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: script
+      behaviorName: ${{ ("ren-top-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
       globalArgs: &id001
-        name: '${{ ("ren-filesystem-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+        name: ${{ ("ren-filesystem-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -65,22 +52,6 @@ jobs:
           address: ${{ inputs.intent.ssh_execution.target.host }}
           transport:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-      inputs:
-        hosts: name:target
-        interpreter: python3
-        script: ${{ steps["inspect-assets"].outputs.script_body }}
-  - name: top
-    labels: {role: swamp}
-    dependsOn:
-    - step: filesystem
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("ren-top-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *id001
       inputs:
         hosts: name:target
         argv:
@@ -94,7 +65,8 @@ jobs:
         - rev-parse
         - --show-toplevel
   - name: common
-    labels: {role: swamp}
+    labels:
+      role: swamp
     dependsOn:
     - step: top
       condition:
@@ -102,7 +74,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("ren-common-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: ${{ ("ren-common-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -119,7 +91,8 @@ jobs:
         - --path-format=absolute
         - --git-common-dir
   - name: worktrees
-    labels: {role: swamp}
+    labels:
+      role: swamp
     dependsOn:
     - step: common
       condition:
@@ -127,7 +100,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("ren-worktrees-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: ${{ ("ren-worktrees-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -143,38 +116,33 @@ jobs:
         - worktree
         - list
         - --porcelain
-  - name: origin-assets
-    labels: {role: swamp}
+  - name: origin
+    labels:
+      role: swamp
     dependsOn:
     - step: worktrees
       condition:
         type: succeeded
     task:
       type: behavior
-      behaviorType: '@nckrtl/instance-source-command'
-      behaviorName: '${{ "ren-origin-assets" }}'
-      methodName: read
-      inputs:
-        action: origin
-        input: ${{ inputs.intent }}
-  - name: origin
-    labels: {role: swamp}
-    dependsOn:
-    - step: origin-assets
-      condition:
-        type: succeeded
-    task:
-      type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("ren-origin-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: script
+      behaviorName: ${{ ("ren-origin-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
       globalArgs: *id001
       inputs:
         hosts: name:target
-        interpreter: python3
-        script: ${{ steps["origin-assets"].outputs.script_body }}
+        argv:
+        - /usr/bin/timeout
+        - '60'
+        - /bin/sh
+        - -c
+        - /usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$1" config --get remote.origin.url | sed -E "s#^([a-z+]+://)[^/@]*:[^/@]*@#\1REDACTED@#;
+          s#^(https?://)[^/@]+@#\1REDACTED@#"
+        - sh
+        - ${{ inputs.intent.checkout }}
   - name: branch
-    labels: {role: swamp}
+    labels:
+      role: swamp
     dependsOn:
     - step: origin
       condition:
@@ -182,7 +150,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("ren-branch-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: ${{ ("ren-branch-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -198,7 +166,8 @@ jobs:
         - branch
         - --show-current
   - name: commit
-    labels: {role: swamp}
+    labels:
+      role: swamp
     dependsOn:
     - step: branch
       condition:
@@ -206,7 +175,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("ren-commit-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: ${{ ("ren-commit-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -223,7 +192,8 @@ jobs:
         - --verify
         - HEAD^{commit}
   - name: default
-    labels: {role: swamp}
+    labels:
+      role: swamp
     dependsOn:
     - step: commit
       condition:
@@ -231,7 +201,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("ren-default-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: ${{ ("ren-default-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -248,7 +218,8 @@ jobs:
         - --format=%(symref)
         - refs/remotes/origin/HEAD
   - name: result
-    labels: {role: swamp}
+    labels:
+      role: swamp
     dependsOn:
     - step: default
       condition:
@@ -256,13 +227,12 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/instance-source-command'
-      behaviorName: '${{ "ren-result" }}'
+      behaviorName: ${{ "ren-result" }}
       methodName: result
       inputs:
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
         facts:
-          filesystem: ${{ steps.filesystem.outputs }}
           top: ${{ steps.top.outputs }}
           common: ${{ steps.common.outputs }}
           worktrees: ${{ steps.worktrees.outputs }}
