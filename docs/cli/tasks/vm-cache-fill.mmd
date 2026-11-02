@@ -1,6 +1,6 @@
 sequenceDiagram
-  %% Target design: swamp/workflows/workflow-operation-task-vm-cache-fill.yaml, docs/reference/compute-drivers.md#shared-package-cache, docs/cli/README.md design rules R2-R4 (GitHub token minted at admission, vault key names only).
-  %% Tightened: flow-tighten 2026-11-02, rules 4 (no Gateway read, private-material callback or per-batch projection from a step), 5 and 16 (admission sends only artifacts missing from the recorded inventory; no `.inventory.json` read), 15 (validation and batching move to admission), 18 (one forEach per artifact, in parallel), 9 (one inventory read as the end check), 19 (staging cleanup on completed), 22 (cfgmgmt `file` for the directory, `@swamp/ssh exec` argv for curl, sha check and install; no host-local TypeScript worker).
+  %% Target design: docs/reference/compute-drivers.md#shared-package-cache, ADR 0207, Recall single-swamp-node + task-vms-swamp-via-ssh, docs/cli/README.md design rules R2-R4 (token minted by the Gateway, vault key names only).
+  %% Tightened: flow-tighten 2026-11-02 (second pass), rules 3 (the pinned agent's package-cache.host already validates, downloads with checked redirects, enforces the budget and writes atomically), 6 (claim, quarantine, download, verify, place and inventory are one action), 11 (one behavior per host and batch, not per artifact), 18 (batches run one at a time: the agent locks the cache), 9 and 14 (a native assert over the batch replies is the end check; no inventory read or report step), 19 (no staging cleanup: the agent removes its own temporary files), 22 (one pinned `@swamp/ssh exec` argv per batch; no curl or script steps).
   %% status: draft
   %% command: none · package cache fill after a lockfile change
   %% kind: task_vm.fill_package_cache
@@ -8,74 +8,68 @@ sequenceDiagram
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
   %% lane H icon=server pill=target tone=amber
-  %% lane A icon=server pill=target tone=purple
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant H as Incus host<br/>Node 13 over ssh
-  participant A as Archive hosts<br/>GitHub · npm
-  Note over GW: Admit the cache fill<br/>host Node 13 · task #5182
-  %%> Started by:
-  %%> - the `builds` queue, after a default-branch lockfile change in a Project's Git mirror; pending fills coalesce per host
-  %%> Requirements:
-  %%> - Node 13 is an active task VM host; no other fill of its cache is open, else the open one is returned
-  %%> What it does:
-  %%> - validates each archive URL, cache key and integrity, drops integrity conflicts, and keeps only artifacts the recorded inventory of Node 13 lacks or holds with a bad digest
-  %%> - mints a GitHub App installation token with only `metadata: read` and copies it to the vault as `task-vm-package-cache-github-13`
-  GW->>SW: Start run, full intent<br/>operation-task-vm-cache-fill
-  %%> Inputs:
-  %%> - `operation_id`, `node_id` 13, `kind`, the artifact list (manager, URL, integrity, cache key, artifact id), the byte budget, and the SSH target with host keys
-  %%> - the vault key name `task-vm-package-cache-github-13`, never the token
-  %%> Runs as:
-  %%> - every step on 209 over official `@swamp/ssh`; Node 13 needs no Swamp worker (R4)
-  SW->>H: Claim the cache directory<br/>@swamp/cfgmgmt file · .orbit-owned
-  %%> What it does:
-  %%> - `@swamp/cfgmgmt file` ensures `/var/lib/orbit/package-cache` (root, `0755`) and its `.orbit-owned` marker; its check refuses a symlink or a foreign owner
-  %%> Refuses:
-  %%> - a non-empty directory without the marker: `task_vm.package_cache_failed`
-  opt a cached file failed its digest
-    SW->>H: Quarantine bad files<br/>quarantine · mv -T · forEach
-    %%> What it does:
-    %%> - moves each file whose bytes no longer match the recorded digest into `quarantine/`; quarantine bytes count toward the budget
-  end
-  loop forEach missing artifact
-    SW->>H: Download the archive<br/>fetch · curl -K - · staging
-    %%> How:
-    %%> - one `@swamp/ssh exec` argv: `curl --fail --proto =https --max-filesize 512M -K -` into a private staging file
-    %%> - for GitHub URLs the `Authorization` header arrives on stdin from `vault.get`; it never enters argv, environment, files or results; npm gets no token
-    %%> Runs as:
-    %%> - one behavior per artifact, `package-cache-13-<artifact id>`, so downloads run in parallel without one lock (rule 18)
-    H->>A: GET the locked archive<br/>HTTPS · redirects checked
-    %%> Allowed:
-    %%> - public npm registry tarballs and GitHub commit archives through the API or codeload; a GitHub redirect must keep the locked commit
-    A-->>H: Archive bytes<br/>at most 512 MiB
-    %%> Result:
-    %%> - the bytes land in the staging file only
-    SW->>H: Verify and place<br/>verify · sha*sum -c · install
-    %%> How:
-    %%> - `sha512sum --check` (or `sha1sum`, `sha256sum`) with the lockfile digest on stdin exits non-zero on a mismatch
-    %%> - `install -D -m 0644` moves the archive to its cache key; Composer archives without a checksum record their SHA-256 on first fill
-    %%> On failure:
-    %%> - this artifact fails; the other artifacts continue
-  end
-  SW->>H: Read the cache inventory<br/>inventory · sha256sum
-  %%> End check:
-  %%> - one `sha256sum` of every admitted cache key, run with the condition `completed` so it also follows failed artifacts
-  %%> - the native `assert` passes only when every admitted key is present (rule 9)
-  %%> Returns:
-  %%> - the verified hashes the Gateway records
-  SW->>H: Remove the staging files<br/>cleanup · completed
+  Note over GW: A lockfile changed<br/>host Node 13 · task #5182
   %%> When:
-  %%> - always, with the condition `completed` (rule 19); best effort
-  alt every archive cached
-    SW-->>GW: Run succeeded<br/>hashes per cache key
-    Note over GW: Record the host inventory<br/>Projects no longer pending
+  %%> - the Gateway Git mirror sees a new default-branch commit whose lock blobs differ from the Project's snapshot
+  %%> - it records the new inventory and queues one fill per configured task VM host, such as Node 13
+  %%> Requirements:
+  %%> - Node 13 is an active, configured task VM host with a recorded SSH host key
+  %%> - no other fill runs for Node 13; a second request returns the running task
+  %%> - every cache key fits its 1,024-byte limit, and the inventory fits 8 batches of 4,096 archives
+  %%> Result:
+  %%> - task #5182 recorded with the archives, the integrity conflicts and the byte budget
+  %%> - nothing has happened on Node 13 yet
+  GW->>SW: Push the fill batches<br/>vault: task-vm-cache-fill-13-0
+  %%> What it does:
+  %%> - at the run start, splits the archives into batches of at most 4,096
+  %%> - writes each batch as one agent request into the Swamp vault
+  %%> Why:
+  %%> - a batch holds the GitHub installation token for Composer downloads; it is minted here and goes Gateway → vault → step
+  %%> - one batch stays below the agent's 4 MiB request limit
+  GW->>SW: Start run, full intent<br/>operation-task-vm-cache-fill
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - Node 13's address, user and SSH host key; the SSH identity comes from the `swamp` role
+  %%> - the batch numbers, the integrity conflicts, and the vault key name of each batch, never its content
+  SW->>H: Fill the package cache<br/>ssh exec · package-cache.host
+  %%> How:
+  %%> - Swamp reaches Node 13 over SSH from 209 with the pinned host key
+  %%> - one argv per batch: `timeout 1530 sudo -n -- orbit-agent command package-cache.host`, with the batch on stdin
+  %%> - batches run one after another; the agent holds one lock on the cache
+  %%> What it does:
+  %%> - checks each archive identity, downloads approved HTTPS URLs, checks lockfile integrity and the byte budget
+  %%> - writes each verified archive and the inventory under `/var/lib/orbit/package-cache`
+  %%> - skips archives that are already cached and verified, so a rerun only adds what is missing
+  %%> Returns:
+  %%> - per batch, the SHA-256 of each cached archive and a short public reason for each refused one
+  SW->>SW: Check every archive<br/>assert
+  %%> What it does:
+  %%> - Swamp's native assert reads every batch reply
+  %%> - it passes only when every reply is `ok`, no archive was refused, and the admission found no integrity conflict
+  alt every archive is cached
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event and reads the run once; Swamp never calls the Gateway
+    Note over GW: Record the host inventory<br/>task succeeded
     %%> Result:
-    %%> - the inventory rows for Node 13 hold each archive's SHA-256; new workspaces seed from them
-  else an artifact failed
-    SW--xGW: Run failed<br/>task_vm.package_cache_failed
+    %%> - each Project whose snapshot is unchanged gets its verified archives on Node 13
+    %%> - a Project stops being pending when every host holds all its archives
+    %%> - task #5182 succeeds
+  else a batch or the check fails
+    SW--xGW: Run failed<br/>failed step
+    %%> When:
+    %%> - an archive was refused or conflicts, SSH fails, or a batch exceeds its time
+    Note over GW: Record what was verified<br/>task failed · next fetch retries
     %%> Result:
-    %%> - the Gateway records the archives that the inventory read verified; each failed key is logged with Node 13
-    Note over GW: Keep the Projects pending<br/>next mirror fetch retries
-    %%> Result:
-    %%> - a full cache also lands here; workspaces download misses privately
+    %%> - archives from batch replies that arrived are recorded, so verified archives stay usable
+    %%> - each refused archive is logged with its cache key and Node 13
+    %%> - task #5182 fails with `task_vm.package_cache_failed`
+    %%> On the Node:
+    %%> - verified archives stay; there is no rollback
+    %%> Retry:
+    %%> - the next mirror fetch queues a new fill while a Project is pending
   end
