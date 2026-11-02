@@ -21,8 +21,8 @@ class Hub209Native(NativeTestCase):
 from pathlib import Path
 if '-M' in sys.argv or '-O' in sys.argv:raise SystemExit(0)
 command=sys.argv[-1];body=sys.stdin.read()
-action='file' if 'python3' in command else 'validate' if '--check' in command else 'ufw' if 'ufw' in command else 'activate' if 'restart' in command else 'observe' if '--json' in command else 'service'
-with Path(CALLS).open('a') as f:f.write(json.dumps({'action':action,'command':command})+'\\n')
+action='file' if '/usr/bin/install' in command else 'validate' if '--check' in command else 'ufw' if 'ufw' in command else 'activate' if 'restart' in command else 'observe' if '--json' in command else 'service'
+with Path(CALLS).open('a') as f:f.write(json.dumps({'action':action,'command':command,'body':body})+'\\n')
 failure=Path(FAILURE).read_text() if Path(FAILURE).exists() else ''
 if failure==action or (failure=='router-web' and action=='ufw' and '443' in command):raise SystemExit(1)
 if action=='file':print('{"ready":true,"changed":true}')
@@ -71,6 +71,11 @@ elif action=='observe':
         terminal = next(s for j in history['jobs'] for s in j['steps'] if s['name'] == 'result')
         self.assertEqual(json.loads(terminal['outputs']['stdout']), {'ready': True, 'node_id': 1, 'control_ssh_source': '10.44.0.15', 'control_ssh_port': 22, 'router_sources': ['10.44.0.7', '10.44.0.11'], 'router_web_ports': [80, 443]})
         self.assertEqual(calls[0]['action'], 'validate')
+        # Rule 22: each file is one install argv over pinned SSH, its content on stdin; no shipped script.
+        files = [s for s in calls if s['action'] == 'file']
+        self.assertEqual([s['command'].split()[-1].strip("'") for s in files], ['/etc/orbit/task-vms/hub.nft', '/etc/systemd/system/orbit-task-vms-hub.service'])
+        self.assertTrue(all(s['body'] for s in files))
+        self.assertFalse(any('python3' in s['command'] for s in calls))
         self.assertNotIn('3774', next(s['command'] for s in calls if s['action'] == 'ufw'))
         self.assertFalse(any('swamp' in s['command'] for s in calls))
         rules = [s['command'] for s in calls if s['action'] == 'ufw']
