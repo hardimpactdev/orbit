@@ -279,6 +279,20 @@ class NativeTurn(harness.NativeTestCase):
         self.assertEqual(self.result(run)["state"], "failed")
         self.assertEqual(self.workspace.joinpath("file").read_text(), "original\n")
 
+    def test_failed_snapshot_keeps_its_index_for_native_resume(self):
+        add = next(
+            s
+            for s in self.flow["jobs"][0]["steps"]
+            if s["name"] == "snapshot_before_add"
+        )
+        add["task"]["inputs"]["argv"] = ["false"]
+        self.write_workflow()
+        run = self.run_workflow(success=False)
+        self.assertEqual(run["status"], "failed")
+        self.assertTrue(list(self.repo.glob("remote-*/before.index")))
+        self.assertEqual(self.server.calls, [])
+        self.assertEqual(self.git("diff", "--cached", "--name-only"), "")
+
     def test_native_resume_reuses_completed_message_send(self):
         marker = self.repo / "result-ready"
         result_step = next(

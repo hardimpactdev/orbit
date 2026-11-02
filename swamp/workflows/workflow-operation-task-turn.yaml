@@ -751,6 +751,7 @@ jobs:
       behaviorName: ${{ "task-turn-outcome" }}
   - name: delete_snapshot_indexes
     labels: {role: swamp}
+    guard: ${{ !has(steps.snapshot_before_tree) || steps.snapshot_before_tree.status != "succeeded" || !has(steps.snapshot_after_tree) || steps.snapshot_after_tree.status != "succeeded" }}
     dependsOn:
     - step: snapshot_before_tree
       condition:

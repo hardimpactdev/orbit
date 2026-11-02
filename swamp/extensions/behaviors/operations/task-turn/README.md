@@ -6,6 +6,8 @@ unchanged. Each snapshot first copies the checkout index so tracked files that
 match ignore rules remain tracked. Public shaping joins the head and tree identities. Reviewer cleanup
 uses separate `git reset --hard` and `git clean -fd` commands. The turn no longer
 checks workspace ownership or repository-analysis provenance before sending Pi.
+Scratch indexes are removed after both trees are captured. A failed snapshot keeps
+its index so native resume can finish it with the same tracked-file set.
 
 ## Remaining rule 22 gaps
 
@@ -31,3 +33,17 @@ The retained script-copy step is part of these unresolved gaps. It must go when
 the official output boundary and image-owned tool are available. The five Pi API
 scripts (`interrupt`, `message_send`, `observe`, `outcome`, `session_create`) run
 only on the Swamp worker and are outside this Node-script audit.
+
+## Verification status
+
+The pinned native tests cover real Git snapshots, ignored tracked files, untracked
+files, private receipt/diff text, reviewer cleanup after a failed diff, completed
+message-send reuse on resume, and interrupted Pi streams. Gateway admission and
+projection tests pass.
+
+The minimal@7 attempt did not reach staging: production `tasks.provision`
+operation 7793 failed at the VM step because SSH to `10.44.0.134:22` timed out.
+Group 2525 / `tvm-269` was destroyed by cancellation 7795 at
+2026-11-02T12:50:45Z. There is no task-turn proof receipt. These changes remain
+unpublished until an affected-kind proof passes; this failure is a provisioning
+fault, not a result from the edited turn workflow.
