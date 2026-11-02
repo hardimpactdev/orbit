@@ -144,7 +144,7 @@ final readonly class NativeSchedules
     private function content(#[SensitiveParameter] Schedule $schedule, ScheduleTarget $target, string $workflowId): string
     {
         $intent = ['schedule' => ['id' => $schedule->id, 'command_hash' => hash('sha256', $schedule->command), 'user' => $target->user,
-            'working_directory' => $target->workingDirectory ?? '', 'login_shell' => $target->loginShell, 'timeout_seconds' => $schedule->timeout_seconds],
+            'working_directory' => $target->workingDirectory ?? '', 'shell' => $target->shell ?? '', 'login_shell' => $target->loginShell, 'timeout_seconds' => $schedule->timeout_seconds],
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($target->node)];
 
         return json_encode([

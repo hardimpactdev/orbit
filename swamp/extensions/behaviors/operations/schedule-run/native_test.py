@@ -111,6 +111,7 @@ raise SystemExit(r.returncode)
                     "id": "123e4567-e89b-42d3-a456-426614174000",
                     "user": account.pw_name,
                     "working_directory": str(self.repo),
+                    "shell": "",
                     "login_shell": False,
                     "timeout_seconds": 2,
                     "command_hash": "a" * 64,
@@ -190,7 +191,7 @@ class ScheduleRunNative(ScheduleSshFixture):
         self.assertTrue(self.journal.read_text().startswith("schedule-journal-"))
         calls = [json.loads(line) for line in self.calls.read_text().splitlines()]
         execution = next(a for a in calls if "/usr/bin/timeout" in a)
-        self.assertEqual(execution[-2], str(self.repo))
+        self.assertEqual(execution[-3], str(self.repo))
         self.assertIn("pipefail", execution[execution.index("-c") + 1])
         self.assertNotIn(self.secrets[0], json.dumps(execution))
         self.assert_private_absent(json.dumps(self.history()), self.calls.read_text())
@@ -260,4 +261,4 @@ class ScheduleRunNative(ScheduleSshFixture):
             if "/usr/bin/timeout" in line
         )
         self.assertIn("86400s", execution)
-        self.assertEqual(execution[-1], "1")
+        self.assertEqual(execution[-2:], ["1", ""])

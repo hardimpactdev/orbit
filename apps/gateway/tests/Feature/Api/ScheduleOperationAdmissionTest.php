@@ -253,7 +253,7 @@ it('creates and runs a Schedule from its Placement without reading the account o
     $this->postJson('/api/v1/schedules/'.$schedule->id.'/run')->assertAccepted();
     $intent = array_last($this->socket->sent)['payload']['inputs']['intent']['schedule'];
     expect($intent)->toEqualCanonicalizing(['id' => $schedule->id, 'command_hash' => hash('sha256', $this->payload['command']), 'user' => 'orbit',
-        'login_shell' => true, 'timeout_seconds' => 3600, 'working_directory' => '']);
+        'login_shell' => true, 'timeout_seconds' => 3600, 'working_directory' => '', 'shell' => '']);
 });
 
 it('answers a calendar serve refuses with schedule.calendar_invalid and keeps the Schedule failed', function (): void {
