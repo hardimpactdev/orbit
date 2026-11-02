@@ -9,6 +9,7 @@ use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\NativeRunResult;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
@@ -32,7 +33,7 @@ final readonly class NodeSettingsProjection implements DirectOperationProjection
         }
         $result = ValidatedData::object($data['result'] ?? []);
         // Swamp's run data: the native assert compared the folder's stat with the intent.
-        if ($status === OperationStatus::Succeeded && (($result['steps']['Prove the apps folder']['status'] ?? null) !== 'succeeded' || $code !== null)) {
+        if ($status === OperationStatus::Succeeded && (NativeRunResult::stepStatus($result, 'Prove the apps folder') !== 'succeeded' || $code !== null)) {
             throw new ResourceOperationException('operation.result_invalid', 'The storage action has no successful result.', 422);
         }
         if (($status === OperationStatus::Failed && $code === null) || ($status !== OperationStatus::Failed && $code !== null)) {

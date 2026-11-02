@@ -6,6 +6,7 @@ namespace App\Domain\Nodes;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Infrastructure\Swamp\NativeRunResult;
 use App\Models\NodeFootprint;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -34,7 +35,7 @@ final readonly class NodeSshAccessProjection implements DirectOperationProjectio
             $terminal = $operation->status->terminal();
             // Swamp's run data: the swamp role identity logged in after the keys were added.
             $raw = ValidatedData::object($data['result'] ?? []);
-            $login = $raw['steps']['Log in with Swamp identity']['status'] ?? null;
+            $login = NativeRunResult::stepStatus($raw, 'Log in with Swamp identity');
             $result = ($data['status'] ?? null) === 'succeeded' && $login === 'succeeded'
                 ? ['ssh_access_ready' => true] : array_intersect_key($raw, array_flip(['error_code']));
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
