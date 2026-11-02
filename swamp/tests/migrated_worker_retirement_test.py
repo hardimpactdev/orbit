@@ -6,7 +6,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = (
-    'operation-schedule-create', 'operation-schedule-control', 'operation-schedule-run',
+    'operation-schedule-create', 'operation-schedule-control', 'task-command-run',
     'operation-schedule-destroy', 'operation-database-read', 'operation-vault-sync',
     'operation-conn-pairing-revoke', 'operation-route-update', 'operation-task-publish',
 )

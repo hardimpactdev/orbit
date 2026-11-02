@@ -9,6 +9,8 @@ declare(strict_types=1);
  *            kernel from the caller's address, then the production SwampRunSubscriber follows the
  *            admitted Operation to its native terminal projection. Reverb, which drives the
  *            subscriber in production, is not part of the minimal topology.
+ *   fires    stdin {schedule, seconds}: the same subscriber, with its shared run reader, until a calendar
+ *            fire of that Schedule is recorded as a task.
  */
 
 use App\Domain\Gateway\GatewayQueue;
@@ -63,6 +65,32 @@ if ($argv[1] === 'seed') {
     app(WorkerKnownHostsPublisher::class)->publish();
     echo json_encode(['nodes' => ['gateway' => $gateway->id, 'operator' => $operator->id, 'target' => $target->id]]), PHP_EOL;
     exit(0);
+}
+
+if ($argv[1] === 'fires') {
+    $started = microtime(true);
+    $subscriber = app(SwampRunSubscriber::class);
+    $fire = null;
+    do {
+        $subscriber->pass();
+        while (($job = app('queue')->connection(GatewayQueue::Connection)->pop(GatewayQueue::Operations->value)) !== null) {
+            try {
+                $job->fire();
+            } catch (Throwable) {
+                $job->release(10);
+            }
+        }
+        $fire = Operation::query()->where('kind', 'schedule.run')->where('triggered_by', 'schedule')->get()
+            ->first(static fn (Operation $operation): bool => ($operation->input['id'] ?? null) === $input['schedule']);
+        if ($fire !== null) {
+            break;
+        }
+        sleep(2);
+    } while (microtime(true) < $started + (int) $input['seconds']);
+    $subscriber->close();
+    echo json_encode(['fire' => $fire === null ? null : ['id' => $fire->id, 'status' => $fire->status->value, 'result' => $fire->result,
+        'run_id' => $fire->state['swamp_fire']['run_id'] ?? null], 'seconds' => round(microtime(true) - $started, 2)]), PHP_EOL;
+    exit($fire === null ? 2 : 0);
 }
 
 $started = microtime(true);

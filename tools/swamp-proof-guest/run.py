@@ -49,6 +49,15 @@ def gateway(request, seconds):
         raise RuntimeError('gateway request produced no reply: ' + result.stderr[-2000:]) from None
 
 
+def fires(schedule, seconds):
+    result = run(['php', str(SOURCE / 'tools/swamp-proof-guest/gateway.php'), 'fires'], input=json.dumps({'schedule': schedule, 'seconds': seconds}),
+                 user='orbit', cwd=SOURCE / 'apps/gateway', timeout=seconds + 60, check=False)
+    try:
+        return json.loads(result.stdout.strip().splitlines()[-1])
+    except (IndexError, ValueError):
+        return {'fire': None, 'error': result.stderr[-2000:]}
+
+
 def native(*argv):
     env = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/home/orbit', 'SWAMP_HOME': str(STATE / 'home'),
            'SWAMP_CONFIG_DIR': str(STATE / 'config'), 'SWAMP_NO_UPDATE_CHECK': '1', 'SWAMP_NO_TELEMETRY': '1',
@@ -122,8 +131,9 @@ def main():
             receipt.update(proof_pass=False, error='prepare failed', prepare_reply=reply)
             return receipt
         if 'bind' in request:
-            # An Operation request binds its target, such as the Process it created.
-            context[request['bind'] + '.id'] = reply['operation']['target_id']
+            # An Operation request binds its target, such as the Process it created, or one field of its input.
+            field = request.get('bind_input')
+            context[request['bind'] + '.id'] = reply['operation']['input'][field] if field else reply['operation']['target_id']
     for argv in fixture.get('before_target', []):
         on_target(up['target']['key'], bind(argv, context))
     reply = gateway({**bind(fixture['request'], context), 'caller': operator, 'key': f'proof-{run_id}-request'}, fixture['budget_seconds'])
@@ -138,6 +148,22 @@ def main():
                        parity=parity_check(fixture, up, run_id, None, None))
         receipt['proof_pass'] = (not operation and reply.get('http_status') == fixture['expect']['http_status']
                                  and error.get('code') == refusal and receipt['parity']['exit'] == 0)
+        return receipt
+    if fixture['expect'].get('run') is False:
+        # R1: the change touches no Node, so the Operation has ended with no run. A Schedule fire, when
+        # expected, is its own root run; the shared run reader records it as a task.
+        fire = None
+        if 'fire' in fixture['expect']:
+            fire = fires(operation['input']['id'], fixture['budget_seconds'])
+            if fire.get('fire') and fire['fire'].get('run_id'):
+                history = native('workflow', 'history', 'get', fire['fire']['run_id'])
+                fire['native'] = {'status': history.get('status'), 'steps': steps(history),
+                                  'seconds': seconds_between({'startedAt': history.get('startedAt'), 'completedAt': history.get('completedAt')})}
+        receipt.update(fire=fire, parity=parity_check(fixture, up, run_id, None, operation))
+        receipt['proof_pass'] = (operation.get('status') == fixture['expect']['status'] and not operation.get('swamp_run_id')
+                                 and receipt['parity']['exit'] == 0 and (receipt['total_seconds'] or 0) <= fixture['budget_seconds']
+                                 and (fire is None or ((fire.get('fire') or {}).get('status') == fixture['expect']['fire']
+                                                       and (fire.get('native') or {}).get('status') == fixture['expect']['fire'])))
         return receipt
     if not operation.get('swamp_run_id'):
         receipt.update(proof_pass=False, error='no native run was bound', reply=reply)

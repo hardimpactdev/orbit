@@ -1,4 +1,4 @@
-"""Schedule validation preserves account identity and command integrity."""
+"""The Schedule check refuses a wrong account, an unreachable directory and a changed command."""
 
 import hashlib
 import importlib.util
@@ -7,64 +7,42 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+spec = importlib.util.spec_from_file_location("check", Path(__file__).parent / "scripts" / "check.py")
+assert spec and spec.loader
+check = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(check)
 
-def load(name):
-    spec = importlib.util.spec_from_file_location(
-        name, Path(__file__).parent / "scripts" / (name + ".py")
-    )
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-account = load("account")
-command_hash = load("command_hash")
+COMMAND = b"php artisan report:send"
+ARGS = ["orbit", "orbit", "/home/orbit", "/bin/bash", "/apps/proof", hashlib.sha256(COMMAND).hexdigest()]
+ACCOUNT = types.SimpleNamespace(pw_name="orbit", pw_uid=4321, pw_dir="/home/orbit", pw_shell="/bin/bash")
 
 
-class ScheduleValidation(unittest.TestCase):
-    def test_account_requires_non_root_exact_recorded_home_shell_and_existing_group(
-        self,
-    ):
-        record = types.SimpleNamespace(
-            pw_name="orbit", pw_uid=1000, pw_dir="/home/orbit", pw_shell="/bin/bash"
-        )
+class ScheduleCheck(unittest.TestCase):
+    def run_check(self, args=ARGS, stdin=COMMAND, account=ACCOUNT, probe=0):
         with (
-            patch.object(account.pwd, "getpwnam", return_value=record),
-            patch.object(
-                account.grp,
-                "getgrnam",
-                return_value=types.SimpleNamespace(gr_name="orbit"),
-            ),
+            patch.object(check.pwd, "getpwnam", return_value=account),
+            patch.object(check.grp, "getgrnam", return_value=types.SimpleNamespace(gr_name="orbit")),
+            patch.object(check.subprocess, "run", return_value=types.SimpleNamespace(returncode=probe)),
         ):
-            self.assertTrue(
-                account.validate("orbit", "/home/orbit", "/bin/bash", "orbit")
-            )
-            for field, value in [
-                ("pw_uid", 0),
-                ("pw_name", "foreign"),
-                ("pw_dir", "/foreign"),
-                ("pw_shell", "/bin/sh"),
-            ]:
-                with self.subTest(field=field), patch.object(record, field, value):
-                    self.assertFalse(
-                        account.validate("orbit", "/home/orbit", "/bin/bash", "orbit")
-                    )
+            return check.check(args, stdin)
 
-    def test_command_input_requires_the_original_single_line_digest(self):
-        command = b"printf private-command"
-        digest = hashlib.sha256(command).hexdigest()
-        self.assertTrue(command_hash.validate(command, digest))
-        for value, expected in [
-            (command + b"\n", digest),
-            (command, "a" * 64),
-            (b"\xff", digest),
-            (b"a\0b", digest),
-            (b"a\rb", digest),
-            (b"", digest),
-        ]:
-            with self.subTest(value=value):
-                self.assertFalse(command_hash.validate(value, expected))
+    def test_passes_for_the_recorded_account_directory_and_command(self):
+        self.assertIsNone(self.run_check())
+
+    def test_refuses_root_and_a_changed_home(self):
+        self.assertIn("does not match", self.run_check(account=types.SimpleNamespace(**{**vars(ACCOUNT), "pw_uid": 0})))
+        self.assertIn("does not match", self.run_check(account=types.SimpleNamespace(**{**vars(ACCOUNT), "pw_dir": "/root"})))
+
+    def test_refuses_a_missing_account(self):
+        with patch.object(check.pwd, "getpwnam", side_effect=KeyError("orbit")):
+            self.assertIn("does not exist", check.check(ARGS, COMMAND))
+
+    def test_refuses_a_directory_the_user_cannot_enter(self):
+        self.assertIn("cannot enter", self.run_check(probe=1))
+
+    def test_refuses_a_changed_or_multiline_command(self):
+        self.assertIn("hash", self.run_check(stdin=b"php artisan other"))
+        self.assertIn("hash", self.run_check(stdin=COMMAND + b"\n", args=[*ARGS[:5], hashlib.sha256(COMMAND + b"\n").hexdigest()]))
 
 
 if __name__ == "__main__":

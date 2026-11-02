@@ -10,6 +10,7 @@ use App\Domain\Operations\OperationResultFields;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Schedules\ScheduleFires;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
@@ -170,6 +171,26 @@ final readonly class SwampCommandStep
                 'result' => $result, 'failure' => app(NativeStepFailure::class)->fromRun($run, $current),
             ]);
         });
+    }
+
+    /** Records a terminal root run of one Schedule's own workflow as its fire; a running fire waits for its end. */
+    public function projectScheduleFire(string $workflowId, string $runId): bool
+    {
+        $run = $this->history($runId);
+        if (($run['id'] ?? null) !== $runId || ($run['workflowId'] ?? null) !== $workflowId || isset($run['parentRun'])
+            || ! is_string($run['workflowName'] ?? null) || preg_match('/\Aschedule-([0-9a-f-]{36})\z/D', $run['workflowName'], $name) !== 1) {
+            throw $this->unavailable();
+        }
+        if (in_array($run['status'] ?? null, ['pending', 'running', 'suspended'], true)) {
+            return false;
+        }
+        if (! in_array($run['status'] ?? null, ['succeeded', 'failed', 'cancelled', 'interrupted'], true)
+            || ! is_string($run['startedAt'] ?? null) || ! is_string($run['completedAt'] ?? null)) {
+            throw $this->unavailable();
+        }
+        app(ScheduleFires::class)->record($name[1], $run);
+
+        return true;
     }
 
     /** A terminal scheduled root observes existing pending Operations; it never replaces their admission roots.

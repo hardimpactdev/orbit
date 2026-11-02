@@ -125,7 +125,7 @@ Start, attach, terminal projection, lost-result recovery and cancel stay shared.
 
 | Driver | What it is | Workflow | Logs | Notes |
 | --- | --- | --- | --- | --- |
-| `command` | One command on a Node or Instance, as the right account, with a timeout | `task-command-run` (today's `operation-schedule-run`) | command stdout and stderr in the Swamp step | Replaces the journal and the agent `schedule.logs` path. |
+| `command` | One command on a Node or Instance, as the right account, with a timeout | `task-command-run` | command stdout and stderr in the Swamp step | Replaces the journal and the agent `schedule.logs` path. |
 | `workflow` | A native Swamp workflow of placed Orbit steps | the kind's own workflow, as today | Swamp step logs | Every Operation kind today except `tasks.turn`. |
 | `pi` | One Pi agent turn in a task VM | `operation-task-turn` over `@swamp/ssh` | Pi transcript, by cursor | `usage` holds tokens and cost. Its workflow interrupts Pi when the run is cancelled. |
 
@@ -135,8 +135,8 @@ A task group maps onto the tree. The task group keeps its board record: plan, gr
 
 A Schedule is a cadence plus a task template: `name`, `target`, `calendar`, `kind`, `input`, `budget` and `enabled`. It holds no run state. Its last run is its newest task.
 
-- The end-state trigger is a native Swamp schedule, for user Schedules as well. The Gateway publishes the full template as inputs with `workflow.trigger.set` (`SwampSchedulePublisher`) when the Schedule is created, changed, enabled or disabled.
-- Each fire is a Swamp root run. The Gateway's shared run reader records a task for it when it sees the run start (`trigger: schedule`, `schedule_id`, `swamp_run_id`, idempotency key `schedule:<id>:<run id>`). It projects the result like any other task. Steps never call the Gateway.
+- The end-state trigger is a native Swamp schedule, for user Schedules as well. A Swamp workflow holds one trigger, so each Schedule is its own small workflow `schedule-<id>`, with its cron trigger and its template fixed inside, that runs `task-command-run` nested (Nick, 2026-11-02). Create and destroy create and delete that workflow; enable and disable set and remove its trigger.
+- Each fire is a Swamp root run of `schedule-<id>`. The Gateway's shared run reader records a task for it when the run ends (`trigger: schedule`, the Schedule id and the run id, idempotency key `schedule-fire:<run id>`). Steps never call the Gateway.
 - `schedule:run` admits a task from the template through normal admission.
 - Per-minute app schedulers (`laravel-scheduler` on production Instances) move to native triggers last. They move only after measured Swamp serve load and an outage test show that it is safe. Until then systemd stays their start trigger, and each fire is still recorded as a task through `schedule:run` admission.
 - Jobs that the Gateway's own Laravel scheduler runs are not tasks. Gateway self-maintenance is not orchestration (boundary decision 9).

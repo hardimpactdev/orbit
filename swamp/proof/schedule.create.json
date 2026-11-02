@@ -1,0 +1,30 @@
+{
+  "topology": "minimal",
+  "queue_timeout_seconds": 300,
+  "kind": "schedule.create",
+  "workflow": "task-command-run",
+  "budget_seconds": 150,
+  "request": {
+    "method": "POST",
+    "path": "schedules",
+    "body": {
+      "target_type": "node",
+      "target_id": "${node.target}",
+      "name": "create-${proof.run}",
+      "calendar": "* * * * *",
+      "command": "touch /tmp/proof-schedule-${proof.run}",
+      "timeout_seconds": 60
+    }
+  },
+  "expect": {
+    "status": "succeeded",
+    "run": false,
+    "fire": "succeeded"
+  },
+  "phases": [],
+  "parity": [
+    "swamp/proof/schedule/parity.py",
+    "ran",
+    "/tmp/proof-schedule-${proof.run}"
+  ]
+}

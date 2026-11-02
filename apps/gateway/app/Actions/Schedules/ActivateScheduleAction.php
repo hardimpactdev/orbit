@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Actions\Schedules;
 
+use App\Domain\Schedules\NativeSchedules;
 use App\Domain\Schedules\ScheduleErrorCode;
 use App\Domain\Schedules\ScheduleOperationAdmission;
+use App\Domain\Schedules\ScheduleTrigger;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
@@ -17,6 +19,10 @@ final readonly class ActivateScheduleAction
 {
     public function admit(Schedule $schedule, ?Node $caller = null, ?string $requestId = null): Operation
     {
+        if ($schedule->trigger === ScheduleTrigger::Swamp && $schedule->status === LifecycleStatus::Active) {
+            // Setting a native trigger is idempotent for every target; only a Node timer is always on.
+            return app(NativeSchedules::class)->enable($schedule, $caller, $requestId);
+        }
         if (! Instance::isMorphType($schedule->target_type)) {
             throw new ResourceOperationException(
                 ScheduleErrorCode::TargetInvalid->value,

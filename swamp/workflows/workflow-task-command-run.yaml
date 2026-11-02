@@ -1,0 +1,134 @@
+id: 2c34c217-ce35-4fde-87ca-1fe4fee45bc7
+name: task-command-run
+description: Run one Schedule command on its Node as the Schedule's user, through official SSH from 209; the command arrives from the vault on stdin.
+vaults: [orbit-control-inputs]
+# A calendar fire may wait for a free scheduled slot; an operator run starts at once.
+queueTimeout: 300
+inputs:
+  type: object
+  properties:
+    # Absent on a calendar fire of schedule-<id>; the Gateway records that fire as its own task.
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [schedule.run]}
+    intent:
+      type: object
+      properties:
+        schedule:
+          type: object
+          properties:
+            id: {type: string, format: uuid}
+            command_hash: {type: string, pattern: '^[a-f0-9]{64}$'}
+            user: {type: string, pattern: '^[a-z_][a-z0-9_-]{0,255}$'}
+            group: {type: string, pattern: '^[a-z_][a-z0-9_-]{0,255}$'}
+            home: {type: string, pattern: '^/[^\x00-\x1f\x7f]*$', maxLength: 4096}
+            shell: {type: string, pattern: '^/[^\x00-\x1f\x7f]*$', maxLength: 4096}
+            working_directory: {type: string, pattern: '^/[^\x00-\x1f\x7f]*$', maxLength: 4096}
+            login_shell: {type: boolean}
+            timeout_seconds: {type: integer, minimum: 1, maximum: 86400}
+          required: [id, command_hash, user, group, home, shell, working_directory, login_shell, timeout_seconds]
+          additionalProperties: false
+        ssh_execution: {type: object}
+      required: [schedule, ssh_execution]
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      properties:
+        command:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^schedule-(?:run-operation-[1-9][0-9]*|command-[0-9a-f-]{36})$'}
+          required: [vault, key]
+          additionalProperties: false
+      required: [command]
+      additionalProperties: false
+  required: [node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+- name: run
+  target: orbit-node-209
+  steps:
+  - name: 'Read the check script'
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/schedule-run-assets'
+      behaviorName: ${{ "schedule-run-assets-" + run.id }}
+      methodName: read
+      inputs: {}
+  - name: 'Check user and directory'
+    target: orbit-node-209
+    dependsOn: [{step: 'Read the check script', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-run-" + run.id }}
+      methodName: exec
+      globalArgs: &ssh
+        name: ${{ "schedule-run-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '30', python3, -I, -c, '${{ steps["Read the check script"].outputs.script }}', '${{ inputs.intent.schedule.user }}',
+          '${{ inputs.intent.schedule.group }}', '${{ inputs.intent.schedule.home }}', '${{ inputs.intent.schedule.shell }}',
+          '${{ inputs.intent.schedule.working_directory }}', '${{ inputs.intent.schedule.command_hash }}']
+        stdin: ${{ vault.get(inputs.execution_secrets.command.vault, inputs.execution_secrets.command.key) }}
+        timeoutSec: 40
+  - name: 'Run the command'
+    target: orbit-node-209
+    dependsOn: [{step: 'Check user and directory', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-run-" + run.id }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        # The command goes on stdin; its output goes to the Node journal, never into native history.
+        argv: '${{ ["/usr/bin/sudo", "-n", "--user", inputs.intent.schedule.user,
+          "--group", inputs.intent.schedule.group, "--", "/usr/bin/timeout", "--signal=TERM",
+          "--kill-after=5", string(inputs.intent.schedule.timeout_seconds) + "s",
+          "/usr/bin/env", "-i", "--chdir=" + inputs.intent.schedule.working_directory,
+          "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "HOME="
+          + inputs.intent.schedule.home, "SHELL=" + inputs.intent.schedule.shell,
+          "USER=" + inputs.intent.schedule.user, "LOGNAME=" + inputs.intent.schedule.user,
+          "/bin/bash", "-o", "pipefail", "-c", "\"$@\" 2>&1 | /usr/bin/systemd-cat
+          --identifier \"$0\"", "orbit-schedule-" + inputs.intent.schedule.id] + [inputs.intent.schedule.shell]
+          + (inputs.intent.schedule.login_shell ? ["--login"] : []) + ["-s"] }}'
+        stdin: ${{ vault.get(inputs.execution_secrets.command.vault, inputs.execution_secrets.command.key) }}
+        timeoutSec: ${{ inputs.intent.schedule.timeout_seconds + 10 }}
+        captureOutput: false
+  - name: 'Report the result'
+    target: orbit-node-209
+    dependsOn:
+    - {step: 'Check user and directory', condition: {type: always}}
+    - {step: 'Run the command', condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "schedule-run-result-" + run.id }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          if [ "$EXECUTED" = succeeded ]; then
+            printf '%s\n' '{"ready":true}'
+          elif [ "$CHECKED" != succeeded ]; then
+            printf '%s\n' '{"error_code":"schedule.target_unavailable"}'
+          else
+            printf '%s\n' '{"error_code":"schedule.run_failed"}'
+          fi
+        env:
+          EXECUTED: '${{ "Run the command" in steps ? steps["Run the command"].status : "skipped" }}'
+          CHECKED: '${{ "Check user and directory" in steps ? steps["Check user and directory"].status : "skipped" }}'

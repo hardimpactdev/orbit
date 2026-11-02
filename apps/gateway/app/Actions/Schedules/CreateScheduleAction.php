@@ -6,12 +6,14 @@ namespace App\Actions\Schedules;
 
 use App\Data\Schedules\AddScheduleData;
 use App\Domain\Schedules\DesiredTimerState;
+use App\Domain\Schedules\NativeSchedules;
 use App\Domain\Schedules\ScheduleErrorCode;
 use App\Domain\Schedules\ScheduleOperationAdmission;
 use App\Domain\Schedules\ScheduleSpecificationValidator;
 use App\Domain\Schedules\ScheduleTarget;
 use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Domain\Schedules\ScheduleTargetType;
+use App\Domain\Schedules\ScheduleTrigger;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
@@ -43,8 +45,12 @@ final readonly class CreateScheduleAction
     {
         $this->validator->validate($data);
         $this->targets->resolve($data->targetType, $data->targetId);
+        ['schedule' => $schedule, 'created' => $created] = $this->reserveAdmission($data);
+        if ($schedule->trigger === ScheduleTrigger::Swamp) {
+            return app(NativeSchedules::class)->create($schedule, $created, $caller, $requestId);
+        }
 
-        return DB::transaction(fn (): Operation => $this->admitOwned($data, $caller, $requestId));
+        return DB::transaction(fn (): Operation => app(ScheduleOperationAdmission::class)->execute($schedule, 'create', caller: $caller, requestId: $requestId, created: $created));
     }
 
     /** @return array{schedule: Schedule, created: bool} */
@@ -68,6 +74,7 @@ final readonly class CreateScheduleAction
                     'target_type' => $data->targetType->storedType(),
                     'target_id' => $data->targetId,
                     'name' => $data->name,
+                    'trigger' => ScheduleTrigger::Swamp,
                 ]);
             $created = ! $schedule->exists;
 
@@ -113,12 +120,5 @@ final readonly class CreateScheduleAction
         });
 
         return $admission;
-    }
-
-    private function admitOwned(AddScheduleData $data, ?Node $caller, ?string $requestId): Operation
-    {
-        $admission = $this->reserveAdmission($data);
-
-        return app(ScheduleOperationAdmission::class)->execute($admission['schedule'], 'create', caller: $caller, requestId: $requestId, created: $admission['created']);
     }
 }

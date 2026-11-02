@@ -5,3 +5,4 @@ process.restart
 process.start
 process.stop
 process.update
+schedule.run

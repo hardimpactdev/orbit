@@ -36,6 +36,7 @@
     {"vault": "orbit-control-inputs", "key_pattern": "^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^process-update-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^schedule-run-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^schedule-command-[0-9a-f-]{36}$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^node-role-[0-9]+-observer$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^database-write-intent-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^bootstrap-identity-node-14$", "actions": ["write", "read"]},
@@ -47,6 +48,7 @@
   ],
   "workflows": [
     {"workflow": "*", "actions": ["run", "read"]},
-    {"workflow": "maintenance-projects", "publishes_inputs": true, "actions": ["run", "read", "write"]}
+    {"workflow": "maintenance-projects", "publishes_inputs": true, "actions": ["run", "read", "write"]},
+    {"workflow": "schedule-*", "schedule_workflows": true, "actions": ["run", "read", "write"]}
   ]
 }

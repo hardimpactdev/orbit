@@ -1,0 +1,37 @@
+{
+  "topology": "minimal",
+  "queue_timeout_seconds": 300,
+  "kind": "schedule.enable",
+  "workflow": "task-command-run",
+  "budget_seconds": 60,
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "schedules",
+      "bind": "schedule",
+      "bind_input": "id",
+      "body": {
+        "target_type": "node",
+        "target_id": "${node.target}",
+        "name": "enable-${proof.run}",
+        "calendar": "0 3 1 1 *",
+        "command": "true",
+        "timeout_seconds": 60
+      }
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "schedules/${schedule.id}/activate"
+  },
+  "expect": {
+    "status": "succeeded",
+    "run": false
+  },
+  "phases": [],
+  "parity": [
+    "swamp/proof/schedule/parity.py",
+    "present",
+    "0 3 1 1 *"
+  ]
+}

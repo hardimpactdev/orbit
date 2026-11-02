@@ -88,7 +88,7 @@ raise SystemExit(r.returncode)
         self.scp.chmod(0o755)
         (self.repo / "existing-key").write_text("fixture identity not consumed")
         self.workflow = yaml.safe_load(
-            (ROOT / "workflows/workflow-operation-schedule-run.yaml").read_text()
+            (ROOT / "workflows/workflow-task-command-run.yaml").read_text()
         )
         for job in self.workflow["jobs"]:
             self.assertEqual(job.pop("labels"), {"role": "swamp"})
@@ -96,16 +96,12 @@ raise SystemExit(r.returncode)
             for step in job["steps"]:
                 self.assertEqual(step.pop("labels"), {"role": "swamp"})
                 self.assertNotIn("labels", step)
-                if step["task"]["behaviorType"] == "@swamp/ssh":
+                if step["task"].get("behaviorType") == "@swamp/ssh":
                     step["task"]["globalArgs"].update(
                         sshBinary=str(self.ssh), scpBinary=str(self.scp)
                     )
-        self.path = self.repo / "workflows/workflow-operation-schedule-run.yaml"
-        self.path.write_text(
-            yaml.safe_dump(self.workflow, sort_keys=False).replace(
-                "/tmp/orbit-schedule-run-", str(self.repo / "assets-")
-            )
-        )
+        self.path = self.repo / "workflows/workflow-task-command-run.yaml"
+        self.path.write_text(yaml.safe_dump(self.workflow, sort_keys=False))
         account = pwd.getpwuid(os.getuid())
         self.inputs = {
             "operation_id": 17,
@@ -165,7 +161,7 @@ raise SystemExit(r.returncode)
         reply = self.cli(
             "workflow",
             "run",
-            "operation-schedule-run",
+            "task-command-run",
             "--stdin",
             input=json.dumps(self.inputs),
             success=success,
@@ -185,7 +181,7 @@ raise SystemExit(r.returncode)
 
     def result(self):
         step = next(
-            s for s in self.history()["jobs"][0]["steps"] if s["name"] == "result"
+            s for s in self.history()["jobs"][0]["steps"] if s["name"] == "Report the result"
         )
         return json.loads(step["outputs"]["stdout"])
 
@@ -201,7 +197,6 @@ class ScheduleRunNative(ScheduleSshFixture):
         self.assertIn("--chdir=" + str(self.repo), execution)
         self.assertIn("pipefail", execution)
         self.assertEqual(execution[-1], "-s")
-        self.assertFalse(list(self.repo.glob("assets-*")))
         self.assert_private_absent(json.dumps(self.history()), self.calls.read_text())
 
     def test_failed_command_and_timeout_return_bounded_errors_without_business_output(
@@ -214,14 +209,13 @@ class ScheduleRunNative(ScheduleSshFixture):
                 self.assertEqual(self.result(), {"error_code": "schedule.run_failed"})
                 self.assert_private_absent(json.dumps(self.history()))
 
-    def test_wrong_hash_skips_execution_and_retains_assets(self):
+    def test_wrong_hash_skips_execution(self):
         self.inputs["intent"]["schedule"]["command_hash"] = "a" * 64
         self.run_schedule(success=False)
-        self.assertEqual(self.result(), {"error_code": "schedule.artifact_conflict"})
+        self.assertEqual(self.result(), {"error_code": "schedule.target_unavailable"})
         self.assertFalse(self.journal.exists())
-        self.assertTrue(list(self.repo.glob("assets-*")))
 
-    def test_native_resume_reuses_assets_after_directory_recovery(self):
+    def test_native_resume_runs_after_directory_recovery(self):
         directory = self.repo / "unavailable-directory"
         self.inputs["intent"]["schedule"]["working_directory"] = str(directory)
         self.run_schedule(success=False)
@@ -230,15 +224,14 @@ class ScheduleRunNative(ScheduleSshFixture):
         self.cli(
             "workflow",
             "resume",
-            "operation-schedule-run",
+            "task-command-run",
             "--run",
             self.run["id"],
             "--from",
-            "directory",
+            "Check user and directory",
         )
         self.assertEqual(self.result(), {"ready": True})
         self.assertTrue(self.journal.exists())
-        self.assertFalse(list(self.repo.glob("assets-*")))
 
     def test_unavailable_context_or_directory_refuses_before_command(self):
         for field, value in [
@@ -254,6 +247,11 @@ class ScheduleRunNative(ScheduleSshFixture):
                 )
                 self.assertFalse(self.journal.exists())
                 self.inputs["intent"]["schedule"][field] = original
+
+    def test_calendar_fire_runs_without_an_operation_id(self):
+        del self.inputs["operation_id"]
+        self.run_schedule()
+        self.assertEqual(self.result(), {"ready": True})
 
     def test_login_shell_and_upper_timeout_are_native_public_arguments(self):
         self.inputs["intent"]["schedule"].update(

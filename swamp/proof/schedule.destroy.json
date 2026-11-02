@@ -1,0 +1,36 @@
+{
+  "topology": "minimal",
+  "queue_timeout_seconds": 300,
+  "kind": "schedule.destroy",
+  "workflow": "task-command-run",
+  "budget_seconds": 60,
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "schedules",
+      "bind": "schedule",
+      "bind_input": "id",
+      "body": {
+        "target_type": "node",
+        "target_id": "${node.target}",
+        "name": "destroy-${proof.run}",
+        "calendar": "0 3 1 1 *",
+        "command": "true",
+        "timeout_seconds": 60
+      }
+    }
+  ],
+  "request": {
+    "method": "DELETE",
+    "path": "schedules/${schedule.id}"
+  },
+  "expect": {
+    "status": "succeeded",
+    "run": false
+  },
+  "phases": [],
+  "parity": [
+    "swamp/proof/schedule/parity.py",
+    "absent"
+  ]
+}

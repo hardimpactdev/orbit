@@ -1,16 +1,16 @@
 ---
 title: "schedule"
-description: "Create, run, inspect, enable, and remove recurring commands that native systemd timers execute on a Node or an Instance, and record Project-owned Schedule definitions."
+description: "Create, run, inspect, enable, and remove recurring commands that Swamp fires on a Node or an Instance, and record Project-owned Schedule definitions."
 covers:
   - apps/cli/app/Commands/Schedules/**
   - apps/cli/app/Commands/Concerns/RendersProjectRuntimeDefinitions.php
 ---
 
-A Schedule runs one command on a native systemd timer for a Node or an Instance. The `schedule` family creates Schedules, runs them by hand, reads their logs, enables a stopped timer, and removes them. It also records Project Schedule definitions.
+A Schedule runs one command on a calendar for a Node or an Instance. Swamp on Node 209 fires it from the Schedule's own workflow; nothing is installed on the Node. The `schedule` family creates Schedules, runs them by hand, reads their logs, enables a disabled Schedule, and removes them. It also records Project Schedule definitions. [Schedules](/reference/schedules) describes the exception for per-minute production schedulers.
 
 [Schedules](/reference/schedules) describes the fields, the execution context, the host artifacts, and the error codes. [Processes and schedules](/reference/processes-and-schedules) describes Project definitions and their Instance copies.
 
-Installed writes return and follow an Operation. `--json` prints the final Operation and its steps. Use `--idempotency-key` to retry the same admission. Project definition writes keep their existing responses.
+Writes return an Operation. Create, enable and destroy answer with an Operation that has already ended; a run is followed until it ends. `--json` prints the final Operation and its steps. Use `--idempotency-key` to retry the same admission. Project definition writes keep their existing responses.
 
 ## Choose the owner
 
@@ -18,8 +18,8 @@ Installed writes return and follow an Operation. `--json` prints the final Opera
 
 | Selector | Owner | Result |
 | --- | --- | --- |
-| `--node=ID` | Node | The command runs as the Node's managed user. The timer installs enabled. |
-| `--instance=ID` | Instance | The command runs as the Instance's runtime user in its checkout or `current` release. The timer can install disabled. |
+| `--node=ID` | Node | The command runs as the Node's managed user. The Schedule starts enabled. |
+| `--instance=ID` | Instance | The command runs as the Instance's runtime user in its checkout or `current` release. The Schedule can start disabled. |
 | `--project=ID --for=production` | Project definition | The Gateway records a definition. Production preparation copies it into a stopped Instance Schedule. |
 
 `schedule:list`, `schedule:show`, `schedule:update`, and `schedule:destroy` take `--project` to work on definitions. `schedule:run`, `schedule:logs`, and `schedule:enable` take the UUID of an installed Schedule.
@@ -32,9 +32,9 @@ Installed writes return and follow an Operation. `--json` prints the final Opera
 | [`schedule:list`](#orbit-schedulelist) | List the Schedules you may address, or one Project's definitions. |
 | [`schedule:show`](#orbit-scheduleshow) | Show one Schedule or one definition. |
 | [`schedule:update`](#orbit-scheduleupdate) | Replace one Project Schedule definition. |
-| [`schedule:run`](#orbit-schedulerun) | Run one Schedule now without changing its timer. |
+| [`schedule:run`](#orbit-schedulerun) | Run one Schedule now without changing its calendar. |
 | [`schedule:logs`](#orbit-schedulelogs) | Return the newest journal lines. |
-| [`schedule:enable`](#orbit-scheduleenable) | Enable and start an Instance Schedule timer. |
+| [`schedule:enable`](#orbit-scheduleenable) | Set the trigger of a disabled Instance Schedule. |
 | [`schedule:destroy`](#orbit-scheduledestroy) | Remove one Schedule or one definition. |
 
 Every command accepts `--json`. Output shows `desired_timer_state` apart from the lifecycle `status`, and every result includes the request ID. `schedule:destroy` asks for confirmation, and the default is No.
@@ -57,16 +57,16 @@ orbit schedule:create <name> (--node=ID | --instance=ID | --project=ID --for=pro
 | `--instance=ID` | none | Positive Instance ID. |
 | `--project=ID` | none | Numeric Project ID for a definition. |
 | `--for=production` | none | Definition environments. Required with `--project`. Only definitions for `production` are copied. |
-| `--calendar=CALENDAR` | none | A systemd calendar expression of at most 255 printable ASCII bytes, such as `daily`, `hourly`, or `Mon..Fri 02:00`. |
+| `--calendar=CALENDAR` | none | A cron expression that Swamp accepts, such as `0 3 * * *`, `20 * * * * *` with seconds, or `@daily`. It fires in UTC. A Project definition takes a systemd calendar, such as `daily` or `Mon..Fri 02:00`. |
 | `--command=COMMAND` | none | One non-empty line of at most 4,096 bytes. |
 | `--timeout=SECONDS` | `3600` | Execution timeout, 1 through 86,400 seconds. |
-| `--no-start` | off | Install an Instance Schedule with its timer disabled and stopped. |
+| `--no-start` | off | Create an Instance Schedule disabled, without a trigger. |
 
-The CLI checks the name, calendar, command, and timeout before it sends a request. The host Node's `systemd-analyze calendar` then accepts or refuses the calendar. A definition has no host yet, so that check runs when production preparation copies the definition.
+The CLI checks the name, calendar, command, and timeout before it sends a request. Swamp then accepts or refuses the calendar. A definition has no host yet, so its calendar is checked when production preparation copies the definition.
 
 ```bash
-orbit schedule:create daily-report --node=7 --calendar=daily --command='php report.php'
-orbit schedule:create hourly-report --instance=12 --calendar=hourly --command='php artisan report:send' --no-start
+orbit schedule:create daily-report --node=7 --calendar='0 3 * * *' --command='php report.php'
+orbit schedule:create hourly-report --instance=12 --calendar=@hourly --command='php artisan report:send' --no-start
 orbit schedule:create hourly-report --project=1 --for=production --calendar=hourly --command='php artisan report:send' --timeout=600
 ```
 
@@ -100,7 +100,7 @@ orbit schedule:update <name> --project=ID --for=production --calendar=CALENDAR -
 
 ## orbit schedule:run
 
-Start the Schedule's service once and return at once. The timer state does not change. A failed start returns `schedule.run_failed`.
+Run the Schedule once now, as a task, and follow it until it ends. The calendar does not change. A failed command returns `schedule.run_failed`; a missing user, directory or command copy returns `schedule.target_unavailable`.
 
 ```bash
 orbit schedule:run <uuid> [--idempotency-key=KEY] [--json]
@@ -122,7 +122,7 @@ The Gateway returns at most 1 MiB and sets `truncated` when that limit removed o
 
 ## orbit schedule:enable
 
-Enable and start the timer of one Instance Schedule. The command is idempotent. Use it after `schedule:create --no-start`, or for a copy that production preparation installed stopped. `schedule` is the UUID of an installed Schedule.
+Set the trigger of one Instance Schedule. The command is idempotent. Use it after `schedule:create --no-start`, or for a copy that production preparation created disabled. `schedule` is the UUID of an installed Schedule.
 
 ```bash
 orbit schedule:enable <schedule> [--idempotency-key=KEY] [--json]
@@ -142,7 +142,7 @@ orbit schedule:destroy <schedule> [--project=ID] [--yes] [--idempotency-key=KEY]
 | `--yes` | Confirm without a prompt. A JSON or non-interactive call without `--yes` returns `input.confirmation_required`. A declined prompt, Ctrl-C, or EOF returns `input.cancelled`. |
 
 <Warning>
-Destroy disables the timer first. When the command is still running, the Schedule stays `removing`. Run `schedule:destroy` again after the command ends to finish the removal.
+Destroy removes the trigger first, then the Schedule's workflow and record. A fire that already started runs to its end and is still recorded. When Swamp does not confirm, the Schedule stays `removing`; run `schedule:destroy` again.
 </Warning>
 
 Destroying a definition leaves every existing Instance copy in place.

@@ -9,6 +9,8 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AgentView\WebSocketException;
 use App\Jobs\Operations\ProjectSwampScheduledTerminal;
+use App\Jobs\Operations\ProjectSwampScheduleFire;
+use App\Models\Schedule;
 use Closure;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
@@ -19,6 +21,9 @@ use Throwable;
 /** Read-only commit-feed discovery owned by the existing shared Gateway observer. */
 final class SwampScheduledResults
 {
+    /** Checkpoint marker of a root run of one Schedule's own workflow. */
+    private const Fire = 'schedule:';
+
     private ?string $feedRequest = null;
 
     private bool $refused = false;
@@ -182,6 +187,7 @@ final class SwampScheduledResults
             throw new WebSocketException('The native commit feed frame is invalid.');
         }
         $observed = [];
+        $candidates = [];
         $previous = $this->cursor;
         $declarations = app(DirectOperation::class)->scheduledResultDefinitions();
         foreach ($payload['changes'] as $change) {
@@ -197,13 +203,29 @@ final class SwampScheduledResults
                     continue;
                 }
                 $ref = $intent['run'] ?? null;
-                if (! is_array($ref) || ! is_string($ref['workflowId'] ?? null) || ! isset($declarations[$ref['workflowId']])) {
+                if (! is_array($ref) || ! is_string($ref['workflowId'] ?? null)) {
+                    continue;
+                }
+                if (! isset($declarations[$ref['workflowId']])) {
+                    if (is_string($ref['runId'] ?? null) && Str::isUuid($ref['runId']) && Str::isUuid($ref['workflowId'])) {
+                        $candidates[$ref['runId']] = $ref['workflowId'];
+                    }
+
                     continue;
                 }
                 if (! is_string($ref['runId'] ?? null) || ! Str::isUuid($ref['runId'])) {
                     throw new WebSocketException('The native scheduled run reference is invalid.');
                 }
                 $observed[$ref['runId']] = $ref['workflowId'];
+            }
+        }
+        // A Schedule's own workflow fires root runs; a run already hinted is followed after its Schedule is gone.
+        if ($candidates !== []) {
+            $fires = array_flip(Schedule::query()->whereIn('swamp_workflow_id', array_unique($candidates))->pluck('swamp_workflow_id')->all());
+            foreach ($candidates as $run => $workflow) {
+                if (isset($fires[$workflow]) || ($this->runs[$run] ?? null) === self::Fire.$workflow) {
+                    $observed[$run] = self::Fire.$workflow;
+                }
             }
         }
         // Cursor and undispatched roots are one checkpoint, so restart cannot skip a discovered result.
@@ -221,7 +243,9 @@ final class SwampScheduledResults
     private function project(string $workflow, string $run): void
     {
         try {
-            Bus::dispatch(new ProjectSwampScheduledTerminal($workflow, $run, null, $this->key()));
+            Bus::dispatch(str_starts_with($workflow, self::Fire)
+                ? new ProjectSwampScheduleFire(substr($workflow, strlen(self::Fire)), $run, $this->key())
+                : new ProjectSwampScheduledTerminal($workflow, $run, null, $this->key()));
         } catch (Throwable $exception) {
             $this->log->warning('The scheduled native result is unavailable.', ['workflow_id' => $workflow, 'run_id' => $run, 'exception_type' => $exception::class]);
         }
@@ -260,7 +284,8 @@ final class SwampScheduledResults
         }
         foreach ($checkpoint['runs'] as $run => $workflow) {
             if (! is_string($run) || ! Str::isUuid($run) || ! is_string($workflow)
-                || ! isset(app(DirectOperation::class)->scheduledResultDefinitions()[$workflow])) {
+                || (! isset(app(DirectOperation::class)->scheduledResultDefinitions()[$workflow])
+                    && ! (str_starts_with($workflow, self::Fire) && Str::isUuid(substr($workflow, strlen(self::Fire)))))) {
                 throw new WebSocketException('The scheduled discovery checkpoint is invalid.');
             }
         }

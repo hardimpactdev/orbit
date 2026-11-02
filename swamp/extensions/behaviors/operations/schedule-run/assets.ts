@@ -18,7 +18,7 @@ type Context = {
 /** Public native file metadata only; no intent reads or execution. */
 export const behavior = {
   type: "@nckrtl/schedule-run-assets",
-  version: "2026.10.31.3",
+  version: "2026.11.02.1",
   resources: {
     lifecycle: {
       schema: z.object({ service: z.string(), timer: z.string() }).strict(),
@@ -26,7 +26,7 @@ export const behavior = {
       garbageCollection: 10,
     },
     assets: {
-      schema: z.object({ scripts_directory: z.string() }).strict(),
+      schema: z.object({ script: z.string() }).strict(),
       lifetime: "infinite",
       garbageCollection: 10,
     },
@@ -45,7 +45,7 @@ export const behavior = {
       },
     },
     read: {
-      description: "Resolve the shipped Schedule run validation scripts",
+      description: "Resolve the shipped Schedule check script",
       arguments: z.object({}).strict(),
       execute: async (_args: Record<string, never>, ctx: {
         extensionFile(name: string): string;
@@ -56,8 +56,7 @@ export const behavior = {
         ): Promise<unknown>;
       }) => {
         const assets = {
-          scripts_directory: ctx.extensionFile("scripts/account.py")
-            .replace(/\/[^/]+$/, ""),
+          script: await Deno.readTextFile(ctx.extensionFile("scripts/check.py")),
         };
         await ctx.writeResource("assets", "assets", assets);
         return assets;

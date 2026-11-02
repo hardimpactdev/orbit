@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Schedules\ScheduleRunStatus;
+use App\Domain\Schedules\ScheduleTrigger;
 use App\Domain\Shared\LifecycleStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -29,6 +30,8 @@ use Illuminate\Support\Str;
  * @property string|null $error_code
  * @property Carbon|null $last_run_at
  * @property ScheduleRunStatus|null $last_run_status
+ * @property ScheduleTrigger $trigger
+ * @property string|null $swamp_workflow_id
  * @property-read Node|Instance $target
  * @property-read Node $hostNode
  */
@@ -58,7 +61,13 @@ final class Schedule extends Model
         'error_code',
         'last_run_at',
         'last_run_status',
+        'trigger',
+        'swamp_workflow_id',
     ];
+
+    /** @var array<string, string> */
+    #[\Override]
+    protected $attributes = ['trigger' => 'node'];
 
     /** @var list<string> */
     #[\Override]
@@ -99,6 +108,7 @@ final class Schedule extends Model
             'status' => LifecycleStatus::class,
             'last_run_at' => 'immutable_datetime',
             'last_run_status' => ScheduleRunStatus::class,
+            'trigger' => ScheduleTrigger::class,
         ];
     }
 }

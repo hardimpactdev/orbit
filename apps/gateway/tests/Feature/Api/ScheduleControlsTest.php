@@ -146,61 +146,12 @@ it('projects the fixed native enable result and preserves intent after failure',
     expect($this->socket->sent)->toHaveCount(1);
 })->with(['succeeded', 'failed']);
 
-it('admits public native installation through 209 SSH without copying the private command', function (): void {
-    $lock = Mockery::mock(ProcessAdmissionLock::class);
-    $lock->shouldNotReceive('run');
-    app()->instance(ProcessAdmissionLock::class, $lock);
-    app()->instance(ScheduleRuntimeManager::class, Mockery::mock(ScheduleRuntimeManager::class));
-    app()->instance(ScheduleRuntimeAccountResolver::class, new FakeScheduleRuntimeAccountResolver);
-    $command = '/usr/bin/true # private-command-sentinel';
-    $response = $this->postJson('/api/v1/schedules', ['target_type' => 'node', 'target_id' => $this->node->id,
-        'name' => 'install-proof', 'calendar' => '2099-01-01 00:00:00', 'command' => $command, 'timeout_seconds' => 5])
-        ->assertAccepted()->assertJsonPath('data.kind', 'schedule.create');
-    $operation = Operation::query()->findOrFail($response->json('data.id'));
-    expect($this->socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-schedule-create');
-    expect($operation->lock_key)->toBeNull();
-    expect($operation->input['command_hash'])->toBe(hash('sha256', $command));
-    expect($response->getContent())->not->toContain($command);
-    $path = '/api/v1/direct-operations/'.$operation->id;
-    $this->getJson($path.'?run_id='.$this->runId)->assertOk()->assertJsonMissingPath('data.input.command');
-    $inputs = $this->socket->sent[0]['payload']['inputs'];
-    expect($this->socket->sent)->toHaveCount(1);
-    expect($inputs['intent']['schedule']['command_hash'])->toBe(hash('sha256', $command));
-    expect($inputs['intent']['ssh_execution']['control_node_id'])->toBe(209);
-    expect($inputs['intent']['ssh_execution']['target']['host'])->toBe($this->node->wireguard_ip);
-    expect($inputs['intent']['ssh_execution']['target']['host_keys'])->toBe(['ssh-ed25519 fixture-host-key']);
-    expect((array) $inputs['execution_secrets'])->toBe([]);
-    expect(json_encode($inputs))->not->toContain($command);
-    $this->getJson($path.'/private-material?run_id='.$this->runId)->assertUnprocessable();
-    $schedule = Schedule::query()->findOrFail($operation->input['id']);
-    expect($schedule->fresh()->status->value)->toBe('provisioning');
-});
-
 it('never reads private command material while enabling an installed timer', function (): void {
     $this->operation->update(['input' => [...$this->operation->input, 'command_hash' => hash('sha256', $this->schedule->command), 'command' => ['$secret' => 'schedule.command', 'id' => $this->node->id]]]);
     $this->getJson($this->path.'/private-material?run_id='.$this->runId)->assertUnprocessable();
     $this->schedule->update(['command' => '/usr/bin/false']);
     $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()
         ->assertJsonPath('data.input.intent.schedule', ['id' => $this->schedule->id]);
-});
-
-it('projects installation failure and retries the same Schedule UUID before broadcasting native success', function (): void {
-    app()->instance(ScheduleRuntimeAccountResolver::class, new FakeScheduleRuntimeAccountResolver);
-    $payload = ['target_type' => 'node', 'target_id' => $this->node->id, 'name' => 'retry-install', 'calendar' => '2099-01-01 00:00:00', 'command' => '/usr/bin/true'];
-    $id = $this->postJson('/api/v1/schedules', $payload)->assertAccepted()->json('data.id');
-    $first = Operation::query()->findOrFail($id);
-    $uuid = $first->input['id'];
-    $body = ['run_id' => $this->runId, 'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z'];
-    $this->postJson('/api/v1/direct-operations/'.$id.'/result', [...$body, 'status' => 'failed', 'error_code' => 'schedule.install_failed', 'result' => ['error_code' => 'schedule.install_failed']])->assertOk();
-    expect(Schedule::query()->findOrFail($uuid)->status->value)->toBe('failed');
-    $retryId = $this->postJson('/api/v1/schedules', $payload)->assertAccepted()->json('data.id');
-    $retry = Operation::query()->findOrFail($retryId);
-    expect($retry->input['id'])->toBe($uuid);
-    Event::fake([RecordBroadcast::class]);
-    $this->postJson('/api/v1/direct-operations/'.$retryId.'/result', [...$body, 'status' => 'succeeded', 'result' => ['ready' => true]])->assertOk();
-    expect(Schedule::query()->findOrFail($uuid)->status->value)->toBe('active');
-    Event::assertDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::ScheduleUpdated && $event->id === $uuid);
-    $this->getJson('/api/v1/direct-operations/'.$retryId.'/private-material?run_id='.$this->runId)->assertConflict();
 });
 
 it('starts native enable with public 209 SSH inputs without invoking the PHP runtime', function (): void {
