@@ -32,7 +32,14 @@
       "body": {
         "slug": "proof-upd-${proof.run}",
         "server": "proof-updsrv-${proof.run}",
-        "database": 1
+        "database": 1,
+        "patterns": [
+          "proof:*"
+        ],
+        "allow": [
+          "@read",
+          "@write"
+        ]
       },
       "bind": "connection"
     }
@@ -45,7 +52,12 @@
     }
   },
   "phases": [
-    {"name": "Check the index fits", "job": "update", "step": "Check the index fits", "budget_seconds": 30}
+    {
+      "name": "Check the index fits",
+      "job": "update",
+      "step": "Check the index fits",
+      "budget_seconds": 30
+    }
   ],
   "parity": [
     "swamp/proof/database/update_parity.py"
