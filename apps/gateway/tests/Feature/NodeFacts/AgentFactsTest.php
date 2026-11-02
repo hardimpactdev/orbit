@@ -122,6 +122,18 @@ describe('agent facts and liveness', function (): void {
             ->and(NodeFact::query()->where('kind', 'checkouts')->sole()->subject)->toBe('');
     });
 
+    it('accepts the .env stat of a 0.8.0 agent and a checkout without one from an older agent', function () use ($checkout): void {
+        $withEnv = $checkout();
+        $withEnv['data']['env'] = ['kind' => 'regular', 'mode' => '0600', 'owner' => 'nckrtl'];
+        $this->postJson('/api/v1/agent/facts', $withEnv)->assertNoContent();
+        $this->postJson('/api/v1/agent/facts', $checkout('/fast/apps/acme/feature'))->assertNoContent();
+        $bad = $withEnv;
+        $bad['data']['env']['mode'] = '777';
+        $this->postJson('/api/v1/agent/facts', $bad)->assertUnprocessable();
+
+        expect(NodeFact::query()->where('subject', '/fast/apps/acme/default')->sole()->data['env']['mode'])->toBe('0600');
+    });
+
     it('requires a subject for a checkout and refuses one for other kinds', function () use ($checkout, $host): void {
         $missing = $checkout();
         unset($missing['subject']);

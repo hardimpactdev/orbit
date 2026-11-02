@@ -58,6 +58,11 @@ enum NodeFactKind: string
                 'application' => ['required', 'string', 'starts_with:/', 'max:4096'],
                 'artisan' => ['required', 'string', 'in:regular,symlink,absent'],
                 'composer' => ['present', 'nullable', 'string', 'max:1048576'],
+                // Agents before 0.8.0 do not report `env`.
+                'env' => ['sometimes', 'nullable', 'array'],
+                'env.kind' => ['required_with:env', 'string', 'in:regular,symlink,other'],
+                'env.mode' => ['required_with:env', 'string', 'regex:/\A0[0-7]{3}\z/'],
+                'env.owner' => ['present_with:env', 'nullable', 'string', 'max:64'],
             ],
             self::Checkouts => [
                 'paths' => ['present', 'array', 'list', 'max:4096'],

@@ -20,7 +20,7 @@ const COMPOSER_BYTES: u64 = 1_048_576;
 /// Events that arrive within this window are read together, so one `git checkout` is one read.
 const DEBOUNCE: Duration = Duration::from_secs(2);
 /// The file names in a work tree whose change changes the fact; other work tree events are ignored.
-const WORK_TREE_FILES: [&str; 2] = ["composer.json", "artisan"];
+const WORK_TREE_FILES: [&str; 3] = ["composer.json", "artisan", ".env"];
 /// The Git files and directories whose change changes the fact.
 const GIT_FILES: [&str; 4] = ["HEAD", "packed-refs", "config", "refs"];
 
@@ -131,7 +131,27 @@ pub fn read(checkout: &Path, application: &Path) -> Result<Value, git2::Error> {
         "application": text(application),
         "artisan": artisan,
         "composer": composer(&application.join("composer.json")),
+        "env": env(&application.join(".env")),
     }))
+}
+
+/// The kind, mode and owner of `.env`, from `stat` alone: the agent never opens it, and may not be able to.
+fn env(path: &Path) -> Value {
+    let Ok(metadata) = std::fs::symlink_metadata(path) else {
+        return Value::Null;
+    };
+    let kind = if metadata.file_type().is_symlink() {
+        "symlink"
+    } else if metadata.is_file() {
+        "regular"
+    } else {
+        "other"
+    };
+    json!({
+        "kind": kind,
+        "mode": format!("{:04o}", metadata.mode() & 0o7777),
+        "owner": orbit_agent_contract::identity::user_name(metadata.uid()),
+    })
 }
 
 /// Every work tree path of the repository: the main one, then each linked one, sorted.
@@ -482,6 +502,17 @@ mod tests {
         assert_eq!(data["artisan"], json!("regular"));
         assert_eq!(data["composer"], json!("{\"require\":{\"php\":\"^8.4\"}}"));
         assert_eq!(data["default_branch"], Value::Null);
+        assert_eq!(data["env"], Value::Null);
+
+        std::fs::write(path.join("server/web/.env"), "APP_KEY=secret").unwrap();
+        std::fs::set_permissions(
+            path.join("server/web/.env"),
+            std::os::unix::fs::PermissionsExt::from_mode(0o640),
+        )
+        .unwrap();
+        let env = &read(&path, &app).unwrap()["env"];
+        assert_eq!(env["kind"], json!("regular"));
+        assert_eq!(env["mode"], json!("0640"));
 
         repo.set_head_detached(head).unwrap();
         assert_eq!(read(&path, &app).unwrap()["branch"], Value::Null);
@@ -502,7 +533,8 @@ mod tests {
             "/apps/acme/default/.git/refs/heads/feature"
         )));
         assert!(relevant(Path::new("/apps/acme/default/composer.json")));
+        assert!(relevant(Path::new("/apps/acme/default/.env")));
         assert!(!relevant(Path::new("/apps/acme/default/.git/index")));
-        assert!(!relevant(Path::new("/apps/acme/default/.env")));
+        assert!(!relevant(Path::new("/apps/acme/default/README.md")));
     }
 }
