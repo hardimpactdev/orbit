@@ -162,6 +162,8 @@ CI has no agent build, selection, combine or upload jobs. The command guard down
 
 The CLI release workflow continues to publish each green main commit with its own CLI version, checksums and provenance. It includes no agent binaries or manifest.
 
+The Docs site workflow also follows each green main commit. It builds the docs and force-pushes the `docs-site` branch, which Mintlify deploys; see [Write the documentation](/contributor-guide#2-write-the-documentation).
+
 ## Local checks
 
 ### Gateway tests and privilege
