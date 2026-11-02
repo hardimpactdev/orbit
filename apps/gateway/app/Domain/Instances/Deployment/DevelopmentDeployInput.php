@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Deployment;
 
-use App\Domain\GitHub\GitHubRepository;
-use App\Domain\GitHub\GitHubTokenGrant;
+use App\Domain\Instances\InstanceGitHubReadTokens;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectDevelopmentDeployStepStore;
 use App\Domain\Projects\ProjectSourceAccess;
@@ -35,11 +34,7 @@ final readonly class DevelopmentDeployInput
         }
 
         return ['ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
-            'manager' => $needsVp ? ['node_id' => $instance->node_id, 'user' => $instance->node->user, 'manager' => 'vp',
-                'platform' => 'linux', 'architecture' => $instance->node->architecture,
-                'setup' => app(ToolManagerIntent::class)->nativeInput($instance->node, ToolManagerName::Vp)] : null,
-            'github_repository' => ($repository = GitHubRepository::fromOrigin($instance->project->repository_url)) === null ? null : $repository->owner.'/'.$repository->name,
-            'github_mint' => $repository !== null];
+            'vp_setup' => $needsVp ? app(ToolManagerIntent::class)->nativeInput($instance->node, ToolManagerName::Vp) : null];
     }
 
     /** @return array{intent:array<string,mixed>,execution_secrets:array<string,array{vault:string,key:string}>} */
@@ -64,19 +59,16 @@ final readonly class DevelopmentDeployInput
         foreach ($commands as $index => $command) {
             $copies['step_'.$index] = $this->copies->executionCopy('orbit-control-inputs', 'development-deploy-operation-'.$operation->id.'-step-'.$index, $command->command);
         }
+        // The fetch reads a 0600 credential file: a repository-scoped read token, or an empty line for a public origin.
+        $copies['credential'] = app(InstanceGitHubReadTokens::class)->credentialCopy($instance->project->repository_url,
+            'development-deploy-operation-'.$operation->id.'-credential');
 
-        return ['intent' => [...$input, ...$runtime], 'execution_secrets' => $copies];
-    }
+        // Commands run with the account's own home, as Orbit creates managed accounts.
+        $user = $instance->node->user;
 
-    public function githubTokenGrant(Operation $operation): GitHubTokenGrant
-    {
-        $instance = $this->owner($operation);
-        $repository = GitHubRepository::fromOrigin($instance->project->repository_url);
-        if ($repository === null || (ValidatedData::object($operation->input['development_runtime'])['github_mint'] ?? false) !== true) {
-            throw $this->forbidden();
-        }
-
-        return GitHubTokenGrant::from(['repository' => $repository->owner.'/'.$repository->name, 'permissions' => ['contents' => 'read']]);
+        return ['intent' => [...$input, ...$runtime, 'application' => ValidatedData::object($input['deployment'])['home'],
+            'account_home' => $user === 'root' ? '/root' : '/home/'.$user],
+            'execution_secrets' => $copies];
     }
 
     private function owner(Operation $operation): Instance

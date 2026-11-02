@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Deployment;
 
-use App\Domain\GitHub\GitHubTokenGrant;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentMaterial;
 use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\DirectOperationGitHubGrant;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Operations\NativeOperationProjection;
@@ -19,7 +17,7 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Records bounded native facts. All sequencing, runtime checks and effects belong to Swamp. */
-final readonly class InstanceDeployProjection implements DirectOperationGitHubGrant, DirectOperationProjection, DirectOperationWorkflowInput, NativeOperationProjection
+final readonly class InstanceDeployProjection implements DirectOperationProjection, DirectOperationWorkflowInput, NativeOperationProjection
 {
     public function __construct(
         private DirectOperation $direct,
@@ -34,11 +32,6 @@ final readonly class InstanceDeployProjection implements DirectOperationGitHubGr
         return (ValidatedData::object($operation->input['deployment'])['variant'] ?? null) === 'development';
     }
 
-    public function githubTokenGrant(Operation $operation): GitHubTokenGrant
-    {
-        return app(DevelopmentDeployInput::class)->githubTokenGrant($operation);
-    }
-
     public function workflowInput(Operation $operation): array
     {
         if ($this->native($operation)) {
@@ -48,7 +41,11 @@ final readonly class InstanceDeployProjection implements DirectOperationGitHubGr
         $processes = ValidatedData::object($input['deployment'])['variant'] === 'production'
             ? $this->members->processWorkflowInput($operation) : ['members' => [], 'execution_secrets' => []];
 
-        return ['intent' => [...$input, 'process_members' => $processes['members']], 'execution_secrets' => $processes['execution_secrets']];
+        // The workflow's development jobs read these keys even when their guards skip them; production leaves them empty.
+        $development = ['ssh_execution' => ['identity_file' => '', 'target' => ['name' => 'target', 'host' => '', 'user' => '', 'port' => 22, 'host_keys' => []]],
+            'application' => '', 'vp_setup' => null];
+
+        return ['intent' => [...$input, ...$development, 'process_members' => $processes['members']], 'execution_secrets' => $processes['execution_secrets']];
     }
 
     public function input(Operation $operation): array
@@ -64,6 +61,9 @@ final readonly class InstanceDeployProjection implements DirectOperationGitHubGr
             $terminal = $locked->status->terminal();
             $status = ValidatedData::string($data['status']);
             $payload = ValidatedData::object($data['result'] ?? []);
+            if ($this->native($locked) && $status !== 'running') {
+                [$data, $payload] = DevelopmentDeployOutcome::from($data);
+            }
             $historyId = $locked->state['deployment_id'] ?? null;
             if (! is_int($historyId)) {
                 $row = $this->history->start($instance, $locked->triggered_by ?? 'operation',

@@ -80,51 +80,49 @@ One workflow, `operation-instance-deploy-direct`, holds both variants. Each step
 
 | Job | Placement | Steps | Runs for |
 | --- | --- | --- | --- |
-| `development` | Node 209; 40 steps reach the app-dev Node over `@swamp/ssh` | 83 | development |
-| `development-result` | Node 209 | 1 | development |
+| `development-source` | Node 209; each step reaches the app-dev Node over `@swamp/ssh`, except the cleanup plan | 14 | development |
+| `development-checkout` | Node 209, over `@swamp/ssh` | 3, the cleanup a `forEach` | development |
+| `dev-vp-capture`, `dev-vp-workspaces`, `dev-vp-install` | Node 209, the shared Vite+ steps of `instance:clone` | 20 | development that needs Vite+ |
+| `development-steps` | Node 209, over `@swamp/ssh` | 4, the commands a `forEach` | development |
 | `deploy` | the production Node's own worker (`orbit-node-<node_id>`); `install-processes` runs on 209 | 3 (one is a `forEach` child workflow) | production |
 | `failure` | the production Node's own worker | 1 | production, after a failed `deploy` |
 
 ### Development
 
-The Gateway validates the request, captures public intent and names vault copies for each command, then starts the run. The run never calls the Gateway except for the GitHub token: for a private repository, the `fetch` script on the Node POSTs to the token endpoint.
+The Gateway validates the request, captures public intent, mints the read token and copies each command and the fetch credential to the vault, then starts the run. The run never calls the Gateway.
 
 ```mermaid
 flowchart TD
-  subgraph GW1["Gateway: admission (PHP)"]
+  subgraph GW1["Gateway: admission and run start (PHP)"]
     A1["StartInstanceDeployAction<br/>lock Instance, snapshot intent,<br/>refuse a pending Route projection"]
-    A2["DevelopmentDeployInput<br/>intent + vault copies: one per command"]
+    A2["DevelopmentDeployInput<br/>vault copies: each command,<br/>and the fetch credential line"]
     A1 --> A2
   end
 
-  subgraph DEV["job development: 83 steps on 209"]
-    S0["dev_assets<br/>render scripts, 1 step, 209"]
-    S1["source: fetch, check, clean, checkout<br/>4 SSH + 4 check steps"]
-    S2["dev_manager: child workflow<br/>operation-tool-manager-setup (vp)"]
-    S3["Vite+: vp_project, vp_resolve, vp_install, vp_verify<br/>3 SSH + 4 local steps"]
-    S4["dev_app_0 .. dev_app_31<br/>32 SSH + 32 check steps,<br/>one pair per deploy step; unused pairs skip"]
-    S5["dev_inspect<br/>1 SSH + 1 check step"]
-    S0 --> S1 --> S2 --> S3 --> S4 --> S5
+  subgraph SRC["job development-source"]
+    S1["Write the fetch credential, Fetch the branch,<br/>Remove the fetch credential"]
+    S2["Check tracked changes, Resolve the commit,<br/>first-parent check, local branch check"]
+    S3["List untracked entries, List the target directories,<br/>Plan the cleanup (209)"]
+    S1 --> S2 --> S3
   end
+  C["job development-checkout<br/>Check the checkout lock, Clean stale directories,<br/>Check out the commit"]
+  V["dev-vp jobs<br/>shared Vite+ capture and install"]
+  D["job development-steps<br/>Run the deploy steps, Read the checkout branch and commit,<br/>Check the checkout (end check)"]
+  G["Gateway: terminal projection<br/>DevelopmentDeployOutcome, history, seed"]
 
-  R["job development-result: result<br/>1 step, runs always"]
-  G["Gateway: terminal projection<br/>deployment record, history"]
-  T["Gateway: POST /direct-operations/{id}/github-token"]
-
-  A2 -- "StartSwampRun: intent + vault key names" --> S0
-  S1 -. "fetch script on the Node" .-> T
-  S5 --> R --> G
+  A2 -- "StartSwampRun: intent + vault key names" --> S1
+  S3 --> C --> V --> D --> G
 ```
 
 Guards and skips:
 
-- Every development step skips for a production run.
-- `dev_manager` and the four Vite+ steps skip when `intent.deployment.needs_vp` is false.
-- `dev_app_N` runs only for a Project with more than N deploy steps.
-- `dev_app_N` also needs checkout, Vite+ and every earlier app step to succeed.
-- `dev_inspect` runs only when every earlier action succeeded.
-- `dev_clean` and `dev_checkout` run under `flock --nonblock` on the checkout; a held lock exits 73. App steps take no lock.
-- Source and Vite+ SSH steps time out after 600 s; an app step after its command timeout plus 10 s. Each `*_check` step is a local behavior that decodes the SSH output.
+- Every development step skips for a production run, and the `forEach` sources are empty there.
+- The Vite+ jobs skip when `intent.deployment.needs_vp` is false.
+- A failed step skips the steps that depend on it. The first failed step names the error code.
+- The deploy steps run in order, and a failed required step skips the rest.
+- For a best-effort command, the step prints only the command's exit status.
+- The lock check, the cleanup, the checkout and each deploy step take `flock --nonblock` on the checkout. A held lock fails `Check the checkout lock`.
+- The fetch times out after 300 s; a deploy step after its command timeout.
 
 ### Production
 

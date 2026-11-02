@@ -8,7 +8,7 @@ covers:
   - apps/agent/src/commands/{production,production_tests,production_home,production_home_tests,deploy_step,dev_deploy,dev_deploy_tests}.rs
   - apps/gateway/app/Http/{Controllers/Api/{InstanceDeploymentsController,InstanceDeployStepsController,InstanceReleasesController,InstanceRollbacksController,ProjectDevelopmentDeployStepsController},Requests/Projects/*ProjectDevelopmentDeployStepRequest}.php
   - apps/gateway/{app/{Models/{InstanceDeployment,InstanceDeployStep,ProjectDevelopmentDeployStep},Data/Instances/InstanceDeploymentData}.php,database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_05_000000_add_caller_node_id_to_instance_deployments}.php}
-  - swamp/extensions/behaviors/automatic-deploy/**
+  - swamp/extensions/behaviors/{automatic-deploy/**,operations/development-deploy/**}
   - packages/php-sdk/src/{Requests/Projects/*DevelopmentDeployStep*,Responses/{Projects/*DevelopmentDeployStep*,Deployments/InstanceDeploymentResponse}}.php
 ---
 
@@ -95,7 +95,7 @@ When every required step passes, Orbit records the commit as the default's `seed
 - The checkout stays at the new commit with the files the steps left. Orbit does not roll it back.
 - The seed keeps the last commit that deployed. So the automatic deployment tick deploys the commit again after a backoff and reruns the steps, at most three times.
 
-A failed best-effort step (`required: false`) gets a warning that names it and its exit status, and the deployment continues. The output and stored events keep that warning, even when the deployment succeeds or the output reached its storage limit.
+A failed best-effort step (`required: false`) does not stop the deployment; the later steps run.
 
 A step and Orbit's checkout take the lock that [setup and teardown steps](/reference/instance-setup) hold on the checkout: a `flock` on the checkout directory. While a setup or teardown step runs there, the deployment fails with `instance.lifecycle_busy` and the tick retries after a backoff. A step's processes do not inherit the lock, so a process that a step leaves running cannot hold up the next step. Steps must not change tracked files: the next deployment would refuse the checkout as dirty.
 
@@ -121,11 +121,11 @@ Each step has `name`, `command`, `timeout_seconds`, and `required`. Names use lo
 
 A new step appends unless `before` or `after` names another step in this Project's development deploy list. The fields are exclusive. Updates without placement keep their position. Names cannot be renamed. Each list permits at most 32 steps and 3,600 seconds of total timeout. Unknown names, duplicate names, invalid fields, unknown placement, self-placement, and limit violations are refused without changing the list. Node access follows the Project's owning Node. Activity records never include commands.
 
-Swamp fetches the branch and checks out the commit over pinned official SSH as the admitted Node account. Each Project command runs in a separate native step as that account. Checkout refuses tracked changes and a local branch with commits that the target lacks. The public result reports only the refusal code. The native checkout actions use system `flock` on the checkout directory. An app command refuses with `instance.lifecycle_busy` while a setup or teardown command holds that directory.
+Swamp fetches the branch and checks out the commit over pinned official SSH as the admitted Node account. The Project commands run in list order as that account, one SSH command each. Checkout refuses tracked changes and a local branch with commits that the target lacks. The public result reports only the refusal code. The checkout, the cleanup and each command take system `flock` on the checkout directory. A command refuses with `instance.lifecycle_busy` while a setup or teardown command holds that directory.
 
-Development commands are captured as named vault execution copies and delivered on SSH stdin. GitHub App reads use the existing numeric Operation token-mint endpoint with repository-scoped Contents read permission; the root key stays in the Gateway. Public origins outside GitHub need no credential. GitHub CLI source access is refused for this native path. Command output is suppressed so application secrets cannot enter native history.
+Development commands are captured as named vault execution copies and delivered on SSH stdin. A command runs with a clean environment: `HOME`, `USER`, `PATH`, `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`, plus `VP_HOME` under a Vite+ runtime. It does not load the checkout's `.env`; the application reads it. At run start the Gateway mints a repository-scoped Contents read token with the GitHub App and writes it into a 0600 credential file for the fetch. The next step removes the file. A public origin, or one without an App installation, fetches anonymously. GitHub CLI source access is refused for this native path. Command output is discarded so application secrets cannot enter native history.
 
-Required steps must pass before Orbit records the commit as deployed. A failed best-effort step (`required: false`) is reported but does not fail the deployment, and the files it wrote stay. Use required steps for installs, builds, and migrations, and best-effort steps for cache warm-up.
+Required steps must pass before Orbit records the commit as deployed. A failed or timed-out best-effort step (`required: false`) does not fail the deployment, and the files it wrote stay. Use required steps for installs, builds, and migrations, and best-effort steps for cache warm-up.
 
 ### Production deploy steps
 
@@ -581,13 +581,22 @@ The Gateway records the placement environment and derives the account and direct
 The kind uses the direct writer by default. The per-kind setting cannot select the deleted polled path. The same cutover includes writer selection and old execution/test deletion. After worker readiness is verified, merge first when released code is needed for the canary. Prove the complete Gateway-to-worker path on a real dev or disposable target within minutes of auto-release. Revert the cutover immediately on failure. This setup and teardown path still requires the worker on its admitted Node. Development deploy instead uses the 209 SSH path described below.
 ## Native development deployment
 
-Default development checkouts use `operation-instance-deploy-direct`, with separate native actions placed on 209 and official `@swamp/ssh` targeting the admitted Node account and stored host keys. The Gateway freezes the Node placement, repository, branch, ordered Project command digests and timeouts. It copies the exact commands to Operation-scoped vault keys before starting one native run. Command bytes, target dotenv values, registry settings and GitHub tokens stay out of workflow inputs and history. Development rollback refuses `deployment_config.unavailable` because development checkouts have no retained releases.
+Default development checkouts use `operation-instance-deploy-direct`. Every Node action of this kind is one official `@swamp/ssh` command from 209, as the admitted Node account with the stored host keys. The shared Vite+ manager setup is the one exception: it still runs its own setup script.
 
-The DAG separates fetch, source checks, cleanup, checkout, Vite+ preparation, each Project command and final checkout inspection. The existing runtime for app steps checks command digests and directories. It clears the environment, enforces deadlines and cleans up descendants. Commands arrive through official SSH stdin and their output is suppressed. Required failures prevent every later command and final success. Best-effort failures record one warning and allow later commands. Only a verified native success advances the Instance seed.
+The Gateway freezes the Node placement, repository, branch, ordered Project command digests and timeouts. It copies the exact commands and the fetch credential to Operation-scoped vault keys before it starts one native run. Command bytes, target dotenv values, registry settings and GitHub tokens stay out of workflow inputs and history. Development rollback refuses `deployment_config.unavailable` because development checkouts have no retained releases.
 
-The shared terminal subscriber reads the bound native result and records the deployment once; development has no result callback, private-material read or Gateway command executor.
+The run has six parts:
 
-Public origins fetch anonymously. Private GitHub origins use the existing numeric Operation token-mint endpoint, bound to the admitted repository, Node and native run, with Contents read permission only. The Gateway's GitHub App key remains in the Gateway. GitHub CLI source access is refused for development deploy. Vite+ manifests, lockfiles and registry settings are read on the target; only exact runtime pins and version constraints enter native metadata.
+- **Fetch.** Write the fetch credential, fetch the branch, and remove the credential.
+- **Checks.** Plain `git` commands check tracked changes and resolve the commit. They prove the commit is on the branch's first-parent chain and check the local branch.
+- **Cleanup plan.** Two `git` commands list the untracked entries and the target's directories. 209 plans the cleanup from them.
+- **Checkout.** Remove the planned stale entries, then check out the commit, each under the checkout lock.
+- **Vite+.** The shared requirement capture and install, the same steps `instance:clone` runs.
+- **Steps.** Each Project command runs in order, then a final check reads the branch and commit.
+
+The Vite+ part runs only when a step needs Vite+. A failed required command skips the later ones. For a best-effort command, the step prints only the command's exit status, so a nonzero status does not fail the deployment.
+
+The shared terminal subscriber reads Swamp's native run data and records the deployment once. The first failed step names the error code, as [Development defaults](#development-defaults) lists. Only a verified native success advances the Instance seed. Development has no result callback, private-material read, token-mint request or Gateway command executor.
 
 When a development deploy runs, it leaves Process definitions, Route publication and PHP configuration with their existing native kinds. A pending default Route projection refuses deploy admission. Production and rollback retain their existing release workflow and callbacks in this change; production migration and its canary are separate.
 

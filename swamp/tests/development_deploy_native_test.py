@@ -1,148 +1,171 @@
-"""Actual development DAG, official SSH, scratch checkout and private stdin copies."""
-import fcntl
+"""Actual development DAG on the pinned Swamp: official SSH argv against a scratch checkout, private stdin commands."""
+import glob
 import hashlib
-import importlib.util
 import json
 import os
+import subprocess
 import sys
 
 import yaml
 from native_harness import ROOT, NativeTestCase
 
-spec = importlib.util.spec_from_file_location('development_scripts', ROOT / 'extensions/behaviors/operations/development-deploy/scripts_test.py')
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
+DEVELOPMENT_JOBS = ('development-source', 'development-checkout', 'dev-vp-capture', 'dev-vp-workspaces', 'dev-vp-install', 'development-steps')
 
 
 class DevelopmentDeployNative(NativeTestCase):
-    native_timeout = 120
+    native_timeout = 180
+
+    def git(self, cwd, *args):
+        return subprocess.run(['git', '-C', str(cwd), *args], check=True, capture_output=True, text=True).stdout.strip()
 
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('operations', 'automatic-deploy', '_lib')
+        self.copy_behaviors('operations')
         self.cli('extension', 'pull', '@swamp/ssh@2026.10.23.1')
-        fixture = module.DevelopmentScripts()
-        fixture.setUp()
-        self.addCleanup(fixture.doCleanups)
-        self.checkout, self.second = fixture.repo, fixture.second
+        # The origin has main with a package that the next commit removes; the checkout is at the first commit.
+        origin, self.checkout = self.repo / 'origin', self.repo / 'checkout'
+        self.git(self.repo, 'init', '--quiet', '--initial-branch=main', str(origin))
+        for key, value in (('user.name', 'proof'), ('user.email', 'proof@example.test')):
+            self.git(origin, 'config', key, value)
+        (origin / 'packages/old').mkdir(parents=True)
+        (origin / 'packages/old/index.js').write_text('old\n')
+        (origin / 'README').write_text('one\n')
+        self.git(origin, 'add', '.')
+        self.git(origin, 'commit', '--quiet', '-m', 'one')
+        subprocess.run(['git', 'clone', '--quiet', str(origin), str(self.checkout)], check=True)
+        (self.checkout / 'packages/old/node_modules').mkdir()
+        (self.checkout / 'packages/old/node_modules/dep.js').write_text('stale\n')
+        (self.checkout / '.env').write_text('KEEP=1\n')
+        self.git(origin, 'rm', '--quiet', '-r', 'packages')
+        (origin / 'README').write_text('two\n')
+        self.git(origin, 'commit', '--quiet', '-am', 'two')
+        self.target = self.git(origin, 'rev-parse', 'HEAD')
+        # The real fetch needs GitHub; the fake ssh fetches from the scratch origin instead and runs every other argv.
+        subprocess.run(['git', '-C', str(self.checkout), 'fetch', '--quiet', 'origin'], check=True)
         binary = self.repo / 'fixture-ssh'
         binary.write_text('#!' + sys.executable + '\n' + '''
-import json,os,shlex,sys
+import os,shlex,shutil,sys
 argv=shlex.split(sys.argv[-1])
-# The external GitHub fetch is replaced by already populated scratch remote refs.
-if len(argv)>3 and argv[3]=='fetch':
-    print(json.dumps({'ready':True}))
-else:
-    os.execv(argv[0],argv)
+if 'fetch' in argv:
+    sys.exit(0)
+if not os.path.exists(argv[0]):
+    argv[0]=shutil.which(os.path.basename(argv[0]))
+os.execv(argv[0],argv)
 ''')
         binary.chmod(0o700)
         self.cli('vault', 'create', 'local_encryption', 'orbit-control-inputs')
         identity = self.repo / 'identity'
         identity.write_text('synthetic unused identity')
-        self.inputs = {'operation_id': 17, 'node_id': 9, 'kind': 'instance.deploy', 'execution_secrets': {}, 'intent': fixture.input['intent']}
-        self.inputs['intent'].update(instance_id=4, manager=None, ssh_execution={'identity_file': str(identity), 'target': {
-            'user': self.inputs['intent']['deployment']['node_user'], 'port': 22, 'host': 'fixture.invalid',
-            'host_keys': ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG']}})
-        self.inputs['intent']['deployment'].update(needs_vp=False, steps=[])
+        user = os.environ.get('USER', 'orbit')
+        self.inputs = {'operation_id': 17, 'node_id': 9, 'kind': 'instance.deploy', 'execution_secrets': {}, 'intent': {
+            'instance_id': 4, 'commit': None, 'application': str(self.checkout), 'vp_setup': None, 'account_home': str(self.repo),
+            'ssh_execution': {'identity_file': str(identity), 'target': {'name': 'target', 'user': user, 'port': 22, 'host': 'fixture.invalid',
+                              'host_keys': ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG']}},
+            'deployment': {'variant': 'development', 'needs_vp': False, 'steps': [], 'node_user': user, 'branch': 'main',
+                           'repository': str(origin), 'home': str(self.checkout)}}}
         workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-instance-deploy-direct.yaml').read_text())
-        self.workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-instance-deploy-direct.yaml').read_text())
-        workflow['jobs'] = workflow['jobs'][:2]
+        workflow['jobs'] = [job for job in workflow['jobs'] if job['name'] in DEVELOPMENT_JOBS]
         for job in workflow['jobs']:
-            self.assertEqual(job.pop('labels'), {'role': 'swamp'})
+            job.pop('labels')
             for step in job['steps']:
+                step.pop('labels', None)
                 task = step['task']
                 if task.get('behaviorType') == '@swamp/ssh':
                     task['globalArgs']['sshBinary'] = str(binary)
-                if task.get('type') == 'workflow':
-                    # VP is skipped; target-local runtime preparation has separate tests.
-                    step['task'] = {'type': 'behavior', 'behaviorType': 'command/shell', 'behaviorName': 'unused-manager', 'methodName': 'execute', 'inputs': {'run': 'true'}}
         (self.repo / 'workflows/workflow-operation-instance-deploy-direct.yaml').write_text(yaml.safe_dump(workflow, sort_keys=False, width=1000000))
 
     def command(self, command, required=True):
         index = len(self.inputs['intent']['deployment']['steps'])
         key = f'development-deploy-operation-17-step-{index}'
-        self.inputs['intent']['deployment']['steps'].append({'name': f'command-{index}', 'required': required,
+        self.inputs['intent']['deployment']['steps'].append({'name': f'command-{index}', 'phase': 'before_activation', 'required': required,
             'timeout_seconds': 5, 'command_digest': hashlib.sha256(command.encode()).hexdigest()})
         self.cli('vault', 'put', 'orbit-control-inputs', key, input=command)
         self.inputs['execution_secrets'][f'step_{index}'] = {'vault': 'orbit-control-inputs', 'key': key}
 
     def run_workflow(self, success=True):
-        self.cli('workflow', 'validate', 'operation-instance-deploy-direct')
+        self.inputs['execution_secrets']['credential'] = {'vault': 'orbit-control-inputs', 'key': 'development-deploy-operation-17-credential'}
+        self.cli('vault', 'put', 'orbit-control-inputs', 'development-deploy-operation-17-credential', input='https://x-access-token:unused@github.com')
         reply = self.cli('workflow', 'run', 'operation-instance-deploy-direct', '--stdin', input=json.dumps(self.inputs), success=success)
-        self.assertTrue(reply.stdout.strip(), reply.stderr)
-        result = json.loads(reply.stdout)
-        self.history = json.loads(self.cli('workflow', 'history', 'get', result['id']).stdout)
-        self.steps = {s['name']: s for job in self.history['jobs'] for s in job['steps']}
-        return json.loads(self.steps['result']['outputs']['stdout'])
+        # A failed run must fail in a step; a missing CEL key fails the whole run instead.
+        self.assertNotIn('Invalid expression', reply.stdout + reply.stderr)
+        history = json.loads(self.cli('workflow', 'history', 'get', json.loads(reply.stdout)['id']).stdout)
+        self.steps = {s['name']: s for job in history['jobs'] for s in job['steps']}
+        return history
 
-    def test_ordered_success_keeps_private_commands_and_environment_out_of_native_history(self):
-        sentinel = "native-private-" + os.urandom(12).hex()
-        (self.checkout / '.env').write_text('TOKEN="' + sentinel + '"\n')
-        self.command('test "$TOKEN" = ' + sentinel + '; printf ' + sentinel + '; printf first > proof')
-        self.command('test "$(cat proof)" = first; printf second >> proof')
+    def test_deploys_the_commit_cleans_removed_directories_and_keeps_private_commands_out_of_history(self):
+        sentinel = 'native-private-' + os.urandom(12).hex()
         self.secrets = (sentinel,)
-        result = self.run_workflow()
-        self.assertEqual(result['commit'], self.second)
-        self.assertIsNone(result['failed_step'])
-        self.assertEqual((self.checkout / 'proof').read_text(), 'firstsecond')
-        self.assertEqual(self.steps['dev_app_2']['status'], 'skipped')
+        self.command(f'printf %s {sentinel}; printf x >> .git/proof-marker')
+        self.command(f'printf %s {sentinel}; exit 3', required=False)
+        self.command('printf y >> .git/proof-marker')
+        history = self.run_workflow()
+        self.assertEqual(history['status'], 'succeeded', json.dumps(self.steps)[:2000])
+        self.assertEqual(self.git(self.checkout, 'rev-parse', 'HEAD'), self.target)
+        self.assertEqual(self.git(self.checkout, 'symbolic-ref', '--short', 'HEAD'), 'main')
+        self.assertEqual((self.checkout / '.git/proof-marker').read_text(), 'xy')
+        self.assertFalse((self.checkout / 'packages').exists(), 'the removed package directory and its untracked files went')
+        self.assertTrue((self.checkout / '.env').exists(), 'untracked files in kept directories stay')
+        self.assertEqual(self.steps['Check the checkout']['status'], 'succeeded')
+        self.assert_private_absent(json.dumps(history))
 
-    def test_required_failure_never_reopens_later_commands_or_final_success(self):
-        self.command('exit 7')
-        self.command('touch must-not-exist')
-        result = self.run_workflow(success=False)
-        self.assertEqual(result['failed_step'], 'dev_app_0')
-        self.assertFalse((self.checkout / 'must-not-exist').exists())
-        self.assertEqual(self.steps['dev_app_1']['status'], 'skipped')
-        self.assertEqual(self.steps['dev_inspect']['status'], 'skipped')
+    def test_tracked_changes_stop_before_any_change(self):
+        (self.checkout / 'README').write_text('local edit\n')
+        before = self.git(self.checkout, 'rev-parse', 'HEAD')
+        self.command('printf x >> .git/proof-marker')
+        history = self.run_workflow(success=False)
+        self.assertEqual(history['status'], 'failed')
+        self.assertEqual(self.steps['Check tracked changes']['status'], 'failed')
+        self.assertEqual(self.git(self.checkout, 'rev-parse', 'HEAD'), before)
+        self.assertFalse((self.checkout / '.git/proof-marker').exists())
 
-    def test_optional_failure_continues_and_records_one_warning(self):
-        self.command('exit 7', required=False)
-        self.command('touch proof')
-        result = self.run_workflow()
-        self.assertEqual(result['warnings'], 1)
-        self.assertTrue((self.checkout / 'proof').exists())
+    def test_a_failed_required_command_skips_the_rest(self):
+        self.command('exit 4')
+        self.command('printf x >> .git/proof-marker')
+        history = self.run_workflow(success=False)
+        self.assertEqual(history['status'], 'failed')
+        self.assertFalse((self.checkout / '.git/proof-marker').exists())
 
-    def test_dirty_checkout_prevents_commands_even_when_vp_is_skipped(self):
-        (self.checkout / 'app').write_text('dirty')
-        self.command('touch must-not-exist')
-        result = self.run_workflow(success=False)
-        self.assertEqual(result['failed_step'], 'dev_check')
-        self.assertFalse((self.checkout / 'must-not-exist').exists())
-        self.assertEqual(self.steps['dev_inspect']['status'], 'skipped')
+    def test_a_production_run_skips_every_development_job_with_its_placeholder_keys(self):
+        intent = self.inputs['intent']
+        intent.update(application='', vp_setup=None, ssh_execution={'identity_file': '', 'target': {'name': 'target', 'host': '', 'user': '', 'port': 22, 'host_keys': []}})
+        intent['deployment'].update(variant='production', steps=[{'name': 'migrate', 'phase': 'before_activation', 'required': True,
+                                                                  'timeout_seconds': 5, 'command_digest': '0' * 64}])
+        before = self.git(self.checkout, 'rev-parse', 'HEAD')
+        history = self.run_workflow()
+        self.assertEqual(history['status'], 'succeeded', json.dumps(self.steps)[:2000])
+        self.assertEqual({step['status'] for step in self.steps.values()}, {'skipped'})
+        self.assertEqual(self.git(self.checkout, 'rev-parse', 'HEAD'), before)
 
-    def test_final_inspection_refuses_a_command_that_changes_branch(self):
-        self.command('git checkout -b unexpected')
-        result = self.run_workflow(success=False)
-        self.assertEqual(result['failed_step'], 'dev_inspect')
-        self.assertEqual(result['error_code'], 'deployment.branch_changed')
+    def test_checks_out_when_nothing_needs_cleaning(self):
+        (self.checkout / 'packages/old/node_modules/dep.js').unlink()
+        (self.checkout / 'packages/old/node_modules').rmdir()
+        history = self.run_workflow()
+        self.assertEqual(history['status'], 'succeeded', json.dumps(self.steps)[:2000])
+        self.assertEqual(self.git(self.checkout, 'rev-parse', 'HEAD'), self.target)
+
+    def test_a_best_effort_timeout_continues_and_a_command_cannot_read_its_own_rest(self):
+        self.command('sleep 10', required=False)
+        self.inputs['intent']['deployment']['steps'][0]['timeout_seconds'] = 1
+        # read consumes stdin: with the script on stdin it would swallow the marker line.
+        self.command('read -r line || true\nprintf x >> .git/proof-marker')
+        history = self.run_workflow()
+        self.assertEqual(history['status'], 'succeeded', json.dumps(self.steps)[:2000])
+        self.assertEqual((self.checkout / '.git/proof-marker').read_text(), 'x')
+        self.assertEqual(self.steps['Run the deploy steps-0']['outputs']['stdout'].strip(), '124')
+        self.assertFalse(glob.glob('/tmp/orbit-git-credential-' + history['id']))
+
+    def test_a_held_checkout_lock_stops_before_the_checkout(self):
+        import fcntl
+        handle = os.open(self.checkout, os.O_RDONLY)
+        self.addCleanup(os.close, handle)
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        before = self.git(self.checkout, 'rev-parse', 'HEAD')
+        history = self.run_workflow(success=False)
+        self.assertEqual(history['status'], 'failed')
+        self.assertEqual(self.steps['Check the checkout lock']['status'], 'failed')
+        self.assertEqual(self.git(self.checkout, 'rev-parse', 'HEAD'), before)
 
 
-    def test_native_checkout_transaction_refuses_an_existing_directory_owner(self):
-        descriptor = os.open(self.checkout, os.O_RDONLY | os.O_DIRECTORY)
-        try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            self.command('touch must-not-exist')
-            result = self.run_workflow(success=False)
-        finally:
-            os.close(descriptor)
-        self.assertEqual(result['failed_step'], 'dev_clean')
-        self.assertEqual(self.steps['dev_checkout']['status'], 'skipped')
-        self.assertFalse((self.checkout / 'must-not-exist').exists())
-
-    def test_production_branch_does_not_evaluate_development_transport_or_commands(self):
-        workflow = self.workflow
-        for job in workflow['jobs']:
-            job.pop('target', None); job.pop('labels', None)
-            for step in job['steps']:
-                step.pop('target', None); step.pop('labels', None)
-                if job['name'] in ('deploy', 'failure'):
-                    step['task'] = {'type': 'behavior', 'behaviorType': 'command/shell', 'behaviorName': 'production-' + step['name'],
-                        'methodName': 'execute', 'inputs': {'run': 'true'}}
-        (self.repo / 'workflows/workflow-operation-instance-deploy-direct.yaml').write_text(yaml.safe_dump(workflow, sort_keys=False, width=1000000))
-        self.inputs['intent'] = {'instance_id': 4, 'process_members': [], 'deployment': {'variant': 'production', 'needs_vp': True, 'steps': [{'name': 'production-command', 'timeout_seconds': 5}]}}
-        self.cli('workflow', 'validate', 'operation-instance-deploy-direct')
-        result = json.loads(self.cli('workflow', 'run', 'operation-instance-deploy-direct', '--stdin', input=json.dumps(self.inputs)).stdout)
-        self.assertEqual(result['status'], 'succeeded')
-        development = next(j for j in result['jobs'] if j['name'] == 'development')
-        self.assertTrue(all(s['status'] == 'skipped' for s in development['steps']))
+if __name__ == '__main__':
+    import unittest
+    unittest.main()

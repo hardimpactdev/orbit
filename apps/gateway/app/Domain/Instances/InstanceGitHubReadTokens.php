@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
+use App\Domain\GitHub\GitHubAccessToken;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitHubTokenGrant;
@@ -66,16 +67,44 @@ final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
     }
 
     /**
+     * One git credential-store line under `$key`, for a fetch that reads a 0600 credential file. A public origin, or one
+     * the App is not installed on, gets an empty line and fetches anonymously.
+     *
+     * @return array{vault:string,key:string}
+     */
+    public function credentialCopy(string $origin, string $key): array
+    {
+        $credential = $this->mint($origin);
+        try {
+            $token = $credential?->reveal();
+
+            return $this->step->executionCopy('orbit-control-inputs', $key, $token === null ? '' : 'https://x-access-token:'.$token."@github.com\n");
+        } catch (\Throwable $exception) {
+            if ($credential !== null && ! $this->github->revokeInstallationToken($credential)) {
+                Log::warning('operation.github_token_revoke_failed');
+            }
+            throw $exception;
+        }
+    }
+
+    /** A repository-scoped Contents read token, or null for a public origin or one the App is not installed on. */
+    private function mint(string $origin): ?GitHubAccessToken
+    {
+        $repository = GitHubRepository::fromOrigin($origin);
+        $credentials = $this->store->credentials();
+
+        return $repository !== null && $credentials !== null && $this->github->repositoryInstallation($credentials, $repository) !== null
+            ? $this->github->scopedRepositoryToken($credentials, GitHubTokenGrant::from(['repository' => $repository->owner.'/'.$repository->name, 'permissions' => ['contents' => 'read']]))
+            : null;
+    }
+
+    /**
      * @param  \Closure(): bool  $unchanged
      * @return array{vault:string,key:string}
      */
     private function copy(Operation $operation, string $origin, \Closure $unchanged): array
     {
-        $repository = GitHubRepository::fromOrigin($origin);
-        $credentials = $this->store->credentials();
-        $credential = $repository !== null && $credentials !== null && $this->github->repositoryInstallation($credentials, $repository) !== null
-            ? $this->github->scopedRepositoryToken($credentials, GitHubTokenGrant::from(['repository' => $repository->owner.'/'.$repository->name, 'permissions' => ['contents' => 'read']]))
-            : null;
+        $credential = $this->mint($origin);
         try {
             if (! $unchanged()) {
                 throw new ResourceOperationException('operation.github_token_forbidden', 'The admitted repository changed during minting.', 409);

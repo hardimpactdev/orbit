@@ -300,10 +300,6 @@ final readonly class DirectOperation
 
     public function githubTokenGrant(Operation $operation): GitHubTokenGrant
     {
-        $projection = $this->projection($operation);
-        if ($projection instanceof DirectOperationGitHubGrant) {
-            return $projection->githubTokenGrant($operation);
-        }
         $grant = $this->definitions[$operation->kind]['github_token'] ?? null;
         if ($grant === null) {
             throw new ResourceOperationException('operation.github_token_forbidden', 'This intent declares no GitHub credential.', 403);
