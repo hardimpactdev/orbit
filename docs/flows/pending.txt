@@ -1,6 +1,4 @@
 conn.gateway_sessions_revoke
-conn.pairing_create
-conn.pairing_revoke
 database.clone
 database.destroy_owned
 database.sqlite_cleanup
@@ -8,13 +6,7 @@ database.sqlite_seed
 database_server.close
 fleet.cli_converge
 fleet.docker_migrate
-fleet.peer_dns
-fleet.recipe
-fleet.recipe_pr
-fleet.rollout
 gateway.swamp_load
-github.app_register
-github.app_sync
 instance.policy_event
 metrics.credentials_reset
 metrics.disable
@@ -51,16 +43,9 @@ task_vm.resume
 task_vm.sweep_host
 task_vm.upcloud_image_build
 tasks.analyze
-tasks.cancel
 tasks.check
-tasks.dependency_merge
 tasks.maintenance
 tasks.maintenance_finish
 tasks.park
-tasks.provision
-tasks.publish
 tasks.script
 tasks.turn
-vault.setup
-vault.sync
-vault.teardown
