@@ -114,7 +114,7 @@ def main():
     # Its last stdout line may be {"secrets": {name: value}}: test credentials it made, bound as ${secret.<name>} into
     # requests only. Receipts keep request paths, never bodies, so the values reach only the Gateway's admission.
     for argv in fixture.get('before_gateway', []):
-        lines = run(bind(argv, context), cwd=SOURCE, timeout=900).stdout.strip().splitlines()
+        lines = run([str(arg) for arg in bind(argv, context)], cwd=SOURCE, timeout=900).stdout.strip().splitlines()
         try:
             made = json.loads(lines[-1]) if lines else {}
         except ValueError:
