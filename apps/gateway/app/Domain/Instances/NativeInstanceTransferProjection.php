@@ -22,7 +22,7 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
-/** Stores the physical placement selected by the native terminal result, including later retirement failures. */
+/** Stores the physical placement the native run reached, read from its Route children, including later retirement failures. */
 final readonly class NativeInstanceTransferProjection implements DirectOperationProjection, DirectOperationPublicView, DirectOperationWorkflowInput, NativeOperationProjection
 {
     public function __construct(private DirectOperation $direct, private NativeRouteTransferPlan $routes) {}
@@ -81,11 +81,16 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
             if ($transfer->instance_id !== $instance->id || $operation->node_id !== $transfer->source_node_id) {
                 throw $this->conflict();
             }
-            $result = Arr::only(ValidatedData::object($data['result'] ?? []), ['cutover', 'restored', 'transfer_id', 'error_code']);
+            $result = $this->outcome($transfer, ValidatedData::object($data['result'] ?? []));
             $status = OperationStatus::from(ValidatedData::string($data['status']));
+            // A run that ends without moving the Instance, such as a restored publication, failed the transfer.
+            if ($status === OperationStatus::Succeeded && ! $result['cutover']) {
+                $status = OperationStatus::Failed;
+                $data = [...$data, 'status' => $status->value, 'error_code' => 'instance.transfer_failed'];
+            }
             $snapshot = ValidatedData::object($operation->input['route_transfer']);
             if (! $operation->status->terminal() && $status->terminal()) {
-                if (($result['cutover'] ?? false) === true && $transfer->cutover_at === null) {
+                if ($result['cutover'] && $transfer->cutover_at === null) {
                     app(InstanceTransferProcesses::class)->cutover($instance, $transfer, ValidatedData::object($operation->input['process_installations']));
                     $instance->update(['node_id' => $transfer->destination_node_id, 'name' => $transfer->destination_name,
                         'checkout_path' => $transfer->destination_path, 'source_layout' => InstanceSourceLayout::Checkout,
@@ -95,7 +100,7 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
                     $this->routes->cutover($snapshot);
                     $transfer->update(['cutover_at' => now(), 'current_step' => InstanceTransferStep::Cutover]);
                 }
-                if (($result['restored'] ?? false) === true && $transfer->cutover_at === null) {
+                if ($result['restored'] && $transfer->cutover_at === null) {
                     $this->routes->rollback($snapshot);
                     $transfer->update(['destination_route_id' => null]);
                 }
@@ -107,7 +112,7 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
                     $transfer->update(['status' => InstanceTransferStatus::Completed, 'current_step' => InstanceTransferStep::Completed,
                         'completed_at' => now(), 'failed_step' => null, 'error_code' => null, 'recovery_evidence' => null]);
                 } else {
-                    $transfer->update(['status' => InstanceTransferStatus::Failed, 'error_code' => $data['error_code'] ?? $result['error_code'] ?? 'instance.transfer_failed']);
+                    $transfer->update(['status' => InstanceTransferStatus::Failed, 'error_code' => $data['error_code'] ?? 'instance.transfer_failed']);
                 }
             }
             $result = ['instance_id' => $instance->id, 'transfer_id' => $transfer->id,
@@ -115,6 +120,19 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
 
             return $this->direct->project($operation, $data, $result);
         });
+    }
+
+    /**
+     * Whether the Route children published the destination or restored the source, read from their captured results.
+     *
+     * @param  array<string,mixed>  $run
+     * @return array{cutover:bool,restored:bool,transfer_id:string}
+     */
+    private function outcome(InstanceTransfer $transfer, array $run): array
+    {
+        $ready = static fn (mixed $child): bool => is_array($child) && ($child['ready'] ?? false) === true;
+
+        return ['cutover' => $ready($run['forward'] ?? null), 'restored' => $ready($run['restore'] ?? null), 'transfer_id' => (string) $transfer->id];
     }
 
     private function conflict(): ResourceOperationException

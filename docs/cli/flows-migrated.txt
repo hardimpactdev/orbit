@@ -11,6 +11,7 @@ fleet.peer_dns
 instance.destroy
 instance.env_import
 instance.register
+instance.transfer
 instance.run_steps
 instance.sync_environment
 node.agent_rekey

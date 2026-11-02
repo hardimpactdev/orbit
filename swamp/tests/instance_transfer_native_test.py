@@ -85,6 +85,11 @@ else:shutil.copyfile(source,destination)
         history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
         return run, history
 
+    def moved(self, history, child):
+        """Whether a Route child (Publish or Restore) succeeded with a ready result, as the Gateway reads it."""
+        step = next((s for s in history["jobs"][0]["steps"] if s["name"] == child), None)
+        return step is not None and step["status"] == "succeeded" and step["outputs"]["result"]["ready"] is True
+
     def test_transfer_keeps_private_archive_bytes_out_of_results_and_retires_only_source(self):
         run, history = self.run_transfer()
         self.assertEqual(run["status"], "succeeded")
@@ -93,13 +98,12 @@ else:shutil.copyfile(source,destination)
         self.assertEqual((self.destination / ".env").read_text(), "PRIVATE_SENTINEL=retained\n")
         self.assertEqual((self.destination / ".env").stat().st_mode & 0o777, 0o640)
         self.assertNotIn("PRIVATE_SENTINEL", json.dumps(history))
-        result = json.loads(next(step["outputs"]["stdout"] for step in history["jobs"][0]["steps"] if step["name"] == "result"))
-        self.assertTrue(result["cutover"])
-        self.assertFalse(result["restored"])
+        self.assertTrue(self.moved(history, "Publish the Route"))
+        self.assertFalse(self.moved(history, "Restore the Route"))
 
     def test_retirement_failure_retains_physical_cutover_result_and_source_residue(self):
         for step in self.child["jobs"][0]["steps"]:
-            if step["name"] == "retire-source":
+            if step["name"] == "Retire the source":
                 step["task"]["methodName"] = "exec"
                 step["task"]["inputs"] = {"hosts": "name:target", "argv": ["/usr/bin/false"]}
         self.workflow_path.write_text(yaml.safe_dump(self.child, sort_keys=False))
@@ -107,37 +111,23 @@ else:shutil.copyfile(source,destination)
         self.assertEqual(run["status"], "failed")
         self.assertTrue(self.source.exists())
         self.assertTrue(self.destination.exists())
-        result = json.loads(next(step["outputs"]["stdout"] for step in history["jobs"][0]["steps"] if step["name"] == "result"))
-        self.assertTrue(result["cutover"])
+        self.assertTrue(self.moved(history, "Publish the Route"))
 
     def test_activation_failure_restores_source_and_discards_only_proven_destination(self):
         self.intent["processes"]["destination"] = [{}]
         for step in self.child["jobs"][0]["steps"]:
-            if step["name"] in ("activate", "discard-destination-runtime"):
+            if step["name"] in ("Create, start Processes", "Remove new Processes"):
                 step["task"] = {"type": "behavior", "behaviorType": "command/shell",
-                    "behaviorName": '${{ "fixture-' + step["name"][:9] + '-" + run.id + "-" + string(self._index) }}',
-                    "methodName": "execute", "inputs": {"run": "false" if step["name"] == "activate" else "true"}}
+                    "behaviorName": '${{ "fixture-' + step["name"][:6].replace(",", "").replace(" ", "-").lower() + '-" + run.id + "-" + string(self._index) }}',
+                    "methodName": "execute", "inputs": {"run": "false" if step["name"] == "Create, start Processes" else "true"}}
         self.workflow_path.write_text(yaml.safe_dump(self.child, sort_keys=False))
         run, history = self.run_transfer(success=False)
         self.assertEqual(run["status"], "failed")
         self.assertTrue(self.source.exists())
-        self.assertFalse(self.destination.exists(), json.dumps([{k: step[k] for k in ("name", "status", "error", "outputs") if k in step} for step in history["jobs"][0]["steps"] if step["name"] in ("forward", "restore", "discard-assets", "discard", "activate-0", "discard-destination-runtime-0", "result")]))
-        result = json.loads(next(step["outputs"]["stdout"] for step in history["jobs"][0]["steps"] if step["name"] == "result"))
-        self.assertFalse(result["cutover"])
-        self.assertTrue(result["restored"], json.dumps([{k:step[k] for k in ("name","status","error","outputs") if k in step} for step in history["jobs"][0]["steps"] if step["name"] in ("forward","restore","discard-assets","discard","result") or step["status"] == "failed"]))
-
-    def test_result_write_failure_never_retires_source(self):
-        for step in self.child["jobs"][0]["steps"]:
-            if step["name"] == "result":
-                step["task"]["methodName"] = "complete"
-                step["task"]["inputs"] = {"cutover": False, "outcomes": {}}
-        self.workflow_path.write_text(yaml.safe_dump(self.child, sort_keys=False))
-        run, history = self.run_transfer(success=False)
-        self.assertEqual(run["status"], "failed")
-        self.assertTrue(self.source.exists())
-        self.assertTrue(self.destination.exists())
-        steps = {s["name"]: s for s in history["jobs"][0]["steps"]}
-        self.assertEqual(steps["retire-source"]["status"], "skipped")
+        trace = json.dumps([{k: step[k] for k in ("name", "status", "error", "outputs") if k in step} for step in history["jobs"][0]["steps"] if step["status"] != "skipped"])
+        self.assertFalse(self.destination.exists(), trace)
+        self.assertFalse(self.moved(history, "Publish the Route"), trace)
+        self.assertTrue(self.moved(history, "Restore the Route"), trace)
 
     def test_nonempty_vite_process_batch_uses_real_stop_input_schema(self):
         connection = self.intent["source"]["ssh_execution"]
@@ -147,7 +137,7 @@ else:shutil.copyfile(source,destination)
             "intent": {"control": control, "ssh_execution": connection},
             "control_intent": {"control": control, "ssh_execution": connection},
             "stop_intent": {"control": {k: control[k] for k in ("process_id", "runtime", "name", "on_demand")} | {"vite": None}, "ssh_execution": connection}}]
-        for action in ("stop", "create", "destroy"):
+        for action in ("control", "create", "destroy"):
             child = yaml.safe_load((ROOT / f"workflows/workflow-operation-process-{action}.yaml").read_text())
             child.pop("target", None); child.pop("labels", None)
             child["jobs"] = [{"name": "fixture", "steps": [{"name": "accepted", "task": {"type": "behavior", "behaviorType": "command/shell",
@@ -156,8 +146,8 @@ else:shutil.copyfile(source,destination)
         run, history = self.run_transfer()
         self.assertEqual(run["status"], "succeeded")
         steps = {s["name"]: s for s in history["jobs"][0]["steps"]}
-        self.assertEqual(steps["pause-0"]["status"], "succeeded")
-        self.assertEqual(steps["retire-runtime-0"]["status"], "succeeded")
+        self.assertEqual(steps["Stop source Processes-0"]["status"], "succeeded")
+        self.assertEqual(steps["Remove source Processes-0"]["status"], "succeeded")
 
     def test_native_cancel_after_forward_keeps_the_terminal_placement_receipt(self):
         barrier = self.repo / "forward-ready"
@@ -165,7 +155,7 @@ else:shutil.copyfile(source,destination)
         hold = self.repo / "hold.py"
         hold.write_text("import signal,sys\nwith open(sys.argv[1], 'w') as stream: stream.write('ready')\nsignal.pause()\n")
         steps = self.child["jobs"][0]["steps"]
-        index = next(i for i, step in enumerate(steps) if step["name"] == "result")
+        index = next(i for i, step in enumerate(steps) if step["name"] == "Remove source Processes")
         receipt = steps[index]
         steps.insert(index, {"name": "cancel-barrier", "dependsOn": receipt["dependsOn"],
             "task": {"type": "behavior", "behaviorType": "command/shell", "behaviorName": '${{ "cancel-barrier-" + run.id }}',
@@ -189,8 +179,7 @@ else:shutil.copyfile(source,destination)
             run = json.loads(stdout)
             self.assertEqual(run["status"], "cancelled", stderr)
             history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
-            result = json.loads(next(step["outputs"]["stdout"] for step in history["jobs"][0]["steps"] if step["name"] == "result"))
-            self.assertTrue(result["cutover"])
+            self.assertTrue(self.moved(history, "Publish the Route"))
             self.assertTrue(self.destination.exists())
         finally:
             if process.poll() is None:

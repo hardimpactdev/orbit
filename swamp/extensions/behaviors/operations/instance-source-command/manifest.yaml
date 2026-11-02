@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: "@nckrtl/instance-source-command"
-version: 2026.11.02.2
+version: 2026.11.02.3
 visibility: private
 license: MIT
 description: Public checkout observations and terminal Instance source results.

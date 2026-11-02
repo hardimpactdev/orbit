@@ -59,45 +59,33 @@
   },
   "phases": [
     {
-      "name": "destination-ready",
+      "name": "Archive the checkout",
       "job": "transfer",
-      "step": "destination-ready",
-      "budget_seconds": 10
-    },
-    {
-      "name": "source-filesystem",
-      "job": "transfer",
-      "step": "source-filesystem",
-      "budget_seconds": 10
-    },
-    {
-      "name": "origin",
-      "job": "transfer",
-      "step": "origin",
-      "budget_seconds": 10
-    },
-    {
-      "name": "archive",
-      "job": "transfer",
-      "step": "archive",
+      "step": "Archive the checkout",
       "budget_seconds": 30
     },
     {
-      "name": "install",
+      "name": "Unpack the checkout",
       "job": "transfer",
-      "step": "install",
+      "step": "Unpack the checkout",
       "budget_seconds": 30
     },
     {
-      "name": "environment-permissions",
+      "name": "Protect the .env file",
       "job": "transfer",
-      "step": "environment-permissions",
+      "step": "Protect the .env file",
       "budget_seconds": 10
     },
     {
-      "name": "retire-source",
+      "name": "Publish the Route",
       "job": "transfer",
-      "step": "retire-source",
+      "step": "Publish the Route",
+      "budget_seconds": 120
+    },
+    {
+      "name": "Retire the source",
+      "job": "transfer",
+      "step": "Retire the source",
       "budget_seconds": 30
     }
   ],

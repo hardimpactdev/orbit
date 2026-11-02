@@ -99,7 +99,10 @@ function native_transfer_result(string $checkpoint, string $status = 'succeeded'
 {
     return ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'status' => $status,
         'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(), 'error_code' => $status === 'failed' ? 'instance.transfer_failed' : null,
-        'result' => ['cutover' => in_array($checkpoint, ['cutover', 'retire'], true), 'restored' => $checkpoint === 'rollback']];
+        // The native result as the Gateway reads it: the Route children's captured results.
+        'result' => ['steps' => [], 'summary' => ['status' => $status, 'succeeded' => 0, 'failed' => 0, 'skipped' => 0, 'failed_steps' => []],
+            ...(in_array($checkpoint, ['cutover', 'retire'], true) ? ['forward' => ['ready' => true]] : []),
+            ...($checkpoint === 'rollback' ? ['restore' => ['ready' => true]] : [])]];
 }
 it('composes Instance placement and every Route in one idempotent cutover transaction', function (): void {
     $operation = native_transfer_operation($this);
@@ -123,6 +126,13 @@ it('records actual native cutover even when cancellation was requested before te
     expect($this->instance->fresh()->node_id)->toBe($this->destination->id)
         ->and($this->transfer->fresh()->cutover_at)->not->toBeNull();
 });
+it('fails a run that restored the source although every step succeeded', function (): void {
+    $operation = app(NativeInstanceTransferProjection::class)->apply(native_transfer_operation($this), native_transfer_result('rollback'));
+    expect($operation->status->value)->toBe('failed')->and($operation->error_code)->toBe('instance.transfer_failed')
+        ->and($this->instance->fresh()->node_id)->toBe($this->node->id)
+        ->and($this->transfer->fresh()->destination_route_id)->toBeNull();
+});
+
 it('rolls back pre-cutover reservations while refusing rollback after committed placement', function (): void {
     $operation = native_transfer_operation($this);
     $projection = app(NativeInstanceTransferProjection::class);

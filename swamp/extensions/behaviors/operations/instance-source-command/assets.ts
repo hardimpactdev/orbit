@@ -104,7 +104,7 @@ export function sourceResult(
 }
 export const behavior = {
     type: "@nckrtl/instance-source-command",
-    version: "2026.11.02.2",
+    version: "2026.11.02.3",
     resources: {
         result: { schema: Output, lifetime: "infinite", garbageCollection: 10 },
     },
@@ -196,124 +196,6 @@ export const behavior = {
                 const result = {
                     commit: z.string().regex(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/)
                         .parse(text(args.commit)),
-                };
-                return {
-                    dataHandles: [
-                        await ctx.writeResource("result", "result", result),
-                    ],
-                };
-            },
-        },
-        complete: {
-            description:
-                "Fail incomplete transfer after its placement result and cleanup are recorded",
-            arguments: z.object({
-                cutover: z.boolean(),
-                outcomes: z.record(
-                    z.string(),
-                    z.object({ status: z.string() }).passthrough(),
-                ),
-            }),
-            async execute(
-                args: {
-                    cutover: boolean;
-                    outcomes: Record<string, { status: string }>;
-                },
-                ctx: Context,
-            ) {
-                if (
-                    !args.cutover ||
-                    Object.values(args.outcomes).some((s) =>
-                        s.status === "failed"
-                    )
-                ) {
-                    throw new Error("instance.transfer_failed");
-                }
-                return {
-                    dataHandles: [
-                        await ctx.writeResource("result", "result", {
-                            ready: true,
-                        }),
-                    ],
-                };
-            },
-        },
-        transferResult: {
-            description:
-                "Expose physical transfer placement before source retirement",
-            arguments: z.object({
-                cutover: z.boolean(),
-                restored: z.boolean(),
-                transfer_id: z.string(),
-                outcomes: z.record(
-                    z.string(),
-                    z.object({ status: z.string() }).passthrough(),
-                ),
-            }),
-            async execute(
-                args: {
-                    cutover: boolean;
-                    restored: boolean;
-                    transfer_id: string;
-                    outcomes: Record<string, { status: string }>;
-                },
-                ctx: Context,
-            ) {
-                const failed = Object.values(args.outcomes).some((step) =>
-                    step.status === "failed"
-                );
-                const result = {
-                    cutover: args.cutover,
-                    restored: args.restored,
-                    transfer_id: args.transfer_id,
-                    ...((failed || !args.cutover)
-                        ? { error_code: "instance.transfer_failed" }
-                        : {}),
-                };
-                return {
-                    dataHandles: [
-                        await ctx.writeResource("result", "result", {
-                            ...result,
-                            stdout: JSON.stringify(result),
-                            exitCode: failed ? 1 : 0,
-                        }),
-                    ],
-                };
-            },
-        },
-        transferSource: {
-            description:
-                "Compare the admitted source repository and Git placement before capture",
-            arguments: z.object({
-                identity: z.string(),
-                origin: z.unknown(),
-                top: z.unknown(),
-                path: z.string(),
-                git_directory: z.unknown(),
-                common: z.unknown(),
-                filesystem: z.unknown(),
-            }),
-            async execute(
-                args: {
-                    identity: string;
-                    origin: unknown;
-                    top: unknown;
-                    path: string;
-                    git_directory: unknown;
-                    common: unknown;
-                    filesystem: unknown;
-                },
-                ctx: Context,
-            ) {
-                if (
-                    repositoryIdentity(text(args.origin)) !== args.identity ||
-                    text(args.top) !== args.path
-                ) throw new Error("instance.source_identity_invalid");
-                const proof = Output.parse(JSON.parse(text(args.filesystem)));
-                const result = {
-                    ...proof,
-                    git_directory: text(args.git_directory),
-                    common: text(args.common),
                 };
                 return {
                     dataHandles: [

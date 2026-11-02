@@ -3,6 +3,7 @@ sequenceDiagram
   %% Tightened: flow-tighten 2026-11-02, rules 5, 17, 22 (destination preflight from recorded state; cfgmgmt file/systemd, Route publish as in route:create).
   %% Decided: Nick 2026-11-02, .env.testing only for an owned MySQL/PostgreSQL database, written by the same file step.
   %% status: draft
+  %% Interim: the run copies the checkout with its .env, has no setup steps or destination check yet, and signs inside the Route child; Schedules and SQLite copies stay refused. The Swamp steps below are the real workflow steps.
   %% command: instance:transfer
   %% kind: instance.transfer
   autonumber
@@ -65,99 +66,70 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>S: Stop source Processes<br/>@swamp/cfgmgmt/systemd stop
+  SW->>S: Stop source Processes<br/>process child · forEach
   %%> What it does:
   %%> - stops the Processes of Instance 42 on Node 12; downtime starts here
   %%> Keeps:
   %%> - the Process units, for a restore if the move fails
   SW->>S: Archive the checkout<br/>@swamp/ssh exec · tar
   %%> What it does:
-  %%> - packs the Git history, branch, origin, index, unstaged edits and untracked files
-  %%> - adds the SQLite file only when `--sqlite-source-path` was given
-  %%> Not included:
-  %%> - `.env`; the Gateway rendered a new one for Node 15
-  %%> Linked worktree:
-  %%> - becomes an independent checkout on Node 15; the common repository on Node 12 stays unchanged
-  SW->>D: Unpack, write .env, CSR<br/>@swamp/cfgmgmt/file · 0600
+  %%> - reads the Git directories, then packs the Git history, branch, origin, index, unstaged edits and untracked files
+  %%> - refuses a shared common repository or alternates (`instance.transfer_source_shared`, `instance.transfer_source_invalid`)
+  %%> Interim:
+  %%> - the archive still carries `.env`; later the Gateway renders it for Node 15
+  SW->>S: Copy the archive to 209<br/>@swamp/ssh copy · from
+  SW->>D: Copy it to the destination<br/>@swamp/ssh copy · to
   %%> How:
-  %%> - copies the archive over `@swamp/ssh` through private scratch space on 209, and checks its hash
+  %%> - through private scratch space on 209; archive bytes never enter results
+  SW->>D: Unpack the checkout<br/>@swamp/ssh exec · tar
   %%> What it does:
-  %%> - extracts it into the destination path, as Node 15's managed user, with one `tar` argv
-  %%> - writes the rendered `.env` from `vault.get env-5133` with `@swamp/cfgmgmt/file`, mode 0600, owned by the managed user
-  %%> - writes any `.env.testing` in the same `file` step, replacing its content; a Git-tracked one stays untouched
-  %%> - creates a private key and a certificate signing request for the Route's domain; the key never leaves Node 15
-  %%> Refuses:
-  %%> - paths or links that escape the checkout
-  %%> Cleanup:
-  %%> - removes the scratch archives on all three Nodes
-  SW->>D: Run Project setup steps<br/>@swamp/ssh exec · in order
-  %%> What it does:
-  %%> - runs the Project's setup steps, as in `instance:create`, so dependencies match Node 15
-  %%> Typical steps:
-  %%> - `composer install`, `vp install`, `php artisan migrate`
-  SW->>GW: Sign the CSR<br/>operation:direct:certificate-sign
-  %%> Why a call to the Gateway:
-  %%> - only the Gateway holds the Orbit CA key
-  %%> - this is the one call a step may make to the Gateway (decision 1)
-  GW-->>SW: signed certificate
-  %%> Returns:
-  %%> - the certificate for the CSR, scoped to task #5133
-  SW->>D: Create, start Processes<br/>@swamp/cfgmgmt/systemd · forEach
-  %%> What it does:
-  %%> - creates the Instance's Processes on Node 15 from Project 7's definitions for `development`, and starts them
-  %%> - Processes recorded as stopped stay stopped
-  SW->>D: Publish the Route<br/>@swamp/cfgmgmt/file · reload
-  %%> What it does:
-  %%> - installs the certificate, the Caddy site and the PHP pool on Node 15 in one step, as `route:create` does, and reloads Caddy; no restart
-  %%> - changes private DNS only when the domain is outside the Cluster TLD; a domain inside it needs no record
-  %%> Why last:
-  %%> - Node 15 becomes reachable only after its Processes run
-  %%> Cutover:
-  %%> - from here Node 15 serves Instance 42
-  SW->>D: Check the destination<br/>@swamp/cfgmgmt check · curl
-  %%> What it does:
-  %%> - the systemd behaviors' `check`: the Processes run on Node 15
-  %%> - one `curl` with the Route's domain as SNI: the site answers
+  %%> - extracts into the destination path, refusing an existing path (`instance.transfer_destination_exists`)
+  SW->>D: Make it standalone<br/>git config core.bare
+  SW->>D: Drop the worktree config<br/>git config --unset-all
   %%> Why:
-  %%> - the one end check before the source is retired
-  alt destination checks pass
-    SW->>S: Retire the source<br/>@swamp/cfgmgmt · absent
+  %%> - a linked worktree becomes an independent checkout on Node 15
+  SW->>D: Protect the .env file<br/>@swamp/ssh exec · o-rwx
+  SW->>D: Prepare Route workloads<br/>route workload child
+  SW->>D: Create, start Processes<br/>process child · forEach
+  %%> What it does:
+  %%> - creates the Instance's Processes on Node 15 and starts them; stopped ones stay stopped
+  %%> Later:
+  %%> - Run Project setup steps comes before this step
+  SW->>D: Publish the Route<br/>route-mutation-forward
+  %%> What it does:
+  %%> - signs the CSR through the Gateway primitive, installs the certificate and site on Node 15, and reloads Caddy
+  %%> Cutover:
+  %%> - a ready result makes Node 15 authoritative
+  %%> Later:
+  %%> - Check the destination (systemd check and one curl) follows this step
+  alt destination published
+    SW->>S: Remove source Processes<br/>process child · forEach
+    SW->>S: Retire the source<br/>@swamp/ssh exec · rm -rf
     %%> What it does:
-    %%> - removes the Process units, Caddy site, PHP pool and certificate of Instance 42 on Node 12 with `ensure: absent`, and reloads Caddy
-    %%> - deletes the recorded checkout with one `rm -rf` argv
+    %%> - deletes the checkout and prunes a linked worktree's entry; the common repository stays
     %%> If it fails:
-    %%> - best effort: Node 15 stays authoritative; the leftovers on Node 12 are harmless and a rerun removes them
+    %%> - Node 15 stays authoritative; the Gateway keeps the placement and marks the task failed
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
-    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    %%> - its shared run reader reads the run's steps and the Route child's ready result
     Note over GW: Record Node 15<br/>Instance, Processes, Route
     %%> Result:
-    %%> - Instance 42, its Processes and its Route are recorded on Node 15, in one change
-    %%> - task #5133 succeeds
-    GW->>SW: Publish Schedule triggers<br/>workflow.trigger.set · Node 15
-    %%> What it does:
-    %%> - sets each Schedule's trigger again, now with Node 15 as its target
-    %%> Result:
-    %%> - the Schedules have moved; their next fire runs on Node 15
+    %%> - Instance 42, its Processes and its Routes are recorded on Node 15, in one change
   else a step fails before cutover
-    SW->>S: Restore the source<br/>start Processes again
+    SW->>S: Restore the Route<br/>route-mutation-restore
+    SW->>S: Restore the source<br/>process child · forEach
+    SW->>D: Remove new Processes<br/>process child · forEach
+    SW->>D: Discard the destination<br/>@swamp/ssh exec · rm -rf
     %%> What it does:
-    %%> - starts the Processes of Instance 42 on Node 12 again; the source is untouched otherwise
-    SW->>D: Discard the destination<br/>only the proven checkout
-    %%> What it does:
-    %%> - removes what the run created on Node 15, and only that
-    %%> If cleanup fails:
-    %%> - the leftovers stay visible as a failure; nothing unproven is deleted
+    %%> - removes the unpacked checkout, and only after the restore succeeded
     SW--xGW: Run failed<br/>error_code, failed step
-    %%> The Gateway reads:
-    %%> - which step failed and its error code
-    Note over GW: Keep Node 12, mark failed<br/>triggers back · rerun is safe
+    Note over GW: Keep Node 12, mark failed<br/>rerun is safe
     %%> Result:
-    %%> - Instance 42 stays on Node 12, active again; task #5133 fails
-    %%> - the Gateway sets the Schedule triggers again for Node 12
-    %%> Retry:
-    %%> - run the same command again; it is a new task
+    %%> - Instance 42 stays on Node 12; a run that only restored also fails (`instance.transfer_failed`)
   end
+  SW->>S: Remove the source archive<br/>@swamp/ssh exec · rm
+  SW->>D: Remove the copied archive<br/>@swamp/ssh exec · rm
+  Note over SW: Remove the 209 archive<br/>rm · always
   loop every 2 s until terminal
     CLI->>GW: operation:show #5133
     %%> What it does:
