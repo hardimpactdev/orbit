@@ -230,26 +230,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/conn/mod.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/conn/mod.ts",
-      "rule": "gateway-http",
-      "count": 5,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/conn/mod.ts",
-      "rule": "private-material",
-      "count": 2,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/dependency-merge/admission.ts",
       "rule": "gateway-http",
       "count": 2,

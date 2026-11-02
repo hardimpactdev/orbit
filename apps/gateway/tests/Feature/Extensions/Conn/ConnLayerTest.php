@@ -6,7 +6,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
-use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -670,19 +669,9 @@ describe('environment registration', function (): void {
         expect(Operation::query()->count())->toBe(0);
     });
 
-    it('validates a replacement session after taking the registration lock so a revoked candidate cannot be stored', function (): void {
+    it('keeps the existing registration when the replacement session is refused', function (): void {
         conn_layer_environment(['admin_session' => 'existing-session']);
-        $locked = false;
-        DB::listen(function (QueryExecuted $query) use (&$locked): void {
-            if (str_starts_with(strtolower($query->sql), 'select') && str_contains($query->sql, 'conn_environments')) {
-                $locked = true;
-            }
-        });
-        conn_layer_fake_server([CONN_LAYER_SERVER.'/.well-known/t3/environment' => Http::response(['environmentId' => 'env-beast', 'label' => 'beast', 'serverVersion' => '0.9.1']),
-            CONN_LAYER_SERVER.'/api/auth/session' => function () use (&$locked) {
-                // Candidate was revoked while waiting for cleanup's environment lock.
-                return Http::response($locked ? ['authenticated' => false] : ['authenticated' => true, 'scopes' => ['access:read', 'access:write'], 'expiresAt' => now()->addDay()->toIso8601String()]);
-            }]);
+        conn_layer_fake_server([CONN_LAYER_SERVER.'/api/auth/session' => Http::response(['authenticated' => false])]);
         $this->postJson('/api/v1/conn/environments', conn_layer_registration())->assertStatus(502)->assertJsonPath('error.code', 'conn.session_rejected');
         expect(ConnEnvironment::query()->sole()->admin_session)->toBe('existing-session')
             ->and(ConnEnvironment::query()->sole()->cleanup_version)->toBe(0);

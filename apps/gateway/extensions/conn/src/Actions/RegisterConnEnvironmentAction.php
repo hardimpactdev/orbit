@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn\Actions;
 
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
+use App\Models\Operation;
+use App\Support\ValidatedData;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Orbit\Extensions\Conn\Data\RegisterConnEnvironmentData;
@@ -39,19 +42,21 @@ final readonly class RegisterConnEnvironmentAction
             );
         }
 
+        $prior = ConnEnvironment::query()->where('environment_id', $data->environmentId)->first();
+        $revision = $prior?->cleanup_version;
+        $marker = $this->cleanupMarker($prior?->id);
+        $session = $this->server->session($data->url, $data->adminSession);
+        $missing = array_values(array_diff(self::REQUIRED_SCOPES, $session->scopes));
+        if ($missing !== []) {
+            throw new ResourceOperationException('conn.admin_scope_missing', 'The session is not an admin session. It lacks '.implode(', ', $missing).'.',
+                details: ['missing_scopes' => implode(' ', $missing)]);
+        }
         $now = Carbon::now();
-        $environment = DB::transaction(function () use ($node, $data, $descriptor, $now): ConnEnvironment {
+        $environment = DB::transaction(function () use ($node, $data, $descriptor, $now, $prior, $revision, $marker, $session): ConnEnvironment {
             $environment = ConnEnvironment::query()->where('environment_id', $data->environmentId)->lockForUpdate()->first()
                 ?? new ConnEnvironment(['environment_id' => $data->environmentId]);
-            $session = $this->server->session($data->url, $data->adminSession);
-            $missing = array_values(array_diff(self::REQUIRED_SCOPES, $session->scopes));
-
-            if ($missing !== []) {
-                throw new ResourceOperationException(
-                    'conn.admin_scope_missing',
-                    'The session is not an admin session. It lacks '.implode(', ', $missing).'.',
-                    details: ['missing_scopes' => implode(' ', $missing)],
-                );
+            if ($this->cleanupMarker($environment->id) !== $marker || $environment->id !== $prior?->id || ($environment->exists ? $environment->cleanup_version : null) !== $revision) {
+                throw new ResourceOperationException('conn.environment_changed', 'The environment changed during session validation. Register again.', 409);
             }
 
             $environment->fill(['label' => $data->label, 'url' => $data->url, 'node_id' => $node->id,
@@ -63,5 +68,21 @@ final readonly class RegisterConnEnvironmentAction
         });
 
         return $environment;
+    }
+
+    /** A revocation during validation may revoke the candidate; never store that stale candidate. */
+    private function cleanupMarker(?int $environmentId): ?int
+    {
+        if ($environmentId === null) {
+            return null;
+        }
+        if (Operation::query()->where('lock_key', OperationStore::lockKey('conn_environment', $environmentId))->exists()) {
+            throw new ResourceOperationException('operation.target_busy', 'A Conn operation holds this environment.', 409);
+        }
+
+        $marker = Operation::query()->whereIn('kind', ['conn.gateway_sessions_revoke', 'conn.pairing_revoke'])
+            ->where('input->conn_environment_id', $environmentId)->max('id');
+
+        return $marker === null ? null : ValidatedData::integer($marker);
     }
 }

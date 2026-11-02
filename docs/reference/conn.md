@@ -222,11 +222,11 @@ Steps make no Gateway calls.
 
 ### Gateway session cleanup
 
-Gateway session cleanup retains its existing direct behavior and current-registration checks for the fixed Gateway client label. It is separate from pairing revocation.
+Gateway session cleanup runs the shared native revocation workflow on Node 209 for the fixed Gateway client label. It captures the T3 URL, registration revision and vault reference at admission, with no step-to-Gateway callback. The child lists sessions once and keeps the current admin and every other label. Failed HTTP or reply checks report `conn.revocation_failed`; the revision stays pending.
 
-Registration keeps its normal response after it validates and stores the new encrypted admin session. It records a cleanup revision. Swamp checks pending revisions each minute and admits `conn.gateway_sessions_revoke` through the Gateway-authorized cleanup endpoint. Cleanup keeps the current admin session and other client labels.
+Registration keeps its normal response after it validates and stores the new encrypted admin session. It records a cleanup revision. The existing Conn publisher checks pending revisions each minute and admits `conn.gateway_sessions_revoke` through the Gateway-authorized cleanup endpoint. It runs separately from cleanup; cleanup steps make no Gateway call. Cleanup keeps the current admin session and other client labels.
 
- A registration during cleanup leaves its newer revision pending for the next check. The list and registration replies expose the non-secret `cleanup_version`. Admission uses a stable key for that environment and revision. A failed revision stays pending without another automatic Operation; a new registration or an explicit cleanup request permits a new attempt. Cleanup never discards the current admin session.
+Registration refuses with `operation.target_busy` while a cleanup or pairing revocation holds that environment. Session validation runs outside the database transaction; a concurrent revocation or registration refuses with `conn.environment_changed` before storing the candidate session. The list and registration replies expose the non-secret `cleanup_version`. Admission uses a stable key for that environment and revision. A failed revision stays pending without another automatic Operation; a new registration or an explicit cleanup request permits a new attempt. Cleanup never discards the current admin session.
 
 ## Pairing Operations
 

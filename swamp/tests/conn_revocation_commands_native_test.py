@@ -23,9 +23,12 @@ class ConnRevocationNative(NativeTestCase):
         self.copy_behaviors("operations/conn-revocation")
         for filename in (
             "workflow-operation-conn-pairing-revoke.yaml",
+            "workflow-operation-conn-direct.yaml",
         ):
             workflow = yaml.safe_load((ROOT / "workflows" / filename).read_text())
             for job in workflow["jobs"]:
+                if "labels" in job:
+                    self.assertEqual(job.pop("labels"), {"role": "swamp"})
                 for step in job["steps"]:
                     self.assertEqual(step.pop("labels"), {"role": "swamp"})
                     self.assertNotIn("labels", step)
@@ -155,6 +158,27 @@ class ConnRevocationNative(NativeTestCase):
         receipt = json.loads(value.get('stdout', '{}'))
         result = {"backend": "revoked", "revoked_sessions": receipt.get('revoked', 0)} if success else {"error_code": "conn.revocation_failed"}
         return run, result
+
+    def test_gateway_cleanup_uses_child_receipt_and_preserves_current_admin(self):
+        self.inputs["kind"] = "conn.gateway_sessions_revoke"
+        self.intent["labels"] = ["Orbit Gateway"]
+        self.intent["links"] = []
+        self.sessions[0]["client"]["label"] = "Orbit Gateway"
+        self.sessions[1]["client"]["label"] = "Orbit Gateway"
+        self.cli("workflow", "validate", "operation-conn-direct")
+        result = self.cli("workflow", "run", "operation-conn-direct", "--stdin", input=json.dumps(self.inputs))
+        started = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]
+        history = self.cli("workflow", "history", "get", started["id"])
+        run = json.JSONDecoder().raw_decode(history.stdout.lstrip())[0]
+        step = run["jobs"][0]["steps"][0]
+        self.assertEqual(step["status"], "succeeded")
+        receipt = json.loads(step["outputs"]["Read session revocations"]["stdout"])
+        self.assertEqual(receipt["revoked"], 1)
+        self.assertTrue(receipt["valid"])
+        self.assertEqual(self.revoked, ["owned"])
+        self.assertEqual(self.revoked_links, [])
+        self.assertEqual(self.list_count, 1)
+        self.assertEqual([row["sessionId"] for row in self.sessions], ["self", "foreign"])
 
     def test_revokes_only_admitted_sessions_and_links(self):
         self.cli("workflow", "validate", "operation-conn-pairing-revoke")

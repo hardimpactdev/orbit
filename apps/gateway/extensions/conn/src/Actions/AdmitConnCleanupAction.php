@@ -7,10 +7,13 @@ namespace Orbit\Extensions\Conn\Actions;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Integrations\IntegrationAvailability;
 use App\Domain\Nodes\NodeAccessAuthorizer;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 
 final readonly class AdmitConnCleanupAction
@@ -28,9 +31,17 @@ final readonly class AdmitConnCleanupAction
                 return null;
             }
 
-            return $this->operations->execute('conn.gateway_sessions_revoke', 'conn_environment', $environment->id, $gateway,
-                ['conn_environment_id' => $environment->id, 'environment' => ['$secret' => 'conn.environment', 'id' => $environment->id],
-                    'cleanup_version' => $environment->cleanup_version, 'caller_node_id' => $caller->id], 'operator', null);
+            $reference = ['vault' => 'orbit-control-inputs', 'key' => 'conn-pairing-revoke-'.Str::uuid()];
+            $operation = $this->operations->execute('conn.gateway_sessions_revoke', 'conn_environment', $environment->id, $gateway,
+                ['conn_environment_id' => $environment->id, 'cleanup_version' => $environment->cleanup_version, 'caller_node_id' => $caller->id,
+                    'intent' => ['url' => $environment->url, 'labels' => [RegisterConnEnvironmentAction::GATEWAY_CLIENT_LABEL], 'links' => []],
+                    'execution_secrets' => ['admin_session' => $reference]], 'operator', null,
+                lockKey: OperationStore::lockKey('conn_environment', $environment->id));
+            if ($operation->wasRecentlyCreated) {
+                app(SwampCommandStep::class)->executionCopy($reference['vault'], $reference['key'], $environment->admin_session);
+            }
+
+            return $operation;
         });
     }
 }

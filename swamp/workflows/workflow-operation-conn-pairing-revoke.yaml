@@ -1,6 +1,7 @@
 id: 52eb4df2-ee4b-4950-9c46-d6f9fb1836e9
 name: operation-conn-pairing-revoke
 description: Revoke admitted Conn sessions and links with native curl steps and private response shaping.
+queueTimeout: 30
 vaults:
 - orbit-control-inputs
 inputs:

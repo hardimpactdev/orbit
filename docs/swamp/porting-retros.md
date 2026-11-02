@@ -410,7 +410,7 @@ Receipt: `/home/nckrtl/swamp-execution/evidence/proof/websocket.app_destroy/2026
 
 ### Delete unused Node placements before stopping workers
 
-The Node-worker audit found an unregistered `ai_router.account_update` workflow and the per-Node worker canary. Neither has a Gateway caller. The live AI account commands use `UpdateAiRouterAccountAction`; their behavior does not change. Both obsolete workflows and their private behaviors and tests are removed. Registered Node placements require their execution and authorization paths to move to 209 before the managed worker cleanup runs. Task VM group workers remain.
+The Node-worker audit found an unregistered `ai_router.account_update` workflow and the per-Node worker canary. Neither has a Gateway caller. The live AI account commands use `UpdateAiRouterAccountAction`; their behavior does not change. Both obsolete workflows and their private behaviors and tests are removed. Registered Node placements require their execution and authorization paths to move to 209 before the managed worker cleanup runs. Plain task VMs have no workers either; only expanded proof topologies run sandbox serve (Recall `task-vms-swamp-via-ssh`).
 
 ### WebSocket secret rotation: offline Instance and live revocation
 
@@ -433,3 +433,11 @@ Receipt: `/home/nckrtl/swamp-execution/evidence/proof/websocket.sync/20261102T22
 Scripts deleted: 0; production growth: 0. New Swamp lines are the proof declaration, shared parity branch and receipt index. The same single-process, test-credential, VM-local CA and notification-token bootstrap limits apply. After the offline-Node rotation proof, held `up` waited for the stopped nested target; starting that owned Node let the same setup finish. No shared topology or production service changed.
 
 Cancellation 8381 destroyed group 2757's VM and completed its cleanup. Across these four kinds, Orbit grows by 415 lines: proof fixtures and receipts add 387, documentation adds 30, and CLI snapshots shrink by two. Production code, behaviors, workflows and shipped scripts have no net growth. The added proof code exercises real Reverb signatures, socket closure and connections through TLS; 62 Gateway tests and 47 CLI tests also pass.
+
+### Gateway session cleanup from 209
+
+`conn.gateway_sessions_revoke` now calls the existing typed Conn revocation workflow from 209, with its complete public intent and an execution-copy vault reference. The parent captures the child's public session receipt; the Gateway records the admitted revision after the one terminal history read. The resource's Gateway Node ID stays its owner, with no Node-bound callback or private-material endpoint. The old callback behavior and secret-source wrapper are removed. The existing scheduled Conn publisher remains separate; moving that admission to registration is outside this worker-placement fix. No shipped script is added.
+
+Registration and revocation share the recorded environment lock. T3 validation runs outside the SQLite transaction; a revocation admitted during validation makes the registration refuse before saving its candidate. Native HTTP or reply failures now use `conn.revocation_failed`, matching the shared revocation path, instead of the old callback's request-specific codes (F9). A failed or cancelled cleanup leaves its revision pending and never revokes a device pairing.
+
+Validation: 114 Gateway tests and 12 pinned native HTTP fixtures pass, including the actual parent/child receipt, current-admin preservation, one inventory read, invalid replies, partial failures, clean reruns and secret scanning. The fixture suite takes 66 s locally. Production p95 is unmeasured; the run budget starts at 1,800 s with a 30 s queue timeout. The topology receipt is omitted under the outage exception: recipe `6a340f7049da` still lacks ready Beast and Shark images. A short read-only source check after release load will verify uptake.

@@ -31,7 +31,7 @@ sequenceDiagram
   %%> - captures the T3 URL, the revision and the fixed client label `Orbit Gateway`
   %%> - pushes the current admin session to the Swamp vault as `conn-session-5181` after commit (R3)
   %%> While it runs:
-  %%> - a new registration of env-beast waits for the lock, then checks its session with T3 as usual
+  %%> - a new registration of env-beast refuses while the environment is busy, then validates its candidate session outside the database transaction
   %%> Why a run:
   %%> - calling T3's API is an effect; the Gateway's only execution primitives are mint and sign
   GW->>SW: Start run, full intent<br/>operation-conn-direct
@@ -46,7 +46,7 @@ sequenceDiagram
   %%> - the caller follows the task with `operation:show`
   SW->>T3: Revoke old sessions<br/>GET clients · POST …/revoke
   %%> How:
-  %%> - HTTPS from 209, with the admin session from `vault.get`
+  %%> - the typed Conn revocation child runs HTTPS from 209, with the admin session from `vault.get`
   %%> What it does:
   %%> - lists the client sessions on env-beast once, selects those labelled `Orbit Gateway` that are not the current session, and revokes each
   %%> - a session already gone counts as revoked
@@ -71,7 +71,7 @@ sequenceDiagram
     T3--xSW: 401 or no answer
     %%> When:
     %%> - T3 refuses the admin session, cannot be reached, or answers with invalid data
-    SW--xGW: Run failed<br/>conn.session_rejected
+    SW--xGW: Run failed<br/>conn.revocation_failed
     %%> The Gateway reads:
     %%> - which step failed and its safe `conn.*` error code
     Note over GW: Revision stays pending<br/>task failed · rerun is safe
