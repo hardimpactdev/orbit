@@ -286,6 +286,27 @@ fi
                          (self.common / 'docs').read_text().splitlines())
         self.assertEqual(10, len((self.common / 'calls').read_text().splitlines()))
 
+    def test_gate_shards_split_every_lane_once_and_only_shard_one_runs_repository_checks(self):
+        runner = self.gate_fixture()
+        ran = []
+        for index in (1, 2, 3):
+            result = subprocess.run([str(runner), '--shard', f'{index}/3'], env=self.gate_env, capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+            report = json.loads(max((self.common / 'orbit-checks').glob('*/*/result.json'), key=lambda path: path.stat().st_mtime).read_text())
+            self.assertEqual(f'{index}/3', report['shard'])
+            repository = [item['command'][0] for item in report['checks'] if item['project'] == 'repository' and item['command'][0].startswith('bin/') and '--check' not in item['command']]
+            self.assertEqual(index == 1, bool(repository), repository)
+            ran.extend((item['project'], tuple(item['command'])) for item in report['checks'] if item['project'] != 'repository')
+        expected = [(project, command) for project in PROJECTS for command in (('composer', 'validate', '--strict'), ('composer', 'check'))]
+        self.assertEqual(sorted(expected), sorted(ran))
+
+    def test_gate_base_option_compares_with_the_given_commit(self):
+        runner = self.gate_fixture()
+        result = subprocess.run([str(runner), '--base', self.commit], env=self.gate_env, capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+        report = json.loads(next((self.common / 'orbit-checks').glob('*/*/result.json')).read_text())
+        self.assertEqual(self.commit, report['base'])
+
     def test_gate_scopes_pint_and_rector_to_the_merge_base_in_composer_check_only(self):
         runner = self.gate_fixture()
         result = subprocess.run([str(runner)], env=self.gate_env, capture_output=True, text=True)

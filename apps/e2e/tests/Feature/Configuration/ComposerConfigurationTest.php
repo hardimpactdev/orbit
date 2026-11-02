@@ -414,7 +414,7 @@ it('sets up PHP 8.5 through the one pinned setup-php action in every PHP job of 
     expect($phpBins)->toContain('orbit-build-cli-binary', 'dependency-audit', 'docs-nav', 'e2e-topology', 'docs-openapi')
         ->not->toContain('php-build');
     expect($phpJobs)->toBe([
-        'ci.yml:php', 'ci.yml:gateway-static', 'ci.yml:docs', 'ci.yml:api-reference', 'ci.yml:web',
+        'ci.yml:php', 'ci.yml:gateway-static', 'ci.yml:docs', 'ci.yml:project-check', 'ci.yml:api-reference', 'ci.yml:web',
         'dependency-audit.yml:audit', 'orbit-cli-binary.yml:build',
     ])
         ->and($directJobs)->toBe(['swamp-shape.yml:test-shards']);

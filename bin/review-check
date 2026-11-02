@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """Run the fast quality checks on one candidate: a commit, or a working tree with uncommitted changes.
 
-The gate runs no test suite. CI runs the full suites on the handoff commit and on the final head."""
+This is the Project check of Orbit tasks and CI's Project check job: one definition of green.
+The gate runs no full test suite. CI runs the full suites on the handoff commit and on the final head.
+
+--shard I/N  run only shard I of N: the lanes are split by weight, and shard 1 also runs the repository checks.
+--base SHA   compare with this commit instead of the main merge base (CI uses a main push's previous head)."""
+import argparse
 import json
 import os
 import re
@@ -67,6 +72,24 @@ def lane_key(entries):
     return SHARED_LANES.get(entries[0][1], entries[0][1])
 
 
+def shard_lanes(groups, weights, shard, count):
+    """Split the lanes between count shards, heaviest first onto the lightest shard; ties go to the lower shard."""
+    loads = [0] * count
+    owner = {}
+    for entries in sorted(groups, key=lambda entries: (-weights[lane_key(entries)], lane_key(entries))):
+        target = min(range(count), key=lambda index: (loads[index], index))
+        owner[lane_key(entries)] = target
+        loads[target] += weights[lane_key(entries)]
+    return [entries for entries in groups if owner[lane_key(entries)] == shard - 1]
+
+
+def shard(value):
+    match = re.fullmatch(r'([1-9][0-9]*)/([1-9][0-9]*)', value)
+    if not match or int(match[1]) > int(match[2]):
+        raise argparse.ArgumentTypeError('use I/N with 1 <= I <= N')
+    return int(match[1]), int(match[2])
+
+
 def git(root, *args):
     return subprocess.check_output(['git', '-C', str(root), *args], text=True).strip()
 
@@ -83,9 +106,9 @@ def working_tree(root):
         return subprocess.check_output(['git', '-C', str(root), 'write-tree'], env=environment, text=True).strip()
 
 
-def candidate_paths(root, head, committed):
+def candidate_paths(root, head, committed, base_override=None):
     """Return the main merge base and the paths the candidate changes since it; none without a main branch."""
-    for base in BASES:
+    for base in ((base_override,) if base_override else BASES):
         merge_base = subprocess.run(['git', '-C', str(root), 'merge-base', base, head], capture_output=True, text=True)
         if merge_base.returncode == 0:
             base_sha = merge_base.stdout.strip()
@@ -192,7 +215,12 @@ def report_directory(reports):
                 raise
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--shard', type=shard, default=(1, 1))
+    parser.add_argument('--base')
+    args = parser.parse_args(argv)
+    shard_index, shard_count = args.shard
     root = Path(__file__).resolve().parent.parent
     processes = check_processes(root)
     head = git(root, 'rev-parse', 'HEAD')
@@ -204,11 +232,12 @@ def main():
     # mkdtemp uses mode 0700. Under an inherited default ACL, the group bits become the ACL mask, so 0700 leaves
     # mask::--- and disables the named entries of that ACL. 0750 keeps them readable; other stays closed.
     directory.chmod(0o750)
-    base, paths = candidate_paths(root, head, committed)
+    base, paths = candidate_paths(root, head, committed, args.base)
     report = {'schema': 1, 'role': 'builder', 'candidate': head, 'committed': committed, 'tree': tree,
               'worktree': str(root), 'base': base, 'changed_paths': paths, 'started_at': time.time(),
               'checks': [], 'passed': False}
-    if base is not None:
+    # Repository checks run once, in shard 1.
+    if shard_index == 1 and base is not None:
         log = directory / 'docs-impact-gate.log'
         started = time.monotonic()
         with log.open('w') as output:
@@ -221,14 +250,14 @@ def main():
               f'{"passed" if result.returncode == 0 else "FAILED"} ({report["checks"][-1]["seconds"]:.3f}s; {log})', flush=True)
         if result.returncode:
             print(log.read_text(), flush=True)
-    else:
+    elif shard_index == 1:
         log = directory / 'docs-impact-gate.log'
         log.write_text('Unable to determine the group start commit: no main branch merge base is available.\n')
         report['checks'].append({'project': 'repository', 'command': ['bin/docs-impact', '--gate'],
                                  'exit_code': 1, 'seconds': 0, 'log': str(log)})
         print(f'[repository] bin/docs-impact --gate: FAILED (0.000s; {log})', flush=True)
         print(log.read_text(), flush=True)
-    for check_name in ('project-vocabulary', 'env-docs', 'tooling-baseline', 'docs-nav'):
+    for check_name in ('project-vocabulary', 'env-docs', 'tooling-baseline', 'docs-nav') if shard_index == 1 else ():
         log = directory / f'{check_name}.log'
         started = time.monotonic()
         with log.open('w') as output:
@@ -256,6 +285,7 @@ def main():
     lane_checks = []
     groups = lanes(selected_projects(paths, root))
     weights = {lane_key(entries): sum(lane_weight(root, project) for _order, project, _commands in entries) for entries in groups}
+    groups = shard_lanes(groups, weights, shard_index, shard_count)
     # The heaviest lane starts first, so it never waits for a free lane.
     groups.sort(key=lambda entries: -weights[lane_key(entries)])
     budget = ProcessBudget(processes, weights)
@@ -306,7 +336,8 @@ def main():
     # Lanes finish in any order; the receipt lists the checks in the order the gate selected them.
     report['checks'].extend(check for *_order, check in sorted(lane_checks, key=lambda item: item[:2]))
     report['unchanged'] = head == git(root, 'rev-parse', 'HEAD') and tree == working_tree(root)
-    report['passed'] = report['unchanged'] and bool(report['checks']) and all(
+    report['shard'] = f'{shard_index}/{shard_count}'
+    report['passed'] = report['unchanged'] and (bool(report['checks']) or shard_index != 1) and all(
         check['exit_code'] == 0 for check in report['checks'])
     report['finished_at'] = time.time()
     path = directory / 'result.json'
