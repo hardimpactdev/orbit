@@ -1,6 +1,6 @@
 # Swamp proof topology
 
-`bin/swamp-proof` proves a Swamp kind against a real Gateway, real Swamp and a real Node on one disposable VM on Shark. The topology is minimal (Nick, 2026-11-01): grow it only when a kind needs more.
+`bin/swamp-proof` proves a Swamp kind against a real Gateway, real Swamp and a real Node on one disposable VM on Beast or Shark. The topology is minimal (Nick, 2026-11-01): grow it only when a kind needs more.
 
 ```sh
 bin/swamp-proof up                 # provision (or keep the held VM), stage this commit, bring the topology up
@@ -15,7 +15,7 @@ Always finish with `down`. Proof VMs do not outlive the proof. Before `up` or `r
 
 [`topologies/minimal/topology.json`](topologies/minimal/topology.json) holds its version. A topology change bumps the version.
 
-- One task VM in Project 62 (`swamp-proof`), provisioned through the normal Gateway API. It boots with a clone of Shark's topology seed and receives the proof club key at `/home/orbit/.config/swamp/club-api-key`.
+- One task VM in Project 62 (`swamp-proof`), provisioned through the normal Gateway API. It boots with a clone of its host's topology seed and receives the proof club key at `/home/orbit/.config/swamp/club-api-key`.
 - The task VM runs the Gateway from the staged commit (SQLite, Gateway queue on its database driver) and the pinned Swamp serve with one worker, `orbit-node-209`. It is seeded as Node 209 with the `gateway` and `swamp` roles (F14), because the Gateway places every native step on Node 209. Serve terminates TLS itself on `swamp.orbit:443` with a leaf signed by a VM-local CA. Serve fires schedules, as on 209, so a Schedule's own workflow fires; `up` pauses every checked-in schedule first, so fleet upkeep does not run in a proof. The Gateway starts runs as `user:orbit-gateway` and reads history as `user:orbit-gateway-read`, as in [gateway-environment](../../docs/reference/gateway-environment.md).
 - One nested VM, `target`, is a copy of the seed's `node-template` on the bridge `oeproof`. It plays the Node: `orbit` user, the worker's and the Gateway's SSH keys authorized, UFW active with an unmanaged `proof-ssh` rule, and a Node agent key in `/etc/orbit/agent/secret` whose verifier the Gateway records. It has no WireGuard key, so it is no private DNS peer. The Gateway has an Orbit root CA certificate and the frozen agent delivery manifest.
 - An `operator` Node record (no VM) is the caller. It has access to the Gateway and the target.

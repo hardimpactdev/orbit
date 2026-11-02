@@ -6,7 +6,7 @@ receipt  print the latest receipt path
 down     cancel the task group through the normal API and confirm the VM is destroyed
 
 Before up or run takes a slot, every other session idle for IDLE_SECONDS or older than
-MAX_SECONDS is taken down, so a lane that forgets down cannot hold Shark for hours.
+MAX_SECONDS is taken down, so a lane that forgets down cannot hold a host for hours.
 """
 import argparse
 import fcntl
@@ -85,7 +85,7 @@ class Gateway:
 
 
 class Guest:
-    """Root in the owned task VM, through Shark's Incus as the Gateway-registered host account."""
+    """Root in the owned task VM, through its host's registered Incus account."""
 
     def __init__(self, host, name):
         if not re.fullmatch(r'tvm-[1-9][0-9]*', name):
@@ -127,13 +127,14 @@ def provision(gateway, state):
         save(SESSION, state)
         operation = gateway.wait(operation, 'tasks.provision', vm['group_id'])
         admitted = operation['input']
-        if admitted.get('host_node_id') != 13 or admitted.get('create', {}).get('topology') is not True:
-            raise ProofError('Provision did not place a topology-seeded VM on Shark.')
+        host_node_id = admitted.get('host_node_id')
+        if host_node_id not in (9, 13) or admitted.get('create', {}).get('topology') is not True:
+            raise ProofError('Provision did not place a topology-seeded VM on Beast or Shark.')
         node = gateway.request('GET', f'nodes/{operation["result"]["node_id"]}')
-        vm.update(task_vm_id=operation['result']['task_vm_id'], node_id=node['id'], name=node['name'], host_node_id=13,
+        vm.update(task_vm_id=operation['result']['task_vm_id'], node_id=node['id'], name=node['name'], host_node_id=host_node_id,
                   seed=admitted.get('image_fingerprint'), provisioned_at=utc())
         save(SESSION, state)
-    host = gateway.request('GET', 'nodes/13')
+    host = gateway.request('GET', f'nodes/{vm["host_node_id"]}')
     state['guest_host'] = f'{host["user"]}@{host["wireguard_ip"]}'
     save(SESSION, state)
     return Guest(state['guest_host'], vm['name'])
