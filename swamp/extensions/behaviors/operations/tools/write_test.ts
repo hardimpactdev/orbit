@@ -6,14 +6,14 @@ const base = { kind: "tool.install", manager: "apt", node_id: 9, package: "hello
 const input = (changes: Record<string, unknown> = {}) => WriteInput.parse({ ...base, ...changes });
 
 Deno.test("refusals happen before any write: silent adoption, missing updates and malformed inventories", () => {
-  assertEquals(decide(input(), { facts: { ...facts, versions: ["1.0.0"] } }).error_code, "tool.package_already_installed");
+  assertEquals(decide(input({ tool_id: 1 }), { facts: { ...facts, versions: ["1.0.0"] } }).error_code, "tool.package_already_installed");
   assertEquals(decide(input({ kind: "tool.update", tool_id: 1 }), { facts }).error_code, "tool.version_probe_failed");
   for (const changes of [{ versions: [null] }, { versions: ["1", "2"] }, { complete: false }]) {
     const refused = decide(input(), { facts: { ...facts, ...changes } });
     assertEquals([refused.ready, refused.manager_version], [false, "apt 3.0.0"]);
   }
   assertEquals(decide(input(), null).error_code, "tool.version_probe_failed");
-  const retry = decide(input({ tool_id: 1 }), { facts: { ...facts, versions: ["1.0.0"] } });
+  const retry = decide(input({ tool_id: 1, tool_status: "failed" }), { facts: { ...facts, versions: ["1.0.0"] } });
   assertEquals([retry.ready, retry.mutate, retry.installed_version], [true, false, "1.0.0"]);
 });
 

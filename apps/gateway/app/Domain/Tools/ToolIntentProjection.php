@@ -115,6 +115,9 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
                     }
                 }
             }
+            if (NativeRunResult::stepStatus($native, 'Refresh apt source') === 'failed') {
+                $code = 'tool.repository_unavailable';
+            }
             $result['error_code'] = $code;
             unset($result['outcome']);
         }

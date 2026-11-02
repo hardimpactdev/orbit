@@ -14,8 +14,8 @@ export function commands(input: Input) {
   const prefix = input.platform === "linux" ? "/home/linuxbrew/.linuxbrew" : ["arm64", "aarch64"].includes(input.architecture) ? "/opt/homebrew" : "/usr/local";
   const home = (input.platform === "linux" ? "/home/" : "/Users/") + input.user;
   const scope = input.platform === "linux" ? "/opt/orbit/vite-plus" : home + "/.vite-plus";
-  const binary = input.manager === "apt" ? "/usr/bin/apt-get" : brew ? prefix + "/bin/brew" : input.manager === "composer" ? "/usr/bin/composer" : scope + "/bin/vp";
-  const env = ["/usr/bin/env", "LC_ALL=C", ...(brew ? ["HOMEBREW_NO_AUTO_UPDATE=1", "HOMEBREW_NO_ANALYTICS=1", "HOMEBREW_NO_INSTALL_CLEANUP=1", "HOMEBREW_NO_AUTOREMOVE=1", "HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1", ...(input.platform === "macos" ? ["HOMEBREW_FORCE_API_AUTO_UPDATE=1"] : [])] : input.manager === "composer" ? ["COMPOSER_HOME=/opt/orbit/composer"] : input.manager === "vp" ? ["VP_HOME=" + scope] : [])];
+  const binary = input.manager === "apt" ? "/usr/bin/apt-get" : brew ? prefix + "/bin/brew" : input.manager === "composer" ? "/usr/bin/composer" : input.platform === "linux" ? "/usr/local/bin/vp" : scope + "/bin/vp";
+  const env = ["/usr/bin/env", "LC_ALL=C", ...(brew ? ["HOMEBREW_NO_AUTO_UPDATE=1", "HOMEBREW_NO_ANALYTICS=1", "HOMEBREW_NO_INSTALL_CLEANUP=1", "HOMEBREW_NO_AUTOREMOVE=1", "HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1", ...(input.platform === "macos" ? ["HOMEBREW_FORCE_API_AUTO_UPDATE=1"] : [])] : input.manager === "composer" ? ["COMPOSER_HOME=/opt/orbit/composer"] : input.manager === "vp" && input.platform !== "linux" ? ["VP_HOME=" + scope] : [])];
   const run = (...args: string[]) => [...env, binary, ...args];
   const formula = cask ? "--cask" : "--formula", qualified = (cask ? "homebrew/cask/" : "homebrew/core/") + input.package;
   const install = input.kind === "tool.install";
@@ -26,6 +26,7 @@ export function commands(input: Input) {
     prefix, home, scope, remove_repository: input.remove_repository, repository_packages: input.repository_packages,
     repository: input.repository ?? { name: "unused", uris: [], suites: [], components: [], signing_key: { url: "https://unused.invalid/key", fingerprint: "" } },
     version: run("--version"),
+    refresh: [...env, "/usr/bin/apt-get", ...aptOptions, "update", "--error-on=any"],
     inventory: input.manager === "apt" ? [...env, "/usr/bin/dpkg-query", "--show", "--showformat=${Package}\t${Status}\t${Version}\n", "--", input.package] : brew ? run("info", "--json=v2", formula, "--installed") : input.manager === "composer" ? run("global", "show", "--direct", "--format=json", "--no-ansi") : run("list", "-g", "--json"),
     candidate: input.manager === "apt" ? [...env, "/usr/bin/apt-cache", ...aptOptions, "policy", "--", input.package] : brew ? run("info", "--json=v2", formula, qualified) : input.manager === "composer" ? run(...composer, "--dry-run") : run("info", input.package, "version", "--json"),
     plan: input.manager === "apt" ? run("--simulate", "remove", "--", input.package) : input.manager === "brew" ? run("uses", "--installed", input.package) : run("--version"),

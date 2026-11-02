@@ -71,6 +71,9 @@ sequenceDiagram
     %%> - downloads the signing key and checks its fingerprint
     %%> - adds the apt source, so apt trusts only packages signed with that key
   end
+  opt signed apt repository
+    SW->>N: Refresh apt source<br/>bounded update of this source
+  end
   Note over SW: assets<br/>public command arguments
   SW->>N: Read manager version<br/>one manager command
   SW->>N: Read installed package<br/>one package query

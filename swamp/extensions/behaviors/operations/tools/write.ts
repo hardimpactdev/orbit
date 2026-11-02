@@ -23,7 +23,7 @@ export function writeInventory(value: unknown) {
 }
 /** Refusals on the installed package before any package write; false when nothing needs writing. */
 export function before(input: Input, facts: z.infer<typeof Facts>, present: boolean): boolean {
-  if (input.kind === "tool.install" && input.tool_id === null && present) throw new ToolRefusal("tool.package_already_installed");
+  if (input.kind === "tool.install" && input.tool_status === null && present) throw new ToolRefusal("tool.package_already_installed");
   if (input.kind === "tool.update" && !present) throw new ToolRefusal("tool.version_probe_failed");
   if (present) verifyInstalled(plain(input), facts.versions![0]!);
   return !(input.kind === "tool.install" && present);
@@ -64,7 +64,7 @@ export function decide(input: Input, phase: Phase): Decision {
   }
 }
 export const behavior = {
-  type: "@nckrtl/tool-write-command", version: "2026.11.02.5",
+  type: "@nckrtl/tool-write-command", version: "2026.11.02.6",
   resources: { assets: { schema: Public, lifetime: "1d", garbageCollection: 10 }, decision: { schema: Public, lifetime: "1d", garbageCollection: 10 }, observation: { schema: Public, lifetime: "1d", garbageCollection: 10 } },
   methods: {
     assets: { description: "Shape public command argv for the admitted manager", arguments: z.object({ input: WriteInput }),

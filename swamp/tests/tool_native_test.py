@@ -9,26 +9,31 @@ from native_harness import ROOT, NativeTestCase
 
 SSH = {'identity_file': '/fixture', 'target': {'host': 'node.invalid', 'port': 22, 'user': 'orbit', 'host_keys': ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG']}}
 TRANSPORT = r'''
-import json, shlex, sys
+import json, os, shlex, sys
 from pathlib import Path
 p=Path(STATE); state=json.loads(p.read_text()); argv=shlex.split(sys.argv[-1])
 with Path(AUDIT).open('a') as out: out.write(json.dumps(argv)+'\n')
-code=0
+code=0; changed=False
 if 'gpg' in argv:
     print('pub:::::::::\nfpr:::::::::'+('B'*40 if state.get('bad_key') else 'A'*40)+':')
 elif '/usr/bin/dpkg-query' in argv:
     if state.get('installed'): print('hello\tinstall ok installed\t'+state['installed'])
     else: sys.stderr.write('dpkg-query: no packages found matching hello\n'); code=1
-elif '/usr/bin/apt-cache' in argv: print('hello:\n  Candidate: '+state['candidate'])
+elif '/usr/bin/apt-cache' in argv:
+    if not state.get('requires_refresh') or state.get('refreshed'): print('hello:\n  Candidate: '+state['candidate'])
+elif '/usr/bin/apt-get' in argv and 'update' in argv: state['refreshed']=True; changed=True
 elif '--simulate' in argv:
     print('Remv hello [1.0]\n'+('Remv other [1.0]\n' if state.get('unsafe') else ''))
 elif 'install' in argv:
+    changed=True
     if state.get('no_write'): pass
     elif state.get('fail_write'): code=1
     else: state['installed']=argv[-1].split('=')[1]
-elif '--remove' in argv: state['installed']=None
+elif '--remove' in argv: state['installed']=None; changed=True
 elif '--version' in argv: print('apt 3.0')
-p.write_text(json.dumps(state)); sys.exit(code)
+if changed:
+    pending=p.with_suffix('.'+str(os.getpid())); pending.write_text(json.dumps(state)); pending.replace(p)
+sys.exit(code)
 '''
 CONFIG = '''import { z } from "npm:zod@4.4.3";
 export const behavior = {
@@ -122,9 +127,10 @@ class ToolNative(NativeTestCase):
 
     def test_verified_key_reaches_native_source_publication(self):
         repository = {'name':'vendor','uris':['https://packages.example.test/apt'],'suites':['stable'],'components':['main'],'signing_key':{'url':'https://packages.example.test/key.asc','fingerprint':'A'*40}}
-        run, result = self.run_kind(repository=repository, repository_given=True)
+        run, result = self.run_kind(state={'requires_refresh': True}, repository=repository, repository_given=True)
         self.assertEqual(result['outcome'], 'applied')
         self.assertEqual(next(s for s in run['jobs'][0]['steps'] if s['name']=='Add the signed apt source')['status'], 'succeeded')
+        self.assertTrue(json.loads(self.state.read_text())['refreshed'])
 
     def test_mismatched_key_fails_native_assert_before_publishing(self):
         repository = {'name':'vendor','uris':['https://packages.example.test/apt'],'suites':['stable'],'components':['main'],'signing_key':{'url':'https://packages.example.test/key.asc','fingerprint':'A'*40}}

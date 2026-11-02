@@ -38,3 +38,9 @@ Deno.test("Homebrew end observations decode the installed version without anothe
   assertEquals(command.includes("HOMEBREW_NO_AUTOREMOVE=1"), true);
   assertEquals(command.includes("/opt/homebrew/bin/brew"), true);
 });
+
+Deno.test("Linux Vite+ uses the recipe launcher, which selects its installed store", () => {
+  const c = commands(input("vp"));
+  assertEquals(c.version.includes("/usr/local/bin/vp"), true);
+  assertEquals(c.write.some(arg => arg.startsWith("VP_HOME=")), false);
+});
