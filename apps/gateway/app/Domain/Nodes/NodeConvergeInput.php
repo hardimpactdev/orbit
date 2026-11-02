@@ -254,7 +254,7 @@ final readonly class NodeConvergeInput
                     'user' => $node->user, 'apps_root' => ValidatedData::object($node->settings['apps'] ?? [])['path'] ?? null,
                     'checkouts' => $node->instances()->with('project')->orderBy('id')->get()->map(static fn ($instance): string => $instance->applicationDirectory())->all(),
                     'url' => $this->delivery->artifacts()[AgentDelivery::key($node)]['url'] ?? null],
-                'caddy-package' => AgentCaddyPackage::input(),
+                'caddy-package' => AgentCaddyPackage::nativeInput(),
                 'caddy' => $this->caddy($node),
                 'private-dns' => PrivateDnsPublicationNodes::query()->whereKey($node->id)->exists()
                     ? ['listener' => app(NodePrivateDnsListenerFootprint::class)->input($node), 'publication' => $this->dns()]

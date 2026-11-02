@@ -48,7 +48,7 @@ final readonly class NativeNodeRoleConvergeInput
             'agent_sha256' => $snapshot['agent_sha256'], 'prerequisites' => $snapshot['prerequisites'],
             'ssh' => $ssh,
             ...($assignment->role === RoleName::Ingress ? ['caddy' => app(NativeCaddyPublicationInput::class)->forNode($node),
-                'caddy_package' => AgentCaddyPackage::input(), 'firewall' => app(NodeRoleFirewallInput::class)->convergeCommands($node, $assignment->role)] : []),
+                'caddy_package' => AgentCaddyPackage::nativeInput(), 'firewall' => app(NodeRoleFirewallInput::class)->convergeCommands($node, $assignment->role)] : []),
             'footprint' => $footprint, 'cli' => $snapshot['cli'], 'metrics_fleet' => null];
 
         return ['intent' => $intent, 'participant_node_ids' => array_values(array_unique([209, $node->id]))];

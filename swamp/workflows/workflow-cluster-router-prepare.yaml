@@ -1,6 +1,6 @@
 id: 19bf171c-cf2a-4509-beb7-3373c29f19af
 name: cluster-router-prepare
-description: Canonical Router prerequisites, Caddy package and owned firewall policy through official SSH.
+description: 'Canonical Router prerequisites, Caddy package and owned firewall policy through official SSH.'
 vaults: []
 inputs:
   type: object
@@ -19,165 +19,135 @@ inputs:
       type: object
       additionalProperties: false
   required:
-  - operation_id
-  - node_id
-  - kind
-  - intent
-  - execution_secrets
+    - operation_id
+    - node_id
+    - kind
+    - intent
+    - execution_secrets
   additionalProperties: false
 jobs:
-- name: prepare
-  steps:
-  - name: account_assets
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/node-role-command'
-      behaviorName: account-assets
-      methodName: read
-      inputs:
-        action: account
-        input: '${{ {"user": inputs.intent.user} }}'
-  - name: account_command
-    labels: {role: swamp}
-    dependsOn:
-    - {step: account_assets, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("cluster-router-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
-      methodName: script
-      globalArgs:
-        name: '${{ ("cluster-router-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.connection.nodeUser }}
-          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
-          port: ${{ inputs.intent.connection.nodePort }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.connection.nodeHost }}
-          transport:
-            hostKeys: ${{ inputs.intent.host_keys }}
-      inputs:
-        hosts: name:target
-        interpreter: python3
-        sudo: false
-        script: ${{ steps["account_assets"].outputs.script_body }}
-  - name: account
-    labels: {role: swamp}
-    dependsOn:
-    - {step: account_command, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/node-role-command'
-      behaviorName: account-result
-      methodName: decode
-      inputs:
-        stdout: ${{ steps["account_command"].outputs.stdout }}
-  - name: packages_assets
-    labels: {role: swamp}
-    dependsOn:
-    - {step: account, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/node-bootstrap-command'
-      behaviorName: packages-assets
-      methodName: packages
-      inputs:
-        releases: ${{ inputs.intent.prerequisites.releases }}
-        packages: ${{ inputs.intent.prerequisites.packages }}
-  - name: packages
-    labels: {role: swamp}
-    writes: true
-    dependsOn:
-    - {step: packages_assets, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("cluster-router-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
-      methodName: script
-      globalArgs:
-        name: '${{ ("cluster-router-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.connection.nodeUser }}
-          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
-          port: ${{ inputs.intent.connection.nodePort }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.connection.nodeHost }}
-          transport:
-            hostKeys: ${{ inputs.intent.host_keys }}
-      inputs:
-        hosts: name:target
-        interpreter: python3
-        sudo: true
-        script: ${{ steps["packages_assets"].outputs.script_body }}
-  - name: caddy_assets
-    labels: {role: swamp}
-    dependsOn:
-    - {step: packages, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/node-role-command'
-      behaviorName: caddy-assets
-      methodName: read
-      inputs:
-        action: caddy_package
-        input: ${{ inputs.intent.caddy_package }}
-  - name: caddy_command
-    labels: {role: swamp}
-    writes: true
-    dependsOn:
-    - {step: caddy_assets, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("cluster-router-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
-      methodName: script
-      globalArgs:
-        name: '${{ ("cluster-router-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.connection.nodeUser }}
-          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
-          port: ${{ inputs.intent.connection.nodePort }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.connection.nodeHost }}
-          transport:
-            hostKeys: ${{ inputs.intent.host_keys }}
-      inputs:
-        hosts: name:target
-        interpreter: python3
-        sudo: true
-        script: ${{ steps["caddy_assets"].outputs.script_body }}
-  - name: caddy
-    labels: {role: swamp}
-    dependsOn:
-    - {step: caddy_command, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/node-role-command'
-      behaviorName: caddy-result
-      methodName: decode
-      inputs:
-        stdout: ${{ steps["caddy_command"].outputs.stdout }}
-  - name: firewall
-    labels: {role: swamp}
-    dependsOn:
-    - {step: caddy, condition: {type: succeeded}}
-    task:
-      type: workflow
-      workflowIdOrName: route-lan-apply
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        execution_secrets: {}
-        intent:
-          rule: ${{ inputs.intent.firewall }}
-          control_node_id: 209
-          connection: ${{ inputs.intent.connection }}
-          host_keys: ${{ inputs.intent.host_keys }}
+  - name: prepare
+    steps:
+      - name: account_command
+        labels: &ref_0
+          role: swamp
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ ("cluster-router-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
+          methodName: exec
+          globalArgs: &ref_1
+            name: '${{ ("cluster-router-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
+            transport:
+              kind: ssh
+              user: '${{ inputs.intent.connection.nodeUser }}'
+              identityFile: '${{ inputs.intent.connection.nodeIdentityFile }}'
+              port: '${{ inputs.intent.connection.nodePort }}'
+            hosts:
+              - name: target
+                address: '${{ inputs.intent.connection.nodeHost }}'
+                transport:
+                  hostKeys: '${{ inputs.intent.host_keys }}'
+          inputs:
+            hosts: 'name:target'
+            sudo: false
+            argv: '${{ ["getent", "passwd", inputs.intent.user] }}'
+            timeoutSec: 30
+      - name: account_group
+        labels: *ref_0
+        dependsOn:
+          - step: account_command
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ ("cluster-router-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
+          methodName: exec
+          globalArgs: *ref_1
+          inputs:
+            hosts: 'name:target'
+            sudo: false
+            argv: '${{ ["id", "-gn", inputs.intent.user] }}'
+            timeoutSec: 30
+      - name: account
+        labels: *ref_0
+        dependsOn:
+          - step: account_group
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/node-role-command'
+          behaviorName: account-result
+          methodName: account
+          inputs:
+            passwd: '${{ steps["account_command"].outputs.stdout }}'
+            group: '${{ steps["account_group"].outputs.stdout }}'
+      - name: packages_assets
+        labels: *ref_0
+        dependsOn:
+          - step: account
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/node-bootstrap-command'
+          behaviorName: packages-assets
+          methodName: packages
+          inputs:
+            releases: '${{ inputs.intent.prerequisites.releases }}'
+            packages: '${{ inputs.intent.prerequisites.packages }}'
+      - name: packages
+        labels: *ref_0
+        writes: true
+        dependsOn:
+          - step: packages_assets
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ ("cluster-router-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
+          methodName: script
+          globalArgs: *ref_1
+          inputs:
+            hosts: 'name:target'
+            interpreter: python3
+            sudo: true
+            script: '${{ steps["packages_assets"].outputs.script_body }}'
+      - name: caddy
+        labels: *ref_0
+        writes: true
+        dependsOn:
+          - step: packages
+            condition:
+              type: succeeded
+        task:
+          type: workflow
+          workflowIdOrName: node-caddy-package
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            intent: '${{ {"package": inputs.intent.caddy_package, "ssh": {"target": {"host": inputs.intent.connection.nodeHost, "user": inputs.intent.connection.nodeUser, "port": inputs.intent.connection.nodePort, "host_keys": inputs.intent.host_keys}, "identity_file": inputs.intent.connection.nodeIdentityFile}} }}'
+      - name: firewall
+        labels:
+          role: swamp
+        dependsOn:
+          - step: caddy
+            condition:
+              type: succeeded
+        task:
+          type: workflow
+          workflowIdOrName: route-lan-apply
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            execution_secrets: {}
+            intent:
+              rule: '${{ inputs.intent.firewall }}'
+              control_node_id: 209
+              connection: '${{ inputs.intent.connection }}'
+              host_keys: '${{ inputs.intent.host_keys }}'

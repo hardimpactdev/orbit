@@ -3,56 +3,71 @@ const expr = (source: string) => "${{ " + source + " }}";
 const placement = { labels: { role: "swamp" } };
 const after = (step: string) => [{ step, condition: { type: "succeeded" } }];
 
-/** One action through official SSH; the owning role or enrollment root retains ordering. */
-export function roleActionSteps(
+/** The enrolled account: two read-only commands over official SSH and one decode on 209. */
+export function roleAccountSteps(
     name: string,
-    action: "account" | "caddy_package",
-    input: string,
+    user: string,
     globalArgs: Fields,
     dependency?: string,
 ): Fields[] {
-    const asset = name + "_assets", command = name + "_command";
-    return [{
-        name: asset,
+    const passwd = name + "_command", group = name + "_group";
+    const read = (step: string, argv: string, after_?: Fields[]) => ({
+        name: step,
         ...placement,
-        ...(dependency ? { dependsOn: after(dependency) } : {}),
-        task: {
-            type: "behavior",
-            behaviorType: "@nckrtl/node-role-command",
-            behaviorName: name + "-assets",
-            methodName: "read",
-            inputs: { action, input: expr(input) },
-        },
-    }, {
-        name: command,
-        ...placement,
-        ...(action === "account" ? {} : { writes: true }),
-        dependsOn: after(asset),
+        ...(after_ ? { dependsOn: after_ } : {}),
         task: {
             type: "behavior",
             behaviorType: "@swamp/ssh",
             behaviorName: globalArgs.name,
-            methodName: "script",
+            methodName: "exec",
             globalArgs,
-            inputs: {
-                hosts: "name:target",
-                interpreter: "python3",
-                sudo: action !== "account",
-                script: expr('steps["' + asset + '"].outputs.script_body'),
+            inputs: { hosts: "name:target", sudo: false, argv: expr(argv), timeoutSec: 30 },
+        },
+    });
+    return [
+        read(passwd, '["getent", "passwd", ' + user + "]", dependency ? after(dependency) : undefined),
+        read(group, '["id", "-gn", ' + user + "]", after(passwd)),
+        {
+            name,
+            ...placement,
+            dependsOn: after(group),
+            task: {
+                type: "behavior",
+                behaviorType: "@nckrtl/node-role-command",
+                behaviorName: name + "-result",
+                methodName: "account",
+                inputs: {
+                    passwd: expr('steps["' + passwd + '"].outputs.stdout'),
+                    group: expr('steps["' + group + '"].outputs.stdout'),
+                },
             },
         },
-    }, {
+    ];
+}
+
+/** The pinned Caddy package floor through the shared official cfgmgmt child workflow. */
+export function roleCaddyPackageStep(
+    name: string,
+    caddyPackage: string,
+    ssh: string,
+    dependency: string,
+): Fields {
+    return {
         name,
         ...placement,
-        dependsOn: after(command),
+        writes: true,
+        dependsOn: after(dependency),
         task: {
-            type: "behavior",
-            behaviorType: "@nckrtl/node-role-command",
-            behaviorName: name + "-result",
-            methodName: "decode",
-            inputs: { stdout: expr('steps["' + command + '"].outputs.stdout') },
+            type: "workflow",
+            workflowIdOrName: "node-caddy-package",
+            inputs: {
+                operation_id: expr("inputs.operation_id"),
+                node_id: expr("inputs.node_id"),
+                kind: expr("inputs.kind"),
+                intent: expr('{"package": ' + caddyPackage + ', "ssh": ' + ssh + "}"),
+            },
         },
-    }];
+    };
 }
 
 export function rolePackageSteps(

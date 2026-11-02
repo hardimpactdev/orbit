@@ -18,10 +18,10 @@ const execute = async (
     const command = action ??
         (args.argv?.includes("recipe-validate")
             ? "caddy-validation"
-            : source.includes("Install the admitted Caddy")
-            ? "caddy-package"
-            : source.includes("def account(data):")
+            : args.argv?.[0] === "getent"
             ? "account"
+            : args.argv?.[0] === "id"
+            ? "account-group"
             : source.includes("orbit-agent") && source.includes("sha256")
             ? "observer-install"
             : source.includes("SECRET = Path")
@@ -34,11 +34,15 @@ const execute = async (
         Deno.writeTextFileSync("fail-used", "used", {createNew:true});
         throw new Error("Synthetic uncertain effect");
     }
+    if (command === "account" || command === "account-group") {
+        const stdout = command === "account" ? "orbit:x:1000:1000::/home/orbit:/bin/bash\n" : "orbit\n";
+        await ctx.writeResource("output", "output", { stdout });
+        return { stdout };
+    }
     let result: unknown = { ready: true, changed: false };
     if (command === "node.private-dns-validate") result = {ready: !state.dnsValidationInvalid, before:{commands:[["/usr/bin/systemctl","stop","orbit-private-dns.service"],["/usr/bin/systemctl","disable","orbit-private-dns.socket"]],records:null,catalog:null}, ...(state.dnsValidationInvalid ? {error_code:"node.private_dns_invalid"} : {})};
     else if (command === "node.private-dns-health") result = {ready: !state.dnsInvalid, ...(state.dnsInvalid ? {error_code:"node.private_dns_failed"} : {})};
     else if (command === "caddy-validation") result = { valid: !state.caddyInvalid };
-    else if (command === "caddy-package") result = { caddy_installed: true };
     else if (command === "inspect") {
         result = {
             curl: {
@@ -70,8 +74,6 @@ const execute = async (
             agent_sha256: "a".repeat(64),
             cli_version: "0.12.0",
         };
-    } else if (command === "account") {
-        result = { user: "orbit", group: "orbit", home: "/home/orbit" };
     } else if (command === "observer-install") {
         result = { installed: true, changed: false, sha256: "a".repeat(64) };
     } else if (source.includes("def install(data)")) {

@@ -12,6 +12,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Cluster;
@@ -175,7 +176,7 @@ it('captures complete pinned Ingress publication and firewall without a target w
         ->and($intent['firewall']['desired'])->not->toBeEmpty()
         ->and($intent['firewall']['desired'][0])->toBe(['ufw', 'allow', 'in', 'on', 'orbit', 'to', $node->wireguard_ip, 'comment', 'orbit:wireguard-members'])
         ->and($intent['firewall']['remove'][0])->toBe(['ufw', '--force', 'delete', 'allow', 'in', 'proto', 'tcp', 'to', 'any', 'port', (string) $node->public_ssh_port, 'comment', 'orbit:public-ssh-recovery'])
-        ->and($intent['caddy_package'])->toHaveKeys(['release', 'minimum_version', 'amd64_sha512']);
+        ->and($intent['caddy_package'])->toBe(AgentCaddyPackage::nativeInput());
     $node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
     expect(NativeNodeRoleConvergeInput::supports($node, RoleName::Ingress))->toBeFalse();
 });

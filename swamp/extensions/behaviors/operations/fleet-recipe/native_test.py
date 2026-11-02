@@ -32,7 +32,7 @@ class RecipeNative(NativeTestCase):
         self.path=self.repo/'workflows/workflow-operation-fleet-recipe-direct.yaml'
         self.path.write_text(yaml.safe_dump(workflow,sort_keys=False))
         # The unselected native children still need static identities for validation.
-        for number,name in enumerate(['operation-route-caddy','operation-fleet-peer-dns','route-certificate-remove','route-lan-apply']):
+        for number,name in enumerate(['operation-route-caddy','operation-fleet-peer-dns','route-certificate-remove','route-lan-apply','node-caddy-package']):
             child={'id':f'c9d03e50-2fe8-4ab8-83bf-{number:012d}','name':name,'inputs':yaml.safe_load((ROOT/f'workflows/workflow-{name}.yaml').read_text())['inputs'],'jobs':[{'name':'fake','steps':[{'name':'apply','task':{'type':'assert','expr':'true','message':'Fixture child succeeded'}}]}]}
             (self.repo/f'workflows/workflow-{name}.yaml').write_text(yaml.safe_dump(child))
         self.intent={'node_id':9,'identity':'sha256:'+'b'*64,'snapshot':'20261031T000000Z','agent_sha256':'a'*64,'cli_version':'0.12.0','automatic':False,'daytime':False,'recipe':{'user':'orbit','snapshot':'20261031T000000Z','tools':{}},'php':None,'incus_hold':[],

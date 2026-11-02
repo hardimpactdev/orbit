@@ -1,7 +1,8 @@
 import { dotless } from "../_lib/behavior_name.ts";
 import { roleFirewallSteps } from "./firewall_steps.ts";
 import {
-    roleActionSteps,
+    roleAccountSteps,
+    roleCaddyPackageStep,
     rolePackageSteps,
 } from "../node-role-command/steps.ts";
 import {
@@ -73,29 +74,25 @@ export function roleWorkflow() {
         }],
     };
     const steps: Fields[] = [
-        ...roleActionSteps(
-            "account",
-            "account",
-            '{"user":inputs.intent.user}',
-            globals,
-        ),
+        ...roleAccountSteps("account", "inputs.intent.user", globals),
         ...roleObserverInstallSteps(
             "observer_install",
             '({"url":inputs.intent.footprint.payloads.agent.url,"sha256":inputs.intent.agent_sha256})',
             globals,
             "account",
         ),
-        ...select(
-            roleActionSteps(
-                "caddy_package",
+        {
+            ...roleCaddyPackageStep(
                 "caddy_package",
                 "self.caddy",
-                globals,
+                ssh,
                 "observer_install",
             ),
-            "caddy",
-            'inputs.intent.role == "ingress" ? [inputs.intent.caddy_package] : []',
-        ),
+            forEach: {
+                item: "caddy",
+                in: ex('inputs.intent.role == "ingress" ? [inputs.intent.caddy_package] : []'),
+            },
+        },
         ...rolePackageSteps(
             "packages",
             "inputs.intent.prerequisites",

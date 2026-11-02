@@ -1,6 +1,7 @@
 import { dotless } from "../_lib/behavior_name.ts";
 import {
-    roleActionSteps,
+    roleAccountSteps,
+    roleCaddyPackageStep,
     rolePackageSteps,
 } from "../node-role-command/steps.ts";
 import { routeMutationSteps } from "../routes/mutation-command/steps.ts";
@@ -253,23 +254,17 @@ export function publicationWorkflow(mode: "forward" | "restore"): Fields {
 export function prepareWorkflow(): Fields {
     const globals = sshGlobals();
     const steps = [
-        ...roleActionSteps(
-            "account",
-            "account",
-            '{"user": inputs.intent.user}',
-            globals,
-        ),
+        ...roleAccountSteps("account", "inputs.intent.user", globals),
         ...rolePackageSteps(
             "packages",
             "inputs.intent.prerequisites",
             globals,
             "account",
         ),
-        ...roleActionSteps(
+        roleCaddyPackageStep(
             "caddy",
-            "caddy_package",
             "inputs.intent.caddy_package",
-            globals,
+            '{"target": {"host": inputs.intent.connection.nodeHost, "user": inputs.intent.connection.nodeUser, "port": inputs.intent.connection.nodePort, "host_keys": inputs.intent.host_keys}, "identity_file": inputs.intent.connection.nodeIdentityFile}',
             "packages",
         ),
     ];
