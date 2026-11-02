@@ -43,7 +43,7 @@ projection tests pass.
 
 The minimal@7 attempt did not reach staging: production `tasks.provision`
 operation 7793 failed at the VM step because SSH to `10.44.0.134:22` timed out.
-Group 2525 / `tvm-269` was destroyed by cancellation 7795 at
+Group 2525 / `tvm-270` was destroyed by cancellation 7795 at
 2026-11-02T12:50:45Z. There is no task-turn proof receipt. These changes remain
 unpublished until an affected-kind proof passes; this failure is a provisioning
 fault, not a result from the edited turn workflow.
