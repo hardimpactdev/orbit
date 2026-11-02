@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R1-R4, no DNS hold, TLD-wide private DNS, web root at instance:create, cert+site one step (Nick 2026-11-02), firewall.allow shape, Gateway signs CSRs (root-of-trust), single-swamp-node. docs/cli/route.mdx, docs/reference/routes.md.
+  %% Checked: flow-tighten 2026-11-02, rules 14-22 (rule 22: name the cfgmgmt behaviors; no other change).
   %% status: draft
   %% command: route:create
   %% kind: route.create
@@ -77,18 +78,21 @@ sequenceDiagram
   %%> Returns:
   %%> - one public certificate bundle per leaf
   opt Cluster-scoped Route
-    SW->>N: Allow the Router on LAN<br/>ufw allow 443 from Router LAN
+    SW->>N: Allow the Router on LAN<br/>@swamp/cfgmgmt/firewall
     %%> What it does:
     %%> - on the workload Node, allows TCP 443 from the Router's LAN address
     %%> - an identical tuple that another Route uses is left as it is
+    %%> - a managed rule goes below the operator rules, so `@swamp/cfgmgmt/firewall` needs no insert position
     %%> Why:
     %%> - the Router forwards to the workload over LAN, with no WireGuard fallback
   end
-  SW->>N: Install cert, publish site<br/>caddy validate, then reload
+  SW->>N: Install cert, publish site<br/>@swamp/cfgmgmt/file · reload
   %%> What it does:
   %%> - writes the certificate next to its key, owned `root:caddy`, mode 0750, and checks it matches the key and domain
   %%> - writes the new site blocks into the Caddyfile of each affected Node
   %%> - validates the whole file, then reloads Caddy
+  %%> How:
+  %%> - `@swamp/cfgmgmt/file` for the certificate and the Caddyfile, `caddy validate` as one `@swamp/ssh exec`, then a reload with `@swamp/cfgmgmt/systemd`
   %%> Why reload:
   %%> - a reload keeps open connections; Caddy is never restarted (rule 7)
   %%> Refuses:
