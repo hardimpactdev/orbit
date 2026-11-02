@@ -110,6 +110,10 @@ def main():
     # Earlier attempts may have left target state behind; the fixture names what a clean start is.
     for argv in fixture.get('clean_target', []):
         on_target(up['target']['key'], argv)
+    # Setup a kind needs on another Node of the topology, by its key, such as wireguard-tools on a peer.
+    for key, commands in fixture.get('before_node', {}).items():
+        for argv in commands:
+            run(['incus', 'exec', key, '--', *bind(argv, context)], timeout=600)
     # A kind that needs a service the topology lacks, such as Plausible, sets it up on this VM first.
     # Its last stdout line may be {"secrets": {name: value}}: test credentials it made, bound as ${secret.<name>} into
     # requests only. Receipts keep request paths, never bodies, so the values reach only the Gateway's admission.
