@@ -157,7 +157,7 @@ Orbit runs Swamp on one Node, 209. A ported step runs on the swamp workers (`lab
 | `operation-fleet-rollout`, `operation-fleet-cli-converge` | 2: `@nckrtl/fleet-release` |
 | `operation-node-bootstrap-host`, `-install`, `-probe`, `-verify`, `operation-node-macos-inspect`, `operation-node-prepare-php-packages` | 8: Node bootstrap |
 | `operation-node-wireguard-hub-converge` | 3: `@nckrtl/node-wireguard-direct` |
-| `operation-ai-router-account-update`, `ai-router-remove-source` | 3: AI router accounts and sources |
+| `operation-ai-router-account-update` | 3: AI router accounts |
 | `operation-conn-direct`, `operation-vault-direct`, `operation-dependency-merge`, `node-worker-canary` | 4: one step each |
 
 Task VM hosts keep a Node worker for image work: `operation-task-vm-image-build`, `operation-task-vm-upcloud-image-build`, `operation-task-vm-cache-fill` and `task-vm-image-reaper` run on the host itself. Shark keeps `orbit-node-13` for them.
