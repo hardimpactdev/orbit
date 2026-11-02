@@ -124,7 +124,8 @@ The Gateway API accepts `POST /api/v1/routes` with an app Route body such as `{"
 | `route.web_root_unsafe` | A production web root would serve an application `.env`, or sits in the default directory without being the Instance root. |
 | `app-prod.web_root_invalid` | The selected production release lacks the web root or its application directory, or the web root holds a link. |
 | `route.router_required` | The Cluster has no active Router. |
-| `route.node_inactive`, `route.cluster_inactive` | The Instance's Node or Cluster, or the custom proxy's Node, is not active. |
+| `route.instance_inactive` | The Instance is neither being provisioned nor active. |
+| `route.node_inactive` | The custom proxy's Node is not active, or has no WireGuard address. |
 | `route.upstream_invalid` | The upstream is not a loopback HTTP URL. |
 | `route.upstream_unresolved` | The Process has no single supported listener for this publication. |
 | `route.process_conflict` | The Process is not a Node Process on the serving Node. |

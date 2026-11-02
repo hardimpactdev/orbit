@@ -59,7 +59,8 @@ The app form creates and activates a Route for the Instance. The Instance implie
 | `app-prod.web_root_invalid` | The selected production release lacks the web root or its application directory, or the web root holds a link. |
 | `route.web_root_unsupported` | A custom proxy Route got a web root. |
 | `route.router_required` | The Cluster has no active Router. |
-| `route.node_inactive`, `route.cluster_inactive` | The Instance's Node or Cluster, or the custom proxy's Node, is not active. |
+| `route.instance_inactive` | The Instance is neither being provisioned nor active. |
+| `route.node_inactive` | The custom proxy's Node is not active, or has no WireGuard address. |
 | `route.upstream_invalid` | The upstream is not a loopback HTTP URL. |
 | `route.upstream_unresolved` | The Process has no single Node-local listener. |
 | `route.process_conflict` | The Process is not a Node Process on the serving Node. |
