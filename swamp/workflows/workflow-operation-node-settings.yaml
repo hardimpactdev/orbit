@@ -55,8 +55,3 @@ jobs:
         sudo: true
         argv: [timeout, '20', /usr/bin/stat, -c, '%F %U:%G %a', '${{ inputs.intent.storage.root }}']
         timeoutSec: 30
-  - name: 'Prove the apps folder'
-    labels: {role: swamp}
-    dependsOn: [{step: 'Check owner and mode', condition: {type: succeeded}}]
-    task: {type: assert, severity: high, message: The apps folder is not the managed user's real folder with mode 0755.,
-      expr: 'steps["Check owner and mode"].outputs.stdout in ["directory " + inputs.intent.storage.user + ":" + inputs.intent.storage.group + " 755", "directory " + inputs.intent.storage.user + ":" + inputs.intent.storage.group + " 755\n"]'}

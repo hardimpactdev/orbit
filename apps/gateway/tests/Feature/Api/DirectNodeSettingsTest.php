@@ -29,7 +29,7 @@ beforeEach(function (): void {
         'node_id' => $this->node->id, 'status' => OperationStatus::Queued, 'sequence' => 1, 'input' => $this->input,
         'state' => ['node_settings_writer' => 'direct', 'swamp_run_id' => $this->run]]);
     $this->body = ['run_id' => $this->run, 'status' => 'succeeded', 'started_at' => '2026-10-30T12:00:00.000Z',
-        'finished_at' => '2026-10-30T12:00:01.000Z', 'error_code' => null, 'result' => ['steps' => ['Prove the apps folder' => ['status' => 'succeeded']]]];
+        'finished_at' => '2026-10-30T12:00:01.000Z', 'error_code' => null, 'result' => ['steps' => ['Check owner and mode' => ['status' => 'succeeded', 'stdout' => "directory orbit:orbit 755\n"]]]];
     $this->socket = new FakeRoutePublicationSocket;
     $this->socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => [
         'kind' => 'started', 'workflowName' => 'operation-node-settings', 'runId' => $this->run,
@@ -57,7 +57,13 @@ it('reports a failed Node step as the settings code and any other failure as nat
         'error_code' => 'operation.native_failed', 'failure' => ['failed_step' => $step, 'detail' => 'node.settings_root_failed: the root exists', 'stderr_recorded' => true]]);
     expect($this->operation->fresh())->status->toBe(OperationStatus::Failed)->error_code->toBe($code)
         ->and($this->node->fresh()->settings)->toBe(['apps' => ['path' => '/srv/old']]);
-})->with([['Create the apps folder', 'node.settings_root_failed'], ['Prove the apps folder', 'node.settings_root_failed'], ['An unrelated step', 'operation.native_failed']]);
+})->with([['Create the apps folder', 'node.settings_root_failed'], ['Check owner and mode', 'node.settings_root_failed'], ['An unrelated step', 'operation.native_failed']]);
+
+it('fails a run whose folder stat is not the managed user\'s real folder with mode 0755', function (string $stdout): void {
+    app(NodeSettingsProjection::class)->apply($this->operation, [...$this->body, 'result' => ['steps' => ['Check owner and mode' => ['status' => 'succeeded', 'stdout' => $stdout]]]]);
+    expect($this->operation->fresh())->status->toBe(OperationStatus::Failed)->error_code->toBe('node.settings_root_failed')
+        ->and($this->node->fresh()->settings)->toBe(['apps' => ['path' => '/srv/old']]);
+})->with(['directory root:root 755', 'directory orbit:orbit 775', 'symbolic link orbit:orbit 777']);
 
 it('sends only the SSH target and the apps folder intent to Swamp', function (): void {
     expect(app(NodeSettingsProjection::class)->input($this->operation))->toBe(['intent' => [

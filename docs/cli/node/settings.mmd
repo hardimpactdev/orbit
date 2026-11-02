@@ -80,11 +80,8 @@ sequenceDiagram
     SW->>N: Check owner and mode<br/>@swamp/ssh exec · stat
     %%> What it does:
     %%> - reads the folder's type, owner, group and mode in one `stat`
-    SW->>SW: Prove the apps folder<br/>assert · user:group 0755
-    %%> What it does:
-    %%> - Swamp's native `assert` compares the `stat` result with the intent
     %%> Why:
-    %%> - a part only counts as applied when the Node shows it
+    %%> - it is the one end check: the Gateway compares its output with the intent, a real folder of the managed user and group, mode 0755
     alt folder is ready
       N-->>SW: orbit:orbit · 0755
       %%> Returns:

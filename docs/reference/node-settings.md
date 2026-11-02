@@ -23,13 +23,15 @@ The Gateway starts `operation-node-settings` on the `swamp` role's workers. Its 
 The steps are:
 
 - `Create the apps folder` runs the official `@swamp/cfgmgmt/directory` behavior. It creates missing folders and gives the apps folder the managed user and group with mode `0755`.
-- `Check owner and mode` reads the folder with one `stat`.
-- `Prove the apps folder` is Swamp's native `assert`: the `stat` output must match the intent.
-- The Gateway reads that end check from Swamp's run data. It stores the settings only after the check succeeded.
+- `Check owner and mode` reads the folder with one `stat`. It is the end check.
+- The Gateway reads its output from Swamp's run data.
+- The folder must be a real folder of the managed user and group, with mode 0755.
+- Any other output fails the task with `node.settings_root_failed`.
+- The Gateway stores the settings only after that check passed.
 
 The Gateway stores the settings only from a successful run. A failed or cancelled run keeps the previous settings, and folders made before a failure stay. A failure in any of these steps reports `node.settings_root_failed`; the failure detail holds the reason.
 
-Gateway admission resolves the root and checks it: path grammar, protected paths, managed checkouts, and the managed home `/home/<user>` that Orbit creates. It performs no account lookup or filesystem action.
+Gateway admission resolves the root and checks it: path grammar, protected paths, managed checkouts, and the managed home `/home/<user>` that Orbit creates. It refuses `/`, `/home`, any home folder itself (`/root` or a folder directly under `/home`), `/etc` and `/usr`. It performs no account lookup or filesystem action.
 
 An action on an apps root requires Linux. Other platforms refuse before recording an execution intent. Patches that only change stored settings remain available outside the worker rollout.
 
@@ -172,6 +174,6 @@ Storing the computed default would go stale when the managed user's home changes
 
 Moving source on a settings change would be a hidden, risky migration. So each checkout keeps the path it got at creation. Move or remove old checkouts with explicit commands.
 
-### No ownership changes to existing directories
+### An existing folder converges
 
-The path can be outside the managed user's home, so a broad `chown` could damage unrelated data. The Gateway only creates missing directories and refuses an existing one that does not already fit.
+An existing apps folder gets the managed user, group and mode 0755, as a new one does, so a rerun repairs drift. A broad `chown` of the wrong path could damage unrelated data. So the Gateway refuses obviously wrong paths at admission, and `@swamp/cfgmgmt/directory` changes only the folder itself, never its contents.

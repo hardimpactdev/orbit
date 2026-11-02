@@ -139,6 +139,24 @@ describe('node storage settings', function (): void {
         expect($node->refresh()->settings)->toBeNull();
     });
 
+    it('rejects obviously wrong apps paths before persisting', function (string $path, string $code): void {
+        $node = Node::query()->create([
+            'name' => 'gateway',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.10',
+            'user' => 'orbit',
+            'wireguard_ip' => '10.44.0.1',
+        ]);
+
+        $this
+            ->patchJson("/api/v1/nodes/{$node->id}/settings", ['apps' => ['path' => $path]])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', $code);
+
+        expect($node->refresh()->settings)->toBeNull();
+    })->with([['/', 'node.settings_path_invalid'], ...array_map(static fn (string $path): array => [$path, 'node.settings_path_protected'],
+        ['/home', '/home/orbit', '/home/alice', '/root', '/etc', '/usr'])]);
+
     it('rejects protected roots on a node without app-dev before persisting', function (): void {
         $inspected = [];
         $prepared = [];

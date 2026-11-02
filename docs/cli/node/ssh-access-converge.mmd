@@ -47,7 +47,7 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>N: Add the Orbit keys<br/>@swamp/cfgmgmt/authorized_key
+  SW->>N: Write the Orbit keys<br/>@swamp/cfgmgmt/authorized_key
   %%> What it does:
   %%> - adds each of Orbit's keys to the managed account's `authorized_keys` when it is missing, one behavior per key
   %%> Never:

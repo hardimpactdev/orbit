@@ -25,7 +25,7 @@ final readonly class ProtectedPathCatalog
             return true;
         }
 
-        if ($path->equals($home) || $home->isInside($path)) {
+        if ($path->equals($home) || $home->isInside($path) || self::isHomeFolder($path)) {
             return true;
         }
 
@@ -38,6 +38,12 @@ final readonly class ProtectedPathCatalog
         }
 
         return $this->isHiddenControlPath($path, $home);
+    }
+
+    /** Any account's own home folder: `/root`, or a folder directly under `/home`. */
+    private static function isHomeFolder(StoragePath $path): bool
+    {
+        return $path->value === '/root' || dirname($path->value) === '/home';
     }
 
     /** @return list<string> */

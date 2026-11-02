@@ -47,7 +47,7 @@ return ['node.worker_known_hosts' => [
     'workflow' => 'operation-node-settings',
     'projection' => NodeSettingsProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'settings', 'step' => 'Prove the apps folder', 'native' => true],
+    'terminal_result' => ['job' => 'settings', 'step' => 'Check owner and mode', 'native' => true],
 ], 'node.converge' => [
     'workflow' => 'operation-node-converge-direct',
     'projection' => NodeConvergeProjection::class,

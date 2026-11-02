@@ -18,7 +18,7 @@ jobs:
   labels: {role: swamp}
   steps:
     # One official authorized_key per key Orbit owns; it adds a missing line and never touches another.
-  - name: 'Add the Orbit keys'
+  - name: 'Write the Orbit keys'
     labels: {role: swamp}
     writes: true
     forEach: {item: key, in: '${{ inputs.intent.keys }}'}
@@ -33,7 +33,7 @@ jobs:
     # The end check: a new session with the swamp role identity only.
   - name: 'Log in with Swamp identity'
     labels: {role: swamp}
-    dependsOn: [{step: 'Add the Orbit keys', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Write the Orbit keys', condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'

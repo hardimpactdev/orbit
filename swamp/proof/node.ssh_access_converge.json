@@ -28,9 +28,9 @@
   },
   "phases": [
     {
-      "name": "Add the Orbit keys",
+      "name": "Write the Orbit keys",
       "job": "ssh_access",
-      "step": "Add the Orbit keys-ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND",
+      "step": "Write the Orbit keys-ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND",
       "budget_seconds": 40
     },
     {

@@ -84,7 +84,7 @@ it('prepares settings from a public SSH intent and stores them only at terminal 
         ->and($this->socket->sent[0]['payload']['inputs']['intent']['ssh']['control_node_id'])->toBe(209)
         ->and($this->socket->sent[0]['payload']['inputs']['intent']['storage'])->toBe(['root' => '/srv/new', 'user' => $this->node->user, 'group' => $this->node->user])
         ->and($this->agents->calls)->toBe([]);
-    app(NodeSettingsProjection::class)->apply($op, ['run_id' => $this->run, 'status' => 'succeeded', 'result' => ['steps' => ['Prove the apps folder' => ['status' => 'succeeded']]],
+    app(NodeSettingsProjection::class)->apply($op, ['run_id' => $this->run, 'status' => 'succeeded', 'result' => ['steps' => ['Check owner and mode' => ['status' => 'succeeded', 'stdout' => 'directory '.$this->node->user.':'.$this->node->user.' 755']]],
         'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null]);
     expect($this->node->fresh()->settings['apps']['path'])->toBe('/srv/new');
 });

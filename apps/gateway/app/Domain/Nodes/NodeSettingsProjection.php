@@ -28,13 +28,18 @@ final readonly class NodeSettingsProjection implements DirectOperationProjection
         $code = ValidatedData::nullableString($data['error_code'] ?? null);
         // A refusal or failure on Node 12 is the documented settings code; its stderr carries the reason.
         $failure = is_array($data['failure'] ?? null) ? $data['failure'] : [];
-        if ($status === OperationStatus::Failed && in_array($failure['failed_step'] ?? null, ['Create the apps folder', 'Check owner and mode', 'Prove the apps folder'], true)) {
+        if ($status === OperationStatus::Failed && in_array($failure['failed_step'] ?? null, ['Create the apps folder', 'Check owner and mode'], true)) {
             $code = $data['error_code'] = 'node.settings_root_failed';
         }
         $result = ValidatedData::object($data['result'] ?? []);
-        // Swamp's run data: the native assert compared the folder's stat with the intent.
-        if ($status === OperationStatus::Succeeded && (NativeRunResult::stepStatus($result, 'Prove the apps folder') !== 'succeeded' || $code !== null)) {
+        if ($status === OperationStatus::Succeeded && (NativeRunResult::stepStatus($result, 'Check owner and mode') !== 'succeeded' || $code !== null)) {
             throw new ResourceOperationException('operation.result_invalid', 'The storage action has no successful result.', 422);
+        }
+        // The end check is the folder's stat in Swamp's run data: the managed user's real folder, mode 0755.
+        if ($status === OperationStatus::Succeeded && ! $this->owned($operation, $result)) {
+            $status = OperationStatus::Failed;
+            $code = $data['error_code'] = 'node.settings_root_failed';
+            $data['status'] = $status->value;
         }
         if (($status === OperationStatus::Failed && $code === null) || ($status !== OperationStatus::Failed && $code !== null)) {
             throw new ResourceOperationException('operation.result_invalid', 'The storage action needs its refusal code.', 422);
@@ -55,5 +60,15 @@ final readonly class NodeSettingsProjection implements DirectOperationProjection
 
             return $projected;
         });
+    }
+
+    /** @param array<string,mixed> $result */
+    private function owned(Operation $operation, array $result): bool
+    {
+        $steps = is_array($result['steps'] ?? null) ? $result['steps'] : [];
+        $check = is_array($steps['Check owner and mode'] ?? null) ? $steps['Check owner and mode'] : [];
+        $stdout = is_string($check['stdout'] ?? null) ? trim($check['stdout']) : null;
+
+        return $stdout === 'directory '.ValidatedData::string($operation->input['user']).':'.ValidatedData::string($operation->input['group']).' 755';
     }
 }

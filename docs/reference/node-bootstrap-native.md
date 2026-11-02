@@ -54,7 +54,7 @@ Orbit only adds its own keys to the managed account's `~/.ssh/authorized_keys`: 
 
 The Gateway captures the stored managed account, WireGuard address and complete SSH host key through the shared `SwampSshExecutionInput`. The run needs no secret. Every step runs on 209 and connects with the `swamp` role identity:
 
-- `Add the Orbit keys` runs one official `@swamp/cfgmgmt/authorized_key` per key. It adds a missing line and leaves a present one alone.
+- `Write the Orbit keys` runs one official `@swamp/cfgmgmt/authorized_key` per key. It adds a missing line and leaves a present one alone.
 - `Log in with Swamp identity` opens a new session with only that identity. It is the end check, read from Swamp's run data.
 
 A Node that does not accept the `swamp` role identity yet needs Node bootstrap first; this command cannot add that first key. The shared subscriber records `ssh_access_ready: true` and the footprint `ssh_access_digest`. A failure keeps the old digest; added keys stay, and a rerun is safe.
