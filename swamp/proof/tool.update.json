@@ -17,7 +17,7 @@
     {"name": "Assert the key fingerprint", "job": "tools", "step": "Assert the key fingerprint", "budget_seconds": 10},
     {"name": "Publish the signing key", "job": "tools", "step": "Publish the signing key", "budget_seconds": 60},
     {"name": "Check the candidate", "job": "tools", "step": "Check the candidate", "budget_seconds": 120},
-    {"name": "decide", "job": "tools", "step": "decide", "budget_seconds": 30},
+    {"name": "Choose package action", "job": "tools", "step": "Choose package action", "budget_seconds": 30},
     {"name": "Assert package state", "job": "tools", "step": "Assert package state", "budget_seconds": 10}
   ],
   "parity": "swamp/proof/tool.install/parity.py"

@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Tightened: Decision 7 (2026-11-02), worker-side key verification before Node contact.
+  %% Pass 3: native operation boundaries retained; see the chart-step table in the commit.
   %% Target design: ADR 0244 task, DECISIONS R1-R4 (process.stop shape), ADR 0242 signed apt sources, single-swamp-node.
   %% status: reviewed
   %% command: tool:install
@@ -44,7 +45,7 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  Note over SW: assets<br/>public command arguments
+  Note over SW: Prepare package commands<br/>typed argv, no script reads
   opt --repository given
     Note over SW: Fetch the signing key<br/>bounded download on 209
     Note over SW: Read the key fingerprint<br/>gpg show-keys on 209
@@ -70,7 +71,7 @@ sequenceDiagram
     SW->>N: Prepare apt keyrings<br/>cfgmgmt directory
     SW->>N: Publish the signing key<br/>cfgmgmt copy_file
     SW->>N: Pin repository packages<br/>only admitted packages
-    SW->>N: Add the signed apt source<br/>cfgmgmt file · deb822 source
+    SW->>N: Write the apt source<br/>cfgmgmt file · deb822 source
     %%> When:
     %%> - only for `apt` with `--repository`
     %%> What it does:
@@ -89,11 +90,8 @@ sequenceDiagram
   %%> What it does:
   %%> - asks the manager which version it would install
   %%> - compares it with the constraint; a version outside it stops the run here
-  Note over SW: decide<br/>candidate and constraint
-  opt Homebrew formula
-    SW->>N: Install Homebrew formula<br/>bounded brew argv
-  end
-  SW->>N: Install the package<br/>apt-get install --no-remove
+  Note over SW: Choose package action<br/>candidate and constraint
+  SW->>N: Apply the package<br/>apt-get install --no-remove
   %%> What it does:
   %%> - installs the package with the manager
   %%> - for `apt`, never removes other packages to make room
@@ -104,10 +102,9 @@ sequenceDiagram
   opt apt
     SW->>N: Check apt package<br/>official package check
   end
-  opt Homebrew formula
-    SW->>N: Check Homebrew formula<br/>bounded brew inventory
+  opt other Tool Managers
+    SW->>N: Check the package<br/>one manager query
   end
-  SW->>N: Check the package<br/>native package check
   Note over SW: Decode package state<br/>typed package observation
   Note over SW: Assert package state<br/>native end check
   opt signing key staged

@@ -15,8 +15,13 @@ from pathlib import Path
 p=Path(STATE); state=json.loads(p.read_text()); argv=shlex.split(sys.argv[-1])
 with Path(AUDIT).open('a') as out: out.write(json.dumps(argv)+'\n')
 code=0; changed=False
-if 'gpg' in argv:
-    print('pub:::::::::\nfpr:::::::::'+('B'*40 if state.get('bad_key') else 'A'*40)+':')
+if any(part.endswith('/bin/brew') for part in argv):
+    if 'info' in argv:
+        key='a'*64
+        print(json.dumps({'formulae':[{'name':'hello','full_name':'hello','tap':'homebrew/core','disabled':False,'installed':[{'version':state['installed'],'installed_on_request':True}] if state.get('installed') else [],'versions':{'stable':'2.0','bottle':True},'bottle':{'stable':{'files':{'x86_64_linux':{'sha256':key,'url':'https://ghcr.io/v2/homebrew/core/hello/sha256:'+key}}}}}]}))
+    elif 'uninstall' in argv: state['installed']=None; changed=True
+    elif 'install' in argv or 'upgrade' in argv: state['installed']='2.0'; changed=True
+    elif '--version' in argv: print('Homebrew 4.0')
 elif '/usr/bin/dpkg-query' in argv:
     if state.get('installed'): print('hello\tinstall ok installed\t'+state['installed'])
     else: sys.stderr.write('dpkg-query: no packages found matching hello\n'); code=1
@@ -105,7 +110,7 @@ class ToolNative(NativeTestCase):
         run = json.loads(self.cli('workflow', 'history', 'get', run['id']).stdout)
         steps = {s['name']: s for s in run['jobs'][0]['steps']}
         self.assertNotIn('result', steps)
-        decision = steps.get('decide', {}).get('outputs', {})
+        decision = steps.get('Choose package action', {}).get('outputs', {})
         observed = steps.get('Decode package state', {}).get('outputs', {})
         result = {**decision, **observed}
         if kind == 'tool.remove' and run['status'] == 'succeeded': result['outcome'] = 'applied'
@@ -119,10 +124,18 @@ class ToolNative(NativeTestCase):
         self.assertTrue(any('--no-remove' in argv and 'DPkg::Lock::Timeout=300' in argv for argv in calls))
         self.assertFalse(any('-c' in argv or any('.py' in part for part in argv) for argv in calls))
 
+    def test_homebrew_shares_the_native_package_write_and_remove_paths(self):
+        for kind, installed in [('tool.install', None), ('tool.remove', '2.0')]:
+            with self.subTest(kind=kind):
+                run, result = self.run_kind(kind, state={'installed': installed}, manager='brew', installed_version=installed)
+                self.assertEqual(run['status'], 'succeeded')
+                self.assertEqual(json.loads(self.state.read_text())['installed'], '2.0' if kind == 'tool.install' else None)
+                self.assertEqual(result['outcome'], 'applied')
+
     def test_a_successful_command_without_the_package_fails_the_native_end_assert(self):
         run, _ = self.run_kind(success=False, state={'no_write': True})
         steps = {step['name']: step for step in run['jobs'][0]['steps']}
-        self.assertEqual(steps['Install the package']['status'], 'succeeded')
+        self.assertEqual(steps['Apply the package']['status'], 'succeeded')
         self.assertEqual(steps['Assert package state']['status'], 'failed')
         self.assertIsNone(json.loads(self.state.read_text())['installed'])
 
@@ -149,7 +162,7 @@ class ToolNative(NativeTestCase):
         repository = {'name':'vendor','uris':['https://packages.example.test/apt'],'suites':['stable'],'components':['main'],'signing_key':{'url':'https://packages.example.test/key.asc','fingerprint':'A'*40}}
         run, result = self.run_kind(state={'requires_refresh': True}, repository=repository, repository_given=True)
         self.assertEqual(result['outcome'], 'applied')
-        self.assertEqual(next(s for s in run['jobs'][0]['steps'] if s['name']=='Add the signed apt source')['status'], 'succeeded')
+        self.assertEqual(next(s for s in run['jobs'][0]['steps'] if s['name']=='Write the apt source')['status'], 'succeeded')
         self.assertTrue(json.loads(self.state.read_text())['refreshed'])
 
     def test_mismatched_key_fails_native_assert_before_publishing(self):

@@ -15,8 +15,8 @@
     {"name": "Publish the signing key", "job": "tools", "step": "Publish the signing key", "budget_seconds": 60},
     {"name": "Check apt package", "job": "tools", "step": "Check apt package", "budget_seconds": 60},
     {"name": "Check the candidate", "job": "tools", "step": "Check the candidate", "budget_seconds": 120},
-    {"name": "decide", "job": "tools", "step": "decide", "budget_seconds": 30},
-    {"name": "Install the package", "job": "tools", "step": "Install the package", "budget_seconds": 900},
+    {"name": "Choose package action", "job": "tools", "step": "Choose package action", "budget_seconds": 30},
+    {"name": "Apply the package", "job": "tools", "step": "Apply the package", "budget_seconds": 900},
     {"name": "Assert package state", "job": "tools", "step": "Assert package state", "budget_seconds": 10}
   ],
   "parity": "swamp/proof/tool.install/parity.py"

@@ -20,3 +20,20 @@ The container behavior lacks an env-file option, working directory, labels and a
 The Node observer does not currently record the Process user's home. Certificate paths therefore retain one getent observation and a pure public rendering step. A recorded account home would let admission finish that rendering and remove both steps. No new Node wrapper or script was added.
 
 Official Docker state outputs use a generated vault key under `swamp-cfgmgmt-docker_container-<definition UUID>-<method>-state-<host>-current.env`. The Gateway grant permits that output namespace for apply/check only. Execution-input key grants remain unchanged.
+
+## Tools candidates for Swamp evaluation
+
+These are open questions from the Tools pass-3 reconciliation. Evidence uses Swamp e459 and cfgmgmt 2026.11.01.1. The workflow keeps separate operations today; it adds no wrapper executor.
+
+| Extra workflow steps | Pinned behavior and candidate question |
+| --- | --- |
+| Prepare package commands; Choose package action; Decode package state | These existing behaviors only shape typed argv or observations. Could reusable workflow bindings and typed output projections remove these dispatches? |
+| Fetch the signing key; Read the key fingerprint; Assert the key fingerprint; Dearmor the signing key | `fetch` requires a remote Node. Worker-local download, OpenPGP inspection and the native assertion are separate operations. Could an official worker-side download and verified-key resource fit? |
+| Prepare apt keyrings; Publish the signing key; Pin repository packages; Write the apt source | Directory mode, a binary `copy_file`, and UTF-8 `file` resources have separate APIs. Could a resource set preserve these native checks under one progress name? |
+| Refresh apt source | File apply does not refresh apt. The apt refresh method has no source scope or option to retain other indexes. Could those options fit the official behavior? |
+| Remove the staged key | Public worker files need cleanup after completion or failure. Could native temporary-artifact lifetime remove this cleanup step? |
+| Read manager version; Read installed package; Read macOS version | The manager version, inventory, candidate and cask/bottle compatibility are different command results. Could package observations expose these together, including normal candidate versions? |
+| Check apt package / Check apt absence; Check the package / Check it is gone; Assert package state | Writes and checks are separate methods. Apt `check` records `non_compliant` and succeeds, so a native assert enforces the result. Would an opt-in failure on drift fit? Could checks expose the small public state in step outputs too? |
+| Remove repository pins | `apt_repository.apply(ensure=absent)` removes its source and signing key, but does not manage apt preferences. Could optional preferences belong to that resource? The separate signing-key removal was redundant and is gone. |
+
+Apt writes keep SSH argv because the official package resource cannot express `--no-remove` and the bounded dpkg lock wait. Homebrew keeps argv for its managed prefix, environment and bottle policy. Could those options fit the official resources? Installation on first use still uses the existing bootstrap boundary; it is not credited as fully rule 22 done.

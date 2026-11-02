@@ -26,3 +26,6 @@ project.observe
 project.routine
 schedule.run
 vault.setup
+tool.install
+tool.update
+tool.remove

@@ -18,7 +18,7 @@ final class ToolNativeRun
         $decision = array_intersect_key($fields, array_flip(['manager_version', 'installed_version', 'native_error_code', 'error_code', 'outcome']));
         $decision['ready'] = $error === null;
         $steps = [
-            ['name' => 'decide', 'status' => 'succeeded', 'outputs' => $decision],
+            ['name' => 'Choose package action', 'status' => 'succeeded', 'outputs' => $decision],
             ['name' => 'Decode package state', 'status' => $error === null ? 'succeeded' : 'skipped', 'outputs' => array_intersect_key($fields, ['installed_version' => true])],
             ['name' => 'Assert package state', 'status' => $error === null ? 'succeeded' : 'failed'],
         ];

@@ -76,7 +76,10 @@ const stepNames = (yaml, kind) => {
     if (m && (item ?? m[1].length) === m[1].length) { item = m[1].length; names.push(m[2]) }
     // An OR term which guards every other kind makes this step exclusive to one kind.
     const exclusive = line.match(/^\s*guard:.*\|\|\s*\(?inputs\.kind\s*!=\s*"([\w.]+)"\s*\|\|/)
-    if (exclusive && exclusive[1] !== kind) names.pop()
+    // A literal leading kind comparison joined by OR makes the whole skip guard true for that kind.
+    // Unknown predicates stay in the chart; neither ternaries nor nested expressions are inferred.
+    const skip = indent === item + 2 && !line.includes('?') && line.match(/^\s*guard:\s*['"]?\$\{\{\s*inputs(?:\.intent)?\.kind\s*(==|!=)\s*"([\w.]+)"\s*(?:\|\||\}\})/)
+    if ((exclusive && exclusive[1] !== kind) || (skip && (skip[1] === '==' ? kind === skip[2] : kind !== skip[2]))) names.pop()
   }
   return names
 }

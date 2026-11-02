@@ -1,9 +1,11 @@
 # Native Tool commands
 
-Install, update and removal use official cfgmgmt resources and one SSH argv per manager command. No package phase sends Python source to the Node. The package check provides the installed version or proven absence; a typed decoder reads that observation and the native assert proves the end state. The Gateway reads these fixed native captures without a result-reporting step.
+Install, update and removal use official cfgmgmt resources and one SSH argv per manager command. No package phase sends Python source to the Node. One shared SSH step applies or removes packages for every supported manager. One apt check or manager query provides the installed version or proven absence; a typed decoder reads that observation and the native assert proves the end state. The Gateway reads these fixed native captures without a result-reporting step.
 
 The signing key is downloaded and inspected on the Swamp worker before any Node contact. A native assert requires exactly the admitted primary fingerprint. The official cfgmgmt `copy_file` behavior publishes the binary `.gpg` key; `file` accepts UTF-8 content only. cfgmgmt `file` writes the deb822 source. Local cleanup removes the run's staged key after completed or skipped publication, including a failed fingerprint check.
 
 APT installation uses one `apt-get` argv because the official apt resource cannot express `--no-remove` or the 300-second dpkg lock wait. Removal uses one `dpkg --remove` argv after the native removal-plan check, so no dependency removal can be added by apt. Official apt `check` proves the package state. Homebrew uses bounded argv: the official resource cannot set `--force-bottle`, the managed prefix or the environment that prevents automatic cleanup and updates. Its bounded inventory command supplies the end observation. One targeted upgrade command preserves the package boundary. Composer, Vite+ and cask commands also use one argv.
 
 `tool.adopt` stays frozen until the Node agent observer pass. Its shared query and repository scripts remain unchanged. The shared first-use Tool Manager child also retains the node-bootstrap family's pinned installers; this change does not replace that separate bootstrap boundary. No new script or script gap is added.
+
+Pass 3 keeps native operation boundaries in the charts. The source and key leave together through `apt_repository` when the last Tool is removed; preferences use a separate file resource. Candidate upstream improvements are recorded in the repository's `swamp-evaluation.md`.

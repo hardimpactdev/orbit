@@ -102,13 +102,13 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
             } elseif (NativeRunResult::stepStatus($native, 'Assert the key fingerprint') === 'failed') {
                 $code = 'tool.repository_key_mismatch';
             } else {
-                foreach (['Prepare apt keyrings', 'Fetch the signing key', 'Read the key fingerprint', 'Dearmor the signing key', 'Publish the signing key', 'Pin repository packages', 'Add the signed apt source', 'Update the apt source'] as $step) {
+                foreach (['Prepare apt keyrings', 'Fetch the signing key', 'Read the key fingerprint', 'Dearmor the signing key', 'Publish the signing key', 'Pin repository packages', 'Write the apt source'] as $step) {
                     if (NativeRunResult::stepStatus($native, $step) === 'failed') {
                         $code = 'tool.repository_failed';
                         break;
                     }
                 }
-                foreach (['Install the package', 'Install Homebrew formula', 'Upgrade the package', 'Remove the package', 'Remove Homebrew formula'] as $step) {
+                foreach (['Apply the package', 'Remove the package'] as $step) {
                     if (NativeRunResult::stepStatus($native, $step) === 'failed') {
                         $code = $operation->kind.'_failed';
                         break;

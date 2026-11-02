@@ -15,7 +15,7 @@
   "expect": {"status": "succeeded"},
   "phases": [
     {"name": "Plan the removal", "job": "tools", "step": "Plan the removal", "budget_seconds": 60},
-    {"name": "decide", "job": "tools", "step": "decide", "budget_seconds": 30},
+    {"name": "Choose package action", "job": "tools", "step": "Choose package action", "budget_seconds": 30},
     {"name": "Remove the package", "job": "tools", "step": "Remove the package", "budget_seconds": 120},
     {"name": "Check apt absence", "job": "tools", "step": "Check apt absence", "budget_seconds": 60},
     {"name": "Assert package state", "job": "tools", "step": "Assert package state", "budget_seconds": 10}

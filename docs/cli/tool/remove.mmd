@@ -1,4 +1,5 @@
 sequenceDiagram
+  %% Pass 3: native operation boundaries retained; see the chart-step table in the commit.
   %% Target design: ADR 0244 task, DECISIONS R1 (record-only change starts no run), R2, R4. Same shape as tool.install.
   %% status: reviewed
   %% command: tool:remove
@@ -51,10 +52,10 @@ sequenceDiagram
     %%> - the task number, at once
     %%> Next:
     %%> - the CLI follows the task with `operation:show`
-    Note over SW: assets<br/>public command arguments
+    Note over SW: Prepare package commands<br/>typed argv, no script reads
     SW->>N: Read manager version<br/>one manager command
     SW->>N: Read installed package<br/>one package query
-    opt macOS Homebrew
+    opt macOS cask
       SW->>N: Read macOS version<br/>bottle compatibility
     end
     SW->>N: Plan the removal<br/>e.g. apt-get --simulate remove
@@ -67,10 +68,7 @@ sequenceDiagram
     %%> - `brew`: refuses when another formula still depends on it
     %%> - `brew-cask`: checks the cask is safe to uninstall
     %%> - `composer`, `vp`: no plan needed; global packages have no system dependents
-    Note over SW: decide<br/>removal safety
-    opt Homebrew formula
-      SW->>N: Remove Homebrew formula<br/>native resource
-    end
+    Note over SW: Choose package action<br/>removal safety
     SW->>N: Remove the package<br/>e.g. dpkg --remove
     %%> What it does:
     %%> - removes exactly this package, so dependency changes can't pull in more removals
@@ -84,10 +82,9 @@ sequenceDiagram
     opt apt
       SW->>N: Check apt absence<br/>official package check
     end
-    opt Homebrew formula
-      SW->>N: Check Homebrew absence<br/>official package check
+    opt other Tool Managers
+      SW->>N: Check it is gone<br/>one manager query
     end
-    SW->>N: Check it is gone<br/>package query
     %%> What it does:
     %%> - asks the Tool Manager again; the package must be absent
     %%> Why:
@@ -101,7 +98,6 @@ sequenceDiagram
       opt last Tool from that apt source
         SW->>N: Remove the apt source<br/>no Tool uses it anymore
         SW->>N: Remove repository pins<br/>native file removal
-        SW->>N: Remove the signing key<br/>native file removal
         %%> When:
         %%> - only when this was the last Tool installed from a signed apt repository
         %%> What it does:

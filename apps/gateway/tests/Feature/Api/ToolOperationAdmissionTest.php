@@ -225,8 +225,8 @@ it('captures native removal and projects only its selected Tool once', function 
         'jobs' => [['name' => 'tools', 'steps' => ToolNativeRun::steps($result)]]];
     $this->socket->reply = static fn (array $request): array => [['id' => $request['id'], 'type' => 'workflow.history.get', 'payload' => ['data' => $run]]];
     $projector = app(SwampCommandStep::class);
-    $projector->projectTerminal($operation, $run, ['job' => 'tools', 'step' => 'Assert package state', 'native' => true, 'captures' => ['decision' => ['job' => 'tools', 'step' => 'decide'], 'observation' => ['job' => 'tools', 'step' => 'Decode package state']]]);
-    $projector->projectTerminal($operation, $run, ['job' => 'tools', 'step' => 'Assert package state', 'native' => true, 'captures' => ['decision' => ['job' => 'tools', 'step' => 'decide'], 'observation' => ['job' => 'tools', 'step' => 'Decode package state']]]);
+    $projector->projectTerminal($operation, $run, ['job' => 'tools', 'step' => 'Assert package state', 'native' => true, 'captures' => ['decision' => ['job' => 'tools', 'step' => 'Choose package action'], 'observation' => ['job' => 'tools', 'step' => 'Decode package state']]]);
+    $projector->projectTerminal($operation, $run, ['job' => 'tools', 'step' => 'Assert package state', 'native' => true, 'captures' => ['decision' => ['job' => 'tools', 'step' => 'Choose package action'], 'observation' => ['job' => 'tools', 'step' => 'Decode package state']]]);
     expect($operation->fresh()->status->value)->toBe($status);
     if ($failed) {
         expect($tool->refresh()->status)->toBe(ToolStatus::Failed)->and($tool->installed_version)->toBe('7.0.0')
@@ -250,7 +250,7 @@ it('marks only the manager failed when first-use setup fails, and the Tool when 
         'startedAt' => '2026-11-01T01:00:00Z', 'completedAt' => '2026-11-01T01:00:01Z',
         'jobs' => [['name' => 'tools', 'steps' => ToolNativeRun::steps($result)]]];
     $this->socket->reply = static fn (array $request): array => [['id' => $request['id'], 'type' => 'workflow.history.get', 'payload' => ['data' => $run]]];
-    app(SwampCommandStep::class)->projectTerminal($operation, $run, ['job' => 'tools', 'step' => 'Assert package state', 'native' => true, 'captures' => ['decision' => ['job' => 'tools', 'step' => 'decide'], 'observation' => ['job' => 'tools', 'step' => 'Decode package state']]]);
+    app(SwampCommandStep::class)->projectTerminal($operation, $run, ['job' => 'tools', 'step' => 'Assert package state', 'native' => true, 'captures' => ['decision' => ['job' => 'tools', 'step' => 'Choose package action'], 'observation' => ['job' => 'tools', 'step' => 'Decode package state']]]);
     $manager = $this->node->toolManagers()->where('name', 'vp')->sole();
     expect($operation->fresh()->error_code)->toBe($result['error_code']);
     if ($setupFailed) {
@@ -289,7 +289,7 @@ it('keeps an unknown manager unfailed when only the package probe failed', funct
         'startedAt' => '2026-11-01T01:00:00Z', 'completedAt' => '2026-11-01T01:00:01Z',
         'jobs' => [['name' => 'tools', 'steps' => ToolNativeRun::steps($result)]]];
     $this->socket->reply = static fn (array $request): array => [['id' => $request['id'], 'type' => 'workflow.history.get', 'payload' => ['data' => $run]]];
-    app(SwampCommandStep::class)->projectTerminal($operation, $run, ['job' => 'tools', 'step' => 'Assert package state', 'native' => true, 'captures' => ['decision' => ['job' => 'tools', 'step' => 'decide'], 'observation' => ['job' => 'tools', 'step' => 'Decode package state']]]);
+    app(SwampCommandStep::class)->projectTerminal($operation, $run, ['job' => 'tools', 'step' => 'Assert package state', 'native' => true, 'captures' => ['decision' => ['job' => 'tools', 'step' => 'Choose package action'], 'observation' => ['job' => 'tools', 'step' => 'Decode package state']]]);
     expect($this->node->toolManagers()->sole()->status)->toBe(LifecycleStatus::Provisioning)
         ->and(Tool::query()->sole()->status)->toBe(ToolStatus::Failed)->and(Tool::query()->sole()->error_code)->toBe('tool.version_probe_failed');
 });

@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Domain\Tools\ToolIntentProjection;
 
 $terminal = ['job' => 'tools', 'step' => 'Assert package state', 'native' => true, 'captures' => [
-    'decision' => ['job' => 'tools', 'step' => 'decide'],
+    'decision' => ['job' => 'tools', 'step' => 'Choose package action'],
     'observation' => ['job' => 'tools', 'step' => 'Decode package state'],
 ]];
 
