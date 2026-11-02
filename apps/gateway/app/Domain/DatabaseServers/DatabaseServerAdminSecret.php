@@ -41,7 +41,8 @@ final readonly class DatabaseServerAdminSecret
     public static function clientEnvCopy(DatabaseServer $server): array
     {
         $variable = match ($server->driver) {
-            DatabaseDriver::Pgsql => 'PGPASSWORD', DatabaseDriver::Redis => 'REDISCLI_AUTH', default => 'MYSQL_PWD'};
+            DatabaseDriver::Pgsql => 'PGPASSWORD', DatabaseDriver::Redis => 'REDISCLI_AUTH', default => 'MYSQL_PWD'
+        };
 
         return app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', "database-server-{$server->id}-client-env", "{$variable}={$server->root_password}\n");
     }

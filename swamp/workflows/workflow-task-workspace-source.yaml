@@ -363,6 +363,7 @@ jobs:
         - switch
         - -c
         - ${{ inputs.intent.workspace.branch }}
+        - ${{ inputs.intent.workspace.start_commit }}
     dependsOn:
     - step: origin
       condition:

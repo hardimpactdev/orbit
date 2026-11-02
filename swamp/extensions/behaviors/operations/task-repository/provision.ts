@@ -14,6 +14,7 @@ const Workspace = z.object({
   repository_identity: z.string().min(1),
   branch: z.string().min(1),
   default_branch: z.string().min(1),
+  start_commit: Sha,
   user: z.string().min(1),
   project_type: z.enum([
     "monorepo",
@@ -202,7 +203,7 @@ export function result(
 }
 export const behavior = {
   type: "@nckrtl/task-provision-data",
-  version: "2026.11.01.3",
+  version: "2026.11.02.1",
   resources: {
     public: {
       schema: z.record(z.string(), z.unknown()),
@@ -278,7 +279,10 @@ export const behavior = {
           analysis_base: Sha.nullable(),
           profile: z.unknown(),
         }).parse(JSON.parse(args.observation));
-        if (observation.branch !== workspace.branch) {
+        if (
+          observation.branch !== workspace.branch ||
+          observation.commit !== workspace.start_commit
+        ) {
           throw new Error("instance.source_identity_changed");
         }
         let profile;

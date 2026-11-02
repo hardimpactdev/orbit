@@ -19,20 +19,21 @@ sequenceDiagram
   %%> - one fire is one task (ADR 0244)
   SW->>N: Measure the datastore<br/>command/shell · measure
   %%> What it does:
-  %%> - counts the auto-definitions of each behavior type, the output records, the workflow runs, the data records and the grant records in serve's `.swamp`
+  %%> - counts the auto-definitions of each behavior type, the output records, the workflow runs, the data records, the step leases and the grant records in serve's `.swamp`
   %%> - samples serve's CPU over 5 seconds
   %%> Runs as:
   %%> - a swamp worker on Node 209, beside serve; it reads only and changes nothing
   N-->>SW: Counts and CPU<br/>one JSON object
   %%> Returns:
-  %%> - `auto_definitions` per type, `outputs`, `workflow_runs`, `data`, `grants` and `serve_cpu_percent`
+  %%> - `auto_definitions` per type, `outputs`, `workflow_runs`, `data`, `step_leases`, `grants` and `serve_cpu_percent`
   SW-->>GW: Run ended<br/>terminal event · measure
   %%> How the Gateway learns it:
   %%> - its shared run reader sees the terminal event and reads the step's output; the step never calls the Gateway
-  Note over GW: Compare with the bounds<br/>2000 · 50000 · 500 · 50%
+  Note over GW: Compare with the bounds<br/>2000 · 50000 · 60000 · 500 · 50%
   %%> Bounds:
   %%> - 2,000 auto-definitions of one type, grant records excepted
   %%> - 50,000 output records
+  %%> - 60,000 step leases; bookkeeping keeps them 2 hours, so they level off near 2 hours of dispatches
   %%> - 500 grant records
   %%> - 50% serve CPU
   %%> Why:

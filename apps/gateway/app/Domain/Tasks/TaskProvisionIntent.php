@@ -39,28 +39,25 @@ final readonly class TaskProvisionIntent
         private TaskVmEnrollmentIntent $enrollment, private AllocateTaskVmAction $allocate,
         private TaskVmProvisionIntent $vms, private StorageRootResolver $roots,
         private NodeSettingsNormalizer $settings, private ManagedCheckoutOverlap $overlap,
-        private ProjectLifecycleStepStore $steps, private InstancePhpVersionCatalog $php) {}
+        private ProjectLifecycleStepStore $steps, private InstancePhpVersionCatalog $php,
+        private TaskStartCommit $startCommit) {}
 
     public function start(Task $group, string $caller, ?string $request): Operation
     {
         if (($replay = $this->idempotency->replay('tasks.provision')) !== null) {
             return $replay;
         }
+        // A group that cannot be provisioned is refused before any GitHub read; the locked recheck below stays.
+        $this->assertProvisionable($group);
+        // GitHub reads stay outside the admission transaction; the workspace starts exactly at this commit.
+        $startCommit = $this->startCommit->resolve($group->project()->firstOrFail());
 
-        return $this->enrollment->admit(fn (): Operation => DB::transaction(function () use ($group, $caller, $request): Operation {
+        return $this->enrollment->admit(fn (): Operation => DB::transaction(function () use ($group, $caller, $request, $startCommit): Operation {
             $group = Task::topLevel()->with('project')->lockForUpdate()->findOrFail($group->id);
             if (($replay = $this->idempotency->replay('tasks.provision')) !== null) {
                 return $replay;
             }
-            if (in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
-                throw new ResourceOperationException('tasks.group_closed', 'This task group has ended.', 409);
-            }
-            if ($group->status === TaskGroupStatus::Backlog) {
-                throw new ResourceOperationException('tasks.not_todo', 'Provision requires a todo task group.', 409);
-            }
-            if ($group->status !== TaskGroupStatus::Todo || $group->taskable_id !== null) {
-                throw TaskGroupGuard::alreadyClaimed();
-            }
+            $this->assertProvisionable($group);
             $project = $group->project;
             if ($project->task_workspace_routed || $project->processDefinitions()->exists() || $project->scheduleDefinitions()->exists()) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'Task workspace publication and runtime definitions need their native parent steps.', 503);
@@ -114,7 +111,7 @@ final readonly class TaskProvisionIntent
                 'project_id' => $project->id, 'eligible' => true, ...($proof ? ['proof_club_required' => true] : []),
                 'workspace' => ['checkout_path' => $checkout->value, 'user' => $node->user,
                     'repository' => $project->repository_url, 'repository_identity' => $project->repository_identity,
-                    'branch' => $instance->branch_override, 'default_branch' => $project->default_branch,
+                    'branch' => $instance->branch_override, 'default_branch' => $project->default_branch, 'start_commit' => $startCommit,
                     'project_type' => $project->type->value, 'entry_point' => $project->type->frameworkEntryPoint(),
                     'skip_profile' => $project->type === ProjectType::Monorepo, 'php_versions' => $this->php->versions(),
                     'setup' => $setup], 'execution_secrets' => $copies,
@@ -124,5 +121,18 @@ final readonly class TaskProvisionIntent
 
             return $this->start->execute('tasks.provision', 'task_group', $group->id, ValidatedData::integer($input['node_id']), $input, $caller, $request);
         }));
+    }
+
+    private function assertProvisionable(Task $group): void
+    {
+        if (in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
+            throw new ResourceOperationException('tasks.group_closed', 'This task group has ended.', 409);
+        }
+        if ($group->status === TaskGroupStatus::Backlog) {
+            throw new ResourceOperationException('tasks.not_todo', 'Provision requires a todo task group.', 409);
+        }
+        if ($group->status !== TaskGroupStatus::Todo || $group->taskable_id !== null) {
+            throw TaskGroupGuard::alreadyClaimed();
+        }
     }
 }
