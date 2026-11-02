@@ -313,7 +313,7 @@ final readonly class SwampCommandStep
     }
 
     /** @param array<string,mixed> $run
-     * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,native?:true}  $selector
+     * @param  array{job:string,step:string,alternatives?:list<string>,captures?:array<string,array{job:string,step:string,field?:string}>,native?:true}  $selector
      * @return array<string,mixed>
      */
     private function terminalOutput(array $run, array $selector): array
@@ -338,7 +338,10 @@ final readonly class SwampCommandStep
                 if (($step['name'] ?? null) === $selector['step']) {
                     $outputs = $step['outputs'] ?? [];
                     $stdout = is_array($outputs) ? ($outputs['stdout'] ?? null) : null;
-                    $selected = $step['status'] ?? null;
+                    $selected ??= $step['status'] ?? null;
+                } elseif (in_array($step['name'] ?? null, $selector['alternatives'] ?? [], true) && ($step['status'] ?? 'skipped') !== 'skipped') {
+                    // The alternative that ran is the end check.
+                    $selected = $step['status'];
                 }
             }
         }

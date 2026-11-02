@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: coordinator 2026-11-02. Every effect runs in Swamp; a read takes the same path as a write. Decided 2026-11-02 (orchestrator): a read on a Database server runs as docker exec in its container (Q-DBAUTH); an external connection reads from 209 with the swamp role's clients; SQLite runs sqlite3 on its Node (R4). One @swamp/ssh step; the Gateway picks its host. No shipped script; the Gateway checks the statement and shapes the rows.
+  %% Target design: coordinator 2026-11-02. Every effect runs in Swamp; a read takes the same path as a write. Decided 2026-11-02 (orchestrator): a read on a Database server runs as docker exec in its container (Q-DBAUTH); an external connection reads from 209 with the swamp role's clients; SQLite runs sqlite3 on its Node (R4). One step per placement; the Gateway picks it. No shipped script; the Gateway checks the statement and shapes the rows.
   %% status: draft
   %% command: database:query
   %% kind: database.read
@@ -45,15 +45,21 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI waits with progress, as for other tasks; a read is a short run, usually a few seconds
-  SW->>N: Run the read<br/>@swamp/ssh · one client
-  %%> How:
-  %%> - Swamp reaches the host over SSH from 209 with the official `@swamp/ssh` behavior; the SSH identity comes from the `swamp` role
-  %%> - stdin is one vault value: the password as the first line, then the statement (Q-DBAUTH); SQLite has no password line
-  %%> Where it runs:
-  %%> - on a Database server: one `docker exec -i` into its container on Node 12; the client in the image logs in as the connection's own user, never root
-  %%> - on a registered external database: the `mysql` or `psql` client on 209, which the `swamp` role installs; 209 reaches the host directly
-  %%> - on SQLite: `sqlite3 -readonly -safe` on the file's Node, as the file's owner; it cannot write, attach or run shell commands
-  %%> What it does:
+  alt a Database server or SQLite
+    SW->>N: Run the read<br/>@swamp/ssh · one client
+    %%> How:
+    %%> - Swamp reaches the host over SSH from 209 with the official `@swamp/ssh` behavior; the SSH identity comes from the `swamp` role
+    %%> - stdin is one vault value: the password as the first line, then the statement (Q-DBAUTH); SQLite has no password line
+    %%> Where it runs:
+    %%> - on a Database server: one `docker exec -i` into its container on Node 12; the client in the image logs in as the connection's own user, never root
+    %%> - on SQLite: `sqlite3 -readonly -safe` on the file's Node, as the file's owner; it cannot write, attach or run shell commands
+  else a registered external database
+    SW->>N: Run the read on 209<br/>mysql or psql client
+    %%> How:
+    %%> - the `mysql` or `psql` client on 209, which the `swamp` role installs; 209 reaches the host directly, with no SSH hop
+    %%> - the same vault value reaches the client on stdin
+  end
+  %%> Both:
   %%> - MySQL and PostgreSQL run the statement inside a READ ONLY transaction
   %%> - a 30 s limit; MySQL prints XML, PostgreSQL and SQLite print CSV; the output stops at 64 KiB
   alt the read succeeds

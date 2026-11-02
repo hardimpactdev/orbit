@@ -9,14 +9,25 @@ inputs:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
     kind: {type: string, const: database.read}
-    # argv: docker exec into a Database server's container, the client on 209 for an external database, or sqlite3 as
-    # the file's owner. ssh_execution is the host it runs on.
+    # argv: docker exec into a Database server's container, or sqlite3 as the file's owner, on the ssh_execution host.
+    # local: the client body and its arguments for a registered external database, read on 209 itself. One is empty.
     intent:
       type: object
       properties:
-        argv: {type: array, items: {type: string}, minItems: 1}
+        argv: {type: array, items: {type: string}}
+        local:
+          type: object
+          properties:
+            client: {type: string}
+            user: {type: string}
+            database: {type: string}
+            host: {type: string}
+            port: {type: string}
+            marker: {type: string}
+          required: [client, user, database, host, port, marker]
+          additionalProperties: false
         ssh_execution: {type: object}
-      required: [argv, ssh_execution]
+      required: [argv, local, ssh_execution]
       additionalProperties: false
     # Names only: read is one whole value, the password line (none for SQLite) and the statements.
     execution_secrets:
@@ -40,6 +51,7 @@ jobs:
     # A read changes nothing: READ ONLY on MySQL and PostgreSQL, -readonly -safe on SQLite. The output stops at 64 KiB.
   - name: 'Run the read'
     labels: {role: swamp}
+    guard: ${{ size(inputs.intent.argv) == 0 }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -61,3 +73,22 @@ jobs:
         argv: ${{ inputs.intent.argv }}
         stdin: ${{ vault.get(inputs.execution_secrets.read.vault, inputs.execution_secrets.read.key) }}
         timeoutSec: 40
+    # A registered external database: the swamp role's mysql or psql client on 209, with the same bounds.
+  - name: 'Run the read on 209'
+    labels: {role: swamp}
+    guard: ${{ inputs.intent.local.client == "" }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "database-read-local" }}
+      methodName: execute
+      inputs:
+        run: printf '%s' "$ORBIT_READ" | timeout 30 sh -c "$ORBIT_CLIENT" sh "$ORBIT_USER" "$ORBIT_DATABASE" "$ORBIT_HOST" "$ORBIT_PORT" "$ORBIT_NULL"
+        env:
+          ORBIT_READ: ${{ vault.get(inputs.execution_secrets.read.vault, inputs.execution_secrets.read.key) }}
+          ORBIT_CLIENT: ${{ inputs.intent.local.client }}
+          ORBIT_USER: ${{ inputs.intent.local.user }}
+          ORBIT_DATABASE: ${{ inputs.intent.local.database }}
+          ORBIT_HOST: ${{ inputs.intent.local.host }}
+          ORBIT_PORT: ${{ inputs.intent.local.port }}
+          ORBIT_NULL: ${{ inputs.intent.local.marker }}

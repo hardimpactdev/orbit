@@ -50,7 +50,7 @@ final readonly class ReadDatabaseConnectionAction
 
         return $this->operations->execute('database.read', 'database_connection', $connection->id, $nodeId,
             ['connection_id' => $connection->id, 'driver' => $connection->driver->value, 'connection_node_id' => $connection->node_id, 'mode' => $mode, 'table' => $table],
-            ['database-apply' => ['name' => 'database.read', 'input' => ['target' => $target, 'null' => Str::random(32),
+            ['database-apply' => ['name' => 'database.read', 'input' => ['target' => $target, 'null' => Str::random(16),
                 'password' => $connection->driver === DatabaseDriver::Sqlite ? '' : ($connection->password ?? ''), 'sql' => $sql],
                 'protected' => ['password', 'sql']]]);
     }

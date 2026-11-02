@@ -71,9 +71,10 @@ it('wraps the read in a READ ONLY transaction and a 30 s limit, and passes the p
     expect(DatabaseRead::statements(DatabaseDriver::Mysql, 'query', 'SELECT 1;', ''))->toBe("SET SESSION max_execution_time = 30000;\nSTART TRANSACTION READ ONLY;\nSELECT 1;\nROLLBACK;\n")
         ->and(DatabaseRead::statements(DatabaseDriver::Pgsql, 'query', 'SELECT 1', ''))->toBe("BEGIN READ ONLY;\nSET LOCAL statement_timeout = '30s';\nSELECT 1;\nROLLBACK;\n")
         ->and(DatabaseRead::statements(DatabaseDriver::Sqlite, 'describe', '', 'users'))->toContain("m.name = 'users'");
-    $argv = DatabaseRead::argv(DatabaseDriver::Pgsql, ['host' => 'db.test', 'port' => 5433, 'user' => 'app', 'database' => 'app'], 'N7');
-    expect($argv[0])->toBe('timeout')->and($argv)->toContain('db.test', '5433', 'N7')
-        ->and(implode(' ', $argv))->toContain('IFS= read -r PGPASSWORD', '| head -c 65536', 'set -o pipefail');
+    $argv = DatabaseRead::argv(DatabaseDriver::Pgsql, ['container' => 'orbit-process-7-db', 'user' => 'app', 'database' => 'app'], 'N7');
+    expect(array_slice($argv, 0, 8))->toBe(['timeout', '30', 'sudo', '-n', 'docker', 'exec', '-i', 'orbit-process-7-db'])
+        ->and(array_slice($argv, 12))->toBe(['app', 'app', '127.0.0.1', '5432', 'N7'])
+        ->and(DatabaseRead::client(DatabaseDriver::Pgsql))->toContain('IFS= read -r PGPASSWORD', '| head -c 65536', 'set -o pipefail');
 });
 
 it('allows only listed read verbs and functions on MySQL and PostgreSQL', function (DatabaseDriver $driver, string $sql, bool $allowed): void {

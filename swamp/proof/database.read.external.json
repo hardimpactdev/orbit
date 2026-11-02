@@ -48,9 +48,9 @@
   },
   "phases": [
     {
-      "name": "Run the read",
+      "name": "Run the read on 209",
       "job": "read",
-      "step": "Run the read",
+      "step": "Run the read on 209",
       "budget_seconds": 40
     }
   ],

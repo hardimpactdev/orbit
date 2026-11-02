@@ -32,7 +32,15 @@ final readonly class DatabaseReadProjection implements DirectOperationProjection
                 ($driver === DatabaseDriver::Sqlite ? '' : ValidatedData::string($command['password'])."\n").$statements);
         }
 
-        return ['intent' => ['argv' => DatabaseRead::argv($driver, ValidatedData::object($command['target']), ValidatedData::string($command['null'])),
+        $target = ValidatedData::object($command['target']);
+        $null = ValidatedData::string($command['null']);
+        // A registered external database is read on 209 itself; every other read runs over official SSH.
+        $external = array_key_exists('host', $target);
+        $text = static fn (string $key): string => ! $external ? '' : (is_int($target[$key] ?? null) ? (string) $target[$key] : ValidatedData::string($target[$key] ?? ''));
+
+        return ['intent' => ['argv' => $external ? [] : DatabaseRead::argv($driver, $target, $null),
+            'local' => ['client' => $external ? DatabaseRead::client($driver) : '', 'user' => $text('user'), 'database' => $text('database'),
+                'host' => $text('host'), 'port' => $text('port'), 'marker' => $external ? $null : ''],
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($operation->node_id))],
             'execution_secrets' => ['read' => $secret]];
     }
@@ -45,9 +53,11 @@ final readonly class DatabaseReadProjection implements DirectOperationProjection
             $data = [...$data, 'error_code' => 'database.query_failed'];
         } elseif (($data['status'] ?? null) === 'succeeded') {
             $command = $this->intent($operation)->payload['commands']['database-apply']['input'];
+            $captured = ValidatedData::object($data['result'] ?? []);
+            $output = ValidatedData::nullableString($captured['output'] ?? $captured['local_output'] ?? null) ?? '';
             try {
                 $result = DatabaseRead::result(DatabaseDriver::from(ValidatedData::string($operation->input['driver'])), ValidatedData::string($operation->input['mode']),
-                    ValidatedData::nullableString($operation->input['table'] ?? null) ?? '', ValidatedData::nullableString(ValidatedData::object($data['result'] ?? [])['output'] ?? null) ?? '',
+                    ValidatedData::nullableString($operation->input['table'] ?? null) ?? '', $output,
                     ValidatedData::string($command['null']), ValidatedData::string($command['password']));
             } catch (ResourceOperationException) {
                 $result = ['error_code' => 'database.query_failed'];

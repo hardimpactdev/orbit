@@ -24,8 +24,9 @@ return ['database.update' => [
     'projection' => DatabaseReadProjection::class,
     'workflow_inputs' => true,
     // The native result cuts stdout short, so the client output comes as one capture.
-    'terminal_result' => ['job' => 'read', 'step' => 'Run the read', 'native' => true,
-        'captures' => ['output' => ['job' => 'read', 'step' => 'Run the read', 'field' => 'stdout']]],
+    'terminal_result' => ['job' => 'read', 'step' => 'Run the read', 'alternatives' => ['Run the read on 209'], 'native' => true,
+        'captures' => ['output' => ['job' => 'read', 'step' => 'Run the read', 'field' => 'stdout'],
+            'local_output' => ['job' => 'read', 'step' => 'Run the read on 209', 'field' => 'stdout']]],
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-read-intent-[1-9][0-9]*$']],
 ], 'database.create' => [
     'workflow' => 'operation-database-create',

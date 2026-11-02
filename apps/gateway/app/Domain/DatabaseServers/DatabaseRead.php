@@ -87,29 +87,35 @@ final readonly class DatabaseRead
     }
 
     /**
-     * The client argv. Each reads its password from the first stdin line, never argv or a file, and its output stops
+     * The client argv over official SSH: on a Database server's Node (docker exec into its container) or as the SQLite
+     * file's owner. Each client reads its password from the first stdin line, never argv or a file, and its output stops
      * at OUTPUT_LIMIT. `$null` marks SQL NULL in CSV, apart from an empty string.
      *
-     * @param  array<string, mixed>  $target  container, user and database; or host, port, user and database; or owner and path
+     * @param  array<string, mixed>  $target  container, user and database; or owner and path
      * @return list<string>
      */
     public static function argv(DatabaseDriver $driver, array $target, string $null): array
     {
-        $limit = '| head -c '.self::OUTPUT_LIMIT;
         $text = static fn (string $key): string => ValidatedData::nullableString($target[$key] ?? null) ?? '';
         if ($driver === DatabaseDriver::Sqlite) {
             return ['sudo', '-n', '-u', $text('owner'), '--', 'timeout', '30', 'sh', '-c',
-                'set -o pipefail; sqlite3 -readonly -safe -bail -csv -header -nullvalue "$2" "$1" '.$limit, 'sh', $text('path'), $null];
+                'set -o pipefail; sqlite3 -readonly -safe -bail -csv -header -nullvalue "$2" "$1" | head -c '.self::OUTPUT_LIMIT, 'sh', $text('path'), $null];
         }
-        $local = $text('container') !== '';
-        $address = $local ? ['127.0.0.1', $driver === DatabaseDriver::Pgsql ? 5432 : 3306] : [$text('host'), is_int($target['port'] ?? null) ? $target['port'] : 0];
-        $client = $driver === DatabaseDriver::Pgsql
-            ? 'IFS= read -r PGPASSWORD && export PGPASSWORD && psql --no-psqlrc --host="$3" --port="$4" --username="$1" --dbname="$2" --quiet --set=ON_ERROR_STOP=1 --csv --pset=null="$5" '.$limit
-            : 'IFS= read -r MYSQL_PWD && export MYSQL_PWD && mysql --protocol=TCP --host="$3" --port="$4" --user="$1" --database="$2" --xml '.$limit;
-        $argv = ['timeout', '30', ...($local ? ['sudo', '-n', 'docker', 'exec', '-i', $text('container')] : []),
-            'sh', '-c', 'set -o pipefail; '.$client, 'sh', $text('user'), $text('database'), $address[0], (string) $address[1]];
 
-        return $driver === DatabaseDriver::Pgsql ? [...$argv, $null] : $argv;
+        return ['timeout', '30', 'sudo', '-n', 'docker', 'exec', '-i', $text('container'), 'sh', '-c', self::client($driver),
+            'sh', $text('user'), $text('database'), '127.0.0.1', $driver === DatabaseDriver::Pgsql ? '5432' : '3306', $null];
+    }
+
+    /**
+     * The client body for `sh -c`, with the user, database, host, port and NULL marker as $1 to $5. Run in a container,
+     * or on 209 for a registered external database.
+     */
+    public static function client(DatabaseDriver $driver): string
+    {
+        return 'set -o pipefail; '.($driver === DatabaseDriver::Pgsql
+            ? 'IFS= read -r PGPASSWORD && export PGPASSWORD && psql --no-psqlrc --host="$3" --port="$4" --username="$1" --dbname="$2" --quiet --set=ON_ERROR_STOP=1 --csv --pset=null="$5"'
+            : 'IFS= read -r MYSQL_PWD && export MYSQL_PWD && mysql --protocol=TCP --host="$3" --port="$4" --user="$1" --database="$2" --xml')
+            .' | head -c '.self::OUTPUT_LIMIT;
     }
 
     /**

@@ -151,14 +151,20 @@ final readonly class DirectOperation
             && ! array_any($map, static fn (mixed $value): bool => ! is_string($value) || preg_match('/\A[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+\z/D', $value) !== 1);
     }
 
-    /** @return array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,native?:true} */
+    /** @return array{job:string,step:string,alternatives?:list<string>,captures?:array<string,array{job:string,step:string,field?:string}>,native?:true} */
     private static function terminalResult(mixed $selector): array
     {
-        if (! is_array($selector) || array_diff(array_keys($selector), ['job', 'step', 'captures', 'native']) !== []
+        if (! is_array($selector) || array_diff(array_keys($selector), ['job', 'step', 'alternatives', 'captures', 'native']) !== []
             || (array_key_exists('native', $selector) && $selector['native'] !== true)
             || ! is_string($selector['job'] ?? null) || ! is_string($selector['step'] ?? null)
             || array_any([$selector['job'], $selector['step']], static fn (string $name): bool => trim($name) === '' || strlen($name) > 256 || preg_match('/[\x00-\x1f\x7f]/', $name) === 1)) {
             throw new LogicException('A direct Operation needs one fixed family declaration.');
+        }
+        // Native only: guarded steps that run in place of `step`, such as one per placement of the same action.
+        $alternatives = $selector['alternatives'] ?? [];
+        if (! is_array($alternatives) || ! array_is_list($alternatives) || count($alternatives) > 4 || ($alternatives !== [] && ($selector['native'] ?? null) !== true)
+            || array_any($alternatives, static fn (mixed $name): bool => ! is_string($name) || trim($name) === '' || strlen($name) > 256 || preg_match('/[\x00-\x1f\x7f]/', $name) === 1)) {
+            throw new LogicException('Terminal alternatives need fixed native step names.');
         }
 
         $captures = $selector['captures'] ?? [];
@@ -175,7 +181,7 @@ final readonly class DirectOperation
             $normalizedCaptures[$name] = [...self::terminalResult(['job' => $capture['job'] ?? null, 'step' => $capture['step'] ?? null]), ...(isset($capture['field']) ? ['field' => $capture['field']] : [])];
         }
 
-        return ['job' => $selector['job'], 'step' => $selector['step'], ...($normalizedCaptures !== [] ? ['captures' => $normalizedCaptures] : []),
+        return ['job' => $selector['job'], 'step' => $selector['step'], ...($alternatives !== [] ? ['alternatives' => $alternatives] : []), ...($normalizedCaptures !== [] ? ['captures' => $normalizedCaptures] : []),
             // `native: true`: no result-reporting step; the projector gets Swamp's run data keyed by step name.
             ...(array_key_exists('native', $selector) ? ['native' => true] : [])];
     }

@@ -34,7 +34,7 @@ beforeEach(function (): void {
     app()->instance(WebSocketClient::class, $socket);
 });
 
-it('reads an external database from 209 with the password and statement in one vault value, never in the run input', function (string $driver, string $client): void {
+it('reads an external database on 209 itself with the password and statement in one vault value, never in the run input', function (string $driver, string $client): void {
     $connection = DatabaseConnection::query()->create(['slug' => 'app', 'driver' => $driver, 'host' => 'db.example.invalid', 'port' => 6543, 'database' => 'app', 'username' => 'private-user', 'password' => DATABASE_INSPECTION_SECRET]);
     $sql = "SELECT email FROM users WHERE token = '".DATABASE_INSPECTION_SECRET."'";
     $response = $this->postJson('/api/v1/database-connections/app/query', ['sql' => $sql])->assertAccepted()->assertJsonPath('data.kind', 'database.read')->assertDontSee(DATABASE_INSPECTION_SECRET);
@@ -44,9 +44,9 @@ it('reads an external database from 209 with the password and statement in one v
     expect($copy)->toStartWith(DATABASE_INSPECTION_SECRET."\n")->toContain($sql.";\n", 'READ ONLY');
     $inputs = $this->socket->sent[1]['payload']['inputs'];
     expect($inputs['execution_secrets'])->toBe(['read' => ['vault' => 'orbit-control-inputs', 'key' => 'database-read-intent-'.$operation->input['intent_id']]])
-        ->and($inputs['intent']['ssh_execution']['target']['host'])->toBe('10.44.0.209')
-        ->and($inputs['intent']['argv'])->toContain('db.example.invalid', '6543', 'private-user', 'app')
-        ->and(implode(' ', $inputs['intent']['argv']))->toContain($client)->not->toContain('docker');
+        ->and($inputs['intent']['argv'])->toBe([])
+        ->and($inputs['intent']['local'])->toMatchArray(['user' => 'private-user', 'database' => 'app', 'host' => 'db.example.invalid', 'port' => '6543'])
+        ->and($inputs['intent']['local']['client'])->toContain($client)->not->toContain('docker');
     expect(json_encode($inputs, JSON_THROW_ON_ERROR))->not->toContain(DATABASE_INSPECTION_SECRET);
     $activity = Activity::query()->where('request_id', $response->json('meta.request_id'))->sole();
     expect($activity->command)->toBe('database:query')
@@ -185,7 +185,8 @@ it('projects the declared terminal read output once without repeating a query', 
     $history = ['id' => $this->runId, 'workflowName' => 'operation-database-read', 'status' => $status,
         'inputs' => $inputs, 'startedAt' => '2026-10-31T12:00:00Z', 'completedAt' => '2026-10-31T12:00:01Z',
         'jobs' => [['name' => 'read', 'steps' => [
-            ['name' => 'Run the read', 'status' => $status, 'outputs' => ['stdout' => "name\nproof\n", 'exitCode' => $status === 'succeeded' ? 0 : 1]],
+            ['name' => 'Run the read', 'status' => 'skipped', 'outputs' => []],
+            ['name' => 'Run the read on 209', 'status' => $status, 'outputs' => ['stdout' => "name\nproof\n", 'exitCode' => $status === 'succeeded' ? 0 : 1]],
         ]]],
     ];
     $this->socket->reply = static fn (array $sent): array => [['type' => 'workflow.history.get', 'id' => $sent['id'], 'payload' => ['data' => $history]]];

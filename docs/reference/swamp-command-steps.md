@@ -48,6 +48,8 @@ Flow-tighten rule 14 removes the step that reports a result. A kind without one 
 - `steps`: each step of the run, keyed by its name. An entry holds `status`, trimmed `stdout` up to 4 KiB, and `exit_code`. Stderr is left out.
 - `summary`: the run status, the step counts by status, and `failed_steps`.
 
+When one action runs as one of several guarded steps, such as one per placement, `alternatives` lists the other steps beside `step`. The step that ran is the end check: when the run succeeds, it must have succeeded. Only native declarations take `alternatives`. `database.read` uses it for its SSH read and its read on 209.
+
 The summary holds the facts of Swamp's `@swamp/workflow-summary` report. It comes from the same history, so there is no second read.
 
 A successful run must show the named step succeeded; otherwise the result is unavailable. `native` passes each step's outputs, so a projector can record values such as a verifier from the step that produced it.

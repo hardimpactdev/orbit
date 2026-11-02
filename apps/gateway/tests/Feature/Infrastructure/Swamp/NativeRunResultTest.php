@@ -63,3 +63,16 @@ it('accepts native only as true in a family declaration', function (): void {
     expect(fn () => $normalize->invoke(null, ['job' => 'settings', 'step' => 'result', 'native' => false]))->toThrow(LogicException::class)
         ->and(fn () => $normalize->invoke(null, ['job' => 'settings', 'step' => 'result', 'outputs' => false]))->toThrow(LogicException::class);
 });
+
+it('takes the alternative that ran as the end check, and keeps alternatives native only', function (): void {
+    $selector = ['job' => 'settings', 'step' => 'Run the read', 'alternatives' => ['Run the read on 209'], 'native' => true];
+    $ran = static fn (string $status): array => nativeRunResultFixture('succeeded', [['name' => 'Run the read', 'status' => 'skipped'],
+        ['name' => 'Run the read on 209', 'status' => $status, 'outputs' => ['stdout' => 'rows']]]);
+
+    expect(nativeRunResultTerminal($ran('succeeded'), $selector)['steps']['Run the read on 209']['stdout'])->toBe('rows');
+    expect(fn () => nativeRunResultTerminal($ran('failed'), $selector))->toThrow(ResourceOperationException::class);
+    expect(fn () => nativeRunResultTerminal($ran('succeeded'), ['job' => 'settings', 'step' => 'Run the read', 'native' => true]))->toThrow(ResourceOperationException::class);
+    $normalize = new ReflectionMethod(DirectOperation::class, 'terminalResult');
+    expect($normalize->invoke(null, $selector))->toBe($selector);
+    expect(fn () => $normalize->invoke(null, ['job' => 'settings', 'step' => 'result', 'alternatives' => ['other']]))->toThrow(LogicException::class);
+});
