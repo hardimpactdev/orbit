@@ -11,13 +11,14 @@ declare(strict_types=1);
  *            subscriber in production, is not part of the minimal topology.
  *   fires    stdin {schedule, seconds}: the same subscriber, with its shared run reader, until a calendar
  *            fire of that Schedule is recorded as a task.
- *   fixture  stdin {roles: {node_id: [role]}, wireguard_keys: {node_id: public key}}: the Node records a kind
- *            fixture needs beyond the seed, such as the VPN hub and peers with keys.
+ *   fixture  stdin {roles: {node_id: [role]}, wireguard_keys: {node_id: public key}, vpn_subnet?}: the records a kind
+ *            fixture needs beyond the seed, such as the VPN hub, peers with keys and the VPN subnet.
  */
 
 use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\WorkerKnownHostsPublisher;
+use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Swamp\SwampRunSubscriber;
 use App\Models\Node;
 use App\Models\Operation;
@@ -81,6 +82,9 @@ if ($argv[1] === 'fixture') {
     }
     foreach ($input['wireguard_keys'] ?? [] as $id => $key) {
         Node::query()->findOrFail((int) $id)->update(['wireguard_public_key' => $key]);
+    }
+    if (isset($input['vpn_subnet'])) {
+        app(VpnSettings::class)->configure(subnet: $input['vpn_subnet']);
     }
     exit(0);
 }
