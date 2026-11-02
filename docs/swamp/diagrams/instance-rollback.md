@@ -5,7 +5,7 @@ description: "Diagrams of production instance.rollback before Swamp and on main,
 
 # Instance rollback: legacy and Swamp flows
 
-Legacy `instance:rollback` selected a retained production release from one queued job. It made about 8 agent calls plus 2 per restarted Process, under a 900 s deadline. On main the Gateway refuses every production rollback at admission with `operation.kind_unavailable`, before it writes anything. A native workflow exists, but the Gateway does not register it, and the rollback API test is skipped as "Deferred". No rollback has run on a Swamp shape. This page is the map for the F9 rebuild of `instance.rollback`.
+Legacy `instance:rollback` selected a retained production release from one queued job. It made about 8 agent calls plus 2 per restarted Process, under a 900 s deadline. On main the Gateway refuses every production rollback at admission with `operation.kind_unavailable`, before it writes anything. A native workflow exists, but the Gateway does not register it, and the rollback API test is skipped as "Deferred". No rollback has run on a Swamp shape. This page is the map for the F9 rebuild of `instance.rollback`. The rebuild has landed: the Gateway now registers `operation-instance-rollback`, and [its chart](/cli/instance/rollback) shows the current flow. The diagrams below keep the history.
 
 Sources:
 

@@ -40,7 +40,7 @@ The web root is the Instance root, or else the Project root, inside `current`. A
 
 With root `server/web/public`, both the initial clone and later releases link `server/web/.env` with target `../../../../.env`. Orbit does not create a second link at the release root. Release selection, retained-release listing and rollback validation check the link in that same application directory. Source classification reads that directory's `composer.json` and `artisan`, while ownership and Git identity checks still cover the whole release.
 
-A [Route with a web root](/reference/routes#web-roots-on-production) adds a web root in `current`, such as `apps/docs/public`. Source preparation links the release's `apps/docs/.env` to `<home>/env/apps/docs/.env`, with target `../../../../env/apps/docs/.env`, before the deploy steps run. Activation, for a deployment and for a rollback, checks each such web root and its links, adds a missing `.env` link, and grants Caddy access before it switches `current`. Only active Routes count. An Instance without such a Route uses only its Instance web root.
+A [Route with a web root](/reference/routes#web-roots-on-production) adds a web root in `current`, such as `apps/docs/public`. Source preparation links the release's `apps/docs/.env` to `<home>/env/apps/docs/.env`, with target `../../../../env/apps/docs/.env`, before the deploy steps run. A deployment's activation checks each such web root and its links, adds a missing `.env` link, and grants Caddy access before it switches `current`. A rollback adds a missing `.env` link before it switches `current`; the deployment that prepared the release granted the access. Only active Routes count. An Instance without such a Route uses only its Instance web root.
 
 A new release without such a directory fails at source preparation. Like any other preparation failure, it keeps the earlier selection and leaves the release directory. A rollback to an older release without the directory fails at activation and keeps the earlier selection.
 
@@ -219,29 +219,24 @@ Swamp records public progress in native resources. A restarted run never repeats
 
 ### The rollback operation
 
-The Gateway validates the request and the access grant, checks that the Instance is a production Instance that retains the release, and answers `202`. The operation's `input` is `{ release }`. A refusal uses the normal JSON error envelope and changes nothing:
+The Gateway validates the request and the access grant, checks that the Instance is a production Instance that retains the release, and answers `202`. It reads the retained releases from the Instance's [deployment history](#retained-releases), not from the Node. Admission holds the Instance, freezes the full intent for the run, and records a running rollback row, which [pauses automatic deployment](#pause) at once. A refusal uses the normal JSON error envelope and changes nothing:
 
 | Code | HTTP | Meaning |
 | --- | --- | --- |
-| `rollback.release_not_retained` | 422 | The Instance does not retain the release. [`instance:release:list`](/cli/instance/release-list) lists the releases it retains. A queued deploy stays queued |
+| `rollback.release_not_retained` | 422 | The Instance's deployment history does not retain the release. [`instance:release:list`](/cli/instance/release-list) lists the releases it retains |
 | `deployment_config.unavailable` | 409 | The Instance is not a production Instance |
 | `operation.target_busy` | 409 | Another operation holds the Instance |
-| `operation.queue_unavailable` | 503 | The Gateway has no queue |
 
-The `rollback` step checks the release again, because a deploy's cleanup can remove it after the request. Then the operation fails at `rollback` with `rollback.release_invalid`. A rollback cancels a deploy that no worker has started, as [One operation at a time](#one-operation-at-a-time) describes.
+One native run on Node 209 then runs these steps over official SSH ([chart](/cli/instance/rollback)). Its budget is 900 seconds.
 
-| Step | Resumable | Failed boundary |
+| Step | What it does | Error code |
 | --- | --- | --- |
-| `rollback` | yes | `rollback_selection` |
-| `activation` | yes | `activation` |
-| `php_refresh` | yes | `cache_refresh` |
-| `process_restart` | yes | `after_activation` |
+| `Activate release` | Links each served application's `.env` in the release, then points `current` at it with `@swamp/cfgmgmt/link`. A link into a removed release fails, and `current` does not move | `rollback.release_invalid` |
+| `Refresh PHP cache` | Reloads the dedicated PHP-FPM service gracefully, which also empties its OPcache. Only for an Instance that serves PHP | `deployment.php_runtime_unconfirmed` |
+| `Restart Processes` | Reloads or restarts each running Process with `restart_on_deploy`, captured at admission | `process.restart_failed` |
+| `Check the selection` | Checks that the link read back after the switch names the release | `deployment.selection_invalid` |
 
-The `rollback` step reads the current selection and finds the retained release. It changes nothing. `php_refresh` appears only for an Instance that serves PHP.
-
-When the operation ends, `result` holds `deployment_id`, `release`, `selected_release`, and `commit`, as for a deploy. `release` is the retained release, and `commit` is its commit. A failed operation names the step in `failed_step` and the error code in `error_code`, such as `rollback.release_invalid`.
-
-A rollback ignores a cancel request once its `activation` step succeeded: it still refreshes PHP and restarts Processes. Before that, a cancel stops it before its next step, and the history row ends `failed` with `deployment.cancelled`.
+When the operation ends, `result` holds `deployment_id`, `release`, `selected_release`, and `commit`, as for a deploy. `release` is the retained release, and `commit` is the commit its deployment recorded. A failed operation names the step in `failed_step` and its error code in `error_code`. `selected_release` is null when `Activate release` failed; the Instance then keeps its recorded selection.
 
 ## Deploy
 
@@ -292,9 +287,9 @@ Rollback and the release list report the same two repository codes.
 
 ## Roll back
 
-A rollback selects one retained release through `current`. The Gateway checks that the release is inside `releases/` and that the web root stays inside it. It then switches `current`, reconciles the dedicated FPM runtime, and resets its cache, as a deployment does. A changed resolved release restarts that service with the same brief serving interruption.
+A rollback selects one retained release through `current`. The release and its PHP runtime belong to the Instance, so a rollback changes no pool or unit: a graceful reload of the dedicated FPM service lets running requests finish and starts new workers with an empty OPcache.
 
-After PHP refresh, a rollback restarts the same active, opted-in Instance Processes as a deployment. The `process_restart` step and its output record the results. A restart failure fails the rollback at `process_restart`, with the failed boundary `after_activation`, and leaves the rollback release selected. A rollback fetches nothing, writes no environment, runs no deploy command, and changes no database file.
+After that reload, a rollback reloads or restarts the same active, opted-in Instance Processes as a deployment. A restart failure fails the rollback at `Restart Processes` and leaves the rollback release selected. A rollback fetches nothing, writes no environment, runs no deploy command, and changes no database file.
 
 ## Automatic deployments
 
@@ -364,7 +359,7 @@ A blocked commit does not deploy automatically again. A new commit deploys at on
 
 #### Pause
 
-A manual deployment or a rollback after `auto_deploy` was last set pauses the Instance, whether it succeeded or not, also while it still runs. A rollback that waits for a worker has no history row yet. Its operation holds the Instance, so the tick reports `busy`, starts nothing, and does not count the commit as stalled. The Instance stays paused until you set `--auto-deploy=true` again; a new commit does not resume it.
+A manual deployment or a rollback after `auto_deploy` was last set pauses the Instance, whether it succeeded or not, also while it still runs. A rollback writes its history row at admission, so it pauses the Instance before its run starts. The Instance stays paused until you set `--auto-deploy=true` again; a new commit does not resume it.
 
 Resuming continues from the commit that is live then. The commit a rollback moved away from is blocked. The tick reads it from the deployment history, so it counts also when you resume or deploy by hand before a tick saw the rollback. The tick also keeps it in `auto_deploy_state.blocked`, so it stays blocked after its rows leave the history.
 
@@ -441,7 +436,7 @@ The Gateway derives alert targets and repositories from the Instance. Both polic
 
 ## History
 
-The Gateway records one row for each deployment and each rollback. It writes the row when a worker first starts the deploy or rollback operation, and completes it when the run ends. It keeps the last 50 rows for each Instance.
+The Gateway records one row for each deployment and each rollback. It writes a deployment's row when a worker first starts it, and a rollback's row at admission. It completes the row when the run ends. It keeps the last 50 rows for each Instance.
 
 Each row holds `kind` (`deploy` or `rollback`), `release`, `branch`, `commit`, `started_at`, `finished_at`, `duration_seconds`, `status` (`running`, `succeeded`, or `failed`), `failed_step`, `error_code`, `selected_release`, `triggered_by`, `caller_node_id`, and `events`. `events` holds the phase and output events of the run, with at most 128 KiB of output. A deployment saves them after each step, so a resumed deployment keeps the events up to the last step that ended. The `cleanup` phase marks release cleanup. A development deployment records `commit` and leaves `release` and `selected_release` null.
 
@@ -489,6 +484,8 @@ Native deployment and rollback own release-layout and selection validation. Thei
 When preparing a candidate, Orbit keeps the selected release's Node and package-manager references, even when its build fails. Retained releases keep those references for rollback too. Release cleanup drops references only for releases it takes out of the retained set; a release kept for running processes keeps its runtimes.
 
 A successful production deployment keeps at most 3 releases in the home: the new selection, the selection before it, and the newest other release. `initial` counts as the oldest, and later releases sort by the creation time in their names. It removes the rest, and the output names each one. So [`instance:rollback`](/cli/instance/rollback) can return to the previous selection and one other release. A rollback removes nothing. A failed deployment removes nothing either; the next successful one does.
+
+The Gateway applies the same rule to the Instance's deployment history to know which releases a home retains: clone selects `initial`, each deployment adds the release it prepared, a successful one keeps those three, and a rollback only moves the selection. Rollback admission refuses any other release. A release that cleanup kept only because a process still used it is not in that set.
 
 The `release-layout` marker is owned by root and records the original layout. Validation authenticates that marker and the selected release without requiring `initial` to remain.
 

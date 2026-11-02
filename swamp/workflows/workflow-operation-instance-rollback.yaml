@@ -1,0 +1,130 @@
+id: 067d6b1c-f0b8-4b5d-8d84-a73d2f4c9048
+name: operation-instance-rollback
+description: 'Rule 22 rollback: select a retained production release with official cfgmgmt/link, reload its PHP-FPM, restart its Processes, and check the selection.'
+vaults: []
+queueTimeout: 30
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [instance.rollback]}
+    intent:
+      type: object
+      properties:
+        # The admitted release and the links that select it: each served application's .env link, then `current` last.
+        rollback:
+          type: object
+          properties:
+            instance_id: {type: integer, minimum: 1}
+            release: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'}
+            user: {type: string, pattern: '^orbit-app-[1-9][0-9]*$'}
+            links:
+              type: array
+              minItems: 1
+              items:
+                type: object
+                properties:
+                  path: {type: string, pattern: '^/home/orbit-app-[1-9][0-9]*/'}
+                  target: {type: string, minLength: 1}
+                required: [path, target]
+                additionalProperties: false
+          required: [instance_id, release, user, links]
+          additionalProperties: false
+        # The dedicated PHP-FPM service of the Instance, or null when it serves no PHP.
+        php_input: {default: null}
+        # The running Processes with restart_on_deploy; a rollback installs no definitions.
+        runtime_definitions:
+          type: object
+          properties:
+            restart:
+              type: array
+              items:
+                type: object
+                properties:
+                  process_id: {type: integer, minimum: 1}
+                  runtime: {type: string, enum: [systemd, docker]}
+                  name: {type: string, pattern: '^orbit-process-[1-9][0-9]*-[a-z0-9-]+(?:\.service)?$'}
+                required: [process_id, runtime, name]
+                additionalProperties: false
+          required: [restart]
+          additionalProperties: false
+        ssh_execution: {type: object}
+      required: [rollback, php_input, runtime_definitions, ssh_execution]
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+- name: rollback
+  labels: {role: swamp}
+  steps:
+  - name: Activate release
+    # In order: each served .env link in the release, then `current`. A link into a removed release fails before `current` moves.
+    labels: {role: swamp}
+    writes: true
+    forEach:
+      item: link
+      in: ${{ inputs.intent.rollback.links }}
+    concurrency: 1
+    # `current` moves only when every link before it held, so a removed release keeps the old selection.
+    guard: ${{ self._index == size(inputs.intent.rollback.links) - 1 && steps.exists(key, key.startsWith("Activate release-") && steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/link'
+      behaviorName: ${{ ("instance-release-link-" + string(inputs.intent.rollback.instance_id) + "-" + string(self._index)).split(".").join("-") }}
+      methodName: apply
+      globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port }}',
+        nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, path: '${{ self.link.path }}', ensure: present, target: '${{ self.link.target }}',
+        owner: '${{ inputs.intent.rollback.user }}', group: '${{ inputs.intent.rollback.user }}'}
+      inputs: {}
+  - name: Refresh PHP cache
+    # A graceful reload: running requests finish, the new workers resolve `current` again, and OPcache starts empty.
+    labels: {role: swamp}
+    dependsOn: [{step: Activate release, condition: {type: succeeded}}]
+    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || inputs.intent.php_input == null }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "instance-php-reload-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: {name: '${{ "instance-php-reload-" + string(inputs.node_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user }}', port: '${{ inputs.intent.ssh_execution.target.port
+            }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{
+                inputs.intent.ssh_execution.target.host_keys }}'}}]}
+      inputs: {hosts: [target], argv: [timeout, '60', systemctl, reload, '${{ inputs.intent.php_input == null ? "unused" : inputs.intent.php_input.service }}'], sudo: true, timeoutSec: 70}
+  - name: Restart Processes
+    # Each Process reloads when its unit allows it, else restarts; a container restarts.
+    labels: {role: swamp}
+    dependsOn: [{step: Activate release, condition: {type: succeeded}}, {step: Refresh PHP cache, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) }}
+    writes: true
+    forEach:
+      item: process
+      in: ${{ inputs.intent.runtime_definitions.restart }}
+    concurrency: 1
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "instance-process-restart-" + string(inputs.node_id) + "-" + string(self.process.process_id) }}
+      methodName: exec
+      globalArgs: {name: '${{ "instance-process-restart-" + string(inputs.node_id) + "-" + string(self.process.process_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user
+            }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host
+              }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
+      inputs: {hosts: [target], argv: '${{ self.process.runtime == "docker" ? ["timeout", "120", "docker", "restart", self.process.name] : ["timeout", "120", "systemctl", "reload-or-restart",
+          self.process.name] }}', sudo: true, timeoutSec: 130}
+  - name: Check the selection
+    # The end check: the link read back after the swap names the admitted release.
+    labels: {role: swamp}
+    # An empty forEach records no step, so the check waits on the steps that always run; a failed restart still fails the run.
+    dependsOn: [{step: Activate release, condition: {type: succeeded}}, {step: Refresh PHP cache, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) }}
+    task:
+      type: assert
+      expr: 'data.latest(("instance-release-link-" + string(inputs.intent.rollback.instance_id) + "-" + string(size(inputs.intent.rollback.links) - 1)).split(".").join("-"), inputs.intent.ssh_execution.target.host).attributes.status
+        in ["applied", "compliant"] && data.latest(("instance-release-link-" + string(inputs.intent.rollback.instance_id) + "-" + string(size(inputs.intent.rollback.links) - 1)).split(".").join("-"),
+        inputs.intent.ssh_execution.target.host).attributes.current.linkTarget == "releases/" + inputs.intent.rollback.release'
+      message: current must select the admitted release.
+      severity: high

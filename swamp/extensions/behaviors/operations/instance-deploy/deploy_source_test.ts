@@ -141,7 +141,7 @@ Deno.test("production source retains uncertainty and prevents repeated private d
   assertEquals(f.calls.length, 2);
 });
 
-Deno.test("production source rejects wrong prepared name and never performs rollback Git work", async () => {
+Deno.test("production source rejects a wrong prepared name", async () => {
   const f = productionFixture();
   f.port.dispatch = (call) => {
     f.calls.push(call);
@@ -152,10 +152,4 @@ Deno.test("production source rejects wrong prepared name and never performs roll
   assertEquals(await prepareDeploySource(f.input, 901000, f.port), {
     error_code: "deployment.identity_changed",
   });
-  f.calls.length = 0;
-  f.input.deployment.variant = "rollback";
-  assertEquals(await prepareDeploySource(f.input, 901000, f.port), {
-    error_code: "deployment.identity_changed",
-  });
-  assertEquals(f.calls, []);
 });

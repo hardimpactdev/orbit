@@ -2,7 +2,6 @@ import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { type LocalCall, localFixture } from "./deploy_test_fixture.ts";
 import {
   activateDeployRelease,
-  inspectRetainedDeployRelease,
   pruneDeployReleases,
 } from "./deploy_release.ts";
 import { DeploySourceInput } from "./deploy_source.ts";
@@ -208,70 +207,3 @@ Deno.test("development deploy does not activate or prune production releases", a
   assertEquals(f.calls.length, 0);
 });
 
-Deno.test("retained release inspection is read only and supports already selected rollback", async () => {
-  const f = fixture();
-  f.input.deployment.variant = "rollback";
-  assertEquals(
-    await inspectRetainedDeployRelease(f.input, f.release.name, 100000, f.port),
-    { release: f.release, previous: f.release },
-  );
-  assertEquals(f.calls.map((call) => call.name), [
-    "inspectRelease",
-    "inspectRelease",
-  ]);
-  assertEquals(f.calls.every((call) => !call.mutates), true);
-  assertEquals(f.calls[1].input.name, f.release.name);
-  assertEquals(
-    await activateDeployRelease(f.input, f.release, 100000, f.port),
-    { selected_release: f.release, selection_confirmed: true },
-  );
-});
-
-Deno.test("retained release inspection refuses missing wrong or changed target without mutation", async () => {
-  for (const fault of ["missing", "name", "commit"] as const) {
-    const f = fixture();
-    f.input.deployment.variant = "rollback";
-    if (fault === "commit") f.input.commit = "d".repeat(40);
-    f.port.dispatch = (call) => {
-      f.calls.push(call);
-      return Promise.resolve({
-        release: call.input.name === undefined
-          ? f.previous
-          : fault === "missing"
-          ? null
-          : fault === "name"
-          ? f.previous
-          : f.release,
-      });
-    };
-    const result = await inspectRetainedDeployRelease(
-      f.input,
-      f.release.name,
-      100000,
-      f.port,
-    );
-    assertEquals(result, {
-      error_code: fault === "missing"
-        ? "rollback.release_invalid"
-        : "deployment.identity_changed",
-    });
-    assertEquals(f.calls.every((call) => !call.mutates), true);
-  }
-});
-
-Deno.test("rollback release cleanup is never performed", async () => {
-  const f = fixture();
-  f.input.deployment.variant = "rollback";
-  assertEquals(
-    await pruneDeployReleases(
-      f.input,
-      f.release,
-      f.previous,
-      3,
-      100000,
-      f.port,
-    ),
-    { error_code: "deployment.identity_changed" },
-  );
-  assertEquals(f.calls, []);
-});

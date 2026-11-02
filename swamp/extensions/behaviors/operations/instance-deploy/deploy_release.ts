@@ -126,9 +126,6 @@ export async function pruneDeployReleases(
     } catch {
       throw new Refused("deployment.identity_changed");
     }
-    if (input.deployment.variant === "rollback") {
-      throw new Refused("deployment.identity_changed");
-    }
     const release = candidate(input, selected),
       prior = previous === null ? null : Release.parse(previous);
     const limit = z.literal(3).parse(retained);
@@ -159,41 +156,5 @@ export async function pruneDeployReleases(
     return result;
   } catch (error) {
     return { error_code: code(error, "deployment.cleanup_unconfirmed") };
-  }
-}
-
-/** Read-only retained selection for a future rollback parent. No Git/private material is read. */
-export async function inspectRetainedDeployRelease(
-  raw: DeploySourceInput,
-  name: string,
-  deadline: number,
-  port: Port,
-  signal?: AbortSignal,
-): Promise<
-  { release: Release; previous: Release | null } | { error_code: string }
-> {
-  try {
-    const input = DeploySourceInput.parse(raw);
-    const home = productionDeployHome(input);
-    const retainedName = Release.shape.name.parse(name);
-    const call = local(input, deadline, port, signal);
-    const previous = z.object({ release: Release.nullable() }).parse(
-      await call((effects) => effects.inspectRelease(home), false),
-    ).release;
-    const release = Release.parse(
-      z.object({ release: Release.nullable() }).parse(
-        await call(
-          (effects) => effects.inspectRelease(home, retainedName),
-          false,
-        ),
-      ).release,
-    );
-    if (
-      release.name !== retainedName ||
-      (input.commit !== null && release.commit !== input.commit)
-    ) throw new Refused("deployment.identity_changed");
-    return { release, previous };
-  } catch (error) {
-    return { error_code: code(error, "rollback.release_invalid") };
   }
 }

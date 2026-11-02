@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\DatabaseServers\DatabaseDestroyRun;
 use App\Domain\Instances\Deployment\InstanceDeployProjection;
+use App\Domain\Instances\Deployment\InstanceRollbackProjection;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentImportProjection;
@@ -71,6 +72,9 @@ return [
         'private_material' => ['git_read' => 'instance.deployment', 'vp_materialize' => 'instance.deployment',
             'environment_material' => 'instance.deployment', 'definitions_material' => 'instance.deployment'],
     ],
+    // The link read back after the swap is the end check; every step runs on Node 209 over official SSH.
+    'instance.rollback' => ['workflow' => 'operation-instance-rollback', 'workflow_inputs' => true,
+        'terminal_result' => ['job' => 'rollback', 'step' => 'Check the selection', 'native' => true], 'projection' => InstanceRollbackProjection::class],
     'instance.run_steps' => ['workflow' => 'operation-instance-setup-direct', 'workflow_inputs' => true,
         'terminal_result' => ['job' => 'setup', 'step' => 'Check every step passed', 'native' => true], 'projection' => InstanceSetupProjection::class],
 ];

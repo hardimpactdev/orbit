@@ -11,7 +11,6 @@ import {
     ProductionCheckpoint,
     runProductionDeploy,
 } from "./deploy_production.ts";
-import { rollbackDirect } from "./rollback_direct.ts";
 
 const Args = DirectArgs.extend({
     kind: z.literal("instance.deploy"),
@@ -29,7 +28,6 @@ type Context = {
 };
 type ProductionPorts = NonNullable<Parameters<typeof runProductionDeploy>[2]>;
 type Ports = {
-    rollback?: Parameters<typeof rollbackDirect>[0];
     http?: (ctx: Context) => Http;
     source?: ProductionPorts["source"];
     inspectRunner?: ProductionPorts["inspectRunner"];
@@ -41,10 +39,9 @@ type Ports = {
     >;
 };
 
-/** Retained production and rollback root. Development is the native SSH DAG. */
+/** Retained production root. Development is the native SSH DAG. */
 export function deployDirect(ports: Ports = {}) {
     const now = ports.now ?? Date.now;
-    const rollback = rollbackDirect(ports.rollback);
     const production = {
         ...ports.production,
         http: ports.http,
@@ -55,10 +52,9 @@ export function deployDirect(ports: Ports = {}) {
     };
     return {
         type: "@nckrtl/instance-deploy-direct",
-        version: "2026.11.01.3",
+        version: "2026.11.02.1",
         globalArguments: Globals,
         resources: {
-            rollbackExecution: rollback.resources.rollbackExecution,
             activeExecution: {
                 description: "Public production effect owner",
                 schema: DeploymentExecution,
@@ -73,8 +69,6 @@ export function deployDirect(ports: Ports = {}) {
             },
         },
         methods: {
-            rollback: rollback.methods.run,
-            rollbackFailure: rollback.methods.failure,
             failure: {
                 description:
                     "Settle a failed production root only when its effect checkpoint is inactive",

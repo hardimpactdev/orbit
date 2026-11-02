@@ -401,14 +401,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/instance-deploy/rollback_direct.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/instance-deploy/runner_local.ts",
       "rule": "inline-script",
       "count": 28,

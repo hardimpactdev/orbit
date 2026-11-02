@@ -17,7 +17,7 @@ export const DeploySourceInput = z.object({
     commit: Commit.nullable(),
     release_name: Name.optional(),
     deployment: z.object({
-        variant: z.enum(["development", "production", "rollback"]),
+        variant: z.enum(["development", "production"]),
         home: z.string().startsWith("/").max(4096),
         repository: z.string().min(1).max(4096),
         branch: z.string().min(1).max(1024),
@@ -160,11 +160,11 @@ export async function prepareDeploySource(
     }
 }
 
-/** Canonical admitted production identity, shared by deploy and retained-release rollback. */
+/** Canonical admitted production identity. */
 export function productionDeployHome(input: DeploySourceInput) {
     const d = input.deployment;
     if (
-        !["production", "rollback"].includes(d.variant) ||
+        d.variant !== "production" ||
         d.user !== `orbit-app-${input.project_id}` ||
         d.home !== `/home/${d.user}` || typeof d.relative_root !== "string" ||
         typeof d.application_suffix !== "string" || !d.served || !d.shared_paths
