@@ -23,6 +23,8 @@ When a step before the selection fails, `Restore the before state` writes the ca
 
 `Withdraw the Router sites` writes each Router Node's Caddyfile without the Router sites and removes their certificates. `Remove the LAN rules` removes the Router tuples no Route needs. `Check the rules are gone` runs the `check` of the same behaviors on each Node and is the end check. It never removes Node baseline WireGuard rules.
 
+When no Node holds Router state, admission ends the unset at once with no run (R1): it deletes the Router assignment and records the Operation as succeeded.
+
 | Error code | Step |
 | --- | --- |
 | `cluster.router_prepare_failed` | `Prepare the Router` |

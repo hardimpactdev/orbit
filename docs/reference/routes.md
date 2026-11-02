@@ -372,6 +372,8 @@ When the preparation fails, the walk restores the saved ACLs, and the deny on th
 
 Private DNS points the Route domain and the Cluster TLD at the Router. [Private DNS](/reference/private-dns#cluster-router-addresses) describes which Router address each requester gets.
 
+A Router unset whose Router left no site, certificate or LAN rule on any Node ends at admission with no run. [Native Cluster Router](/reference/native-cluster-router#unset-a-router) has the steps.
+
 Router Caddy forwards Orbit CA HTTPS to the workload Node and keeps the domain as the HTTP `Host` value and the TLS server name. The Router and the workload Node get separate private keys. The Router uses the workload Node's LAN address when the Node has one, and its WireGuard address otherwise. A configured LAN address that does not answer fails publication. Orbit never falls back to WireGuard, also not per target in a pool.
 
 Route LAN rules keep the source-only tuple shape: allow TCP443 from the recorded Router LAN source on the workload Node, without a destination or Route comment. The Gateway captures the complete Node-wide set of unique tuples. Identical tuples are shared by Routes: withdrawal keeps one while another published Route still needs it. Route listeners and the Router's selected LAN upstream stay unchanged.

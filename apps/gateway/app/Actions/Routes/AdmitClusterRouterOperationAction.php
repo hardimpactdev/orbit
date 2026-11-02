@@ -10,6 +10,7 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ClusterRouterReplacementStep;
 use App\Domain\Routes\NativeClusterRouterIntent;
+use App\Domain\Routes\NativeClusterRouterProjection;
 use App\Domain\Routes\NativeClusterRouterPublicationInput;
 use App\Domain\Routes\NativeClusterRouterSteps;
 use App\Domain\Routes\RouteReconciliationGuard;
@@ -85,13 +86,23 @@ final readonly class AdmitClusterRouterOperationAction
                 throw new ResourceOperationException('cluster.node_required', 'The Cluster requires a stored Node for this Operation.', 409);
             }
 
-            $operation = $this->operations->execute('cluster.router_unset', 'cluster_router', $cluster->id, $nodeId,
-                ['cluster_id' => $cluster->id, 'assignment_ids' => $assignments->modelKeys(), 'node_ids' => $nodeIds], 'operator', $requestId);
-            $intent = app(NativeClusterRouterIntent::class)->forOperation($operation);
-            $input = [...$operation->input, 'cluster_router' => $intent, ...app(NativeClusterRouterPublicationInput::class)->capture($operation, $intent)];
-            $operation->update(['input' => [...$input, 'cluster_router_plan' => app(NativeClusterRouterSteps::class)->build($input, true)]]);
+            $admitted = ['cluster_id' => $cluster->id, 'assignment_ids' => $assignments->modelKeys(), 'node_ids' => $nodeIds];
+            $draft = new Operation()->forceFill(['kind' => 'cluster.router_unset', 'node_id' => $nodeId, 'input' => $admitted]);
+            $intent = app(NativeClusterRouterIntent::class)->forOperation($draft);
+            $input = [...$admitted, 'cluster_router' => $intent, ...app(NativeClusterRouterPublicationInput::class)->capture($draft, $intent)];
+            $input['cluster_router_plan'] = app(NativeClusterRouterSteps::class)->build($input, true);
+            // R1: a Router that left no site, certificate or LAN rule on any Node clears with no run.
+            if ($input['cluster_router_plan']['check_nodes'] === []) {
+                $result = ['ready' => true, 'selected' => true, 'cleanup_complete' => true];
+                $operation = $this->operations->record('cluster.router_unset', 'cluster_router', $cluster->id, $nodeId, $input, $result, 'operator', $requestId);
+                if ($operation->wasRecentlyCreated) {
+                    app(NativeClusterRouterProjection::class)->project($operation, ['status' => 'succeeded', 'result' => $result]);
+                }
 
-            return $operation->refresh();
+                return $operation->refresh();
+            }
+
+            return $this->operations->execute('cluster.router_unset', 'cluster_router', $cluster->id, $nodeId, $input, 'operator', $requestId)->refresh();
         }));
     }
 

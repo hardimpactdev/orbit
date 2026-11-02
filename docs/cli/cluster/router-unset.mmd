@@ -33,6 +33,16 @@ sequenceDiagram
   %%> Result:
   %%> - Node 7's `router` assignment recorded as retiring
   %%> - task #5161 recorded with the full intent
+  %%> Decides:
+  %%> - whether any Node holds Router state: a Router site, a Router certificate, or a LAN rule only the Router needed
+  alt no Node holds Router state
+    Note over GW: Clear the Router<br/>R1: no run
+    %%> Result:
+    %%> - Node 7's `router` assignment is deleted and task #5161 succeeds at once; no Swamp run starts (R1)
+    GW-->>CLI: Router cleared<br/>task #5161 succeeded
+    %%> What you get:
+    %%> - the final result at once; there is nothing to follow
+  else Router state on a Node
   GW->>SW: Start run, full intent<br/>operation-cluster-router
   %%> What it does:
   %%> - starts one Swamp run on serve (Node 209)
@@ -93,4 +103,5 @@ sequenceDiagram
     GW-->>CLI: status + result
     %%> Returns:
     %%> - the current status, and the result once the task has ended
+  end
   end
