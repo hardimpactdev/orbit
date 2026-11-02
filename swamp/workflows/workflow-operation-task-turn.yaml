@@ -952,17 +952,10 @@ jobs:
       condition:
         type: succeeded
     task:
-      type: behavior
-      behaviorType: command/shell
-      methodName: execute
-      inputs:
-        run: 'python3 -B "$ORBIT_ACTION"
-
-          '
-        env:
-          ORBIT_RESULT: ${{ steps.shape_result.outputs.result_json }}
-          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/outcome.py" }}
-      behaviorName: ${{ "task-turn-outcome" }}
+      type: assert
+      expr: steps.shape_result.outputs.successful
+      message: Pi did not complete the task turn.
+      severity: high
   - name: delete_snapshot_indexes
     labels: {role: swamp}
     guard: ${{ !has(steps.snapshot_before_tree) || steps.snapshot_before_tree.status != "succeeded" || !has(steps.snapshot_after_tree) || steps.snapshot_after_tree.status

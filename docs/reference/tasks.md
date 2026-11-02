@@ -376,6 +376,8 @@ The request and generic Operation read APIs stay unchanged. CLI JSON, PHP SDK an
 
 The Gateway admits the request and starts the native `operation-task-turn` workflow. A missing workspace returns HTTP 409 `tasks.no_workspace`. A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. A worker on Node 209 runs the turn. The full intent supplies the group's VM workspace path and admitted SSH target; official SSH performs each workspace action. Pi API actions run on Node 209 with the existing vault-backed VM token. Swamp owns cancellation and the Pi session without adding a workspace lease or cross-step lock.
 
+The final `outcome` step uses a native assert over the typed turn result. A failed Pi turn fails the run while preserving its public result and failure code.
+
 | Input | Rule |
 | --- | --- |
 | `thread` | `new`, or a thread of this group with the same role. A consult uses a reviewer thread. Another thread returns 422 `tasks.thread_role_mismatch` |

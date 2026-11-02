@@ -82,6 +82,7 @@ Deno.test("untrusted prompt expressions remain inert JSON content", () => {
     );
 });
 Deno.test("turn result retains the existing board token metrics", () => {
+    assertEquals(finish(result()).successful, true);
     const value = JSON.parse(finish(result()).result_json);
     assertEquals(value.state, "done");
     assertEquals(value.receipt.outcome, "ready_for_review");
@@ -113,6 +114,7 @@ Deno.test("wrong thread, role and incomplete blocked receipts never authorize pr
 });
 Deno.test("missing completion or failed cleanup produces a failed terminal result", () => {
     for (const overrides of [{ terminal: "" }, { failure: true }]) {
+        assertEquals(finish({ ...result(), ...overrides }).successful, false);
         const value = JSON.parse(
             finish({ ...result(), ...overrides }).result_json,
         );

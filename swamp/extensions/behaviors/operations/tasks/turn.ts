@@ -151,7 +151,7 @@ export function finish(raw: unknown) {
             peak_context_tokens: usage.peakContext,
         },
     };
-    return { result_json: JSON.stringify(result) };
+    return { result_json: JSON.stringify(result), successful: !failed };
 }
 type PublicContext = {
     extensionFile(name: string): string;
@@ -184,7 +184,7 @@ export const turnDataResources = {
         lifetime: "infinite",
         garbageCollection: 10,
         description: "Public terminal turn result",
-        schema: z.object({ result_json: z.string() }),
+        schema: z.object({ result_json: z.string(), successful: z.boolean() }),
     },
 };
 export const turnDataMethods = {

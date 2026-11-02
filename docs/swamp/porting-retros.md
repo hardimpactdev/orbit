@@ -196,3 +196,11 @@ Decision 5 and pass 3 are proved for all six Process lifecycle kinds, Horizon ha
 Pinned systemd apply publishes unitFile but does not restart an active process after a change or stop an activating unit. Keep those native actions separate, along with check and native assert. The charts show their exact labels; the commit maps each expansion. No wrapper or shipped script was added. Process and Horizon have removed 29 scripts in total, with no retained script gap. Candidate improvements are recorded in `swamp-evaluation.md`.
 
 Docker checks store their observed environment in the vault under a bounded native-output grant. Proof now loads serve's production grants as well as Gateway execution-input grants. Earlier receipt failures exposed that missing grant, then outdated phase labels and an obsolete env-file cleanup expectation. The corrected proofs verify root-owned 0600 managed env files until destroy. Schedule setup and command failures share `schedule.run_failed` with native diagnostics; target admission retains `schedule.target_unavailable`.
+
+## Task turn native outcome check (rule 22, partial)
+
+Task turn replaces `outcome.py` with a native assert over the existing public shaper's typed success flag. One script and its manifest entry are deleted. The public result, failure codes, step name and dependencies stay the same. Ten native, eight data, six action and four Gateway tests pass.
+
+Shared minimal@9 receipt: `~/swamp-execution/evidence/proof/tasks.turn/20261102T151441Z-minimal.json`, source `f41a857e5b`. One sample takes 51.39 seconds (nearest-rank p95 51.39), within 180 seconds; queue timeout stays 60 seconds. The Gateway, vault, SSH and Git are real; Pi is synthetic. This run found no topology fault.
+
+Nine task-turn scripts remain. The receipt helper needs an image-owned installation and image identity update. Worker API and private-file redaction replacements must preserve the admitted Pi session and sanitize data before history. The eleven files in vault-sync run only on the worker and cover the Bitwarden CLI integration gap. The registry has no account/item behavior. Neither family is newly declared rule 22 done.

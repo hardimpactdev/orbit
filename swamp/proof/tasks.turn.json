@@ -29,6 +29,7 @@
     "status": "succeeded"
   },
   "phases": [
+    {"name": "outcome", "job": "turn", "step": "outcome", "budget_seconds": 30},
     {
       "name": "snapshot_before_add",
       "job": "turn",
