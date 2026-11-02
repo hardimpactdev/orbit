@@ -9,8 +9,7 @@ covers:
   - apps/gateway/{app/Models/DatabaseServer.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,database/migrations/2026_12_30_000000_add_test_processes_to_database_connections.php}
   - apps/cli/app/Commands/Database/{CreateDatabaseServerCommand,ListDatabaseServersCommand,ShowDatabaseServerCommand,DestroyDatabaseServerCommand,CreateDatabaseUserCommand}.php
   - packages/php-sdk/src/{Requests,Responses}/DatabaseServers/**
-  - swamp/{extensions/behaviors/operations/database-server-commands/{assets,create_assets}.ts,workflows/workflow-operation-database-{server-create,server-destroy,create,destroy}.yaml}
-  - swamp/extensions/behaviors/operations/database/local_sql_effect_fixture.ts
+  - swamp/{extensions/behaviors/operations/{database-server-commands/{assets,create_assets}.ts,database/local_sql_effect_fixture.ts},workflows/workflow-operation-database-{server-create,server-destroy,create,destroy}.yaml}
 ---
 
 # Database servers
