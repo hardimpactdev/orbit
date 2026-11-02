@@ -17,7 +17,7 @@ The Gateway renders every WireGuard file the run writes, and none holds a privat
 
 Two more execs write the guest's `orbit.conf` and DNS marker; the tunnel start loads the key from its key file. Provider, peer, hub and runtime actions remain visible native steps. No step calls the Gateway to read intent or report progress.
 
-Model issue and Pi runtime preparation are child workflows in the same native root. Secrets resolve from vault descriptors at the consuming step. Pi preparation verifies the pinned artifact and probes the captured Pi URL on its actual WireGuard bind address before returning success. A failed provider, network, model or runtime step cannot produce a ready VM result.
+Model issue and Pi runtime preparation are child workflows in the same native root. Secrets resolve from vault descriptors at the consuming step. Pi preparation checks the pinned build's digest on 209 before any guest step, and probes the captured Pi URL on its actual WireGuard bind address before returning success. A failed provider, network, model or runtime step cannot produce a ready VM result.
 
 Native failure and cancellation branches revoke any attempted model issuance. They keep no network snapshot and restore no hub peer: a published guest peer stays for diagnosis, and the next hub convergence drops it. The provider VM remains available after failure. Runtime always removes its temporary artifact and script staging directories before returning readiness.
 

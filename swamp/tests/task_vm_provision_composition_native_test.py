@@ -80,10 +80,10 @@ else:print('{"ready":true}')
                        "peer_files": {"config": "[Interface]\nAddress = 10.44.0.142/16\nPostUp = wg set %i private-key /etc/wireguard/orbit.key\nPostUp = resolvectl dns %i 10.44.0.1; resolvectl domain %i \\~orbit\n\n[Peer]\nPublicKey = " + self.peer + "\nEndpoint = 192.0.2.1:51820\nAllowedIPs = 10.44.0.0/16\nPersistentKeepalive = 25\n",
                                       "peers": "[Peer]\nPublicKey = " + self.peer + "\nEndpoint = 192.0.2.1:51820\nAllowedIPs = 10.44.0.0/16\nPersistentKeepalive = 25\n",
                                       "dns_hook": "PostUp = resolvectl dns %i 10.44.0.1; resolvectl domain %i \\~orbit", "dns_marker": "orbit\n10.44.0.1\norbit\n"},
-                       "pi_artifact": {"path": "/tmp/pi", "sha256": "a" * 64, "ssh_execution": ssh}, "process_unit": "public unit", "models_json": "{}", "certificate_json": "{}", "runtime_json": "{}",
+                       "pi_artifact": {"path": "/tmp/pi", "sha256": "a" * 64, "ssh_execution": ssh}, "process_unit": "public unit", "certificate": "public certificate", "pi_url": "http://10.44.0.142:3774",
                        "model_intent": {"task_vm_id": 42, "gateway_node_id": 14, "model_router_node_id": 6, "model_origin": "http://192.0.2.6"}}
         self.inputs = {"operation_id": 7005, "node_id": 9, "kind": "task_vm.provision", "intent": self.intent,
-                       "execution_secrets": {key: {"vault": "orbit-control-inputs", "key": name} for key, name in {"model_key": "task-vm-model-key-42", "pi_token": "task-vm-pi-token-42", "model_router_management": "model-router-management-node-6", "model_router_anchor": "model-router-anchor-node-6"}.items()}}
+                       "execution_secrets": {key: {"vault": "orbit-control-inputs", "key": name} for key, name in {"model_key": "task-vm-model-key-42", "pi_models": "task-vm-pi-models-42", "pi_token": "task-vm-pi-token-42", "model_router_management": "model-router-management-node-6", "model_router_anchor": "model-router-anchor-node-6"}.items()}}
 
     def fixture(self, name, step, value, stdout=False):
         workflow = {"id": str(__import__("uuid").uuid4()), "name": name, "inputs": {"type": "object", "additionalProperties": True}, "jobs": [{"name": "fixture", "steps": [{"name": step, "task": {"type": "behavior", "behaviorType": "command/shell", "behaviorName": name + "-fixture", "methodName": "execute", "inputs": {"run": "printf '%s\\n' \"$PUBLIC\"", "env": {"PUBLIC": json.dumps(value)}}}}]}]}
