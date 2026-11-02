@@ -1,4 +1,4 @@
-"""Minimal Swamp proof topology: one task VM runs Gateway plus Swamp, one nested VM plays the Node.
+"""Swamp proof topology: one task VM runs Gateway plus Swamp, nested VMs play the Nodes.
 
 up       provision one Project 62 task VM (or keep the held one), stage this commit, bring up the topology
 run      run kind fixtures in the held topology and write a receipt per kind
@@ -106,16 +106,16 @@ def last_json(text):
     return json.loads(text.strip().splitlines()[-1])
 
 
-def topology():
-    return json.loads((ROOT / 'swamp/proof/topologies/minimal/topology.json').read_text())
+def topology(name):
+    return json.loads((ROOT / 'swamp/proof/topologies' / name / 'topology.json').read_text())
 
 
 def provision(gateway, state):
     vm = state['vm']
     if 'group_id' not in vm:
         group = gateway.request('POST', 'task-groups', {
-            'project_id': 62, 'title': f'topology minimal@{state["topology_version"]} {ROOT.name}',
-            'brief': 'Disposable minimal proof topology. No product work, publication or merge.',
+            'project_id': 62, 'title': f'topology {state["topology"]}@{state["topology_version"]} {ROOT.name}',
+            'brief': f'Disposable {state["topology"]} proof topology. No product work, publication or merge.',
             'orchestration': 'external', 'status': 'todo',
             'tasks': [{'title': 'Host the proof topology', 'brief': 'Run kind fixtures and keep their receipts.',
                        'deliverables': [{'id': 'proof', 'type': 'review', 'description': 'Proof receipt.'}]}]})
@@ -140,39 +140,53 @@ def provision(gateway, state):
     return Guest(state['guest_host'], vm['name'])
 
 
-def up(gateway):
+def up(gateway, name='minimal'):
     if subprocess.run(['git', '-C', str(ROOT), 'status', '--porcelain'], capture_output=True, text=True, check=True).stdout.strip():
         raise ProofError('Commit the worktree first; the topology serves one exact commit.')
     commit = subprocess.run(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()
     state = json.loads(SESSION.read_text()) if SESSION.is_file() else None
+    if state and not state['vm'].get('destroyed') and state['topology'] != name:
+        raise ProofError(f'The session holds topology {state["topology"]}; use down first.')
     if not state or state['vm'].get('destroyed'):
-        spec = topology()
+        spec = topology(name)
         state = {'topology': spec['name'], 'topology_version': spec['version'], 'nonce': secrets.token_hex(8), 'vm': {},
                  'receipts': [], 'up_started_at': utc(), 'up_started_epoch': time.time()}
     state.setdefault('receipts', [])
     state.setdefault('up_started_at', utc())
     state.setdefault('up_started_epoch', time.time())
-    state.update(commit=commit, ready=False, last_up_started_at=utc(), last_up_started_epoch=time.time())
+    # A restage of a held VM serves the staged commit's topology version; each receipt records the one it ran on.
+    state.update(commit=commit, topology_version=topology(name)['version'], ready=False, last_up_started_at=utc(), last_up_started_epoch=time.time())
     save(SESSION, state)
     guest = provision(gateway, state)
+    staged = stage(guest, commit)
+    bring_up(guest, state, commit, [{'step': 'stage', 'seconds': round(staged, 1)}])
+    return state
+
+
+def stage(guest, commit):
+    """Replace the VM's source tree with a fresh clone of commit; returns the seconds it took."""
     started = time.time()
     with tempfile.TemporaryDirectory() as folder:
         bundle = Path(folder) / 'source.bundle'
         subprocess.run(['git', '-C', str(ROOT), 'bundle', 'create', str(bundle), 'HEAD'], check=True, capture_output=True)
         # A held VM's serve writes into the staged tree; stop it before the tree is replaced.
-        stage = ('systemctl stop orbit-node-worker orbit-swamp-serve 2>/dev/null; rm -rf /home/orbit/swamp-proof'
-                 ' && install -d -o orbit -g orbit /home/orbit/swamp-proof && cat > /home/orbit/swamp-proof/source.bundle')
-        guest.call(['sh', '-c', stage], input=bundle.read_bytes(), timeout=300)
+        script = ('systemctl stop orbit-node-worker orbit-swamp-serve 2>/dev/null; rm -rf /home/orbit/swamp-proof'
+                  ' && install -d -o orbit -g orbit /home/orbit/swamp-proof && cat > /home/orbit/swamp-proof/source.bundle')
+        guest.call(['sh', '-c', script], input=bundle.read_bytes(), timeout=300)
     guest.call(['runuser', '-u', 'orbit', '--', 'git', 'clone', '-q', '--no-checkout', '/home/orbit/swamp-proof/source.bundle', SOURCE])
     guest.call(['runuser', '-u', 'orbit', '--', 'git', '-C', SOURCE, 'checkout', '-q', '--detach', commit])
-    staged = time.time() - started
-    facts = last_json(guest.call(['python3', '-I', f'{SOURCE}/tools/swamp-proof-guest/up.py', SOURCE], timeout=2700))
+    return time.time() - started
+
+
+def bring_up(guest, state, commit, timings, fresh=False):
+    """Run the guest's up on the staged commit: fresh Swamp credentials and Gateway database, and with fresh, new Nodes."""
+    facts = last_json(guest.call(['python3', '-I', f'{SOURCE}/tools/swamp-proof-guest/up.py', SOURCE, state['topology'],
+                                  *(['--fresh'] if fresh else [])], timeout=2700))
     if not facts.get('ready') or facts['commit'] != commit:
         raise ProofError('The topology did not come up on the staged commit.')
-    state.update(ready=True, ready_at=utc(), ready_epoch=time.time(), facts=facts,
-                 timings=[{'step': 'stage', 'seconds': round(staged, 1)}, *facts['timings']])
+    state.update(ready=True, ready_at=utc(), ready_epoch=time.time(), facts=facts, runs_since_up=0,
+                 timings=[*timings, *facts['timings']])
     save(SESSION, state)
-    return state
 
 
 FIXTURE_ONLY = ('swamp/proof/', 'tools/swamp-proof-guest/run.py', 'tools/swamp-proof-guest/gateway.php', 'tools/swamp_proof.py')
@@ -206,8 +220,18 @@ def refresh(guest, state):
 def run(state, kind):
     if not state.get('ready') or state['vm'].get('destroyed'):
         raise ProofError('Use up first.')
+    fixture = json.loads((ROOT / 'swamp/proof' / f'{kind}.json').read_text())
+    if fixture.get('topology', 'minimal') != state['topology']:
+        raise ProofError(f'{kind} needs topology {fixture.get("topology", "minimal")}; this session holds {state["topology"]}.')
     guest = Guest(state['guest_host'], state['vm']['name'])
     refresh(guest, state)
+    # Consecutive kinds share one up. A fixture that needs a clean end state gets fresh Nodes and a fresh
+    # Gateway database on the same VM, but only when an earlier fixture ran since the last up.
+    if fixture.get('clean') is True and state.get('runs_since_up', 0) > 0:
+        # A fresh clone too: the Swamp repository in the staged tree records its datastore, which up recreates.
+        state['last_up_started_epoch'] = time.time()
+        staged = stage(guest, state['commit'])
+        bring_up(guest, state, state['commit'], [{'step': 'clean restage', 'seconds': round(staged, 1)}], fresh=True)
     started = time.time()
     body = last_json(guest.call(['python3', '-I', f'{SOURCE}/tools/swamp-proof-guest/run.py', SOURCE, kind], timeout=3600))
     receipt = {'kind': kind, 'proof_pass': body.get('proof_pass') is True, 'topology': state['topology'],
@@ -218,20 +242,29 @@ def run(state, kind):
                            'up_to_receipt_seconds': round(time.time() - state['last_up_started_epoch'], 1),
                            'since_first_provision_seconds': round(time.time() - state['up_started_epoch'], 1)},
                'up_started_at': state['up_started_at'], 'written_at': utc(), **body}
-    destination = EVIDENCE / kind / (datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ') + '-minimal.json')
+    destination = EVIDENCE / kind / (datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ') + f'-{state["topology"]}.json')
     save(destination, receipt)
     state['receipts'].append(str(destination))
     state['last_run_epoch'] = time.time()
+    state['runs_since_up'] = state.get('runs_since_up', 0) + 1
     save(SESSION, state)
     return destination, receipt
 
 
 def cancel(gateway, state, session):
-    """Cancel the proof group once; a cancel still running, or whose reply was lost, is followed under its key."""
+    """Cancel the proof group; a cancel still running, or whose reply was lost, is followed under its key.
+
+    A cancel that ended without success is not replayed: the next down admits a new one under the next key.
+    """
     vm = state['vm']
     operation = gateway.request('GET', f'operations/{vm["cancel_operation_id"]}') if vm.get('cancel_operation_id') else None
+    if operation is not None and operation['status'] in ('failed', 'cancelled'):
+        vm['cancel_attempt'] = vm.get('cancel_attempt', 0) + 1
+        operation = None
     if operation is None:
-        operation = gateway.request('POST', f'task-groups/{vm["group_id"]}/cancel', {}, f'swamp-proof:{state["nonce"]}:cancel')
+        attempt = vm.get('cancel_attempt', 0)
+        operation = gateway.request('POST', f'task-groups/{vm["group_id"]}/cancel', {},
+                                    f'swamp-proof:{state["nonce"]}:cancel' + (f':{attempt}' if attempt else ''))
         vm['cancel_operation_id'] = operation['id']
         save(session, state)
     return gateway.wait(operation, 'tasks.cancel', vm['group_id'])
@@ -288,7 +321,7 @@ def reap(gateway, now=None):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest='action', required=True)
-    sub.add_parser('up')
+    sub.add_parser('up').add_argument('--topology', default='minimal', help='Topology under swamp/proof/topologies (default minimal).')
     runner = sub.add_parser('run')
     runner.add_argument('kind', nargs='+')
     sub.add_parser('receipt')
@@ -312,7 +345,7 @@ def main(argv=None):
                 for name in reap(Gateway()):
                     print(f'swamp-proof: took down expired session {name}', file=sys.stderr)
             if args.action == 'up':
-                state = up(Gateway())
+                state = up(Gateway(), args.topology)
                 print(json.dumps({key: state[key] for key in ('topology', 'topology_version', 'commit', 'vm', 'timings')}))
                 return 0
             state = json.loads(SESSION.read_text())

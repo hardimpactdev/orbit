@@ -78,9 +78,48 @@ class Down(unittest.TestCase):
         with self.assertRaisesRegex(swamp_proof.ProofError, 'ended failed'):
             self.run_down(['failed'])
 
+    def test_a_cached_failed_cancel_is_followed_by_a_new_one_under_the_next_key(self):
+        state, posts = self.run_down(['succeeded'], state={'nonce': 'n', 'vm': {'group_id': 7, 'task_vm_id': 3, 'cancel_operation_id': 90}})
+        self.assertEqual(posts, ['swamp-proof:n:cancel:1'])
+        self.assertTrue(state['vm']['destroyed'])
+
     def test_the_gateway_group_record_must_show_the_vm_gone(self):
         with self.assertRaisesRegex(swamp_proof.ProofError, 'did not destroy'):
             self.run_down(['succeeded'], group={'status': 'cancelled', 'vm_power': 'running'})
+
+
+class Reuse(unittest.TestCase):
+    """Consecutive kinds share one up; a clean fixture restages fresh Nodes only after an earlier run."""
+
+    def run_kinds(self, fixtures):
+        calls = []
+
+        class Guest:
+            def __init__(self, *_):
+                pass
+
+            def call(self, argv, input=None, timeout=120):
+                calls.append(argv)
+                if argv[2].endswith('up.py'):
+                    return '{"ready": true, "commit": "c", "timings": []}'
+                return '{"proof_pass": true}'
+
+        state = {'ready': True, 'vm': {'name': 'tvm-1'}, 'guest_host': 'h', 'topology': 'minimal', 'topology_version': 6,
+                 'commit': 'c', 'receipts': [], 'timings': [], 'ready_epoch': 1, 'last_up_started_epoch': 1, 'up_started_epoch': 1,
+                 'up_started_at': 'now'}
+        with patch.object(swamp_proof, 'Guest', Guest), patch.object(swamp_proof, 'refresh'), patch.object(swamp_proof, 'save'), \
+                patch.object(Path, 'read_text', side_effect=lambda *_: fixtures.pop(0)):
+            for _ in range(len(fixtures)):
+                swamp_proof.run(state, 'kind')
+        return [argv for argv in calls if argv[2].endswith('up.py')]
+
+    def test_kinds_share_one_up(self):
+        self.assertEqual(self.run_kinds(['{}', '{}', '{}']), [])
+
+    def test_a_clean_fixture_restages_fresh_nodes_only_after_an_earlier_run(self):
+        ups = self.run_kinds(['{"clean": true}', '{}', '{"clean": true}'])
+        self.assertEqual(len(ups), 1)
+        self.assertEqual(ups[0][-1], '--fresh')
 
 
 class Reap(unittest.TestCase):

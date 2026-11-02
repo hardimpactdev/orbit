@@ -35,6 +35,7 @@ def provision(url, password, ca_file):
 
     def request(path, value=None, form=False):
         headers = {
+            "Accept": "application/json",
             "Content-Type": "application/x-www-form-urlencoded"
             if form
             else "application/json"
@@ -66,10 +67,12 @@ def provision(url, password, ca_file):
     user_key = os.urandom(64)
     private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     public = private.public_key()
+    verification = request("/identity/accounts/register/send-verification-email", {"email": email, "name": "Native sync fixture"})
     request(
-        "/identity/accounts/register",
+        "/identity/accounts/register/finish",
         {
             "email": email,
+            "emailVerificationToken": verification,
             "name": "Native sync fixture",
             "masterPasswordHash": password_hash,
             "key": encrypt(user_key, stretched),

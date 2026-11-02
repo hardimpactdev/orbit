@@ -27,7 +27,7 @@ return ['node.worker_known_hosts' => [
     'workflow' => 'operation-node-wireguard-hub-converge',
     'projection' => NodeWireGuardHubProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'check', 'step' => 'Confirm the hub', 'outputs' => false],
+    'terminal_result' => ['job' => 'check', 'step' => 'Confirm the hub', 'native' => true],
 ], 'node.remove' => [
     'workflow' => 'operation-node-remove', 'projection' => NodeRemovalProjection::class,
     'workflow_inputs' => true,

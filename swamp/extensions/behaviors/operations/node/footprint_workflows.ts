@@ -5,6 +5,7 @@ import {
 import { roleMetricsJobs } from "./role_metrics_workflow.ts";
 import { roleCertificateJobs } from "./role_certificates_workflow.ts";
 import { rolePublicationJobs } from "./role_publication_workflow.ts";
+import { roleSwampRuntimeJobs } from "./role_swamp_runtime_workflow.ts";
 /** Generate native jobs from one footprint chain; cached stages stay in their root run. */
 import { stringify } from "jsr:@std/yaml@1.0.12";
 import { BaselineStage } from "./role_direct_local.ts";
@@ -58,6 +59,7 @@ export function footprintWorkflow(
   let previous = "admission";
   let dependencies = "null";
   let prepared = false;
+  let swamp: ReturnType<typeof roleSwampRuntimeJobs> | undefined;
   for (const stage of order) {
     if (role && stage === "runtime") {
       jobs.push({
@@ -76,6 +78,13 @@ export function footprintWorkflow(
         }],
       });
       previous = "analytics_storage_job";
+      const runtime = "steps.admit.outputs.snapshot.runtime";
+      swamp = roleSwampRuntimeJobs(
+        previous,
+        runtime,
+        `!steps.admit.outputs.ready || !has(${runtime}) || ${runtime} == null || ${runtime}.role != "swamp"`,
+      );
+      jobs.push(...swamp.jobs);
     }
     if (role && stage === "caddy") {
       const metrics = roleMetricsJobs(previous, {
@@ -148,6 +157,9 @@ export function footprintWorkflow(
     if (!role) {
       inputs.cancellation = expression(`steps.${cancellation}.outputs`);
     }
+    if (isBaseline && stage === "runtime" && swamp) {
+      inputs.swamp_failure = expression(swamp.failure);
+    }
     steps.push({
       name,
       writes: true,
@@ -178,7 +190,17 @@ export function footprintWorkflow(
       },
     });
     const job = `${name}_job`;
-    jobs.push({ name: job, dependsOn: [dependency(previous)], steps });
+    // The runtime outcome reports the swamp role's native steps, which run before it on any outcome.
+    jobs.push({
+      name: job,
+      dependsOn: [
+        dependency(previous),
+        ...(isBaseline && stage === "runtime" && swamp
+          ? [dependency(swamp.lastJob, "always")]
+          : []),
+      ],
+      steps,
+    });
     previous = job;
   }
   const results = role

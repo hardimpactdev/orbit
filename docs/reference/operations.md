@@ -31,7 +31,7 @@ The alert uses the existing [signed release webhook](/reference/gateway-recovery
 
 ## Swamp datastore watch
 
-The native schedule `swamp-datastore-watch` runs every 15 minutes on the swamp role's workers on Node 209. It reads only: one `command/shell` step counts the files under serve's datastore, `.swamp/` in the serve checkout, and samples serve's CPU over 5 seconds with `top`. It prints one JSON result with the auto-definitions per type, `outputs`, `workflow_runs`, `data`, `grants` and `serve_cpu_percent`. The step never calls the Gateway.
+The native schedule `swamp-datastore-watch` runs every 15 minutes on the swamp role's workers on Node 209. It reads only: one `command/shell` step counts the files under serve's datastore, `.swamp/` in the serve checkout, and samples serve's CPU over 5 seconds with `top`. It prints one JSON result with the auto-definitions per type, `outputs`, `workflow_runs`, `data`, `step_leases`, `grants` and `serve_cpu_percent`. The step never calls the Gateway.
 
 The Gateway reads the terminal `measure` output through the shared scheduled-result reader and raises a [problem](/reference/tasks#fingerprints) with source `swamp` for each crossed bound:
 
@@ -39,6 +39,7 @@ The Gateway reads the terminal `measure` output through the shared scheduled-res
 | --- | --- |
 | `datastore\|auto_definitions\|<type>` | One auto-definition type other than `swamp/grant` holds more than 2,000 files |
 | `datastore\|outputs` | `outputs` holds more than 50,000 files |
+| `datastore\|step_leases` | `data/swamp/step-lease` holds more than 60,000 files; bookkeeping keeps leases 2 hours, so the count should level off near 2 hours of dispatches |
 | `datastore\|grants` | Serve holds more than 500 grant records, the auto-definitions of type `swamp/grant` |
 | `serve\|cpu` | Serve used more than 50% CPU over the sample |
 | `watch\|failed` | A watch run did not succeed, so the datastore is unwatched |
@@ -103,7 +104,7 @@ The shared observer projects live step names from native run events without read
 
 A failed or interrupted root retains its first causal step as `failed_step` and a bounded safe diagnostic in `error.detail`. Recorded stderr is preferred; otherwise the native step error is retained. `error.stderr_recorded` distinguishes recorded stderr from missing stderr, including worker disconnection or dispatch refusal. Stdout is never failure evidence.
 
-When a kind's workflow has no result-reporting step, the kind declares its terminal result as `native`. Its projector then reads Swamp's own run data keyed by step name ([Swamp command steps](/reference/swamp-command-steps#read-swamps-run-data-instead-of-a-result-step)).
+When a kind's workflow has no result-reporting step, the kind declares its terminal result as `native`. Its projector then reads Swamp's own run data keyed by step name ([Swamp command steps](/reference/swamp-command-steps#read-swamps-run-data-instead-of-a-result-step)). `node.wireguard_hub_converge` is the first: its run ends on a native `assert`, and the Gateway records `projected: true` when that check succeeded.
 
 A failed step with exit 124 and a command beginning with a literal `timeout N` reports `<step> timed out after <N>s`; other failures keep their redacted diagnostic. The shared projector and the existing exact history read use the same diagnostic extractor. An older native failure can receive missing detail once through its next normal Operation read, without changing its terminal result or sending another failure alert.
 

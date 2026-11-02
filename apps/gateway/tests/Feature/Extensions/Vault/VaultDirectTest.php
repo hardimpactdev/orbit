@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationKinds;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
@@ -22,10 +23,12 @@ beforeEach(function (): void {
     $this->outsider = Node::query()->create(['name' => 'other', 'status' => 'active', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.2', 'wireguard_ip' => '10.44.0.2']);
     $this->run = 'a075eb23-7ac4-4487-80d1-57a038a92676';
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-vault-direct', 'runId' => $this->run]]];
+    $socket->reply = fn (array $request): array => $request['type'] === 'vault.put'
+        ? [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]]
+        : [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => $this->run]]];
     app()->instance(WebSocketClient::class, $socket);
     $this->socket = $socket;
-    config(['swamp.run_token' => 'fixture.shared.token']);
+    config(['swamp.run_token' => 'fixture.shared.token', 'swamp.read_token' => 'fixture.shared.read']);
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
     $this->payload = ['url' => 'https://vault.orbit', 'client_id' => 'fixture-client', 'client_secret' => 'private-vault-client', 'master_password' => 'private-vault-master', 'organization' => 'Orbit', 'collection' => 'Test'];
 });
@@ -53,16 +56,23 @@ it('starts setup directly and projects encrypted settings only after proven safe
     admitDirectVault($this, 'setup');
     expect(app(DirectOperation::class)->writer('vault.setup'))->toBe('direct');
     expect(app(OperationKinds::class)->definition('vault.setup'))->not->toHaveKeys(['runs', 'completion', 'completion_contract']);
-    expect($this->socket->sent[0]['payload']['inputs'])->toBe(['operation_id' => $this->operation->id, 'kind' => 'vault.setup', 'node_id' => $this->gateway->id]);
-    $this->getJson($this->path.'/private-material?run_id='.$this->run)->assertOk()->assertJsonPath('data.configuration.master_password', 'private-vault-master');
+    $start = $this->socket->sent[1]['payload'];
+    expect($start['workflowIdOrName'])->toBe('operation-vault-setup');
+    expect($start['inputs'])->toBe([...$this->operation->input, 'operation_id' => $this->operation->id, 'kind' => 'vault.setup', 'node_id' => $this->gateway->id]);
+    expect(json_encode($start))->not->toContain('private-vault-client', 'private-vault-master');
     expect(app(VaultSettings::class)->configuration())->toBeNull();
-    $this->postJson($this->path.'/result', directVaultProjection($this, ['outcome' => 'succeeded', 'data' => ['backend' => 'configured']]))->assertConflict();
-    $this->postJson($this->path.'/result', directVaultProjection($this, ['outcome' => 'succeeded', 'data' => ['backend' => 'configured', 'email' => 'fixture@example.test', 'organization_id' => 'org', 'organization_name' => 'Orbit', 'collection_id' => 'collection', 'collection_name' => 'Test']]))->assertOk();
+    $result = ['outcome' => 'succeeded', 'data' => ['backend' => 'configured', 'email' => 'fixture@example.test', 'organization_id' => 'org', 'organization_name' => 'Orbit', 'collection_id' => 'collection', 'collection_name' => 'Test']];
+    $run = ['id' => $this->run, 'workflowName' => 'operation-vault-setup', 'status' => 'succeeded', 'inputs' => $start['inputs'],
+        'startedAt' => now()->toIso8601String(), 'completedAt' => now()->toIso8601String(),
+        'jobs' => [['name' => 'setup', 'steps' => [['name' => 'Verify the account', 'outputs' => ['stdout' => json_encode($result)]]]]]];
+    $this->socket->reply = static fn (array $request): array => [['id' => $request['id'], 'type' => 'workflow.history.get', 'payload' => ['data' => $run]]];
+    app(SwampCommandStep::class)->projectTerminal($this->operation, $run, ['job' => 'setup', 'step' => 'Verify the account']);
     expect(app(VaultSettings::class)->configuration()?->credentials->clientSecret)->toBe('private-vault-client');
     expect(Setting::query()->where('key', 'vault.operation.'.$this->operation->id)->exists())->toBeFalse();
     expect(Setting::query()->where('key', 'vault.configuration')->value('value'))->not->toContain('private-vault-client');
     expect(json_encode([$this->operation->fresh()->toArray(), Activity::query()->get()->toArray()]))->not->toContain('private-vault-client')->not->toContain('private-vault-master');
-    $this->getJson($this->path.'/private-material?run_id='.$this->run)->assertConflict();
+    app(SwampCommandStep::class)->projectTerminal($this->operation->fresh(), $run, ['job' => 'setup', 'step' => 'Verify the account']);
+    expect(array_count_values(array_column($this->socket->sent, 'type'))['workflow.history.get'])->toBe(1);
     Http::assertNothingSent();
 });
 
@@ -83,6 +93,41 @@ it('tears down directly and clears settings and ledger only after proven removal
     expect(json_encode([$this->operation->fresh()->toArray(), Activity::query()->get()->toArray()]))->not->toContain('private-vault-client')->not->toContain('private-vault-master');
     Http::assertNothingSent();
 });
+
+it('fails setup without projecting successful verification when native cleanup fails', function (): void {
+    app(VaultSettings::class)->put(new VaultConfiguration(new VaultCredentials('https://vault.orbit', 'old-client', 'old-secret', 'old-password', 'old-device'), 'old@example.test', 'old-org', 'Old', 'old-collection', 'Old'));
+    admitDirectVault($this, 'setup');
+    $run = ['id' => $this->run, 'workflowName' => 'operation-vault-setup', 'status' => 'failed',
+        'inputs' => [...$this->operation->input, 'operation_id' => $this->operation->id, 'node_id' => $this->gateway->id, 'kind' => 'vault.setup'],
+        'startedAt' => now()->toIso8601String(), 'completedAt' => now()->toIso8601String(),
+        'jobs' => [['name' => 'setup', 'steps' => [
+            ['name' => 'Verify the account', 'status' => 'succeeded', 'outputs' => ['stdout' => json_encode(['outcome' => 'succeeded', 'data' => ['backend' => 'configured', 'email' => 'fixture@example.test', 'organization_id' => 'org', 'organization_name' => 'Orbit', 'collection_id' => 'collection', 'collection_name' => 'Test']])]],
+            ['name' => 'Clear the session', 'status' => 'failed', 'error' => 'probe deletion failed'],
+        ]]]];
+    $this->socket->reply = static fn (array $request): array => [['id' => $request['id'], 'type' => 'workflow.history.get', 'payload' => ['data' => $run]]];
+    app(SwampCommandStep::class)->projectTerminal($this->operation, $run, ['job' => 'setup', 'step' => 'Verify the account']);
+    expect($this->operation->fresh()->status->value)->toBe('failed');
+    expect($this->operation->fresh()->error_code)->toBe('operation.native_failed');
+    expect(app(VaultSettings::class)->configuration()?->collectionId)->toBe('old-collection');
+    expect(Setting::query()->where('key', 'vault.operation.'.$this->operation->id)->exists())->toBeFalse();
+});
+
+it('projects a setup refusal from the failed native step exit code without stdout', function (int $exit, string $code): void {
+    admitDirectVault($this, 'setup');
+    $run = ['id' => $this->run, 'workflowName' => 'operation-vault-setup', 'status' => 'failed',
+        'inputs' => [...$this->operation->input, 'operation_id' => $this->operation->id, 'node_id' => $this->gateway->id, 'kind' => 'vault.setup'],
+        'startedAt' => now()->toIso8601String(), 'completedAt' => now()->toIso8601String(),
+        'jobs' => [['name' => 'setup', 'steps' => [['name' => 'Verify the account', 'status' => 'failed', 'error' => 'Command exited with code '.$exit]]]]];
+    $this->socket->reply = static fn (array $request): array => [['id' => $request['id'], 'type' => 'workflow.history.get', 'payload' => ['data' => $run]]];
+    app(SwampCommandStep::class)->projectTerminal($this->operation, $run, ['job' => 'setup', 'step' => 'Verify the account']);
+    expect($this->operation->fresh()->status->value)->toBe('failed');
+    expect($this->operation->fresh()->error_code)->toBe($code);
+    expect(app(VaultSettings::class)->configuration())->toBeNull();
+})->with([
+    [10, 'vault.login_failed'], [11, 'vault.organization_missing'], [12, 'vault.collection_missing'],
+    [13, 'vault.collection_read_only'], [14, 'vault.items_published'], [15, 'vault.result_invalid'],
+    [16, 'vault.kdf_unsupported'], [17, 'vault.unreachable'], [124, 'operation.native_failed'],
+]);
 
 it('preserves settings and ledger after a failed direct teardown and forgets its snapshot', function (): void {
     admitDirectVault($this, 'teardown');
@@ -128,4 +173,4 @@ it('preserves a later Vault configuration when a terminal setup or teardown resu
     expect(app(VaultSettings::class)->configuration()?->collectionId)->toBe('new-collection');
     expect(app(VaultSettings::class)->configuration()?->credentials->clientSecret)->toBe('new-private-client');
     Http::assertNothingSent();
-})->with(['setup', 'teardown']);
+})->with(['teardown']);

@@ -266,22 +266,6 @@ def reconcile(action, config, remote):
     if action == 'teardown' and config.get('keep_items'):
         return {'backend': 'absent'}
     snapshot = remote.open()
-    if action == 'setup':
-        organizations = [item for item in snapshot['organizations'] if config['organization'] in (item['id'], item['name'])]
-        if len(organizations) != 1:
-            refuse('vault.organization_missing')
-        organization = organizations[0]
-        collections = [item for item in snapshot['collections'] if item['organization_id'] == organization['id'] and config['collection'] in (item['id'], item['name'])]
-        if len(collections) != 1:
-            refuse('vault.collection_missing')
-        collection = collections[0]
-        if collection['read_only']:
-            refuse('vault.collection_read_only')
-        previous = config.get('previous')
-        if previous and config.get('published') and (previous['organization_id'] != organization['id'] or previous['collection_id'] != collection['id']):
-            refuse('vault.items_published')
-        return {'backend': 'configured', 'email': snapshot['email'], 'organization_id': organization['id'],
-            'organization_name': organization['name'], 'collection_id': collection['id'], 'collection_name': collection['name']}
     if config['organization_id'] not in remote.keys:
         refuse('vault.organization_missing')
     ciphers = [item for item in snapshot['ciphers'] if item['organization_id'] == config['organization_id'] and config['collection_id'] in item['collection_ids']]
@@ -294,7 +278,7 @@ def reconcile(action, config, remote):
 def main(payload):
     try:
         action, config = payload['action'], payload['configuration']
-        if action not in ('setup', 'teardown'):
+        if action != 'teardown':
             refuse('vault.action_invalid')
         return 'succeeded', reconcile(action, config, Collection(config))
     except Refusal as failure:

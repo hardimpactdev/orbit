@@ -39,11 +39,13 @@ it('admits a credential reset with names-only native input and encrypted pending
     $scope = new SettingScope(SettingScopeType::Node, $this->target->id);
     $pending = app(SettingRepository::class)->get($scope, NativeMetricsCredentialManager::PendingPasswordKey);
     expect($op->kind)->toBe('metrics.credentials_reset');
-    expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'workflow.run']);
-    $native = $this->socket->sent[1]['payload']['inputs'];
-    expect($native['execution_secrets']['credentials'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'metrics-credentials-operation-'.$op->id]);
+    expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'vault.put', 'vault.put', 'workflow.run']);
+    $native = $this->socket->sent[3]['payload']['inputs'];
+    expect($native['execution_secrets']['probe'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'metrics-credentials-operation-'.$op->id.'-probe']);
     expect(json_encode([$op->toArray(), $native]))->not->toContain('fixture-grafana-private-value', $pending);
-    expect(json_decode($this->socket->sent[0]['payload']['value'], true)['pending_password'])->toBe($pending);
+    expect($this->socket->sent[0]['payload']['value'])->toBe('user = "admin:'.$pending.'"'."\n");
+    expect($this->socket->sent[1]['payload']['value'])->toContain('request = PUT', 'fixture-grafana-private-value', $pending);
+    expect($this->socket->sent[2]['payload']['value'])->toBe($this->socket->sent[0]['payload']['value']);
     expect($op->input['ssh_execution']['target']['host_keys'])->toBe(['ssh-ed25519 fixture-public-key']);
 });
 

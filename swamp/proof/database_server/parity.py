@@ -1,5 +1,6 @@
 """Database server create contract on the target (F9): an owned running container on the private port,
-no first-start password in its environment, and the admin login works with the recorded password unseen.
+no first-start password in its environment, no login env file left, and the admin login works with the
+recorded password unseen.
 
 Database server destroy contract: no container of the Process is left, and the data volume stays.
 
@@ -45,4 +46,6 @@ bindings = [binding['HostIp'] for ports in value['HostConfig']['PortBindings'].v
 check(bindings and all(ip not in ('', '0.0.0.0', '::') for ip in bindings), f'only private bindings, got {bindings}')
 mounts = [mount for mount in value['Mounts'] if mount['Type'] == 'volume']
 check(len(mounts) == 1, 'one data volume')
+left = target('sh', '-c', f'ls /run/orbit-database-server-create-{operation["id"]}*.env 2>/dev/null || true')
+check(left == '', f'no login env file is left on the Node, found {left}')
 print(f'parity: {operation["kind"]} leaves {intent["driver"]} {container} running, healthy and scrubbed')

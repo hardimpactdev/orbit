@@ -22,3 +22,5 @@ node.agent_rekey
 database.create
 database.destroy
 process.horizon_handoff
+
+vault.setup

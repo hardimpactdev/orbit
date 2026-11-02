@@ -5,10 +5,10 @@ from role_paths import KEY_ROOT, role_paths
 
 
 def request(leaf):
-    role, current, _ = role_paths(leaf)
+    name, current, _ = role_paths(leaf)
     if valid_pair(
-        current / (role + ".pem"),
-        current / (role + ".key"),
+        current / (name + ".pem"),
+        current / (name + ".key"),
         current / "root-ca.pem",
         leaf,
     ):

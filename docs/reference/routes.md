@@ -505,7 +505,7 @@ Route and Cluster Router operations compose the native `route-certificate-publis
 
 Node 209 stages the scripts and reaches each admitted Node through pinned official SSH. The Node retains its leaf private key and returns only public CSRs. The existing Gateway signing endpoint checks the numeric Operation and its run, then signs those requests and returns public certificate bundles. The CA private key stays only in the Gateway.
 
-Removal follows Caddy withdrawal and refuses a scope still referenced by fresh Caddy configuration. It removes only the admitted account’s scope. The parent Operation projects the complete native result; certificate children create no separate Operations.
+Removal follows Caddy withdrawal and refuses a scope still referenced by fresh Caddy configuration. A certificate folder loader keeps a scope in use when its directory is inside that scope, is the scope itself, or contains the scope. Removal keeps both the account and Caddy copies on refusal. It removes only the admitted account’s scope. The parent Operation projects the complete native result; certificate children create no separate Operations.
 
 A `pending` replacement renders a site only after its certificate step completes. A `failed` replacement renders no site. Cleanup issues the live certificates, stores its `cleanup` step, rebuilds the workload and Router Caddy, and only then removes the staging certificates. So a failed cleanup never leaves a site that names a missing certificate.
 

@@ -31,8 +31,8 @@ jobs:
           inputs:
             env:
               RELEASE_SHA: '${{ inputs.intent.sha }}'
-            # Fast-forward the serve checkout and render the swamp role's grants. Manifest additionalFiles that differ from
-            # serve's start restart serve, which drains first (https://swamp-club.com/lab/4282); the release then loads
+            # Fast-forward the serve checkout and render serve's grants. A manifest additionalFiles entry that serve
+            # did not start with restarts serve, which drains first (https://swamp-club.com/lab/4282); the release then loads
             # again. Otherwise serve reloads both, and the served workflows are compared with the commit.
             run: |
               set -eu
