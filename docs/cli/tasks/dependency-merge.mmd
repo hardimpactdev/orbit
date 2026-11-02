@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS 1 (tokens minted at admission, vault; no private-material callback) and R2-R3. docs/reference/tasks.md#dependency-batch-squash-admission.
+  %% Tightened: flow-tighten 2026-11-02, rule 6 (the PR, its checks and its files in one read step).
   %% status: draft
   %% command: none · Services API (tasks-dependency-merge)
   %% kind: tasks.dependency_merge
@@ -41,17 +42,16 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the caller follows the task with `operation:show`
-  SW->>GH: Read the PR and checks<br/>Required checks · smoke
+  SW->>GH: Read the PR<br/>checks · paged files · manifests
   %%> What it does:
-  %%> - reads the PR fresh, with the read token from `vault.get`
+  %%> - reads the PR fresh, its checks on the exact head, and every changed file, with the read token from `vault.get`
+  %%> - only root `composer.json`, `composer.lock`, `package.json` and the npm, pnpm and Bun text lock files may change; Yarn and `bun.lockb` go the ordinary PR path
   %%> Refuses:
   %%> - a PR that is not open, is a draft, comes from another repository, or targets another branch
   %%> - `Required checks` or `Production smoke / smoke` missing, pending, skipped or failed on the exact head
-  SW->>GH: Read the changed files<br/>paged PR files · manifests
-  %%> What it does:
-  %%> - reads every changed file; only root `composer.json`, `composer.lock`, `package.json` and the npm, pnpm and Bun text lock files may change; Yarn and `bun.lockb` go the ordinary PR path
-  %%> Refuses:
   %%> - incomplete or capped file evidence, or any other file
+  %%> Why one step:
+  %%> - all three read PR #57 and fail the same way
   Note over SW: Check the dependency diff<br/>versions only · lock sources
   %%> What it does:
   %%> - compares base and head manifests: only versions of existing dependencies may differ
