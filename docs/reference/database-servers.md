@@ -274,11 +274,11 @@ On a Valkey server, `database:destroy` deletes the connection's ACL user with `A
 
 ## Remove a server
 
-`database:server:destroy <slug>` refuses with `database.server_in_use` (409) while a connection points to the server. Otherwise it removes the Process and the server record. A never-active adopted server is record-only: durable create history must prove adoption and no earlier successful or active creation. In that case removal preserves the operator's Process, container and volume. Admission marks the server as removing, so new database creation refuses an inactive server. It keeps the volume, so the data survives. Remove the volume on the Node by hand when its data must go.
+`database:server:destroy <slug>` refuses with `database.server_in_use` (409) while a connection points to the server. A server without a Process has nothing on its Node, so the Gateway deletes the record at once and returns a succeeded Operation with no run (R1). Otherwise admission marks the server as removing, so new database creation refuses it, and starts `operation-database-server-destroy`. Its steps inspect every container of the Process, including slots left by older creates, stop and remove them, and check they are gone. The volume stays, so the data survives. Remove the volume on the Node by hand when its data must go.
 
 `database:server:destroy` starts `operation-database-server-destroy` with the public Process identity and target SSH metadata. All steps select Node 209 with one placement selector and reach the server Node through official SSH. Native fan-out inspects every container slot before any stop or removal. Each slot inspection uses its own SSH model, named by the native run and iteration, so model locks do not serialize independent observations. One shared native child stops and removes each present owned container through the shared Process scripts. The named data volume stays intact.
 
-A server without a Process, or a record-only adoption cleanup, uses no remote action. The shared terminal subscriber deletes the Server and Process records only after native success; record-only cleanup preserves the operator Process. Steps make no Gateway calls and need no database credentials. Rollback reverts the cutover PR.
+The shared terminal subscriber deletes the Server and Process records only after native success. A failed step marks the server failed with that step and its error code, and keeps both records; run the command again. Steps make no Gateway calls and need no database credentials.
 
 After correcting a failed action, an authorized operator can use native `swamp workflow resume operation-database-server-destroy --run <run-id> --from prepared` to inspect all slots again before continuing. Already absent containers stay absent. Resuming only terminal delivery preserves completed effects.
 
@@ -313,6 +313,9 @@ The server commands return these codes.
 | `database.server_unhealthy` | 502 | The container reported unhealthy or exited before it became healthy. |
 | `database.server_login_failed` | 502 | The admin login failed after the container became healthy. |
 | `database.server_scrub_failed` | 502 | Docker could not recreate the container without its first-start password. |
+| `database.server_inspect_failed` | 502 | Docker could not list the server's containers. |
+| `database.server_remove_failed` | 502 | Docker could not stop or remove a server container. |
+| `database.server_remove_incomplete` | 502 | A container of the server's Process is still present after removal. |
 | `database.server_create_failed` | 502 | The create run ended without reaching the admin login check. |
 | `database.server_container_foreign` | 409 | A container with the server's name belongs to another Process; nothing changed. |
 | `database.valkey_acl_failed` | 502 | Docker could not write the Valkey ACL file into the volume. |

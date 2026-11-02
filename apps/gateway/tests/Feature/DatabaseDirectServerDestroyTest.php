@@ -70,19 +70,19 @@ it('keeps records on a bounded native failure', function (): void {
     expect($this->server->fresh()->status->value)->toBe('active');
 });
 
-it('uses a native no-op for a failed server without a Process', function (): void {
+it('removes a server without a Process at once with no run (R1)', function (): void {
     $server = DatabaseServer::query()->create(['slug' => 'empty', 'driver' => 'mysql', 'node_id' => $this->node->id, 'tag' => '8.4', 'port' => 3333, 'root_password' => 'private-empty', 'status' => 'failed']);
+    $sent = count($this->socket->sent);
     $operation = app(DestroyDatabaseServerAction::class)->execute($server);
-    $path = '/api/v1/direct-operations/'.$operation->id;
-    $this->getJson($path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.intent.process_id', null)->assertJsonPath('data.input.intent.container', null);
-    $this->postJson($path.'/result', $this->finished)->assertOk();
+    expect([$operation->status->value, $operation->result, $operation->lock_key])->toBe(['succeeded', ['backend' => 'absent'], null]);
+    expect(count($this->socket->sent))->toBe($sent);
     $this->assertModelMissing($server);
 });
 
 it('marks cancelled removal failed without deleting the Server or Process', function (): void {
     $this->postJson($this->path.'/result', [...$this->finished, 'status' => 'cancelled', 'result' => []])->assertOk();
     expect($this->server->fresh()->status->value)->toBe('failed');
-    expect($this->server->fresh()->failed_step)->toBe('database-apply');
+    expect($this->server->fresh()->failed_step)->toBeNull();
     $this->assertDatabaseHas('processes', ['id' => $this->server->process_id]);
 });
 
@@ -120,21 +120,18 @@ it('refuses a stale active server model before an Instance reservation after rem
     $this->assertDatabaseCount('database_connections', 0);
 });
 
-it('preserves the operator Process during admitted record-only cleanup', function (): void {
-    $processId = $this->server->process_id;
-    $this->operation->update(['input' => [...$this->operation->input, 'record_only' => true]]);
-    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()
-        ->assertJsonPath('data.input.intent.process_id', null)->assertJsonPath('data.input.intent.container', null);
-    $this->postJson($this->path.'/result', $this->finished)->assertOk();
-    $this->assertModelMissing($this->server);
-    $this->assertDatabaseHas('processes', ['id' => $processId]);
+it('records the failed step and error code of a failed removal on the server', function (): void {
+    $this->postJson($this->path.'/result', [...$this->finished, 'status' => 'failed', 'error_code' => 'database.server_remove_failed',
+        'result' => ['failed_step' => 'Stop and remove them', 'error_code' => 'database.server_remove_failed']])->assertOk();
+    expect([$this->server->fresh()->status->value, $this->server->fresh()->failed_step])->toBe(['failed', 'Stop and remove them']);
+    $this->assertDatabaseHas('processes', ['id' => $this->server->process_id]);
 });
 
 it('passes full public removal inputs and projects only bounded fields', function (): void {
     $sent = array_last($this->socket->sent);
     $input = $sent['payload']['inputs'];
     expect($input['intent']['process_id'])->toBe($this->server->process_id);
-    expect($input['intent']['ssh'])->toMatchArray(['host' => '10.44.0.9', 'user' => 'orbit']);
+    expect($input['intent']['ssh_execution']['target'])->toMatchArray(['host' => '10.44.0.9', 'user' => 'orbit']);
     expect((array) $input['execution_secrets'])->toBe([]);
     expect(json_encode($input))->not->toContain('private-root-sentinel');
     $response = $this->postJson($this->path.'/result', [...$this->finished, 'result' => ['backend' => 'absent', 'private' => 'private-sentinel']])->assertOk();
