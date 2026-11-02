@@ -16,6 +16,12 @@ enum NodeFactKind: string
     /** Systemd units and Docker containers the watch list names or the agent owns, with their state. */
     case Units = 'units';
 
+    /** One Git checkout under the Node's apps root, named by its path in `subject`. */
+    case Checkout = 'checkout';
+
+    /** The paths of every checkout the agent found; a checkout row whose path it no longer names is deleted. */
+    case Checkouts = 'checkouts';
+
     /** Free space is stored in whole steps of this size, so ordinary disk use is not a change to write. */
     public const int FreeStepBytes = 268_435_456;
 
@@ -38,7 +44,31 @@ enum NodeFactKind: string
                 'units.*.runtime' => ['required', 'string', 'in:systemd,docker'],
                 'units.*.state' => ['required', 'string', 'max:32', 'regex:/\A[a-z-]+\z/'],
             ],
+            self::Checkout => [
+                'owner' => ['present', 'nullable', 'string', 'max:64'],
+                'top_level' => ['present', 'nullable', 'string', 'starts_with:/', 'max:4096'],
+                'common_dir' => ['present', 'nullable', 'string', 'starts_with:/', 'max:4096'],
+                'linked' => ['required', 'boolean'],
+                'worktrees' => ['present', 'array', 'list', 'max:256'],
+                'worktrees.*' => ['required', 'string', 'starts_with:/', 'max:4096'],
+                'origin' => ['present', 'nullable', 'string', 'max:2048'],
+                'branch' => ['present', 'nullable', 'string', 'max:255'],
+                'head' => ['present', 'nullable', 'string', 'regex:/\A[a-f0-9]{40}(?:[a-f0-9]{24})?\z/'],
+                'default_branch' => ['present', 'nullable', 'string', 'max:255'],
+                'artisan' => ['required', 'string', 'in:regular,symlink,absent'],
+                'composer' => ['present', 'nullable', 'string', 'max:1048576'],
+            ],
+            self::Checkouts => [
+                'paths' => ['present', 'array', 'list', 'max:4096'],
+                'paths.*' => ['required', 'string', 'starts_with:/', 'max:1024'],
+            ],
         };
+    }
+
+    /** Whether a fact of this kind names its item in `subject`. */
+    public function hasSubject(): bool
+    {
+        return $this === self::Checkout;
     }
 
     /**

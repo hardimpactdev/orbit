@@ -68,12 +68,61 @@ describe('agent facts and liveness', function (): void {
             ->assertForbidden()->assertJsonPath('error.code', 'peer.identity_unknown');
     });
 
-    it('names the role services the agent watches', function (): void {
+    it('names the role services the agent watches, and the apps root of an active app-dev Node', function (): void {
+        $this->node->forceFill(['settings' => ['apps' => ['path' => '/fast/apps']]])->save();
+        $this->getJson('/api/v1/agent/watch')->assertOk()->assertJsonPath('data.apps_root', null);
+
         $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
         $this->node->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
 
         $this->getJson('/api/v1/agent/watch')->assertOk()
-            ->assertJsonPath('data.services', ['caddy.service', 'docker.service'])->assertJsonPath('data.workspaces', []);
+            ->assertJsonPath('data.services', ['caddy.service', 'docker.service'])->assertJsonPath('data.workspaces', [])
+            ->assertJsonPath('data.apps_root', '/fast/apps');
+    });
+
+    $checkout = static fn (string $path = '/fast/apps/acme/default', string $branch = 'main'): array => ['kind' => 'checkout',
+        'subject' => $path, 'observed_at' => '2026-11-02T18:00:00Z', 'data' => ['owner' => 'nckrtl', 'top_level' => $path,
+            'common_dir' => $path.'/.git', 'linked' => false, 'worktrees' => [$path], 'origin' => 'git@github.com:acme/app.git',
+            'branch' => $branch, 'head' => str_repeat('a', 40), 'default_branch' => 'main', 'artisan' => 'regular', 'composer' => '{}']];
+
+    it('stores one row per checkout and writes only the checkout that changed', function () use ($checkout): void {
+        $this->postJson('/api/v1/agent/facts', $checkout())->assertNoContent();
+        $this->postJson('/api/v1/agent/facts', $checkout('/fast/apps/acme/feature'))->assertNoContent();
+        expect(NodeFact::query()->where('kind', 'checkout')->pluck('subject')->sort()->values()->all())
+            ->toBe(['/fast/apps/acme/default', '/fast/apps/acme/feature']);
+
+        $writes = 0;
+        DB::listen(static function ($query) use (&$writes): void {
+            if (preg_match('/^\s*(insert|update|delete)/i', $query->sql) === 1) {
+                $writes++;
+            }
+        });
+        $this->postJson('/api/v1/agent/facts', $checkout())->assertNoContent();
+        expect($writes)->toBe(0);
+        $this->postJson('/api/v1/agent/facts', $checkout(branch: 't3code/login'))->assertNoContent();
+        expect($writes)->toBe(1)
+            ->and(NodeFact::query()->where('subject', '/fast/apps/acme/default')->sole()->data['branch'])->toBe('t3code/login')
+            ->and(NodeFact::query()->where('subject', '/fast/apps/acme/feature')->sole()->data['branch'])->toBe('main');
+    });
+
+    it('deletes the checkouts the index no longer names', function () use ($checkout): void {
+        $this->postJson('/api/v1/agent/facts', $checkout())->assertNoContent();
+        $this->postJson('/api/v1/agent/facts', $checkout('/fast/apps/acme/feature'))->assertNoContent();
+        $index = static fn (array $paths): array => ['kind' => 'checkouts', 'observed_at' => '2026-11-02T18:00:00Z', 'data' => ['paths' => $paths]];
+
+        $this->postJson('/api/v1/agent/facts', $index(['/fast/apps/acme/default']))->assertNoContent();
+
+        expect(NodeFact::query()->where('kind', 'checkout')->pluck('subject')->all())->toBe(['/fast/apps/acme/default'])
+            ->and(NodeFact::query()->where('kind', 'checkouts')->sole()->subject)->toBe('');
+    });
+
+    it('requires a subject for a checkout and refuses one for other kinds', function () use ($checkout, $host): void {
+        $missing = $checkout();
+        unset($missing['subject']);
+        $this->postJson('/api/v1/agent/facts', $missing)->assertUnprocessable();
+        $this->postJson('/api/v1/agent/facts', [...$checkout(), 'subject' => 'relative/path'])->assertUnprocessable();
+        $this->postJson('/api/v1/agent/facts', [...$host(), 'subject' => '/'])->assertUnprocessable();
+        expect(NodeFact::query()->count())->toBe(0);
     });
 
     it('reports a Node online, then offline since its last event, and unknown without a subscriber', function (): void {

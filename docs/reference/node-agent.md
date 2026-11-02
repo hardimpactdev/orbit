@@ -89,10 +89,28 @@ The agent reports facts the Gateway stores and answers reads from, such as Docto
 | --- | --- | --- |
 | `host` | `os`, `arch`, and the `mount`, `size` and `free` bytes of each data filesystem (ext2–4, XFS, Btrfs, ZFS, F2FS; no snap mounts; at most 64) | every 60 seconds |
 | `units` | `docker` (`available` or `absent`), and each `orbit-process-*` unit, each Process container, and each role service from the [watch list](#watch-list), with its `runtime` and `state`. A role service that is not installed reads `not-found`. | every 10 seconds |
+| `checkout` | One Git checkout at `<apps_root>/<project>/<name>`, named by its path in `subject`. See [Checkouts](#checkouts). | on change |
+| `checkouts` | `paths`: the path of every checkout the agent found under the apps root | on change |
 
 The Gateway stores a host's `free` bytes rounded down to 256 MiB. Free space moves with every log line, so without the rounding each `host` report would write a row.
 
-The agent sends a fact when it changed, and again every 10 minutes. The Gateway answers `204`. It stores one row per Node and kind in `node_facts`, with the agent's `observed_at` and its own `received_at`. A report whose content is unchanged reads one row and writes nothing. A change compares and writes in one short transaction with no remote call inside. A request over 1 MiB fails with `agent.fact_too_large` (413), and invalid data fails with `validation.failed` (422).
+The agent sends a fact when it changed, and again every 10 minutes. The Gateway answers `204`. It stores one row per Node, kind and `subject` in `node_facts`. Only `checkout` has a subject; the other kinds refuse one and store `''`. Each row keeps the agent's `observed_at` and the Gateway's own `received_at`. A report whose content is unchanged reads one row and writes nothing. A change compares and writes in one short transaction with no remote call inside. A request over 1 MiB fails with `agent.fact_too_large` (413), and invalid data fails with `validation.failed` (422).
+
+### Checkouts
+
+On an app-dev Node, the [watch list](#watch-list) names the `apps_root`. The agent sends one `checkout` fact per Git checkout, so each request stays small and each change writes one row. Beast, for example, has more than 300 checkouts. The `checkout` data holds:
+
+| Field | Meaning |
+| --- | --- |
+| `owner` | The account that owns the checkout directory |
+| `top_level`, `common_dir` | The work tree root and the shared `.git` directory |
+| `linked`, `worktrees` | Whether this is a linked worktree, and every worktree path of the repository |
+| `origin` | The origin URL, with any embedded credential masked |
+| `branch`, `head` | The branch `HEAD` names, null when detached, and the `HEAD` commit |
+| `default_branch` | The branch `refs/remotes/origin/HEAD` names, or null |
+| `artisan`, `composer` | Whether `artisan` is `regular`, a `symlink` or `absent`, and the text of `composer.json` (at most 1 MiB, or null) |
+
+After the checkouts, the agent sends the `checkouts` index. The Gateway deletes the `checkout` rows whose path is missing from the new index, in the same short transaction.
 
 ## Task workspaces
 
@@ -106,6 +124,7 @@ The agent asks `GET /api/v1/agent/watch` what to watch, at start and every 60 se
 {
   "data": {
     "services": ["caddy.service", "docker.service"],
+    "apps_root": "/home/orbit/apps",
     "workspaces": [
       {
         "instance_id": 31,
@@ -119,7 +138,7 @@ The agent asks `GET /api/v1/agent/watch` what to watch, at start and every 60 se
 }
 ```
 
-`services` are the services of the Node's roles, which the agent reports as [facts](#facts). Only plain unit names ending in `.service` are accepted. Agents released before the observer pass still ask `GET /api/v1/agent/workspaces`, which returns only the `workspaces` list. The Gateway serves it until every Node runs the new agent.
+`services` are the services of the Node's roles, which the agent reports as [facts](#facts). `apps_root` is the apps path of an active app-dev Node, whose [checkouts](#checkouts) the agent reports; it is null on other Nodes. Only plain unit names ending in `.service` are accepted. Agents released before the observer pass still ask `GET /api/v1/agent/workspaces`, which returns only the `workspaces` list. The Gateway serves it until every Node runs the new agent.
 
 `workspaces` holds the Instances on the caller's Node that hold the workspace of an unfinished task: `backlog` or `todo` with an Instance, `reserved`, `running`, `reviewing`, or `settling`. `base` is the Project's default branch. `start` is the Instance's starting commit, or null. The list is empty while Tasks is disabled, and it holds at most 64 entries.
 
