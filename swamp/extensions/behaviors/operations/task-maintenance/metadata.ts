@@ -30,6 +30,8 @@ const Place = z.object({
     mode: z.enum(["routine", "package"]),
     targets: z.array(UpdateTargetSchema),
     minimum_days: z.number().min(0),
+    directory: z.string().startsWith("/"),
+    files: z.array(z.string()),
 });
 const Snapshot = z.object({
     directory: z.string(),
@@ -38,6 +40,111 @@ const Snapshot = z.object({
 });
 type Place = z.infer<typeof Place>;
 type Snapshot = z.infer<typeof Snapshot>;
+type Steps = Record<string, unknown>;
+
+/** The manifests one directory may hold, read in this order by `read-<phase>-<index>`. */
+export const MANIFESTS = {
+    composer: ["composer.json", "composer.lock"],
+    js: ["package.json", "package-lock.json", "bun.lock"],
+} as const;
+
+/** The captured directory of one configured path, refusing anything outside the checkout. */
+export function directory(checkout: string, relative: string): string {
+    const root = checkout.replace(/\/+$/, "");
+    if (relative === ".") return root;
+    if (
+        relative.startsWith("/") ||
+        relative.split("/").some((part) => ["", ".", ".."].includes(part))
+    ) throw Error("maintenance_invalid_path");
+    return `${root}/${relative}`;
+}
+
+/** Outputs of one official SSH exec step, or null when it did not run. */
+function exec(steps: Steps, name: string) {
+    const step = steps[name] as
+        | { status?: string; outputs?: Record<string, unknown> }
+        | undefined;
+    if (step?.status !== "succeeded" || !step.outputs) return null;
+    return z.object({
+        exitCode: z.number().int().nullable().optional(),
+        stdout: z.string().default(""),
+        stderr: z.string().default(""),
+    }).passthrough().parse(step.outputs);
+}
+
+/** One directory's manifests from its `cat` reads and the `test -d node_modules` read. */
+export function snapshot(p: Place, phase: string, steps: Steps): Snapshot {
+    const files: Record<string, string> = {};
+    for (const [i, name] of p.files.entries()) {
+        const read = exec(steps, `read-${phase}-${i}`);
+        if (read === null) throw Error("maintenance_manifest_unreadable");
+        if (read.exitCode === 0) files[name] = read.stdout;
+        else if (!/No such file or directory/.test(read.stderr)) {
+            throw Error("maintenance_manifest_unreadable");
+        }
+    }
+    return {
+        directory: p.directory,
+        files,
+        node_modules: exec(steps, "node-modules")?.exitCode === 0,
+    };
+}
+
+/** Order-insensitive JSON equality, as the manifest comparison has always been. */
+function canonical(value: unknown): string {
+    if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+    if (value !== null && typeof value === "object") {
+        return `{${
+            Object.keys(value).sort().map((key) =>
+                `${JSON.stringify(key)}:${
+                    canonical((value as Record<string, unknown>)[key])
+                }`
+            ).join(",")
+        }}`;
+    }
+    return JSON.stringify(value);
+}
+
+/** The full manifest 209 writes with `tee`, and whether the directory needs it. */
+export function manifestWrite(
+    p: Place,
+    current: Record<string, unknown>,
+    after: Record<string, unknown>,
+) {
+    return {
+        manifest_path: `${p.directory}/${
+            p.manager === "composer" ? "composer.json" : "package.json"
+        }`,
+        manifest_text: `${JSON.stringify(after, null, 2)}\n`,
+        manifest_write: canonical(current) !== canonical(after),
+    };
+}
+
+/** One package command in its directory: `env -C <dir> <argv…>`. */
+const inDirectory = (p: Place, argv: string[]) => [
+    "env",
+    "-C",
+    p.directory,
+    ...argv,
+];
+
+/** The terminal maintenance result from the two base snapshot reads. */
+export function result(intent: Record<string, unknown>, steps: Steps) {
+    const tracked = exec(steps, "snapshot-tracked"),
+        untracked = exec(steps, "snapshot-untracked");
+    if (
+        tracked === null || ![0, 1].includes(tracked.exitCode ?? -1) ||
+        untracked === null || untracked.exitCode !== 0
+    ) throw Error("maintenance_base_unavailable");
+    return {
+        group_id: intent.group_id,
+        instance_id: intent.instance_id,
+        project_id: intent.project_id,
+        subtask: intent.subtask,
+        outcome: "passed",
+        changed: tracked.exitCode === 1 || untracked.stdout !== "",
+    };
+}
 function workspace(p: Place, s: Snapshot) {
     const manifest = JSON.parse(
         s.files[p.manager === "composer" ? "composer.json" : "package.json"],
@@ -90,13 +197,10 @@ function locked(p: Place, s: Snapshot): Record<string, string> {
 function audit(
     p: Place,
     s: Snapshot,
-    text: string,
+    stdout: string,
 ): Record<string, { id: string }[]> {
-    const report = z.object({
-        code: z.number().int().min(0).max(3),
-        stdout: z.string(),
-    }).parse(JSON.parse(text));
-    const data = JSON.parse(report.stdout), w = workspace(p, s);
+    // The audit step admits exit codes 0 to 3 only; its JSON report is stdout.
+    const data = JSON.parse(stdout), w = workspace(p, s);
     if (data.error) throw Error("maintenance_audit_failed");
     if (w.manager === "composer") {
         if (!data.advisories || typeof data.advisories !== "object") {
@@ -133,7 +237,6 @@ const writeData = async (ctx: Context, value: Record<string, unknown>) => ({
     dataHandles: [await ctx.writeResource("public", "output", value)],
 });
 type Context = {
-    extensionFile(name: string): string;
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
     signal?: AbortSignal;
 };
@@ -170,35 +273,32 @@ export function plan(p: Place, s: Snapshot, report: string) {
         !p.targets.some((t) => t.package === "expo")
     ) throw Error("maintenance_expo_batch_required");
     const prepare = w.manager !== "composer" && w.vitePlus && !s.node_modules
-        ? {
-            argv: [
-                w.manager,
-                ...(w.manager === "npm"
-                    ? ["ci", "--ignore-scripts"]
-                    : ["install", "--frozen-lockfile", "--ignore-scripts"]),
-            ],
-        }
+        ? inDirectory(p, [
+            w.manager,
+            ...(w.manager === "npm"
+                ? ["ci", "--ignore-scripts"]
+                : ["install", "--frozen-lockfile", "--ignore-scripts"]),
+        ])
         : null;
-    const update = p.mode === "routine"
-        ? {
-            argv: w.manager === "composer"
+    const update = inDirectory(
+        p,
+        p.mode === "routine"
+            ? w.manager === "composer"
                 ? ["composer", "update", "--no-interaction"]
-                : [w.vitePlus ? "./node_modules/.bin/vp" : w.manager, "update"],
-        }
-        : {
-            argv: w.manager === "composer"
-                ? [
-                    "composer",
-                    "update",
-                    ...p.targets.map((t) => t.package),
-                    ...p.targets.flatMap(
-                        (t) => ["--with", `${t.package}:${t.version}`],
-                    ),
-                    "--with-dependencies",
-                    "--no-interaction",
-                ]
-                : [w.manager, "install"],
-        };
+                : [w.vitePlus ? "./node_modules/.bin/vp" : w.manager, "update"]
+            : w.manager === "composer"
+            ? [
+                "composer",
+                "update",
+                ...p.targets.map((t) => t.package),
+                ...p.targets.flatMap(
+                    (t) => ["--with", `${t.package}:${t.version}`],
+                ),
+                "--with-dependencies",
+                "--no-interaction",
+            ]
+            : [w.manager, "install"],
+    );
     const declarations = structuredClone(after);
     if (p.mode === "package" && p.manager === "js") {
         for (const t of p.targets) {
@@ -210,10 +310,11 @@ export function plan(p: Place, s: Snapshot, report: string) {
         }
     }
     return {
-        patch: { before: w.manifest, after },
+        after,
+        ...manifestWrite(p, w.manifest, after),
         declarations,
-        prepare,
-        update,
+        prepare_argv: prepare,
+        update_argv: update,
         targets: p.targets,
         manager: w.manager,
         expo: w.expo,
@@ -222,6 +323,23 @@ export function plan(p: Place, s: Snapshot, report: string) {
                 p.targets.find((t) => t.package === "expo")!.version
             }.tgz`
             : null,
+    };
+}
+/** Write back the preserved declaration ranges, then resynchronize only the lock. */
+export function restore(
+    p: Place,
+    after: Snapshot,
+    declarations: Record<string, unknown>,
+) {
+    const w = workspace(p, after);
+    return {
+        ...manifestWrite(p, w.manifest, declarations),
+        sync_argv: inDirectory(p, [
+            w.manager,
+            "install",
+            w.manager === "npm" ? "--package-lock-only" : "--lockfile-only",
+            "--ignore-scripts",
+        ]),
     };
 }
 export function verify(
@@ -278,7 +396,7 @@ export function verifyExpo(
 }
 export const behavior = {
     type: "@nckrtl/task-maintenance-input",
-    version: "2026.11.01.1",
+    version: "2026.11.02.1",
     resources: {
         public: {
             schema: z.record(z.string(), z.unknown()),
@@ -289,7 +407,7 @@ export const behavior = {
     methods: {
         read: {
             description:
-                "Capture configured maintenance paths and co-located scripts",
+                "Capture configured maintenance paths and their directories",
             arguments: z.object({
                 intent: z.object({
                     group_id: Id,
@@ -337,6 +455,8 @@ export const behavior = {
                         ),
                         minimum_days: project.worker.policy[path]
                             ?.minimumReleaseAgeDays ?? 0,
+                        directory: directory(args.intent.checkout_path, path),
+                        files: [...MANIFESTS[manager]],
                     }))
                 );
                 if (
@@ -347,14 +467,24 @@ export const behavior = {
                         )
                     )
                 ) throw Error("maintenance_unconfigured_target");
+                return await writeData(ctx, { paths });
+            },
+        },
+        result: {
+            description:
+                "Report the passed maintenance and whether the checkout differs from its provision base",
+            arguments: z.object({
+                intent: z.record(z.string(), z.unknown()),
+                steps: z.record(z.string(), z.unknown()),
+            }),
+            async execute(
+                args: { intent: Record<string, unknown>; steps: Steps },
+                ctx: Context,
+            ) {
                 return await writeData(ctx, {
-                    paths: paths.map((p) => ({
-                        ...p,
-                        input_json: JSON.stringify(p),
-                    })),
-                    assets: ctx.extensionFile("scripts/workspace_files.py")
-                        .replace(/\/[^/]+$/, ""),
-                    input_json: JSON.stringify(args.intent),
+                    result_json: JSON.stringify(
+                        result(args.intent, args.steps),
+                    ),
                 });
             },
         },
@@ -384,18 +514,23 @@ export const behavior = {
         },
         inspect: {
             description:
-                "Decode one remote directory and select its fixed audit command",
-            arguments: z.object({ place: Place, stdout: z.string() }),
+                "Decode one directory's manifest reads and select its fixed audit command",
+            arguments: z.object({
+                place: Place,
+                phase: z.enum(["before", "after", "restored"]),
+                steps: z.record(z.string(), z.unknown()),
+            }),
             async execute(
-                args: { place: Place; stdout: string },
+                args: { place: Place; phase: string; steps: Steps },
                 ctx: Context,
             ) {
-                const snapshot = Snapshot.parse(JSON.parse(args.stdout)),
-                    w = workspace(args.place, snapshot);
+                const read = snapshot(args.place, args.phase, args.steps),
+                    w = workspace(args.place, read);
                 return await writeData(ctx, {
-                    snapshot,
-                    audit_json: JSON.stringify({
-                        argv: w.manager === "composer"
+                    snapshot: read,
+                    audit_argv: inDirectory(
+                        args.place,
+                        w.manager === "composer"
                             ? [
                                 "composer",
                                 "audit",
@@ -405,8 +540,7 @@ export const behavior = {
                                 "--no-scripts",
                             ]
                             : [w.manager, "audit", "--json"],
-                        report: true,
-                    }),
+                    ),
                 });
             },
         },
@@ -425,9 +559,6 @@ export const behavior = {
                 const result = plan(args.place, args.snapshot, args.audit);
                 return await writeData(ctx, {
                     ...result,
-                    patch_json: JSON.stringify(result.patch),
-                    prepare_json: JSON.stringify(result.prepare),
-                    update_json: JSON.stringify(result.update),
                     release_targets: result.targets.map((t) => ({
                         name: t.package,
                         version: t.version,
@@ -532,23 +663,10 @@ export const behavior = {
                 },
                 ctx: Context,
             ) {
-                const w = workspace(args.place, args.after);
-                return await writeData(ctx, {
-                    patch_json: JSON.stringify({
-                        before: w.manifest,
-                        after: args.declarations,
-                    }),
-                    sync_json: JSON.stringify({
-                        argv: [
-                            w.manager,
-                            "install",
-                            w.manager === "npm"
-                                ? "--package-lock-only"
-                                : "--lockfile-only",
-                            "--ignore-scripts",
-                        ],
-                    }),
-                });
+                return await writeData(
+                    ctx,
+                    restore(args.place, args.after, args.declarations),
+                );
             },
         },
         synchronized: {

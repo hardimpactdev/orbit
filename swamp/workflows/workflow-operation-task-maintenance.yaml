@@ -1,7 +1,7 @@
 id: 005e43f4-02fc-4bca-b43a-5e2456cb4258
 name: operation-task-maintenance
-description: Run captured package/routine maintenance through official SSH from209,
-  without a guest worker.
+description: Run captured package/routine maintenance as official SSH exec argv from
+  Node 209, without a guest worker or shipped scripts.
 vaults: []
 inputs:
   type: object
@@ -32,15 +32,15 @@ jobs:
 - name: prepare
   labels: {role: swamp}
   steps:
-  - name: assets
+  - name: read
     labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
+      behaviorName: '${{ "maintenance-input-task-maintenance-input" }}'
       methodName: read
       inputs:
         intent: ${{ inputs.intent }}
-      behaviorName: '${{ "task-repository-assets-task-maintenance-input" }}'
   - name: workspace
     labels: {role: swamp}
     task:
@@ -58,65 +58,7 @@ jobs:
           checkout_path: ${{ inputs.intent.checkout_path }}
           ssh_execution: ${{ inputs.intent.ssh_execution }}
     dependsOn:
-    - step: assets
-      condition:
-        type: succeeded
-  - name: prepare-assets
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs:
-        name: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-      inputs:
-        hosts: name:target
-        argv:
-        - mkdir
-        - -p
-        - ${{ "/tmp/orbit-task-repository-" + run.id }}
-    dependsOn:
-    - step: workspace
-      condition:
-        type: succeeded
-  - name: copy-assets
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: copy
-      globalArgs:
-        name: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-      inputs:
-        hosts: name:target
-        src: ${{ steps.assets.outputs.assets }}
-        dst: ${{ "/tmp/orbit-task-repository-" + run.id + "/" }}
-        recursive: true
-        direction: to
-    dependsOn:
-    - step: prepare-assets
+    - step: read
       condition:
         type: succeeded
 - name: paths
@@ -130,15 +72,13 @@ jobs:
     labels: {role: swamp}
     forEach:
       item: item
-      in: ${{ steps.assets.outputs.paths }}
+      in: ${{ steps.read.outputs.paths }}
     task:
       type: workflow
       workflowIdOrName: task-maintenance-path
       inputs:
         place: ${{ self.item }}
-        place_json: ${{ self.item.input_json }}
         ssh_execution: ${{ inputs.intent.ssh_execution }}
-        remote_assets: ${{ "/tmp/orbit-task-repository-"+run.id }}
     concurrency: 1
 - name: maintenance
   labels: {role: swamp}
@@ -147,14 +87,15 @@ jobs:
     condition:
       type: succeeded
   steps:
-  - name: snapshot-after
+  # Tracked changes against the provision base; exit 1 means changed.
+  - name: snapshot-tracked
     labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
-      globalArgs:
+      globalArgs: &ssh_args
         name: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
@@ -168,61 +109,73 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
+        okExitCodes: any
         argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-task-repository-"+run.id+"/scripts/snapshot.py" }}
-        stdin: ${{ steps.assets.outputs.input_json }}
-  - name: result
+        - git
+        - -c
+        - core.hooksPath=/dev/null
+        - -c
+        - core.fsmonitor=false
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - diff
+        - --quiet
+        - ${{ inputs.intent.base }}
+        - --
+  # New files that .gitignore does not exclude.
+  - name: snapshot-untracked
     labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh_args
+      inputs:
+        hosts: name:target
+        argv:
+        - git
+        - -c
+        - core.hooksPath=/dev/null
+        - -c
+        - core.fsmonitor=false
+        - -C
+        - ${{ inputs.intent.checkout_path }}
+        - ls-files
+        - --others
+        - --exclude-standard
+        - -z
     dependsOn:
-    - step: snapshot-after
+    - step: snapshot-tracked
       condition:
         type: succeeded
+  - name: shape
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-maintenance-input'
+      behaviorName: '${{ "maintenance-input-task-maintenance-input" }}'
+      methodName: result
+      inputs:
+        intent: ${{ inputs.intent }}
+        steps: ${{ steps }}
+    dependsOn:
+    - step: snapshot-untracked
+      condition:
+        type: succeeded
+  - name: result
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
       behaviorName: '${{ "maintenance-result" }}'
       methodName: execute
       inputs:
-        run: "python3 - <<'PYTHON'\nimport json\nimport os\n\nvalue = json.loads(os.environ[\"\
-          INTENT\"])\nprint(\n    json.dumps(\n        {\n            \"group_id\"\
-          : value[\"group_id\"],\n            \"instance_id\": value[\"instance_id\"\
-          ],\n            \"project_id\": value[\"project_id\"],\n            \"subtask\"\
-          : value[\"subtask\"],\n            \"outcome\": \"passed\",\n          \
-          \  \"changed\": json.loads(os.environ[\"AFTER\"])[\"changed\"],\n      \
-          \  }\n    )\n)\nPYTHON\n"
+        run: |
+          printf '%s\n' "$ORBIT_RESULT"
         env:
-          INTENT: ${{ steps.assets.outputs.input_json }}
-          AFTER: ${{ steps["snapshot-after"].outputs.stdout }}
-  - name: cleanup-assets
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs:
-        name: '${{ ("task-repository-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-      inputs:
-        hosts: name:target
-        argv:
-        - rm
-        - -rf
-        - --
-        - ${{ "/tmp/orbit-task-repository-" + run.id }}
-    allowFailure: true
+          ORBIT_RESULT: ${{ steps.shape.outputs.result_json }}
     dependsOn:
-    - step: result
+    - step: shape
       condition:
         type: succeeded

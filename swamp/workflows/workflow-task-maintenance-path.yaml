@@ -1,36 +1,61 @@
 id: 85856d40-df44-408b-92dd-7769c6e6fed3
 name: task-maintenance-path
-description: One captured maintenance directory, with each SSH action visible in native
-  history.
+description: One captured maintenance directory; every task VM action is one official SSH
+  exec argv, visible in native history.
 vaults: []
 inputs:
   type: object
   properties:
     place:
       type: object
-    place_json:
-      type: string
     ssh_execution:
       type: object
-    remote_assets:
-      type: string
   required:
   - place
-  - place_json
   - ssh_execution
-  - remote_assets
 jobs:
 - name: inspect
   labels: {role: swamp}
   steps:
-  - name: inspect-before
+  # One `cat` per manifest of this manager; a missing file is a recorded observation.
+  - name: read-before-${{ self._index }}
+    labels: {role: swamp}
+    forEach:
+      item: item
+      in: ${{ inputs.place.files }}
+    concurrency: 1
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host) + "-" + self.item).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: &read_ssh_args
+        name: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host) + "-" + self.item).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: ${{ inputs.ssh_execution.target.user }}
+          port: ${{ inputs.ssh_execution.target.port }}
+          identityFile: ${{ inputs.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        okExitCodes: any
+        argv:
+        - cat
+        - --
+        - ${{ inputs.place.directory + "/" + self.item }}
+  - name: node-modules
     labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
-      globalArgs: &id001
+      globalArgs: &ssh_args
         name: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
@@ -44,12 +69,15 @@ jobs:
             hostKeys: ${{ inputs.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
+        okExitCodes: any
         argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ inputs.remote_assets + "/scripts/workspace_files.py" }}
-        stdin: ${{ inputs.place_json }}
-        timeoutSec: 3600
+        - test
+        - -d
+        - ${{ inputs.place.directory + "/node_modules" }}
+    dependsOn:
+    - step: read-before-${{ self._index }}
+      condition:
+        type: succeeded
   - name: before
     labels: {role: swamp}
     task:
@@ -59,9 +87,10 @@ jobs:
       methodName: inspect
       inputs:
         place: ${{ inputs.place }}
-        stdout: ${{ steps["inspect-before"].outputs.stdout }}
+        phase: before
+        steps: ${{ steps }}
     dependsOn:
-    - step: inspect-before
+    - step: node-modules
       condition:
         type: succeeded
   - name: audit-before
@@ -71,15 +100,11 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
-      globalArgs: *id001
+      globalArgs: *ssh_args
       inputs:
         hosts: name:target
-        argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ inputs.remote_assets + "/scripts/command.py" }}
-        - ${{ steps.before.outputs.audit_json }}
-        stdin: ${{ inputs.place_json }}
+        okExitCodes: [0, 1, 2, 3]
+        argv: ${{ steps.before.outputs.audit_argv }}
         timeoutSec: 3600
     dependsOn:
     - step: before
@@ -210,20 +235,17 @@ jobs:
     allowFailure: true
   - name: prepare
     labels: {role: swamp}
+    guard: ${{ steps.plan.outputs.prepare_argv == null }}
+    writes: true
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
-      globalArgs: *id001
+      globalArgs: *ssh_args
       inputs:
         hosts: name:target
-        argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ inputs.remote_assets + "/scripts/command.py" }}
-        - ${{ steps.plan.outputs.prepare_json }}
-        stdin: ${{ inputs.place_json }}
+        argv: ${{ steps.plan.outputs.prepare_argv }}
         timeoutSec: 3600
     dependsOn:
     - step: expo-validate
@@ -232,24 +254,24 @@ jobs:
         conditions:
         - type: succeeded
         - type: skipped
-    guard: ${{ steps.plan.outputs.prepare == null }}
+  # 209 computed the whole manifest; tee writes it from stdin in place.
   - name: manifest
     labels: {role: swamp}
+    guard: ${{ inputs.place.mode != "package" || !steps.plan.outputs.manifest_write }}
+    writes: true
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
-      globalArgs: *id001
+      globalArgs: *ssh_args
       inputs:
         hosts: name:target
         argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ inputs.remote_assets + "/scripts/manifest.py" }}
-        - ${{ steps.plan.outputs.patch_json }}
-        stdin: ${{ inputs.place_json }}
-        timeoutSec: 3600
+        - tee
+        - --
+        - ${{ steps.plan.outputs.manifest_path }}
+        stdin: ${{ steps.plan.outputs.manifest_text }}
     dependsOn:
     - step: prepare
       condition:
@@ -257,23 +279,18 @@ jobs:
         conditions:
         - type: succeeded
         - type: skipped
-    guard: ${{ inputs.place.mode != "package" }}
   - name: update
     labels: {role: swamp}
+    writes: true
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
-      globalArgs: *id001
+      globalArgs: *ssh_args
       inputs:
         hosts: name:target
-        argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ inputs.remote_assets + "/scripts/command.py" }}
-        - ${{ steps.plan.outputs.update_json }}
-        stdin: ${{ inputs.place_json }}
+        argv: ${{ steps.plan.outputs.update_argv }}
         timeoutSec: 3600
     dependsOn:
     - step: manifest
@@ -282,22 +299,25 @@ jobs:
         conditions:
         - type: succeeded
         - type: skipped
-  - name: inspect-after
+  - name: read-after-${{ self._index }}
     labels: {role: swamp}
+    forEach:
+      item: item
+      in: ${{ inputs.place.files }}
+    concurrency: 1
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host) + "-" + self.item).split(".").join("-") }}'
       methodName: exec
-      globalArgs: *id001
+      globalArgs: *read_ssh_args
       inputs:
         hosts: name:target
+        okExitCodes: any
         argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ inputs.remote_assets + "/scripts/workspace_files.py" }}
-        stdin: ${{ inputs.place_json }}
-        timeoutSec: 3600
+        - cat
+        - --
+        - ${{ inputs.place.directory + "/" + self.item }}
     dependsOn:
     - step: update
       condition:
@@ -311,9 +331,10 @@ jobs:
       methodName: inspect
       inputs:
         place: ${{ inputs.place }}
-        stdout: ${{ steps["inspect-after"].outputs.stdout }}
+        phase: after
+        steps: ${{ steps }}
     dependsOn:
-    - step: inspect-after
+    - step: read-after-${{ self._index }}
       condition:
         type: succeeded
   - name: audit-after
@@ -323,15 +344,11 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
-      globalArgs: *id001
+      globalArgs: *ssh_args
       inputs:
         hosts: name:target
-        argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ inputs.remote_assets + "/scripts/command.py" }}
-        - ${{ steps.after.outputs.audit_json }}
-        stdin: ${{ inputs.place_json }}
+        okExitCodes: [0, 1, 2, 3]
+        argv: ${{ steps.after.outputs.audit_argv }}
         timeoutSec: 3600
     dependsOn:
     - step: after
@@ -411,104 +428,73 @@ jobs:
     guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
   - name: restore-ranges
     labels: {role: swamp}
+    guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" || !steps["restore-plan"].outputs.manifest_write }}
+    writes: true
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
-      globalArgs:
-        name: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: ${{ inputs.ssh_execution.target.user }}
-          port: ${{ inputs.ssh_execution.target.port }}
-          identityFile: ${{ inputs.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.ssh_execution.target.host_keys }}
+      globalArgs: *ssh_args
       inputs:
         hosts: name:target
         argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ inputs.remote_assets+"/scripts/manifest.py" }}
-        - ${{ steps["restore-plan"].outputs.patch_json }}
-        stdin: ${{ inputs.place_json }}
-        timeoutSec: 3600
+        - tee
+        - --
+        - ${{ steps["restore-plan"].outputs.manifest_path }}
+        stdin: ${{ steps["restore-plan"].outputs.manifest_text }}
     dependsOn:
     - step: restore-plan
       condition:
         type: succeeded
-    guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
   - name: synchronize-lock
     labels: {role: swamp}
+    guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
+    writes: true
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
-      globalArgs:
-        name: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: ${{ inputs.ssh_execution.target.user }}
-          port: ${{ inputs.ssh_execution.target.port }}
-          identityFile: ${{ inputs.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.ssh_execution.target.host_keys }}
+      globalArgs: *ssh_args
       inputs:
         hosts: name:target
-        argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ inputs.remote_assets+"/scripts/command.py" }}
-        - ${{ steps["restore-plan"].outputs.sync_json }}
-        stdin: ${{ inputs.place_json }}
+        argv: ${{ steps["restore-plan"].outputs.sync_argv }}
         timeoutSec: 3600
     dependsOn:
     - step: restore-ranges
       condition:
-        type: succeeded
-    guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
-  - name: inspect-restored
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+  - name: read-restored-${{ self._index }}
     labels: {role: swamp}
+    guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
+    forEach:
+      item: item
+      in: ${{ inputs.place.files }}
+    concurrency: 1
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host) + "-" + self.item).split(".").join("-") }}'
       methodName: exec
-      globalArgs:
-        name: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: ${{ inputs.ssh_execution.target.user }}
-          port: ${{ inputs.ssh_execution.target.port }}
-          identityFile: ${{ inputs.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.ssh_execution.target.host_keys }}
+      globalArgs: *read_ssh_args
       inputs:
         hosts: name:target
+        okExitCodes: any
         argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ inputs.remote_assets + "/scripts/workspace_files.py" }}
-        stdin: ${{ inputs.place_json }}
-        timeoutSec: 3600
+        - cat
+        - --
+        - ${{ inputs.place.directory + "/" + self.item }}
     dependsOn:
     - step: synchronize-lock
       condition:
         type: succeeded
-    guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
   - name: restored
     labels: {role: swamp}
+    guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
@@ -516,12 +502,12 @@ jobs:
       methodName: inspect
       inputs:
         place: ${{ inputs.place }}
-        stdout: ${{ steps["inspect-restored"].outputs.stdout }}
+        phase: restored
+        steps: ${{ steps }}
     dependsOn:
-    - step: inspect-restored
+    - step: read-restored-${{ self._index }}
       condition:
         type: succeeded
-    guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
   - name: synchronized
     labels: {role: swamp}
     task:

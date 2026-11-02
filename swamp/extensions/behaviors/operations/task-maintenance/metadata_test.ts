@@ -1,5 +1,13 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1";
-import { plan, verify } from "./metadata.ts";
+import {
+    directory,
+    manifestWrite,
+    plan,
+    restore,
+    result,
+    snapshot as read,
+    verify,
+} from "./metadata.ts";
 const target = {
     path: ".",
     manager: "composer" as const,
@@ -16,6 +24,8 @@ const place = {
     mode: "package" as const,
     targets: [target],
     minimum_days: 7,
+    directory: "/owned",
+    files: ["composer.json", "composer.lock"],
 };
 const snapshot = (version: string, range = "^1.0") => ({
     directory: "/owned",
@@ -27,14 +37,17 @@ const snapshot = (version: string, range = "^1.0") => ({
         }),
     },
 });
-const report = JSON.stringify({
-    code: 0,
-    stdout: JSON.stringify({ advisories: {} }),
-});
+const report = JSON.stringify({ advisories: {} });
 Deno.test("package policy preserves ranges and admits only an exact non-downgrade solve", () => {
     const p = plan(place, snapshot("1.0.0"), report);
-    assertEquals(p.patch.after.require["acme/lib"], "^2.0");
-    assertEquals(p.update.argv, [
+    assertEquals(p.after.require["acme/lib"], "^2.0");
+    assertEquals(p.manifest_path, "/owned/composer.json");
+    assertEquals(JSON.parse(p.manifest_text), p.after);
+    assertEquals(p.manifest_write, true);
+    assertEquals(p.update_argv, [
+        "env",
+        "-C",
+        "/owned",
         "composer",
         "update",
         "acme/lib",
@@ -75,10 +88,7 @@ Deno.test("security policy refuses stale advisories and a still-affected selecte
         "Stale advisory",
     );
     const affected = JSON.stringify({
-        code: 1,
-        stdout: JSON.stringify({
-            advisories: { "acme/lib": [{ advisoryId: "PKSA-fixed" }] },
-        }),
+        advisories: { "acme/lib": [{ advisoryId: "PKSA-fixed" }] },
     });
     assertThrows(
         () => verify(security, snapshot("1.0.0"), snapshot("2.0.0"), affected),
@@ -105,13 +115,10 @@ Deno.test("JS solve pins exact versions before restoring the preserved declarati
             }),
         },
     };
-    const a = JSON.stringify({
-        code: 0,
-        stdout: JSON.stringify({ vulnerabilities: {} }),
-    });
-    const result = plan(p, s, a);
-    assertEquals(result.patch.after.dependencies.lib, "2.0.0");
-    assertEquals(result.declarations.dependencies.lib, "^2.0.0");
+    const a = JSON.stringify({ vulnerabilities: {} });
+    const planned = plan(p, s, a);
+    assertEquals(planned.after.dependencies.lib, "2.0.0");
+    assertEquals(planned.declarations.dependencies.lib, "^2.0.0");
     const after = {
         ...s,
         files: {
@@ -178,5 +185,123 @@ Deno.test("the exact Expo batch must cover its fresh SDK catalog without changin
             }),
         Error,
         "maintenance_expo_catalog_mismatch",
+    );
+});
+
+const ssh = (stdout: string, exitCode = 0, stderr = "") => ({
+    status: "succeeded",
+    outputs: { stdout, exitCode, stderr },
+});
+
+Deno.test("a configured path stays inside the captured checkout", () => {
+    assertEquals(directory("/w/", "."), "/w");
+    assertEquals(directory("/w", "apps/web"), "/w/apps/web");
+    for (const bad of ["/etc", "../x", "a/../b", "a//b", "./a", "a/"]) {
+        assertThrows(
+            () => directory("/w", bad),
+            Error,
+            "maintenance_invalid_path",
+        );
+    }
+});
+
+Deno.test("a snapshot reads each manifest exec and records a missing file as absent", () => {
+    const steps = {
+        "read-after-0": ssh('{"require":{}}\n'),
+        "read-after-1": ssh(
+            "",
+            1,
+            "cat: /owned/composer.lock: No such file or directory\n",
+        ),
+        "node-modules": ssh("", 1),
+    };
+    assertEquals(read(place, "after", steps), {
+        directory: "/owned",
+        files: { "composer.json": '{"require":{}}\n' },
+        node_modules: false,
+    });
+    assertThrows(
+        () =>
+            read(place, "after", {
+                ...steps,
+                "read-after-1": ssh(
+                    "",
+                    1,
+                    "cat: /owned/composer.lock: Permission denied\n",
+                ),
+            }),
+        Error,
+        "maintenance_manifest_unreadable",
+    );
+    assertThrows(
+        () => read(place, "before", steps),
+        Error,
+        "maintenance_manifest_unreadable",
+    );
+});
+
+Deno.test("a manifest write is the whole pretty JSON and skips an equal manifest in any key order", () => {
+    const write = manifestWrite(place, { b: 1, a: { d: 2, c: 3 } }, {
+        a: { c: 3, d: 2 },
+        b: 1,
+    });
+    assertEquals(write, {
+        manifest_path: "/owned/composer.json",
+        manifest_text:
+            '{\n  "a": {\n    "c": 3,\n    "d": 2\n  },\n  "b": 1\n}\n',
+        manifest_write: false,
+    });
+    assertEquals(manifestWrite(place, { a: 1 }, { a: 2 }).manifest_write, true);
+});
+
+Deno.test("JS restoration writes the declarations back and syncs only the lock in its directory", () => {
+    const js = { ...place, manager: "js" as const, files: ["package.json"] };
+    const after = {
+        directory: "/owned",
+        node_modules: true,
+        files: {
+            "package.json": JSON.stringify({ dependencies: { lib: "2.0.0" } }),
+            "bun.lock": "{}",
+        },
+    };
+    const restored = restore(js, after, { dependencies: { lib: "^2.0.0" } });
+    assertEquals(restored.manifest_path, "/owned/package.json");
+    assertEquals(restored.manifest_write, true);
+    assertEquals(restored.sync_argv, [
+        "env",
+        "-C",
+        "/owned",
+        "bun",
+        "install",
+        "--lockfile-only",
+        "--ignore-scripts",
+    ]);
+});
+
+Deno.test("the result counts tracked and untracked changes against the provision base", () => {
+    const intent = { group_id: 1, instance_id: 2, project_id: 3, subtask: 4 };
+    const changed = (tracked: number, untracked: string) =>
+        result(intent, {
+            "snapshot-tracked": ssh("", tracked),
+            "snapshot-untracked": ssh(untracked),
+        }).changed;
+    assertEquals(changed(0, ""), false);
+    assertEquals(changed(1, ""), true);
+    assertEquals(changed(0, "new.txt\0"), true);
+    assertEquals(
+        result(intent, {
+            "snapshot-tracked": ssh("", 0),
+            "snapshot-untracked": ssh(""),
+        }),
+        { ...intent, outcome: "passed", changed: false },
+    );
+    assertThrows(
+        () =>
+            result(intent, {
+                "snapshot-tracked": ssh("", 128),
+                "snapshot-untracked": ssh(""),
+            }),
+        Error,
+        "maintenance_base_unavailable",
     );
 });

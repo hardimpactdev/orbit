@@ -79,6 +79,16 @@ class NativeMaintenance(fixture.NativeRepository):
             path = tools / name
             path.write_text("#!/bin/sh\nexit 0\n")
             path.chmod(0o755)
+        # Record every argv the task VM receives, and any copy to it.
+        self.ssh_log = self.repo / "ssh.log"
+        (tools / "ssh").write_text(
+            "#!"
+            + sys.executable
+            + '\nimport json,shlex,subprocess,sys\nargs=sys.argv[1:]\nif "-M" in args or "-O" in args:raise SystemExit(0)\nargv=shlex.split(args[-1])\nopen('
+            + repr(str(self.ssh_log))
+            + ',"a").write(json.dumps(argv)+"\\n")\nr=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)\nsys.stdout.buffer.write(r.stdout);sys.stderr.buffer.write(r.stderr)\nraise SystemExit(r.returncode)\n'
+        )
+        (tools / "scp").write_text("#!/bin/sh\nexit 99\n")
         self.native_env["PATH"] = str(tools) + ":" + os.environ["PATH"]
         for name in (
             "task-vm-workspace",
@@ -89,30 +99,10 @@ class NativeMaintenance(fixture.NativeRepository):
                 (ROOT / f"workflows/workflow-{name}.yaml").read_text()
             )
             for job in flow["jobs"]:
-                job.pop("target", None); job.pop("labels", None)
+                # A local native run has no remote worker; strip the role placement.
                 job.pop("labels", None)
                 for step in job["steps"]:
                     self.assertEqual(step.pop("labels"), {"role": "swamp"})
-                    step.pop("labels", None)
-                    # Keep the production inputs and graph, changing only local placement and temp namespace.
-                    task = step["task"]
-                    inputs = task.get("inputs", {})
-                    for key, value in list(inputs.items()):
-                        if isinstance(value, str):
-                            inputs[key] = value.replace(
-                                "/tmp/orbit-task-repository-",
-                                str(self.repo / "remote-assets-"),
-                            )
-                        elif isinstance(value, list):
-                            inputs[key] = [
-                                v.replace(
-                                    "/tmp/orbit-task-repository-",
-                                    str(self.repo / "remote-assets-"),
-                                )
-                                if isinstance(v, str)
-                                else v
-                                for v in value
-                            ]
             (self.repo / f"workflows/workflow-{name}.yaml").write_text(
                 yaml.safe_dump(flow, sort_keys=False)
             )
@@ -138,6 +128,26 @@ class NativeMaintenance(fixture.NativeRepository):
         )
         self.assertFalse(output["changed"])
         self.assertEqual(output["group_id"], 1)
+
+    def test_task_vm_receives_only_plain_argv_and_no_shipped_program(self):
+        result = self.run_workflow()
+        self.assertEqual(result["status"], "succeeded")
+        calls = [json.loads(line) for line in self.ssh_log.read_text().splitlines()]
+        workspace = str(self.workspace)
+        self.assertIn(["cat", "--", workspace + "/composer.json"], calls)
+        self.assertIn(["test", "-d", workspace + "/node_modules"], calls)
+        self.assertIn(
+            ["env", "-C", workspace, "composer", "update", "--no-interaction"],
+            calls,
+        )
+        # The shared workspace child runs first; every maintenance call after it is plain argv.
+        maintenance = calls[calls.index(["cat", "--", workspace + "/composer.json"]) :]
+        self.assertLessEqual(
+            {call[0] for call in maintenance}, {"cat", "test", "env", "tee", "git"}
+        )
+        self.assertFalse(
+            any("python3" in part for call in maintenance for part in call)
+        )
 
     def test_committed_and_untracked_repairs_count_against_provision_base(self):
         (self.workspace / "repair.txt").write_text("repair before maintenance")
