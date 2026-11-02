@@ -1,5 +1,6 @@
-"""Legacy env:sync contract on the target (F9): the Gateway-rendered .env byte for byte, private to the
-account, the stored value never in native history, and a result with only key names and change flags."""
+"""env:sync contract on the target (F9): the Gateway-rendered .env byte for byte through the official file
+behavior, private to the account, the stored value never in native history, and a result with only key names
+and change flags."""
 import hashlib
 import json
 import os
@@ -31,4 +32,5 @@ check(result['keys'] == plan['keys'] and 'PROOF_SECRET' in result['keys'], 'the 
 check(result['runtime_refresh'] == 'skipped_development' and result['testing_status'] is None, 'development syncs only .env')
 check(set(result) == {'instance_id', 'changed', 'keys', 'key_count', 'test_database', 'environment_changed', 'testing_status',
                       'runtime_refresh', 'restarted_process_ids'}, 'the result holds only public fields')
-print('parity: legacy env:sync contract holds')
+check(result['changed'] is True and result['environment_changed'] is True, 'a first sync reports the file as changed')
+print('parity: env:sync contract holds')

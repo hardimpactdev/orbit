@@ -167,11 +167,8 @@ trait FollowsOperations
 
             if (is_string($refresh)) {
                 $this->writeHumanMessage('Production PHP: '.match ($refresh) {
-                    'config_cache_and_opcache_refreshed' => 'config cache rebuilt; FPM opcache reset',
-                    'opcache_refreshed_config_uncached' => 'FPM opcache reset; config remains uncached',
-                    'skipped_unchanged' => 'refresh skipped: environment file unchanged',
+                    'refreshed' => 'config cache rebuilt when the release has one; FPM opcache reset',
                     'skipped_no_php_version' => 'refresh skipped: no PHP version selected',
-                    'skipped_no_current_release' => 'refresh skipped: no current release',
                     default => $refresh,
                 });
             }

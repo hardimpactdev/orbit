@@ -1,6 +1,6 @@
 id: 1aa9bc3f-6c22-4b27-8742-e0a8620da06b
 name: operation-instance-environment
-description: Write one Instance's Gateway-rendered .env from the vault over official SSH from 209, check it, and refresh a production runtime.
+description: Write one Instance's Gateway-rendered .env and .env.testing from the vault with the official file behavior, check them, and refresh a production runtime.
 vaults: [orbit-control-inputs]
 queueTimeout: 30
 inputs:
@@ -12,7 +12,7 @@ inputs:
     intent:
       type: object
       properties:
-        # The public plan the environment script reads: account, directory, key names and the sha256 of each rendered file.
+        # The public plan: account, directory, key names and the sha256 of each rendered file.
         environment:
           type: object
           properties:
@@ -20,15 +20,11 @@ inputs:
             environment: {type: string, enum: [development, production]}
             base: {type: string, pattern: '^/'}
             user: {type: string, pattern: '^[a-z_][a-z0-9_-]{0,31}$'}
-            maximum: {type: integer, const: 1048576}
-            required_capacity: {type: integer, minimum: 1048576}
-            require_home: {type: boolean}
-            preserve_workload_keys: {type: boolean}
             keys: {type: array, items: {type: string}}
             owned_keys: {type: array, items: {type: string}}
             sha256: {type: string, pattern: '^[a-f0-9]{64}$'}
-            testing: {default: null}  # null, or the managed key names and the sha256 of their sorted lines
-          required: [instance_id, environment, base, user, maximum, required_capacity, require_home, preserve_workload_keys, keys, owned_keys, sha256, testing]
+            testing: {default: null}  # null, or the sha256 of .env.testing and its test database
+          required: [instance_id, environment, base, user, keys, owned_keys, sha256, testing]
           additionalProperties: false
         # Production only: the config cache, the PHP-FPM service and the Processes to restart.
         runtime: {default: null}
@@ -38,32 +34,25 @@ inputs:
     execution_secrets:
       type: object
       properties:
-        environment:
+        environment: &secret
           type: object
           properties:
             vault: {type: string, enum: [orbit-control-inputs]}
-            key: {type: string, pattern: '^instance-environment-[1-9][0-9]*$'}
+            key: {type: string, pattern: '^instance-environment-(?:testing-)?[1-9][0-9]*$'}
           required: [vault, key]
           additionalProperties: false
+        testing: *secret
       required: [environment]
       additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
-- name: environment
+- name: inspect
   labels: {role: swamp}
   steps:
-  - name: 'Read the scripts'
+    # Interim until the Node agent reports .env key names to admission (decision 2): key names and hashes only, never values.
+  - name: 'Read the key names'
     labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/instance-environment-assets'
-      behaviorName: instance-environment-assets
-      methodName: read
-      inputs: {environment: '${{ inputs.intent.environment }}', runtime: '${{ inputs.intent.runtime }}'}
-  - name: 'Check for foreign keys'
-    labels: {role: swamp}
-    dependsOn: [{step: 'Read the scripts', condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -82,51 +71,65 @@ jobs:
           transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}
       inputs:
         hosts: name:target
-        argv: [/usr/bin/sudo, -n, --user, '${{ inputs.intent.environment.user }}', --, timeout, '30', python3, -I, -c, '${{ steps["Read the scripts"].outputs.environment }}',
-          check, '${{ steps["Read the scripts"].outputs.plan }}']
-        okExitCodes: [0, 1]
+        # "#sha <sha256>  <file>" for each file, "#tracked" when Git tracks .env.testing, then each .env key name; the public result reads the first 4 KiB.
+        argv: [/usr/bin/sudo, -n, --user, '${{ inputs.intent.environment.user }}', --, /usr/bin/timeout, '30', /bin/sh, -c,
+          'cd -- "$1" || exit 1; sha256sum -- .env .env.testing 2>/dev/null | sed "s/^/#sha /"; ! git ls-files --error-unmatch -- .env.testing >/dev/null 2>&1 || echo "#tracked"; [ ! -f .env ] || sed -n -E "s/^[ \t]*(export[ \t]+)?([A-Za-z_][A-Za-z0-9_.]*)[ \t]*=.*/\2/p" .env',
+          sh, '${{ inputs.intent.environment.base }}']
         timeoutSec: 40
+  - name: 'Check for foreign keys'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Read the key names', condition: {type: succeeded}}]
+    task:
+      type: assert
+      expr: '!steps["Read the key names"].outputs.stdout.split("\n").exists(k, k != "" && !k.startsWith("#") && !(k in inputs.intent.environment.keys) && !(k in inputs.intent.environment.owned_keys))'
+      message: The .env holds keys Orbit does not manage; a sync would drop them.
+      severity: high
+- name: environment
+  labels: {role: swamp}
+  dependsOn: [{job: inspect, condition: {type: succeeded}}]
+  steps:
+    # .env always; .env.testing when the Gateway rendered one and Git does not track it.
   - name: 'Write .env, .env.testing'
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: 'Check for foreign keys', condition: {type: succeeded}}]
-    guard: ${{ steps["Check for foreign keys"].outputs.exitCode != 0 }}
+    forEach:
+      item: file
+      in: '${{ [{"name": ".env", "secret": inputs.execution_secrets.environment}] + ("testing" in inputs.execution_secrets && !steps["Read the key names"].outputs.stdout.contains("#tracked") ? [{"name": ".env.testing", "secret": inputs.execution_secrets.testing}] : []) }}'
     task:
       type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-environment-ssh-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs: *ssh
-      inputs:
-        hosts: name:target
-        # The rendered files arrive on stdin from the vault, never in argv or native history.
-        argv: [/usr/bin/sudo, -n, --user, '${{ inputs.intent.environment.user }}', --, timeout, '30', python3, -I, -c, '${{ steps["Read the scripts"].outputs.environment }}',
-          write, '${{ steps["Read the scripts"].outputs.plan }}']
-        stdin: ${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}
-        okExitCodes: [0, 1]
-        timeoutSec: 40
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "instance-environment-file-" + string(inputs.node_id) + "-" + string(self._index) }}
+      methodName: apply
+      globalArgs:
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+        becomeUser: ${{ inputs.intent.environment.user }}
+        path: ${{ inputs.intent.environment.base + "/" + self.file.name }}
+        ensure: present
+        mode: '0600'
+        content: ${{ vault.get(self.file.secret.vault, self.file.secret.key) }}
+      inputs: {}
   - name: 'Check the written file'
     labels: {role: swamp}
     dependsOn: [{step: 'Write .env, .env.testing', condition: {type: succeeded}}]
-    guard: ${{ steps["Write .env, .env.testing"].outputs.exitCode != 0 }}
     task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-environment-ssh-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs: *ssh
-      inputs:
-        hosts: name:target
-        argv: [/usr/bin/sudo, -n, --user, '${{ inputs.intent.environment.user }}', --, timeout, '30', python3, -I, -c, '${{ steps["Read the scripts"].outputs.environment }}',
-          verify, '${{ steps["Read the scripts"].outputs.plan }}']
-        okExitCodes: [0, 1]
-        timeoutSec: 40
-    # Every production sync refreshes the runtime, also when .env did not change.
+      type: assert
+      expr: 'data.latest("instance-environment-file-" + string(inputs.node_id) + "-0", inputs.intent.ssh_execution.target.host).attributes.current.contentSha256 == inputs.intent.environment.sha256 && (inputs.intent.environment.testing == null || steps["Read the key names"].outputs.stdout.contains("#tracked") || data.latest("instance-environment-file-" + string(inputs.node_id) + "-1", inputs.intent.ssh_execution.target.host).attributes.current.contentSha256 == inputs.intent.environment.testing.sha256)'
+      message: A written file differs from the rendered one.
+      severity: high
+    # Production only, in order: the config cache when the release has one, the PHP-FPM reload, then each Process that restarts on deploy.
+    # An uncached release stays uncached; without a current release the cache is skipped.
   - name: 'Refresh the runtime'
     labels: {role: swamp}
     writes: true
     dependsOn: [{step: 'Check the written file', condition: {type: succeeded}}]
-    guard: ${{ inputs.intent.environment.environment != "production" || steps["Check the written file"].outputs.exitCode != 0 }}
+    forEach:
+      item: action
+      in: '${{ inputs.intent.runtime == null ? [] : (inputs.intent.runtime.config == null ? [] : [["/usr/bin/sudo", "-n", "--user", inputs.intent.runtime.config.user, "--", "/usr/bin/timeout", "120", "/bin/sh", "-c", "cd -- \"$1\" 2>/dev/null || exit 0; [ ! -f bootstrap/cache/config.php ] || exec \"$2\" artisan config:cache --no-interaction", "sh", inputs.intent.runtime.config.application, "/usr/bin/php" + inputs.intent.runtime.config.version]]) + (inputs.intent.runtime.fpm_service == null ? [] : [["/usr/bin/sudo", "-n", "--", "/usr/bin/timeout", "60", "/usr/bin/systemctl", "reload", inputs.intent.runtime.fpm_service]]) + inputs.intent.runtime.processes.map(p, p.runtime == "docker" ? ["/usr/bin/sudo", "-n", "--", "/usr/bin/timeout", "120", "/usr/bin/docker", "restart", p.name] : ["/usr/bin/sudo", "-n", "--", "/usr/bin/timeout", "120", "/usr/bin/systemctl", "restart", p.name]) }}'
+    concurrency: 1
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -135,68 +138,5 @@ jobs:
       globalArgs: *ssh
       inputs:
         hosts: name:target
-        sudo: true
-        argv: [timeout, '300', python3, -I, -c, '${{ steps["Read the scripts"].outputs.refresh }}', '${{ steps["Read the scripts"].outputs.runtime }}']
-        okExitCodes: [0, 1]
-        timeoutSec: 310
-  - name: 'Report the result'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'Check for foreign keys', condition: {type: always}}
-    - {step: 'Write .env, .env.testing', condition: {type: always}}
-    - {step: 'Check the written file', condition: {type: always}}
-    - {step: 'Refresh the runtime', condition: {type: always}}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: instance-environment-result
-      methodName: execute
-      inputs:
-        run: |
-          python3 -I - <<'PY'
-          import json
-          import os
-          import sys
-
-          result = {}
-          for name in ('CHECKED', 'WRITTEN', 'VERIFIED', 'REFRESHED'):
-              status, stdout = os.environ[name + '_STATUS'], os.environ[name + '_STDOUT']
-              if status == 'skipped':
-                  continue
-              try:
-                  value = json.loads(stdout) if status == 'succeeded' else None
-              except ValueError:
-                  value = None
-              if not isinstance(value, dict):
-                  value = {'error_code': 'env.sync_unconfirmed'}
-              if 'error_code' in value:
-                  print(json.dumps({'error_code': value['error_code'], 'failed_step': name.lower(),
-                                    **({'foreign_keys': value['foreign_keys']} if 'foreign_keys' in value else {})}))
-                  sys.exit(1)
-              value.pop('ready', None)
-              result.update(value)
-          if 'environment_changed' not in result:
-              print(json.dumps({'error_code': 'env.sync_unconfirmed', 'failed_step': 'written'}))
-              sys.exit(1)
-          result.setdefault('runtime_refresh', 'skipped_development')
-          result.setdefault('restarted_process_ids', [])
-          plan = json.loads(os.environ['PLAN'])
-          print(json.dumps({'instance_id': plan['instance_id'], 'changed': result['environment_changed'] or result['testing_status'] == 'written',
-                            'keys': plan['keys'], 'key_count': len(plan['keys']),
-                            'test_database': plan['testing']['test_database'] if plan['testing'] else None, **result}))
-          PY
-        env:
-          PLAN: '${{ "Read the scripts" in steps && steps["Read the scripts"].status == "succeeded" ? steps["Read the scripts"].outputs.plan : "{}" }}'
-          CHECKED_STATUS: '${{ "Check for foreign keys" in steps ? steps["Check for foreign keys"].status : "skipped" }}'
-          CHECKED_STDOUT: '${{ "Check for foreign keys" in steps && steps["Check for foreign keys"].status == "succeeded" ? steps["Check for foreign keys"].outputs.stdout : "" }}'
-          WRITTEN_STATUS: '${{ "Write .env, .env.testing" in steps ? steps["Write .env, .env.testing"].status : "skipped" }}'
-          WRITTEN_STDOUT: '${{ "Write .env, .env.testing" in steps && steps["Write .env, .env.testing"].status == "succeeded" ? steps["Write .env, .env.testing"].outputs.stdout : "" }}'
-          VERIFIED_STATUS: '${{ "Check the written file" in steps ? steps["Check the written file"].status : "skipped" }}'
-          VERIFIED_STDOUT: '${{ "Check the written file" in steps && steps["Check the written file"].status == "succeeded" ? steps["Check the written file"].outputs.stdout : "" }}'
-          REFRESHED_STATUS: '${{ "Refresh the runtime" in steps ? steps["Refresh the runtime"].status : "skipped" }}'
-          REFRESHED_STDOUT: '${{ "Refresh the runtime" in steps && steps["Refresh the runtime"].status == "succeeded" ? steps["Refresh the runtime"].outputs.stdout : "" }}'
-        ignoreExitCode: true
-  - name: 'Fail on an error'
-    labels: {role: swamp}
-    dependsOn: [{step: 'Report the result', condition: {type: succeeded}}]
-    task: {type: assert, expr: 'steps["Report the result"].outputs.exitCode == 0', severity: high, message: The Instance environment did not sync.}
+        argv: ${{ self.action }}
+        timeoutSec: 150

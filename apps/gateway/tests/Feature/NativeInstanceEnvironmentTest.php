@@ -9,6 +9,8 @@ use App\Domain\Instances\Environment\NativeInstanceEnvironmentSync;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Models\DatabaseConnection;
+use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Process;
@@ -46,12 +48,11 @@ it('admits one task whose plan holds key names and the rendered hash, then pushe
     $content = "API_TOKEN=\"synthetic-private-value\"\n";
     expect($operation->kind)->toBe('instance.sync_environment')
         ->and($plan)->toMatchArray(['instance_id' => $instance->id, 'node_id' => $instance->node_id, 'environment' => 'development',
-            'user' => $instance->node->user, 'require_home' => false, 'preserve_workload_keys' => true,
-            'keys' => ['API_TOKEN'], 'owned_keys' => ['OLD'], 'sha256' => hash('sha256', $content), 'testing' => null, 'runtime' => null])
+            'user' => $instance->node->user, 'keys' => ['API_TOKEN'], 'owned_keys' => ['OLD'], 'sha256' => hash('sha256', $content), 'testing' => null, 'runtime' => null])
         ->and(json_encode($operation->input))->not->toContain('synthetic-private-value');
     $put = nativeEnvironmentFrame($this->socket, 'vault.put');
     expect($put['payload'])->toMatchArray(['vaultName' => 'orbit-control-inputs', 'key' => 'instance-environment-'.$operation->id])
-        ->and(json_decode($put['payload']['value'], true))->toBe(['content' => $content, 'testing' => null]);
+        ->and($put['payload']['value'])->toBe($content);
     $run = collect($this->socket->sent)->last();
     expect($run['payload']['workflowIdOrName'])->toBe('operation-instance-environment')
         ->and(json_encode($run))->not->toContain('synthetic-private-value')
@@ -76,11 +77,6 @@ it('refuses to start when the values or the placement changed after admission', 
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe($change === 'value' ? 'env.configuration_changed' : 'operation.execution_forbidden'))
         ->and($this->socket->sent)->toBe([]);
 })->with(['value', 'placement']);
-
-it('hashes a merged .env.testing by the sorted lines of its managed keys', function (): void {
-    expect(NativeInstanceEnvironmentSync::managedLines("DB_DATABASE=\"t\"\nAPP=1\nDB_CONNECTION=\"pgsql\"", ['DB_CONNECTION', 'DB_DATABASE']))
-        ->toBe("DB_CONNECTION=\"pgsql\"\nDB_DATABASE=\"t\"\n");
-});
 
 function nativeProductionEnvironmentInstance(bool $php = true): Instance
 {
@@ -111,9 +107,8 @@ it('plans a production refresh with the config cache, the FPM service and only o
     $operation = app(StartInstanceEnvironmentSyncAction::class)->execute($instance);
     $plan = $operation->input['direct_environment'];
     $identity = ProductionPhpRuntimeIdentity::from($instance);
-    expect($plan['require_home'])->toBeTrue()
-        ->and($plan['runtime']['config'])->toBe(['user' => $instance->production_user, 'home' => $instance->production_home,
-            'version' => '8.5', 'application' => $instance->production_home.'/current/apps/site'])
+    expect($plan['runtime']['config'])->toBe(['user' => $instance->production_user, 'home' => $instance->production_home,
+        'version' => '8.5', 'application' => $instance->production_home.'/current/apps/site'])
         ->and($plan['runtime']['fpm_service'])->toBe($identity->service)
         ->and($plan['runtime']['processes'])->toBe([['id' => $process->id, 'runtime' => 'systemd', 'name' => 'orbit-process-'.$process->id.'-worker.service']])
         ->and(json_encode($operation->input))->not->toContain('synthetic-private-value');
@@ -126,16 +121,66 @@ it('plans a production file sync without PHP with no config cache or FPM reload'
     expect($operation->input['direct_environment']['runtime'])->toBe(['config' => null, 'fpm_service' => null, 'processes' => []]);
 });
 
-it('records the admitted key names as owned only when the run succeeds', function (string $status): void {
+/** A native run result: each named step's status and stdout, as Swamp's run data gives them. */
+function nativeEnvironmentRun(array $steps): array
+{
+    return ['steps' => array_map(fn (array|string $step): array => is_string($step) ? ['status' => $step] : $step, $steps),
+        'summary' => ['status' => 'unknown', 'succeeded' => 0, 'failed' => 0, 'skipped' => 0, 'failed_steps' => []]];
+}
+
+function nativeEnvironmentApply(Operation $operation, string $status, array $steps, ?string $code = null): Operation
+{
+    return app(NativeInstanceEnvironmentProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => $status,
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'error_code' => $code, 'result' => nativeEnvironmentRun($steps)]);
+}
+
+it('builds the public result from the run and records the key names as owned', function (): void {
     $instance = nativeEnvironmentInstance();
     $operation = app(StartInstanceEnvironmentSyncAction::class)->execute($instance);
-    $result = $status === 'succeeded'
-        ? ['instance_id' => $instance->id, 'changed' => true, 'keys' => ['API_TOKEN'], 'key_count' => 1, 'test_database' => null,
-            'environment_changed' => true, 'testing_status' => null, 'runtime_refresh' => 'skipped_development', 'restarted_process_ids' => []]
-        : ['error_code' => 'env.sync_would_drop_keys', 'failed_step' => 'checked', 'foreign_keys' => ['FOREIGN']];
-    app(NativeInstanceEnvironmentProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => $status,
-        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-        'error_code' => $result['error_code'] ?? null, 'result' => $result]);
-    expect($operation->refresh()->status->value)->toBe($status)
-        ->and($instance->refresh()->environment_owned_keys)->toBe($status === 'succeeded' ? ['API_TOKEN'] : ['OLD']);
-})->with(['succeeded', 'failed']);
+    $sha = $operation->input['direct_environment']['sha256'];
+    nativeEnvironmentApply($operation, 'succeeded', ['Read the key names' => ['status' => 'succeeded', 'stdout' => "#sha {$sha}  .env\nAPI_TOKEN"],
+        'Check for foreign keys' => 'succeeded', 'Write .env, .env.testing-0' => 'succeeded', 'Check the written file' => 'succeeded']);
+    expect($operation->refresh()->status->value)->toBe('succeeded')
+        ->and($operation->result)->toBe(['instance_id' => $instance->id, 'changed' => false, 'keys' => ['API_TOKEN'], 'key_count' => 1,
+            'test_database' => null, 'environment_changed' => false, 'testing_status' => null,
+            'runtime_refresh' => 'skipped_development', 'restarted_process_ids' => []])
+        ->and($instance->refresh()->environment_owned_keys)->toBe(['API_TOKEN']);
+});
+
+it('reports a changed .env when its hash before the write differs', function (): void {
+    $operation = app(StartInstanceEnvironmentSyncAction::class)->execute(nativeEnvironmentInstance());
+    nativeEnvironmentApply($operation, 'succeeded', ['Read the key names' => ['status' => 'succeeded', 'stdout' => 'OLD'], 'Check the written file' => 'succeeded']);
+    expect($operation->refresh()->result)->toMatchArray(['changed' => true, 'environment_changed' => true]);
+});
+
+it('maps a failed foreign-key check to env.sync_would_drop_keys with the foreign key names', function (): void {
+    $instance = nativeEnvironmentInstance();
+    $operation = app(StartInstanceEnvironmentSyncAction::class)->execute($instance);
+    nativeEnvironmentApply($operation, 'failed', ['Read the key names' => ['status' => 'succeeded', 'stdout' => "#sha 00  .env\nOLD\nZED\nAPI_TOKEN\nFOREIGN"],
+        'Check for foreign keys' => 'failed'], 'operation.native_failed');
+    expect($operation->refresh()->error_code)->toBe('env.sync_would_drop_keys')
+        ->and($operation->result)->toBe(['error_code' => 'env.sync_would_drop_keys', 'foreign_keys' => ['FOREIGN', 'ZED']])
+        ->and($instance->refresh()->environment_owned_keys)->toBe(['OLD']);
+});
+
+it('maps a failed runtime refresh to env.runtime_refresh_failed', function (): void {
+    $operation = app(StartInstanceEnvironmentSyncAction::class)->execute(nativeProductionEnvironmentInstance());
+    nativeEnvironmentApply($operation, 'failed', ['Check the written file' => 'succeeded', 'Refresh the runtime-1' => 'failed'], 'operation.native_failed');
+    expect($operation->refresh()->error_code)->toBe('env.runtime_refresh_failed');
+});
+
+it('pushes .env.testing as its own vault copy, hashed as a whole file', function (): void {
+    $instance = nativeEnvironmentInstance();
+    $connection = DatabaseConnection::query()->create(['slug' => 'native-env-db', 'driver' => 'mysql', 'owner_instance_id' => $instance->id,
+        'node_id' => $instance->node_id, 'host' => '10.44.0.3', 'port' => 3306, 'database' => 'app', 'test_database' => 'app_test',
+        'username' => 'app', 'password' => 'synthetic-password']);
+    DatabaseConnectionTarget::query()->create(['instance_id' => $instance->id, 'database_connection_id' => $connection->id, 'prefix' => 'DB']);
+    $operation = app(StartInstanceEnvironmentSyncAction::class)->execute($instance);
+    $puts = collect($this->socket->sent)->where('type', 'vault.put')->keyBy(fn (array $frame): string => $frame['payload']['key']);
+    $testing = $puts['instance-environment-testing-'.$operation->id]['payload']['value'];
+    expect($testing)->toContain('APP_ENV="testing"')->toContain('app_test')
+        ->and($operation->input['direct_environment']['testing'])->toBe(['sha256' => hash('sha256', $testing), 'test_database' => 'app_test'])
+        ->and(collect($this->socket->sent)->last()['payload']['inputs']['execution_secrets']['testing'])
+        ->toBe(['vault' => 'orbit-control-inputs', 'key' => 'instance-environment-testing-'.$operation->id]);
+});

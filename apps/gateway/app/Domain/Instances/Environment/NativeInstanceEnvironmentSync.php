@@ -15,7 +15,7 @@ use App\Models\Process;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
 
-/** The public sync plan at admission, and the run inputs with the rendered files as one vault copy. */
+/** The public sync plan at admission, and the run inputs with each rendered file as its own vault copy. */
 final readonly class NativeInstanceEnvironmentSync
 {
     public function __construct(
@@ -37,13 +37,9 @@ final readonly class NativeInstanceEnvironmentSync
 
         return ['instance_id' => $context->instanceId, 'node_id' => $context->nodeId,
             'environment' => $context->environment, 'base' => $context->path, 'user' => $context->executionUser,
-            'maximum' => InstanceEnvironmentValidator::MaximumFileBytes,
-            'required_capacity' => InstanceEnvironmentValidator::MaximumFileBytes * 2,
-            'require_home' => $context->environment === 'production', 'preserve_workload_keys' => true,
             'keys' => $files['keys'], 'owned_keys' => $instance->environment_owned_keys ?? [],
             'sha256' => hash('sha256', $files['content']),
-            'testing' => $files['testing'] === null ? null : ['managed_keys' => $files['testing']['managed_keys'],
-                'sha256' => hash('sha256', self::managedLines($files['testing']['content'], $files['testing']['managed_keys'])),
+            'testing' => $files['testing'] === null ? null : ['sha256' => hash('sha256', $files['testing']['content']),
                 'test_database' => $files['testing']['test_database']],
             'runtime' => $context->environment === 'production' ? $this->runtime($instance) : null];
     }
@@ -59,35 +55,23 @@ final readonly class NativeInstanceEnvironmentSync
             throw new ResourceOperationException('operation.execution_forbidden', 'The Instance environment placement changed after admission.', 422);
         }
         $files = $this->render($context);
-        $testing = $files['testing'] === null ? null : hash('sha256', self::managedLines($files['testing']['content'], $files['testing']['managed_keys']));
+        $testing = $files['testing'] === null ? null : hash('sha256', $files['testing']['content']);
         $planned = $plan['testing'] === null ? null : ValidatedData::object($plan['testing'])['sha256'];
         if (hash('sha256', $files['content']) !== $plan['sha256'] || $testing !== $planned) {
             throw new ResourceOperationException('env.configuration_changed', 'The Instance environment changed after admission.', 409);
         }
 
+        $secrets = ['environment' => $this->steps->executionCopy('orbit-control-inputs', 'instance-environment-'.$operation->id, $files['content'])];
+        if ($files['testing'] !== null) {
+            $secrets['testing'] = $this->steps->executionCopy('orbit-control-inputs', 'instance-environment-testing-'.$operation->id, $files['testing']['content']);
+        }
+
         return ['intent' => ['environment' => Arr::except($plan, ['node_id', 'runtime']), 'runtime' => $plan['runtime'],
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node)],
-            'execution_secrets' => ['environment' => $this->steps->executionCopy('orbit-control-inputs', 'instance-environment-'.$operation->id,
-                json_encode(['content' => $files['content'], 'testing' => $files['testing'] === null ? null : ['content' => $files['testing']['content']]], JSON_THROW_ON_ERROR))]];
+            'execution_secrets' => $secrets];
     }
 
-    /** The lines of the managed keys, sorted; the Node checks a merged .env.testing by these.
-     * @param  list<string>  $keys
-     */
-    public static function managedLines(string $content, array $keys): string
-    {
-        $lines = [];
-        foreach (preg_split('/(?<=\n)/', $content, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $line) {
-            if (preg_match('/\A[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_.]*)[ \t]*=/', $line, $match) === 1 && in_array($match[1], $keys, true)) {
-                $lines[] = str_ends_with($line, "\n") ? $line : $line."\n";
-            }
-        }
-        sort($lines, SORT_STRING);
-
-        return implode('', $lines);
-    }
-
-    /** @return array{content:string,keys:list<string>,testing:array{content:string,managed_keys:list<string>,test_database:string}|null} */
+    /** @return array{content:string,keys:list<string>,testing:array{content:string,test_database:string}|null} */
     private function render(InstanceEnvironmentContext $context): array
     {
         $values = $this->store->synchronizationSnapshot($context)->values();
@@ -95,7 +79,7 @@ final readonly class NativeInstanceEnvironmentSync
 
         return ['content' => $this->renderer->render($context, $values), 'keys' => array_keys($values),
             'testing' => $testing === null ? null : ['content' => $this->renderer->render($context, $testing->values),
-                'managed_keys' => $testing->managedKeys, 'test_database' => $testing->testDatabase]];
+                'test_database' => $testing->testDatabase]];
     }
 
     /** The config cache, the account's PHP-FPM service and the running Processes that restart on deploy.

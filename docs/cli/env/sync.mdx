@@ -15,12 +15,12 @@ orbit env:sync --instance=12
 The Gateway answers at once with the started Operation. The CLI follows it until it ends and prints the outcome, the failed step and error code if any, the Operation ID, and the request ID. With `--json`, it prints only the final Operation, whose `result` holds the [synchronization result](/reference/environment-variables#operations). The command exits nonzero unless the Operation succeeds. Ctrl-C stops following; the Operation keeps running, and `orbit operation:show ID` shows it.
 
 <Note>
-On production Instances, every sync refreshes the selected PHP runtime without a deploy, even when `.env` is unchanged. If the current release has `bootstrap/cache/config.php`, Orbit runs `php artisan config:cache` there as the Instance user before resetting FPM's opcache. An uncached release stays uncached. The Operation result reports whether config and opcache were refreshed, or why refresh was skipped: no current release, or no selected PHP version. Development Instances keep the file-only behavior, and their result reports `skipped_development`.
+On production Instances, every sync refreshes the selected PHP runtime without a deploy, even when `.env` is unchanged. If the current release has `bootstrap/cache/config.php`, Orbit runs `php artisan config:cache` there as the Instance user, then reloads PHP-FPM to reset its opcache. An uncached release stays uncached. The Operation result reports `refreshed`, or `skipped_no_php_version` when no PHP version is selected. Development Instances keep the file-only behavior, and their result reports `skipped_development`.
 
-Orbit builds cached config at a temporary path, verifies it, then atomically replaces the old cache. After a successful refresh, Orbit restarts running Instance Processes that have `restart_on_deploy` enabled and reports their IDs. A build failure keeps the old cache, stops the opcache reset, and fails the Operation with `env.config_cache_refresh_failed`. Fix the reported problem and repeat `env:sync`. A Process restart failure fails the Operation with `env.runtime_refresh_failed`; the result does not list the Processes already restarted. Deploys and Route-domain transitions do not run this env-sync refresh.
+After the reload, Orbit restarts running Instance Processes that have `restart_on_deploy` enabled and reports their IDs. A failed cache build, reload or restart fails the Operation with `env.runtime_refresh_failed`. Fix the reported problem and repeat `env:sync`. Deploys and Route-domain transitions do not run this env-sync refresh.
 </Note>
 
-An Operation that fails with `env.sync_unconfirmed` could not confirm the write, so the file may have changed. Run the command again: it checks the file and either keeps the matching file or writes it.
+When the end check `Check the written file` fails, the file on the Node differs from the rendering. Run the command again: it writes the file again.
 
 ## How it works
 

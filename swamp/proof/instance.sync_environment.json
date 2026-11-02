@@ -33,7 +33,9 @@
       "method": "PUT",
       "path": "instances/${instance.id}/environment/PROOF_SECRET",
       "operation": false,
-      "body": {"value": "proof-private-${proof.run}"}
+      "body": {
+        "value": "proof-private-${proof.run}"
+      }
     }
   ],
   "request": {
@@ -44,11 +46,30 @@
     "status": "succeeded"
   },
   "phases": [
-    {"name": "Read the scripts", "job": "environment", "step": "Read the scripts", "budget_seconds": 15},
-    {"name": "Check for foreign keys", "job": "environment", "step": "Check for foreign keys", "budget_seconds": 20},
-    {"name": "Write .env, .env.testing", "job": "environment", "step": "Write .env, .env.testing", "budget_seconds": 20},
-    {"name": "Check the written file", "job": "environment", "step": "Check the written file", "budget_seconds": 20},
-    {"name": "Report the result", "job": "environment", "step": "Report the result", "budget_seconds": 15}
+    {
+      "name": "Read the key names",
+      "job": "inspect",
+      "step": "Read the key names",
+      "budget_seconds": 20
+    },
+    {
+      "name": "Check for foreign keys",
+      "job": "inspect",
+      "step": "Check for foreign keys",
+      "budget_seconds": 10
+    },
+    {
+      "name": "Write .env, .env.testing",
+      "job": "environment",
+      "step": "Write .env, .env.testing-0",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Check the written file",
+      "job": "environment",
+      "step": "Check the written file",
+      "budget_seconds": 10
+    }
   ],
   "parity": "swamp/proof/instance.sync_environment/parity.py"
 }
