@@ -1,0 +1,12 @@
+{
+  "kind": "schedule.disable",
+  "topology": "minimal",
+  "topology_version": 10,
+  "source_commit": "6c0be3e94894a184af6d0016a5b70d681ddf72ac",
+  "receipt": "/home/nckrtl/swamp-execution/evidence/proof/schedule.disable/20261102T200055Z-minimal.json",
+  "proof_pass": true,
+  "operation_seconds": 0.11,
+  "budget_seconds": 60,
+  "queue_timeout_seconds": 300,
+  "scripts_deleted": 0
+}

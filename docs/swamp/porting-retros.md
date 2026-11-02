@@ -332,3 +332,8 @@ Native command success, failure, timeout, context and secret isolation retain th
 `schedule.enable` sets an existing workflow's trigger without rewriting its fixed intent. A copied definition with no workflow still publishes its command and workflow first. The regression fails against the previous extra edit, covers repeat enable, and retains the first-copy case. Fifty-two Gateway cases, PHP analysis, formatting, charts and docs pass.
 
 The fresh minimal@10 receipt at `bf68a00fae` enables a disabled Node Schedule in 0.17 seconds, with no Node units or control run. This is one sample, so observed p95 is 0.17 seconds; its budget is 60 seconds and the shared fire child's queue timeout is 300. The index is `swamp/proof/receipts/schedule-enable-native.json`. No script is added or deleted. The proof uses a test calendar and proof CA, without production data or scale.
+
+
+## Native Schedule disable
+
+The fresh minimal@10 receipt at `6c0be3e948` covers initial disable and a repeated disable. The measured request takes 0.11 seconds, its one-sample p95, with a 60-second budget and shared fire queue timeout of 300. The workflow remains, its trigger is absent, no Node units appear and no control run starts. The existing native implementation needs no rewrite or shipped script. The chart is marked migrated; `swamp/proof/receipts/schedule-disable-native.json` indexes the passing receipt. The proof uses a test calendar and proof CA, without production data or scale.
