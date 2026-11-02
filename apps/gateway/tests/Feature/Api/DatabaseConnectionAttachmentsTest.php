@@ -358,9 +358,11 @@ it('allows a SQLite update that keeps every target on the registered Node', func
     ]);
     $connection->targets()->create(['instance_id' => $this->instance->id, 'prefix' => 'DB']);
 
+    // A record-only change returns its finished Operation (R1).
     $this->patchJson('/api/v1/database-connections/same-node', [
         'driver' => 'sqlite', 'node_id' => $this->instance->node_id, 'path' => '/var/lib/app/updated.sqlite',
-    ])->assertOk()->assertJsonPath('data.path', '/var/lib/app/updated.sqlite');
+    ])->assertAccepted()->assertJsonPath('data.kind', 'database.update')->assertJsonPath('data.status', 'succeeded');
+    expect($connection->fresh()->path)->toBe('/var/lib/app/updated.sqlite');
 })->with(['sqlite', 'mysql']);
 
 it('refuses an unsupported attach key and an invalid prefix', function (): void {
