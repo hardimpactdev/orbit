@@ -1,5 +1,5 @@
 {
-  "kind": "node.settings.symlink",
+  "kind": "node.settings.file",
   "workflow": "operation-node-settings",
   "topology": "minimal",
   "budget_seconds": 120,
@@ -9,7 +9,7 @@
     [
       "sh",
       "-c",
-      "mkdir -p /srv/proof-real-${proof.run} && ln -sfn /srv/proof-real-${proof.run} /srv/proof-link-${proof.run}"
+      "mkdir -p /srv/proof-file-${proof.run} && touch /srv/proof-file-${proof.run}/apps"
     ]
   ],
   "request": {
@@ -17,7 +17,7 @@
     "path": "nodes/${node.target}/settings",
     "body": {
       "apps": {
-        "path": "/srv/proof-link-${proof.run}/apps"
+        "path": "/srv/proof-file-${proof.run}/apps"
       }
     }
   },
@@ -25,12 +25,6 @@
     "status": "failed"
   },
   "phases": [
-    {
-      "name": "Read the scripts",
-      "job": "settings",
-      "step": "Read the scripts",
-      "budget_seconds": 20
-    },
     {
       "name": "Create the apps folder",
       "job": "settings",

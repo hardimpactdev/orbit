@@ -4,7 +4,7 @@ description: "Typed Node settings for the apps root and operator-owned task VM h
 covers:
   - apps/gateway/app/Domain/Nodes/Storage/**
   - apps/gateway/app/{Actions/Nodes/UpdateNodeSettingsAction,Domain/Nodes/NodeSettingsOperationCompletion,Domain/Nodes/NodeSettingsProjection,Providers/TaskVmServiceProvider}.php
-  - {apps/gateway/app/Infrastructure/Nodes/AgentNodeStorageRootPreparer.php,swamp/extensions/behaviors/operations/node-scripts/{native_test.py,scripts/apps_folder.py,scripts/apps_folder_test.py}}
+  - apps/gateway/app/Infrastructure/Nodes/AgentNodeStorageRootPreparer.php
   - apps/gateway/app/Data/Nodes/{NodeSettingsData,NodeStorageAppsData,NodeTaskVmsData}.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/gateway/app/Http/Requests/Nodes/UpdateNodeSettingsRequest.php
@@ -18,19 +18,17 @@ A Node has typed settings for its development apps root (`apps.path`) and its ta
 
 A settings change that touches the apps root records a `node.settings` Operation and returns HTTP 202. A change to `task_vms` alone, or clearing `apps.path` on a Node without an active `app-dev` role, is stored at once and starts no run. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/node.settings.mmd) shows both paths.
 
-The Gateway starts `operation-node-settings` on the `swamp` role's workers. Its inputs are the SSH target and the apps intent: the root (none means the managed home's `apps`), the managed user, and whether missing folders may be created. Every step runs on Node 209 and reaches the Node with official `@swamp/ssh` and sudo.
+The Gateway starts `operation-node-settings` on the `swamp` role's workers. Its inputs are the SSH target and the resolved apps folder with the managed user and group. Every step runs on Node 209 and reaches the Node over SSH with sudo.
 
 The steps are:
 
-- `Read the scripts` loads the shipped `apps_folder.py`.
-- `Create the apps folder` resolves the managed home and group. It refuses a path that is the home or an ancestor of it.
-- It also refuses a hidden folder in the home and a symlink on the way.
-- The same step creates each missing folder as the managed user and group with mode `0755`. It never changes an existing folder.
-- `Check owner and mode` reads the folder back. Its output is the terminal result.
+- `Create the apps folder` runs the official `@swamp/cfgmgmt/directory` behavior. It creates missing folders and gives the apps folder the managed user and group with mode `0755`.
+- `Check owner and mode` reads the folder with one `stat`.
+- `Prove the apps folder` is Swamp's native `assert`: the `stat` output must match the intent. The Gateway reads this end check from Swamp's run data.
 
-The Gateway stores the settings only from that successful result. A failed or cancelled run keeps the previous settings, and folders made before a failure stay. A failure in either Node step reports `node.settings_root_failed`; the failure detail holds the reason.
+The Gateway stores the settings only from a successful run. A failed or cancelled run keeps the previous settings, and folders made before a failure stay. A failure in any of these steps reports `node.settings_root_failed`; the failure detail holds the reason.
 
-Gateway admission checks path grammar, recorded protected paths and managed checkouts. It performs no account lookup or filesystem action.
+Gateway admission resolves the root and checks it: path grammar, protected paths, managed checkouts, and the managed home `/home/<user>` that Orbit creates. It performs no account lookup or filesystem action.
 
 An action on an apps root requires Linux. Other platforms refuse before recording an execution intent. Patches that only change stored settings remain available outside the worker rollout.
 
@@ -131,7 +129,7 @@ The Gateway checks path grammar and recorded exclusions before admission. Swamp 
 - not be inside a hidden directory of the managed user's home; and
 - not equal, or lie inside, an existing Instance checkout on the Node.
 
-Swamp then checks the path on the Node with the shipped `apps_folder.py` script. When the Node has an active `app-dev` role, it prepares the path: it creates each missing directory, owned by the managed user and group with mode `0755`. Otherwise the path must already exist. `app-dev` convergence prepares the apps root in the same way. Caddy must still reach each development Web root under the apps root; [Caddy access](/reference/routes#caddy-access) explains how.
+Swamp then prepares the path on the Node with `@swamp/cfgmgmt/directory`. When the Node has an active `app-dev` role, it prepares the path: it creates each missing directory, owned by the managed user and group with mode `0755`. Otherwise the path must already exist. `app-dev` convergence prepares the apps root in the same way. Caddy must still reach each development Web root under the apps root; [Caddy access](/reference/routes#caddy-access) explains how.
 
 An existing directory must be a real directory, not a symlink, owned by the managed user and group. The owner must have read, write, and execute access, and group and others must not have write access. The Gateway never changes the owner or mode of an existing directory. When a check fails, the stored setting stays unchanged. A directory that the Gateway created before the failure can remain.
 

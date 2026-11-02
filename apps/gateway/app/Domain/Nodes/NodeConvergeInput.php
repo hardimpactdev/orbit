@@ -20,6 +20,7 @@ use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Fleet\Footprint\PhpRuntimeFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
 use App\Infrastructure\Nodes\AgentCaddyPackage;
+use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Nodes\NodePrivateDnsListenerFootprint;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
@@ -59,7 +60,31 @@ final readonly class NodeConvergeInput
         }
 
         return [...$snapshot, 'payloads' => $payloads, 'user' => $node->user,
-            'ssh' => app(SwampSshExecutionInput::class)->forNode($node)];
+            'ssh' => app(SwampSshExecutionInput::class)->forNode($node), 'agent' => $this->agentFiles($node, $payloads)];
+    }
+
+    /**
+     * The Node agent's files as official cfgmgmt writes them: the unit already opens the apps root of the account
+     * Orbit creates (`/home/<user>`), and the Instance checkouts under that root whose `.env` loses its world bits.
+     *
+     * @param  array<string,mixed>  $payloads
+     * @return array{url:?string,files:list<array{path:string,content:string}>,unit:string,checkouts:list<string>}|null
+     */
+    private function agentFiles(Node $node, array $payloads): ?array
+    {
+        if (! isset($payloads['agent'])) {
+            return null;
+        }
+        $agent = ValidatedData::object($payloads['agent']);
+        $root = is_string($agent['apps_root'] ?? null) ? $agent['apps_root'] : ($node->user === 'root' ? '/root' : '/home/'.$node->user).'/apps';
+        $configuration = app(NodeAgentSshExecutor::class)->configurationForRoot($node, $root);
+        $checkouts = array_values(array_filter(is_array($agent['checkouts'] ?? null) ? $agent['checkouts'] : [],
+            static fn (mixed $path): bool => is_string($path) && str_starts_with($path, $root.'/')));
+
+        return ['url' => is_string($agent['url'] ?? null) ? $agent['url'] : null,
+            'files' => [['path' => NodeAgentFootprint::ConfigurationPath, 'content' => $configuration['configuration']],
+                ['path' => NodeAgentFootprint::CertificatePath, 'content' => $configuration['certificate']]],
+            'unit' => $configuration['unit'], 'checkouts' => $checkouts];
     }
 
     /** @return array<string,mixed> */

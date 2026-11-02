@@ -8,7 +8,7 @@
     [
       "sh",
       "-c",
-      "sed -i '/^# BEGIN Orbit managed keys$/d; /^# END Orbit managed keys$/d; /proof-operator/d' /home/orbit/.ssh/authorized_keys"
+      "sed -i '/proof-operator/d' /home/orbit/.ssh/authorized_keys"
     ]
   ],
   "prepare": [],
@@ -28,15 +28,9 @@
   },
   "phases": [
     {
-      "name": "Write the Orbit block",
+      "name": "Add the Orbit keys",
       "job": "ssh_access",
-      "step": "Write the Orbit block",
-      "budget_seconds": 40
-    },
-    {
-      "name": "Read the file back",
-      "job": "ssh_access",
-      "step": "Read the file back",
+      "step": "Add the Orbit keys-ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND",
       "budget_seconds": 40
     },
     {
