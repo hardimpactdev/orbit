@@ -423,3 +423,13 @@ Receipt: `/home/nckrtl/swamp-execution/evidence/proof/websocket.app_rotate/20261
 `node.bootstrap_probe` already carries its complete intent and vault reference and uses official SSH. Its job and steps now select `role: swamp`, so it needs no worker on the Gateway. The Operation keeps the Gateway binding that owns its bootstrap identity; execution on 209 reads no Gateway callback or Gateway-local key path. The other first-contact roots still use a Gateway-local key path and cannot move by label alone.
 
 One pinned native fixture passes through the official SSH behavior and result decoder, using a disposable host transport and a vault-held key; history and artifacts contain no private key. Its local wall time is 8.3 s, with 18 Gateway tests and two decoder tests passing. The full topology receipt is omitted under the outage exception: recipe `6a340f7049da` has no ready Beast or Shark image. Production latency remains unmeasured; a short read-only probe after release load must confirm the 209 placement.
+
+### WebSocket sync: confirm the current registry without mutation
+
+`websocket.sync` already records an R1 confirmation task without a Swamp run. The real Reverb proof compares the registry version and a private digest of every app and credential before and after sync. Both stay unchanged. Current required boots confirm the existing revision. Reverb keeps the same PID and boot identities. The Gateway connection stays open and receives an event. The chart drops its inaccurate superseded branch: independent syncs do not supersede each other.
+
+Receipt: `/home/nckrtl/swamp-execution/evidence/proof/websocket.sync/20261102T220216Z-minimal.json`, source `8cfc3d6dc6`, minimal@11, Operation 3. One success: 4.14 s to terminal (sample p95 4.14 s), 5.6 s fixture wall time, 90 s budget; no applicable `queueTimeout`.
+
+Scripts deleted: 0; production growth: 0. New Swamp lines are the proof declaration, shared parity branch and receipt index. The same single-process, test-credential, VM-local CA and notification-token bootstrap limits apply. After the offline-Node rotation proof, held `up` waited for the stopped nested target; starting that owned Node let the same setup finish. No shared topology or production service changed.
+
+Cancellation 8381 destroyed group 2757's VM and completed its cleanup. Across these four kinds, Orbit grows by 415 lines: proof fixtures and receipts add 387, documentation adds 30, and CLI snapshots shrink by two. Production code, behaviors, workflows and shipped scripts have no net growth. The added proof code exercises real Reverb signatures, socket closure and connections through TLS; 62 Gateway tests and 47 CLI tests also pass.
