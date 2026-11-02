@@ -94,7 +94,7 @@ export function removalPlan(input: Input, step: Step) {
 /** Package state from an official behavior check, or the manager's one read command. */
 export function after(input: Input, value: Record<string, unknown> | null) {
   if (value === null) throw new ToolRefusal("tool.version_probe_failed");
-  if (["apt", "brew"].includes(input.manager)) {
+  if (input.manager === "apt") {
     const state = z.object({ status: z.enum(["compliant", "non_compliant"]), packages: z.array(z.object({ name: z.string(), installed: z.boolean(), version: z.string().nullable() })) }).parse(value);
     const selected = state.packages.filter((p) => p.name === input.package);
     if (selected.length !== 1) throw new ToolRefusal("tool.version_probe_failed");

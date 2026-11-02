@@ -98,6 +98,7 @@ sequenceDiagram
       opt last Tool from that apt source
         SW->>N: Remove the apt source<br/>no Tool uses it anymore
         SW->>N: Remove repository pins<br/>native file removal
+        SW->>N: Remove the signing key<br/>native file removal
         %%> When:
         %%> - only when this was the last Tool installed from a signed apt repository
         %%> What it does:

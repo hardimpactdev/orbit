@@ -89,7 +89,7 @@ export const behavior = {
         if (installed_version !== null && !safeVersion(installed_version)) throw new ToolRefusal("tool.version_probe_failed");
         if (typeof installed_version === "string") verifyInstalled(plain(WriteInput.parse({ ...args.input, kind: "tool.install" })), installed_version);
         const value = { installed_version, present: facts.versions.length === 1, absent: facts.versions.length === 0,
-          compliant: !["apt", "brew"].includes(args.input.manager) || args.after.status === "compliant" };
+          compliant: args.input.manager !== "apt" || args.after.status === "compliant" };
         await ctx.writeResource("observation", "observation", value); return value;
       } },
   },
