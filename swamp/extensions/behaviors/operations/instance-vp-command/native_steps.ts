@@ -40,10 +40,11 @@ export function instanceActions(
             ...extra,
         };
         if (extra.forEach) {
-            task.behaviorName = String(task.behaviorName).replace(
-                / \}\}$/,
-                ' + "-" + string(self._index) }}',
-            );
+            const name = String(task.behaviorName);
+            // The index goes inside the dot-free wrapper, so the name still starts with a letter.
+            task.behaviorName = name.includes(').split(".").join("-")')
+                ? name.replace(').split(".").join("-")', ' + "-" + string(self._index)).split(".").join("-")')
+                : name.replace(/ \}\}$/, ' + "-" + string(self._index) }}');
         }
         steps.push(step);
         return String(step.name);

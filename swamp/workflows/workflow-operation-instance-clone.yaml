@@ -818,49 +818,16 @@ jobs:
     condition:
       type: succeeded
   steps:
-  - name: clone-vp-local-directory
+  - name: clone-vp-read-package
     labels:
       role: swamp
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "vp-local" }}
-      methodName: execute
-      inputs:
-        run: umask 077; mkdir -p -- "$ORBIT_DIRECTORY"
-        env:
-          ORBIT_DIRECTORY: ${{ "/tmp/orbit-instance-"+run.id }}
-  - name: clone-vp-project-asset
-    labels:
-      role: swamp
-    dependsOn:
-    - step: clone-vp-local-directory
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/instance-vp-assets'
-      behaviorName: ${{ "idm-clone-1" }}
-      methodName: read
-      inputs:
-        action: project_material
-        input:
-          application: ${{ inputs.intent.application }}
-          destination: ${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}
-  - name: clone-vp-project
-    labels:
-      role: swamp
-    dependsOn:
-    - step: clone-vp-project-asset
-      condition:
-        type: succeeded
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("ids-clone-2-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: script
-      globalArgs: &id004
-        name: ${{ ("ids-clone-2-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      behaviorName: ${{ ("ids-clone--0-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("id-clone-vp-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -873,45 +840,273 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        interpreter: python3
-        script: ${{ steps["clone-vp-project-asset"].outputs.script_body }}
-  - name: clone-vp-private-copy
+        argv: ${{ ["find", inputs.intent.application, "-maxdepth", "1", "-type", "f", "-name", "package.json", "-exec", "cat", "--", "{}", "+"] }}
+  - name: clone-vp-read-pnpm_lock
     labels:
       role: swamp
     dependsOn:
-    - step: clone-vp-project
+    - step: clone-vp-read-package
       condition:
         type: succeeded
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("ids-clone-3-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
-      methodName: copy
-      globalArgs: *id004
+      behaviorName: ${{ ("ids-clone--1-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("id-clone-vp-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        src: ${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}
-        dst: ${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}
-        direction: from
-  - name: clone-vp-requirements
+        argv: ${{ ["find", inputs.intent.application, "-maxdepth", "1", "-type", "f", "-name", "pnpm-lock.yaml", "-exec", "cat", "--", "{}", "+"] }}
+  - name: clone-vp-read-npm_lock
     labels:
       role: swamp
     dependsOn:
-    - step: clone-vp-private-copy
+    - step: clone-vp-read-pnpm_lock
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("ids-clone--2-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("id-clone-vp-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["find", inputs.intent.application, "-maxdepth", "1", "-type", "f", "-name", "package-lock.json", "-exec", "cat", "--", "{}", "+"] }}
+  - name: clone-vp-read-node_version
+    labels:
+      role: swamp
+    dependsOn:
+    - step: clone-vp-read-npm_lock
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("ids-clone--3-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("id-clone-vp-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["find", inputs.intent.application, "-maxdepth", "1", "-type", "f", "-name", ".node-version", "-exec", "cat", "--", "{}", "+"] }}
+  - name: clone-vp-read-nvmrc
+    labels:
+      role: swamp
+    dependsOn:
+    - step: clone-vp-read-node_version
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("ids-clone--4-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("id-clone-vp-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["find", inputs.intent.application, "-maxdepth", "1", "-type", "f", "-name", ".nvmrc", "-exec", "cat", "--", "{}", "+"] }}
+  - name: clone-vp-home
+    labels:
+      role: swamp
+    dependsOn:
+    - step: clone-vp-read-nvmrc
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("ids-clone--5-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("id-clone-vp-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - realpath
+        - -s
+        - --
+        - .
+  - name: clone-vp-store
+    labels:
+      role: swamp
+    dependsOn:
+    - step: clone-vp-home
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("ids-clone--6-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("id-clone-vp-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - find
+        - /opt
+        - .
+        - -maxdepth
+        - '4'
+        - (
+        - -path
+        - /opt/orbit/vite-plus/bin/vp
+        - -o
+        - -path
+        - ./.vite-plus/bin/vp
+        - -o
+        - -path
+        - ./.local/share/vite-plus/bin/vp
+        - )
+        - -type
+        - f
+        - -exec
+        - realpath
+        - -s
+        - --
+        - '{}'
+        - +
+  - name: clone-vp-links
+    labels:
+      role: swamp
+    dependsOn:
+    - step: clone-vp-store
       condition:
         type: succeeded
     task:
       type: behavior
       behaviorType: '@nckrtl/instance-vp-requirements'
-      behaviorName: ${{ "idm-clone-4" }}
-      methodName: capture
+      behaviorName: ${{ "idm-clone--7" }}
+      methodName: links
       inputs:
-        path: ${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}
-- name: clone-vp-install
+        application: ${{ inputs.intent.application }}
+        package: ${{ steps["clone-vp-read-package"].outputs.stdout }}
+        pnpm_lock: ${{ steps["clone-vp-read-pnpm_lock"].outputs.stdout }}
+- name: clone-vp-workspaces
   labels:
     role: swamp
   dependsOn:
   - job: clone-vp-capture
+    condition:
+      type: succeeded
+  steps:
+  - name: clone-vp-read-workspace
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("ids-clone--0-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("id-clone-vp-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["find", self.link.directory, "-maxdepth", "1", "-type", "f", "-name", "package.json", "-exec", "cat", "--", "{}", "+"] }}
+    forEach:
+      item: link
+      in: ${{ steps["clone-vp-links"].outputs.links }}
+  - name: clone-vp-requirements
+    labels:
+      role: swamp
+    dependsOn:
+    - step: clone-vp-read-workspace
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-vp-requirements'
+      behaviorName: ${{ "idm-clone--1" }}
+      methodName: capture
+      inputs:
+        package: ${{ steps["clone-vp-read-package"].outputs.stdout }}
+        pnpm_lock: ${{ steps["clone-vp-read-pnpm_lock"].outputs.stdout }}
+        npm_lock: ${{ steps["clone-vp-read-npm_lock"].outputs.stdout }}
+        node_version: ${{ steps["clone-vp-read-node_version"].outputs.stdout }}
+        nvmrc: ${{ steps["clone-vp-read-nvmrc"].outputs.stdout }}
+        home: ${{ steps["clone-vp-home"].outputs.stdout }}
+        store: ${{ steps["clone-vp-store"].outputs.stdout }}
+        links: ${{ steps["clone-vp-links"].outputs.links }}
+        workspaces: ${{ steps.filter(k, k.startsWith("clone-vp-read-workspace-")).map(k, steps[k].outputs.stdout) }}
+- name: clone-vp-install
+  labels:
+    role: swamp
+  dependsOn:
+  - job: clone-vp-workspaces
     condition:
       type: succeeded
   steps:

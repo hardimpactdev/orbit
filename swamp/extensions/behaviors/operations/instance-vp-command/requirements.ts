@@ -9,10 +9,82 @@ type Context = {
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
 };
 const Observation = z.object({ stdout: z.string() }).passthrough();
+const Link = z.object({ link: z.string(), directory: z.string().startsWith("/") }).strict();
+const Captured = z.object({
+    package: z.string(),
+    pnpm_lock: z.string(),
+    npm_lock: z.string(),
+    node_version: z.string(),
+    nvmrc: z.string(),
+    home: z.string(),
+    store: z.string(),
+    links: z.array(Link),
+    workspaces: z.array(z.object({ step: z.string(), stdout: z.string() })),
+}).strict();
+// A file the Node did not have was read as empty output.
+const present = (stdout: string) => stdout === "" ? null : stdout;
+function packageJson(stdout: string): Record<string, unknown> {
+    const value = JSON.parse(present(stdout) ?? "{}");
+    if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("tool.project_invalid");
+    return value;
+}
+function usesVitePlus(pkg: Record<string, unknown>) {
+    const dependencies = { ...(pkg.dependencies as object ?? {}), ...(pkg.devDependencies as object ?? {}) };
+    return Object.entries(dependencies).some(([name, spec]) =>
+        name === "vite-plus" || (typeof spec === "string" && spec.startsWith("npm:vite-plus@"))
+    );
+}
+/** The pnpm `link:` targets inside the application that may hold the vite-plus workspace. */
+export function workspaceLinks(application: string, pkg: string, pnpmLock: string) {
+    if (!usesVitePlus(packageJson(pkg))) return [];
+    const root = application.replace(/\/+$/, "");
+    const links = new Map<string, string>();
+    for (const [, link] of pnpmLock.matchAll(/version: ["']?link:([^\s"']+)/g)) {
+        const parts: string[] = [];
+        for (const part of (root + "/" + link).split("/").slice(1)) {
+            if (part === "..") parts.pop();
+            else if (part !== "" && part !== ".") parts.push(part);
+        }
+        const directory = "/" + parts.join("/");
+        if (directory.startsWith(root + "/")) links.set("link:" + link, directory);
+    }
+    return [...links].map(([link, directory]) => ({ link, directory }));
+}
+const Candidates = ["/opt/orbit/vite-plus", ".vite-plus", ".local/share/vite-plus"];
+/** Builds the selection material from the reads; the Node held no staged copy. */
+export function material(raw: z.infer<typeof Captured>) {
+    const pkg = packageJson(raw.package);
+    const home = z.string().startsWith("/").parse(raw.home.trim());
+    const found = new Set(raw.store.split("\n").map((line) => line.trim()).filter(Boolean));
+    const scopes = Candidates.map((path) => path.startsWith("/") ? path : home + "/" + path);
+    const scope = usesVitePlus(pkg) ? scopes.find((path) => found.has(path + "/bin/vp")) : undefined;
+    const workspaces: Record<string, unknown> = {};
+    for (const row of raw.workspaces) {
+        const link = raw.links[Number(/-(\d+)$/.exec(row.step)?.[1] ?? NaN)];
+        const workspace = packageJson(row.stdout);
+        if (link && workspace.name === "vite-plus") workspaces[link.link] = workspace.version;
+    }
+    return {
+        store: scope ?? scopes[2],
+        manager_required: scope === undefined,
+        package: pkg,
+        locks: Object.fromEntries(
+            [["pnpm-lock.yaml", raw.pnpm_lock], ["package-lock.json", raw.npm_lock]].filter(([, text]) => present(text) !== null),
+        ),
+        workspaces,
+        ".node-version": present(raw.node_version),
+        ".nvmrc": present(raw.nvmrc),
+    };
+}
 export const behavior = {
     type: "@nckrtl/instance-vp-requirements",
-    version: "2026.11.01.1",
+    version: "2026.11.02.1",
     resources: {
+        links: {
+            schema: z.object({ links: z.array(Link) }),
+            lifetime: "1d",
+            garbageCollection: 10,
+        },
         result: {
             schema: z.object({
                 runtime: VpRuntime.nullable(),
@@ -24,25 +96,24 @@ export const behavior = {
         },
     },
     methods: {
+        links: {
+            description: "Select the linked workspace folders to read for vite-plus",
+            arguments: z.object({ application: z.string().startsWith("/"), package: z.string(), pnpm_lock: z.string() }),
+            execute: async (args: { application: string; package: string; pnpm_lock: string }, ctx: Context) => {
+                const result = { links: workspaceLinks(args.application, args.package, args.pnpm_lock) };
+                await ctx.writeResource("links", "links", result);
+                return result;
+            },
+        },
         capture: {
-            description:
-                "Select canonical pinned VP requirements from a private manifest file",
-            arguments: z.object({ path: z.string() }),
-            execute: async ({ path }: { path: string }, ctx: Context) => {
-                const info = await Deno.lstat(path);
-                if (!info.isFile || info.isSymlink || info.size > 67108864) {
-                    throw new Error("tool.project_invalid");
-                }
-                const material = JSON.parse(await Deno.readTextFile(path));
-                const store = z.string().startsWith("/").parse(material.store);
-                const runtime = vpRequirements(material, store);
-                await Deno.remove(path);
+            description: "Select canonical pinned VP requirements from the read manifests",
+            arguments: Captured,
+            execute: async (args: z.infer<typeof Captured>, ctx: Context) => {
+                const raw = material(Captured.parse(args));
                 const result = {
                     ready: true as const,
-                    runtime,
-                    manager_required: z.boolean().parse(
-                        material.manager_required,
-                    ),
+                    runtime: vpRequirements(raw, raw.store),
+                    manager_required: raw.manager_required,
                 };
                 await ctx.writeResource("result", "result", result);
                 return result;

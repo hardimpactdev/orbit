@@ -1,42 +1,71 @@
 import { expression as e, instanceActions } from "./native_steps.ts";
 type Fields = Record<string, unknown>;
-/** The stock CLI owns runtime download, registry configuration and package-manager store locks. */
+/** Manifest files the requirement selection reads; each is one read-only official SSH exec. */
+export const VpManifests = {
+    package: "package.json",
+    pnpm_lock: "pnpm-lock.yaml",
+    npm_lock: "package-lock.json",
+    node_version: ".node-version",
+    nvmrc: ".nvmrc",
+} as const;
+/** One read: a missing regular file prints nothing and still exits 0, so absent is a result, not a failure. */
+export function manifestRead(directory: string, file: string) {
+    return '["find", ' + directory + ', "-maxdepth", "1", "-type", "f", "-name", "' + file +
+        '", "-exec", "cat", "--", "{}", "+"]';
+}
+/** Reads the manifests and the VP store on the Node; selection stays on 209. */
 export function vpCaptureSteps(
     name: string,
     intent: string,
 ): Fields[] {
-    const a = instanceActions(
-            name,
-            intent + ".ssh_execution",
-            undefined,
-            "@nckrtl/instance-vp-assets",
-        ),
-        o = a.output;
-    const file = '"/tmp/orbit-instance-" + run.id + "/project.json"';
-    a.add("local-directory", {
-        type: "behavior",
-        behaviorType: "command/shell",
-        behaviorName: e('"vp-local"'),
-        methodName: "execute",
-        inputs: {
-            run: 'umask 077; mkdir -p -- "$ORBIT_DIRECTORY"',
-            env: { ORBIT_DIRECTORY: e('"/tmp/orbit-instance-"+run.id') },
+    const a = instanceActions(name, intent + ".ssh_execution");
+    for (const [key, file] of Object.entries(VpManifests)) {
+        a.sshAction("read-" + key, "exec", { argv: e(manifestRead(intent + ".application", file)) });
+    }
+    a.sshAction("home", "exec", { argv: ["realpath", "-s", "--", "."] });
+    a.sshAction("store", "exec", {
+        argv: [
+            "find", "/opt", ".", "-maxdepth", "4", "(",
+            "-path", "/opt/orbit/vite-plus/bin/vp", "-o",
+            "-path", "./.vite-plus/bin/vp", "-o",
+            "-path", "./.local/share/vite-plus/bin/vp", ")",
+            "-type", "f", "-exec", "realpath", "-s", "--", "{}", "+",
+        ],
+    });
+    a.metadata(
+        "links",
+        "links",
+        {
+            application: e(intent + ".application"),
+            package: e(a.output("read-package") + ".stdout"),
+            pnpm_lock: e(a.output("read-pnpm_lock") + ".stdout"),
         },
-    });
-    a.script("project", "project_material", {
-        application: e(intent + ".application"),
-        destination: e(file),
-    });
-    a.sshAction("private-copy", "copy", {
-        src: e(file),
-        dst: e(file),
-        direction: "from",
+        "@nckrtl/instance-vp-requirements",
+    );
+    return a.steps;
+}
+/** Linked workspace manifests fan out from the capture job's output, then the selection runs. */
+export function vpWorkspaceSteps(name: string, intent: string): Fields[] {
+    const a = instanceActions(name, intent + ".ssh_execution");
+    const capture = (suffix: string) => 'steps["' + name + "-" + suffix + '"].outputs.stdout';
+    a.sshAction("read-workspace", "exec", { argv: e(manifestRead("self.link.directory", "package.json")) }, {
+        forEach: { item: "link", in: e('steps["' + name + '-links"].outputs.links') },
     });
     a.metadata(
         "requirements",
         "capture",
-        { path: e(file) },
+        {
+            ...Object.fromEntries(Object.keys(VpManifests).map((key) => [key, e(capture("read-" + key))])),
+            home: e(capture("home")),
+            store: e(capture("store")),
+            links: e('steps["' + name + '-links"].outputs.links'),
+            workspaces: e(
+                'steps.filter(k, k.startsWith("' + name + '-read-workspace-")).map(k, steps[k].outputs.stdout)',
+            ),
+        },
         "@nckrtl/instance-vp-requirements",
+        // An empty fan-out skips the read step; a failed read leaves its link unresolved and the selection refuses.
+        { dependsOn: [{ step: name + "-read-workspace", condition: { type: "always" } }] },
     );
     return a.steps;
 }
@@ -147,7 +176,7 @@ export function vpInstallSteps(name: string, intent: string): Fields[] {
     return a.steps;
 }
 
-/** Two native jobs because e459 expands fan-outs from prior-job outputs. */
+/** Three native jobs because e459 expands fan-outs from prior-job outputs. */
 export function vpPreparationJobs(
     name: string,
     intent: string,
@@ -159,10 +188,18 @@ export function vpPreparationJobs(
         dependsOn: [{ job: dependencyJob, condition: { type: "succeeded" } }],
         steps: vpCaptureSteps(name, intent),
     }, {
-        name: name + "-install",
+        name: name + "-workspaces",
         labels: { role: "swamp" },
         dependsOn: [{
             job: name + "-capture",
+            condition: { type: "succeeded" },
+        }],
+        steps: vpWorkspaceSteps(name, intent),
+    }, {
+        name: name + "-install",
+        labels: { role: "swamp" },
+        dependsOn: [{
+            job: name + "-workspaces",
             condition: { type: "succeeded" },
         }],
         steps: vpInstallSteps(name, intent),

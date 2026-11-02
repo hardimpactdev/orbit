@@ -90,10 +90,10 @@ flowchart TD
     P0 --> P1 --> P2 --> P3 --> P4 --> P5
   end
 
-  subgraph VP["jobs clone-vp-capture + clone-vp-install: 14 steps"]
-    V1["capture project.json, requirements: 5 steps, 2 SSH"]
+  subgraph VP["jobs clone-vp-capture + clone-vp-workspaces + clone-vp-install: 19 steps"]
+    V1["read 5 manifests, home, store; links: 8 steps, 7 SSH exec"]
     V2["manager, cli, install, inventory, verify, result:<br/>9 steps, 4 SSH"]
-    V1 --> V2
+    V1 --> W1["read each linked workspace package.json, select requirements: 2 steps"] --> V2
   end
 
   R["job clone: result (1 step)"]
@@ -131,7 +131,7 @@ Legacy action to Swamp steps on main. "Steps" counts declared steps.
 | Source | 3 agent calls | 20 destination source steps, same chain as `instance.create` | 20 | **3 → 20**; dev checkout instead of a production home |
 | Profile | 1 agent call + Gateway classifier | `source-profile-assets`, `source-profile-read`, `source-result` | 3 | |
 | Environment | Gateway copy + 2 agent calls | admission copies the store; `environment` writes `.env` | 1 | production mode not forced |
-| Vite+ | none in clone | `clone-vp-capture` (5), `clone-vp-install` (9) | 14 | new |
+| Vite+ | none in clone | `clone-vp-capture` (8), `clone-vp-workspaces` (2), `clone-vp-install` (9) | 19 | new |
 | SQLite | 8 calls (optional) | refused | 0 | **dropped** |
 | Definitions | Gateway records | refused | 0 | **dropped** |
 | Route | about 10 calls + DNS | refused | 0 | **dropped** |

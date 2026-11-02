@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { behavior } from "./requirements.ts";
+import { behavior, material, workspaceLinks } from "./requirements.ts";
 import { vpPreparationJobs } from "./steps.ts";
 const runtime = {
     store: "/home/app/.vite-plus",
@@ -51,7 +51,7 @@ Deno.test("read-only inventory requires both exact installed versions", async ()
 });
 Deno.test("VP graph gates machine installer to absent manager and uses read-only proof", () => {
     const jobs = vpPreparationJobs("vp", "inputs.intent", "before");
-    const steps = jobs[1].steps as Record<string, any>[];
+    const steps = jobs[2].steps as Record<string, any>[];
     const manager = steps.find((row) => row.name === "vp-manager")!;
     assertEquals(manager.forEach.in.includes(".manager_required"), true);
     const install = steps.find((row) => row.name === "vp-install")!;
@@ -69,4 +69,47 @@ Deno.test("VP graph gates machine installer to absent manager and uses read-only
             true,
         );
     }
+});
+
+Deno.test("each manifest is one read-only exec whose absent file is empty output", () => {
+    const jobs = vpPreparationJobs("vp", "inputs.intent", "before");
+    const capture = jobs[0].steps as Record<string, any>[];
+    const reads = capture.filter((row) => String(row.name).startsWith("vp-read-"));
+    assertEquals(reads.map((row) => row.name), ["vp-read-package", "vp-read-pnpm_lock", "vp-read-npm_lock", "vp-read-node_version", "vp-read-nvmrc"]);
+    for (const read of reads) {
+        assertEquals(read.task.methodName, "exec");
+        assertEquals(read.task.inputs.argv.includes('"-exec", "cat", "--", "{}", "+"'), true);
+        assertEquals("script" in read.task.inputs, false);
+    }
+    assertEquals(jobs.flatMap((job) => job.steps as Record<string, any>[]).some((row) => row.task.methodName === "script" && row.task.inputs?.interpreter === "python3" && String(row.name).startsWith("vp-read")), false);
+});
+
+Deno.test("only in-application pnpm links of a vite-plus project are read", () => {
+    const pkg = JSON.stringify({ devDependencies: { "vite-plus": "link:packages/vp" } });
+    const lock = "version: link:packages/vp\nversion: 'link:../outside'\nversion: link:./packages/vp\n";
+    assertEquals(workspaceLinks("/srv/app", pkg, lock), [
+        { link: "link:packages/vp", directory: "/srv/app/packages/vp" },
+        { link: "link:./packages/vp", directory: "/srv/app/packages/vp" },
+    ]);
+    assertEquals(workspaceLinks("/srv/app", "{}", lock), []);
+    assertEquals(workspaceLinks("/srv/app", "", lock), []);
+});
+
+Deno.test("selection material treats empty reads as absent and prefers the machine store", () => {
+    const raw = {
+        package: JSON.stringify({ devDependencies: { "vite-plus": "link:packages/vp" } }),
+        pnpm_lock: "lock", npm_lock: "", node_version: "24.2.0\n", nvmrc: "",
+        home: "/home/app\n",
+        store: "/home/app/.vite-plus/bin/vp\n/opt/orbit/vite-plus/bin/vp\n",
+        links: [{ link: "link:packages/vp", directory: "/srv/app/packages/vp" }],
+        workspaces: [{ step: "vp-read-workspace-0", stdout: JSON.stringify({ name: "vite-plus", version: "0.2.1" }) }],
+    };
+    const result = material(raw);
+    assertEquals(result.store, "/opt/orbit/vite-plus");
+    assertEquals(result.manager_required, false);
+    assertEquals(result.locks, { "pnpm-lock.yaml": "lock" });
+    assertEquals(result.workspaces, { "link:packages/vp": "0.2.1" });
+    assertEquals([result[".node-version"], result[".nvmrc"]], ["24.2.0\n", null]);
+    const bare = material({ ...raw, store: "" });
+    assertEquals([bare.store, bare.manager_required], ["/home/app/.local/share/vite-plus", true]);
 });

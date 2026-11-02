@@ -33,16 +33,18 @@ class InstanceVpNative(NativeTestCase):
   self.vp=scope/'bin/vp'
   self.vp.write_text('#!/usr/bin/env python3\nimport json,sys\nfrom pathlib import Path\np=Path('+repr(str(self.calls))+')\np.write_text((p.read_text() if p.exists() else "")+json.dumps(sys.argv[1:])+"\\n")\nif sys.argv[1:]==["--version"]: print("vp 1.4.0")\nelif "list" in sys.argv: print(json.dumps({"node":[{"version":"24.2.0"}],"package_managers":{"pnpm":[{"version":"10.0.0"}]}}))\n')
   self.vp.chmod(0o700)
-  material=self.repo/'extensions/behaviors/operations/instance-vp-command/scripts/project_material.py'
-  material.write_text(material.read_text().replace("candidates = [Path('/opt/orbit/vite-plus'), home / '.vite-plus', home / '.local/share/vite-plus']",'candidates = [Path('+repr(str(scope))+')]'))
   deno=os.environ.get('DENO_BIN','/tmp/lane4-deno-2.9.8/deno')
   module=(ROOT/'extensions/behaviors/operations/instance-vp-command/steps.ts').as_uri()
   graph=subprocess.run([deno,'eval','import {vpPreparationJobs} from '+json.dumps(module)+';console.log(JSON.stringify(vpPreparationJobs("vp","inputs.intent","before")))'],check=True,capture_output=True,text=True)
-  jobs=[{'name':'before','steps':[{'name':'ready','task':{'type':'assert','expr':'true','message':'Fixture ready'}}]}]+json.loads(graph.stdout.replace('/tmp/orbit-instance-',str(self.control)+'/stage-'))
+  requirements=self.repo/'extensions/behaviors/operations/instance-vp-command/requirements.ts'
+  requirements.write_text(requirements.read_text().replace('"/opt/orbit/vite-plus"',json.dumps(str(scope))))
+  # The machine store probe looks only at the disposable fixture scope.
+  graph_text=graph.stdout.replace('"/opt/orbit/vite-plus/bin/vp"',json.dumps(str(scope/'bin/vp'))).replace('"/opt"',json.dumps(str(self.host)))
+  jobs=[{'name':'before','steps':[{'name':'ready','task':{'type':'assert','expr':'true','message':'Fixture ready'}}]}]+json.loads(graph_text)
   for job in jobs:
-   job.pop('target',None)
+   job.pop('target',None); job.pop('labels',None)
    for step in job['steps']:
-    step.pop('target',None)
+    step.pop('target',None); step.pop('labels',None)
     task=step['task']
     if task.get('behaviorType')=='@swamp/ssh':
      task['globalArgs'].update(sshBinary=str(self.repo/'ssh'),scpBinary=str(self.repo/'scp'))
@@ -73,7 +75,7 @@ if '-O' in sys.argv or '-N' in sys.argv or '-MNf' in sys.argv: sys.exit(0)
 command=sys.argv[-1].replace(CONTROL,HOST)
 body=sys.stdin.buffer.read().replace(CONTROL.encode(),HOST.encode())
 if 'sudo' in command or b'Install only the admitted' in body: raise AssertionError('Unadmitted installer in no-VP fixture')
-if command.startswith('test ') or command.startswith('mkdir ') or command.startswith('chmod ') or command.startswith('rm ') or command.startswith('python') or '/usr/bin/' in command or command.startswith('sh ') or command.startswith('/bin/'):
+if command.startswith('test ') or command.startswith("'find' ") or command.startswith("'realpath' ") or command.startswith('mkdir ') or command.startswith('chmod ') or command.startswith('rm ') or command.startswith('python') or '/usr/bin/' in command or command.startswith('sh ') or command.startswith('/bin/'):
     result=subprocess.run(['/bin/sh','-c',command],input=body);sys.exit(result.returncode)
 raise AssertionError('Unexpected SSH action: '+command)
 '''
