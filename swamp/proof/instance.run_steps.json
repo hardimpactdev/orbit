@@ -15,8 +15,8 @@
         "name": "Proof run steps",
         "type": "node-package",
         "root": ".",
-        "repository_url": "https://github.com/octocat/Hello-World.git",
-        "default_branch": "master"
+        "repository_url": "https://github.com/octocat/Spoon-Knife.git",
+        "default_branch": "main"
       }
     },
     {
@@ -48,10 +48,30 @@
     "status": "succeeded"
   },
   "phases": [
-    {"name": "Read the scripts", "job": "setup", "step": "Read the scripts", "budget_seconds": 15},
-    {"name": "Check the checkout", "job": "setup", "step": "Check the checkout", "budget_seconds": 20},
-    {"name": "Run the setup steps", "job": "setup", "step": "Run the setup steps", "budget_seconds": 30},
-    {"name": "Report the result", "job": "setup", "step": "Report the result", "budget_seconds": 15}
+    {
+      "name": "Read the scripts",
+      "job": "setup",
+      "step": "Read the scripts",
+      "budget_seconds": 15
+    },
+    {
+      "name": "Check the checkout",
+      "job": "setup",
+      "step": "Check the checkout",
+      "budget_seconds": 20
+    },
+    {
+      "name": "Run the setup steps",
+      "job": "setup",
+      "step": "Run the setup steps",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Report the result",
+      "job": "setup",
+      "step": "Report the result",
+      "budget_seconds": 15
+    }
   ],
   "parity": "swamp/proof/instance.run_steps/parity.py"
 }
