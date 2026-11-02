@@ -1,18 +1,11 @@
 manifestVersion: 1
 name: '@nckrtl/task-turn-scripts'
-version: 2026.10.31.1
+version: 2026.11.02.1
 visibility: private
 license: MIT
 description: Pi turn metadata and separate native workspace and API actions.
 behaviors:
 - operations/task-turn/mod.ts
 additionalFiles:
-- scripts/difference.py
-- scripts/interrupt.py
-- scripts/message_send.py
-- scripts/observe.py
 - scripts/receipt_helper.py
 - scripts/receipt_prepare.py
-- scripts/receipt_read.py
-- scripts/session_create.py
-- scripts/public_output.py

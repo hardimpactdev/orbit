@@ -298,17 +298,21 @@ jobs:
       behaviorType: command/shell
       methodName: execute
       inputs:
-        run: 'python3 -B "$ORBIT_ACTION"
-
-          '
+        run: &pi_write |
+          set -eu
+          curl --fail --silent --show-error --location --max-redirs 0 --max-time 30 \
+            --variable %ORBIT_PI_TOKEN --expand-header 'Authorization: Bearer {{ORBIT_PI_TOKEN}}' \
+            --variable %ORBIT_PI_BODY --expand-data '{{ORBIT_PI_BODY}}' \
+            --header 'Content-Type: application/json' --output /dev/null "$ORBIT_PI_URL$ORBIT_PI_PATH"
+          printf '%s\n' '{"accepted":true}'
         env:
-          ORBIT_TURN_INPUT: ${{ steps.prepare.outputs.intent_json }}
           ORBIT_PI_TOKEN: ${{ vault.get(inputs.execution_secrets.pi_token.vault, inputs.execution_secrets.pi_token.key) }}
           ORBIT_PI_URL: ${{ steps.prepare.outputs.pi_url }}
+          ORBIT_PI_PATH: /sessions
           ORBIT_PI_BODY: ${{ steps.prepare.outputs.create_json }}
-          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/session_create.py" }}
       behaviorName: ${{ "task-turn-session_create" }}
     guard: ${{ !inputs.intent.new_session }}
+    writes: true
   - name: message_send
     labels: {role: swamp}
     dependsOn:
@@ -326,16 +330,14 @@ jobs:
       behaviorType: command/shell
       methodName: execute
       inputs:
-        run: 'python3 -B "$ORBIT_ACTION"
-
-          '
+        run: *pi_write
         env:
-          ORBIT_TURN_INPUT: ${{ steps.prepare.outputs.intent_json }}
           ORBIT_PI_TOKEN: ${{ vault.get(inputs.execution_secrets.pi_token.vault, inputs.execution_secrets.pi_token.key) }}
           ORBIT_PI_URL: ${{ steps.prepare.outputs.pi_url }}
+          ORBIT_PI_PATH: ${{ "/sessions/" + inputs.intent.session_id + "/messages" }}
           ORBIT_PI_BODY: ${{ steps.prepare.outputs.send_json }}
-          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/message_send.py" }}
       behaviorName: ${{ "task-turn-message_send" }}
+    writes: true
   - name: observe
     labels: {role: swamp}
     dependsOn:
@@ -347,14 +349,36 @@ jobs:
       behaviorType: command/shell
       methodName: execute
       inputs:
-        run: 'python3 -B "$ORBIT_ACTION"
-
-          '
+        # The first matching terminal event ends the read, so curl may then get EPIPE: only
+        # jq's status counts. jq diagnostics can quote Pi text and never reach history.
+        run: |
+          set -u
+          status=0
+          curl --fail --silent --location --max-redirs 0 --max-time 1800 --no-buffer \
+            --variable %ORBIT_PI_TOKEN --expand-header 'Authorization: Bearer {{ORBIT_PI_TOKEN}}' \
+            "$ORBIT_PI_URL/sessions/$ORBIT_PI_SESSION/stream?max_bytes=1048576" |
+            jq -cRn --arg turn "$ORBIT_PI_TURN" -f /dev/fd/3 3<<'PI_FILTER' 2>/dev/null || status=$?
+          def fail($status): "" | halt_error($status);
+          (first(inputs | if utf8bytelength > 1048576 then fail(21) else (try fromjson catch fail(24)) end
+            | select(type == "object" and .turnId == $turn and (.state == "done" or .state == "failed"))) // fail(22)) as $event |
+          ["input","output","cacheRead","cacheWrite","total","calls","peakContext"] as $keys |
+          (reduce $keys[] as $key ({}; .[$key] = (if ($event.usage | type) == "object" and ($event.usage | has($key)) then $event.usage[$key] else 0 end))) as $usage |
+          if all($usage[]; type == "number" and isfinite and . >= 0) then {state:$event.state, turnId:$turn, usage:$usage} else fail(23) end
+          PI_FILTER
+          case $status in
+            0) exit 0 ;;
+            21) code=tasks.pi_event_too_large ;;
+            22) code=tasks.pi_completion_unconfirmed ;;
+            23) code=tasks.pi_usage_invalid ;;
+            *) code=tasks.pi_event_invalid ;;
+          esac
+          printf '%s\n' "$code" >&2
+          exit 1
         env:
-          ORBIT_TURN_INPUT: ${{ steps.prepare.outputs.intent_json }}
           ORBIT_PI_TOKEN: ${{ vault.get(inputs.execution_secrets.pi_token.vault, inputs.execution_secrets.pi_token.key) }}
           ORBIT_PI_URL: ${{ steps.prepare.outputs.pi_url }}
-          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/observe.py" }}
+          ORBIT_PI_SESSION: ${{ inputs.intent.session_id }}
+          ORBIT_PI_TURN: ${{ "operation-" + string(inputs.operation_id) }}
         timeout: 1800000
       behaviorName: ${{ "task-turn-observe" }}
   - name: snapshot_after_index
@@ -662,12 +686,53 @@ jobs:
       behaviorType: command/shell
       methodName: execute
       inputs:
-        run: 'python3 -B "$ORBIT_ACTION" "$ORBIT_RECEIPT"
-
-          '
+        # One redaction filter for receipt and diff text. jq diagnostics can quote private
+        # input, so they never reach history: a failure prints one fixed code.
+        run: &public_output |
+          set -u
+          if [ "$ORBIT_PUBLIC_MODE" = receipt ]; then
+            if [ ! -e "$ORBIT_RECEIPT" ]; then printf 'null\n'; exit 0; fi
+            if [ -L "$ORBIT_RECEIPT" ] || [ "$(stat -c %s -- "$ORBIT_RECEIPT")" -gt 65536 ]; then
+              printf 'tasks.receipt_invalid\n' >&2
+              exit 1
+            fi
+            set -- --arg counts "" --arg patch "" --rawfile receipt "$ORBIT_RECEIPT"
+          else
+            set -- --arg receipt "" --rawfile counts "$ORBIT_COUNTS" --rawfile patch "$ORBIT_PATCH"
+          fi
+          status=0
+          jq -cn --arg mode "$ORBIT_PUBLIC_MODE" "$@" -f /dev/fd/3 3<<'PUBLIC_FILTER' 2>/dev/null || status=$?
+          def fail: "" | halt_error(1);
+          def redact:
+            gsub("(?<![A-Za-z0-9])[a-fA-F0-9]{64}(?![A-Za-z0-9])"; "[REDACTED]") |
+            gsub("\u001b\\[[0-?]*[ -/]*[@-~]"; "") |
+            gsub("-----BEGIN [A-Z0-9 ]+-----[\\s\\S]*?(?:-----END [A-Z0-9 ]+-----|$)"; "[REDACTED]") |
+            (if contains("-----END ") then split("-----END ")[-1] | sub("^[\\s\\S]*?-----"; "") else . end) |
+            gsub("(?i)(?<scheme>\\b[a-z][a-z0-9+.-]*://)[^/@\\s]+@"; "\(.scheme)[REDACTED]@") |
+            gsub("(?i)(?:Proxy-)?Authorization\\s*:[^\\r\\n]*"; "Authorization: [REDACTED]") |
+            gsub("(?i)\\bBearer\\s+[A-Za-z0-9._+/=-]+"; "Bearer [REDACTED]") |
+            gsub("(?<![A-Za-z0-9])(?:gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{20,})"; "[REDACTED]") |
+            gsub("(?<q>[\"']?)(?<name>[A-Za-z][A-Za-z0-9_-]{0,255})\\k<q>(?<sep>\\s*[:=]\\s*)(?<value>\"[^\"\\r\\n]*\"|'[^'\\r\\n]*'|[^\\s,}&{\\[\\]]+)";
+              "\(.q)\(.name)\(.q)\(.sep)" +
+              (if .name | test("TOKEN|SECRET|PASSWORD|PASSWD|PASSPHRASE|CREDENTIAL|APIKEY|APPKEY|PRIVATEKEY|KEYS?"; "i") then "[REDACTED]" else .value end));
+          def public: walk(if type == "string" then redact else . end);
+          def count: if . == "-" then 0 elif test("^[0-9]+$") then tonumber else fail end;
+          if $mode == "receipt" then
+            $receipt | try fromjson catch fail | public
+          else
+            [$counts | split("\u0000")[] | select(length > 0) | split("\t") | if length < 3 then fail else . end |
+              {path: .[2:] | join("\t"), insertions: (.[0] | count), deletions: (.[1] | count)}] as $files |
+            ($patch | redact) as $diff |
+            {files: $files[:500], diff: $diff[:65536], files_complete: ($files | length <= 500), diff_available: ($diff | length <= 65536),
+             summary: {files: ($files | length), insertions: ([$files[].insertions] | add // 0), deletions: ([$files[].deletions] | add // 0)}} | public
+          end
+          PUBLIC_FILTER
+          [ "$status" -eq 0 ] && exit 0
+          if [ "$ORBIT_PUBLIC_MODE" = receipt ]; then printf 'tasks.receipt_invalid\n' >&2; else printf 'tasks.difference_invalid\n' >&2; fi
+          exit 1
         env:
-          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/receipt_read.py" }}
           ORBIT_RECEIPT: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/receipt.json" }}
+          ORBIT_PUBLIC_MODE: receipt
       behaviorName: task-turn-receipt-read
   - name: difference
     labels: {role: swamp}
@@ -683,13 +748,11 @@ jobs:
       behaviorType: command/shell
       methodName: execute
       inputs:
-        run: 'python3 -B "$ORBIT_ACTION" "$ORBIT_COUNTS" "$ORBIT_PATCH"
-
-          '
+        run: *public_output
         env:
-          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/difference.py" }}
           ORBIT_COUNTS: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/difference.numstat" }}
           ORBIT_PATCH: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/difference.patch" }}
+          ORBIT_PUBLIC_MODE: difference
       behaviorName: task-turn-difference
     guard: ${{ inputs.intent.role == "implementer" }}
   - name: interrupt
@@ -703,16 +766,15 @@ jobs:
       behaviorType: command/shell
       methodName: execute
       inputs:
-        run: 'python3 -B "$ORBIT_ACTION"
-
-          '
+        run: *pi_write
         env:
-          ORBIT_TURN_INPUT: ${{ steps.prepare.outputs.intent_json }}
           ORBIT_PI_TOKEN: ${{ vault.get(inputs.execution_secrets.pi_token.vault, inputs.execution_secrets.pi_token.key) }}
           ORBIT_PI_URL: ${{ steps.prepare.outputs.pi_url }}
-          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/interrupt.py" }}
+          ORBIT_PI_PATH: ${{ "/sessions/" + inputs.intent.session_id + "/interrupt" }}
+          ORBIT_PI_BODY: '{}'
       behaviorName: ${{ "task-turn-interrupt" }}
     guard: ${{ (has(steps.observe) && steps.observe.status == "succeeded") || !has(steps.message_send) || steps.message_send.status != "succeeded" }}
+    writes: true
   - name: restore_reset
     labels: {role: swamp}
     dependsOn:

@@ -198,7 +198,7 @@ export const turnDataMethods = {
                     "prepared",
                     {
                         ...prepare(args),
-                        directory: ctx.extensionFile("scripts/observe.py")
+                        directory: ctx.extensionFile("scripts/receipt_prepare.py")
                             .replace(/\/[^/]+$/, ""),
                     },
                 ),

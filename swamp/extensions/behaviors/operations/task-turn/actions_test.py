@@ -1,4 +1,4 @@
-"""Execute the workflow's shipped action scripts against Git and a Pi HTTP fixture."""
+"""Execute native workflow commands against Git and a Pi HTTP fixture."""
 
 import ast
 import json
@@ -10,6 +10,8 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+import yaml
 
 SCRIPTS = Path(__file__).with_name("scripts")
 TOKEN = "synthetic-pi-test-token-with-at-least-32-characters"
@@ -39,6 +41,8 @@ class PiHandler(BaseHTTPRequestHandler):
         self.wfile.write(
             (json.dumps({"state": "working", "turnId": "older"}) + "\n").encode()
         )
+        if getattr(self.server, "malformed", None):
+            self.wfile.write((self.server.malformed + "\n").encode())
         if not self.server.disconnect:
             self.wfile.write(
                 (
@@ -54,6 +58,11 @@ class PiHandler(BaseHTTPRequestHandler):
             )
 
     def respond(self, value):
+        if getattr(self.server, "redirect", False):
+            self.send_response(302)
+            self.send_header("Location", "/credential-destination")
+            self.end_headers()
+            return
         if self.headers.get("Authorization") != "Bearer " + TOKEN:
             self.send_response(401)
             self.end_headers()
@@ -108,6 +117,45 @@ class TurnActions(unittest.TestCase):
                     str(self.repo / ".git/orbit/patch"),
                 ]
             )
+        if name in {
+            "session_create",
+            "message_send",
+            "interrupt",
+            "observe",
+            "receipt_read",
+            "difference",
+        }:
+            flow = yaml.safe_load(
+                (
+                    Path(__file__).resolve().parents[4]
+                    / "workflows/workflow-operation-task-turn.yaml"
+                ).read_text()
+            )
+            step = next(
+                s for j in flow["jobs"] for s in j["steps"] if s["name"] == name
+            )
+            # command/shell runs `sh -c`, without errexit or pipefail.
+            args = ["sh", "-c", step["task"]["inputs"]["run"]]
+            extra = {
+                "ORBIT_PUBLIC_MODE": "receipt"
+                if name == "receipt_read"
+                else "difference",
+                "ORBIT_RECEIPT": str(self.repo / ".git/orbit/receipt.json"),
+                "ORBIT_COUNTS": str(self.repo / ".git/orbit/counts"),
+                "ORBIT_PATCH": str(self.repo / ".git/orbit/patch"),
+                **extra,
+            }
+            extra = {
+                "ORBIT_PI_PATH": {
+                    "session_create": "/sessions",
+                    "message_send": "/sessions/session-14/messages",
+                    "interrupt": "/sessions/session-14/interrupt",
+                }.get(name, ""),
+                "ORBIT_PI_SESSION": self.value["session_id"],
+                "ORBIT_PI_TURN": "operation-" + str(self.value["operation_id"]),
+                "ORBIT_PI_BODY": "{}",
+                **extra,
+            }
         result = subprocess.run(
             args,
             input=json.dumps(self.value) if remote else None,
@@ -190,6 +238,42 @@ class TurnActions(unittest.TestCase):
         self.assertIn("tasks.pi_completion_unconfirmed", result.stderr)
         self.assertEqual(len(server.calls), 1)
 
+    def test_pi_redirects_fail_without_forwarding_the_credential(self):
+        server, env = self.pi_server()
+        server.redirect = True
+        self.run_step("session_create", ok=False, **env)
+        self.assertEqual([path for path, _ in server.calls], ["/sessions"])
+
+    def test_public_receipt_redacts_private_formats_recursively(self):
+        self.run_step("receipt_prepare")
+        private = [
+            "a1" * 32,
+            "user:pass",
+            "ghp_" + "a" * 30,
+            "github_pat_" + "b" * 30,
+            "private-value",
+            "pem-private",
+        ]
+        text = (
+            private[0]
+            + " https://"
+            + private[1]
+            + "@example.invalid "
+            + private[2]
+            + " "
+            + private[3]
+            + "\nAuthorization: Bearer private-value\n"
+            + "MODEL_KEY=private-value\n-----BEGIN PRIVATE KEY-----\npem-private\n-----END PRIVATE KEY-----"
+        )
+        (self.repo / ".git/orbit/receipt.json").write_text(
+            json.dumps({"summary": text, "deliverables": {"key": text}})
+        )
+        receipt = self.run_step("receipt_read")
+        for value in private:
+            self.assertNotIn(value, json.dumps(receipt))
+        self.assertIn("[REDACTED]", receipt["summary"])
+        self.assertIn("key", receipt["deliverables"])
+
     def test_receipt_symlink_cannot_escape_into_host_file(self):
         root = self.repo / ".git/orbit"
         root.mkdir()
@@ -229,6 +313,44 @@ class TurnActions(unittest.TestCase):
         diff = self.run_step("difference")
         self.assertNotIn(credential, json.dumps(diff))
         self.assertIn("[REDACTED]", diff["diff"])
+
+    def test_pi_credential_reaches_curl_only_through_its_environment(self):
+        server, env = self.pi_server()
+        tools = Path(self.temp.name) / "tools"
+        tools.mkdir()
+        record = Path(self.temp.name) / "curl-argv"
+        real = subprocess.check_output(["which", "curl"], text=True).strip()
+        (tools / "curl").write_text(
+            '#!/bin/sh\nprintf "%s\\n" "$@" >> "' + str(record) + '"\n'
+            'exec "' + real + '" "$@"\n'
+        )
+        (tools / "curl").chmod(0o755)
+        path = str(tools) + ":" + os.environ["PATH"]
+        for name in ["session_create", "message_send", "observe", "interrupt"]:
+            self.run_step(name, **env, PATH=path)
+        self.assertEqual(len(server.calls), 4)
+        self.assertIn("%ORBIT_PI_TOKEN", record.read_text())
+        self.assertNotIn(TOKEN, record.read_text())
+
+    def test_malformed_pi_event_reports_one_fixed_code(self):
+        server, env = self.pi_server()
+        server.malformed = "not json private-pi-text"
+        result = self.run_step("observe", ok=False, **env)
+        self.assertEqual(result.stderr, "tasks.pi_event_invalid\n")
+        self.assertNotIn("private-pi-text", result.stdout)
+
+    def test_malformed_receipt_and_counts_report_one_fixed_code(self):
+        root = self.repo / ".git/orbit"
+        root.mkdir()
+        (root / "receipt.json").write_text('{"summary": private-receipt-text}')
+        result = self.run_step("receipt_read", ok=False)
+        self.assertEqual(result.stderr, "tasks.receipt_invalid\n")
+        self.assertNotIn("private-receipt-text", result.stdout)
+        (root / "counts").write_text("private-count\t1\tfile\0")
+        (root / "patch").write_text("")
+        result = self.run_step("difference", ok=False)
+        self.assertEqual(result.stderr, "tasks.difference_invalid\n")
+        self.assertNotIn("private-count", result.stdout)
 
     def test_every_shipped_action_compiles(self):
         for path in SCRIPTS.glob("*.py"):
