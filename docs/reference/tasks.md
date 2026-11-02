@@ -758,11 +758,25 @@ A failure in one source does not skip the others. The dispatch command exits suc
 
 ## Execution ownership
 
-Swamp drives each group through the API and MCP operations documented above. `tasks:tick` and tick orchestration are removed. Creating a todo group records intent; only Swamp starts its work. An operator starts a group's work item on serve with `swamp workflow run group-start --input workItem=tg-<group> --server wss://swamp.orbit`; the next `groups-driver` tick discovers it and owns it from there. At the plan stage the operator records the complete typed plan and its exact consent in one call, `swamp workflow run group-plan` with `workItem`, `plan` and `actor`; the next tick applies the consent and starts analysis. A resolution clears the matching assistance and records the answer without sending it to an agent. Swamp decides whether to retry or continue. Cancel and complete remain explicit API operations.
+Swamp drives each group through the API and MCP operations documented above. `tasks:tick` and tick orchestration are removed. Creating a todo group records intent; only Swamp starts its work.
 
 The Gateway retains task state, workspace leases, operation recovery, provider jobs and transcripts. A keyed operation performs only the requested primitive and records its result. Operation workers can resume an unfinished primitive; they do not choose the next task phase. Swamp owns admission capacity, lifecycle retries, PR observation and cleanup scheduling.
 
 The group execution lock waits at most five seconds for every waiting caller, including HTTP actions, operation workers and VM jobs. A caller that does not wait refuses immediately. A busy lock retains recorded state and leaves the caller to retry.
+
+### Start and plan a group
+
+Serve runs remote-only, so the operator calls two placed workflows:
+
+```sh
+swamp workflow run group-start --input workItem=tg-<group> --server wss://swamp.orbit
+swamp workflow run group-plan --input-file plan.yaml --server wss://swamp.orbit
+```
+
+- `group-start` starts the group's work item. The next `groups-driver` tick discovers it and owns it from there.
+- `group-plan` takes `workItem`, `plan` and `actor` at the plan stage.
+- It records the complete typed plan and its exact consent in one call.
+- The next tick applies the consent and starts analysis.
 
 ## Workspace lease
 

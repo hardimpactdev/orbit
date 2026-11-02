@@ -452,7 +452,7 @@ async function step(ctx: Ctx, workItem: string, killAt?: string): Promise<{ stat
 
 export const behavior = {
   type: "@nckrtl/orbit-driver",
-  version: "2026.11.2.2",
+  version: "2026.11.02.2",
   globalArguments: GlobalArgsSchema,
   resources: {
     launch: {
