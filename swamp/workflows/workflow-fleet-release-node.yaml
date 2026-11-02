@@ -1,6 +1,6 @@
 id: 3125b46d-bd66-4e0a-96bf-e336d7f182fc
 name: fleet-release-node
-description: Gate one fleet Node on 209, publish its CLI through the native child, record the outcome on 209, and for a rollout publish the observer on the Node.
+description: Gate one fleet Node on 209, publish its CLI through the native child, record the outcome, and for a rollout publish the pinned observer with official cfgmgmt, all from 209.
 vaults: []
 queueTimeout: 60
 inputs:
@@ -88,11 +88,11 @@ jobs:
         target_node_id: ${{ inputs.target_node_id }}
         gate: ${{ steps.gate.outputs }}
         native_cli: '${{ {"status": has(steps.cli) ? steps.cli.status : "skipped", "result": has(steps.cli) && steps.cli.status == "succeeded" && has(steps.cli.outputs.result) ? steps.cli.outputs.result : null} }}'
-  # The residual observer effect stays placed on its own Node until it is replaced; only a rollout runs it.
-  - name: observer
-    labels:
-      node: ${{ string(inputs.target_node_id) }}
+  # A rollout publishes the pinned observer from 209 over SSH, as node.converge does; it never runs on the Node's worker.
+  - name: observer_fetch
+    labels: {role: swamp}
     writes: true
+    allowFailure: true
     dependsOn:
     - step: record
       condition:
@@ -100,8 +100,112 @@ jobs:
     guard: ${{ inputs.kind != "fleet.rollout" || !steps.record.outputs.ok || steps.record.outputs.step != "cli" }}
     task:
       type: behavior
+      behaviorType: '@swamp/cfgmgmt/fetch'
+      behaviorName: ${{ "fleet-observer-fetch-" + string(inputs.target_node_id) }}
+      methodName: apply
+      globalArgs:
+        url: ${{ steps.gate.outputs.agent.url }}
+        path: /usr/local/bin/orbit-agent
+        checksum: ${{ "sha256:" + steps.gate.outputs.agent.sha256 }}
+        owner: root
+        group: root
+        mode: '0755'
+        nodeHost: ${{ steps.gate.outputs.ssh.target.host }}
+        nodeUser: ${{ steps.gate.outputs.ssh.target.user }}
+        nodePort: ${{ steps.gate.outputs.ssh.target.port }}
+        nodeIdentityFile: ${{ steps.gate.outputs.ssh.identity_file }}
+        become: true
+      inputs: {}
+  # The running binary's digest, read beside the fetch, decides whether the agent restarts.
+  - name: observer_read
+    labels: {role: swamp}
+    allowFailure: true
+    dependsOn:
+    - step: record
+      condition:
+        type: succeeded
+    guard: ${{ inputs.kind != "fleet.rollout" || !steps.record.outputs.ok || steps.record.outputs.step != "cli" }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "fleet-observer-ssh-" + string(inputs.target_node_id) }}
+      methodName: exec
+      globalArgs: &observer_ssh
+        name: ${{ "fleet-observer-ssh-" + string(inputs.target_node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ steps.gate.outputs.ssh.target.user }}
+          port: ${{ steps.gate.outputs.ssh.target.port }}
+          identityFile: ${{ steps.gate.outputs.ssh.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ steps.gate.outputs.ssh.target.host }}
+          transport:
+            hostKeys: ${{ steps.gate.outputs.ssh.target.host_keys }}
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 35
+        okExitCodes: any
+        argv: ${{ ["timeout", "30", "sh", "-c", "sha256sum /proc/$(systemctl show --property=MainPID --value orbit-agent.service)/exe; systemctl is-active orbit-agent.service"] }}
+  - name: observer_restart
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - step: observer_fetch
+      condition:
+        type: succeeded
+    - step: observer_read
+      condition:
+        type: always
+    guard: ${{ inputs.kind != "fleet.rollout" || !steps.record.outputs.ok || steps.record.outputs.step != "cli" || (size(data.latest("fleet-observer-fetch-" + string(inputs.target_node_id), steps.gate.outputs.ssh.target.host).attributes.changes) == 0 && "observer_read" in steps && steps.observer_read.status == "succeeded" && steps.observer_read.outputs.stdout.startsWith(steps.gate.outputs.agent.sha256)) }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "fleet-observer-ssh-" + string(inputs.target_node_id) }}
+      methodName: exec
+      globalArgs: *observer_ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 95
+        argv: ["timeout", "90", "systemctl", "restart", "orbit-agent.service"]
+  # The end check: the pinned digest runs on an active unit.
+  - name: observer_check
+    labels: {role: swamp}
+    allowFailure: true
+    dependsOn:
+    - step: observer_restart
+      condition:
+        type: always
+    guard: ${{ inputs.kind != "fleet.rollout" || !steps.record.outputs.ok || steps.record.outputs.step != "cli" || !("observer_fetch" in steps) || steps.observer_fetch.status != "succeeded" }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "fleet-observer-ssh-" + string(inputs.target_node_id) }}
+      methodName: exec
+      globalArgs: *observer_ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 35
+        okExitCodes: any
+        argv: ${{ ["timeout", "30", "sh", "-c", "sha256sum /proc/$(systemctl show --property=MainPID --value orbit-agent.service)/exe; systemctl is-active orbit-agent.service"] }}
+  - name: observer
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - step: observer_fetch
+      condition:
+        type: always
+    - step: observer_check
+      condition:
+        type: always
+    guard: ${{ inputs.kind != "fleet.rollout" || !steps.record.outputs.ok || steps.record.outputs.step != "cli" }}
+    task:
+      type: behavior
       behaviorType: '@nckrtl/fleet-release'
-      behaviorName: fleet-release-node-${{ inputs.target_node_id }}
+      behaviorName: fleet-release-observer-${{ inputs.target_node_id }}
       methodName: observer
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -110,3 +214,8 @@ jobs:
         run_id: ${{ inputs.run_id }}
         target_node_id: ${{ inputs.target_node_id }}
         record: ${{ steps.record.outputs }}
+        agent: ${{ steps.gate.outputs.agent }}
+        fetch: ${{ steps.observer_fetch.status }}
+        changed: ${{ steps.observer_fetch.status == "succeeded" && size(data.latest("fleet-observer-fetch-" + string(inputs.target_node_id), steps.gate.outputs.ssh.target.host).attributes.changes) > 0 }}
+        restart: '${{ "observer_restart" in steps ? steps.observer_restart.status : "skipped" }}'
+        running: '${{ "observer_check" in steps && steps.observer_check.status == "succeeded" && has(steps.observer_check.outputs.stdout) ? steps.observer_check.outputs.stdout : null }}'

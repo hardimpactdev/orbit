@@ -1,7 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp, type Http } from "../../automatic-deploy/gateway.ts";
 import { DirectArgs, GatewayOperation, Globals } from "../_lib/direct.ts";
-import { Code, NodeRelease, publishObserver } from "./release_local.ts";
+import { Code, NodeRelease } from "./release_local.ts";
 import { CliNativeRun } from "./cli_converge_local.ts";
 
 const Kind = z.enum(["fleet.rollout", "fleet.cli_converge"]);
@@ -55,6 +55,7 @@ const Gate = z.object({
         release: NodeRelease.shape.release,
         profile: NodeRelease.shape.profile,
     }).strict(),
+    agent: NodeRelease.shape.agent,
 }).strict();
 const initial = (node_id: number): z.infer<typeof NodeResult> => ({
     node_id,
@@ -83,6 +84,25 @@ function refused(
 /** A rollout Node whose CLI succeeded also publishes the observer; every other Node ends at its record. */
 const observes = (record: z.infer<typeof NodeResult>) =>
     record.ok && record.step === "cli";
+/**
+ * The observer outcome from its native steps. The check prints the running binary's SHA-256 and
+ * `active`; only the pinned digest on an active unit counts as published.
+ */
+export function observed(
+    record: z.infer<typeof NodeResult>,
+    run: { agent: { sha256: string; version: string }; fetch: string; changed: boolean; restart: string; running: string | null },
+): z.infer<typeof NodeResult> {
+    if (run.fetch !== "succeeded") return refused(record, "agent.download_failed", "agent");
+    if (!["succeeded", "skipped"].includes(run.restart)) return refused(record, "agent.restart_failed", "agent");
+    const [digest, , state] = (run.running ?? "").trim().split(/\s+/);
+    if (digest !== run.agent.sha256 || state !== "active") return refused(record, "agent.observer_unhealthy", "verify");
+    return {
+        ...record,
+        agent_version: run.agent.version,
+        step: "verify",
+        ...(run.changed || run.restart === "succeeded" ? { outcome: "converged" as const } : {}),
+    };
+}
 /** The final outcome of one fleet-release-node child, or undefined while it is uncertain. */
 function outcome(kind: z.infer<typeof Kind>, raw: unknown) {
     const step = z.object({
@@ -118,7 +138,6 @@ export function windowOpen(daytime: boolean, at: Date): boolean {
 
 /** Native dependencies, placed Node steps and durable outputs own the release lifecycle. */
 export function fleetRelease(
-    observerInstall: typeof publishObserver = publishObserver,
     makeHttp: (ctx: Context) => Http = (ctx) =>
         gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
     now = () => new Date(),
@@ -249,6 +268,7 @@ export function fleetRelease(
                         result,
                         ssh: node.ssh,
                         cli: { user: node.user, release: node.release, profile: node.profile },
+                        agent: node.agent,
                     });
                     await ctx.writeResource("gate", `gate-${node.node_id}`, gate);
                     return gate;
@@ -295,50 +315,34 @@ export function fleetRelease(
             },
             observer: {
                 description:
-                    "Publish the pinned observer binary on this placed Node after its CLI succeeded",
+                    "Shape the native observer publication on Node 209 from its fetch, restart and check steps",
                 arguments: Args.extend({
                     target_node_id: z.number().int().positive(),
                     record: NodeResult,
+                    agent: NodeRelease.shape.agent.unwrap(),
+                    fetch: z.string(),
+                    changed: z.boolean(),
+                    restart: z.string(),
+                    running: z.string().nullable(),
                 }),
                 execute: async (
                     raw: z.infer<typeof Args> & {
                         target_node_id: number;
                         record: z.infer<typeof NodeResult>;
+                        agent: NonNullable<z.infer<typeof NodeRelease>["agent"]>;
+                        fetch: string;
+                        changed: boolean;
+                        restart: string;
+                        running: string | null;
                     },
                     ctx: Context,
                 ) => {
                     const args = Args.parse(raw);
-                    let result = NodeResult.parse(raw.record);
+                    const result = NodeResult.parse(raw.record);
                     if (args.kind !== "fleet.rollout" || !observes(result) || result.node_id !== raw.target_node_id) {
                         throw new Error("Only a rollout Node whose CLI succeeded publishes the observer");
                     }
-                    const { current } = await read(args, ctx);
-                    const node = current.input.nodes.find((v) =>
-                        v.node_id === raw.target_node_id
-                    )!;
-                    if (current.cancel_requested || ctx.signal?.aborted === true) {
-                        result = refused(result, "operation.cancelled", "agent");
-                    } else if (!windowOpen(node.daytime, now())) {
-                        result = refused(result, "fleet.window_closed", "agent");
-                    } else {
-                        if (!node.agent) {
-                            throw new Error("Rollout has no pinned agent delivery");
-                        }
-                        const agent = await observerInstall(node, undefined, ctx.signal);
-                        if ("error_code" in agent) {
-                            result = refused(result, agent.error_code, "agent");
-                        } else if (!("changed" in agent)) {
-                            throw new Error("Agent publication returned no observer result");
-                        } else {
-                            result = {
-                                ...result,
-                                agent_version: agent.version,
-                                step: "verify",
-                                ...(agent.changed ? { outcome: "converged" as const } : {}),
-                            };
-                        }
-                    }
-                    const safe = NodeResult.parse(result);
+                    const safe = NodeResult.parse(observed(result, raw));
                     await ctx.writeResource("node", `node-${safe.node_id}`, safe);
                     return safe;
                 },

@@ -410,7 +410,7 @@ Completion requires a successful keyed installer step with `outcome: current|app
 
 ## Orbit CLI
 
-Every Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-and-order) runs the Orbit CLI. `fleet.cli_converge` records one intent for the selected Nodes and starts `operation-fleet-cli-converge`. The Gateway captures the release assets, the public profile and each installing Node's SSH descriptor. For each Node in turn, the `fleet-release-node` child checks on Node 209 that the Node may publish, runs the native `node-cli-install` child from Node 209 over SSH, and records the outcome on Node 209. Only `fleet.rollout` then publishes the observer binary, on the Node's own worker. It never invokes `cli.install` or `cli.self-update` on orbit-agent.
+Every Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-and-order) runs the Orbit CLI. `fleet.cli_converge` records one intent for the selected Nodes and starts `operation-fleet-cli-converge`. The Gateway captures the release assets, the public profile and each installing Node's SSH descriptor. For each Node in turn, the `fleet-release-node` child checks on Node 209 that the Node may publish, runs the native `node-cli-install` child from Node 209 over SSH, and records the outcome on Node 209. Only `fleet.rollout` then publishes the observer binary, also from Node 209. It never invokes `cli.install` or `cli.self-update` on orbit-agent.
 
 `POST /api/v1/fleet/cli/converge` selects the fleet, or the optional `node_ids` list. A selected ineligible Node is rejected. An unpublished release is skipped. Role add, role relocate and `fleet.recipe` run the same `node-cli-install` child in their parent run.
 

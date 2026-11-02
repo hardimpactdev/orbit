@@ -6,9 +6,7 @@
   "deleted_scripts": [
     "swamp/extensions/behaviors/operations/fleet-recipe/scripts/cli.py"
   ],
-  "retained_limits": [
-    "fleet.rollout: the observer step still publishes the observer binary on the target Node's worker; not all-native until that effect is replaced"
-  ],
+  "retained_limits": [],
   "vm": {
     "group_id": 2679,
     "provision_operation_id": 8139,

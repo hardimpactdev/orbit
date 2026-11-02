@@ -156,7 +156,6 @@ Orbit runs Swamp on one Node, 209. A ported step runs on the swamp workers (`lab
 | --- | --- |
 | `operation-instance-deploy-direct`, `operation-instance-rollback-direct` | 6: `@nckrtl/instance-deploy-direct` prepare, finish, rollback and failure |
 | `operation-node-role-add-direct`, `-relocate-direct`, `-remove-direct` | 193: node role add, removal, metrics, publication and certificate steps |
-| `operation-fleet-rollout`, `operation-fleet-cli-converge` | 2: `@nckrtl/fleet-release` |
 | `operation-node-bootstrap-host`, `-install`, `-probe`, `-verify`, `operation-node-macos-inspect`, `operation-node-prepare-php-packages` | 8: Node bootstrap |
 | `operation-node-wireguard-hub-converge` | 3: `@nckrtl/node-wireguard-direct` |
 | `operation-ai-router-account-update` | 3: AI router accounts |

@@ -1030,9 +1030,9 @@ A rollout that waits longer than 2 hours raises `rollout_stalled` once. It means
 
 ### One Node
 
-The placed Node step checks the existing CLI without running a foreign file. It downloads the admitted release, verifies SHA-256 and its reported version as the Node user, publishes the root-owned executable and switches its link atomically. It writes the public root CLI profile when needed. A source build stays in place. A newer release stays in place for CLI-only convergence; a rollout may downgrade only to the exact release validated by the Gateway.
+Each Node runs the `fleet-release-node` child, and every step runs on Node 209 over SSH with the Node's stored host keys. Its `gate` step checks that every earlier Node succeeded, that the task is not cancelled, and that the Node's window is open. The `cli` step runs the native [`node-cli-install`](/reference/node-provisioning#orbit-cli) child. A newer release or a commit build stays in place.
 
-A rollout then verifies the observer binary digest, downloads and publishes the admitted agent when it differs, and restarts `orbit-agent.service`. It verifies that the running service executable has the admitted digest. It never reads the agent secret or changes observer configuration. Native resume repeats this inspection after an interrupted publication and starts the published observer if necessary.
+A rollout then publishes the observer with official resources. `@swamp/cfgmgmt/fetch` writes the pinned agent to `/usr/local/bin/orbit-agent` only when its SHA-256 differs. One SSH read prints the running service's binary digest. The agent restarts only when the file changed or the running digest differs from the pin. The same read then checks that the pinned digest runs on an active unit. A failed fetch records `agent.download_failed`, a failed restart `agent.restart_failed`, and a failed check `agent.observer_unhealthy`. The rollout never reads the agent secret or changes observer configuration.
 
 Full Node footprint convergence remains the Nodes family's operation. Release rollout changes only the CLI, its public connection profile and the observer binary. It does not apply Caddy, DNS, PHP or role configuration.
 

@@ -21,7 +21,7 @@ Both commands accept `--json`. JSON output contains only the response.
 
 ## How it works
 
-The rollout publishes the CLI and the Node agent on each Node in turn. Each Node runs the `fleet-release-node` child, which runs the shared `node-cli-install` child from Node 209. Only the observer step runs on the Node itself.
+The rollout publishes the CLI and the Node agent on each Node in turn. Each Node runs the `fleet-release-node` child, which runs the shared `node-cli-install` child from Node 209. A rollout then publishes the pinned Node agent from Node 209 with official resources.
 
 <div className="flow-at" data-chart="fleet/rollout"></div>
 

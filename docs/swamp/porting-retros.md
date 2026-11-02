@@ -275,6 +275,17 @@ The fleet admissions carry each installing Node's public SSH descriptor. `fleet-
 
 The `fleet.cli_converge` fixture plants a script that prints `custom-build` at `/usr/local/bin/orbit` and checks it before the request; the run replaced it with Orbit 0.8725.0 and wrote the 0600 profile. `swamp/proof/receipts/fleet-cli-rule22.json` indexes both receipts. One shipped script is deleted. `fleet.rollout` is not proved here and is not rule 22 done while its observer step runs on the Node.
 
+## Fleet rollout observer from 209 (rule 22)
+
+`fleet.rollout` publishes the pinned observer with official resources from 209: `@swamp/cfgmgmt/fetch` writes `/usr/local/bin/orbit-agent` with its checksum, one SSH read prints the running binary's digest, `systemctl restart` runs only when the file changed or the running digest differs, and the same read is the end check. No step runs on the target Node's worker. The embedded observer program, `publishObserver` and its tests are deleted, and the rollout keeps no `.previous` copy, ownership check or update lock. A failed fetch records `agent.download_failed`, a failed restart `agent.restart_failed`, a failed check `agent.observer_unhealthy`. The gate checks the window and cancellation once per Node; nothing rechecks them between the CLI and the observer.
+
+| Fresh receipt on minimal@11 at `a5533d93fe` | Runtime, one sample | Run budget / queue timeout |
+| --- | --- | --- |
+| `evidence/proof/fleet.rollout/20261102T212038Z-minimal.json` | 14.34 s | 900 / 60 s |
+| `evidence/proof/fleet.cli_converge/20261102T211857Z-minimal.json` | 16.33 s | 900 / 60 s |
+
+The proof Gateway runs from a checkout, so the rollout fixture sets `ORBIT_GATEWAY_CHECKOUT` to it; the release gate then reads it as served in place.
+
 ## Task turn receipt without a helper (rule 22)
 
 Task turn ships no script. The agent writes `.git/orbit/receipt.json` itself, following the schema that the turn prompt states. `receipt_prepare.py` and `receipt_helper.py` are deleted with their manifest entries and the copy step. Two pinned `@swamp/ssh exec` argv steps create `.git/orbit` and remove an earlier receipt. The image-owned tool that the audit proposed is not needed.

@@ -369,20 +369,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/fleet/release_program.ts",
-      "rule": "custom-control",
-      "count": 3,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/fleet/release_program.ts",
-      "rule": "inline-script",
-      "count": 78,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/fleet/release.ts",
       "rule": "gateway-http",
       "count": 2,

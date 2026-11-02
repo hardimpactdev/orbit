@@ -18,8 +18,19 @@ class FleetReleaseNative(NativeTestCase):
         super().setUp()
         self.copy_behaviors('automatic-deploy', 'operations', 'node-worker')
         module = self.repo / 'extensions/behaviors/operations/fleet-recipe/fleet_release.ts'
-        module.write_text('import { http, observer } from "./release_native_fixture.ts";\n' +
-                          module.read_text().replace('fleetRelease();', 'fleetRelease(observer, () => http, () => new Date("2026-10-31T02:30:00Z"));'))
+        module.write_text('import { http } from "./release_native_fixture.ts";\n' +
+                          module.read_text().replace('fleetRelease();', 'fleetRelease(() => http, () => new Date("2026-10-31T02:30:00Z"));'))
+        # Only the SSH and file transports are held: the observer fetch records the effect, the SSH reads print the running digest.
+        (self.repo / 'extensions/behaviors/fleet-host-fixture.ts').write_text('''import {z} from "npm:zod@4.4.3";
+const node=(host:string)=>Number(host.split(".").pop());
+const load=()=>JSON.parse(Deno.readTextFileSync("fleet-native.json"));const save=(s:any)=>Deno.writeTextFileSync("fleet-native.json",JSON.stringify(s));
+export const behavior={type:"@fixture/fleet-host",version:"2026.11.02.1",globalArguments:z.object({nodeHost:z.string()}).passthrough(),resources:{output:{schema:z.object({stdout:z.string()}),lifetime:"1d",garbageCollection:10},state:{schema:z.record(z.string(),z.unknown()),lifetime:"1d",garbageCollection:10}},methods:{
+apply:{description:"Fake observer fetch",arguments:z.object({}),execute:async(_:any,ctx:any)=>{const s=load();const n=node(ctx.globalArgs.nodeHost);s.effects.push(`observer:${n}`);save(s);
+if(s.observer_failure===n)throw new Error("Checksum mismatch");
+return {dataHandles:[await ctx.writeResource("state",ctx.globalArgs.nodeHost,(s.unchanged?{status:"compliant",changes:[]}:{status:"applied",changes:["downloaded"]}))]};}},
+exec:{description:"Fake SSH",arguments:z.object({argv:z.array(z.string())}).passthrough(),execute:async(a:any,ctx:any)=>{const s=load();const n=node(ctx.globalArgs.nodeHost);
+if(a.argv.includes("restart")){s.restarts=(s.restarts||[]).concat([n]);save(s);return {stdout:""};}
+const out={stdout:`${s.running?.[n]??"b".repeat(64)}  /proc/41/exe\\nactive\\n`};await ctx.writeResource("output","output",out);return out;}}}};''')
         shutil.copy(ROOT / 'extensions/behaviors/operations/fleet/release_native_fixture.ts', module.parent)
         # The real node-cli-install child has its own native test; this one records the effect and fails on request.
         (self.repo / 'extensions/behaviors/fleet-cli-fixture.ts').write_text('''import {z} from "npm:zod@4.4.3";
@@ -41,7 +52,11 @@ const result={installed:a.version,configured:true,version:a.version};await ctx.w
                 job.pop('labels', None)
                 for step in job['steps']:
                     step.pop('target', None); step.pop('labels', None)
-                    step.pop('labels', None)
+                    task = step['task']
+                    if task.get('behaviorType') in ('@swamp/ssh', '@swamp/cfgmgmt/fetch'):
+                        task['behaviorType'] = '@fixture/fleet-host'
+                        task['globalArgs'] = {'nodeHost': '${{ steps.gate.outputs.ssh.target.host }}'}
+                        task['inputs'] = {'argv': task['inputs']['argv']} if 'argv' in task['inputs'] else {}
             (self.repo / 'workflows' / name).write_text(yaml.safe_dump(workflow, sort_keys=False))
         self.state = {'bound': True, 'calls': [], 'effects': [], 'failure': None, 'uncertain': False,
                       'operation': {'id': 7, 'kind': 'fleet.rollout', 'node_id': 1, 'status': 'queued',
@@ -63,14 +78,15 @@ const result={installed:a.version,configured:true,version:a.version};await ctx.w
         state = json.loads((self.repo / 'fleet-native.json').read_text())
         return state, result
 
-    def test_only_the_rollout_observer_runs_on_its_node(self):
+    def test_every_step_runs_on_209_and_only_a_rollout_publishes_the_observer(self):
         import yaml
         steps = {step['name']: step for job in yaml.safe_load((ROOT / 'workflows/workflow-fleet-release-node.yaml').read_text())['jobs'] for step in job['steps']}
         for name in ('gate', 'cli', 'record'):
             self.assertEqual(steps[name]['labels'], {'role': 'swamp'}, name)
-        self.assertEqual(steps['observer']['labels'], {'node': '${{ string(inputs.target_node_id) }}'})
-        self.assertTrue(steps['observer']['guard'].startswith('${{ inputs.kind != "fleet.rollout" ||'))
-        self.assertEqual(steps['observer']['task']['methodName'], 'observer')
+        for name in ('observer_fetch', 'observer_read', 'observer_restart', 'observer_check', 'observer'):
+            self.assertEqual(steps[name]['labels'], {'role': 'swamp'}, name)
+            self.assertTrue(steps[name]['guard'].startswith('${{ inputs.kind != "fleet.rollout" ||'), name)
+        self.assertEqual(steps['observer_fetch']['task']['behaviorType'], '@swamp/cfgmgmt/fetch')
 
     def test_ordered_rollout_in_one_native_run(self):
         state, _ = self.run_parent()
@@ -92,13 +108,29 @@ const result={installed:a.version,configured:true,version:a.version};await ctx.w
         self.assertEqual(state['operation']['result']['nodes'][1]['error_code'], 'cli.install_failed')
         self.assertEqual(state['operation']['result']['nodes'][2]['outcome'], 'pending')
 
-    def test_uncertain_effect_stops_later_nodes_and_is_not_success(self):
-        self.state['failure'] = 3
-        self.state['uncertain'] = True
+    def test_failed_observer_fetch_stops_later_nodes(self):
+        self.state['observer_failure'] = 3
         state, _ = self.run_parent(success=False)
         self.assertEqual(state['effects'], ['cli:2', 'observer:2', 'cli:3', 'observer:3'])
         self.assertEqual(state['operation']['status'], 'failed')
-        self.assertEqual(state['operation']['result']['error_code'], 'fleet.release_uncertain')
+        self.assertEqual(state['operation']['result']['nodes'][1]['error_code'], 'agent.download_failed')
+        self.assertEqual(state['operation']['result']['nodes'][2]['outcome'], 'pending')
+
+    def test_a_pinned_running_agent_restarts_only_when_the_binary_changed(self):
+        state, _ = self.run_parent()
+        self.assertEqual(state['restarts'], [2, 3, 4])
+        self.assertEqual(state['operation']['result']['nodes'][0]['agent_version'], '0.5.0')
+
+    def test_an_unchanged_pinned_agent_is_not_restarted(self):
+        self.state['unchanged'] = True
+        state, _ = self.run_parent()
+        self.assertNotIn('restarts', state)
+        self.assertEqual(state['operation']['result']['nodes'][0]['outcome'], 'converged')
+
+    def test_an_agent_still_running_another_binary_fails_its_check(self):
+        self.state['running'] = {'3': 'c' * 64}
+        state, _ = self.run_parent(success=False)
+        self.assertEqual(state['operation']['result']['nodes'][1]['error_code'], 'agent.observer_unhealthy')
 
     def test_closed_window_defers_shared_nodes_without_effects(self):
         for node in self.state['operation']['input']['nodes']:

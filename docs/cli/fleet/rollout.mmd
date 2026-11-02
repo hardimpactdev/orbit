@@ -1,7 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R1-R4, agent-frozen-until-swamp-port, single-swamp-node. docs/reference/gateway-recovery.md#fleet-rollout.
   %% Tightened: flow-tighten 2026-11-02, rule 22 (cfgmgmt fetch and link name the install steps).
-  %% Real steps 2026-11-02: prepare, node-N (fleet-release-node: gate, cli, record, observer), finish.
+  %% Real steps 2026-11-02: prepare, node-N (fleet-release-node: gate, cli, record, observer_fetch, observer_read, observer_restart, observer_check, observer), finish.
   %% status: draft
   %% command: none · after each verified Gateway release
   %% kind: fleet.rollout
@@ -45,7 +45,7 @@ sequenceDiagram
     %%> - a skipped Node, a planning error or a closed window records the outcome without touching the Node
     %%> Why:
     %%> - the loop runs one Node at a time, so a failed Node stops every later one
-    SW->>N: Install the CLI release<br/>cli · node-cli-install
+    SW->>N: Install the CLI release<br/>cli · node-cli-install · record
     %%> How:
     %%> - Swamp reaches Node 12 over SSH from 209, with `@swamp/ssh` and the admitted host keys
     %%> What it does:
@@ -53,19 +53,29 @@ sequenceDiagram
     %%> - otherwise downloads the release with `@swamp/cfgmgmt/fetch` and its `checksum`, checks the new file reports the release version, and switches the link with `@swamp/cfgmgmt/link`
     %%> - a file that does not report a valid Orbit version is replaced by the admitted release
     %%> - writes root's profile, 0600, with `@swamp/cfgmgmt/file`
-    Note over SW: Record the CLI outcome<br/>record
-    %%> What it does:
-    %%> - the `record` step on Node 209 records `converged` or `unchanged` with the CLI version, or `cli.install_failed`
-    SW->>N: Publish the Node agent<br/>observer · on Node 12
+    %%> - the `record` step on Node 209 then records `converged` or `unchanged` with the CLI version, or `cli.install_failed`
+    SW->>N: Install the Node agent<br/>observer_fetch · observer_read
     %%> When:
     %%> - only in a rollout, and only after the Node's CLI succeeded
     %%> What it does:
-    %%> - the `observer` step publishes the pinned observer binary only when its digest differs
+    %%> - `observer_fetch` writes the pinned agent to `/usr/local/bin/orbit-agent` with `@swamp/cfgmgmt/fetch` and its `checksum`, only when its SHA-256 differs
+    %%> - beside it, `observer_read` prints the running service's binary digest with one `@swamp/ssh exec`
     %%> Today:
-    %%> - this step runs on Node 12's own worker, never on Node 209; it moves to `@swamp/cfgmgmt` when the observer delivery is replaced
-    %%> - the Node agent is frozen at its pin, so this step changes nothing
+    %%> - the Node agent is frozen at its pin, so the fetch changes nothing
     %%> Not included:
     %%> - Caddy, DNS, PHP and role files; `node.converge` and `fleet.recipe` own those
+    opt binary changed or stale
+      SW->>N: Restart the Node agent<br/>observer_restart · systemctl
+      %%> When:
+      %%> - the fetch wrote a new binary, or the running digest differs from the pin
+      %%> What it does:
+      %%> - `systemctl restart orbit-agent.service`
+    end
+    SW->>N: Check the Node agent<br/>observer_check · observer
+    %%> What it does:
+    %%> - `observer_check` reads the running digest again; `observer` on Node 209 records the agent version when the pinned digest runs on an active unit
+    %%> Result:
+    %%> - `agent.download_failed`, `agent.restart_failed` or `agent.observer_unhealthy` names the failed part
   end
   Note over SW: Report each Node<br/>finish
   %%> What it does:
