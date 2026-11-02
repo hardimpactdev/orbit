@@ -6,12 +6,15 @@ use App\Domain\Metrics\MetricsCredentialResetProjection;
 use App\Domain\Metrics\MetricsExporterOperationProjection;
 use App\Domain\Metrics\MetricsRoleProjection;
 
-$exporters = array_fill_keys(['metrics.exporter_enable', 'metrics.exporter_disable'], [
-    'workflow' => 'operation-metrics-exporter',
-    'projection' => MetricsExporterOperationProjection::class,
-    'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'exporter', 'step' => 'result'],
-]);
+$exporters = [];
+foreach (['metrics.exporter_enable' => 'operation-metrics-exporter-enable', 'metrics.exporter_disable' => 'operation-metrics-exporter-disable'] as $kind => $workflow) {
+    $exporters[$kind] = [
+        'workflow' => $workflow,
+        'projection' => MetricsExporterOperationProjection::class,
+        'workflow_inputs' => true,
+        'terminal_result' => ['job' => 'exporter', 'step' => 'Prove the exporter state', 'native' => true],
+    ];
+}
 
 $credentials = ['metrics.credentials_reset' => [
     'workflow' => 'operation-metrics-credentials-reset',

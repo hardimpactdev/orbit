@@ -36,7 +36,7 @@ final readonly class MetricsRoleInput
             $fleet[] = ['exporter_node_id' => $target->id, 'enabled' => $selected, 'metrics_address' => $node->wireguard_ip,
                 'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($target),
                 'runtime' => ['ssh_execution' => $ssh, 'configuration' => $files['/etc/orbit/metrics/prometheus.yml']],
-                'compose_only' => true, 'service' => app(MetricsFleetCapture::class)->forExporter($node, $target, $selected)];
+                'service' => app(MetricsFleetCapture::class)->forExporter($node, $target, $selected)];
         }
         $dns = [];
         foreach (PrivateDnsPublicationNodes::query()->get() as $dnsNode) {

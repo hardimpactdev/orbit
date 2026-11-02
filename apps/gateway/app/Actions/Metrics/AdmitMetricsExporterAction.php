@@ -75,7 +75,7 @@ final readonly class AdmitMetricsExporterAction
 
             return $this->operations->execute($enabled ? 'metrics.exporter_enable' : 'metrics.exporter_disable', 'metrics', $metrics instanceof Node ? $metrics->id : $node->id,
                 $node->id, ['exporter_node_id' => $node->id, 'enabled' => $enabled,
-                    'ssh_execution' => $this->ssh->forNode($node), 'metrics_address' => $metrics?->wireguard_ip, 'runtime' => $runtime,
+                    'ssh_execution' => $this->ssh->forNode($node), 'exporter_address' => $node->wireguard_ip, 'metrics_address' => $metrics?->wireguard_ip, 'runtime' => $runtime,
                     'service' => $metrics instanceof Node ? app(MetricsFleetCapture::class)->forExporter($metrics, $node, $enabled) : null],
                 'operator', request()->attributes->getString('orbit.request_id'));
         });

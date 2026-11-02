@@ -1,0 +1,33 @@
+id: f1bfc018-2d18-431d-a8f7-8554b869a580
+name: metrics-exporter-allows
+description: Apply the exporter Node's captured firewall rules for the Metrics Node with the official firewall behavior.
+inputs:
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string}
+    intent: {type: object}
+  required: [operation_id, node_id, kind, intent]
+jobs:
+- name: allows
+  steps:
+  - name: rule
+    labels: {role: swamp}
+    writes: true
+    forEach: {item: rule, in: '${{ inputs.intent.service.rules }}'}
+    task:
+      type: behavior
+      methodName: apply
+      inputs: {}
+      behaviorType: '@swamp/cfgmgmt/firewall'
+      behaviorName: '${{ ("metrics-firewall-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
+      globalArgs:
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        become: true
+        port: ${{ self.rule.port }}
+        action: ${{ self.rule.action }}
+        ensure: ${{ self.rule.ensure }}
+        source: ${{ self.rule.source }}

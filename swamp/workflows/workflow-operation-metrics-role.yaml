@@ -174,8 +174,17 @@ jobs:
     forEach: {item: exporter, in: '${{ inputs.intent.fleet }}'}
     task:
       type: workflow
-      workflowIdOrName: operation-metrics-exporter
-      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ self.exporter.exporter_node_id }}', kind: '${{ inputs.intent.enabled ? "metrics.exporter_enable" : "metrics.exporter_disable" }}', intent: '${{ self.exporter }}'}
+      workflowIdOrName: metrics-exporter-node
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ self.exporter.exporter_node_id }}', kind: '${{ self.exporter.enabled ? "metrics.exporter_enable" : "metrics.exporter_disable" }}', intent: '${{ self.exporter }}'}
+  - name: exporter_allows
+    labels: {role: swamp}
+    dependsOn: [{step: exporter, condition: {type: succeeded}}]
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
+    forEach: {item: exporter, in: '${{ inputs.intent.fleet }}'}
+    task:
+      type: workflow
+      workflowIdOrName: metrics-exporter-allows
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ self.exporter.exporter_node_id }}', kind: '${{ self.exporter.enabled ? "metrics.exporter_enable" : "metrics.exporter_disable" }}', intent: '${{ self.exporter }}'}
 - name: certificates
   dependsOn: [{job: exporters, condition: {type: succeeded}}]
   steps:

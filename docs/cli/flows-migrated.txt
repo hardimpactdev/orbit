@@ -41,3 +41,5 @@ route.create
 tasks.cancel
 vault.teardown
 tasks.provision
+metrics.exporter_disable
+metrics.exporter_enable

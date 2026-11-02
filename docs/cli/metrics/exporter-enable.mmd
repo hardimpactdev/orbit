@@ -34,7 +34,7 @@ sequenceDiagram
   %%> - Node 12's exporter preference recorded as `enabled`
   %%> - task #5140 recorded with the full intent
   %%> - nothing has happened on any Node yet
-  GW->>SW: Start run, full intent<br/>operation-metrics-exporter
+  GW->>SW: Start run, full intent<br/>operation-metrics-exporter-enable
   %%> What it does:
   %%> - starts one Swamp run on serve (Node 209)
   %%> Inputs:
@@ -64,11 +64,15 @@ sequenceDiagram
   SW->>M: Publish the config<br/>validate, reload Prometheus
   %%> What it does:
   %%> - validates the new Prometheus configuration with `promtool` before using it
-  %%> - publishes it and tells Prometheus to reload it while running (SIGHUP or its reload endpoint)
+  %%> - copies it over the live file in place (Prometheus bind-mounts the file) and sends Prometheus SIGHUP, so it reloads while running
   %%> - no restart, so collection from every other Node continues without a gap; Grafana keeps running
   %%> When a restart is needed:
   %%> - only when the Prometheus container itself changes, which is a role update, not an exporter change
   %%> - checks once that Prometheus loaded the new configuration
+  Note over SW: Prove the exporter state<br/>end check · assert
+  %%> What it does:
+  %%> - checks that Prometheus lists Node 12's exporter address as an active target after the reload (inside Publish the config)
+  %%> - is the operation's end check; with no Metrics Node it passes at once, because only the preference is recorded
   alt all steps pass
     M-->>SW: Prometheus ready
     %%> Returns:

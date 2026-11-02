@@ -17,6 +17,10 @@ sys.path.insert(0, str(ROOT))
 from tests.native_harness import NativeTestCase
 
 
+ENABLED_CONFIG = 'scrape_configs:\n  - job_name: node\n    static_configs:\n      - targets: ["192.0.2.9:9100"]\n'
+DISABLED_CONFIG = "scrape_configs: []\n"
+
+
 class MetricsExporterNative(NativeTestCase):
     native_timeout = 120
 
@@ -55,48 +59,33 @@ class MetricsExporterNative(NativeTestCase):
         )
         (self.repo / "extensions/behaviors").mkdir(parents=True)
         (self.repo / "extensions/behaviors/fixture.ts").write_text(fixture)
-        workflow = yaml.safe_load(
-            (ROOT / "workflows/workflow-operation-metrics-exporter.yaml").read_text()
+        real = (
+            "operation-metrics-exporter-enable",
+            "operation-metrics-exporter-disable",
+            "metrics-exporter-node",
+            "metrics-exporter-allows",
+            "metrics-prometheus-publish",
         )
-        for step in [step for job in workflow["jobs"] for step in job["steps"]]:
-            self.assertEqual(step.pop("labels"), {"role": "swamp"})
-            step["task"] = copy.deepcopy(step["task"])
-            task = step["task"]
-            if task.get("type") == "workflow":
-                child_name = task["workflowIdOrName"]
-                child = yaml.safe_load(
-                    (
-                        ROOT / "workflows" / ("workflow-" + child_name + ".yaml")
-                    ).read_text()
-                )
-                child["jobs"] = [
-                    {
-                        "name": "fixture",
-                        "steps": [
-                            {
-                                "name": "accepted",
-                                "task": {
-                                    "type": "assert",
-                                    "expr": "true",
-                                    "message": "fixture child accepted",
-                                },
-                            }
-                        ],
-                    }
-                ]
-                (
-                    self.repo / "workflows" / ("workflow-" + child_name + ".yaml")
-                ).write_text(yaml.safe_dump(child))
-            if task.get("behaviorType", "").startswith("@swamp/"):
-                task["inputs"] = dict(
-                    task.get("inputs", {}),
-                    _fixture_type=task["behaviorType"],
-                    _fixture_name=step["name"],
-                )
-                task["behaviorType"] = "@fixture/metrics-host"
-        (self.repo / "workflows/workflow-metrics-exporter.yaml").write_text(
-            yaml.safe_dump(workflow, sort_keys=False)
-        )
+        for name in real:
+            workflow = yaml.safe_load(
+                (ROOT / "workflows" / ("workflow-" + name + ".yaml")).read_text()
+            )
+            for step in [step for job in workflow["jobs"] for step in job["steps"]]:
+                self.assertEqual(step.pop("labels"), {"role": "swamp"})
+                step["task"] = copy.deepcopy(step["task"])
+                task = step["task"]
+                if task.get("type") == "workflow" and task["workflowIdOrName"] not in real:
+                    self.stub(task["workflowIdOrName"])
+                if task.get("behaviorType", "").startswith("@swamp/"):
+                    task["inputs"] = dict(
+                        task.get("inputs", {}),
+                        _fixture_type=task["behaviorType"],
+                        _fixture_name=step["name"],
+                    )
+                    task["behaviorType"] = "@fixture/metrics-host"
+            (self.repo / "workflows" / ("workflow-" + name + ".yaml")).write_text(
+                yaml.safe_dump(workflow, sort_keys=False)
+            )
         self.connection = {
             "nodeHost": "192.0.2.9",
             "nodeUser": "orbit",
@@ -122,11 +111,12 @@ class MetricsExporterNative(NativeTestCase):
             "exporter_node_id": 9,
             "enabled": True,
             "ssh_execution": ssh,
+            "exporter_address": "192.0.2.9",
             "metrics_address": "192.0.2.3",
             "runtime": {
                 "assignment_id": 1,
                 "ssh_execution": ssh,
-                "configuration": "global: {}\nscrape_configs: []\n",
+                "configuration": ENABLED_CONFIG,
             },
             "service": {
                 "files": [
@@ -179,6 +169,34 @@ class MetricsExporterNative(NativeTestCase):
         ):
             value.update(owner="root", group="root")
 
+    def stub(self, name):
+        child = yaml.safe_load(
+            (ROOT / "workflows" / ("workflow-" + name + ".yaml")).read_text()
+        )
+        child["jobs"] = [
+            {
+                "name": "fixture",
+                "steps": [
+                    {
+                        "name": "accepted",
+                        "task": {
+                            "type": "assert",
+                            "expr": "true",
+                            "message": "fixture child accepted",
+                        },
+                    }
+                ],
+            }
+        ]
+        (self.repo / "workflows" / ("workflow-" + name + ".yaml")).write_text(
+            yaml.safe_dump(child)
+        )
+
+    def workflow(self):
+        return "operation-metrics-exporter-" + (
+            "enable" if self.intent["enabled"] else "disable"
+        )
+
     def run_exporter(self, fail="", success=True, flags=()):
         state = json.loads(self.state.read_text())
         state["fail"] = fail
@@ -195,7 +213,7 @@ class MetricsExporterNative(NativeTestCase):
             self.cli(
                 "workflow",
                 "run",
-                "operation-metrics-exporter",
+                self.workflow(),
                 "--input",
                 json.dumps(inputs),
                 *flags,
@@ -206,21 +224,32 @@ class MetricsExporterNative(NativeTestCase):
             self.cli("workflow", "history", "get", started["id"], *flags).stdout
         ), json.loads(self.state.read_text())
 
-    def test_enable_uses_official_models_and_restarts_existing_prometheus(self):
+    def steps(self, state):
+        return [c["step"] for c in state["calls"]]
+
+    def test_enable_installs_allows_checks_then_reloads_without_restart(self):
         history, state = self.run_exporter()
         self.assertEqual(history["status"], "succeeded")
-        self.assertEqual(state["loaded"], self.intent["runtime"]["configuration"])
-        calls = [c["step"] for c in state["calls"]]
+        self.assertEqual(state["loaded"], ENABLED_CONFIG)
+        calls = self.steps(state)
+        self.assertLess(calls.index("started"), calls.index("Check the endpoints"))
+        self.assertLess(calls.index("rule"), calls.index("Check the endpoints"))
+        self.assertLess(calls.index("Check the endpoints"), calls.index("validate"))
         self.assertLess(calls.index("validate"), calls.index("publish"))
-        self.assertLess(calls.index("publish"), calls.index("prometheus"))
-        self.assertIn("@swamp/cfgmgmt/firewall", [c["type"] for c in state["calls"]])
-        self.assertIn("@swamp/cfgmgmt/systemd", [c["type"] for c in state["calls"]])
-        self.assertIn(
-            "@swamp/cfgmgmt/docker_container", [c["type"] for c in state["calls"]]
-        )
+        self.assertLess(calls.index("publish"), calls.index("reload"))
+        reload = next(c for c in state["calls"] if c["step"] == "reload")
+        self.assertEqual(reload["args"]["argv"], ["/usr/bin/docker", "kill", "--signal=HUP", "orbit-metrics-prometheus"])
+        # Nick: reload, not restart. No container restart happens.
+        self.assertNotIn("@swamp/cfgmgmt/docker_container", [c["type"] for c in state["calls"]])
+        self.assertNotIn("package_removed", calls)
+        publish = next(c for c in state["calls"] if c["step"] == "publish")
+        # In place: Prometheus bind-mounts the file, so a rename would leave it on the old inode.
+        self.assertEqual(publish["args"]["argv"][0], "/usr/bin/cp")
+        self.assertEqual(publish["args"]["argv"][-1], "/etc/orbit/metrics/prometheus.yml")
 
-    def test_disable_stops_units_and_removes_official_port_rules(self):
+    def test_disable_unpublishes_first_then_removes_exporters_package_and_allows(self):
         self.intent["enabled"] = False
+        self.intent["runtime"]["configuration"] = DISABLED_CONFIG
         self.intent["service"]["downloads"] = []
         self.intent["service"]["checks"] = []
         for unit in self.intent["service"]["units"]:
@@ -231,17 +260,16 @@ class MetricsExporterNative(NativeTestCase):
             file["ensure"] = "absent"
         history, state = self.run_exporter()
         self.assertEqual(history["status"], "succeeded")
-        calls = [c["step"] for c in state["calls"]]
-        self.assertIn("stopped", calls)
+        self.assertEqual(state["loaded"], DISABLED_CONFIG)
+        calls = self.steps(state)
+        self.assertLess(calls.index("reload"), calls.index("stopped"))
+        self.assertLess(calls.index("stopped"), calls.index("package_removed"))
+        self.assertLess(calls.index("package_removed"), calls.index("rule"))
         self.assertNotIn("started", calls)
         self.assertNotIn("package", calls)
-        self.assertTrue(
-            all(
-                c["globals"]["ensure"] == "absent"
-                for c in state["calls"]
-                if c["step"] == "firewall"
-            )
-        )
+        removed = next(c for c in state["calls"] if c["step"] == "package_removed")
+        self.assertEqual(removed["globals"]["ensure"], "absent")
+        self.assertTrue(all(c["globals"]["ensure"] == "absent" for c in state["calls"] if c["step"] == "rule"))
 
     def test_preference_only_runs_no_host_effect(self):
         self.intent["runtime"] = None
@@ -250,23 +278,31 @@ class MetricsExporterNative(NativeTestCase):
         self.assertEqual(history["status"], "succeeded")
         self.assertEqual(state["calls"], [])
 
-    def test_bad_config_does_not_publish_or_restart(self):
+    def test_bad_config_does_not_publish_or_reload_and_removes_the_candidate(self):
         history, state = self.run_exporter("validate", success=False)
         self.assertEqual(history["status"], "failed")
         self.assertEqual(state["published"], "old")
         self.assertEqual(state["loaded"], "old")
-        self.assertNotIn("prometheus", [c["step"] for c in state["calls"]])
+        calls = self.steps(state)
+        self.assertNotIn("reload", calls)
+        self.assertIn("remove_candidate", calls)
 
     def test_firewall_failure_stops_publication(self):
-        history, state = self.run_exporter("firewall", success=False)
+        history, state = self.run_exporter("rule", success=False)
         self.assertEqual(history["status"], "failed")
         self.assertEqual(state["published"], "old")
 
-    def test_failed_readiness_retains_published_intent_for_native_resume(self):
-        history, state = self.run_exporter("verify", success=False)
+    def test_failed_reload_keeps_the_published_file_for_a_rerun(self):
+        history, state = self.run_exporter("reload", success=False)
         self.assertEqual(history["status"], "failed")
-        self.assertEqual(state["loaded"], self.intent["runtime"]["configuration"])
-        self.assertEqual(state["published"], state["loaded"])
+        self.assertEqual(state["published"], ENABLED_CONFIG)
+        self.assertEqual(state["loaded"], "old")
+
+    def test_end_check_fails_when_prometheus_does_not_scrape_the_exporter(self):
+        self.intent["runtime"]["configuration"] = DISABLED_CONFIG
+        history, state = self.run_exporter(success=False)
+        self.assertEqual(history["status"], "failed")
+        self.assertIn("targets", self.steps(state))
 
     def test_canonical_child_schemas_accept_public_service_intent(self):
         connection = {
@@ -290,11 +326,6 @@ class MetricsExporterNative(NativeTestCase):
         ]
         history, _ = self.run_exporter()
         self.assertEqual(history["status"], "succeeded")
-        states = {
-            s["name"]: s["status"] for job in history["jobs"] for s in job["steps"]
-        }
-        self.assertEqual(states["caddy"], "succeeded")
-        self.assertEqual(states["pools-0"], "succeeded")
 
     def test_official_firewall_schema_refuses_invalid_port_before_effect(self):
         self.intent["service"]["rules"] = self.intent["service"]["rules"][:1]
@@ -302,7 +333,7 @@ class MetricsExporterNative(NativeTestCase):
         history, state = self.run_exporter(success=False)
         self.assertEqual(history["status"], "failed")
         self.assertEqual(state["published"], "old")
-        self.assertNotIn("firewall", [c["step"] for c in state["calls"]])
+        self.assertNotIn("rule", self.steps(state))
 
     def test_metrics_owner_and_exporter_keep_their_captured_ssh_ports(self):
         self.intent["runtime"]["ssh_execution"] = copy.deepcopy(
@@ -315,21 +346,18 @@ class MetricsExporterNative(NativeTestCase):
             if call["type"] != "@swamp/ssh":
                 continue
             globals = call["globals"]
-            remote = call["step"] in ("validate", "verify")
+            remote = call["step"] in ("validate", "publish", "reload", "targets")
             self.assertEqual(globals["transport"]["port"], 2202 if remote else 22)
             self.assertEqual(
                 globals["hosts"][0]["address"],
                 "192.0.2.3" if remote else "192.0.2.9",
             )
 
-    def test_workflow_stays_within_requested_budget(self):
-        workflow = ROOT / "workflows/workflow-operation-metrics-exporter.yaml"
-        self.assertLessEqual(len(workflow.read_text().splitlines()), 300)
-        self.assertFalse(
-            (
-                ROOT / "extensions/behaviors/operations/metrics-exporter/scripts/ufw.py"
-            ).exists()
-        )
+    def test_workflows_stay_within_requested_budget(self):
+        for name in ("operation-metrics-exporter-enable", "operation-metrics-exporter-disable", "metrics-exporter-node", "metrics-exporter-allows", "metrics-prometheus-publish"):
+            workflow = ROOT / "workflows" / ("workflow-" + name + ".yaml")
+            self.assertLessEqual(len(workflow.read_text().splitlines()), 200, name)
+        self.assertFalse((ROOT / "workflows/workflow-operation-metrics-exporter.yaml").exists())
 
     def test_server_backed_resume_restarts_after_publication_failure(self):
         # Reuse the official local serve fixture path used by database.destroy.
@@ -399,7 +427,7 @@ class MetricsExporterNative(NativeTestCase):
                     str(token),
                 )
                 history, state = self.run_exporter(
-                    "prometheus", success=False, flags=flags
+                    "reload", success=False, flags=flags
                 )
                 self.assertEqual(state["loaded"], "old")
                 self.assertEqual(
@@ -411,11 +439,11 @@ class MetricsExporterNative(NativeTestCase):
                     self.cli(
                         "workflow",
                         "resume",
-                        "operation-metrics-exporter",
+                        self.workflow(),
                         "--run",
                         history["id"],
                         "--from",
-                        "prometheus",
+                        "Publish the config",
                         *flags,
                     ).stdout
                 )
@@ -430,12 +458,10 @@ class MetricsExporterNative(NativeTestCase):
                     server.kill()
                     server.wait(timeout=5)
 
-    def test_composed_role_child_updates_target_without_republishing_runtime(self):
-        self.intent['compose_only'] = True
-        history, state = self.run_exporter()
-        self.assertEqual(history['status'], 'succeeded')
-        calls = [c['step'] for c in state['calls']]
-        self.assertIn('started', calls)
-        self.assertIn('firewall', calls)
-        self.assertFalse(set(calls) & {'candidate', 'validate', 'publish', 'prometheus', 'verify', 'remove_candidate'})
-        self.assertEqual(state['loaded'], 'old')
+    def test_role_composition_applies_the_node_child_without_publishing(self):
+        self.intent["runtime"] = None
+        inputs = {"operation_id": 12, "node_id": 9, "kind": "metrics.exporter_enable", "intent": self.intent}
+        self.cli("workflow", "run", "metrics-exporter-node", "--input", json.dumps(inputs))
+        calls = self.steps(json.loads(self.state.read_text()))
+        self.assertIn("started", calls)
+        self.assertFalse(set(calls) & {"candidate", "validate", "publish", "reload", "targets"})
