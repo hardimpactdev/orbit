@@ -1,6 +1,6 @@
 id: b77987fa-6c2a-4ba7-9b35-c1739ef369b1
 name: operation-database-create
-description: database:create from 209, one docker exec per SQL or Valkey action; the create statement comes from the vault on stdin.
+description: database:create from 209, one docker exec -i per batch; each login reads its password from the vault as the first stdin line.
 vaults: [orbit-control-inputs]
 queueTimeout: 30
 inputs:
@@ -10,15 +10,15 @@ inputs:
     node_id: {type: integer, minimum: 1}
     kind: {type: string, const: database.create}
     intent: {type: object}
-    # Names only: client_env (the server's admin login, MySQL and Valkey), statement (the create statement with the
-    # owner's password) and owner_env (the owner's login), each one whole value.
+    # Names only: create (the admin password line and the create batch) and check (the owner's password line and the
+    # owner check), each one whole value.
     execution_secrets:
       type: object
       additionalProperties:
         type: object
         properties:
           vault: {type: string, enum: [orbit-control-inputs]}
-          key: {type: string, pattern: '^database-(server-[1-9][0-9]*-client-env|create-(intent|owner)-[1-9][0-9]*)$'}
+          key: {type: string, pattern: '^database-create-(intent|owner)-[1-9][0-9]*$'}
         required: [vault, key]
         additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
@@ -27,34 +27,11 @@ jobs:
 - name: create
   labels: {role: swamp}
   steps:
-  - name: 'Write the client login'
+    # One batch: a name the server holds for someone else stops it before any change (database.name_conflict). The
+    # Gateway reads the outcome from the native result, so a refused batch still ends this step (exit 1 or 3).
+  - name: 'Create owner and databases'
     labels: {role: swamp}
     writes: true
-    guard: ${{ inputs.intent.driver == "pgsql" }}
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: ${{ "database-create-login-" + string(inputs.node_id) }}
-      methodName: apply
-      globalArgs:
-        path: ${{ inputs.intent.login }}
-        ensure: present
-        content: ${{ vault.get(inputs.execution_secrets.client_env.vault, inputs.execution_secrets.client_env.key) }}
-        owner: root
-        group: root
-        mode: '0600'
-        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
-        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
-        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
-        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        become: true
-      inputs: {}
-    # A database that exists with another owner is never granted to the new one: database.name_conflict.
-  - name: 'Check names are free'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'Write the client login', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    guard: '${{ !(inputs.intent.driver == "pgsql" || steps["Write the client login"].status == "succeeded") }}'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -74,58 +51,15 @@ jobs:
       inputs:
         hosts: name:target
         sudo: true
-        argv: '${{ ["timeout", "60"] + inputs.intent.client }}'
-        stdin: '${{ inputs.intent.statements.probe }}'
-        okExitCodes: [0, 1]
-        timeoutSec: 70
-  - name: 'Create owner and databases'
-    labels: {role: swamp}
-    writes: true
-    dependsOn:
-    - {step: 'Check names are free', condition: {type: succeeded}}
-    guard: '${{ !(steps["Check names are free"].outputs.exitCode == 0 && (inputs.intent.driver == "redis" ? (inputs.intent.index == null || int(steps["Check names are free"].outputs.stdout.split("\n")[1]) > inputs.intent.index) : steps["Check names are free"].outputs.stdout.trim() == "")) }}'
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "database-create-ssh-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs: *ssh
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv: '${{ ["timeout", "300"] + inputs.intent.client }}'
-        stdin: ${{ vault.get(inputs.execution_secrets.statement.vault, inputs.execution_secrets.statement.key) }}
-        okExitCodes: [0, 1]
+        argv: '${{ ["timeout", "300"] + inputs.intent.admin_client }}'
+        stdin: ${{ vault.get(inputs.execution_secrets.create.vault, inputs.execution_secrets.create.key) }}
+        okExitCodes: [0, 1, 3]
         timeoutSec: 310
-  - name: 'Write the owner login'
-    labels: {role: swamp}
-    writes: true
-    dependsOn:
-    - {step: 'Create owner and databases', condition: {type: succeeded}}
-    guard: ${{ steps["Create owner and databases"].outputs.exitCode != 0 }}
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: ${{ "database-create-login-" + string(inputs.node_id) }}
-      methodName: apply
-      globalArgs:
-        path: ${{ inputs.intent.owner_login }}
-        ensure: present
-        content: ${{ vault.get(inputs.execution_secrets.owner_env.vault, inputs.execution_secrets.owner_env.key) }}
-        owner: root
-        group: root
-        mode: '0600'
-        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
-        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
-        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
-        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        become: true
-      inputs: {}
-    # The owner logs in over TCP with its own password; only then is the connection usable.
+    # The owner logs in with its own password; only then is the connection usable.
   - name: 'Check the owner login'
     labels: {role: swamp}
-    dependsOn:
-    - {step: 'Write the owner login', condition: {type: succeeded}}
+    dependsOn: [{step: 'Create owner and databases', condition: {type: succeeded}}]
+    guard: '${{ steps["Create owner and databases"].outputs.exitCode != 0 }}'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -136,125 +70,6 @@ jobs:
         hosts: name:target
         sudo: true
         argv: '${{ ["timeout", "60"] + inputs.intent.owner_client }}'
-        stdin: '${{ inputs.intent.statements.login }}'
-        okExitCodes: [0, 1]
+        stdin: ${{ vault.get(inputs.execution_secrets.check.vault, inputs.execution_secrets.check.key) }}
+        okExitCodes: [0, 1, 2]
         timeoutSec: 70
-    # Always, as the last Node steps: both login files leave the Node whatever happened above.
-  - name: 'Remove the owner login'
-    labels: {role: swamp}
-    writes: true
-    dependsOn:
-    - {step: 'Write the owner login', condition: {type: completed}}
-    - {step: 'Check the owner login', condition: {type: always}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: ${{ "database-create-login-" + string(inputs.node_id) }}
-      methodName: apply
-      globalArgs:
-        path: ${{ inputs.intent.owner_login }}
-        ensure: absent
-        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
-        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
-        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
-        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        become: true
-      inputs: {}
-  - name: 'Remove the client login'
-    labels: {role: swamp}
-    writes: true
-    dependsOn:
-    - {step: 'Write the client login', condition: {type: completed}}
-    - {step: 'Check names are free', condition: {type: always}}
-    - {step: 'Create owner and databases', condition: {type: always}}
-    - {step: 'Remove the owner login', condition: {type: always}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: ${{ "database-create-login-" + string(inputs.node_id) }}
-      methodName: apply
-      globalArgs:
-        path: ${{ inputs.intent.login }}
-        ensure: absent
-        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
-        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
-        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
-        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        become: true
-      inputs: {}
-  - name: 'Report the result'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'Write the client login', condition: {type: always}}
-    - {step: 'Check names are free', condition: {type: always}}
-    - {step: 'Create owner and databases', condition: {type: always}}
-    - {step: 'Write the owner login', condition: {type: always}}
-    - {step: 'Check the owner login', condition: {type: always}}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: database-create-result
-      methodName: execute
-      inputs:
-        run: |
-          python3 -I - <<'PY'
-          import json
-          import os
-          import sys
-
-          # valkey-cli reading stdin exits 0 on an error reply, so its output is read for error lines too.
-          ERRORS = ('ERR', 'WRONGPASS', 'NOAUTH', 'ERROR', 'error:')
-          driver, user, index = os.environ['DRIVER'], os.environ['OWNER'], os.environ['INDEX']
-
-
-          def ran(name):
-              return os.environ[name + '_STATUS'] == 'succeeded'
-
-
-          def broken(name):
-              out = os.environ[name + '_STDOUT']
-              return os.environ[name + '_STATUS'] == 'failed' or (ran(name) and (os.environ[name + '_EXIT'] not in ('', '0') or any(line.startswith(ERRORS) for line in out.splitlines())))
-
-
-          probe = os.environ['PROBE_STDOUT']
-          login = os.environ['LOGIN_STDOUT'].strip()
-          expected = {'mysql': user + '@%', 'pgsql': user}.get(driver)
-          result = {'backend': 'active'}
-          if os.environ['CLIENT_STATUS'] == 'failed':
-              result = {'failed_step': 'Write the client login', 'error_code': 'database.server_command_failed'}
-          elif broken('PROBE'):
-              result = {'failed_step': 'Check names are free', 'error_code': 'database.server_command_failed'}
-          elif driver == 'redis' and index and int((probe.splitlines() + ['', '0'])[1] or 0) <= int(index):
-              result = {'failed_step': 'Check names are free', 'error_code': 'database.index_invalid'}
-          elif driver != 'redis' and probe.strip():
-              result = {'failed_step': 'Check names are free', 'error_code': 'database.name_conflict'}
-          elif broken('CREATE') or not ran('CREATE'):
-              result = {'failed_step': 'Create owner and databases', 'error_code': 'database.server_admin_failed'}
-          elif os.environ['OWNER_STATUS'] != 'succeeded':
-              result = {'failed_step': 'Write the owner login', 'error_code': 'database.server_command_failed'}
-          elif not ran('LOGIN') or os.environ['LOGIN_EXIT'] != '0' or (login != expected if expected else not login.startswith(('PONG', 'NOPERM'))):
-              # A Valkey owner without +ping answers NOPERM after a successful AUTH; a wrong password answers NOAUTH.
-              result = {'failed_step': 'Check the owner login', 'error_code': 'database.owner_login_failed'}
-          print(json.dumps(result))
-          sys.exit(0 if 'backend' in result else 1)
-          PY
-        env:
-          DRIVER: ${{ inputs.intent.driver }}
-          OWNER: ${{ inputs.intent.username }}
-          INDEX: '${{ inputs.intent.index == null ? "" : string(inputs.intent.index) }}'
-          CLIENT_STATUS: '${{ "Write the client login" in steps ? steps["Write the client login"].status : "skipped" }}'
-          OWNER_STATUS: '${{ "Write the owner login" in steps ? steps["Write the owner login"].status : "skipped" }}'
-          PROBE_STATUS: '${{ "Check names are free" in steps ? steps["Check names are free"].status : "skipped" }}'
-          PROBE_EXIT: '${{ "Check names are free" in steps && steps["Check names are free"].status == "succeeded" ? string(steps["Check names are free"].outputs.exitCode) : "" }}'
-          PROBE_STDOUT: '${{ "Check names are free" in steps && steps["Check names are free"].status == "succeeded" ? steps["Check names are free"].outputs.stdout : "" }}'
-          CREATE_STATUS: '${{ "Create owner and databases" in steps ? steps["Create owner and databases"].status : "skipped" }}'
-          CREATE_EXIT: '${{ "Create owner and databases" in steps && steps["Create owner and databases"].status == "succeeded" ? string(steps["Create owner and databases"].outputs.exitCode) : "" }}'
-          CREATE_STDOUT: '${{ "Create owner and databases" in steps && steps["Create owner and databases"].status == "succeeded" ? steps["Create owner and databases"].outputs.stdout : "" }}'
-          LOGIN_STATUS: '${{ "Check the owner login" in steps ? steps["Check the owner login"].status : "skipped" }}'
-          LOGIN_EXIT: '${{ "Check the owner login" in steps && steps["Check the owner login"].status == "succeeded" ? string(steps["Check the owner login"].outputs.exitCode) : "" }}'
-          LOGIN_STDOUT: '${{ "Check the owner login" in steps && steps["Check the owner login"].status == "succeeded" ? steps["Check the owner login"].outputs.stdout : "" }}'
-        ignoreExitCode: true
-  - name: 'Fail on an error'
-    labels: {role: swamp}
-    dependsOn: [{step: 'Report the result', condition: {type: succeeded}}]
-    task: {type: assert, expr: 'steps["Report the result"].outputs.exitCode == 0', severity: high, message: The database create did not complete.}

@@ -10,6 +10,7 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\DatabaseExecutionIntent;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeRoutePublicationSocket;
@@ -29,6 +30,15 @@ beforeEach(function (): void {
     $this->finish = ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => now()->subSecond()->toIso8601ZuluString('millisecond'), 'finished_at' => now()->toIso8601ZuluString('millisecond'), 'result' => ['backend' => 'active']];
 });
 
+/** The native result of a create run: the batch and the owner check, as Swamp's run data gives them. */
+function create_native(array $finish, string $driver, string $user, string $batch = '', int $exit = 0): array
+{
+    $check = ['mysql' => $user.'@%', 'pgsql' => $user, 'redis' => 'PONG'][$driver];
+
+    return [...$finish, 'result' => ['steps' => ['Create owner and databases' => ['status' => 'succeeded', 'stdout' => $batch, 'exit_code' => $exit],
+        'Check the owner login' => ['status' => 'succeeded', 'stdout' => $check."\n", 'exit_code' => 0]]]];
+}
+
 it('starts one direct managed create with safe typed intent and no Gateway probes', function (string $driver): void {
     $this->server->update(['driver' => $driver]);
     $request = ['slug' => 'proof', 'server' => $this->server->slug, ...($driver === 'redis' ? ['patterns' => ['proof:*'], 'allow' => ['@list'], 'database' => 1] : [])];
@@ -47,18 +57,14 @@ it('starts one direct managed create with safe typed intent and no Gateway probe
     $id = $operation->input['intent_id'];
     $statement = "database-create-intent-{$id}";
     $owner = "database-create-owner-{$id}";
-    $expected = ['statement' => ['vault' => 'orbit-control-inputs', 'key' => $statement], 'owner_env' => ['vault' => 'orbit-control-inputs', 'key' => $owner]];
-    if ($driver !== 'pgsql') {
-        $expected['client_env'] = ['vault' => 'orbit-control-inputs', 'key' => 'database-server-'.$this->server->id.'-client-env'];
-    }
-    expect($inputs['execution_secrets'])->toBe($expected);
-    expect($inputs['intent']['login'])->toBe('/run/orbit-database-create-'.$operation->id.'.env');
-    expect($inputs['intent']['statements'])->toHaveKeys(['probe', 'login']);
+    expect($inputs['execution_secrets'])->toBe(['create' => ['vault' => 'orbit-control-inputs', 'key' => $statement], 'check' => ['vault' => 'orbit-control-inputs', 'key' => $owner]]);
+    expect(array_slice($inputs['intent']['admin_client'], 0, 6))->toBe(['docker', 'exec', '-i', 'orbit-process-'.$this->server->process_id.'-beast-mysql', 'sh', '-c']);
     $connection = DatabaseConnection::query()->sole();
-    // The create statement carries the owner's password and goes Gateway → vault → stdin; the admin login is an env file key.
-    expect($puts[$statement])->toContain($driver === 'pgsql' ? 'SCRAM-SHA-256' : ($driver === 'redis' ? 'ACL SETUSER proof' : $connection->password));
-    expect($puts[$owner])->toBe(['mysql' => 'MYSQL_PWD=', 'pgsql' => 'PGPASSWORD=', 'redis' => 'REDISCLI_AUTH='][$driver].$connection->password."\n");
-    expect($puts[$statement])->not->toContain(SERVER_DATABASE_ROOT_SECRET);
+    // Each login reads its password from the first stdin line; the batch with the owner's password follows (Q-DBAUTH).
+    expect($puts[$statement])->toStartWith(SERVER_DATABASE_ROOT_SECRET."\n")
+        ->toContain($driver === 'pgsql' ? 'SCRAM-SHA-256' : ($driver === 'redis' ? 'ACL SETUSER proof' : $connection->password));
+    expect($puts[$statement])->toContain($driver === 'redis' ? 'CONFIG GET databases' : 'database.name_conflict');
+    expect($puts[$owner])->toStartWith($connection->password."\n");
     expect(json_encode($inputs))->not->toContain($connection->password)->not->toContain(SERVER_DATABASE_ROOT_SECRET);
     expect(json_encode($operation->fresh()->toArray()).$response->getContent())->not->toContain(SERVER_DATABASE_ROOT_SECRET, $connection->password);
     expect(DB::table('database_execution_intents')->sole()->payload)->not->toContain($connection->password);
@@ -71,11 +77,31 @@ it('projects the stored attachment once without Node calls or execution receipts
     $operation = Operation::query()->sole();
     $path = '/api/v1/direct-operations/'.$operation->id;
     $this->withServerVariables(['REMOTE_ADDR' => $this->dbNode->wireguard_ip]);
-    $this->postJson($path.'/result', $this->finish)->assertOk();
+    $finish = create_native($this->finish, 'mysql', DatabaseConnection::query()->sole()->username);
+    $this->postJson($path.'/result', $finish)->assertOk();
     expect(DatabaseConnectionTarget::query()->sole()->database_connection_id)->toBe(DatabaseConnection::query()->sole()->id);
-    $this->postJson($path.'/result', $this->finish)->assertOk();
+    $this->postJson($path.'/result', $finish)->assertOk();
     $this->assertDatabaseCount('database_connection_targets', 1);
     $this->getJson($path.'/private-material?run_id='.$this->runId)->assertConflict();
+});
+
+it('fails with name_conflict when the batch refuses a name another owner holds', function (): void {
+    $this->postJson('/api/v1/database-connections', ['slug' => 'taken', 'server' => $this->server->slug])->assertAccepted();
+    $operation = Operation::query()->sole();
+    $this->withServerVariables(['REMOTE_ADDR' => $this->dbNode->wireguard_ip]);
+    $this->postJson('/api/v1/direct-operations/'.$operation->id.'/result', create_native($this->finish, 'mysql', 'taken', "database.name_conflict\n", 1))->assertOk();
+    expect([$operation->fresh()->status->value, $operation->fresh()->error_code, $operation->fresh()->failed_step])->toBe(['failed', 'database.name_conflict', 'Create owner and databases']);
+});
+
+it('gives an Instance database on MySQL the parallel test pool, as on PostgreSQL', function (): void {
+    $this->postJson('/api/v1/database-connections', ['slug' => 'pooled', 'server' => $this->server->slug, 'instance_id' => $this->instance->id, 'test_processes' => 3])->assertAccepted();
+    $connection = DatabaseConnection::query()->sole();
+    $operation = Operation::query()->sole();
+    $databases = DatabaseExecutionIntent::recorded($operation->input['intent_id'])->payload['commands']['database-apply']['input']['databases'];
+    expect($connection->test_processes)->toBe(3)
+        ->and($databases)->toBe([$connection->database, $connection->test_database, ...array_map(static fn (int $n): string => $connection->test_database.'_test_'.$n, [1, 2, 3])]);
+    $puts = collect($this->socket->sent)->where('type', 'vault.put')->pluck('payload.value', 'payload.key');
+    expect($puts['database-create-intent-'.$operation->input['intent_id']])->toContain('CREATE DATABASE IF NOT EXISTS `'.$connection->test_database.'_test_3`;');
 });
 
 it('preserves reserved credentials after failure and admits only an identical retry', function (): void {
@@ -122,8 +148,10 @@ it('abandons an invalid Valkey index reservation without deleting an ACL user', 
     $operation = Operation::query()->sole();
     $this->withServerVariables(['REMOTE_ADDR' => $this->dbNode->wireguard_ip]);
     $path = '/api/v1/direct-operations/'.$operation->id;
-    $failed = [...$this->finish, 'status' => 'failed', 'error_code' => 'database.index_invalid', 'result' => ['error_code' => 'database.index_invalid']];
+    // The batch reads the live count first; an index at or above it fails the run and abandons the reservation.
+    $failed = create_native($this->finish, 'redis', 'unused', "databases\n4\nOK\nOK\n");
     $this->postJson($path.'/result', $failed)->assertOk();
+    expect($operation->fresh()->error_code)->toBe('database.index_invalid');
     $this->assertDatabaseCount('database_connections', 0);
     $this->assertDatabaseCount('database_users', 0);
     $this->getJson($path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.status', 'failed');
@@ -141,7 +169,8 @@ it('keeps recorded create intent immutable and projects terminal history exactly
     expect(app(DirectOperation::class)->workflowInputs($operation)['intent'])->toBe($inputs['intent']);
     $history = ['id' => $this->runId, 'workflowName' => 'operation-database-create', 'status' => 'succeeded', 'inputs' => $inputs,
         'startedAt' => '2026-10-31T12:00:00Z', 'completedAt' => '2026-10-31T12:00:01Z',
-        'jobs' => [['name' => 'create', 'steps' => [['name' => 'Report the result', 'outputs' => ['stdout' => '{"backend":"active"}']]]]],
+        'jobs' => [['name' => 'create', 'steps' => [['name' => 'Create owner and databases', 'status' => 'succeeded', 'outputs' => ['stdout' => '', 'exitCode' => 0]],
+            ['name' => 'Check the owner login', 'status' => 'succeeded', 'outputs' => ['stdout' => DatabaseConnection::query()->sole()->username."@%\n", 'exitCode' => 0]]]]],
     ];
     $this->socket->reply = static fn (array $sent): array => [['type' => 'workflow.history.get', 'id' => $sent['id'], 'payload' => ['data' => $history]]];
     config(['swamp.read_token' => 'fake.token']);
@@ -150,5 +179,5 @@ it('keeps recorded create intent immutable and projects terminal history exactly
     app(SwampCommandStep::class)->projectTerminal($projected, ['id' => $this->runId, 'status' => 'succeeded'], $selector);
     expect($projected->status->value)->toBe('succeeded');
     expect($projected->result)->toBe(['backend' => 'active']);
-    expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'vault.put', 'vault.put', 'workflow.run', 'vault.put', 'workflow.history.get']);
+    expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'vault.put', 'workflow.run', 'vault.put', 'workflow.history.get']);
 });

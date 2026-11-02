@@ -44,30 +44,72 @@ final readonly class DatabaseCreateProjection implements DirectOperationProjecti
             'patterns' => ValidatedData::stringList($input['patterns']), 'allow' => ValidatedData::stringList($input['allow'])],
             ValidatedData::string($payload['password']), ValidatedData::string($payload['salt']));
         $container = ValidatedData::string($input['container']);
-        $login = "/run/orbit-database-create-{$operation->id}.env";
-        $ownerLogin = "/run/orbit-database-create-{$operation->id}-owner.env";
-        $secrets = ['statement' => ['vault' => 'orbit-control-inputs', 'key' => "database-create-intent-{$id}"],
-            'owner_env' => ['vault' => 'orbit-control-inputs', 'key' => "database-create-owner-{$id}"]];
-        if ($driver !== DatabaseDriver::Pgsql) {
-            $secrets['client_env'] = ['vault' => 'orbit-control-inputs', 'key' => "database-server-{$operation->target_id}-client-env"];
-        }
+        $secrets = ['create' => ['vault' => 'orbit-control-inputs', 'key' => "database-create-intent-{$id}"],
+            'check' => ['vault' => 'orbit-control-inputs', 'key' => "database-create-owner-{$id}"]];
         if (! $operation->status->terminal()) {
-            // The create statement carries the owner's password, so it goes Gateway → vault → stdin (Q-DBAUTH).
+            // Each login reads its password from the first stdin line; the statements follow (Q-DBAUTH).
             $copy = app(SwampCommandStep::class);
-            $secrets['statement'] = $copy->executionCopy('orbit-control-inputs', "database-create-intent-{$id}", $statements['create']);
-            $secrets['owner_env'] = $copy->executionCopy('orbit-control-inputs', "database-create-owner-{$id}", $statements['owner_env']);
-            if ($driver !== DatabaseDriver::Pgsql) {
-                $secrets['client_env'] = DatabaseServerAdminSecret::clientEnvCopy($this->server($operation));
-            }
+            $secrets['create'] = $copy->executionCopy('orbit-control-inputs', $secrets['create']['key'], $this->server($operation)->root_password."\n".$statements['create']);
+            $secrets['check'] = $copy->executionCopy('orbit-control-inputs', $secrets['check']['key'], $statements['owner_password']."\n".$statements['login']);
         }
+        [$admin, $adminDatabase] = match ($driver) {
+            DatabaseDriver::Pgsql => ['postgres', 'postgres'], DatabaseDriver::Redis => ['default', ''], default => ['root', 'mysql']
+        };
 
-        return ['intent' => ['driver' => $driver->value, 'username' => $user, 'container' => $container, 'login' => $login, 'owner_login' => $ownerLogin,
-            'index' => is_int($input['index'] ?? null) ? $input['index'] : null,
-            'client' => DatabaseStatements::client($driver, $container, $login),
-            'owner_client' => DatabaseStatements::ownerClient($driver, $container, $ownerLogin, $user, $databases[0] ?? 'postgres'),
-            'statements' => ['probe' => $statements['probe'], 'login' => $statements['login']],
+        return ['intent' => ['driver' => $driver->value, 'username' => $user,
+            'admin_client' => DatabaseStatements::login($driver, $container, $admin, $adminDatabase),
+            'owner_client' => DatabaseStatements::login($driver, $container, $user, $databases[0] ?? ''),
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($operation->node_id))],
             'execution_secrets' => $secrets];
+    }
+
+    /**
+     * The native result decides: a name the server holds for someone else, a failed batch, a Valkey index at or above
+     * the live count, or an owner that cannot log in fails the run with its code.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{0: array<string, mixed>, 1: array<string, string>}
+     */
+    private function outcome(Operation $operation, array $data): array
+    {
+        if (($data['status'] ?? null) !== 'succeeded') {
+            $code = ValidatedData::nullableString($data['error_code'] ?? null) ?? 'database.server_admin_failed';
+
+            return [$data, ['error_code' => $code]];
+        }
+        $steps = ValidatedData::object(ValidatedData::object($data['result'] ?? [])['steps'] ?? []);
+        $read = static function (string $step) use ($steps): array {
+            $entry = ValidatedData::object($steps[$step] ?? []);
+
+            return [is_int($entry['exit_code'] ?? null) ? $entry['exit_code'] : null,
+                array_values(array_filter(array_map(trim(...), explode("\n", ValidatedData::nullableString($entry['stdout'] ?? null) ?? ''))))];
+        };
+        [$exit, $lines] = $read('Create owner and databases');
+        $driver = ValidatedData::string($operation->input['driver']);
+        $admitted = DatabaseExecutionIntent::recorded(ValidatedData::integer($operation->input['intent_id']))->payload['commands']['database-apply']['input'];
+        $index = $admitted['index'] ?? null;
+        $refused = static fn (array $lines): bool => array_any($lines, static fn (string $line): bool => str_starts_with($line, 'ERR') || str_starts_with($line, 'WRONGPASS') || str_starts_with($line, 'NOAUTH'));
+        [$step, $code] = match (true) {
+            in_array('database.name_conflict', $lines, true) => ['Create owner and databases', 'database.name_conflict'],
+            $exit !== 0 || ($driver === 'redis' && $refused($lines)) => ['Create owner and databases', 'database.server_admin_failed'],
+            $driver === 'redis' && is_int($index) && ($lines[0] ?? null) === 'databases' && ctype_digit($lines[1] ?? '') && $index >= (int) $lines[1] => ['Create owner and databases', 'database.index_invalid'],
+            default => [null, null],
+        };
+        if ($code === null) {
+            [$exit, $lines] = $read('Check the owner login');
+            $user = ValidatedData::string($admitted['username'] ?? null);
+            $expected = match ($driver) {
+                'mysql' => $user.'@%', 'pgsql' => $user, default => null
+            };
+            // A Valkey owner without +ping answers NOPERM after a successful AUTH; a wrong password answers NOAUTH.
+            $ok = $exit === 0 && ($expected !== null ? ($lines[0] ?? null) === $expected : str_starts_with($lines[0] ?? '', 'PONG') || str_starts_with($lines[0] ?? '', 'NOPERM'));
+            [$step, $code] = $ok ? [null, null] : ['Check the owner login', 'database.owner_login_failed'];
+        }
+        if ($code === null) {
+            return [$data, ['backend' => 'active']];
+        }
+
+        return [[...$data, 'status' => 'failed', 'error_code' => $code, 'failure' => ['failed_step' => $step, 'stderr_recorded' => true]], ['error_code' => $code]];
     }
 
     private function server(Operation $operation): DatabaseServer
@@ -80,7 +122,7 @@ final readonly class DatabaseCreateProjection implements DirectOperationProjecti
         return DB::transaction(function () use ($operation, $data): Operation {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
             $terminal = $operation->status->terminal();
-            $result = array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip(['backend', 'error_code']));
+            [$data, $result] = $this->outcome($operation, $data);
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if (! $terminal) {
                 $connection = DatabaseConnection::query()->find(ValidatedData::integer($operation->input['connection_id']));

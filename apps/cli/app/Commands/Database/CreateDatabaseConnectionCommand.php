@@ -28,7 +28,7 @@ final class CreateDatabaseConnectionCommand extends DatabaseCommand
         {--password= : Password}
         {--server= : Database server slug. Creates a MySQL/PostgreSQL database or Valkey ACL user}
         {--locale= : Builtin PostgreSQL locale: C or C.UTF-8 (requires --server)}
-        {--test-processes= : PostgreSQL parallel worker databases: 1-32, default 8 (requires --server and --instance)}
+        {--test-processes= : MySQL or PostgreSQL parallel worker databases: 1-32, default 8 (requires --server and --instance)}
         {--instance= : Numeric Instance ID that owns a database created with --server}
         {--pattern=* : Key pattern for a Valkey ACL user with --server}
         {--allow=* : Allowed command or category for a Valkey ACL user with --server}
@@ -39,7 +39,7 @@ final class CreateDatabaseConnectionCommand extends DatabaseCommand
     protected $description = 'Register an existing database, or create one on a Database server.';
 
     #[\Override]
-    protected $help = 'Create PostgreSQL worker databases with --server --instance --test-processes=N (default 8). Run Laravel tests with --parallel --processes=N within that pool. Leave --recreate-databases and --drop-databases off.';
+    protected $help = 'Create MySQL or PostgreSQL worker databases with --server --instance --test-processes=N (default 8). Run Laravel tests with --parallel --processes=N within that pool. Leave --recreate-databases and --drop-databases off.';
 
     /** @var list<string> */
     private const array REGISTRATION_OPTIONS = ['driver', 'node', 'host', 'port', 'path', 'username', 'password'];

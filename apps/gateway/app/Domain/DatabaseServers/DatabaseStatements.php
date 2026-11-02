@@ -17,12 +17,16 @@ final readonly class DatabaseStatements
     private const string NAME = '/\A[A-Za-z0-9_]{1,64}\z/D';
 
     /**
+     * database:destroy, in the run's order: `fence` (PostgreSQL: journal each database's ALLOW_CONNECTIONS and close it to
+     * new clients, in one transaction), `drop` (refuses on a blocker with `database.in_use` before the first drop, then
+     * drops the planned names), `gone` (fails while a planned name remains) and `restore` (PostgreSQL: gives each
+     * surviving database its journaled value back). Each follows the admin password line on stdin.
+     *
      * @param  list<string>  $databases
      * @param  list<string>  $users
-     * @param  list<string>  $testPrefixes
-     * @return array{inventory: string, blockers: string, drop: string, gone: string}
+     * @return array{fence: string, drop: string, gone: string, restore: string}
      */
-    public function destroy(DatabaseDriver $driver, array $databases, array $users, array $testPrefixes): array
+    public function destroy(DatabaseDriver $driver, array $databases, array $users): array
     {
         $users = array_values(array_filter($users, static fn (string $user): bool => $user !== 'default'));
         if ($driver === DatabaseDriver::Redis) {
@@ -32,53 +36,67 @@ final readonly class DatabaseStatements
                 }
             }
 
-            return ['inventory' => '', 'blockers' => '',
+            return ['fence' => '', 'restore' => '',
                 'drop' => implode('', array_map(static fn (string $user): string => "ACL DELUSER {$user}\n", $users))."ACL SAVE\n",
                 'gone' => implode('', array_map(static fn (string $user): string => "ACL GETUSER {$user}\n", $users))];
         }
-        foreach ([...$databases, ...$users, ...$testPrefixes] as $name) {
+        foreach ([...$databases, ...$users] as $name) {
             if (preg_match(self::NAME, $name) !== 1) {
                 $this->invalid();
             }
         }
-        $pg = $driver === DatabaseDriver::Pgsql;
         $names = $this->list($databases);
         $userList = $this->list($users);
-        // MySQL test databases under the test prefix; only plain names, so the drop the run builds from them stays safe.
-        $inventory = $pg || $testPrefixes === [] ? '' : 'SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE ('
-            .implode(' OR ', array_map(static fn (string $prefix): string => 'BINARY LEFT(SCHEMA_NAME,'.strlen($prefix).")=BINARY '{$prefix}'", $testPrefixes))
-            .") AND SCHEMA_NAME REGEXP '^[A-Za-z0-9_]+$' ORDER BY SCHEMA_NAME;\n";
-        $blockers = $pg ? <<<SQL
-            SELECT DISTINCT blocker FROM (
-             SELECT datname::text AS blocker FROM pg_stat_activity WHERE datname IN ({$names})
-             UNION ALL SELECT database::text FROM pg_replication_slots WHERE database IN ({$names})
-             UNION ALL SELECT database::text FROM pg_prepared_xacts WHERE database IN ({$names})
-             UNION ALL SELECT d.datname::text FROM pg_subscription s JOIN pg_database d ON d.oid=s.subdbid WHERE d.datname IN ({$names})
-             UNION ALL SELECT COALESCE(d.datname::text,owned.datname::text,r.rolname::text)
-             FROM pg_shdepend dep JOIN pg_roles r ON dep.refclassid='pg_authid'::regclass AND dep.refobjid=r.oid
-             LEFT JOIN pg_database d ON d.oid=dep.dbid
-             LEFT JOIN pg_database owned ON dep.dbid=0 AND dep.classid='pg_database'::regclass AND dep.objid=owned.oid
-             WHERE r.rolname IN ({$userList}) AND (dep.dbid<>0 AND d.datname NOT IN ({$names}) OR dep.dbid=0 AND (owned.oid IS NULL OR owned.datname NOT IN ({$names})))
-            ) blockers ORDER BY blocker;
+        if ($driver === DatabaseDriver::Pgsql) {
+            $blockers = "SELECT datname::text FROM pg_stat_activity WHERE datname IN ({$names})"
+                ." UNION ALL SELECT database::text FROM pg_replication_slots WHERE database IN ({$names})"
+                ." UNION ALL SELECT database::text FROM pg_prepared_xacts WHERE database IN ({$names})"
+                ." UNION ALL SELECT d.datname::text FROM pg_subscription s JOIN pg_database d ON d.oid=s.subdbid WHERE d.datname IN ({$names})"
+                ." UNION ALL SELECT r.rolname::text FROM pg_shdepend dep JOIN pg_roles r ON dep.refclassid='pg_authid'::regclass AND dep.refobjid=r.oid"
+                ." LEFT JOIN pg_database d ON d.oid=dep.dbid LEFT JOIN pg_database owned ON dep.dbid=0 AND dep.classid='pg_database'::regclass AND dep.objid=owned.oid"
+                ." WHERE r.rolname IN ({$userList}) AND (dep.dbid<>0 AND d.datname NOT IN ({$names}) OR dep.dbid=0 AND (owned.oid IS NULL OR owned.datname NOT IN ({$names})))";
+            $journal = 'orbit_admin.database_removal_fences';
+            $fence = "BEGIN;\nCREATE SCHEMA IF NOT EXISTS orbit_admin;\nCREATE TABLE IF NOT EXISTS {$journal} (oid oid PRIMARY KEY, datname name NOT NULL, allow_connections boolean NOT NULL);\n"
+                ."INSERT INTO {$journal} SELECT oid, datname, datallowconn FROM pg_database WHERE datname IN ({$names}) ON CONFLICT (oid) DO NOTHING;\n"
+                .implode('', array_map(static fn (string $name): string => "SELECT 'ALTER DATABASE \"{$name}\" ALLOW_CONNECTIONS false' WHERE EXISTS (SELECT FROM pg_database WHERE datname='{$name}')\\gexec\n", $databases))
+                ."COMMIT;\n";
+            $drop = "SELECT 'database.in_use' WHERE EXISTS ({$blockers});\n"
+                ."DO \$orbit\$ BEGIN IF EXISTS ({$blockers}) THEN RAISE EXCEPTION 'database.in_use'; END IF; END \$orbit\$;\n"
+                .implode('', array_map(static fn (string $name): string => "DROP DATABASE IF EXISTS \"{$name}\";\n", $databases))
+                .implode('', array_map(static fn (string $user): string => "DROP ROLE IF EXISTS \"{$user}\";\n", $users))
+                ."DELETE FROM {$journal} WHERE datname IN ({$names});\n";
+            // The journal holds the database OID, so a replacement database with the same name is never changed.
+            $restore = "SELECT format('ALTER DATABASE %I ALLOW_CONNECTIONS %s', d.datname, j.allow_connections) FROM {$journal} j JOIN pg_database d ON d.oid=j.oid WHERE j.datname IN ({$names})\\gexec\n"
+                ."DELETE FROM {$journal} WHERE datname IN ({$names});\n";
 
-            SQL : $this->mysqlBlockers($names, $this->list(array_map(static fn (string $user): string => $user.'@%', $users)));
-        $drop = implode('', array_map(static fn (string $name): string => $pg ? "DROP DATABASE IF EXISTS \"{$name}\";\n" : "DROP DATABASE IF EXISTS `{$name}`;\n", $databases))
-            .implode('', array_map(static fn (string $user): string => $pg ? "DROP ROLE IF EXISTS \"{$user}\";\n" : "DROP USER IF EXISTS '{$user}'@'%';\n", $users));
-        $gone = $pg
-            ? "SELECT datname FROM pg_database WHERE datname IN ({$names}) UNION ALL SELECT rolname FROM pg_roles WHERE rolname IN ({$userList});\n"
-            : "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME IN ({$names})"
-                .($testPrefixes === [] ? '' : ' OR ('.implode(' OR ', array_map(static fn (string $prefix): string => 'BINARY LEFT(SCHEMA_NAME,'.strlen($prefix).")=BINARY '{$prefix}'", $testPrefixes)).')')
-                ." UNION ALL SELECT User FROM mysql.user WHERE User IN ({$userList}) AND Host='%';\n";
+            $left = "SELECT datname FROM pg_database WHERE datname IN ({$names}) UNION ALL SELECT rolname FROM pg_roles WHERE rolname IN ({$userList})";
 
-        return ['inventory' => $inventory, 'blockers' => $blockers, 'drop' => $drop, 'gone' => $gone];
+            // The end check fails the run while a planned name remains, so a parent run sees the refusal too.
+            return ['fence' => $fence, 'drop' => $drop, 'restore' => $restore,
+                'gone' => "DO \$orbit\$ BEGIN IF EXISTS ({$left}) THEN RAISE EXCEPTION 'database.destroy_incomplete'; END IF; END \$orbit\$;\n"];
+        }
+        $blockers = $this->mysqlBlockers($names, $this->list(array_map(static fn (string $user): string => $user.'@%', $users)));
+        // A blocker stops the batch before the first drop: the prepared statement reads a table that does not exist.
+        $drop = "SELECT 'database.in_use' FROM DUAL WHERE EXISTS ({$blockers});\n"
+            ."SET @orbit_guard = IF(EXISTS ({$blockers}), 'SELECT 1 FROM orbit_in_use.refused', 'DO 0');\n"
+            ."PREPARE orbit_guard FROM @orbit_guard;\nEXECUTE orbit_guard;\nDEALLOCATE PREPARE orbit_guard;\n"
+            .implode('', array_map(static fn (string $name): string => "DROP DATABASE IF EXISTS `{$name}`;\n", $databases))
+            .implode('', array_map(static fn (string $user): string => "DROP USER IF EXISTS '{$user}'@'%';\n", $users));
+
+        $left = "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME IN ({$names}) UNION ALL SELECT User FROM mysql.user WHERE User IN ({$userList}) AND Host='%'";
+
+        // The end check fails the run while a planned name remains, so a parent run sees the refusal too.
+        return ['fence' => '', 'restore' => '', 'drop' => $drop,
+            'gone' => "SET @orbit_left = IF(EXISTS ({$left}), 'SELECT 1 FROM orbit_destroy_incomplete.refused', 'DO 0');\n"
+                ."PREPARE orbit_left FROM @orbit_left;\nEXECUTE orbit_left;\nDEALLOCATE PREPARE orbit_left;\n"];
     }
 
     /**
-     * database:create. `probe` and `login` are public; `create` carries the owner's password (or its SCRAM verifier,
-     * or its ACL hash) and goes Gateway → vault → stdin; `owner_env` is the owner's login as a Docker env file.
+     * database:create. `create` carries the owner's password (or its SCRAM verifier, or its ACL hash) and refuses a
+     * foreign name by itself; `login` is the owner check. Both go Gateway → vault → stdin behind a password line.
      *
      * @param  array{driver: string, username: string, databases: list<string>, test_prefix: ?string, locale: ?string, index: ?int, patterns: list<string>, allow: list<string>}  $input
-     * @return array{probe: string, login: string, create: string, owner_env: string}
+     * @return array{login: string, create: string, owner_password: string}
      */
     public function create(array $input, #[\SensitiveParameter] string $password, string $salt): array
     {
@@ -97,8 +115,9 @@ final readonly class DatabaseStatements
                 }
             }
 
-            return ['probe' => "CONFIG GET databases\nACL GETUSER {$user}\n", 'login' => "PING\n",
-                'create' => "ACL SETUSER {$user} ".implode(' ', $rules)."\nACL SAVE\n", 'owner_env' => "REDISCLI_AUTH={$password}\n"];
+            // The batch reads the server's database count first; the Gateway checks the index against it.
+            return ['login' => "PING\n", 'owner_password' => $password,
+                'create' => "CONFIG GET databases\nACL SETUSER {$user} ".implode(' ', $rules)."\nACL SAVE\n"];
         }
         foreach ([$user, ...$input['databases'], ...($input['test_prefix'] === null ? [] : [$input['test_prefix']])] as $name) {
             if (preg_match(self::NAME, $name) !== 1) {
@@ -119,9 +138,11 @@ final readonly class DatabaseStatements
                 $create .= "REVOKE ALL ON DATABASE \"{$name}\" FROM PUBLIC;\n\\connect {$name}\nREVOKE CREATE ON SCHEMA public FROM PUBLIC;\nGRANT ALL ON SCHEMA public TO \"{$user}\";\n\\connect postgres\n";
             }
             // A database that exists with another owner, or a role that exists with superuser-like rights, is not ours to reuse.
-            $probe = "SELECT datname FROM pg_database WHERE datname IN ({$names}) AND pg_get_userbyid(datdba) <> '{$user}' UNION ALL SELECT rolname FROM pg_roles WHERE rolname='{$user}' AND (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication);\n";
+            $foreign = "SELECT datname FROM pg_database WHERE datname IN ({$names}) AND pg_get_userbyid(datdba) <> '{$user}' UNION ALL SELECT rolname FROM pg_roles WHERE rolname='{$user}' AND (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication)";
+            // A name the server holds for someone else stops the batch before any change; the marker names the refusal.
+            $guard = "SELECT 'database.name_conflict' WHERE EXISTS ({$foreign});\nDO \$orbit\$ BEGIN IF EXISTS ({$foreign}) THEN RAISE EXCEPTION 'database.name_conflict'; END IF; END \$orbit\$;\n";
 
-            return ['probe' => $probe, 'login' => "SELECT current_user;\n", 'create' => $create, 'owner_env' => "PGPASSWORD={$password}\n"];
+            return ['login' => "SELECT current_user;\n", 'owner_password' => $password, 'create' => $guard.$create];
         }
         $prefix = $input['test_prefix'];
         $create = "CREATE USER IF NOT EXISTS '{$user}'@'%' IDENTIFIED BY '".str_replace(['\\', "'"], ['\\\\', "''"], $password)."';\n";
@@ -133,9 +154,14 @@ final readonly class DatabaseStatements
         }
         // An existing database the owner holds no full grant on belongs to someone else.
         $grant = "d.Db=REPLACE(s.SCHEMA_NAME,'_','\\\\_')";
-        $probe = "SELECT s.SCHEMA_NAME FROM information_schema.SCHEMATA s WHERE s.SCHEMA_NAME IN ({$names}) AND NOT EXISTS (SELECT 1 FROM mysql.db d WHERE d.User='{$user}' AND d.Host='%' AND {$grant} AND d.Create_priv='Y');\n";
+        $foreign = "SELECT 1 FROM information_schema.SCHEMATA s WHERE s.SCHEMA_NAME IN ({$names}) AND NOT EXISTS (SELECT 1 FROM mysql.db d WHERE d.User='{$user}' AND d.Host='%' AND {$grant} AND d.Create_priv='Y')";
+        // A name the server holds for someone else stops the batch before any change: the prepared statement reads a
+        // table that does not exist. The marker line names the refusal for the Gateway.
+        $guard = "SELECT 'database.name_conflict' FROM DUAL WHERE EXISTS ({$foreign});\n"
+            ."SET @orbit_guard = IF(EXISTS ({$foreign}), 'SELECT 1 FROM orbit_name_conflict.refused', 'DO 0');\n"
+            ."PREPARE orbit_guard FROM @orbit_guard;\nEXECUTE orbit_guard;\nDEALLOCATE PREPARE orbit_guard;\n";
 
-        return ['probe' => $probe, 'login' => "SELECT CURRENT_USER();\n", 'create' => $create, 'owner_env' => "MYSQL_PWD={$password}\n"];
+        return ['login' => "SELECT CURRENT_USER();\n", 'owner_password' => $password, 'create' => $guard.$create];
     }
 
     /** PostgreSQL's SCRAM-SHA-256 verifier, so the plaintext password never reaches the server's SQL log. */
@@ -174,7 +200,7 @@ final readonly class DatabaseStatements
     {
         $client = match ($driver) {
             DatabaseDriver::Pgsql => 'PGPASSWORD && exec psql --no-psqlrc --host=127.0.0.1 --username="$1" --dbname="$2" --no-align --tuples-only --quiet --set=ON_ERROR_STOP=1',
-            DatabaseDriver::Redis => 'REDISCLI_AUTH && exec valkey-cli --user "$1" --no-auth-warning',
+            DatabaseDriver::Redis => 'REDISCLI_AUTH && exec valkey-cli -e --user "$1" --no-auth-warning',
             default => 'MYSQL_PWD && exec mysql --protocol=TCP --host=127.0.0.1 --user="$1" --database="$2" --batch --skip-column-names',
         };
         $variable = strtok($client, ' ');
@@ -207,18 +233,13 @@ final readonly class DatabaseStatements
 
     private function mysqlBlockers(string $names, string $definers): string
     {
-        return <<<SQL
-            SELECT DISTINCT blocker FROM (
-             SELECT DB AS blocker FROM information_schema.PROCESSLIST WHERE DB IN ({$names}) AND ID<>CONNECTION_ID()
-             UNION ALL SELECT locks.OBJECT_SCHEMA FROM performance_schema.metadata_locks locks LEFT JOIN performance_schema.threads threads ON threads.THREAD_ID=locks.OWNER_THREAD_ID WHERE locks.OBJECT_SCHEMA IN ({$names}) AND (threads.PROCESSLIST_ID IS NULL OR threads.PROCESSLIST_ID<>CONNECTION_ID())
-             UNION ALL SELECT TABLE_SCHEMA FROM information_schema.VIEWS WHERE DEFINER IN ({$definers}) AND TABLE_SCHEMA NOT IN ({$names})
-             UNION ALL SELECT ROUTINE_SCHEMA FROM information_schema.ROUTINES WHERE DEFINER IN ({$definers}) AND ROUTINE_SCHEMA NOT IN ({$names})
-             UNION ALL SELECT TRIGGER_SCHEMA FROM information_schema.TRIGGERS WHERE DEFINER IN ({$definers}) AND TRIGGER_SCHEMA NOT IN ({$names})
-             UNION ALL SELECT EVENT_SCHEMA FROM information_schema.EVENTS WHERE DEFINER IN ({$definers}) AND EVENT_SCHEMA NOT IN ({$names})
-             UNION ALL SELECT TABLE_SCHEMA FROM information_schema.KEY_COLUMN_USAGE WHERE REFERENCED_TABLE_SCHEMA IN ({$names}) AND TABLE_SCHEMA<>REFERENCED_TABLE_SCHEMA
-            ) blockers ORDER BY blocker;
-
-            SQL;
+        return "SELECT DB FROM information_schema.PROCESSLIST WHERE DB IN ({$names}) AND ID<>CONNECTION_ID()"
+            ." UNION ALL SELECT locks.OBJECT_SCHEMA FROM performance_schema.metadata_locks locks LEFT JOIN performance_schema.threads threads ON threads.THREAD_ID=locks.OWNER_THREAD_ID WHERE locks.OBJECT_SCHEMA IN ({$names}) AND (threads.PROCESSLIST_ID IS NULL OR threads.PROCESSLIST_ID<>CONNECTION_ID())"
+            ." UNION ALL SELECT TABLE_SCHEMA FROM information_schema.VIEWS WHERE DEFINER IN ({$definers}) AND TABLE_SCHEMA NOT IN ({$names})"
+            ." UNION ALL SELECT ROUTINE_SCHEMA FROM information_schema.ROUTINES WHERE DEFINER IN ({$definers}) AND ROUTINE_SCHEMA NOT IN ({$names})"
+            ." UNION ALL SELECT TRIGGER_SCHEMA FROM information_schema.TRIGGERS WHERE DEFINER IN ({$definers}) AND TRIGGER_SCHEMA NOT IN ({$names})"
+            ." UNION ALL SELECT EVENT_SCHEMA FROM information_schema.EVENTS WHERE DEFINER IN ({$definers}) AND EVENT_SCHEMA NOT IN ({$names})"
+            ." UNION ALL SELECT TABLE_SCHEMA FROM information_schema.KEY_COLUMN_USAGE WHERE REFERENCED_TABLE_SCHEMA IN ({$names}) AND TABLE_SCHEMA<>REFERENCED_TABLE_SCHEMA";
     }
 
     private function invalid(): never

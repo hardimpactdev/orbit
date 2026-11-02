@@ -172,7 +172,7 @@ it('admits only the requested member without discovering or deleting sibling wor
         ->and(InstanceRemoval::query()->sole()->members()->count())->toBe(1);
 })->with([false, true]);
 
-it('drops an owned server database through a database:destroy child that reads the server admin login', function (): void {
+it('drops an owned server database through a database:destroy child with one vault value per batch', function (): void {
     $process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $this->node->id, 'name' => 'dispatch-managed', 'runtime' => 'docker',
         'runtime_config' => ['image' => 'mysql:8.4', 'command' => ['mysqld'], 'environment' => [], 'ports' => [], 'volumes' => []],
         'restart_policy' => 'unless-stopped', 'desired_state' => 'running', 'status' => 'active']);
@@ -183,13 +183,12 @@ it('drops an owned server database through a database:destroy child that reads t
         'database_server_id' => $server->id, 'owner_instance_id' => $this->instance->id]);
     $this->withHeader('Idempotency-Key', 'destroy-managed')->deleteJson($this->path, ['force' => true])->assertAccepted();
     $run = collect($this->socket->sent)->firstWhere('type', 'workflow.run')['payload']['inputs'];
-    $key = 'database-server-'.$server->id.'-client-env';
+    $key = 'database-destroy-'.$run['intent']['direct_destroy']['database']['intent_id'].'-'.$server->id.'-drop';
     $child = $run['intent']['direct_destroy']['database']['servers'][0];
 
     expect(collect($this->socket->sent)->where('type', 'vault.put')->pluck('payload.key')->all())->toContain($key)
-        ->and($run['execution_secrets']['server_'.$server->id])->toBe(['vault' => 'orbit-control-inputs', 'key' => $key])
+        ->and($run['execution_secrets']['server_'.$server->id.'_drop'])->toBe(['vault' => 'orbit-control-inputs', 'key' => $key])
         ->and($child['server_id'])->toBe($server->id)
-        ->and($child['intent']['statements']['drop'])->toContain('dispatch_managed')
         ->and($child['intent']['ssh_execution']['target']['host'])->toBe('10.44.0.9')
         ->and(json_encode($run))->not->toContain('fixture-private-password')->not->toContain('fixture-connection-password')
         ->and($this->instance->refresh()->status)->toBe(InstanceState::Removing);

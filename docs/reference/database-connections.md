@@ -159,7 +159,7 @@ An owned database created or copied for development has a test database of the s
 
 | Driver | Test database |
 | --- | --- |
-| `mysql` | `<name>_test` on the same server. The user also gets every database whose name starts with `<name>_test`, so Laravel's parallel testing can create `<name>_test_test_1` and the rest. |
+| `mysql` | `<name>_test` and a recorded pool of `<name>_test_test_1..N` on the same server. The user also gets every database whose name starts with `<name>_test`. [Create the pool](/reference/database-servers#create-a-database-on-a-server) with `--test-processes=N` (default 8, range 1–32). |
 | `pgsql` | `<name>_test` and a recorded pool of `<name>_test_test_1..N`, owned by the Instance role without `CREATEDB`. [Create the pool](/reference/database-servers#create-a-database-on-a-server) with `--test-processes=N` (default 8, range 1–32). |
 | `sqlite` | `:memory:` |
 

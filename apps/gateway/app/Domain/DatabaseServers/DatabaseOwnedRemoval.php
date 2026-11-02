@@ -6,14 +6,12 @@ namespace App\Domain\DatabaseServers;
 
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\DatabaseServer;
-use App\Models\Node;
 use App\Support\ValidatedData;
 
 /**
- * The `operation-database-destroy` child of `instance:destroy`, one per Database server: the same intent and admin
- * login that `database:destroy` uses, rendered from the admitted owned-database snapshot.
+ * The `operation-database-destroy` child of `instance:destroy`, one per Database server: the same run inputs that
+ * `database:destroy` uses, rendered from the admitted owned-database snapshot.
  */
 final readonly class DatabaseOwnedRemoval
 {
@@ -34,15 +32,13 @@ final readonly class DatabaseOwnedRemoval
             $snapshot = ValidatedData::object($row['intent'] ?? null);
             $driver = DatabaseDriver::from(ValidatedData::string($snapshot['driver']));
             $container = ValidatedData::string($snapshot['container']);
-            $login = "/run/orbit-database-destroy-owned-{$intentId}-{$serverId}.env";
             $server = DatabaseServer::query()->findOrFail($serverId);
-            $servers[] = ['server_id' => $serverId, 'node_id' => $nodeId, 'intent' => ['driver' => $driver->value, 'container' => $container,
-                'login' => $login, 'client' => DatabaseStatements::client($driver, $container, $login),
-                'statements' => app(DatabaseStatements::class)->destroy($driver, ValidatedData::stringList($snapshot['databases']),
-                    ValidatedData::stringList($snapshot['users']), ValidatedData::stringList($snapshot['test_prefixes'])),
-                'ssh_execution' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($nodeId))]];
-            $copies['server_'.$serverId] = $push ? DatabaseServerAdminSecret::clientEnvCopy($server)
-                : ['vault' => 'orbit-control-inputs', 'key' => "database-server-{$serverId}-client-env"];
+            $run = DatabaseDestroyRun::render($server, $container, app(DatabaseStatements::class)->destroy($driver,
+                ValidatedData::stringList($snapshot['databases']), ValidatedData::stringList($snapshot['users'])), "{$intentId}-{$serverId}", $push);
+            $servers[] = ['server_id' => $serverId, 'node_id' => $nodeId, 'intent' => $run['intent']];
+            foreach ($run['execution_secrets'] as $batch => $copy) {
+                $copies["server_{$serverId}_{$batch}"] = $copy;
+            }
         }
 
         return [$servers, $copies];

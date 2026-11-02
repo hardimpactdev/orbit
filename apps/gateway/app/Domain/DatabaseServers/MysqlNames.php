@@ -24,9 +24,10 @@ final readonly class MysqlNames
         return $this->limit($this->normalize($name), self::DATABASE_MAX_LENGTH, grant: 0);
     }
 
-    public function testDatabase(string $database): string
+    /** A pool keeps room for its last worker, `<test>_test_32`, within the limit. */
+    public function testDatabase(string $database, bool $pool = false): string
     {
-        return $this->limit($database.'_test', self::DATABASE_MAX_LENGTH, grant: 1);
+        return $this->limit($database.'_test', self::DATABASE_MAX_LENGTH - ($pool ? strlen('_test_32') : 0), grant: 1);
     }
 
     public function user(string $name): string

@@ -72,7 +72,7 @@ final readonly class DatabaseConnectionFieldRules
     }
 
     /**
-     * Creating a database on a MySQL server takes only the slug, the server, and an optional Instance. An ACL user on a
+     * Creating a database on a MySQL server takes the slug, the server, and an optional Instance with its test pool size. An ACL user on a
      * Valkey server takes the slug, the server, its key patterns and allowed commands, and an optional database index.
      * The Gateway derives every other connection field from the server. A server that does not exist gets no rules for
      * the driver's fields, so the create reports the missing server.
@@ -116,7 +116,8 @@ final readonly class DatabaseConnectionFieldRules
                 'allow' => ['required', 'array', 'list', 'min:1', 'max:64'],
                 'allow.*' => ['required', 'string', 'max:128', 'regex:'.self::ACL_RULE_PATTERN, Rule::notIn(self::ACL_REFUSED_RULES)],
             ],
-            default => [...$rules, 'locale' => ['missing'], 'patterns' => ['missing'], 'allow' => ['missing']],
+            default => [...$rules, 'locale' => ['missing'], 'patterns' => ['missing'], 'allow' => ['missing'],
+                'test_processes' => ['sometimes', 'required', 'integer', 'min:1', 'max:'.PostgresTestDatabases::MAX_PROCESSES, self::strictInteger(...)]],
         };
     }
 

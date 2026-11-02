@@ -71,8 +71,8 @@ final readonly class CreateServerDatabaseAction
             if (($retry = $this->retries->prepare($data)) !== null) {
                 return $retry;
             }
-            if ($data->testProcesses !== null && ($server->driver !== DatabaseDriver::Pgsql || $data->instanceId === null)) {
-                throw new ResourceOperationException('validation.failed', 'Test processes require a PostgreSQL server and an Instance.', 422);
+            if ($data->testProcesses !== null && ($server->driver === DatabaseDriver::Redis || $data->instanceId === null)) {
+                throw new ResourceOperationException('validation.failed', 'Test processes require a MySQL or PostgreSQL server and an Instance.', 422);
             }
             if ($data->locale !== null && $server->driver !== DatabaseDriver::Pgsql) {
                 throw new ResourceOperationException('validation.failed', 'A locale requires a PostgreSQL server.', 422);
@@ -84,11 +84,12 @@ final readonly class CreateServerDatabaseAction
             $redis = $server->driver === DatabaseDriver::Redis;
             $database = $redis ? ($data->database === null ? null : (string) $data->database)
                 : ($server->driver === DatabaseDriver::Pgsql ? $this->postgresName($data->slug) : $this->names->database($data->slug));
-            $processes = $server->driver === DatabaseDriver::Pgsql && $instance !== null ? ($data->testProcesses ?? PostgresTestDatabases::DEFAULT_PROCESSES) : null;
-            if ($processes !== null) {
+            // Both SQL servers get the parallel test pool `<test>_test_1..N` beside an Instance's database.
+            $processes = ! $redis && $instance !== null ? ($data->testProcesses ?? PostgresTestDatabases::DEFAULT_PROCESSES) : null;
+            if ($processes !== null && $server->driver === DatabaseDriver::Pgsql) {
                 $database = $this->postgresTests->database($database ?? '');
             }
-            $test = $instance === null ? null : $this->names->testDatabase($database ?? '');
+            $test = $instance === null ? null : $this->names->testDatabase($database ?? '', pool: $processes !== null);
             if (! $redis) {
                 app(DatabaseDestroySafety::class)->assertNames([$database ?? ''], $test === null ? [] : [$test]);
             }

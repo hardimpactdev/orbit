@@ -42,18 +42,6 @@
   },
   "phases": [
     {
-      "name": "Write the client login",
-      "job": "destroy",
-      "step": "Write the client login",
-      "budget_seconds": 60
-    },
-    {
-      "name": "Check for blockers",
-      "job": "destroy",
-      "step": "Check for blockers",
-      "budget_seconds": 60
-    },
-    {
       "name": "Drop databases and users",
       "job": "destroy",
       "step": "Drop databases and users",
@@ -63,19 +51,7 @@
       "name": "Check they are gone",
       "job": "destroy",
       "step": "Check they are gone",
-      "budget_seconds": 60
-    },
-    {
-      "name": "Remove the client login",
-      "job": "destroy",
-      "step": "Remove the client login",
-      "budget_seconds": 60
-    },
-    {
-      "name": "Report the result",
-      "job": "destroy",
-      "step": "Report the result",
-      "budget_seconds": 60
+      "budget_seconds": 30
     }
   ],
   "parity": [

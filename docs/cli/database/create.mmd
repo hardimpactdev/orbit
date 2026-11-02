@@ -1,5 +1,7 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, DECISIONS R1-R4, 5 (swamp role SSH identity), round 2 bugs (server admin password by its own vault key), flow-tighten, script audit Q-DBAUTH (one docker exec per action, statement on stdin) and Q-SECRET (login files via cfgmgmt file, always removed). docs/reference/database-servers.md.
+  %% Target design: ADR 0244 task, DECISIONS R1-R4, 5 (swamp role SSH identity), round 2 bugs (server admin password by its own vault key; the owner password is staged and always removed), flow-tighten. docs/reference/database-servers.md.
+  %% Tightened: flow-tighten 2026-11-02, rules 14, 16, 22 (one docker exec -i with SQL on stdin, no staged password or cleanup, no script read, report or assert step).
+  %% Decided: Nick 2026-11-02, the parallel test database pool (test_processes) applies to MySQL as to PostgreSQL; to verify against the code.
   %% status: draft
   %% command: database:create
   %% kind: database.create
@@ -29,7 +31,7 @@ sequenceDiagram
   %%> - the slug `shop` is free (`database.slug_conflict`)
   %%> - with `--server`: Database server `beast-mysql` is active, and your Node has an access grant to Node 12
   %%> - with `--instance`: Instance 42 exists, and the server is MySQL or PostgreSQL (`database.driver_unsupported` for Valkey)
-  %%> - `--locale` and `--test-processes` only on PostgreSQL; `--pattern` and `--allow` only on Valkey
+  %%> - `--locale` only on PostgreSQL; `--test-processes` on MySQL and PostgreSQL; `--pattern` and `--allow` only on Valkey
   %%> - no database removal runs on `beast-mysql`; the Gateway holds one lock per Database server
   %%> Builds:
   %%> - the names from the slug: database `shop`, test database `shop_test`, owner `<project>_<instance>`
@@ -49,9 +51,9 @@ sequenceDiagram
   else new database on a server
     GW->>SW: Store the owner password<br/>database-create-intent-5121
     %%> What it does:
-    %%> - puts the owner password into the Swamp vault on Node 209, after the task is committed (R3)
-    %%> Not included:
-    %%> - the server's admin password; it is already in the vault under the server's own key `database-server-3-admin`
+    %%> - puts two whole values into the Swamp vault on Node 209, after the task is committed (R3)
+    %%> - `database-create-intent-5121`: the admin password line, then the create batch with the owner password inside
+    %%> - `database-create-owner-5121`: the owner password line, then the owner check
     %%> Why:
     %%> - secrets go Gateway → vault → step; workflow inputs carry only vault key names
     GW->>SW: Start run, full intent<br/>operation-database-create
@@ -66,52 +68,31 @@ sequenceDiagram
     %%> - the task number, at once
     %%> Next:
     %%> - the CLI follows the task with `operation:show`
-    opt MySQL or Valkey server
-      SW->>N: Write the client login<br/>cfgmgmt file · 0600 env file
-      %%> What it does:
-      %%> - writes the server's admin login, from its vault key `database-server-3-client-env`, to a root-only 0600 file
-      %%> Why:
-      %%> - `docker exec --env-file` hands it to the client; it never enters argv, stdin or a statement
-      %%> Not included:
-      %%> - PostgreSQL uses local trust inside the container and needs no login
-    end
-    SW->>N: Check names are free<br/>docker exec · query on stdin
+    SW->>N: Create owner and databases<br/>docker exec -i · SQL on stdin
     %%> How:
-    %%> - one `docker exec -i` with the statement the Gateway rendered on standard input
-    %%> What it does:
-    %%> - finds a planned database that exists for another owner, or a role with superuser-like rights
-    %%> - Valkey: reads the server's database count for `--database`
+    %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior and the `swamp` role's SSH identity; nothing is copied to the Node
+    %%> - one `docker exec -i` into the server container per statement batch, with the statements on stdin; the owner password from `vault.get` sits inside the SQL, never in argv or a file
+    %%> - admin login: inside the container, the first stdin line is the admin password, read into the client's password variable, never in argv or a file
+    %%> What it does, in order:
+    %%> - creates the owner login, or keeps it when it already exists with this password
+    %%> - creates the primary database, and with `--instance` the test database
+    %%> - grants the owner its databases and test databases, nothing else
     %%> Refuses:
-    %%> - `database.name_conflict`, or `database.index_invalid` on Valkey; nothing changes
-    SW->>N: Create owner and databases<br/>docker exec · statement from vault
-    %%> What it does:
-    %%> - runs the create statement the Gateway put in the vault, because it carries the owner's password
+    %%> - a name the server already has for something else (`database.name_conflict`); the batch refuses by itself before any change, so no read runs first, and prints the refusal for the Gateway
     %%> Per driver:
-    %%> - MySQL: `CREATE USER IF NOT EXISTS`, `CREATE DATABASE IF NOT EXISTS`, one grant per database and one for the test prefix
-    %%> - PostgreSQL: the role with a SCRAM verifier, each database with `TEMPLATE template0` and the chosen locale, PUBLIC revoked, the public schema granted
-    %%> - Valkey: `ACL SETUSER shop reset on #<hash> resetchannels ~<pattern> -@all +<rule> -@admin -@dangerous -function -script`, then `ACL SAVE`
-    SW->>N: Write the owner login<br/>cfgmgmt file · 0600 env file
+    %%> - MySQL, PostgreSQL: one owner per Instance on a server; a second database for Instance 42 reuses it
+    %%> - MySQL, PostgreSQL with `--instance`: also the parallel test pool `shop_test_test_1` to `_8` (`--test-processes`)
+    %%> - MySQL: one grant per database, plus one for the test prefix, which covers the pool
+    %%> - PostgreSQL: the chosen locale and `TEMPLATE template0`; revokes PUBLIC access, then grants the public schema to the owner
+    %%> - Valkey: `CONFIG GET databases`, then `ACL SETUSER shop reset on #<hash> resetchannels ~<pattern> -@all +<rule> -@admin -@dangerous -function -script`, then `ACL SAVE`; the Gateway checks index 1 against the live count
+    %%> - Valkey with `--allow=flushdb`: `+flushdb` follows the final deny; give the user its own `--database` index
+    SW->>N: Check the owner login<br/>docker exec -i · as the owner
     %%> What it does:
-    %%> - writes the owner's own login to a second root-only 0600 file
-    SW->>N: Check the owner login<br/>docker exec · log in as the owner
-    %%> What it does:
-    %%> - logs in as the owner over TCP with its own password
+    %%> - logs in as the owner, password as the first stdin line, and reads its own name; the Gateway checks the answer
     %%> Why:
-    %%> - the connection only counts as active when the server accepts it
-    SW->>N: Remove the owner login<br/>always runs · cfgmgmt file absent
-    %%> When:
-    %%> - always, whether the steps above passed or failed
-    opt MySQL or Valkey server
-      SW->>N: Remove the client login<br/>always runs · cfgmgmt file absent
-      %%> When:
-      %%> - always, as the last Node step
-    end
-    Note over SW: Report the result<br/>failed_step · error_code
-    %%> What it does:
-    %%> - maps the first failed step to its error code, for example `database.name_conflict`
-    Note over SW: Fail on an error<br/>assert · exit code 0
-    %%> What it does:
-    %%> - fails the run when the report holds an `error_code`, so the task fails with that code
+    %%> - the connection only counts as active when the server accepts it; this is the one end check
+    %%> Not included:
+    %%> - no staged password file, so no cleanup step; no report or assert step
     alt every step passes
       N-->>SW: owner logs in
       %%> Returns:
@@ -130,7 +111,7 @@ sequenceDiagram
       %%> - a name is taken, SQL fails, SSH fails, or the owner cannot log in
       SW--xGW: Run failed<br/>error_code, failed step
       %%> The Gateway reads:
-      %%> - which step failed and its error code
+      %%> - which step failed and its exit code, mapped to `error_code` such as `database.name_conflict`
       Note over GW: Mark the connection failed<br/>task failed · rerun after a fix
       %%> Result:
       %%> - connection `shop` stays reserved, marked failed, with its encrypted owner password

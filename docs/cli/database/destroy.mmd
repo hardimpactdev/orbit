@@ -1,5 +1,6 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, DECISIONS R1-R4, 5 (swamp role SSH identity), round 2 bugs (server admin password by its own vault key), flow-tighten (rule 22: no ownership probe or fence), script audit Q-DBAUTH (one docker exec per action, statement on stdin) and Q-SECRET (login file via cfgmgmt file). docs/reference/database-servers.md#remove-a-database.
+  %% Target design: ADR 0244 task, DECISIONS R1-R4, 5 (swamp role SSH identity), round 2 bugs (server admin password by its own vault key, cleanup on pass or fail). docs/reference/database-servers.md#remove-a-database.
+  %% Tightened: flow-tighten 2026-11-02, rules 6, 16, 19, 22 (no copied scripts or cleanup, no ownership read, blocker check and drops in one SQL batch on stdin).
   %% status: draft
   %% command: database:destroy
   %% kind: database.destroy
@@ -49,65 +50,52 @@ sequenceDiagram
     %%> What it does:
     %%> - starts one Swamp run on serve (Node 209)
     %%> Inputs:
-    %%> - the planned databases, test prefix, test pool and unshared users
-    %%> - the vault key name `database-server-3-admin`; the admin password itself never enters the intent
+    %%> - the planned databases (with the recorded test database and pool) and unshared users
+    %%> - four vault key names, one per batch (`database-destroy-5124-fence`, `-drop`, `-gone`, `-restore`); each value is the admin password line and its statements, so the password never enters the intent
     %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
     GW-->>CLI: 202 Accepted<br/>task #5124
     %%> What you get:
     %%> - the task number, at once
     %%> Next:
     %%> - the CLI follows the task with `operation:show`
-    opt MySQL or Valkey server
-      SW->>N: Write the client login<br/>cfgmgmt file · 0600 env file
+    opt PostgreSQL server
+      SW->>N: Fence new clients<br/>docker exec -i · SQL on stdin
+      %%> How:
+      %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior; nothing is copied to the Node
+      %%> - one `docker exec -i` into the server container, the admin password as the first stdin line, then the statements
       %%> What it does:
-      %%> - writes the server's admin login, from its vault key `database-server-3-client-env`, to a root-only 0600 file
-      %%> Why:
-      %%> - `docker exec --env-file` hands it to the client; it never enters argv, stdin or a statement
+      %%> - stops new clients from connecting to every planned database
+      %%> - journals each database's prior value in `orbit_admin.database_removal_fences`, in the same transaction
       %%> Not included:
-      %%> - PostgreSQL uses local trust inside the container and needs no login
+      %%> - existing clients stay connected; Orbit never force-disconnects them
     end
-    opt MySQL with a test prefix
-      SW->>N: Find the test databases<br/>docker exec · SELECT on stdin
-      %%> What it does:
-      %%> - lists the databases under the recorded test prefix, plain names only
-    end
-    SW->>N: Check for blockers<br/>docker exec · query on stdin
-    %%> How:
-    %%> - one `docker exec -i` with the statement the Gateway rendered at admission on standard input
+    SW->>N: Drop databases and users<br/>docker exec -i · SQL on stdin
     %%> What it does:
-    %%> - checks the whole set before the first drop; any row is a blocker
+    %%> - one statement batch on stdin: first the blocker query, then each planned database, then each planned user that no other connection on `beast-mysql` uses
+    %%> - a missing database or user counts as removed
     %%> Blocks:
     %%> - PostgreSQL: sessions, replication slots, prepared transactions, subscriptions, outside dependencies of a removed role
     %%> - MySQL: connected clients, metadata locks, outside definers, cross-schema foreign keys
-    %%> Refuses:
-    %%> - any blocker gives `database.in_use`; nothing is dropped
-    %%> Not included:
-    %%> - Valkey has no databases and skips this check
-    SW->>N: Drop databases and users<br/>docker exec · DROP on stdin
-    %%> What it does:
-    %%> - drops each planned database and each unshared user; a missing one counts as removed
+    %%> - any blocker ends the batch with `database.in_use` before the first drop
     %%> Per driver:
-    %%> - Valkey: `ACL DELUSER` for each user, then `ACL SAVE`; the user's keys stay
+    %%> - admin login: the admin password as the first stdin line, from the vault, read inside the container
+    %%> - Valkey: no database; `ACL DELUSER`, then `ACL SAVE`; the user's keys stay
     %%> Not included:
-    %%> - no ownership probe and no connection fence (flow-tighten rule 22); a client that connects between the check and the drop is cut off
-    SW->>N: Check they are gone<br/>docker exec · query on stdin
+    %%> - no ownership read first: the plan comes from the Gateway's records
+    SW->>N: Check they are gone<br/>docker exec -i · SELECT
     %%> What it does:
-    %%> - checks that no planned database or user is left on the server
+    %%> - checks that no planned database or user is left on the server; the check fails the run while one remains
     %%> Why:
-    %%> - the removal only counts when the server shows it
-    opt MySQL or Valkey server
-      SW->>N: Remove the client login<br/>always runs · cfgmgmt file absent
+    %%> - the removal only counts when the server shows it; this is the one end check, and a parent run such as `instance:destroy` sees a refusal too
+    opt a step failed
+      SW->>N: Restore the fence<br/>prior ALLOW_CONNECTIONS
       %%> When:
-      %%> - always, as the last Node step, whether the steps above passed or failed
+      %%> - only after a failed step on a fenced PostgreSQL server: a step with `dependsOn` and the condition `failed`
       %%> What it does:
-      %%> - removes the 0600 login file from Node 12
+      %%> - gives each surviving database its exact prior value from the journal
+      %%> If it fails:
+      %%> - the journal stays; the next `database:destroy` restores or finishes
     end
-    Note over SW: Report the result<br/>backend · failed_step · error_code
-    %%> What it does:
-    %%> - maps the first failed step to its error code, for example `database.in_use`
-    Note over SW: Fail on an error<br/>assert · exit code 0
-    %%> What it does:
-    %%> - fails the run when the report holds an `error_code`, so the task fails with that code
     alt every step passes
       N-->>SW: set absent
       %%> Returns:

@@ -20,11 +20,11 @@ A server's `driver` names its kind. A `mysql` server runs MySQL, a `pgsql` serve
 
 ## Execution
 
-Managed database creation runs `operation-database-create` on Node 209 over official SSH, one `docker exec -i` per action ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/database/create.mmd)): check names are free, create the owner and databases, then log in as the owner over TCP.
+Managed database creation runs `operation-database-create` on Node 209 over official SSH, in two steps ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/database/create.mmd)): one `docker exec -i` creates the owner and databases, then the owner logs in over TCP.
 
-The create statement carries the owner's password, so the Gateway renders it and puts it in the vault, and the step reads it on standard input. MySQL and Valkey clients read the admin login from a root-only 0600 env file that `@swamp/cfgmgmt/file` writes from the server's key `database-server-<id>-client-env`; the owner's login uses a second such file. Always-run steps remove both. PostgreSQL uses local trust for the admin work.
+Each step's standard input is one whole vault value the Gateway renders: the login's password as the first line, then the statements. Inside the container, the client reads that line into its password variable, so no password enters argv or a file, and no cleanup step is needed. The create batch carries the owner's password.
 
-A database that exists for another owner is refused with `database.name_conflict` before any change. The Gateway projects the recorded connection after native success.
+The batch refuses a database that exists for another owner with `database.name_conflict` before any change; it prints the refusal for the Gateway, so no read runs first. The run has no report step: the Gateway reads both steps' output from the native result. The Gateway projects the recorded connection after native success.
 
 Database actions return one [Operation](/reference/operations) with HTTP 202. The Gateway validates the request and records intent. Swamp runs one native DAG on the admitted Nodes and returns a bounded result. The CLI follows the Operation; use `--idempotency-key` after a lost start response. List and show read Gateway records. Tables, schema, describe and read-only queries run in the native Database read workflow.
 
@@ -154,7 +154,7 @@ Orbit refuses a name with `database.name_conflict` when the server already has t
 
 On MySQL and PostgreSQL, `--instance` also creates the test database `<name>_test`, attaches the connection to the Instance under prefix `DB`, and records the Instance as the owner. [Test databases](/reference/database-connections#test-databases) describes how tests use it.
 
-PostgreSQL also creates `<name>_test_test_1` through `<name>_test_test_N`, all owned by the same managed role. `--test-processes=N` sets N from 1 to 32; omission uses 8. The connection records `test_processes`. This option requires a PostgreSQL server and `--instance`; other combinations are refused. The primary name is limited to 50 characters with the same hash suffix, so the longest worker name fits PostgreSQL's 63-character limit. The selected locale applies to the primary database and every test database.
+Both also create the parallel test pool `<name>_test_test_1` through `<name>_test_test_N`, owned by the same managed user or role. `--test-processes=N` sets N from 1 to 32; omission uses 8. The connection records `test_processes`. This option requires a MySQL or PostgreSQL server and `--instance`; other combinations are refused. The primary name is limited to 50 characters with the same hash suffix, so the longest worker name fits PostgreSQL's 63-character limit. The selected locale applies to the primary database and every test database.
 
 Creation checks every name before mutation. Failure keeps its reserved intent for a convergent retry; destruction drops only the recorded pool and leaves unrecorded names alone. The count is fixed at creation; create a new connection to change it.
 
@@ -265,11 +265,11 @@ For Valkey writes, Swamp invokes the fixed `database.valkey` program on the serv
 
 ## Remove a database
 
-`database:destroy` of a connection on a MySQL server drops the database, every database whose name starts with its test database name, and each user Orbit created for it that no other connection on the server uses. On PostgreSQL it drops only the primary, test database, and recorded worker pool. It deletes the record only after every database and unshared user is gone. A failed drop keeps the record; a repeat tolerates missing objects and finishes the remaining drops.
+`database:destroy` drops the primary database, the test database, the recorded test pool, and each user Orbit created for the connection that no other connection on the server uses. The plan comes from the records; unrecorded names are left alone. It deletes the record only after every database and unshared user is gone. A failed drop keeps the record; a repeat tolerates missing objects and finishes the remaining drops.
 
-Standalone removal runs `operation-database-destroy` on Node 209 over official SSH, one `docker exec -i` per action with the statement the Gateway rendered at admission on standard input ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/database/destroy.mmd)). It finds MySQL test databases under the recorded prefix, checks blockers for the whole set, drops, and checks the names are gone. On Valkey it runs `ACL DELUSER` for each user and `ACL SAVE`. MySQL and Valkey clients read the admin login from a root-only 0600 env file that `@swamp/cfgmgmt/file` writes from the server's vault key `database-server-<id>-client-env` and an always-run step removes; PostgreSQL uses local trust inside the container. The Gateway removes records through the shared terminal projector.
+Standalone removal runs `operation-database-destroy` on Node 209 over official SSH, one `docker exec -i` per batch ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/database/destroy.mmd)). PostgreSQL first fences new clients. One batch then checks blockers for the whole set and drops, and the end check fails the run while a planned name remains. On Valkey the batch runs `ACL DELUSER` for each user and `ACL SAVE`. Each batch's standard input is one vault value: the admin password line, then the statements. The Gateway removes records through the shared terminal projector.
 
-The Gateway admits the recorded resource identities and starts one native Swamp workflow. It performs no live probe, builds no SQL, and refuses a server Node without a stored SSH host key. System database names and prefixes are refused before SQL. Removal runs no ownership probe and no connection fence (flow-tighten rule 22): a client that connects between the blocker check and the drop is cut off.
+The Gateway admits the recorded resource identities and starts one native Swamp workflow. It performs no live probe, builds no SQL, and refuses a server Node without a stored SSH host key. System database names and prefixes are refused before SQL. Removal runs no ownership probe.
 
 Before the first drop, Orbit checks the whole removal set. PostgreSQL sessions, replication slots (including inactive logical slots), prepared transactions, and subscriptions block removal. Dependencies of an unshared role outside the set also block it, including ownership and grants in another database or on a shared object. MySQL checks connected clients, metadata locks on the planned schemas (including transactions that use qualified table names without a default database), stored objects outside the set whose definer is a user being removed, and incoming cross-schema foreign keys. Cross-schema references between planned databases also block; remove those constraints first.
 
@@ -411,7 +411,7 @@ Laravel's `--recreate-databases` and `--drop-databases` remain unsupported: drop
 
 Database removal follows Orbit’s existing refusal rule for connected clients. `DROP DATABASE ... WITH (FORCE)` was rejected because it would disconnect clients without a separate choice and still fails on logical replication slots, subscriptions, and prepared transactions. Preflight checks every planned database and every role being removed before destructive SQL runs.
 
-Removal keeps no admission fence or journal (flow-tighten rule 22). A client that connects between the check and the drops is cut off; Gateway admission still refuses creates on the same server while removal runs.
+On PostgreSQL, the fence closes the worker-start race between that check and the drops. It journals each database's `ALLOW_CONNECTIONS` with its OID in `orbit_admin.database_removal_fences`, in the same transaction that closes it. After a failed step, `Restore the fence` gives each surviving database its journaled value back; the OID keeps it from changing a replacement database. A failed restore keeps the journal for the next removal.
 
 PostgreSQL cannot run `DROP DATABASE` in a transaction, so an infrastructure failure still requires a retry. Avoid changing server dependencies through another admin connection during removal. Missing databases and users count as removed on retry.
 

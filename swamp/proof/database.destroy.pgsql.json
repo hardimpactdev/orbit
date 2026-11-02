@@ -42,10 +42,10 @@
   },
   "phases": [
     {
-      "name": "Check for blockers",
+      "name": "Fence new clients",
       "job": "destroy",
-      "step": "Check for blockers",
-      "budget_seconds": 60
+      "step": "Fence new clients",
+      "budget_seconds": 30
     },
     {
       "name": "Drop databases and users",
@@ -57,13 +57,7 @@
       "name": "Check they are gone",
       "job": "destroy",
       "step": "Check they are gone",
-      "budget_seconds": 60
-    },
-    {
-      "name": "Report the result",
-      "job": "destroy",
-      "step": "Report the result",
-      "budget_seconds": 60
+      "budget_seconds": 30
     }
   ],
   "parity": [

@@ -50,7 +50,7 @@ final readonly class DropServerDatabaseAction
             // The run reads the admin password from the server's own vault key (R3), so the intent records none.
             $input = $snapshot['input'];
             $input['statements'] = app(DatabaseStatements::class)->destroy(DatabaseDriver::from(ValidatedData::string($input['driver'])),
-                ValidatedData::stringList($input['databases']), ValidatedData::stringList($input['users']), ValidatedData::stringList($input['test_prefixes']));
+                ValidatedData::stringList($input['databases']), ValidatedData::stringList($input['users']));
             $prepared[] = $this->operations->prepare('database.destroy', 'database_server', $snapshot['server_id'], $snapshot['node_id'],
                 ['connection_ids' => $snapshot['connection_ids'], ...$input], [], ['delete_connections' => $snapshot['connection_ids']]);
         }
@@ -86,11 +86,12 @@ final readonly class DropServerDatabaseAction
             if (! $redis) {
                 app(DatabaseDestroySafety::class)->assertNames($names, $prefix === null ? [] : [$prefix]);
             }
-            if ($server->driver === DatabaseDriver::Pgsql) {
+            // The plan comes from the records: the test database and its recorded pool go by name on both SQL servers.
+            if (! $redis) {
                 $names = [...$names, ...app(PostgresTestDatabases::class)->recordedNames($connection)];
             }
             app(DatabaseDestroySafety::class)->assertNames($names);
-            $groups[$server->id] ??= ['server' => $server, 'connection_ids' => [], 'names' => [], 'users' => [], 'prefixes' => [], 'owners' => []];
+            $groups[$server->id] ??= ['server' => $server, 'connection_ids' => [], 'names' => [], 'users' => [], 'owners' => []];
             $group = &$groups[$server->id];
             $group['connection_ids'][] = $connection->id;
             $group['names'] = [...$group['names'], ...$names];
@@ -102,10 +103,6 @@ final readonly class DropServerDatabaseAction
                 $group['owners'][$name] = $owner;
             }
             $group['users'] = [...$group['users'], ...$this->unsharedUsers($connection, $ids)];
-            if ($server->driver === DatabaseDriver::Mysql && $prefix !== null) {
-                $group['prefixes'][] = $prefix;
-                $group['owners'][$prefix] = $connection->username ?? '';
-            }
             unset($group);
         }
 
@@ -117,7 +114,6 @@ final readonly class DropServerDatabaseAction
                     'container' => $server->process === null ? null : app(DockerProcessRenderer::class)->containerName($server->process),
                     'host' => $server->node->wireguard_ip, 'port' => $server->port, 'default_open' => $server->default_open,
                     'databases' => array_values(array_unique($group['names'])), 'users' => array_values(array_unique($group['users'])),
-                    'test_prefixes' => array_values(array_unique($group['prefixes'])),
                     'owners' => (object) $group['owners']]];
         }, $groups));
     }

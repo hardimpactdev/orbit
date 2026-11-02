@@ -285,7 +285,7 @@ class InstanceDestroyNative(InstanceNativeFixture):
         self.assertEqual((sqlite['behaviorType'], sqlite['globalArgs']['ensure'], sqlite['globalArgs']['become']), ('@swamp/cfgmgmt/file', 'absent', False))
         servers = steps['Drop owned databases']['task']
         self.assertEqual((servers['workflowIdOrName'], servers['inputs']['kind']), ('operation-database-destroy', 'database.destroy'))
-        self.assertEqual(list(servers['inputs']['execution_secrets']), ['client_env'])
+        self.assertEqual(list(servers['inputs']['execution_secrets']), ['fence', 'drop', 'gone', 'restore'])
 
 SSH = '''import os,shlex,subprocess,sys
 if '-O' in sys.argv or '-N' in sys.argv or '-MNf' in sys.argv: sys.exit(0)
