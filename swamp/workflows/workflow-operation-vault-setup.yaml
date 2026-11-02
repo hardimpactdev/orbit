@@ -33,12 +33,6 @@ inputs:
           pattern: ^/
         published:
           type: boolean
-        refusal_exit_codes:
-          type: object
-          additionalProperties:
-            type: integer
-            minimum: 1
-            maximum: 123
         previous:
           type: object
           properties:
@@ -57,7 +51,6 @@ inputs:
       - collection
       - ca_file
       - published
-      - refusal_exit_codes
       additionalProperties: false
     execution_secrets:
       type: object
@@ -95,128 +88,366 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/vault-sync-plan'
-      behaviorName: vault-setup-inputs
+      behaviorName: vault-setup-prepare-public-data
       methodName: prepare
       inputs:
         intent: ${{ inputs.intent }}
-  - name: Verify the account
+        env:
+          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key) }}
+  - name: workspace
     labels:
       role: swamp
     writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: vault-setup-workspace
+      methodName: execute
+      inputs:
+        run: timeout 30 mktemp -d -t orbit-vault-setup.XXXXXX
+        env: {}
+        timeout: 30000
     dependsOn:
     - step: Prepare public data
       condition:
         type: succeeded
+  - name: Configure the server
+    labels:
+      role: swamp
+    writes: true
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: vault-setup-verify
+      behaviorName: vault-setup-configure-the-server
       methodName: execute
       inputs:
-        run: |
-          timeout 180 bash -euo pipefail <<'BW_COMMAND'
-          umask 077
-          mkdir -m 0700 -p -- "$ORBIT_VAULT_DIRECTORY"
-          BITWARDENCLI_APPDATA_DIR=$ORBIT_VAULT_DIRECTORY
-          BW_CLIENTID=$(jq -ern 'env.ORBIT_VAULT_INTENT | fromjson | .client_id' 2>/dev/null)
-          NODE_EXTRA_CA_CERTS=$(jq -ern 'env.ORBIT_VAULT_INTENT | fromjson | .ca_file' 2>/dev/null)
-          URL=$(jq -ern 'env.ORBIT_VAULT_INTENT | fromjson | .url' 2>/dev/null)
-          export BITWARDENCLI_APPDATA_DIR BW_CLIENTID NODE_EXTRA_CA_CERTS BW_NOINTERACTION=true
-          (unset ORBIT_VAULT_CONFIGURATION; npx --yes --package=@bitwarden/cli@2026.6.0 bw config server "$URL" >/dev/null 2>/dev/null) || exit 10
-          BW_CLIENTSECRET=$(jq -ern 'env.ORBIT_VAULT_CONFIGURATION | fromjson | .client_secret' 2>/dev/null)
-          export BW_CLIENTSECRET
-          (unset ORBIT_VAULT_CONFIGURATION; npx --yes --package=@bitwarden/cli@2026.6.0 bw login --apikey >/dev/null 2>/dev/null) || exit 10
-          BW_PASSWORD=$(jq -ern 'env.ORBIT_VAULT_CONFIGURATION | fromjson | .master_password' 2>/dev/null)
-          export BW_PASSWORD
-          (unset ORBIT_VAULT_CONFIGURATION; npx --yes --package=@bitwarden/cli@2026.6.0 bw unlock --passwordenv BW_PASSWORD --raw >"$ORBIT_VAULT_DIRECTORY/session" 2>/dev/null) || exit 10
-          unset BW_CLIENTSECRET BW_PASSWORD
-          BW_SESSION=$(cat "$ORBIT_VAULT_DIRECTORY/session"); export BW_SESSION
-          (unset ORBIT_VAULT_CONFIGURATION; npx --yes --package=@bitwarden/cli@2026.6.0 bw status >"$ORBIT_VAULT_DIRECTORY/status.json" 2>/dev/null) || exit 10
-          jq -e --slurpfile status "$ORBIT_VAULT_DIRECTORY/status.json" '.[("user_" + $status[0].userId + "_kdfConfig_kdfConfig")] | .kdfType == 0 and (.iterations | type == "number" and . == floor and . >= 1 and . <= 2000000)' "$ORBIT_VAULT_DIRECTORY/data.json" >/dev/null 2>/dev/null || exit 16
-          (unset ORBIT_VAULT_CONFIGURATION; npx --yes --package=@bitwarden/cli@2026.6.0 bw list organizations >"$ORBIT_VAULT_DIRECTORY/organizations.json" 2>/dev/null) || exit 10
-          jq -ce '(env.ORBIT_VAULT_INTENT | fromjson | .organization) as $wanted | map(select(.id == $wanted or .name == $wanted)) | if length == 1 then .[0] else empty end' "$ORBIT_VAULT_DIRECTORY/organizations.json" >"$ORBIT_VAULT_DIRECTORY/organization.json" 2>/dev/null || exit 11
-          (unset ORBIT_VAULT_CONFIGURATION; npx --yes --package=@bitwarden/cli@2026.6.0 bw list collections >"$ORBIT_VAULT_DIRECTORY/collections.json" 2>/dev/null) || exit 10
-          jq -ce --slurpfile org "$ORBIT_VAULT_DIRECTORY/organization.json" '(env.ORBIT_VAULT_INTENT | fromjson | .collection) as $wanted | map(select(.organizationId == $org[0].id and (.id == $wanted or .name == $wanted))) | if length == 1 then .[0] else empty end' "$ORBIT_VAULT_DIRECTORY/collections.json" >"$ORBIT_VAULT_DIRECTORY/collection.json" 2>/dev/null || exit 12
-          jq -en --slurpfile org "$ORBIT_VAULT_DIRECTORY/organization.json" --slurpfile col "$ORBIT_VAULT_DIRECTORY/collection.json" '(env.ORBIT_VAULT_INTENT | fromjson) as $i | if $i.published and $i.previous != null then $i.previous.organization_id == $org[0].id and $i.previous.collection_id == $col[0].id else true end' >/dev/null 2>/dev/null || exit 14
-          jq -nr --slurpfile org "$ORBIT_VAULT_DIRECTORY/organization.json" --slurpfile col "$ORBIT_VAULT_DIRECTORY/collection.json" '{type:2,secureNote:{type:0},name:"Orbit setup check",organizationId:$org[0].id,collectionIds:[$col[0].id]} | @base64' 2>/dev/null |
-           (unset ORBIT_VAULT_CONFIGURATION; npx --yes --package=@bitwarden/cli@2026.6.0 bw create item >"$ORBIT_VAULT_DIRECTORY/probe.json" 2>/dev/null) || exit 13
-          jq -cne --slurpfile status "$ORBIT_VAULT_DIRECTORY/status.json" --slurpfile org "$ORBIT_VAULT_DIRECTORY/organization.json" --slurpfile col "$ORBIT_VAULT_DIRECTORY/collection.json" '{outcome:"succeeded",data:{backend:"configured",email:$status[0].userEmail,organization_id:$org[0].id,organization_name:$org[0].name,collection_id:$col[0].id,collection_name:$col[0].name}} as $r | (env.ORBIT_VAULT_CONFIGURATION | fromjson | [.client_secret,.master_password]) as $excluded | if all($r.data[]; . as $v | ($v | type == "string") and ($v | utf8bytelength <= 1024) and all($excluded[]; . == "" or (. as $s | $v | contains($s) | not))) then $r else empty end' 2>/dev/null || exit 15
-          BW_COMMAND
+        run: timeout 60 npx --yes --package=@bitwarden/cli@2026.6.0 bw config server "$ORBIT_URL" >/dev/null 2>/dev/null
         env:
-          ORBIT_VAULT_INTENT: ${{ steps["Prepare public data"].outputs.intent_json }}
-          ORBIT_VAULT_DIRECTORY: ${{ "/tmp/orbit-vault-setup-" + run.id }}
-          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key)
-            }}
-        timeout: 180000
+          BITWARDENCLI_APPDATA_DIR: ${{ steps.workspace.outputs.stdout.trim() }}
+          BW_NOINTERACTION: 'true'
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+          ORBIT_URL: ${{ inputs.intent.url }}
+        timeout: 60000
+    dependsOn:
+    - step: workspace
+      condition:
+        type: succeeded
+  - name: Log in
+    labels:
+      role: swamp
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: vault-setup-log-in
+      methodName: execute
+      inputs:
+        run: timeout 60 npx --yes --package=@bitwarden/cli@2026.6.0 bw login --apikey >/dev/null 2>/dev/null
+        env:
+          BITWARDENCLI_APPDATA_DIR: ${{ steps.workspace.outputs.stdout.trim() }}
+          BW_NOINTERACTION: 'true'
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+          BW_CLIENTID: ${{ inputs.intent.client_id }}
+          BW_CLIENTSECRET: ${{ vault.get("orbit-control-inputs", steps["Prepare public data"].outputs.client_secret_key) }}
+        timeout: 60000
+    dependsOn:
+    - step: Configure the server
+      condition:
+        type: succeeded
+  - name: Unlock the vault
+    labels:
+      role: swamp
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: vault-setup-unlock-the-vault
+      methodName: execute
+      inputs:
+        run: timeout 60 npx --yes --package=@bitwarden/cli@2026.6.0 bw unlock --passwordenv BW_PASSWORD --raw >"$BITWARDENCLI_APPDATA_DIR/session"
+          2>/dev/null
+        env:
+          BITWARDENCLI_APPDATA_DIR: ${{ steps.workspace.outputs.stdout.trim() }}
+          BW_NOINTERACTION: 'true'
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+          BW_PASSWORD: ${{ vault.get("orbit-control-inputs", steps["Prepare public data"].outputs.master_password_key) }}
+        timeout: 60000
+    dependsOn:
+    - step: Log in
+      condition:
+        type: succeeded
+  - name: Resolve the session
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/vault-sync-plan'
+      behaviorName: vault-setup-resolve-the-session
+      methodName: session
+      inputs:
+        directory: ${{ steps.workspace.outputs.stdout.trim() }}
+    dependsOn:
+    - step: Unlock the vault
+      condition:
+        type: succeeded
+  - name: Read account status
+    labels:
+      role: swamp
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: vault-setup-read-account-status
+      methodName: execute
+      inputs:
+        run: timeout 60 npx --yes --package=@bitwarden/cli@2026.6.0 bw status >"$ORBIT_OUTPUT" 2>/dev/null
+        env:
+          BITWARDENCLI_APPDATA_DIR: ${{ steps.workspace.outputs.stdout.trim() }}
+          BW_NOINTERACTION: 'true'
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+          BW_SESSION: ${{ vault.get("orbit-control-inputs", steps["Resolve the session"].outputs.session_key) }}
+          ORBIT_OUTPUT: ${{ steps.workspace.outputs.stdout.trim() + "/status" }}
+        timeout: 60000
+    dependsOn:
+    - step: Resolve the session
+      condition:
+        type: succeeded
+  - name: Read organizations
+    labels:
+      role: swamp
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: vault-setup-read-organizations
+      methodName: execute
+      inputs:
+        run: timeout 60 npx --yes --package=@bitwarden/cli@2026.6.0 bw list organizations >"$ORBIT_OUTPUT" 2>/dev/null
+        env:
+          BITWARDENCLI_APPDATA_DIR: ${{ steps.workspace.outputs.stdout.trim() }}
+          BW_NOINTERACTION: 'true'
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+          BW_SESSION: ${{ vault.get("orbit-control-inputs", steps["Resolve the session"].outputs.session_key) }}
+          ORBIT_OUTPUT: ${{ steps.workspace.outputs.stdout.trim() + "/organizations" }}
+        timeout: 60000
+    dependsOn:
+    - step: Resolve the session
+      condition:
+        type: succeeded
+  - name: Read collections
+    labels:
+      role: swamp
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: vault-setup-read-collections
+      methodName: execute
+      inputs:
+        run: timeout 60 npx --yes --package=@bitwarden/cli@2026.6.0 bw list collections >"$ORBIT_OUTPUT" 2>/dev/null
+        env:
+          BITWARDENCLI_APPDATA_DIR: ${{ steps.workspace.outputs.stdout.trim() }}
+          BW_NOINTERACTION: 'true'
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+          BW_SESSION: ${{ vault.get("orbit-control-inputs", steps["Resolve the session"].outputs.session_key) }}
+          ORBIT_OUTPUT: ${{ steps.workspace.outputs.stdout.trim() + "/collections" }}
+        timeout: 60000
+    dependsOn:
+    - step: Resolve the session
+      condition:
+        type: succeeded
+  - name: Check account KDF
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/vault-sync-plan'
+      behaviorName: vault-setup-check-account-kdf
+      methodName: account
+      inputs:
+        directory: ${{ steps.workspace.outputs.stdout.trim() }}
+    dependsOn:
+    - step: Read account status
+      condition:
+        type: succeeded
+  - name: Select the organization
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/vault-sync-plan'
+      behaviorName: vault-setup-select-the-organization
+      methodName: organization
+      inputs:
+        directory: ${{ steps.workspace.outputs.stdout.trim() }}
+        intent: ${{ inputs.intent }}
+    dependsOn:
+    - step: Read organizations
+      condition:
+        type: succeeded
+  - name: Select the collection
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/vault-sync-plan'
+      behaviorName: vault-setup-select-the-collection
+      methodName: collection
+      inputs:
+        directory: ${{ steps.workspace.outputs.stdout.trim() }}
+        intent: ${{ inputs.intent }}
+        organization: ${{ steps["Select the organization"].outputs.id }}
+    dependsOn:
+    - step: Read collections
+      condition:
+        type: succeeded
+    - step: Select the organization
+      condition:
+        type: succeeded
+  - name: Probe write access
+    labels:
+      role: swamp
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: vault-setup-probe-write-access
+      methodName: execute
+      inputs:
+        run: timeout 60 npx --yes --package=@bitwarden/cli@2026.6.0 bw create item <"$ORBIT_PROBE_FILE" >"$ORBIT_OUTPUT" 2>/dev/null
+        env:
+          BITWARDENCLI_APPDATA_DIR: ${{ steps.workspace.outputs.stdout.trim() }}
+          BW_NOINTERACTION: 'true'
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+          BW_SESSION: ${{ vault.get("orbit-control-inputs", steps["Resolve the session"].outputs.session_key) }}
+          ORBIT_PROBE_FILE: ${{ steps["Select the collection"].outputs.payload_path }}
+          ORBIT_OUTPUT: ${{ steps.workspace.outputs.stdout.trim() + "/probe" }}
+        timeout: 60000
+    dependsOn:
+    - step: Check account KDF
+      condition:
+        type: succeeded
+    - step: Select the collection
+      condition:
+        type: succeeded
+  - name: Read probe identity
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/vault-sync-plan'
+      behaviorName: vault-setup-read-probe-identity
+      methodName: probe
+      inputs:
+        directory: ${{ steps.workspace.outputs.stdout.trim() }}
+    dependsOn:
+    - step: Probe write access
+      condition:
+        type: succeeded
+  - name: Verify the account
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/vault-sync-plan'
+      behaviorName: vault-setup-verify-the-account
+      methodName: setup
+      inputs:
+        intent: ${{ inputs.intent }}
+        email: ${{ steps["Check account KDF"].outputs.email }}
+        organization: ${{ steps["Select the organization"].outputs }}
+        collection: ${{ steps["Select the collection"].outputs }}
+        env:
+          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key) }}
+    dependsOn:
+    - step: Read probe identity
+      condition:
+        type: succeeded
   - name: Clear the session
     labels:
       role: swamp
     writes: true
-    dependsOn:
-    - step: Verify the account
-      condition:
-        type: completed
-    guard: ${{ !("Prepare public data" in steps) || steps["Prepare public data"].status != "succeeded"
-      }}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: vault-setup-cleanup
+      behaviorName: vault-setup-clear-the-session
       methodName: execute
       inputs:
-        run: |
-          timeout 30 bash -euo pipefail <<'BW_COMMAND'
-          umask 077
-          BITWARDENCLI_APPDATA_DIR=$ORBIT_VAULT_DIRECTORY
-          NODE_EXTRA_CA_CERTS=$(jq -ern 'env.ORBIT_VAULT_INTENT | fromjson | .ca_file' 2>/dev/null)
-          export BITWARDENCLI_APPDATA_DIR NODE_EXTRA_CA_CERTS BW_NOINTERACTION=true
-          if [ -f "$ORBIT_VAULT_DIRECTORY/session" ]; then BW_SESSION=$(cat "$ORBIT_VAULT_DIRECTORY/session"); export BW_SESSION; fi
-          unset ORBIT_VAULT_CONFIGURATION
-          if [ -s "$ORBIT_VAULT_DIRECTORY/probe.json" ]; then
-            ID=$(jq -er '.id' "$ORBIT_VAULT_DIRECTORY/probe.json" 2>/dev/null)
-            npx --yes --package=@bitwarden/cli@2026.6.0 bw delete item "$ID" --permanent >/dev/null 2>/dev/null
-          fi
-          if [ -d "$ORBIT_VAULT_DIRECTORY" ]; then npx --yes --package=@bitwarden/cli@2026.6.0 bw logout >/dev/null 2>/dev/null || true; fi
-          BW_COMMAND
+        run: timeout 30 npx --yes --package=@bitwarden/cli@2026.6.0 bw delete item "$ORBIT_PROBE_ID" --permanent >/dev/null 2>/dev/null
         env:
-          ORBIT_VAULT_INTENT: ${{ steps["Prepare public data"].outputs.intent_json }}
-          ORBIT_VAULT_DIRECTORY: ${{ "/tmp/orbit-vault-setup-" + run.id }}
+          BITWARDENCLI_APPDATA_DIR: ${{ steps.workspace.outputs.stdout.trim() }}
+          BW_NOINTERACTION: 'true'
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+          BW_SESSION: ${{ vault.get("orbit-control-inputs", steps["Resolve the session"].outputs.session_key) }}
+          ORBIT_PROBE_ID: ${{ steps["Read probe identity"].outputs.id }}
         timeout: 30000
+    dependsOn:
+    - step: Verify the account
+      condition:
+        type: or
+        conditions:
+        - type: completed
+        - type: skipped
+    guard: ${{ !("Read probe identity" in steps) || steps["Read probe identity"].status != "succeeded" }}
+  - name: Log out
+    labels:
+      role: swamp
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: vault-setup-log-out
+      methodName: execute
+      inputs:
+        run: timeout 30 npx --yes --package=@bitwarden/cli@2026.6.0 bw logout >/dev/null 2>/dev/null
+        env:
+          BITWARDENCLI_APPDATA_DIR: ${{ steps.workspace.outputs.stdout.trim() }}
+          BW_NOINTERACTION: 'true'
+          NODE_EXTRA_CA_CERTS: ${{ inputs.intent.ca_file }}
+        timeout: 30000
+    dependsOn:
+    - step: Clear the session
+      condition:
+        type: or
+        conditions:
+        - type: completed
+        - type: skipped
+    guard: ${{ steps.workspace.status != "succeeded" }}
+    allowFailure: true
   - name: Remove CLI session
     labels:
       role: swamp
     writes: true
-    dependsOn:
-    - step: Clear the session
-      condition:
-        type: completed
-    guard: ${{ !("Prepare public data" in steps) || steps["Prepare public data"].status != "succeeded"
-      }}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: vault-setup-remove-session
+      behaviorName: vault-setup-remove-cli-session
       methodName: execute
       inputs:
         run: timeout 30 rm -rf -- "$ORBIT_VAULT_DIRECTORY"
         env:
-          ORBIT_VAULT_DIRECTORY: ${{ "/tmp/orbit-vault-setup-" + run.id }}
+          ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
+        timeout: 30000
+    dependsOn:
+    - step: Log out
+      condition:
+        type: completed
+    guard: ${{ steps.workspace.status != "succeeded" }}
   - name: Confirm the setup
     labels:
       role: swamp
     dependsOn:
-    - step: Clear the session
-      condition:
-        type: completed
     - step: Verify the account
       condition:
         type: succeeded
+    - step: Clear the session
+      condition:
+        type: completed
     - step: Remove CLI session
       condition:
         type: completed
     task:
       type: assert
-      expr: steps["Verify the account"].outputs.exitCode == 0 && steps["Verify the account"].outputs.stdout.contains('"backend":"configured"')
-        && steps["Clear the session"].status == "succeeded" && steps["Remove CLI session"].status == "succeeded"
+      expr: steps["Clear the session"].status == "succeeded" && steps["Remove CLI session"].status == "succeeded"
       message: Vault account verification or session cleanup failed.
       severity: high

@@ -16,7 +16,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Orbit\Extensions\Vault\Domain\VaultException;
 use Orbit\Extensions\Vault\Domain\VaultOperationSecrets;
-use Orbit\Extensions\Vault\Domain\VaultSetupResultProjection;
 use SensitiveParameter;
 
 /** Records public intent and the shared native credential descriptor. */
@@ -63,7 +62,6 @@ final readonly class StartVaultOperationAction
             $intent['previous'] = $configuration['previous'];
         }
         $intent['ca_file'] = '/usr/local/share/ca-certificates/orbit-root.crt';
-        $intent['refusal_exit_codes'] = VaultSetupResultProjection::ExitCodes;
 
         return ['intent' => $intent, 'execution_secrets' => ['configuration' => ['vault' => 'orbit-control-inputs', 'key' => 'vault-setup-'.Str::uuid()]]];
     }

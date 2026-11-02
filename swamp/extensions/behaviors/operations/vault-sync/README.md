@@ -1,22 +1,19 @@
-# Vaultwarden CLI integration
+# Vault CLI primitives
 
-Setup and sync run the pinned official Bitwarden CLI directly on Swamp workers.
-No script assets are shipped or copied to Nodes. The public planning behavior
-only serializes frozen intent and shapes reconciliation metadata.
+Every action runs one pinned Bitwarden CLI command on a Swamp worker.
+No script assets, shell programs, jq filters or commands reach a Node.
+Typed data methods bind the frozen configuration, select the organization and
+collection, check KDF support, encode cipher stdin and whitelist CLI responses.
+They execute no CLI, HTTP or cryptographic protocol.
 
-Native command steps bound each CLI action. Bash enables pipefail so a failed
-CLI cannot become a successful filter. Credentials enter through vault-backed
-environment values; shell builtins export only the needed CLI credential. Cipher
-payloads reach the CLI on stdin. Raw inventory and write responses are filtered
-with jq before native stdout, retaining only public IDs and ledger metadata.
-CLI diagnostics are discarded because they may contain credentials.
+Native schema-sensitive fields put credentials and session keys in the vault.
+Command environments resolve the generated key names with vault.get. Only the
+needed credential reaches each CLI action. Private inventory, write responses
+and cipher stdin stay in one mode-0700 scratch directory. Cipher input files
+use mode 0600. No raw value enters history, logs or argv; CLI stderr is discarded.
+The Gateway's bounded grants cover only the native credential and session fields.
 
-Setup verifies every new request, including its harmless write probe. A native
-resume keeps completed verification. Its cleanup runs after verification succeeds
-or fails, and a separate completed dependency always removes the private cache.
-Session files use umask 077. No second login is used for the end check.
-
-The Gateway maps setup's public refusal exit codes and records the terminal
-result. Sync keeps native per-item write receipts for summary resume, records
-only a complete ledger, and ends with a native assert. Empty change sets still
-log out, remove the cache and return the unchanged ledger.
+Cleanup runs after success, failure or a skipped dependency, then removes the
+private directory. Setup deletes its harmless write probe and logs out before
+removal. Sync retains each public write receipt for native summary resume.
+Native assertions check the final state. A new setup always verifies credentials.

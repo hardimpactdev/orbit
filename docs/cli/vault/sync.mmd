@@ -43,20 +43,40 @@ sequenceDiagram
   %%> - the CLI follows the task with `operation:show`, then prints `vault:status`
   %% Worker-side actions use the pinned official CLI directly. No scripts are shipped or copied.
   Note over SW: Prepare public data
+  %%> What it does:
+  %%> - compares the frozen public and private configuration, then stores credentials as native sensitive fields
   Note over SW: workspace
   SW->>VW: configure
   SW->>VW: login
   SW->>VW: unlock
+  Note over SW: Resolve the session
+  %%> What it does:
+  %%> - shapes private CLI data; credentials stay in native vault storage and cipher stdin stays in the 0700 scratch directory
   SW->>VW: sync
-  SW->>VW: inventory
-  SW->>VW: trash
+  SW->>VW: Read private inventory
+  Note over SW: inventory
+  SW->>VW: Read private trash
+  Note over SW: trash
   Note over SW: plan
   SW->>VW: delete
-  SW->>VW: write
+  %%> For each:
+  %%> - one action per admitted cipher; native receipts preserve completed work on resume
+  Note over SW: encode
+  %%> What it does:
+  %%> - shapes private CLI data; credentials stay in native vault storage and cipher stdin stays in the 0700 scratch directory
+  %%> For each:
+  %%> - one action per admitted cipher; native receipts preserve completed work on resume
+  SW->>VW: Apply cipher
+  %%> For each:
+  %%> - one action per admitted cipher; native receipts preserve completed work on resume
+  Note over SW: write
+  %%> For each:
+  %%> - one action per admitted cipher; native receipts preserve completed work on resume
   SW->>VW: logout
   Note over SW: remove-cache
   Note over SW: result
   Note over SW: Confirm the sync
+  %% Each command step runs one pinned CLI command. Typed shapers expose only bounded public metadata.
   alt every change made
     VW-->>SW: items match
     %%> Returns:

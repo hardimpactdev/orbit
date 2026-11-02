@@ -112,21 +112,28 @@ it('fails setup without projecting successful verification when native cleanup f
     expect(Setting::query()->where('key', 'vault.operation.'.$this->operation->id)->exists())->toBeFalse();
 });
 
-it('projects a setup refusal from the failed native step exit code without stdout', function (int $exit, string $code): void {
+it('projects a setup refusal from a typed failure or one native CLI step without stdout', function (string $step, string $detail, string $code): void {
     admitDirectVault($this, 'setup');
     $run = ['id' => $this->run, 'workflowName' => 'operation-vault-setup', 'status' => 'failed',
         'inputs' => [...$this->operation->input, 'operation_id' => $this->operation->id, 'node_id' => $this->gateway->id, 'kind' => 'vault.setup'],
         'startedAt' => now()->toIso8601String(), 'completedAt' => now()->toIso8601String(),
-        'jobs' => [['name' => 'setup', 'steps' => [['name' => 'Verify the account', 'status' => 'failed', 'error' => 'Command exited with code '.$exit]]]]];
+        'jobs' => [['name' => 'setup', 'steps' => [['name' => $step, 'status' => 'failed', 'error' => $detail]]]]];
     $this->socket->reply = static fn (array $request): array => [['id' => $request['id'], 'type' => 'workflow.history.get', 'payload' => ['data' => $run]]];
     app(SwampCommandStep::class)->projectTerminal($this->operation, $run, ['job' => 'setup', 'step' => 'Verify the account']);
     expect($this->operation->fresh()->status->value)->toBe('failed');
     expect($this->operation->fresh()->error_code)->toBe($code);
     expect(app(VaultSettings::class)->configuration())->toBeNull();
 })->with([
-    [10, 'vault.login_failed'], [11, 'vault.organization_missing'], [12, 'vault.collection_missing'],
-    [13, 'vault.collection_read_only'], [14, 'vault.items_published'], [15, 'vault.result_invalid'],
-    [16, 'vault.kdf_unsupported'], [17, 'vault.unreachable'], [124, 'operation.native_failed'],
+    ['Log in', 'Command exited with code 1', 'vault.login_failed'],
+    ['Unlock the vault', 'Command exited with code 1', 'vault.login_failed'],
+    ['Select the organization', 'vault.organization_missing', 'vault.organization_missing'],
+    ['Select the collection', 'vault.collection_missing', 'vault.collection_missing'],
+    ['Probe write access', 'Command exited with code 1', 'vault.collection_read_only'],
+    ['Select the collection', 'vault.items_published', 'vault.items_published'],
+    ['Verify the account', 'vault.result_invalid', 'vault.result_invalid'],
+    ['Check account KDF', 'vault.kdf_unsupported', 'vault.kdf_unsupported'],
+    ['Prepare public data', 'vault.intent_changed', 'vault.intent_changed'],
+    ['Clear the session', 'Command exited with code 1', 'operation.native_failed'],
 ]);
 
 it('preserves settings and ledger after a failed direct teardown and forgets its snapshot', function (): void {

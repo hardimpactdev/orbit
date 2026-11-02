@@ -178,6 +178,21 @@ class VaultSyncNative(VaultSyncFixture):
             input=json.dumps(self.private),
         )
 
+    def test_private_configuration_mismatch_refuses_before_cli_contact(self):
+        self.private["url"] = "https://different.example.test"
+        self.cli(
+            "vault",
+            "put",
+            "orbit-control-inputs",
+            "vault-sync-fixture",
+            "--force",
+            input=json.dumps(self.private),
+        )
+        run = self.run_sync(success=False)
+        first = run["jobs"][0]["steps"][0]
+        self.assertEqual(first["error"], "vault.intent_changed")
+        self.assertEqual(json.loads(self.state.read_text()).get("commands", []), [])
+
     def test_summary_retry_restores_more_than_ten_write_receipts(self):
         self.prepare_twelve_writes()
         path = self.repo / "workflows/workflow-operation-vault-sync.yaml"
@@ -210,9 +225,14 @@ class VaultSyncNative(VaultSyncFixture):
         # Reproduce the original shared behavior, whose first two results expire.
         path = self.repo / "workflows/workflow-operation-vault-sync.yaml"
         workflow = yaml.safe_load(path.read_text())
-        workflow["jobs"][2]["steps"][0]["task"]["behaviorName"] = (
-            '${{ "vault-sync-" + string(inputs.operation_id) + "-write" }}'
-        )
+        next(
+            step
+            for job in workflow["jobs"]
+            for step in job["steps"]
+            if step["name"] == "write"
+        )["task"][
+            "behaviorName"
+        ] = '${{ "vault-sync-" + string(inputs.operation_id) + "-write" }}'
         path.write_text(yaml.safe_dump(workflow, sort_keys=False))
         state = json.loads(self.state.read_text())
         state["fail_command"] = "logout"
@@ -310,11 +330,13 @@ class VaultSyncNative(VaultSyncFixture):
 
     def test_recorded_orphan_is_deleted_and_unrecorded_copy_is_preserved(self):
         self.intent["wanted"] = []
-        self.intent["ledger"].append({
-            **self.intent["ledger"][0],
-            "source": "database-user:8",
-            "cipher_id": "second",
-        })
+        self.intent["ledger"].append(
+            {
+                **self.intent["ledger"][0],
+                "source": "database-user:8",
+                "cipher_id": "second",
+            }
+        )
         self.input_file.write_text(json.dumps(self.inputs))
         cipher = {
             "source": "database-user:7",

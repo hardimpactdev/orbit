@@ -1,3 +1,4 @@
+import { cliDataMethods, cliDataResources } from "./cli-data.ts";
 import { z } from "npm:zod@4.4.3";
 
 const Text = z.string().refine(
@@ -158,16 +159,9 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/vault-sync-plan",
-    version: "2026.11.02.2",
+    version: "2026.11.02.3",
     resources: {
-        inputs: {
-            description: "Public CLI intent",
-            lifetime: "infinite",
-            garbageCollection: 10,
-            schema: z.object({
-                intent_json: z.string(),
-            }),
-        },
+        ...cliDataResources,
         plan: {
             description: "Public per-cipher reconciliation plan",
             schema: Plan,
@@ -182,18 +176,7 @@ export const behavior = {
         },
     },
     methods: {
-        prepare: {
-            description: "Serialize frozen public CLI intent",
-            arguments: z.object({ intent: z.record(z.string(), z.unknown()) }),
-            execute: async (
-                args: { intent: Record<string, unknown> },
-                ctx: Context,
-            ) => {
-                const inputs = { intent_json: JSON.stringify(args.intent) };
-                await ctx.writeResource("inputs", "inputs", inputs);
-                return inputs;
-            },
-        },
+        ...cliDataMethods,
         plan: {
             description: "Plan changes from public inventory",
             arguments: z.object({

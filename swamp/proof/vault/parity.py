@@ -18,7 +18,7 @@ assert set(result["data"]) == {
 }
 assert result["data"]["backend"] == "configured"
 assert result["data"]["collection_name"] == "Disposable"
-assert not Path("/tmp/orbit-vault-setup-" + operation["swamp_run_id"]).exists()
+assert not list(Path("/tmp").glob("orbit-vault-setup.*"))
 assert not any(
     key in json.dumps(operation["input"])
     for key in ("client_secret", "master_password")

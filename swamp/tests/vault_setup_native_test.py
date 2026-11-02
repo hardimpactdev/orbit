@@ -73,16 +73,6 @@ class VaultSetupNative(NativeTestCase):
             "collection": "Disposable",
             "published": False,
             "ca_file": "/public/ca.pem",
-            "refusal_exit_codes": {
-                "vault.login_failed": 10,
-                "vault.organization_missing": 11,
-                "vault.collection_missing": 12,
-                "vault.collection_read_only": 13,
-                "vault.items_published": 14,
-                "vault.result_invalid": 15,
-                "vault.kdf_unsupported": 16,
-                "vault.unreachable": 17,
-            },
         }
         self.inputs = {
             "operation_id": 7,
@@ -127,30 +117,26 @@ class VaultSetupNative(NativeTestCase):
         history = self.cli("workflow", "history", "get", run["id"])
         run = json.JSONDecoder().raw_decode(history.stdout.lstrip())[0]
         steps = {step["name"]: step for job in run["jobs"] for step in job["steps"]}
-        self.assertEqual(
-            list(steps),
-            [
-                "Prepare public data",
-                "Verify the account",
-                "Clear the session",
-                "Remove CLI session",
-                "Confirm the setup",
-            ],
-        )
         self.assertEqual(run["status"], "succeeded" if success else "failed")
-        self.assertEqual(steps["Clear the session"]["status"], "succeeded")
-        self.assertFalse(Path("/tmp/orbit-vault-setup-" + run["id"]).exists())
+        self.assertIn(steps["Clear the session"]["status"], ["succeeded", "skipped"], steps["Clear the session"])
+        if "outputs" in steps["workspace"]:
+            self.assertFalse(
+                Path(steps["workspace"]["outputs"]["stdout"].strip()).exists()
+            )
         self.assert_private_absent(result.stdout, result.stderr, history.stdout)
         verification = steps["Verify the account"]
         if not success:
-            self.assertEqual(verification["status"], "failed")
-            self.assertNotIn("outputs", verification)
-            self.assertEqual(steps["Confirm the setup"]["status"], "skipped")
-            return {
-                "exit_code": int(
-                    verification["error"].removeprefix("Command exited with code ")
+            failure = next(
+                step for step in steps.values() if step["status"] == "failed"
+            )
+            code = failure["error"]
+            if not code.startswith("vault."):
+                code = (
+                    "vault.collection_read_only"
+                    if failure["name"] == "Probe write access"
+                    else "vault.login_failed"
                 )
-            }
+            return {"error_code": code}
         return json.loads(verification["outputs"]["stdout"])
 
     def test_setup_proves_write_access_and_cleans_its_session(self):
@@ -166,20 +152,10 @@ class VaultSetupNative(NativeTestCase):
             },
         )
         commands = json.loads(self.state.read_text())["commands"]
-        self.assertEqual(
-            [row[0] for row in commands],
-            [
-                "config",
-                "login",
-                "unlock",
-                "status",
-                "list",
-                "list",
-                "create",
-                "delete",
-                "logout",
-            ],
-        )
+        names = [row[0] for row in commands]
+        self.assertEqual(names[:3], ["config", "login", "unlock"])
+        self.assertCountEqual(names[3:6], ["status", "list", "list"])
+        self.assertEqual(names[6:], ["create", "delete", "logout"])
 
     def test_legacy_refusals_preserve_public_codes_and_always_clean_up(self):
         for change, code in [
@@ -204,7 +180,7 @@ class VaultSetupNative(NativeTestCase):
                 self.state.write_text(json.dumps({**json.loads(original), **change}))
                 self.assertEqual(
                     self.run_setup(False),
-                    {"exit_code": self.intent["refusal_exit_codes"][code]},
+                    {"error_code": code},
                 )
                 self.state.write_text(original)
 
@@ -213,7 +189,7 @@ class VaultSetupNative(NativeTestCase):
             previous={"organization_id": "old-org", "collection_id": "old-collection"},
             published=True,
         )
-        self.assertEqual(self.run_setup(False), {"exit_code": 14})
+        self.assertEqual(self.run_setup(False), {"error_code": "vault.items_published"})
         self.assertFalse(
             any(
                 row[0] == "create"

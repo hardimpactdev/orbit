@@ -52,7 +52,7 @@
       "name": "workspace",
       "job": "prepare",
       "step": "workspace",
-      "budget_seconds": 30
+      "budget_seconds": 60
     },
     {
       "name": "configure",
@@ -73,22 +73,40 @@
       "budget_seconds": 60
     },
     {
+      "name": "Resolve the session",
+      "job": "prepare",
+      "step": "Resolve the session",
+      "budget_seconds": 30
+    },
+    {
       "name": "sync",
       "job": "prepare",
       "step": "sync",
       "budget_seconds": 60
     },
     {
+      "name": "Read private inventory",
+      "job": "prepare",
+      "step": "Read private inventory",
+      "budget_seconds": 60
+    },
+    {
       "name": "inventory",
       "job": "prepare",
       "step": "inventory",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Read private trash",
+      "job": "prepare",
+      "step": "Read private trash",
       "budget_seconds": 60
     },
     {
       "name": "trash",
       "job": "prepare",
       "step": "trash",
-      "budget_seconds": 60
+      "budget_seconds": 30
     },
     {
       "name": "plan",
@@ -106,7 +124,7 @@
       "name": "remove-cache",
       "job": "cleanup",
       "step": "remove-cache",
-      "budget_seconds": 30
+      "budget_seconds": 60
     },
     {
       "name": "result",

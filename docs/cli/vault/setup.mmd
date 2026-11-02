@@ -42,29 +42,28 @@ sequenceDiagram
   %%> - the CLI follows the task with `operation:show`, then prints `vault:status`
   Note over SW: Prepare public data
   %%> What it does:
-  %%> - serializes the frozen public intent for the native CLI environment; resolves no script assets
-  SW->>VW: Verify the account<br/>login · unlock · collection
+  %%> - compares the frozen public and private configuration, then stores credentials as native sensitive fields
+  Note over SW: workspace
+  SW->>VW: Configure the server
+  SW->>VW: Log in
+  SW->>VW: Unlock the vault
+  Note over SW: Resolve the session
   %%> What it does:
-  %%> - configures the official Bitwarden CLI in a private scratch directory, logs in, unlocks, and reads the collection
-  %%> - resolves the organization and collection by name or ID and checks write access
-  %%> - refuses a changed collection while published items exist
-  %%> How:
-  %%> - all work runs on a worker labelled role=swamp; only the Orbit root CA extends TLS trust
-  %%> - credentials arrive from vault.get in the command environment; session keys stay in the scratch directory
-  %%> Returns:
-  %%> - only the account email, organization and collection IDs and names, and configured status
-  Note over SW: Clear the session<br/>logout · remove scratch directory
-  %%> What it does:
-  %%> - native completed dependencies run cleanup after verification succeeds or fails
-  %%> - logout is best effort; the scratch directory and session key are removed
+  %%> - shapes private CLI data; credentials stay in native vault storage and cipher stdin stays in the 0700 scratch directory
+  SW->>VW: Read account status
+  SW->>VW: Read organizations
+  SW->>VW: Read collections
+  Note over SW: Check account KDF
+  Note over SW: Select the organization
+  Note over SW: Select the collection
+  SW->>VW: Probe write access
+  Note over SW: Read probe identity
+  Note over SW: Verify the account
+  SW->>VW: Clear the session
+  SW->>VW: Log out
   Note over SW: Remove CLI session
-  %%> What it does:
-  %%> - deletes the private CLI cache after cleanup succeeds or fails
-  Note over SW: Confirm the setup<br/>native assert
-  %%> What it does:
-  %%> - checks the verification result with Swamp's native assert; no second login or write
-  %%> Retry:
-  %%> - native resume keeps completed verification; a new setup verifies credentials again in a fresh scratch directory
+  Note over SW: Confirm the setup
+  %% Each command step runs one pinned CLI command. Typed shapers expose only bounded public metadata.
   alt the account can write
     VW-->>SW: collection writable
     %%> Returns:

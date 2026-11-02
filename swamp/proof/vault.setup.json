@@ -42,22 +42,106 @@
       "budget_seconds": 30
     },
     {
+      "name": "workspace",
+      "job": "setup",
+      "step": "workspace",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Configure the server",
+      "job": "setup",
+      "step": "Configure the server",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Log in",
+      "job": "setup",
+      "step": "Log in",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Unlock the vault",
+      "job": "setup",
+      "step": "Unlock the vault",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Resolve the session",
+      "job": "setup",
+      "step": "Resolve the session",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Read account status",
+      "job": "setup",
+      "step": "Read account status",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Read organizations",
+      "job": "setup",
+      "step": "Read organizations",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Read collections",
+      "job": "setup",
+      "step": "Read collections",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Check account KDF",
+      "job": "setup",
+      "step": "Check account KDF",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Select the organization",
+      "job": "setup",
+      "step": "Select the organization",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Select the collection",
+      "job": "setup",
+      "step": "Select the collection",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Probe write access",
+      "job": "setup",
+      "step": "Probe write access",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Read probe identity",
+      "job": "setup",
+      "step": "Read probe identity",
+      "budget_seconds": 30
+    },
+    {
       "name": "Verify the account",
       "job": "setup",
       "step": "Verify the account",
-      "budget_seconds": 180
+      "budget_seconds": 30
     },
     {
       "name": "Clear the session",
       "job": "setup",
       "step": "Clear the session",
-      "budget_seconds": 30
+      "budget_seconds": 60
+    },
+    {
+      "name": "Log out",
+      "job": "setup",
+      "step": "Log out",
+      "budget_seconds": 60
     },
     {
       "name": "Remove CLI session",
       "job": "setup",
       "step": "Remove CLI session",
-      "budget_seconds": 30
+      "budget_seconds": 60
     },
     {
       "name": "Confirm the setup",
