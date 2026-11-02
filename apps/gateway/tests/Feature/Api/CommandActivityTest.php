@@ -25,6 +25,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolStatus;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Gateway\GatewayCaddyConfigRenderer;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Models\Activity;
@@ -41,6 +42,7 @@ use Illuminate\Support\Str;
 use Tests\Support\FakeGatewayPrivateDnsRoute;
 use Tests\Support\FakeNodeConverger;
 use Tests\Support\FakeNodeRoleFirewallManager;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\FakeRouteRemovalProjector;
 use Tests\Support\FakesEnvironmentSyncInspection;
 use Tests\Support\FakeToolManager;
@@ -58,10 +60,17 @@ it('records environment commands without submitted imported or rejected values',
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
         ->putJson("/api/v1/instances/{$instance->id}/environment/SUBMITTED", ['value' => $submitted])
         ->assertOk();
+    $instance->node->update(['architecture' => 'x86_64', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-host-key']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => $request['type'] === 'vault.put'
+        ? [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]]
+        : [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'synthetic-shared-run-token']);
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
         ->postJson("/api/v1/instances/{$instance->id}/environment/import", ['replace' => true])
-        ->assertOk();
+        ->assertStatus(202);
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
         ->call(
@@ -70,7 +79,7 @@ it('records environment commands without submitted imported or rejected values',
             server: ['CONTENT_TYPE' => 'application/json'],
             content: '{}',
         )
-        ->assertOk();
+        ->assertStatus(202);
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
         ->putJson("/api/v1/instances/{$instance->id}/environment/REJECTED", [

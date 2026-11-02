@@ -5,7 +5,7 @@ description: "Diagrams of env:sync and env:import before Swamp and on main, how 
 
 # Instance environment sync and import: legacy and Swamp flows
 
-`orbit env:sync` writes an Instance's stored environment to its workload `.env`. `orbit env:import` does the reverse: it reads the workload `.env` and stores its values in the Gateway. Legacy did both inside the API request with orbit-agent commands, and both read the whole `.env`, values included, into the Gateway. On main, sync is a Swamp run: the Node reads the file locally and only key names come back. Import is not ported. It still reads the whole file into the Gateway through the agent command `instance.read-environment`. This page is the map for the F9 rebuild of both.
+`orbit env:sync` writes an Instance's stored environment to its workload `.env`. `orbit env:import` does the reverse: it reads the workload `.env` and stores its values in the Gateway. Legacy did both inside the API request with orbit-agent commands, and both read the whole `.env`, values included, into the Gateway. On main, sync is a Swamp run: the Node reads the file locally and only key names come back. Import was ported after this map: a Swamp run copies the file into a vault key, and the Gateway reads it once (see [Instance environment variables](/reference/environment-variables#import)). This page is the map for the F9 rebuild of both.
 
 Sources:
 

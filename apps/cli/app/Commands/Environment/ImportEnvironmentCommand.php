@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace App\Commands\Environment;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Environment\ImportInstanceEnvironmentRequest;
-use Orbit\Sdk\Responses\Environment\EnvironmentOperationResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class ImportEnvironmentCommand extends EnvironmentCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'env:import
         {--instance= : Positive Instance ID or exact Route domain}
@@ -34,18 +37,23 @@ final class ImportEnvironmentCommand extends EnvironmentCommand
             return self::FAILURE;
         }
 
-        $response = $this->sendWithProgress(
+        $profile = $this->activeGatewayProfile($repository);
+
+        if ($profile === null) {
+            return self::FAILURE;
+        }
+
+        $operation = $this->send(
             $connector,
             new ImportInstanceEnvironmentRequest(
                 instance: $selector,
                 replace: $this->option('replace') === true ? true : null,
             ),
-            EnvironmentOperationResponse::class,
-            ['Import environment', 'Importing environment', 'Imported environment'],
+            OperationResponse::class,
         );
 
-        return $response instanceof EnvironmentOperationResponse
-            ? $this->renderEnvironmentOperation($response)
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, 'Import environment', 'Environment import')
             : self::FAILURE;
     }
 }

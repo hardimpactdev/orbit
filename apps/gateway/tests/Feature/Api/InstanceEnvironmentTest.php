@@ -25,6 +25,7 @@ use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceEnvironmentValue;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
@@ -94,85 +95,46 @@ it('updates missing existing and identical values without contacting the workloa
         ->toBe('env:update');
 });
 
-it('imports by exact Route domain and applies conflict and replacement semantics', function (): void {
-    $this->access->contents = "APP_KEY=synthetic-key\nNEW=value\n";
+function native_env_import_socket(): FakeRoutePublicationSocket
+{
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started',
+        'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'synthetic-shared-run-token']);
+
+    return $socket;
+}
+
+it('admits one native import by exact Route domain without reading the workload during admission', function (): void {
+    $this->instance->node->update(['architecture' => 'x86_64', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-host-key']);
+    $socket = native_env_import_socket();
     $url = "/api/v1/instances/{$this->route->domain}/environment/import";
 
-    $this
-        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
-        ->call('POST', $url, server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
-        ->assertOk()
-        ->assertJsonPath('data.changed', true)
-        ->assertJsonPath('data.key_count', 2);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])->postJson($url, ['replace' => true])
+        ->assertStatus(202)->assertJsonPath('data.kind', 'instance.env_import');
 
-    $this->access->contents = "APP_KEY=other\nTHIRD=three\n";
-    $this
-        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
-        ->call('POST', $url, server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'env.import_conflict');
-
-    expect($this->instance->environmentValues()->orderBy('env_key')->pluck('env_key')->all())
-        ->toBe(['APP_KEY', 'NEW']);
-
-    $this
-        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
-        ->postJson($url, ['replace' => true])
-        ->assertOk()
-        ->assertJsonPath('data.changed', true)
-        ->assertJsonPath('data.key_count', 3);
-    $this
-        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
-        ->postJson($url, ['replace' => true])
-        ->assertJsonPath('data.changed', false);
-
-    expect(Activity::query()->latest('id')->value('command'))->toBe('env:import');
+    $operation = Operation::query()->latest('id')->firstOrFail();
+    expect($operation->input['replace'])->toBeTrue()
+        ->and($this->access->readPaths)->toBe([])
+        ->and(array_column($socket->sent, 'type'))->toBe(['workflow.run'])
+        ->and($socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-instance-env-import')
+        ->and(Activity::query()->latest('id')->value('command'))->toBe('env:import');
 });
 
 it('imports the Laravel environment in its application directory', function (string $root, string $suffix): void {
     $this->instance->update(['root' => $root, 'source_is_laravel' => true]);
-    $this->access->contents = "APP_KEY=nested-key\n";
+    $this->instance->node->update(['architecture' => 'x86_64', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-host-key']);
+    $socket = native_env_import_socket();
 
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
         ->call('POST', "/api/v1/instances/{$this->instance->id}/environment/import", server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
-        ->assertOk();
-    expect($this->access->readPaths)->toBe([$this->instance->checkout_path.$suffix]);
-    expect($this->instance->environmentValues()->where('env_key', 'APP_KEY')->sole()->env_value)->toBe('nested-key');
-
+        ->assertStatus(202);
+    expect($socket->sent[0]['payload']['inputs']['intent']['base'])->toBe($this->instance->checkout_path.$suffix);
 })->with([
     'nested' => ['server/web/public', '/server/web'],
     'root public' => ['public', ''],
 ]);
-
-it('normalizes Laravel APP_URL while preserving literal APP_KEY', function (): void {
-    $this->instance->update(['source_is_laravel' => true]);
-    $this->access->contents = "APP_KEY=base64:synthetic\nAPP_URL=http://old.test\n";
-
-    $this
-        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
-        ->call(
-            'POST',
-            "/api/v1/instances/{$this->instance->id}/environment/import",
-            server: ['CONTENT_TYPE' => 'application/json'],
-            content: '{}',
-        )
-        ->assertOk();
-
-    expect($this->instance->environmentValues()->where('env_key', 'APP_KEY')->sole()->env_value)
-        ->toBe('base64:synthetic')
-        ->and($this->instance->environmentValues()->where('env_key', 'APP_URL')->sole()->env_value)
-        ->toBe('https://{{instance.domain}}');
-
-    $this
-        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
-        ->putJson("/api/v1/instances/{$this->instance->id}/environment/APP_URL", ['value' => 'https://wrong.test'])
-        ->assertUnprocessable()
-        ->assertJsonPath('error.code', 'env.configuration_invalid')
-        ->assertJsonPath('error.details', [
-            'key' => 'APP_URL',
-            'rule' => 'laravel_app_url',
-        ]);
-});
 
 it('returns redacted configuration details for invalid keys and unsupported placeholders', function (
     string $key,

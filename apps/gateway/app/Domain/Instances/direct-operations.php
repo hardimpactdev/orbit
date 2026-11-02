@@ -6,6 +6,7 @@ use App\Domain\DatabaseServers\DatabaseDestroyRun;
 use App\Domain\Instances\Deployment\InstanceDeployProjection;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
+use App\Domain\Instances\Environment\NativeInstanceEnvironmentImportProjection;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentProjection;
 use App\Domain\Instances\InstanceCloneProjection;
 use App\Domain\Instances\InstanceGitHubReadTokens;
@@ -28,6 +29,11 @@ return [
         'projection' => DevelopmentInstanceCreateProjection::class,
         'terminal_result' => ['job' => 'create', 'step' => 'finish'],
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(?:instance-git-(?:operation|credential)-[1-9][0-9]*|instance-create-environment-input-[1-9][0-9]*)$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$']]],
+    'instance.env_import' => ['workflow' => 'operation-instance-env-import', 'workflow_inputs' => true,
+        'terminal_result' => ['job' => 'import', 'step' => 'Read .env into the vault', 'native' => true,
+            'captures' => ['size' => ['job' => 'import', 'step' => 'Read .env into the vault', 'field' => 'size'],
+                'sha256' => ['job' => 'import', 'step' => 'Read .env into the vault', 'field' => 'sha256']]],
+        'projection' => NativeInstanceEnvironmentImportProjection::class],
     'instance.sync_environment' => ['workflow' => 'operation-instance-environment', 'workflow_inputs' => true,
         'terminal_result' => ['job' => 'environment', 'step' => 'Check the written file', 'native' => true],
         'projection' => NativeInstanceEnvironmentProjection::class,

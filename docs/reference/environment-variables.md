@@ -3,13 +3,13 @@ title: "Instance environment variables"
 description: "How the Gateway imports, stores, updates, and synchronizes an Instance .env file without exposing its values."
 covers:
   - apps/gateway/app/Domain/Instances/Environment/**
-  - apps/gateway/app/Actions/*/{Import,Update,Synchronize,Refresh}*Environment*Action.php
+  - apps/gateway/app/Actions/*/{Start,Update,Synchronize,Refresh}*Environment*Action.php
   - apps/gateway/app/Http/Controllers/Api/InstanceEnvironment*Controller.php
   - apps/gateway/app/Infrastructure/Instances/{RemoteInstanceEnvironmentAccess,RemoteInstanceEnvironmentRuntimeRefresher,NativeInstanceEnvironmentOperationLock}.php
-  - apps/gateway/app/Models/{Instance,InstanceEnvironmentValue}.php
-  - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
+  - apps/gateway/{app/Models/{Instance,InstanceEnvironmentValue}.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - apps/cli/app/Commands/Environment/**
   - packages/php-sdk/src/{Requests,Responses}/Environment/**
+  - swamp/{workflows/workflow-operation-instance-env-import.yaml,extensions/behaviors/operations/instance-env-import/**}
 ---
 
 # Instance environment variables
@@ -70,7 +70,7 @@ The import and update endpoints accept either a positive numeric Instance ID or 
 
 Import and update change stored configuration only. The `.env` file on the Node stays the same until you synchronize. The Gateway refuses unknown, duplicate, or wrongly typed members with 422 before it changes anything.
 
-Import and update return `instance_id`, `operation`, `changed`, and `key_count`. Synchronization returns HTTP 202 with its native Operation. The final result includes `instance_id`, `changed`, `environment_changed`, `key_count`, the synchronized key names, testing status and runtime refresh status.
+Update returns `instance_id`, `operation`, `changed`, and `key_count`. Import and synchronization return HTTP 202 with their native Operation. The final import result has the same four fields. The final result includes `instance_id`, `changed`, `environment_changed`, `key_count`, the synchronized key names, testing status and runtime refresh status.
 
 The Instance must be active and have complete placement. The Node must have exactly one active `app-dev` or `app-prod` role; without one, the Gateway returns `instance.placement_unavailable` (409).
 
@@ -115,11 +115,11 @@ On `app-prod`, every release links `.env` in its application directory to the pr
 
 ## Import
 
-Import reads the Instance's `.env`. It never reads `.env.example`. Before it reads the contents, the Gateway checks SSH access, the user, the path, the file type, the owner, and the size. A missing, unsafe, or oversized file stops the import.
+Import reads the Instance's `.env`. It never reads `.env.example`. A Swamp run on Node 209 checks the file type, the owner, and the size over SSH, then copies the bytes into the Swamp vault key `instance-env-import.content.<operation>`. A missing, unsafe, or oversized file fails the Operation with `env.import_source_missing`. The run returns only the size and sha256. The Gateway reads the vault key once, checks the sha256, parses and stores the file, and then deletes the key, also after a failure. A sha256 mismatch fails with `env.import_unconfirmed` and stores nothing. The [`env:import` chart](/cli/env/import) shows each step.
 
 The importer accepts blank lines, comments, quoted and escaped values, multiline quoted values, and expansion of keys from the same file. It does not read the Gateway's own environment. A duplicate key, an unresolved expansion, invalid syntax, or a file over 1 MiB refuses the whole import. Orbit stores keys and values only, without comments or formatting.
 
-Without `replace`, a file key that is already stored returns `env.import_conflict` (409), and nothing is stored. With `replace`, matching keys take the file value, new keys are added, and stored keys that the file lacks stay.
+Without `replace`, a file key that is already stored fails the Operation with `env.import_conflict`, and nothing is stored. With `replace`, matching keys take the file value, new keys are added, and stored keys that the file lacks stay.
 
 For a Laravel Instance, import stores `APP_URL` as `https://{{instance.domain}}`, so the URL follows the Route. It keeps a non-empty `APP_KEY` as the file has it. When the file contains `APP_KEY` with an empty value, import reuses the Instance's non-empty stored key, or generates a cryptographically random 32-byte key with the `base64:` prefix if no usable stored key exists. A missing `APP_KEY` stays missing; other values stay as the file has them. Non-Laravel imports do not generate keys.
 
@@ -214,16 +214,17 @@ Laravel import creates an application's `APP_KEY` only when the source value is 
 
 ## Errors
 
-Import, update, and the start of synchronization return these codes in the Orbit error envelope, with the HTTP status shown. A synchronization Operation that fails records its code in `error_code`; those rows show `Operation`. None of the codes contains a value.
+Update and the start of import or synchronization return these codes in the Orbit error envelope, with the HTTP status shown. An import or synchronization Operation that fails records its code in `error_code`; those rows show `Operation`. None of the codes contains a value.
 
 | Code | HTTP | Cause |
 | --- | --- | --- |
 | `env.target_ambiguous` | 409 | The domain reaches more than one Instance. |
 | `env.owner_unavailable` | 409 | The Instance is not active or not fully placed, or it lacks exactly one healthy Route. |
 | `instance.placement_unavailable` | 409 | The owning Node does not have exactly one active `app-dev` or `app-prod` role. |
-| `env.import_conflict` | 409 | Import without `replace` found a key that is already stored. |
-| `env.import_source_missing` | 404 | The recorded source `.env` file does not exist; fix or restore the file before importing. |
-| `env.configuration_invalid` | 422 | A key, value, placeholder, count, size, or Laravel `APP_URL` rule failed. |
+| `env.import_conflict` | Operation | Import without `replace` found a key that is already stored. |
+| `env.import_source_missing` | Operation | The `.env` file is missing, a link, owned by another user, or over 1 MiB. Fix or restore the file before importing. |
+| `env.import_unconfirmed` | Operation | The vault copy does not match the size and sha256 the run reported. Nothing is stored. Repeat the import. |
+| `env.configuration_invalid` | 422 | A key, value, placeholder, count, size, or Laravel `APP_URL` rule failed. An import records it on its Operation. |
 | `env.reference_unavailable` | 409 | A placeholder is left over after rendering. |
 | `operation.target_busy` | 409 | Another operation holds the Instance. |
 | `env.configuration_missing` | 409 | Synchronization found no stored configuration. Import or store values first. |

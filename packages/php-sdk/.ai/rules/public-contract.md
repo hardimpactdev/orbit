@@ -63,8 +63,8 @@ operations. Keep the public API typed and small.
   representations while preserving their intended request or event value.
 - Keep Instance environment transport limited to an ID-or-domain selector,
   optional import replacement, one key and string value for update, and an
-  empty synchronization body. Import and update return the bounded value-free
-  result; synchronization returns the queued operation. The Gateway owns lookup, validation, references, storage, and synchronization.
+  empty synchronization body. Update returns the bounded value-free result;
+  import and synchronization return the queued operation. The Gateway owns lookup, validation, references, storage, and synchronization.
 - Keep dependency reads bodyless and transport only numeric resource identity,
   optional source identity, and pagination. Preserve Swamp provenance, freshness,
   findings and PR certainty. The Gateway owns validation and read policy.

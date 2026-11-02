@@ -35,7 +35,7 @@ final readonly class EnvironmentOperationResponse
             || ! is_int($data['instance_id'])
             || $data['instance_id'] < 1
             || ! is_string($data['operation'])
-            || ! in_array($expectedOperation, ['import', 'update'], strict: true)
+            || $expectedOperation !== 'update'
             || $data['operation'] !== $expectedOperation
             || ! is_bool($data['changed'])
             || ! is_int($data['key_count'])

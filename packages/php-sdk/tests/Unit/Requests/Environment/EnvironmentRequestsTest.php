@@ -16,22 +16,8 @@ use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\PendingRequest;
 
 describe('Instance environment requests', function (): void {
-    it('sends the exact import and update methods routes and JSON object payloads', function (): void {
+    it('sends the exact update method route and JSON object payload', function (): void {
         $cases = [
-            [
-                new ImportInstanceEnvironmentRequest(17),
-                Method::POST,
-                '/api/v1/instances/17/environment/import',
-                [],
-                '{}',
-            ],
-            [
-                new ImportInstanceEnvironmentRequest('app.example.test', false),
-                Method::POST,
-                '/api/v1/instances/app.example.test/environment/import',
-                ['replace' => false],
-                '{"replace":false}',
-            ],
             [
                 new UpdateInstanceEnvironmentRequest(17, 'FEATURE_FLAG', 'false'),
                 Method::PUT,
@@ -61,6 +47,33 @@ describe('Instance environment requests', function (): void {
                 ->toBe('application/json');
         }
     });
+
+    it('starts import with its replacement choice and returns the started operation', function (ImportInstanceEnvironmentRequest $request, string $endpoint, string $body): void {
+        $mock = new MockClient([
+            ImportInstanceEnvironmentRequest::class => MockResponse::make([
+                'data' => [
+                    'id' => 902, 'kind' => 'instance.env_import', 'target_type' => 'instance', 'target_id' => 17,
+                    'input' => ['instance_id' => 17, 'replace' => false], 'status' => 'running', 'sequence' => 1,
+                    'current_step' => null, 'failed_step' => null, 'error_code' => null, 'result' => null,
+                    'cancel_requested' => false, 'attempts' => 0, 'poll_after_seconds' => 2,
+                ],
+                'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111'],
+            ], 202),
+        ]);
+        $operation = environment_connector($mock)->send($request)->dto();
+        $pending = $mock->getLastPendingRequest();
+
+        expect($request->getMethod())->toBe(Method::POST)
+            ->and($request->resolveEndpoint())->toBe($endpoint)
+            ->and((string) $pending?->createPsrRequest()->getBody())->toBe($body)
+            ->and($pending?->headers()->get('Content-Type'))->toBe('application/json')
+            ->and($operation)->toBeInstanceOf(OperationResponse::class)
+            ->and($operation->id)->toBe(902)
+            ->and($operation->kind)->toBe('instance.env_import');
+    })->with([
+        'without replacement' => [new ImportInstanceEnvironmentRequest(17), '/api/v1/instances/17/environment/import', '{}'],
+        'with replacement choice' => [new ImportInstanceEnvironmentRequest('app.example.test', false), '/api/v1/instances/app.example.test/environment/import', '{"replace":false}'],
+    ]);
 
     it('starts synchronization with an empty JSON object and returns the started operation', function (): void {
         $request = new SynchronizeInstanceEnvironmentRequest('app.example.test');
@@ -339,7 +352,6 @@ function assert_safe_environment_transport_failure(
 function environment_operation(GatewayRequest $request): string
 {
     return match ($request::class) {
-        ImportInstanceEnvironmentRequest::class => 'import',
         UpdateInstanceEnvironmentRequest::class => 'update',
         default => throw new InvalidArgumentException('Unknown environment request.'),
     };

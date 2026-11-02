@@ -8,6 +8,7 @@ database_server.create
 database_server.destroy
 fleet.peer_dns
 instance.destroy
+instance.env_import
 instance.run_steps
 instance.sync_environment
 node.agent_rekey

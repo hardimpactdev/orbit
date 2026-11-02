@@ -55,22 +55,6 @@ describe('environment request wiring', function (): void {
             ->and($mock->getRecordedResponses())
             ->toHaveCount(1);
     })->with([
-        'import without replacement' => [[
-            'command' => 'env:import',
-            'arguments' => ['--instance' => 'app.com'],
-            'request_class' => ImportInstanceEnvironmentRequest::class,
-            'path' => '/api/v1/instances/app.com/environment/import',
-            'body' => [],
-            'operation' => 'import',
-        ]],
-        'import with replacement' => [[
-            'command' => 'env:import',
-            'arguments' => ['--instance' => 'app.com', '--replace' => true],
-            'request_class' => ImportInstanceEnvironmentRequest::class,
-            'path' => '/api/v1/instances/app.com/environment/import',
-            'body' => ['replace' => true],
-            'operation' => 'import',
-        ]],
         'update' => [[
             'command' => 'env:update',
             'arguments' => ['--instance' => 'app.com', '--key' => 'APP_DEBUG', '--value' => 'true'],
@@ -101,7 +85,6 @@ describe('environment request wiring', function (): void {
             ->and($mock->getRecordedResponses())
             ->toHaveCount(1);
     })->with([
-        'import' => ['env:import', [], ImportInstanceEnvironmentRequest::class, 'import', 'import'],
         'update' => [
             'env:update',
             ['--key' => 'APP_DEBUG', '--value' => 'true'],
@@ -185,12 +168,12 @@ describe('environment output', function (): void {
 
     it('renders the exact value-free JSON store result', function (): void {
         MockClient::global([
-            ImportInstanceEnvironmentRequest::class => environment_cli_response('import'),
+            UpdateInstanceEnvironmentRequest::class => environment_cli_response('update'),
         ]);
 
         $this
-            ->artisan('env:import', ['--instance' => 'app.com', '--json' => true])
-            ->expectsOutput(environment_cli_result_json('import', workloadFileChanged: false))
+            ->artisan('env:update', ['--instance' => 'app.com', '--key' => 'APP_DEBUG', '--value' => 'true', '--json' => true])
+            ->expectsOutput(environment_cli_result_json('update', workloadFileChanged: false))
             ->assertExitCode(0);
     });
 });
@@ -306,37 +289,6 @@ describe('environment failures', function (): void {
         expect($output)->not->toContain('environment-secret-sentinel');
     });
 
-    it('renders the Gateway import-conflict message instead of an HTTP status wrapper', function (): void {
-        MockClient::global([
-            ImportInstanceEnvironmentRequest::class => MockResponse::make(
-                [
-                    'error' => [
-                        'code' => 'env.import_conflict',
-                        'message' => 'The import contains keys that are already stored.',
-                        'details' => [],
-                    ],
-                ],
-                409,
-                ['X-Orbit-Request-Id' => environment_cli_request_id()],
-            ),
-        ]);
-
-        [$exitCode, $output] = environment_cli_display('env:import', [
-            '--instance' => '17',
-            '--json' => true,
-            '--no-interaction' => true,
-        ]);
-
-        expect($exitCode)->toBe(1);
-        expect(trim($output))
-            ->toBe(environment_cli_error_json(
-                code: 'env.import_conflict',
-                message: 'The import contains keys that are already stored.',
-                requestId: environment_cli_request_id(),
-            ))
-            ->not->toContain('Gateway environment operation failed with HTTP status');
-    });
-
     it('renders the Gateway not-found message instead of an HTTP status wrapper', function (): void {
         MockClient::global([
             ImportInstanceEnvironmentRequest::class => MockResponse::make(
@@ -397,6 +349,37 @@ describe('environment failures', function (): void {
             ->not->toContain('FatalRequestException')
             ->not->toContain('RuntimeException');
     });
+});
+
+describe('environment import', function (): void {
+    it('starts the import with the replacement choice and emits only the final Operation in JSON', function (array $arguments, string $body): void {
+        $mock = environment_cli_operation_mock(ImportInstanceEnvironmentRequest::class, 'instance.env_import', 'succeeded');
+
+        $exit = Artisan::call('env:import', ['--instance' => 'app.com', ...$arguments, '--json' => true, '--no-interaction' => true]);
+        $data = json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exit)->toBe(0)
+            ->and($data['kind'])->toBe('instance.env_import')
+            ->and($data['result'])->toBe(['instance_id' => 17, 'changed' => true, 'environment_changed' => true, 'key_count' => 3]);
+        $mock->assertSent(fn ($request, $response): bool => $request instanceof ImportInstanceEnvironmentRequest
+            && $response->getPendingRequest()->getUrl() === 'https://10.44.0.1/api/v1/instances/app.com/environment/import'
+            && (string) $response->getPendingRequest()->body() === $body);
+        $mock->assertSent(ShowOperationRequest::class);
+    })->with([
+        'without replacement' => [[], '{}'],
+        'with replacement' => [['--replace' => true], '{"replace":true}'],
+    ]);
+
+    it('reports the outcome in human output', function (string $status, int $exitCode, string $message): void {
+        environment_cli_operation_mock(ImportInstanceEnvironmentRequest::class, 'instance.env_import', $status);
+
+        [$exit, $output] = environment_cli_display('env:import', ['--instance' => '17']);
+
+        expect($exit)->toBe($exitCode)->and($output)->toContain($message, 'Operation: 901');
+    })->with([
+        'success' => ['succeeded', 0, 'Environment import succeeded.'],
+        'failure' => ['failed', 1, 'Environment import failed.'],
+    ]);
 });
 
 describe('environment synchronization', function (): void {
@@ -470,7 +453,18 @@ function environment_cli_display(string $command, array $arguments = []): array
 /** @param array<string, mixed> $result */
 function environment_cli_sync_mock(string $status, array $result = []): MockClient
 {
-    $started = ['id' => 901, 'kind' => 'instance.sync_environment', 'target_type' => 'instance', 'target_id' => 17,
+    return environment_cli_operation_mock(SynchronizeInstanceEnvironmentRequest::class, 'instance.sync_environment', $status, $result);
+}
+
+/**
+ * Records one 202 environment Operation start, then a terminal Operation for the follower.
+ *
+ * @param  class-string  $request
+ * @param  array<string, mixed>  $result
+ */
+function environment_cli_operation_mock(string $request, string $kind, string $status, array $result = []): MockClient
+{
+    $started = ['id' => 901, 'kind' => $kind, 'target_type' => 'instance', 'target_id' => 17,
         'input' => ['instance_id' => 17], 'status' => 'running', 'sequence' => 1, 'current_step' => null, 'failed_step' => null,
         'error_code' => null, 'result' => null, 'cancel_requested' => false, 'attempts' => 0, 'poll_after_seconds' => 0];
     $final = [...$started, 'status' => $status, 'sequence' => 6, ...($status === 'succeeded'
@@ -478,7 +472,7 @@ function environment_cli_sync_mock(string $status, array $result = []): MockClie
         : ['failed_step' => 'write', 'error_code' => 'env.write_failed'])];
 
     return MockClient::global([
-        SynchronizeInstanceEnvironmentRequest::class => MockResponse::make(['data' => $started, 'meta' => ['request_id' => environment_cli_request_id()]], 202),
+        $request => MockResponse::make(['data' => $started, 'meta' => ['request_id' => environment_cli_request_id()]], 202),
         ShowRealtimeRequest::class => MockResponse::make([], 503),
         ShowOperationRequest::class => MockResponse::make(['data' => $final, 'meta' => ['request_id' => environment_cli_request_id()]]),
     ]);

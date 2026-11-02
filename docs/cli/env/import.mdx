@@ -12,7 +12,9 @@ orbit env:import --instance=SELECTOR [--replace] [--json]
 | --- | --- |
 | `--replace` | Replace stored keys that the file also holds. Stored keys that the file lacks stay. |
 
-Without `--replace`, a file key that is already stored returns `env.import_conflict`, and nothing is stored. For a Laravel Instance, import stores `APP_URL` as `https://{{instance.domain}}`.
+The Gateway answers at once with the started `instance.env_import` Operation. The CLI follows it until it ends and prints the outcome, the failed step and error code if any, the Operation ID, and the request ID. With `--json`, it prints only the final Operation. The command exits nonzero unless the Operation succeeds. Ctrl-C stops following; the Operation keeps running, and `orbit operation:show ID` shows it.
+
+Without `--replace`, a file key that is already stored fails the Operation with `env.import_conflict`, and nothing is stored. For a Laravel Instance, import stores `APP_URL` as `https://{{instance.domain}}`.
 
 ```bash
 orbit env:import --instance=12

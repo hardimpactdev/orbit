@@ -1,0 +1,8 @@
+manifestVersion: 1
+name: "@nckrtl/instance-env-import"
+version: 2026.11.02.1
+visibility: private
+license: MIT
+description: Stores one copied Instance .env in the vault as a sensitive field, for the Gateway to read once.
+behaviors:
+  - operations/instance-env-import/store.ts

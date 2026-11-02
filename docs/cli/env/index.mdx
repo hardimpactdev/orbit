@@ -6,7 +6,7 @@ covers:
   - apps/cli/app/Commands/Environment/**
 ---
 
-The Gateway stores the environment configuration of every Instance as encrypted keys and values. The `env` family imports an existing `.env`, changes one stored value, and writes the complete stored configuration back into the Instance's `.env`.
+The Gateway stores the environment configuration of every Instance as encrypted keys and values. The `env` family imports an existing `.env`, changes one stored value, and writes the complete stored configuration back into the Instance's `.env`. Import and sync run as Swamp Operations that the CLI follows to the end; update changes stored configuration at once.
 
 [Instance environment variables](/reference/environment-variables) describes the file location, the limits, the placeholders, and the error codes.
 

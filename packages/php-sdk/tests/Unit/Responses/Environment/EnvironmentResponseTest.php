@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
-use Orbit\Sdk\Requests\Environment\ImportInstanceEnvironmentRequest;
 use Orbit\Sdk\Requests\Environment\UpdateInstanceEnvironmentRequest;
 use Orbit\Sdk\Responses\Environment\EnvironmentOperationResponse;
 use Saloon\Http\Faking\MockClient;
@@ -49,19 +48,19 @@ describe('Instance environment response', function (): void {
         expect(fn () => EnvironmentOperationResponse::fromGatewayData([
             'instance_id' => 17, 'operation' => $operation, 'changed' => true, 'key_count' => 1, 'runtime_refresh' => $outcome,
         ], $operation, '11111111-1111-4111-8111-111111111111'))->toThrow(GatewayApiException::class);
-    })->with([['update', 'skipped_unchanged'], ['import', 'skipped_unchanged']]);
+    })->with([['update', 'skipped_unchanged']]);
 
     it('rejects missing wrongly typed contradictory extra and out-of-bound data safely', function (array $data): void {
         $sentinel = 'malformed-environment-value-8c2d';
         $mock = new MockClient([
-            ImportInstanceEnvironmentRequest::class => MockResponse::make([
+            UpdateInstanceEnvironmentRequest::class => MockResponse::make([
                 'data' => $data,
                 'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111'],
             ]),
         ]);
 
         try {
-            environment_response_connector($mock)->send(new ImportInstanceEnvironmentRequest(17))->dto();
+            environment_response_connector($mock)->send(new UpdateInstanceEnvironmentRequest(17, 'FEATURE_FLAG', 'false'))->dto();
             $this->fail('Expected malformed environment response rejection.');
         } catch (GatewayApiException $exception) {
             $diagnostics = implode("\n", [
@@ -84,31 +83,31 @@ describe('Instance environment response', function (): void {
         }
     })->with([
         'missing id' => [[
-            'operation' => 'import',
+            'operation' => 'update',
             'changed' => true,
             'key_count' => 1,
         ]],
         'non-positive id' => [[
             'instance_id' => 0,
-            'operation' => 'import',
+            'operation' => 'update',
             'changed' => true,
             'key_count' => 1,
         ]],
         'wrong changed type' => [[
             'instance_id' => 17,
-            'operation' => 'import',
+            'operation' => 'update',
             'changed' => 1,
             'key_count' => 1,
         ]],
         'negative key count' => [[
             'instance_id' => 17,
-            'operation' => 'import',
+            'operation' => 'update',
             'changed' => true,
             'key_count' => -1,
         ]],
         'excessive key count' => [[
             'instance_id' => 17,
-            'operation' => 'import',
+            'operation' => 'update',
             'changed' => true,
             'key_count' => 1_025,
         ]],
@@ -120,14 +119,14 @@ describe('Instance environment response', function (): void {
         ]],
         'extra value' => [[
             'instance_id' => 17,
-            'operation' => 'import',
+            'operation' => 'update',
             'changed' => true,
             'key_count' => 1,
             'value' => 'malformed-environment-value-8c2d',
         ]],
         'value-bearing collection' => [[
             'instance_id' => 17,
-            'operation' => 'import',
+            'operation' => 'update',
             'changed' => true,
             'key_count' => 1,
             'environment' => ['VISIBLE_NAME' => 'malformed-environment-value-8c2d'],
@@ -136,10 +135,10 @@ describe('Instance environment response', function (): void {
 
     it('rejects missing or invalid request correlation safely', function (array $meta): void {
         $mock = new MockClient([
-            ImportInstanceEnvironmentRequest::class => MockResponse::make([
+            UpdateInstanceEnvironmentRequest::class => MockResponse::make([
                 'data' => [
                     'instance_id' => 17,
-                    'operation' => 'import',
+                    'operation' => 'update',
                     'changed' => false,
                     'key_count' => 0,
                 ],
@@ -149,7 +148,7 @@ describe('Instance environment response', function (): void {
 
         expect(
             fn (): mixed => environment_response_connector($mock)
-                ->send(new ImportInstanceEnvironmentRequest(17))
+                ->send(new UpdateInstanceEnvironmentRequest(17, 'FEATURE_FLAG', 'false'))
                 ->dto(),
         )
             ->toThrow(GatewayApiException::class, 'Gateway response contains invalid environment operation data.');
@@ -165,13 +164,13 @@ describe('Instance environment response', function (): void {
     ): void {
         $credential = 'environment-failure-credential-4c81';
         $requestId = '22222222-2222-4222-8222-222222222222';
-        $request = new ImportInstanceEnvironmentRequest(17);
+        $request = new UpdateInstanceEnvironmentRequest(17, 'FEATURE_FLAG', 'false');
         $expectedDetails = [
             'field' => 'replace',
             'APP_KEY' => '[REDACTED]',
         ];
         $mock = new MockClient([
-            ImportInstanceEnvironmentRequest::class => MockResponse::make(
+            UpdateInstanceEnvironmentRequest::class => MockResponse::make(
                 [
                     'error' => [
                         'code' => $errorCode,
@@ -239,7 +238,7 @@ describe('Instance environment response', function (): void {
                 ->not->toContain('Gateway environment operation failed with HTTP status');
         }
     })->with([
-        'import conflict' => ['env.import_conflict', 'The import contains keys that are already stored.', 409],
+        'invalid configuration' => ['env.configuration_invalid', 'The environment configuration is invalid.', 422],
         'missing resource' => ['http.404', 'Resource not found.', 404],
         'unavailable target' => [
             'env.owner_unavailable',
@@ -266,11 +265,11 @@ describe('Instance environment response', function (): void {
     it('rejects a malformed value-bearing response without retaining its body', function (): void {
         $sentinel = 'malformed-body-environment-value-b3e1';
         $mock = new MockClient([
-            ImportInstanceEnvironmentRequest::class => MockResponse::make("not-json {$sentinel}"),
+            UpdateInstanceEnvironmentRequest::class => MockResponse::make("not-json {$sentinel}"),
         ]);
 
         try {
-            environment_response_connector($mock)->send(new ImportInstanceEnvironmentRequest(17))->dto();
+            environment_response_connector($mock)->send(new UpdateInstanceEnvironmentRequest(17, 'FEATURE_FLAG', 'false'))->dto();
             $this->fail('Expected malformed response rejection.');
         } catch (GatewayApiException $exception) {
             $diagnostics = implode("\n", [
