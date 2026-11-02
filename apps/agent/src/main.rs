@@ -1,6 +1,7 @@
 use bollard::{container::ListContainersOptions, system::EventsOptions, Docker};
 use futures_util::{SinkExt, StreamExt};
 use orbit_agent::{
+    checkouts::watch_checkouts,
     docker_container_name, docker_status,
     facts::{self, FactSender},
     gateway_client, iso_now, lock_single_instance,
@@ -10,7 +11,8 @@ use orbit_agent::{
     },
     next_attempt, process_unit_name, retry_delay, snapshot_frames, tls_config,
     workspace::{
-        configure_libgit2, lock_workspaces, watch_workspaces, SharedWorkspaces, WorkspaceUpdate,
+        configure_libgit2, lock_workspaces, watch_workspaces, SharedWorkspaces, WatchFacts,
+        WorkspaceUpdate,
     },
     workspace_frame, workspaces_frames, AgentSecret, ChangeBatch, Config, Envelope, HeartbeatData,
     Liveness, LivenessCheck, Sequencer, Unit, CHANGE_MERGE_WINDOW, LOCK_PATH, SECRET_PATH,
@@ -136,19 +138,24 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
     configure_libgit2()?;
     let workspaces = SharedWorkspaces::default();
     let (workspace_tx, mut workspace_rx) = mpsc::unbounded_channel();
-    let (services_tx, services_rx) = watch::channel(Vec::new());
+    let (watch_facts_tx, watch_facts_rx) = watch::channel(WatchFacts::default());
     tokio::spawn(watch_workspaces(
         client.clone(),
         config.gateway_url.clone(),
         workspaces.clone(),
         workspace_tx,
-        services_tx,
+        watch_facts_tx,
+    ));
+    tokio::spawn(watch_checkouts(
+        client.clone(),
+        config.gateway_url.clone(),
+        watch_facts_rx.clone(),
     ));
     tokio::spawn(report_facts(
         client.clone(),
         config.gateway_url.clone(),
         connection.clone(),
-        services_rx,
+        watch_facts_rx,
     ));
     let (log_hub, log_prompts) = LogHub::new();
     tokio::spawn(run_controller(
@@ -662,7 +669,7 @@ async fn report_facts(
     client: reqwest::Client,
     gateway: String,
     connection: Connection,
-    services: watch::Receiver<Vec<String>>,
+    listed: watch::Receiver<WatchFacts>,
 ) {
     let manager = match Proxy::new(
         &connection,
@@ -688,7 +695,7 @@ async fn report_facts(
     loop {
         let (kind, data) = tokio::select! {
             _ = units_tick.tick() => {
-                let names = services.borrow().clone();
+                let names = listed.borrow().services.clone();
                 match observed_units(&manager, &names).await {
                     Ok((units, docker)) => ("units", facts::units_data(&units, docker)),
                     Err(error) => {
@@ -700,26 +707,15 @@ async fn report_facts(
             _ = host_tick.tick() => ("host", facts::host_data(std::env::consts::OS, std::env::consts::ARCH, &observed_filesystems())),
         };
         let now = std::time::Instant::now();
-        let Some(body) = sender.body(kind, &data, &facts::observed_at(), now) else {
+        let Some(body) = sender.body(kind, None, &data, &facts::observed_at(), now) else {
             continue;
         };
-        let result = async {
-            client
-                .post(&url)
-                .json(&body)
-                .timeout(Duration::from_secs(30))
-                .send()
-                .await?
-                .error_for_status()
-        }
-        .await;
-        match result {
-            Ok(_) => {
-                sender.sent(kind, &data, now);
+        match facts::post(&client, &url, &body).await {
+            Ok(()) => {
+                sender.sent(kind, None, &data, now);
                 last_error = None;
             }
             Err(error) => {
-                let error = error.to_string();
                 if last_error.as_ref() != Some(&error) {
                     eprintln!("orbit-agent: {kind} fact report failed: {error}");
                     last_error = Some(error);

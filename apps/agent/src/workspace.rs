@@ -120,6 +120,43 @@ pub fn parse_watch_list(body: &Value) -> Result<Vec<WatchEntry>, &'static str> {
         .collect())
 }
 
+/// What the watch list asks the facts reporters to observe: the role services, and on an app-dev Node the apps root
+/// with each Project's application directory below a checkout.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct WatchFacts {
+    pub services: Vec<String>,
+    pub apps_root: Option<String>,
+    pub applications: BTreeMap<String, String>,
+}
+
+/// Parses the `apps_root` and `applications` of `GET /api/v1/agent/watch`. An apps root must be a normalized absolute
+/// path; an application directory a relative path without `.` or `..`.
+pub fn parse_watch_apps(body: &Value) -> (Option<String>, BTreeMap<String, String>) {
+    let root = body
+        .pointer("/data/apps_root")
+        .and_then(Value::as_str)
+        .filter(|root| valid_checkout_path(root))
+        .map(str::to_owned);
+    let applications = body
+        .pointer("/data/applications")
+        .and_then(Value::as_object)
+        .map(|map| {
+            map.iter()
+                .filter_map(|(slug, directory)| {
+                    Some((slug.clone(), directory.as_str()?.to_owned()))
+                })
+                .filter(|(_, directory)| {
+                    directory.len() <= 4096
+                        && !directory
+                            .split('/')
+                            .any(|part| part.is_empty() || part == "." || part == "..")
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    (root, applications)
+}
+
 /// Parses the role `services` of `GET /api/v1/agent/watch`, keeping only plain unit names.
 pub fn parse_watch_services(body: &Value) -> Result<Vec<String>, &'static str> {
     let data = body
@@ -386,7 +423,7 @@ impl Watched {
 async fn fetch_watch_list(
     client: &reqwest::Client,
     gateway: &str,
-) -> Result<(Vec<WatchEntry>, Vec<String>), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(Vec<WatchEntry>, WatchFacts), Box<dyn std::error::Error + Send + Sync>> {
     let body: Value = client
         .get(format!(
             "{}/api/v1/agent/watch",
@@ -398,7 +435,13 @@ async fn fetch_watch_list(
         .error_for_status()?
         .json()
         .await?;
-    Ok((parse_watch_list(&body)?, parse_watch_services(&body)?))
+    let (apps_root, applications) = parse_watch_apps(&body);
+    let facts = WatchFacts {
+        services: parse_watch_services(&body)?,
+        apps_root,
+        applications,
+    };
+    Ok((parse_watch_list(&body)?, facts))
 }
 /// Locks the shared states, recovering from a poisoned lock.
 pub fn lock_workspaces(
@@ -496,13 +539,13 @@ async fn check_pass(
     }
 }
 /// Pulls the watch list every 60 s and checks the listed checkouts every 2 s, also while realtime is down. It
-/// passes the listed role services to the facts reporter through `services`.
+/// passes what the facts reporters observe through `facts`.
 pub async fn watch_workspaces(
     client: reqwest::Client,
     gateway: String,
     shared: SharedWorkspaces,
     tx: mpsc::UnboundedSender<WorkspaceUpdate>,
-    services: tokio::sync::watch::Sender<Vec<String>>,
+    facts: tokio::sync::watch::Sender<WatchFacts>,
 ) {
     let mut watched = BTreeMap::new();
     let mut list_tick = tokio::time::interval(LIST_INTERVAL);
@@ -516,7 +559,7 @@ pub async fn watch_workspaces(
             _ = list_tick.tick() => match fetch_watch_list(&client, &gateway).await {
                 Ok((entries, listed)) => {
                     last_error = None;
-                    services.send_if_modified(|current| {
+                    facts.send_if_modified(|current| {
                         let changed = *current != listed;
                         *current = listed;
                         changed
@@ -784,6 +827,29 @@ mod tests {
             vec!["caddy.service".to_owned(), "docker.service".to_owned()]
         );
         assert!(parse_watch_services(&json!({"data": {}})).is_err());
+    }
+
+    #[test]
+    fn watch_apps_keep_a_normalized_root_and_relative_application_directories() {
+        let body = json!({"data": {"apps_root": "/fast/apps", "applications": {
+            "operator": "server/web", "escape": "../etc", "absolute": "/etc", "dot": "./web", "number": 5
+        }}});
+
+        assert_eq!(
+            parse_watch_apps(&body),
+            (
+                Some("/fast/apps".to_owned()),
+                BTreeMap::from([("operator".to_owned(), "server/web".to_owned())])
+            )
+        );
+        assert_eq!(
+            parse_watch_apps(&json!({"data": {"apps_root": "/fast/../apps", "applications": []}})),
+            (None, BTreeMap::new())
+        );
+        assert_eq!(
+            parse_watch_apps(&json!({"data": {}})),
+            (None, BTreeMap::new())
+        );
     }
 
     #[test]

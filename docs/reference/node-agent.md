@@ -111,6 +111,8 @@ On an app-dev Node, the [watch list](#watch-list) names the `apps_root`. The age
 | `application` | The application directory the agent read: the checkout, or the subdirectory `applications` names for its Project |
 | `artisan`, `composer` | Whether `artisan` in `application` is `regular`, a `symlink` or `absent`, and the text of its `composer.json` (at most 1 MiB, or null) |
 
+The agent finds checkouts two levels below the apps root and skips symlinks and hidden names. It watches, with inotify on Linux and FSEvents on macOS, the apps root and each project directory. In each checkout it watches the Git directory, `refs/heads`, `refs/remotes/origin`, and the application directory. Only `HEAD`, `packed-refs`, `config`, a ref, `composer.json` and `artisan` count; an edit to another file sends nothing. It reads the checkouts that changed 2 seconds after the last event, and reads all of them at start and every 10 minutes. A full read of 339 checkouts on beast takes about 4 seconds, off the agent's async workers.
+
 After the checkouts, the agent sends the `checkouts` index. The Gateway deletes the `checkout` rows whose path is missing from the new index, in the same short transaction.
 
 ## Task workspaces

@@ -1,6 +1,6 @@
 [package]
 name = "orbit-agent"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2021"
 
 [lib]
@@ -44,6 +44,7 @@ tar = "0.4"
 flate2 = "1"
 zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2"] }
 xz2 = { version = "0.1.7", features = ["static"] }
+notify = "8.2.1"
 
 # Redaction's shared cases should measure the rules, not unoptimized regex matching.
 [profile.dev.package.regex]

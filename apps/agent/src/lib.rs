@@ -8,6 +8,7 @@ use std::{
     io::BufReader,
     net::{IpAddr, SocketAddr},
 };
+pub mod checkouts;
 pub mod command;
 pub mod commands;
 pub mod facts;

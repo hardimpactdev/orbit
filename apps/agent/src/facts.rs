@@ -85,28 +85,65 @@ pub fn valid_service(name: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || b"@._:-".contains(&byte))
 }
 
-/// Decides which facts to send: a fact whose digest changed, or any fact not sent for [`RESYNC_INTERVAL`].
+/// Decides which facts to send: a fact whose digest changed, or any fact not sent for [`RESYNC_INTERVAL`]. A kind
+/// with many items, such as `checkout`, names each in `subject`.
 #[derive(Default)]
 pub struct FactSender {
-    sent: BTreeMap<String, (String, Instant)>,
+    sent: BTreeMap<(String, String), (String, Instant)>,
 }
 
 impl FactSender {
     /// The request body when the fact must be sent, or None.
-    pub fn body(&self, kind: &str, data: &Value, observed_at: &str, now: Instant) -> Option<Value> {
+    pub fn body(
+        &self,
+        kind: &str,
+        subject: Option<&str>,
+        data: &Value,
+        observed_at: &str,
+        now: Instant,
+    ) -> Option<Value> {
         let digest = digest(kind, data);
-        match self.sent.get(kind) {
+        match self.sent.get(&key(kind, subject)) {
             Some((last, at)) if *last == digest && now.duration_since(*at) < RESYNC_INTERVAL => {
                 None
             }
-            _ => Some(json!({"kind": kind, "observed_at": observed_at, "data": data})),
+            _ => Some(match subject {
+                Some(subject) => {
+                    json!({"kind": kind, "subject": subject, "observed_at": observed_at, "data": data})
+                }
+                None => json!({"kind": kind, "observed_at": observed_at, "data": data}),
+            }),
         }
     }
 
     /// Records a fact the Gateway accepted.
-    pub fn sent(&mut self, kind: &str, data: &Value, now: Instant) {
-        self.sent.insert(kind.to_owned(), (digest(kind, data), now));
+    pub fn sent(&mut self, kind: &str, subject: Option<&str>, data: &Value, now: Instant) {
+        self.sent
+            .insert(key(kind, subject), (digest(kind, data), now));
     }
+
+    /// Forgets the items of a kind that `keep` rejects, so an item that comes back is sent again.
+    pub fn retain(&mut self, kind: &str, keep: impl Fn(&str) -> bool) {
+        self.sent
+            .retain(|(sent_kind, subject), _| sent_kind != kind || keep(subject));
+    }
+}
+
+fn key(kind: &str, subject: Option<&str>) -> (String, String) {
+    (kind.to_owned(), subject.unwrap_or_default().to_owned())
+}
+
+/// Sends one fact body to `POST /api/v1/agent/facts`.
+pub async fn post(client: &reqwest::Client, url: &str, body: &Value) -> Result<(), String> {
+    client
+        .post(url)
+        .json(body)
+        .timeout(std::time::Duration::from_secs(30))
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 fn digest(kind: &str, data: &Value) -> String {
@@ -193,27 +230,28 @@ mod tests {
         let data = json!({"os": "linux"});
 
         let body = sender
-            .body("host", &data, "2026-11-02T18:00:00Z", start)
+            .body("host", None, &data, "2026-11-02T18:00:00Z", start)
             .unwrap();
         assert_eq!(
             body,
             json!({"kind": "host", "observed_at": "2026-11-02T18:00:00Z", "data": {"os": "linux"}})
         );
-        sender.sent("host", &data, start);
+        sender.sent("host", None, &data, start);
 
         assert!(sender
-            .body("host", &data, "t", start + Duration::from_secs(60))
+            .body("host", None, &data, "t", start + Duration::from_secs(60))
             .is_none());
         assert!(sender
             .body(
                 "host",
+                None,
                 &json!({"os": "darwin"}),
                 "t",
                 start + Duration::from_secs(60)
             )
             .is_some());
         assert!(sender
-            .body("host", &data, "t", start + RESYNC_INTERVAL)
+            .body("host", None, &data, "t", start + RESYNC_INTERVAL)
             .is_some());
     }
 
@@ -222,8 +260,34 @@ mod tests {
         let sender = FactSender::default();
         let data = json!({});
 
-        assert!(sender.body("units", &data, "t", Instant::now()).is_some());
-        assert!(sender.body("units", &data, "t", Instant::now()).is_some());
+        assert!(sender
+            .body("units", None, &data, "t", Instant::now())
+            .is_some());
+        assert!(sender
+            .body("units", None, &data, "t", Instant::now())
+            .is_some());
+    }
+
+    #[test]
+    fn a_checkout_is_keyed_by_its_subject_and_forgotten_when_it_goes() {
+        let mut sender = FactSender::default();
+        let now = Instant::now();
+        let data = json!({"branch": "main"});
+        sender.sent("checkout", Some("/apps/a/default"), &data, now);
+
+        assert!(sender
+            .body("checkout", Some("/apps/a/default"), &data, "t", now)
+            .is_none());
+        assert_eq!(
+            sender.body("checkout", Some("/apps/a/feature"), &data, "t", now),
+            Some(
+                json!({"kind": "checkout", "subject": "/apps/a/feature", "observed_at": "t", "data": data})
+            )
+        );
+        sender.retain("checkout", |subject| subject != "/apps/a/default");
+        assert!(sender
+            .body("checkout", Some("/apps/a/default"), &data, "t", now)
+            .is_some());
     }
 
     #[test]
