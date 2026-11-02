@@ -13,10 +13,7 @@ inputs:
     node_id:
       type: integer
       minimum: 1
-    kind:
-      type: string
-      enum:
-      - conn.gateway_sessions_revoke
+    kind: {type: string, enum: [conn.gateway_sessions_revoke]}
     intent:
       type: object
       properties:
