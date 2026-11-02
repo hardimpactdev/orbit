@@ -2,7 +2,7 @@
 title: "Schedules"
 description: "How the Gateway stores a Schedule as its own Swamp workflow with a cron trigger, records each fire as a task, and removes it."
 covers:
-  - apps/gateway/app/{Actions,Domain}/Schedules/**
+  - apps/gateway/{app/{Actions,Domain}/Schedules/**,tests/Feature/Domain/ScheduleValidationTest.php}
   - apps/gateway/app/Infrastructure/Schedules/**
   - apps/gateway/app/Data/Schedules/**
   - apps/gateway/app/Http/{Controllers/Api/Schedule*,Requests/Schedules/*}.php
