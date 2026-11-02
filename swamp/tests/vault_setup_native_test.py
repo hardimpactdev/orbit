@@ -127,6 +127,15 @@ class VaultSetupNative(NativeTestCase):
         history = self.cli("workflow", "history", "get", run["id"])
         run = json.JSONDecoder().raw_decode(history.stdout.lstrip())[0]
         steps = {step["name"]: step for job in run["jobs"] for step in job["steps"]}
+        self.assertEqual(
+            list(steps),
+            [
+                "Resolve CLI assets",
+                "Verify the account",
+                "Clear the session",
+                "Confirm the setup",
+            ],
+        )
         self.assertEqual(run["status"], "succeeded" if success else "failed")
         self.assertEqual(steps["Clear the session"]["status"], "succeeded")
         self.assertFalse(Path("/tmp/orbit-vault-setup-" + run["id"]).exists())

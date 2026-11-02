@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R2-R4, swamp-vault-design (Vaultwarden = human copy). docs/reference/vaultwarden.md.
+  %% Tightened: flow-tighten 2026-11-02, rule 22 (no script-read step; the Bitwarden CLI calls run on 209).
   %% status: draft
   %% command: vault:setup
   %% kind: vault.setup
@@ -39,9 +40,12 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`, then prints `vault:status`
-  Note over SW: Read the scripts
+  Note over SW: Resolve CLI assets
   %%> What it does:
-  %%> - resolves the shipped Bitwarden CLI scripts and the public intent; no Gateway call
+  %%> - resolves worker-local CLI asset paths with Swamp's extensionFile API and serializes the public intent
+  %%> Why separate:
+  %%> - pinned command/shell accepts a command and environment, but has no extension asset input; workers have no repository checkout
+  %%> - reads no script contents or credentials and makes no Gateway or Node call
   SW->>VW: Verify the account<br/>login · unlock · collection
   %%> What it does:
   %%> - configures the official Bitwarden CLI in a private scratch directory, logs in, unlocks, and reads the collection

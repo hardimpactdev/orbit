@@ -47,7 +47,7 @@ inputs:
 jobs:
 - name: setup
   steps:
-  - name: Read the scripts
+  - name: Resolve CLI assets
     labels: {role: swamp}
     task:
       type: behavior
@@ -58,30 +58,30 @@ jobs:
   - name: Verify the account
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: Read the scripts, condition: {type: succeeded}}]
+    dependsOn: [{step: Resolve CLI assets, condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: command/shell
       behaviorName: vault-setup-verify
       methodName: execute
       inputs:
-        run: timeout 180 python3 -B '${{ steps["Read the scripts"].outputs.scripts.setup }}'
+        run: timeout 180 python3 -B '${{ steps["Resolve CLI assets"].outputs.scripts.setup }}'
         env: &environment
-          ORBIT_VAULT_INTENT: '${{ steps["Read the scripts"].outputs.intent_json }}'
+          ORBIT_VAULT_INTENT: '${{ steps["Resolve CLI assets"].outputs.intent_json }}'
           ORBIT_VAULT_DIRECTORY: '${{ "/tmp/orbit-vault-setup-" + run.id }}'
           ORBIT_VAULT_CONFIGURATION: '${{ vault.get(inputs.execution_secrets.configuration.vault, inputs.execution_secrets.configuration.key) }}'
   - name: Clear the session
     labels: {role: swamp}
     writes: true
     dependsOn: [{step: Verify the account, condition: {type: completed}}]
-    guard: '${{ !("Read the scripts" in steps) || steps["Read the scripts"].status != "succeeded" }}'
+    guard: '${{ !("Resolve CLI assets" in steps) || steps["Resolve CLI assets"].status != "succeeded" }}'
     task:
       type: behavior
       behaviorType: command/shell
       behaviorName: vault-setup-cleanup
       methodName: execute
       inputs:
-        run: timeout 30 python3 -B '${{ steps["Read the scripts"].outputs.scripts.cleanup }}'
+        run: timeout 30 python3 -B '${{ steps["Resolve CLI assets"].outputs.scripts.cleanup }}'
         env: *environment
   - name: Confirm the setup
     labels: {role: swamp}
