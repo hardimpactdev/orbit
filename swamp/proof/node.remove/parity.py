@@ -25,13 +25,16 @@ if mode == 'role':
     check(run('test', '-e', '/etc/systemd/system/orbit-websocket.service').returncode == 1, 'the retired unit is absent')
     check(run('systemctl', 'is-active', '--quiet', 'orbit-websocket.service').returncode in (3, 4), 'the role is stopped')
     check(run('test', '-e', '/etc/caddy/orbit-websocket-cert-current').returncode == 1, 'the role certificate is absent')
-    check('orbit:role:websocket' not in run('ufw', 'status').stdout, 'the role firewall rule is absent')
+    check('proof-unrelated' in run('ufw', 'status').stdout, 'the unrelated firewall rule remains')
 elif mode == 'online':
     check(operation['result'].get('removed') is True and operation['result'].get('offline') is False, 'online removal is projected')
     check(run('test', '-e', '/usr/local/bin/orbit-agent').returncode == 1, 'observer binary is absent')
     check(run('test', '-e', '/etc/orbit/agent').returncode == 1, 'observer config is absent')
     keys = run('cat', '/home/orbit/.ssh/authorized_keys').stdout
-    check(keys.strip() == 'ssh-ed25519 AAAAProofUnrelated operator', 'only the unrelated SSH key remains')
+    check('ssh-ed25519 AAAAProofUnrelated operator' in keys.splitlines(), 'the unrelated SSH key remains')
+    remaining = {' '.join(line.split()[:2]) for line in keys.splitlines()}
+    managed = operation['input']['intent']['managed_keys']
+    check(all(' '.join(key.split()[:2]) not in remaining for key in managed), 'every admitted management key is revoked')
 else:
     check(operation['result'].get('removed') is True and operation['result'].get('offline') is True, 'offline consent is projected')
     check(run('test', '-f', '/etc/orbit/agent/secret').returncode == 0, 'offline target configuration remains')

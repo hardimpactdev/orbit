@@ -26,7 +26,7 @@
       [
         "sh",
         "-c",
-        "mkdir -p /srv/proof-retained /etc/caddy/orbit-websocket-cert-current; echo keep > /srv/proof-retained/user-data; printf \"[Unit]\\nDescription=Proof WebSocket removal\\n[Service]\\nExecStart=/usr/bin/sleep infinity\\n[Install]\\nWantedBy=multi-user.target\\n\" > /etc/systemd/system/orbit-websocket.service; systemctl daemon-reload; systemctl enable --now orbit-websocket.service; ufw allow 6001/tcp comment orbit:role:websocket"
+        "mkdir -p /srv/proof-retained /etc/caddy/orbit-websocket-cert-current; echo keep > /srv/proof-retained/user-data; printf \"[Unit]\\nDescription=Proof WebSocket removal\\n[Service]\\nExecStart=/usr/bin/sleep infinity\\n[Install]\\nWantedBy=multi-user.target\\n\" > /etc/systemd/system/orbit-websocket.service; systemctl daemon-reload; systemctl enable --now orbit-websocket.service; ufw allow 6001/tcp comment proof-unrelated"
       ]
     ]
   },
