@@ -73,7 +73,7 @@ The `tasks:insights` response is `TaskInsightsData`, mapped in the script becaus
 
 The `tasks:agent:show` description names the cursor and the saved transcript, as the [thread read](/reference/tasks#read-a-thread) defines them. Its response uses the fixed `TaskAgentSnapshot` schema, because the controller returns the agent viewer's snapshot or delta event and not a data class.
 
-The agent routes `agent:watch` and `agent:facts` are internal: only `orbit-agent` calls them with its agent secret, so they have no SDK request, CLI command or MCP tool. Their summaries, bodies and responses are written in the script, because the controller validates the fact body by kind. The script lists each fact kind and the `subject` a `checkout` fact needs; a new kind changes that list in the same change. The [Node agent](/reference/node-agent#facts) page owns their meaning.
+The agent routes `agent:watch` and `agent:facts` are internal: only `orbit-agent` calls them with its agent secret, so they have no SDK request, CLI command or MCP tool. Their summaries, bodies and responses are written in the script, because the controller validates the fact body by kind. The script lists each fact kind and the `subject` a `checkout` fact needs; a new kind changes that list in the same change. It also writes the `agent:watch` response, including `applications`, a map whose empty form is `{}`. The [Node agent](/reference/node-agent#facts) page owns their meaning.
 
 A form-request rule `present` marks that property required, as `required` does.
 
