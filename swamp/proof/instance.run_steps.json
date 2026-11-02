@@ -25,7 +25,7 @@
       "operation": false,
       "body": {
         "name": "marker",
-        "command": "printf x >> .git/orbit-proof-steps; printf proof-private-step-output",
+        "command": "printf x >> .git/orbit-proof-steps; printf 'proof-private-%s-output' step",
         "timeout_seconds": 10
       }
     },

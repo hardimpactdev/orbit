@@ -21,6 +21,7 @@ def check(condition, message):
         sys.exit('parity: ' + message)
 
 
+# The command text is a run input by decision; its stdout must stay on the Node.
 check('proof-private-step-output' not in outputs, 'step stdout reached native history')
 check(result == {'instance_id': operation['input']['instance_id'], 'outcome': 'succeeded', 'no_op': False}, 'the bounded success receipt')
 marker = directory + '/.git/orbit-proof-steps'
