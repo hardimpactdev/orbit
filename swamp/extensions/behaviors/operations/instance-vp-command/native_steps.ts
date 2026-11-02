@@ -9,7 +9,7 @@ export function instanceActions(
 ) {
     const steps: Fields[] = [];
     const globals = {
-        name: expression('"id-' + name.slice(0, 10) + '-" + run.id'),
+        name: expression('"id-' + name.slice(0, 10) + '-" + string(' + ssh + ".target.host)"),
         transport: {
             kind: "ssh",
             user: expression(ssh + ".target.user"),
@@ -58,7 +58,7 @@ export function instanceActions(
             type: "behavior",
             behaviorType,
             behaviorName: expression(
-                '"idm-' + name.slice(0, 6) + "-" + steps.length + '-" + run.id',
+                '"idm-' + name.slice(0, 6) + "-" + steps.length + '"',
             ),
             methodName: method,
             inputs,
@@ -74,7 +74,7 @@ export function instanceActions(
             type: "behavior",
             behaviorType: "@swamp/ssh",
             behaviorName: expression(
-                '"ids-' + name.slice(0, 6) + "-" + steps.length + '-" + run.id',
+                '"ids-' + name.slice(0, 6) + "-" + steps.length + '-" + string(' + ssh + ".target.host)",
             ),
             methodName,
             globalArgs: globals,

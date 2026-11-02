@@ -35,7 +35,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-dns-read-records-" + run.id }}
+      behaviorName: '${{ "route-dns-read-records-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: exec
       globalArgs: &id001
         name: ${{ "route-dns-" + string(inputs.intent.node_id) }}
@@ -60,7 +60,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-dns-read-catalog-" + run.id }}
+      behaviorName: '${{ "route-dns-read-catalog-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -82,7 +82,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/route-mutation-command'
-      behaviorName: ${{ "route-dns-compose-" + run.id }}
+      behaviorName: '${{ "route-dns-compose" }}'
       methodName: dns
       inputs:
         before: ${{ inputs.intent.before }}
@@ -96,7 +96,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-catalog-directory-" + run.id }}
+      behaviorName: '${{ "route-ssh-catalog-directory-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -117,7 +117,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-records-" + run.id }}
+      behaviorName: '${{ "route-ssh-records-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -143,7 +143,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-catalog-" + run.id }}
+      behaviorName: '${{ "route-ssh-catalog-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -169,7 +169,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-dns-validate-" + run.id }}
+      behaviorName: '${{ "route-dns-validate-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -187,7 +187,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-restart-backend-" + run.id }}
+      behaviorName: '${{ "route-ssh-restart-backend-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -206,7 +206,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-listener-" + run.id }}
+      behaviorName: '${{ "route-ssh-listener-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -226,7 +226,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "route-dns-result-" + run.id }}
+      behaviorName: '${{ "route-dns-result" }}'
       methodName: execute
       inputs:
         run: 'printf ''%s\n'' ''{"ready":true}''

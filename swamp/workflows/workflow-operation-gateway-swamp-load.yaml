@@ -26,7 +26,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: '${{ "gateway-swamp-load-" + string(inputs.operation_id) }}'
+          behaviorName: '${{ "gateway-swamp-load" }}'
           methodName: execute
           inputs:
             env:

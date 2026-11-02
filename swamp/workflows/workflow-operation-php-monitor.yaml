@@ -78,10 +78,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-probe-" + run.id }}
+      behaviorName: '${{ "route-ssh-probe-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: exec
       globalArgs: &id001
-        name: ${{ "route-ssh-" + run.id }}
+        name: '${{ "route-ssh-probe-" + string(inputs.intent.connection.nodeHost) }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -110,7 +110,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/php-monitor-command'
-      behaviorName: ${{ "input-" + run.id }}
+      behaviorName: '${{ "input" }}'
       methodName: prepare
       inputs:
         runtime: ${{ inputs.intent.php_runtime }}
@@ -124,7 +124,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-apply-pool-" + run.id }}
+      behaviorName: '${{ "route-ssh-apply-pool-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -150,7 +150,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-validate-" + run.id }}
+      behaviorName: '${{ "route-ssh-validate-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -173,7 +173,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-reload-" + run.id }}
+      behaviorName: '${{ "route-ssh-reload-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -201,7 +201,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "result-" + run.id }}
+      behaviorName: '${{ "result" }}'
       methodName: execute
       inputs:
         run: printf '{"ready":true,"present":%s}\n' "$ORBIT_PHP_PRESENT"

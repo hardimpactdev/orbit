@@ -14,11 +14,11 @@ jobs:
   steps:
   - name: assets
     labels: {role: swamp}
-    task: {type: behavior, behaviorType: '@nckrtl/tool-write-command', behaviorName: '${{ "tm-assets-" + run.id }}', methodName: manager_assets, inputs: {input: '${{ inputs.intent }}'}}
+    task: {type: behavior, behaviorType: '@nckrtl/tool-write-command', behaviorName: '${{ "tm-assets" }}', methodName: manager_assets, inputs: {input: '${{ inputs.intent }}'}}
   - name: setup_assets
     labels: {role: swamp}
     guard: '${{ !("setup" in inputs.intent) || inputs.intent.setup == null }}'
-    task: {type: behavior, behaviorType: '@nckrtl/node-tool-setup-assets', behaviorName: '${{ "tm-setup-assets-" + run.id }}', methodName: read, inputs: {setup: '${{ inputs.intent.setup }}'}}
+    task: {type: behavior, behaviorType: '@nckrtl/node-tool-setup-assets', behaviorName: '${{ "tm-setup-assets" }}', methodName: read, inputs: {setup: '${{ inputs.intent.setup }}'}}
   # Read the manager; on a Linux first use install it at its pinned version, then read it again.
   - name: Set up the Tool Manager
     labels: {role: swamp}
@@ -26,9 +26,9 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tm-setup-" + run.id }}'
+      behaviorName: '${{ "tm-setup-" + string(inputs.ssh.target.host) }}'
       methodName: exec
-      globalArgs: {name: '${{ "tm-ssh-" + run.id }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', identitiesOnly: true, hostKeys: '${{ inputs.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}
+      globalArgs: {name: '${{ "tm-setup-" + string(inputs.ssh.target.host) }}', transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', identityFile: '${{ inputs.ssh.identity_file }}', identitiesOnly: true, hostKeys: '${{ inputs.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]}
       inputs:
         hosts: name:target
         okExitCodes: any

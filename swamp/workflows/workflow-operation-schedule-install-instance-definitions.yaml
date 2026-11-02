@@ -49,7 +49,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: ${{ "schedule-def-result-" + run.id }}
+          behaviorName: '${{ "schedule-def-result" }}'
           methodName: execute
           inputs:
             run: |

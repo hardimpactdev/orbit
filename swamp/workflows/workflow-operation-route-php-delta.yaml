@@ -91,7 +91,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/route-publication-command'
-      behaviorName: ${{ "route-delta-plan-" + run.id }}
+      behaviorName: '${{ "route-delta-plan" }}'
       methodName: phpPlan
       inputs:
         node_id: ${{ inputs.intent.node_id }}
@@ -107,10 +107,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-read-account-" + run.id }}
+      behaviorName: '${{ "route-ssh-read-account-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: exec
       globalArgs: &id001
-        name: ${{ "route-ssh-" + run.id }}
+        name: '${{ "route-ssh-read-account-" + string(inputs.intent.connection.nodeHost) }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -155,7 +155,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-read-current-" + run.id }}
+      behaviorName: '${{ "route-ssh-read-current-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -192,7 +192,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/route-publication-command'
-      behaviorName: ${{ "route-delta-compose-" + run.id }}
+      behaviorName: '${{ "route-delta-compose" }}'
       methodName: php
       inputs:
         node_id: ${{ inputs.intent.node_id }}
@@ -217,10 +217,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-apply-pool-" + run.id + "-" + string(self._index) }}
+      behaviorName: '${{ "route-ssh-apply-pool-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index) }}'
       methodName: exec
       globalArgs:
-        name: ${{ "route-ssh-apply-pool-" + run.id + "-" + string(self._index) }}
+        name: '${{ "route-ssh-apply-pool-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index) }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -251,10 +251,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-validate-" + run.id + "-" + string(self._index) }}
+      behaviorName: '${{ "route-ssh-validate-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index) }}'
       methodName: exec
       globalArgs:
-        name: ${{ "route-ssh-validate-" + run.id + "-" + string(self._index) }}
+        name: '${{ "route-ssh-validate-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index) }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -285,10 +285,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-reload-" + run.id + "-" + string(self._index) }}
+      behaviorName: '${{ "route-ssh-reload-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index) }}'
       methodName: exec
       globalArgs:
-        name: ${{ "route-ssh-reload-" + run.id + "-" + string(self._index) }}
+        name: '${{ "route-ssh-reload-" + string(inputs.intent.connection.nodeHost) + "-" + string(self._index) }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -330,7 +330,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "route-delta-result-" + run.id }}
+      behaviorName: '${{ "route-delta-result" }}'
       methodName: execute
       inputs:
         run: printf '%s\n' '{"ready":true}'

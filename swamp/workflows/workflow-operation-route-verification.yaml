@@ -48,7 +48,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "route-result-" + run.id }}
+      behaviorName: '${{ "route-result" }}'
       methodName: execute
       inputs:
         run: "if [ \"$READY\" = true ]; then\n  printf '%s\\n' '{\"ready\":true}'\n\

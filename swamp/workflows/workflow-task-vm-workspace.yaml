@@ -31,7 +31,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-workspace-input'
-      behaviorName: ${{ "workspace-input-" + run.id }}
+      behaviorName: '${{ "workspace-input" }}'
       methodName: read
       inputs:
         intent: ${{ inputs.intent }}
@@ -44,10 +44,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-vm-workspace-" + run.id }}
+      behaviorName: '${{ "task-vm-workspace-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: &id001
-        name: ${{ "task-vm-workspace-" + run.id }}
+        name: '${{ "task-vm-workspace-" + string(inputs.intent.ssh_execution.target.host) }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -72,7 +72,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-vm-workspace-" + run.id }}
+      behaviorName: '${{ "task-vm-workspace-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -91,7 +91,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-vm-workspace-" + run.id }}
+      behaviorName: '${{ "task-vm-workspace-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -111,7 +111,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-workspace-input'
-      behaviorName: ${{ "workspace-input-" + run.id }}
+      behaviorName: '${{ "workspace-input" }}'
       methodName: result
       inputs:
         observation: ${{ steps.observe.outputs }}

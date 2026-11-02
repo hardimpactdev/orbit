@@ -38,8 +38,8 @@ export function roleCertificateJobs(
         behaviorType: "@nckrtl/node-role-certificates",
         behaviorName: expr(
             methodName === "record"
-                ? '"cert-record-" + run.id + "-" + string(self._index)'
-                : '"role-cert-" + run.id',
+                ? '"cert-record-" + string(inputs.node_id) + "-" + string(self._index)'
+                : '"role-cert"',
         ),
         methodName,
         inputs: { ...args, ...extra },
@@ -47,7 +47,7 @@ export function roleCertificateJobs(
     const connection =
         `${plan}.connections.filter(c, c.node_id == self.leaf.node_id)[0].ssh`;
     const ssh = {
-        name: expr('"role-certificate-" + run.id + "-" + string(self._index)'),
+        name: expr('"role-certificate-" + ' + key("self.leaf")),
         transport: {
             kind: "ssh",
             user: expr(connection + ".target.user"),

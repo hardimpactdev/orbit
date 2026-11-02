@@ -72,7 +72,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "vm-terminal-" + run.id }}
+      behaviorName: '${{ "vm-terminal" }}'
       methodName: execute
       inputs:
         run: '/usr/bin/python3 -B - <<''PYTHON''

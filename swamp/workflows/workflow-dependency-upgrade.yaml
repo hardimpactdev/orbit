@@ -30,7 +30,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "dependency-fetch-" + run.id }}
+      behaviorName: '${{ "dependency-fetch" }}'
       methodName: execute
       inputs:
         run: git -C "$ORBIT_CHECKOUT" fetch --quiet -- origin "$ORBIT_BRANCH"
@@ -46,7 +46,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "dependency-head-" + run.id }}
+      behaviorName: '${{ "dependency-head" }}'
       methodName: execute
       inputs:
         run: git -C "$ORBIT_CHECKOUT" rev-parse --verify "FETCH_HEAD^{commit}"

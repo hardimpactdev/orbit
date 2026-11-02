@@ -69,7 +69,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "icl-" + run.id + "-0" }}'
+          behaviorName: '${{ "icl-0" }}'
           methodName: paths
           inputs:
             intent: '${{ inputs.intent }}'
@@ -82,7 +82,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: '${{ "icl-" + run.id + "-1" }}'
+          behaviorName: '${{ "icl-1" }}'
           methodName: execute
           inputs:
             run: python3 -B "$ORBIT_MINT"
@@ -100,10 +100,10 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "icl-" + run.id + "-2" }}'
+          behaviorName: '${{ "icl-2-" + string(inputs.intent.candidate.ssh_execution.target.host) }}'
           methodName: exec
           globalArgs: &ref_2
-            name: '${{ "icl-candidate-" + run.id }}'
+            name: '${{ "icl-2-" + string(inputs.intent.candidate.ssh_execution.target.host) }}'
             transport:
               kind: ssh
               user: '${{ inputs.intent.candidate.ssh_execution.target.user }}'
@@ -135,7 +135,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "icl-" + run.id + "-3" }}'
+          behaviorName: '${{ "icl-3-" + string(inputs.intent.candidate.ssh_execution.target.host) }}'
           methodName: exec
           globalArgs: *ref_2
           inputs:
@@ -160,7 +160,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "icl-" + run.id + "-4" }}'
+          behaviorName: '${{ "icl-4-" + string(inputs.intent.candidate.ssh_execution.target.host) }}'
           methodName: exec
           globalArgs: *ref_2
           inputs:
@@ -185,7 +185,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "icl-" + run.id + "-5" }}'
+          behaviorName: '${{ "icl-5-" + string(inputs.intent.candidate.ssh_execution.target.host) }}'
           methodName: exec
           globalArgs: *ref_2
           inputs:
@@ -210,7 +210,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "icl-" + run.id + "-6" }}'
+          behaviorName: '${{ "icl-6" }}'
           methodName: read
           inputs:
             action: origin
@@ -224,7 +224,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "icl-" + run.id + "-7" }}'
+          behaviorName: '${{ "icl-7-" + string(inputs.intent.candidate.ssh_execution.target.host) }}'
           methodName: script
           globalArgs: *ref_2
           inputs:
@@ -240,7 +240,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "icl-" + run.id + "-8" }}'
+          behaviorName: '${{ "icl-8" }}'
           methodName: cloneCandidate
           inputs:
             intent: '${{ inputs.intent.candidate }}'
@@ -257,10 +257,10 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-0-" + run.id }}'
+          behaviorName: '${{ "src-0-" + string(inputs.intent.ssh_execution.target.host) }}'
           methodName: exec
           globalArgs: &ref_3
-            name: '${{ "source-" + run.id }}'
+            name: '${{ "src-0-" + string(inputs.intent.ssh_execution.target.host) }}'
             transport:
               kind: ssh
               user: '${{ inputs.intent.ssh_execution.target.user }}'
@@ -299,7 +299,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-1-" + run.id }}'
+          behaviorName: '${{ "src-1" }}'
           methodName: branchAvailable
           inputs:
             resolve: '${{ inputs.intent.resolve }}'
@@ -335,7 +335,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-3-" + run.id }}'
+          behaviorName: '${{ "src-3" }}'
           methodName: read
           inputs:
             action: prepare_directory
@@ -353,7 +353,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-4-" + run.id }}'
+          behaviorName: '${{ "src-4-" + string(inputs.intent.ssh_execution.target.host) }}'
           methodName: script
           globalArgs: *ref_3
           inputs:
@@ -373,7 +373,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-5-" + run.id }}'
+          behaviorName: '${{ "src-5" }}'
           methodName: decode
           inputs:
             observation: '${{ steps["source-prepare-read"].outputs }}'
@@ -392,7 +392,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-6-" + run.id }}'
+          behaviorName: '${{ "src-6-" + string(inputs.intent.ssh_execution.target.host) }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -422,7 +422,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-7-" + run.id }}'
+          behaviorName: '${{ "src-7-" + string(inputs.intent.ssh_execution.target.host) }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -453,7 +453,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-8-" + run.id }}'
+          behaviorName: '${{ "src-8" }}'
           methodName: read
           inputs:
             action: origin
@@ -473,7 +473,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-9-" + run.id }}'
+          behaviorName: '${{ "src-9-" + string(inputs.intent.ssh_execution.target.host) }}'
           methodName: script
           globalArgs: *ref_3
           inputs:
@@ -493,7 +493,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-10-" + run.id }}'
+          behaviorName: '${{ "src-10" }}'
           methodName: origin
           inputs:
             expected: '${{ inputs.intent.source.repository }}'
@@ -512,7 +512,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-11-" + run.id }}'
+          behaviorName: '${{ "src-11-" + string(inputs.intent.ssh_execution.target.host) }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -541,7 +541,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-12-" + run.id }}'
+          behaviorName: '${{ "src-12-" + string(inputs.intent.ssh_execution.target.host) }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -569,7 +569,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-13-" + run.id }}'
+          behaviorName: '${{ "src-13" }}'
           methodName: read
           inputs:
             action: mark_source
@@ -590,7 +590,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-14-" + run.id }}'
+          behaviorName: '${{ "src-14-" + string(inputs.intent.ssh_execution.target.host) }}'
           methodName: script
           globalArgs: *ref_3
           inputs:
@@ -610,7 +610,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-15-" + run.id }}'
+          behaviorName: '${{ "src-15" }}'
           methodName: paths
           inputs:
             intent: '${{ inputs.intent }}'
@@ -627,7 +627,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-16-" + run.id }}'
+          behaviorName: '${{ "src-16-" + string(inputs.intent.ssh_execution.target.host) }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -649,7 +649,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "source-copy-" + run.id }}'
+          behaviorName: '${{ "source-copy-" + string(inputs.intent.ssh_execution.target.host) }}'
           methodName: copy
           globalArgs: *ref_3
           inputs:
@@ -671,7 +671,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-18-" + run.id }}'
+          behaviorName: '${{ "src-18-" + string(inputs.intent.ssh_execution.target.host) }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -696,7 +696,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-19-" + run.id }}'
+          behaviorName: '${{ "src-19-" + string(inputs.intent.ssh_execution.target.host) }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -726,7 +726,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-20-" + run.id }}'
+          behaviorName: '${{ "src-20" }}'
           methodName: select
           inputs:
             resolve: '${{ inputs.intent.resolve }}'
@@ -744,7 +744,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-21-" + run.id }}'
+          behaviorName: '${{ "src-21-" + string(inputs.intent.ssh_execution.target.host) }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -776,7 +776,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-22-" + run.id }}'
+          behaviorName: '${{ "src-22-" + string(inputs.intent.ssh_execution.target.host) }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -805,7 +805,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-23-" + run.id }}'
+          behaviorName: '${{ "src-23" }}'
           methodName: read
           inputs:
             action: profile
@@ -823,7 +823,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-24-" + run.id }}'
+          behaviorName: '${{ "src-24-" + string(inputs.intent.ssh_execution.target.host) }}'
           methodName: script
           globalArgs: *ref_3
           inputs:
@@ -843,7 +843,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-25-" + run.id }}'
+          behaviorName: '${{ "src-25" }}'
           methodName: provisioningResult
           inputs:
             intent: '${{ inputs.intent }}'
@@ -859,10 +859,10 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "icl-" + run.id + "-35" }}'
+          behaviorName: '${{ "icl-35-" + string(inputs.intent.ssh_execution.target.host) }}'
           methodName: exec
           globalArgs:
-            name: '${{ "icl-target-" + run.id }}'
+            name: '${{ "icl-35-" + string(inputs.intent.ssh_execution.target.host) }}'
             transport:
               kind: ssh
               user: '${{ inputs.intent.ssh_execution.target.user }}'
@@ -893,7 +893,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: '${{ "vp-local-"+run.id }}'
+          behaviorName: '${{ "vp-local" }}'
           methodName: execute
           inputs:
             run: umask 077; mkdir -p -- "$ORBIT_DIRECTORY"
@@ -908,7 +908,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-vp-assets'
-          behaviorName: '${{ "idm-clone--1-" + run.id }}'
+          behaviorName: '${{ "idm-clone-1" }}'
           methodName: read
           inputs:
             action: project_material
@@ -924,10 +924,10 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-clone--2-" + run.id }}'
+          behaviorName: '${{ "ids-clone-2-" + string(inputs.intent.ssh_execution.target.host) }}'
           methodName: script
           globalArgs: &ref_4
-            name: '${{ "id-clone-vp-" + run.id }}'
+            name: '${{ "ids-clone-2-" + string(inputs.intent.ssh_execution.target.host) }}'
             transport:
               kind: ssh
               user: '${{ inputs.intent.ssh_execution.target.user }}'
@@ -951,7 +951,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-clone--3-" + run.id }}'
+          behaviorName: '${{ "ids-clone-3-" + string(inputs.intent.ssh_execution.target.host) }}'
           methodName: copy
           globalArgs: *ref_4
           inputs:
@@ -968,7 +968,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-vp-requirements'
-          behaviorName: '${{ "idm-clone--4-" + run.id }}'
+          behaviorName: '${{ "idm-clone-4" }}'
           methodName: capture
           inputs:
             path: '${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}'
@@ -984,7 +984,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/node-tool-setup-assets'
-          behaviorName: '${{ "idm-clone--0-" + run.id + "-" + string(self._index) }}'
+          behaviorName: '${{ "idm-clone-0-" + string(self._index) }}'
           methodName: read
           inputs:
             setup: '${{ inputs.intent.vp_setup }}'
@@ -1002,10 +1002,10 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-clone--1-" + run.id + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-clone-1-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index) }}'
           methodName: script
           globalArgs: &ref_5
-            name: '${{ "id-clone-vp-" + run.id }}'
+            name: '${{ "ids-clone-1-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index) }}'
             transport:
               kind: ssh
               user: '${{ inputs.intent.ssh_execution.target.user }}'
@@ -1047,7 +1047,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-clone--3-" + run.id + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-clone-3-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_5
           inputs:
@@ -1069,7 +1069,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-vp-requirements'
-          behaviorName: '${{ "idm-clone--4-" + run.id + "-" + string(self._index) }}'
+          behaviorName: '${{ "idm-clone-4-" + string(self._index) }}'
           methodName: cli
           inputs:
             runtime: '${{ self.runtime }}'
@@ -1084,7 +1084,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-clone--5-" + run.id + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-clone-5-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_5
           inputs:
@@ -1111,7 +1111,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-clone--6-" + run.id + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-clone-6-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_5
           inputs:
@@ -1134,7 +1134,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-vp-requirements'
-          behaviorName: '${{ "idm-clone--7-" + run.id + "-" + string(self._index) }}'
+          behaviorName: '${{ "idm-clone-7-" + string(self._index) }}'
           methodName: verify
           inputs:
             runtime: '${{ self.runtime }}'
@@ -1170,7 +1170,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-vp-requirements'
-          behaviorName: '${{ "idm-clone--8-" + run.id }}'
+          behaviorName: '${{ "idm-clone-8" }}'
           methodName: result
           inputs:
             name: clone-vp
@@ -1187,7 +1187,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "icl-" + run.id + "-36" }}'
+          behaviorName: '${{ "icl-36" }}'
           methodName: cloneResult
           inputs:
             intent: '${{ inputs.intent }}'

@@ -37,7 +37,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-clone-command-assets'
-      behaviorName: ${{ "dbcm-" + run.id }}
+      behaviorName: '${{ "dbcm" }}'
       methodName: read
       inputs: {intent: '${{ inputs.intent }}'}
   - name: target_dir
@@ -45,8 +45,8 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "dbtq-" + run.id }}
-      globalArgs: &id001 {name: '${{ "dbtq-" + run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.target_ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
+      behaviorName: '${{ "dbtq-" + string(inputs.intent.target_ssh.host) }}'
+      globalArgs: &id001 {name: '${{ "dbtq-" + string(inputs.intent.target_ssh.host) }}', transport: {kind: ssh, user: '${{ inputs.intent.target_ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
         hosts: [{name: server, address: '${{ inputs.intent.target_ssh.host }}', transport: {hostKeys: '${{ inputs.intent.target_ssh.host_keys }}'}}]}
       methodName: exec
       inputs: {hosts: 'name:server', argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-dbc-target-" + run.id }}']}
@@ -58,7 +58,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "dbtq-" + run.id }}
+      behaviorName: '${{ "dbtq-" + string(inputs.intent.target_ssh.host) }}'
       globalArgs: *id001
       methodName: copy
       inputs: {hosts: 'name:server', src: '${{ steps.assets.outputs.directory + "/." }}', dst: '${{ "/tmp/orbit-dbc-target-" + run.id }}', direction: to, recursive: true}
@@ -71,7 +71,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "dbtq-" + run.id }}
+      behaviorName: '${{ "dbtq-" + string(inputs.intent.target_ssh.host) }}'
       globalArgs: *id001
       methodName: exec
       inputs: {hosts: 'name:server', argv: [/usr/bin/python3, -B, '${{ "/tmp/orbit-dbc-target-" + run.id + "/sqlite_clone_local.py" }}', '${{ steps.assets.outputs.intent_json
@@ -84,8 +84,8 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "dbsq-" + run.id }}
-      globalArgs: &id002 {name: '${{ "dbsq-" + run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.source_ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
+      behaviorName: '${{ "dbsq-" + string(inputs.intent.source_ssh.host) }}'
+      globalArgs: &id002 {name: '${{ "dbsq-" + string(inputs.intent.source_ssh.host) }}', transport: {kind: ssh, user: '${{ inputs.intent.source_ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
         hosts: [{name: server, address: '${{ inputs.intent.source_ssh.host }}', transport: {hostKeys: '${{ inputs.intent.source_ssh.host_keys }}'}}]}
       methodName: exec
       inputs: {hosts: 'name:server', argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-dbc-source-" + run.id }}']}
@@ -98,7 +98,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "dbsq-" + run.id }}
+      behaviorName: '${{ "dbsq-" + string(inputs.intent.source_ssh.host) }}'
       globalArgs: *id002
       methodName: copy
       inputs: {hosts: 'name:server', src: '${{ steps.assets.outputs.directory + "/." }}', dst: '${{ "/tmp/orbit-dbc-source-" + run.id }}', direction: to, recursive: true}
@@ -111,7 +111,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "dbsq-" + run.id }}
+      behaviorName: '${{ "dbsq-" + string(inputs.intent.source_ssh.host) }}'
       globalArgs: *id002
       methodName: exec
       inputs: {hosts: 'name:server', argv: [/usr/bin/python3, -B, '${{ "/tmp/orbit-dbc-source-" + run.id + "/sqlite_clone_export.py" }}', '${{ steps.assets.outputs.intent_json
@@ -124,7 +124,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-clone-command-assets'
-      behaviorName: ${{ "dbcm-" + run.id }}
+      behaviorName: '${{ "dbcm" }}'
       methodName: snapshot
       inputs: {stdout: '${{ steps.export.outputs.stdout }}', exit_code: '${{ steps.export.outputs.exitCode }}'}
   - name: transfer_dir
@@ -134,7 +134,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "dbcc-" + run.id }}
+      behaviorName: '${{ "dbcc" }}'
       methodName: execute
       inputs: {run: 'umask 077
 
@@ -147,7 +147,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "dbsq-" + run.id }}
+      behaviorName: '${{ "dbsq-" + string(inputs.intent.source_ssh.host) }}'
       globalArgs: *id002
       methodName: copy
       inputs: {hosts: 'name:server', src: '${{ inputs.intent.source.directory + "/snapshot.sqlite" }}', dst: '${{ "/tmp/orbit-dbc-transfer-" + run.id + "/snapshot.sqlite"
@@ -161,7 +161,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "dbtq-" + run.id }}
+      behaviorName: '${{ "dbtq-" + string(inputs.intent.target_ssh.host) }}'
       globalArgs: *id001
       methodName: exec
       inputs: {hosts: 'name:server', argv: [/usr/bin/python3, -B, '${{ "/tmp/orbit-dbc-target-" + run.id + "/sqlite_clone_prepare.py" }}', '${{ steps.assets.outputs.intent_json
@@ -184,7 +184,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "dbtq-" + run.id }}
+      behaviorName: '${{ "dbtq-" + string(inputs.intent.target_ssh.host) }}'
       globalArgs: *id001
       methodName: copy
       inputs: {hosts: 'name:server', src: '${{ "/tmp/orbit-dbc-transfer-" + run.id + "/snapshot.sqlite" }}', dst: '${{ inputs.intent.target.incoming }}', direction: to}
@@ -198,7 +198,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "dbtq-" + run.id }}
+      behaviorName: '${{ "dbtq-" + string(inputs.intent.target_ssh.host) }}'
       globalArgs: *id001
       methodName: exec
       inputs: {hosts: 'name:server', argv: [/usr/bin/python3, -B, '${{ "/tmp/orbit-dbc-target-" + run.id + "/sqlite_clone_install.py" }}', '${{ steps.assets.outputs.intent_json
@@ -225,7 +225,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "dbsq-" + run.id }}
+      behaviorName: '${{ "dbsq-" + string(inputs.intent.source_ssh.host) }}'
       globalArgs: *id002
       methodName: exec
       inputs: {hosts: 'name:server', argv: [/usr/bin/python3, -B, '${{ "/tmp/orbit-dbc-source-" + run.id + "/sqlite_clone_cleanup_source.py" }}', '${{ steps.assets.outputs.intent_json
@@ -252,7 +252,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "dbtq-" + run.id }}
+      behaviorName: '${{ "dbtq-" + string(inputs.intent.target_ssh.host) }}'
       globalArgs: *id001
       methodName: exec
       inputs: {hosts: 'name:server', argv: [/usr/bin/python3, -B, '${{ "/tmp/orbit-dbc-target-" + run.id + "/sqlite_clone_cleanup_target.py" }}', '${{ steps.assets.outputs.intent_json
@@ -278,7 +278,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "dbcc-" + run.id }}
+      behaviorName: '${{ "dbcc" }}'
       methodName: execute
       inputs: {run: 'rm -rf -- /tmp/orbit-dbc-transfer-${{ run.id }}'}
   - name: cleanup_source_scripts
@@ -290,7 +290,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "dbsq-" + run.id }}
+      behaviorName: '${{ "dbsq-" + string(inputs.intent.source_ssh.host) }}'
       globalArgs: *id002
       methodName: exec
       inputs: {hosts: 'name:server', argv: [/usr/bin/rm, -rf, --, '${{ "/tmp/orbit-dbc-source-" + run.id }}']}
@@ -303,7 +303,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "dbtq-" + run.id }}
+      behaviorName: '${{ "dbtq-" + string(inputs.intent.target_ssh.host) }}'
       globalArgs: *id001
       methodName: exec
       inputs: {hosts: 'name:server', argv: [/usr/bin/rm, -rf, --, '${{ "/tmp/orbit-dbc-target-" + run.id }}']}
@@ -332,7 +332,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-clone-command-assets'
-      behaviorName: ${{ "dbcm-" + run.id }}
+      behaviorName: '${{ "dbcm" }}'
       methodName: result
       inputs: {expected: '${{ inputs.intent.variant == "sqlite_local" ? ["local_copy","cleanup_transfer","cleanup_target_scripts"] : ["install","cleanup_source","cleanup_incoming","cleanup_transfer","cleanup_source_scripts","cleanup_target_scripts"]
           }}', steps: '${{ steps }}'}

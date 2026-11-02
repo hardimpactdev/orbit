@@ -23,13 +23,13 @@ jobs:
     <<: &placed {labels: {role: swamp}}
     writes: false
     task:
-      <<: &metadata {type: behavior, behaviorType: '@nckrtl/database-server-command-assets', behaviorName: '${{ "db-destroy-assets-" + run.id }}'}
+      <<: &metadata {type: behavior, behaviorType: '@nckrtl/database-server-command-assets', behaviorName: '${{ "db-destroy-assets" }}'}
       methodName: read
       inputs: {intent: '${{ inputs.intent }}'}
   - name: directory
     <<: *placed
     task:
-      <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "dbd-" + string(inputs.operation_id) + "-" + inputs.scope }}', methodName: exec, globalArgs: &ssh_globals {name: '${{ "dbd-" + string(inputs.operation_id) + "-" + inputs.scope }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity}, hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]}}
+      <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "dbd-" + string(inputs.intent.ssh.host) + "-" + inputs.scope }}', methodName: exec, globalArgs: &ssh_globals {name: '${{ "dbd-" + string(inputs.intent.ssh.host) + "-" + inputs.scope }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity}, hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]}}
       inputs:
         hosts: name:server
         argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) }}']
@@ -69,7 +69,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-destroy-plan'
-      behaviorName: ${{ "database-destroy-plan-" + run.id }}
+      behaviorName: '${{ "database-destroy-plan" }}'
       methodName: read
       inputs:
         intent: ${{ inputs.intent }}
@@ -146,8 +146,8 @@ jobs:
     forEach: {item: selected, in: '${{ has(steps.plan) && has(steps.plan.outputs) ? steps.plan.outputs.databases : [] }}'}
     task:
       <<: *ssh
-      behaviorName: ${{ "db-destroy-drop_database-" + string(inputs.operation_id) + "-" + inputs.scope + "-" + string(self._index) }}
-      globalArgs: {<<: *ssh_globals, name: '${{ "db-destroy-drop_database-" + string(inputs.operation_id) + "-" + inputs.scope + "-" + string(self._index) }}'}
+      behaviorName: '${{ "db-destroy-drop_database-" + string(inputs.intent.ssh.host) + "-" + inputs.scope + "-" + string(self._index) }}'
+      globalArgs: {<<: *ssh_globals, name: '${{ "db-destroy-drop_database-" + string(inputs.intent.ssh.host) + "-" + inputs.scope + "-" + string(self._index) }}'}
       inputs:
         hosts: name:server
         argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', drop_database, '${{ steps.plan.outputs.json }}', '${{ self.selected }}', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) }}']
@@ -168,8 +168,8 @@ jobs:
     forEach: {item: selected, in: '${{ has(steps.plan) && has(steps.plan.outputs) ? steps.plan.outputs.users : [] }}'}
     task:
       <<: *ssh
-      behaviorName: ${{ "db-destroy-drop_user-" + string(inputs.operation_id) + "-" + inputs.scope + "-" + string(self._index) }}
-      globalArgs: {<<: *ssh_globals, name: '${{ "db-destroy-drop_user-" + string(inputs.operation_id) + "-" + inputs.scope + "-" + string(self._index) }}'}
+      behaviorName: '${{ "db-destroy-drop_user-" + string(inputs.intent.ssh.host) + "-" + inputs.scope + "-" + string(self._index) }}'
+      globalArgs: {<<: *ssh_globals, name: '${{ "db-destroy-drop_user-" + string(inputs.intent.ssh.host) + "-" + inputs.scope + "-" + string(self._index) }}'}
       inputs:
         hosts: name:server
         argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', drop_user, '${{ steps.plan.outputs.json }}', '${{ self.selected }}', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) }}']
@@ -182,8 +182,8 @@ jobs:
     forEach: {item: selected, in: '${{ has(steps.plan) && has(steps.plan.outputs) ? steps.plan.outputs.users : [] }}'}
     task:
       <<: *ssh
-      behaviorName: ${{ "db-destroy-acl_remove-" + string(inputs.operation_id) + "-" + inputs.scope + "-" + string(self._index) }}
-      globalArgs: {<<: *ssh_globals, name: '${{ "db-destroy-acl_remove-" + string(inputs.operation_id) + "-" + inputs.scope + "-" + string(self._index) }}'}
+      behaviorName: '${{ "db-destroy-acl_remove-" + string(inputs.intent.ssh.host) + "-" + inputs.scope + "-" + string(self._index) }}'
+      globalArgs: {<<: *ssh_globals, name: '${{ "db-destroy-acl_remove-" + string(inputs.intent.ssh.host) + "-" + inputs.scope + "-" + string(self._index) }}'}
       inputs:
         hosts: name:server
         argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', acl_remove, '${{ steps.plan.outputs.json }}', '${{ self.selected }}', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) }}']
@@ -231,8 +231,8 @@ jobs:
     forEach: {item: selected, in: '${{ has(steps.plan) && has(steps.plan.outputs) ? steps.plan.outputs.users : [] }}'}
     task:
       <<: *ssh
-      behaviorName: ${{ "db-destroy-acl_restore-" + string(inputs.operation_id) + "-" + inputs.scope + "-" + string(self._index) }}
-      globalArgs: {<<: *ssh_globals, name: '${{ "db-destroy-acl_restore-" + string(inputs.operation_id) + "-" + inputs.scope + "-" + string(self._index) }}'}
+      behaviorName: '${{ "db-destroy-acl_restore-" + string(inputs.intent.ssh.host) + "-" + inputs.scope + "-" + string(self._index) }}'
+      globalArgs: {<<: *ssh_globals, name: '${{ "db-destroy-acl_restore-" + string(inputs.intent.ssh.host) + "-" + inputs.scope + "-" + string(self._index) }}'}
       inputs:
         hosts: name:server
         argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', acl_restore, '${{ steps.plan.outputs.json }}', '${{ self.selected }}', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + (inputs.scope == "single" ? "" : "-" + inputs.scope) }}']

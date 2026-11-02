@@ -172,7 +172,7 @@ Deno.test("role certificate jobs use the native child before root-only phase wri
     };
     assertEquals(
         ssh.name,
-        '${{ "role-certificate-" + run.id + "-" + string(self._index) }}',
+        '${{ "role-certificate-" + string(self.leaf.node_id) + "_" + self.leaf.scope }}',
     );
     assertEquals(
         ssh.transport.identityFile,

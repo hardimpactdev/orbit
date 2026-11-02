@@ -8,6 +8,7 @@ import {
     roleObserverSteps,
 } from "./observer_steps.ts";
 import { stringify } from "jsr:@std/yaml@1.0.12";
+import { behaviorName } from "../_lib/behavior_name.ts";
 type Fields = Record<string, unknown>;
 const ex = (s: string) => "${{ " + s + " }}";
 const on = (
@@ -40,8 +41,10 @@ function select(group: Fields[], item: string, list: string): Fields[] {
         }
         step.task = JSON.parse(task);
         const typed = step.task as Fields;
-        typed.behaviorName = ex(
-            '"' + step.name + '-"+run.id+"-"+string(self._index)',
+        typed.behaviorName = behaviorName(
+            String(step.name),
+            typed.globalArgs,
+            true,
         );
         if (typed.globalArgs) {
             typed.globalArgs = {
@@ -55,7 +58,7 @@ function select(group: Fields[], item: string, list: string): Fields[] {
 export function roleWorkflow() {
     const ssh = "inputs.intent.ssh";
     const globals = {
-        name: ex('"role-converge-"+run.id'),
+        name: ex('"role-converge-" + string(' + ssh + ".target.host)"),
         transport: {
             kind: "ssh",
             user: ex(ssh + ".target.user"),

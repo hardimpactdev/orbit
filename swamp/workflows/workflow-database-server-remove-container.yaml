@@ -68,9 +68,9 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "database-server-destroy-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "database-server-destroy-" + string(inputs.intent.ssh.host) }}'
       globalArgs: &id002
-        name: ${{ "database-server-destroy-" + string(inputs.operation_id) }}
+        name: '${{ "database-server-destroy-" + string(inputs.intent.ssh.host) }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh.user }}
@@ -110,7 +110,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "database-server-destroy-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "database-server-destroy-" + string(inputs.intent.ssh.host) }}'
       globalArgs: *id002
       methodName: exec
       inputs:
@@ -137,7 +137,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-server-destroy-metadata'
-      behaviorName: ${{ "db-destroy-" + run.id }}
+      behaviorName: '${{ "db-destroy" }}'
       methodName: result
       inputs:
         completed: ${{ !inputs.member.present || has(steps.remove) && has(steps.remove.outputs) && steps.remove.outputs.exitCode

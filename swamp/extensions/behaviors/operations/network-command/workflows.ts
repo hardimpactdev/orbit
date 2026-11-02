@@ -37,7 +37,7 @@ function steps() {
     ) => add(name, {
         type: "behavior",
         behaviorType: "@nckrtl/network-command",
-        behaviorName: expr('"' + name + '-"+run.id'),
+        behaviorName: expr(JSON.stringify(name)),
         methodName: method,
         inputs,
     }, guard);
@@ -56,14 +56,14 @@ function steps() {
             behaviorName: expr(
                 (connection === "inputs.intent.hub_ssh"
                     ? '"network-hub-"'
-                    : '"network-peer-"') + "+run.id",
+                    : '"network-peer-"') + " + string(" + connection + ".target.host)",
             ),
             methodName: method,
             globalArgs: {
                 name: expr(
                     (connection === "inputs.intent.hub_ssh"
                         ? '"network-hub-"'
-                        : '"network-peer-"') + "+run.id",
+                        : '"network-peer-"') + " + string(" + connection + ".target.host)",
                 ),
                 transport: {
                     kind: "ssh",

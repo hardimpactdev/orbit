@@ -1,3 +1,4 @@
+import { behaviorName } from "../_lib/behavior_name.ts";
 type Fields = Record<string, unknown>;
 const expr = (s: string) => "${{ " + s + " }}";
 const placement = { labels: { role: "swamp" } };
@@ -28,12 +29,11 @@ export function workloadWorkflow(): Fields {
     const runtime =
         "inputs.intent.plan.runtime != null ? [inputs.intent.plan.runtime] : []";
     function add(name: string, list: string, task: Fields) {
-        const behaviorName = expr(
-            `"irw-" + run.id + "-${name}-" + string(self._index)`,
-        );
-        task.behaviorName = behaviorName;
+        if (task.behaviorType === "@swamp/ssh") task.globalArgs = globals;
+        const identity = behaviorName("irw-" + name, task.globalArgs, true);
+        task.behaviorName = identity;
         if (task.behaviorType === "@swamp/ssh") {
-            task.globalArgs = { ...globals, name: behaviorName };
+            task.globalArgs = { ...globals, name: identity };
         }
         steps.push({
             name,

@@ -32,10 +32,10 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: ${{ "schedule-idle-" + run.id }}
+          behaviorName: '${{ "schedule-idle-" + string(inputs.intent.ssh_execution.target.host) }}'
           methodName: exec
           globalArgs:
-            name: ${{ "schedule-idle-" + run.id }}
+            name: '${{ "schedule-idle-" + string(inputs.intent.ssh_execution.target.host) }}'
             transport:
               kind: ssh
               user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -62,7 +62,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/cfgmgmt/systemd'
-          behaviorName: ${{ "schedule-stop_timer-" + run.id }}
+          behaviorName: '${{ "schedule-stop_timer-" + string(inputs.intent.ssh_execution.target.host) }}'
           methodName: apply
           globalArgs:
             nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
@@ -81,7 +81,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/cfgmgmt/exec'
-          behaviorName: ${{ "schedule-stop_service-" + run.id }}
+          behaviorName: '${{ "schedule-stop_service-" + string(inputs.intent.ssh_execution.target.host) }}'
           methodName: apply
           globalArgs:
             nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
@@ -102,7 +102,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/cfgmgmt/file'
-          behaviorName: ${{ "schedule-remove_files-" + run.id + "-" + string(self._index) }}
+          behaviorName: '${{ "schedule-remove_files-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index) }}'
           methodName: apply
           globalArgs:
             nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
@@ -119,7 +119,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/cfgmgmt/exec'
-          behaviorName: ${{ "schedule-reload-" + run.id }}
+          behaviorName: '${{ "schedule-reload-" + string(inputs.intent.ssh_execution.target.host) }}'
           methodName: apply
           globalArgs:
             nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
@@ -135,7 +135,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: ${{ "schedule-result-" + run.id }}
+          behaviorName: '${{ "schedule-result" }}'
           methodName: execute
           inputs:
             run: |

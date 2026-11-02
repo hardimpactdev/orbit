@@ -50,7 +50,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/process-command-assets'
-      behaviorName: ${{ "db-destroy-process-" + run.id }}
+      behaviorName: '${{ "db-destroy-process" }}'
       methodName: read
       inputs:
         control:
@@ -65,7 +65,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-server-destroy-metadata'
-      behaviorName: ${{ "db-destroy-" + run.id }}
+      behaviorName: '${{ "db-destroy" }}'
       methodName: controls
       inputs:
         intent: ${{ inputs.intent }}
@@ -77,9 +77,9 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "database-server-destroy-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "database-server-destroy-" + string(inputs.intent.ssh.host) }}'
       globalArgs: &id002
-        name: ${{ "database-server-destroy-" + string(inputs.operation_id) }}
+        name: '${{ "database-server-destroy-" + string(inputs.intent.ssh.host) }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh.user }}
@@ -114,7 +114,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "database-server-destroy-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "database-server-destroy-" + string(inputs.intent.ssh.host) }}'
       globalArgs: *id002
       methodName: copy
       inputs:
@@ -162,10 +162,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "dbdi-" + run.id + "-" + string(self._index) }}
+      behaviorName: '${{ "dbdi-" + string(inputs.intent.ssh.host) + "-" + string(self._index) }}'
       globalArgs:
         <<: *id002
-        name: ${{ "dbdi-" + run.id + "-" + string(self._index) }}
+        name: '${{ "dbdi-" + string(inputs.intent.ssh.host) + "-" + string(self._index) }}'
       methodName: exec
       inputs:
         hosts: name:server
@@ -198,7 +198,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-server-destroy-metadata'
-      behaviorName: ${{ "db-destroy-" + run.id }}
+      behaviorName: '${{ "db-destroy" }}'
       methodName: plan
       inputs:
         controls: ${{ steps.controls.outputs.controls }}
@@ -259,7 +259,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-server-destroy-metadata'
-      behaviorName: ${{ "db-destroy-" + run.id }}
+      behaviorName: '${{ "db-destroy" }}'
       methodName: result
       inputs:
         completed: ${{ has(steps.checked) && steps.checked.status == "succeeded" }}

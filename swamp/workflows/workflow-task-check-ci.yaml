@@ -14,7 +14,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-ci-data-" + run.id }}
+      behaviorName: '${{ "task-check-ci-data" }}'
       methodName: assets
       inputs: {}
   - name: read-${{ self.check.attributes.inputs.operation_id }}
@@ -22,7 +22,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-ci-read-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+      behaviorName: '${{ "task-check-ci-read-" + string(self._index) }}'
       methodName: execute
       inputs:
         run: 'python3 -B "$ORBIT_ACTION"
@@ -46,7 +46,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-ci-data-" + run.id }}
+      behaviorName: '${{ "task-check-ci-data-" + string(self._index) }}'
       methodName: ci
       inputs:
         pending: ${{ self.check.attributes }}
@@ -62,10 +62,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+      behaviorName: '${{ "task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: &id002
-        name: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+        name: '${{ "task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.host) }}'
         transport:
           kind: ssh
           user: ${{ self.check.attributes.inputs.intent.ssh_execution.target.user }}
@@ -97,7 +97,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+      behaviorName: '${{ "task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.host) }}'
       methodName: copy
       globalArgs: *id002
       inputs:
@@ -117,7 +117,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+      behaviorName: '${{ "task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id002
       inputs:
@@ -139,7 +139,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-ci-data-" + run.id }}
+      behaviorName: '${{ "task-check-ci-data-" + string(self._index) }}'
       methodName: observed
       inputs:
         value: ${{ steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs }}
@@ -156,7 +156,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+      behaviorName: '${{ "task-check-ci-ssh-" + string(self.check.attributes.inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id002
       inputs:
@@ -178,7 +178,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-pending-" + string(self.check.attributes.inputs.operation_id) }}
+      behaviorName: '${{ "task-check-pending-" + string(self._index) }}'
       methodName: settle
       inputs:
         value: ${{ steps["observed-" + string(self.check.attributes.inputs.operation_id)].outputs }}
@@ -193,7 +193,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-revoke-read-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+      behaviorName: '${{ "task-check-revoke-read-" + string(self._index) }}'
       methodName: execute
       inputs:
         run: 'python3 -B "$ORBIT_ACTION"
@@ -214,7 +214,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-ci-data-" + run.id }}
+      behaviorName: '${{ "task-check-ci-data" }}'
       methodName: collect
       inputs:
         steps: ${{ steps }}
@@ -230,7 +230,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-ci-result-" + run.id }}
+      behaviorName: '${{ "task-check-ci-result" }}'
       methodName: execute
       inputs:
         run: 'printf ''%s\n'' "$ORBIT_RESULT"

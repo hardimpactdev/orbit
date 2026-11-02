@@ -35,10 +35,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-dns-root-read-records-" + run.id }}
+      behaviorName: '${{ "route-dns-root-read-records-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: exec
       globalArgs: &id001
-        name: ${{ "route-dns-root-" + run.id }}
+        name: '${{ "route-dns-root-read-records-" + string(inputs.intent.connection.nodeHost) }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -60,7 +60,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-dns-root-read-catalog-" + run.id }}
+      behaviorName: '${{ "route-dns-root-read-catalog-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -143,7 +143,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "route-dns-root-result-" + run.id }}
+      behaviorName: '${{ "route-dns-root-result" }}'
       methodName: execute
       inputs:
         run: "if [ \"$READY\" = true ]; then\n  printf '{\"ready\":true,\"outcome\"\

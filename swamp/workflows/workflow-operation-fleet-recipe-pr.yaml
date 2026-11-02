@@ -29,7 +29,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/fleet-recipe-pr'
-      behaviorName: ${{ "recipe-pr-prepare-" + run.id }}
+      behaviorName: '${{ "recipe-pr-prepare" }}'
       methodName: prepare
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -42,7 +42,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/fleet-recipe-pr'
-      behaviorName: ${{ "recipe-pr-branch-" + run.id }}
+      behaviorName: '${{ "recipe-pr-branch" }}'
       methodName: branch
       inputs: &id001
         operation_id: ${{ inputs.operation_id }}
@@ -64,7 +64,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/fleet-recipe-pr'
-      behaviorName: ${{ "recipe-pr-file-" + run.id }}
+      behaviorName: '${{ "recipe-pr-file" }}'
       methodName: file
       inputs: *id001
     dependsOn:
@@ -80,7 +80,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/fleet-recipe-pr'
-      behaviorName: ${{ "recipe-pr-pull-" + run.id }}
+      behaviorName: '${{ "recipe-pr-pull" }}'
       methodName: pull
       inputs: *id001
     dependsOn:
@@ -96,7 +96,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/fleet-recipe-pr'
-      behaviorName: ${{ "recipe-pr-tree-" + run.id }}
+      behaviorName: '${{ "recipe-pr-tree" }}'
       methodName: tree
       inputs: *id001
     dependsOn:
@@ -112,7 +112,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/fleet-recipe-pr'
-      behaviorName: ${{ "recipe-pr-commit-" + run.id }}
+      behaviorName: '${{ "recipe-pr-commit" }}'
       methodName: commit
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -135,7 +135,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/fleet-recipe-pr'
-      behaviorName: ${{ "recipe-pr-ref-" + run.id }}
+      behaviorName: '${{ "recipe-pr-ref" }}'
       methodName: ref
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -158,7 +158,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/fleet-recipe-pr'
-      behaviorName: ${{ "recipe-pr-close-" + run.id }}
+      behaviorName: '${{ "recipe-pr-close" }}'
       methodName: close
       inputs: *id001
     dependsOn:
@@ -174,7 +174,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/fleet-recipe-pr'
-      behaviorName: ${{ "recipe-pr-merge-" + run.id }}
+      behaviorName: '${{ "recipe-pr-merge" }}'
       methodName: merge
       inputs: *id001
     dependsOn:
@@ -190,7 +190,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/fleet-recipe-pr'
-      behaviorName: ${{ "recipe-pr-comment-" + run.id }}
+      behaviorName: '${{ "recipe-pr-comment" }}'
       methodName: comment
       inputs: *id001
     dependsOn:
@@ -207,7 +207,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/fleet-recipe-pr'
-      behaviorName: ${{ "recipe-pr-result-" + run.id }}
+      behaviorName: '${{ "recipe-pr-result" }}'
       methodName: result
       inputs:
         operation_id: ${{ inputs.operation_id }}

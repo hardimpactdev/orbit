@@ -20,7 +20,7 @@ jobs:
     task:
       <<: &apply {type: behavior, methodName: apply, inputs: {}}
       behaviorType: '@swamp/cfgmgmt/apt'
-      behaviorName: '${{ "metrics-package-" + run.id }}'
+      behaviorName: '${{ "metrics-package-" + string(inputs.intent.ssh_execution.target.host) }}'
       globalArgs:
         <<: &target
           nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
@@ -36,7 +36,7 @@ jobs:
     task:
       <<: *apply
       behaviorType: '@swamp/cfgmgmt/fetch'
-      behaviorName: '${{ "metrics-download-" + run.id + "-" + string(self._index) }}'
+      behaviorName: '${{ "metrics-download-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index) }}'
       globalArgs:
         <<: *target
         url: ${{ self.download.url }}
@@ -54,7 +54,7 @@ jobs:
     task:
       <<: *apply
       behaviorType: '@swamp/cfgmgmt/systemd'
-      behaviorName: '${{ "metrics-stop-" + run.id + "-" + string(self._index) }}'
+      behaviorName: '${{ "metrics-stop-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index) }}'
       globalArgs:
         <<: *target
         service: ${{ self.unit.service }}
@@ -69,7 +69,7 @@ jobs:
     task:
       <<: *apply
       behaviorType: '@swamp/cfgmgmt/directory'
-      behaviorName: '${{ "metrics-directory-" + run.id + "-" + string(self._index) }}'
+      behaviorName: '${{ "metrics-directory-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index) }}'
       globalArgs: {<<: *target, path: '${{ self.directory }}', ensure: present, owner: root, group: root, mode: '0755'}
   - name: files
     dependsOn: [{step: directories, condition: &done {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
@@ -78,7 +78,7 @@ jobs:
     task:
       <<: *apply
       behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: '${{ "metrics-file-" + run.id + "-" + string(self._index) }}'
+      behaviorName: '${{ "metrics-file-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index) }}'
       globalArgs:
         <<: *target
         path: ${{ self.file.path }}
@@ -98,10 +98,10 @@ jobs:
         behaviorType: '@swamp/ssh'
         methodName: exec
         globalArgs: &ssh_target
-          name: '${{ "metrics-target-" + run.id }}'
+          name: '${{ "metrics-reload-units-" + string(inputs.intent.ssh_execution.target.host) }}'
           transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}
           hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]
-      behaviorName: '${{ "metrics-reload-units-" + run.id }}'
+      behaviorName: '${{ "metrics-reload-units-" + string(inputs.intent.ssh_execution.target.host) }}'
       inputs: {hosts: 'name:target', argv: [/usr/bin/systemctl, daemon-reload], sudo: true}
   - name: started
     dependsOn: [{step: reload_units, condition: *done}]
@@ -110,7 +110,7 @@ jobs:
     task:
       <<: *apply
       behaviorType: '@swamp/cfgmgmt/systemd'
-      behaviorName: '${{ "metrics-start-" + run.id + "-" + string(self._index) }}'
+      behaviorName: '${{ "metrics-start-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index) }}'
       globalArgs:
         <<: *target
         service: ${{ self.unit.service }}
@@ -123,7 +123,7 @@ jobs:
     task:
       <<: *apply
       behaviorType: '@swamp/cfgmgmt/systemd'
-      behaviorName: '${{ "metrics-restart-" + run.id + "-" + string(self._index) }}'
+      behaviorName: '${{ "metrics-restart-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index) }}'
       methodName: restart
       globalArgs:
         <<: *target
@@ -156,7 +156,7 @@ jobs:
     task:
       <<: *apply
       behaviorType: '@swamp/cfgmgmt/firewall'
-      behaviorName: '${{ "metrics-firewall-" + run.id + "-" + string(self._index) }}'
+      behaviorName: '${{ "metrics-firewall-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index) }}'
       globalArgs:
         <<: *target
         port: ${{ self.rule.port }}
@@ -171,7 +171,7 @@ jobs:
     forEach: {item: url, in: '${{ inputs.intent.runtime == null ? [] : inputs.intent.service.checks }}'}
     task:
       <<: *ssh
-      behaviorName: '${{ "metrics-verify-" + run.id + "-" + string(self._index) }}'
+      behaviorName: '${{ "metrics-verify-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index) }}'
       inputs: {hosts: 'name:target', argv: [/usr/bin/curl, --fail, --silent, --output, /dev/null, '${{ self.url }}']}
 - name: exporter
   dependsOn: [{job: exporters, condition: *job_done}]
@@ -182,7 +182,7 @@ jobs:
     task:
       <<: *apply
       behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: '${{ "metrics-candidate-" + run.id }}'
+      behaviorName: '${{ "metrics-candidate-" + string(inputs.intent.runtime == null ? inputs.intent.ssh_execution.target.host : inputs.intent.runtime.ssh_execution.target.host) }}'
       globalArgs:
         <<: &owner
           nodeHost: '${{ inputs.intent.runtime == null ? inputs.intent.ssh_execution.target.host : inputs.intent.runtime.ssh_execution.target.host }}'
@@ -202,9 +202,9 @@ jobs:
     guard: '${{ inputs.intent.runtime == null || (has(inputs.intent.compose_only) && inputs.intent.compose_only) || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     task:
       <<: *ssh
-      behaviorName: '${{ "metrics-validate-" + run.id }}'
+      behaviorName: '${{ "metrics-validate-" + string(inputs.intent.runtime == null ? inputs.intent.ssh_execution.target.host : inputs.intent.runtime.ssh_execution.target.host) }}'
       globalArgs: &ssh_owner
-        name: '${{ "metrics-owner-" + run.id }}'
+        name: '${{ "metrics-validate-" + string(inputs.intent.runtime == null ? inputs.intent.ssh_execution.target.host : inputs.intent.runtime.ssh_execution.target.host) }}'
         transport: {kind: ssh, user: '${{ inputs.intent.runtime == null ? inputs.intent.ssh_execution.target.user : inputs.intent.runtime.ssh_execution.target.user }}', port: '${{ inputs.intent.runtime == null ? inputs.intent.ssh_execution.target.port : inputs.intent.runtime.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}
         hosts: [{name: target, address: '${{ inputs.intent.runtime == null ? inputs.intent.ssh_execution.target.host : inputs.intent.runtime.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.runtime == null ? inputs.intent.ssh_execution.target.host_keys : inputs.intent.runtime.ssh_execution.target.host_keys }}'}}]
       inputs:
@@ -218,7 +218,7 @@ jobs:
     task:
       <<: *apply
       behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: '${{ "metrics-publish-" + run.id }}'
+      behaviorName: '${{ "metrics-publish-" + string(inputs.intent.runtime == null ? inputs.intent.ssh_execution.target.host : inputs.intent.runtime.ssh_execution.target.host) }}'
       globalArgs: {<<: *owner, path: /etc/orbit/metrics/prometheus.yml, ensure: present, content: '${{ inputs.intent.runtime == null ? "" : inputs.intent.runtime.configuration }}', owner: root, group: root, mode: '0644'}
   - name: prometheus
     dependsOn: [{step: publish, condition: *done}]
@@ -227,7 +227,7 @@ jobs:
     task:
       <<: *apply
       behaviorType: '@swamp/cfgmgmt/docker_container'
-      behaviorName: '${{ "metrics-prometheus-" + run.id }}'
+      behaviorName: '${{ "metrics-prometheus-" + string(inputs.intent.runtime == null ? inputs.intent.ssh_execution.target.host : inputs.intent.runtime.ssh_execution.target.host) }}'
       methodName: restart
       globalArgs: {<<: *owner, name: orbit-metrics-prometheus, image: 'prom/prometheus:v3.5.0', ensure: running}
   - name: verify
@@ -236,7 +236,7 @@ jobs:
     guard: '${{ inputs.intent.runtime == null || (has(inputs.intent.compose_only) && inputs.intent.compose_only) || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     task:
       <<: *ssh
-      behaviorName: '${{ "metrics-ready-" + run.id }}'
+      behaviorName: '${{ "metrics-ready-" + string(inputs.intent.runtime == null ? inputs.intent.ssh_execution.target.host : inputs.intent.runtime.ssh_execution.target.host) }}'
       globalArgs: *ssh_owner
       inputs: {hosts: 'name:target', argv: [/usr/bin/curl, --fail, --silent, --output, /dev/null, 'http://127.0.0.1:9090/-/ready']}
   - name: remove_candidate
@@ -246,7 +246,7 @@ jobs:
     task:
       <<: *apply
       behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: '${{ "metrics-remove-candidate-" + run.id }}'
+      behaviorName: '${{ "metrics-remove-candidate-" + string(inputs.intent.runtime == null ? inputs.intent.ssh_execution.target.host : inputs.intent.runtime.ssh_execution.target.host) }}'
       globalArgs: {<<: *owner, path: '${{ "/etc/orbit/metrics/prometheus-" + run.id + ".yml" }}', ensure: absent}
   - name: result
     dependsOn: [{step: remove_candidate, condition: *done}]
@@ -255,6 +255,6 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "metrics-result-" + run.id }}'
+      behaviorName: '${{ "metrics-result" }}'
       methodName: execute
       inputs: {run: "printf '%s\\n' '{\"ready\":true}'"}

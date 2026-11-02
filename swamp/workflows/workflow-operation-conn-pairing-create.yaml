@@ -64,7 +64,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/conn-pairing'
-      behaviorName: ${{ "conn-pairing-" + run.id }}
+      behaviorName: '${{ "conn-pairing" }}'
       methodName: issue
       inputs:
         intent: ${{ inputs.intent }}

@@ -55,7 +55,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-prepare-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-prepare" }}'
       methodName: prepare
       inputs:
         intent: ${{ inputs.intent }}
@@ -66,7 +66,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -75,7 +75,7 @@ jobs:
         - -p
         - ${{ "/tmp/orbit-task-check-" + run.id }}
       globalArgs: &id001
-        name: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+        name: '${{ "task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -95,7 +95,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: copy
       inputs:
         hosts: name:target
@@ -113,7 +113,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -132,7 +132,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-validation-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-validation" }}'
       methodName: decode
       inputs:
         value: '${{ has(steps.validate) && has(steps.validate.outputs) && has(steps.validate.outputs.stdout) ? steps.validate.outputs.stdout : "{}" }}'
@@ -145,7 +145,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -165,7 +165,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index) }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -193,7 +193,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-setup_result-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-setup_result" }}'
       methodName: setup
       inputs:
         intent: ${{ inputs.intent }}
@@ -214,7 +214,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -233,7 +233,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -256,7 +256,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -279,7 +279,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index) }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -307,7 +307,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-base-ready-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-base-ready-" + string(self._index) }}'
       methodName: decode
       inputs:
         value: '${{ "base_prepare-" + string(self._index) in steps && "outputs" in steps["base_prepare-" + string(self._index)] && "stdout" in steps["base_prepare-"
@@ -326,7 +326,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index) }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -360,7 +360,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index) }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -388,7 +388,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -413,7 +413,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -434,7 +434,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-local-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-local" }}'
       methodName: local
       inputs:
         intent: ${{ inputs.intent }}
@@ -448,7 +448,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -469,7 +469,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-candidate-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-candidate" }}'
       methodName: candidate
       inputs:
         intent: ${{ inputs.intent }}
@@ -487,7 +487,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -508,7 +508,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-prepare_local-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-prepare_local" }}'
       methodName: execute
       inputs:
         run: 'mkdir -p -- "$ORBIT_PUBLICATION_ROOT"
@@ -525,7 +525,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: copy
       inputs:
         hosts: name:target
@@ -542,7 +542,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-import-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-import" }}'
       methodName: execute
       inputs:
         run: 'python3 -B "$ORBIT_ACTION"
@@ -561,7 +561,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-import_result-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-import_result" }}'
       methodName: decode
       inputs:
         value: '${{ has(steps.import) && has(steps.import.outputs) && has(steps.import.outputs.stdout) ? steps.import.outputs.stdout : "{}" }}'
@@ -574,7 +574,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-mint-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-mint" }}'
       methodName: execute
       inputs:
         run: 'python3 -B "$ORBIT_ACTION"
@@ -595,7 +595,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-mint-result-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-mint-result" }}'
       methodName: decode
       inputs:
         value: ${{ steps.mint_github.outputs.stdout }}
@@ -608,7 +608,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-push-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-push" }}'
       methodName: execute
       inputs:
         run: 'python3 -B "$ORBIT_ACTION"
@@ -629,7 +629,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-revoke-write-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-revoke-write" }}'
       methodName: execute
       inputs:
         run: 'python3 -B "$ORBIT_ACTION"
@@ -649,7 +649,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -668,7 +668,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-finish-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-finish" }}'
       methodName: finish
       inputs:
         intent: ${{ inputs.intent }}
@@ -700,7 +700,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: ${{ "task-check-pending-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-pending" }}'
       methodName: pending
       inputs:
         pending: true
@@ -719,7 +719,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-revoke-unused-read-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-revoke-unused-read" }}'
       methodName: execute
       inputs:
         run: 'python3 -B "$ORBIT_ACTION"
@@ -739,7 +739,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-result-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-result" }}'
       methodName: execute
       inputs:
         run: 'printf ''%s\n'' "$ORBIT_RESULT"
@@ -759,7 +759,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-outcome-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-outcome" }}'
       methodName: execute
       inputs:
         run: 'python3 -c ''import json, os, sys; sys.exit(1 if "error_code" in json.loads(os.environ["ORBIT_RESULT"]) else 0)''
@@ -776,7 +776,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-check-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -796,7 +796,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-check-cleanup_local-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "task-check-cleanup_local" }}'
       methodName: execute
       inputs:
         run: 'rm -rf -- "$ORBIT_PUBLICATION_ROOT"

@@ -66,7 +66,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "vm-provision-result-"+run.id }}
+      behaviorName: '${{ "vm-provision-result" }}'
       methodName: execute
       inputs:
         run: 'printf ''%s\n'' "$ORBIT_RESULT"

@@ -60,7 +60,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-server-command-assets'
-      behaviorName: ${{ "db-owned-result-" + run.id }}
+      behaviorName: '${{ "db-owned-result" }}'
       methodName: owned_result
       inputs:
         expected: '${{ inputs.intent.servers.map(s, "server-" + string(s.server_id)) + inputs.intent.sqlite.map(s, "sqlite-" + string(s.connection_id)) }}'

@@ -26,7 +26,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/ai-router-source-input'
-          behaviorName: '${{ "ai-router-source-input-" + string(inputs.operation_id) }}'
+          behaviorName: '${{ "ai-router-source-input-" + string(inputs.intent.target_node_id) }}'
           methodName: prepare
           inputs:
             retired: '${{ inputs.intent.retired }}'

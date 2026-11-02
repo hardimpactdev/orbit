@@ -62,10 +62,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "bootstrap-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "bootstrap-ssh-" + string(inputs.node_id) }}'
       methodName: exec
       globalArgs: &id002
-        name: ${{ "bootstrap-ssh-" + string(inputs.operation_id) }}
+        name: '${{ "bootstrap-ssh-" + string(inputs.node_id) }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.bootstrap.target.user }}
@@ -87,7 +87,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "bootstrap-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "bootstrap-ssh-" + string(inputs.node_id) }}'
       methodName: collect-host-public-key
       globalArgs: *id002
       inputs:
@@ -105,7 +105,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/node-bootstrap-probe-result'
-      behaviorName: ${{ "bootstrap-result-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "bootstrap-result-" + string(inputs.node_id) }}'
       methodName: read
       inputs:
         bootstrap: ${{ inputs.intent.bootstrap }}

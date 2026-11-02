@@ -17,9 +17,9 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "process-vite-ssh-" + run.id }}
+      behaviorName: '${{ "process-vite-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
-      globalArgs: {name: '${{ "process-vite-ssh-" + run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user }}', port: '${{ inputs.intent.ssh_execution.target.port
+      globalArgs: {name: '${{ "process-vite-ssh-" + string(inputs.intent.ssh_execution.target.host) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user }}', port: '${{ inputs.intent.ssh_execution.target.port
             }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {
               hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
       inputs: {name: suspend, hosts: [target], argv: [/usr/bin/rm, -f, '${{ inputs.intent.vite_plan.suspend.marker }}'], sudo: true}
@@ -29,7 +29,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/directory'
-      behaviorName: ${{ "process-vite-directory-" + run.id }}
+      behaviorName: '${{ "process-vite-directory-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: apply
       globalArgs: &node {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
           }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, path: /etc/orbit/vite, ensure: present, owner: root, group: root, mode: '0755'}
@@ -40,7 +40,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: ${{ "process-vite-environment-" + run.id }}
+      behaviorName: '${{ "process-vite-environment-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: apply
       globalArgs: {<<: *node, path: '${{ inputs.intent.vite_plan.environment.path }}', content: '${{ inputs.intent.vite_plan.environment.content }}', mode: '0644'}
       inputs: {}

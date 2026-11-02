@@ -23,7 +23,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/tool-remove-command'
-      behaviorName: '${{ "tr-assets-" + run.id }}'
+      behaviorName: '${{ "tr-assets" }}'
       methodName: assets
       inputs: {input: '${{ inputs.intent }}'}
   # The installed package and, for apt and brew, what removing it would also remove.
@@ -33,10 +33,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tr-plan-" + run.id }}'
+      behaviorName: '${{ "tr-plan-" + string(inputs.ssh.target.host) }}'
       methodName: exec
       globalArgs: &ssh
-        name: '${{ "tr-ssh-" + run.id }}'
+        name: '${{ "tr-plan-" + string(inputs.ssh.target.host) }}'
         transport:
           kind: ssh
           user: '${{ inputs.ssh.target.user }}'
@@ -58,7 +58,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/tool-remove-command'
-      behaviorName: '${{ "tr-decide-" + run.id }}'
+      behaviorName: '${{ "tr-decide" }}'
       methodName: decide
       inputs: {input: '${{ inputs.intent }}', plan: '${{ steps["Plan the removal"] }}'}
   - name: Remove the package
@@ -68,7 +68,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tr-remove-" + run.id }}'
+      behaviorName: '${{ "tr-remove-" + string(inputs.ssh.target.host) }}'
       methodName: exec
       globalArgs: *ssh
       inputs:
@@ -82,7 +82,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tr-check-" + run.id }}'
+      behaviorName: '${{ "tr-check-" + string(inputs.ssh.target.host) }}'
       methodName: exec
       globalArgs: *ssh
       inputs:
@@ -101,7 +101,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tr-source-" + run.id }}'
+      behaviorName: '${{ "tr-source-" + string(inputs.ssh.target.host) }}'
       methodName: exec
       globalArgs: *ssh
       inputs:
@@ -120,7 +120,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/tool-remove-command'
-      behaviorName: '${{ "tr-result-" + run.id }}'
+      behaviorName: '${{ "tr-result" }}'
       methodName: result
       inputs:
         input: '${{ inputs.intent }}'

@@ -99,12 +99,12 @@ export function removalWorkflow(): Fields {
             type: "behavior",
             behaviorType: "@swamp/ssh",
             behaviorName: expr(
-                '"route-readiness-" + run.id + "-" + string(self._index)',
+                '"route-readiness-" + string(self.part.connection.nodeHost)',
             ),
             methodName: "exec",
             globalArgs: {
                 name: expr(
-                    '"route-readiness-" + run.id + "-" + string(self._index)',
+                    '"route-readiness-" + string(self.part.connection.nodeHost)',
                 ),
                 transport: {
                     kind: "ssh",

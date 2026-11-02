@@ -57,7 +57,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: ${{ "process-def-result-" + run.id }}
+          behaviorName: '${{ "process-def-result" }}'
           methodName: execute
           inputs:
             run: |

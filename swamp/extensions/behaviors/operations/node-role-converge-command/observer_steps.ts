@@ -1,4 +1,5 @@
 import { roleBaselineSteps } from "./steps.ts";
+import { behaviorName } from "../_lib/behavior_name.ts";
 
 type Fields = Record<string, unknown>;
 const expr = (source: string) => "${{ " + source + " }}";
@@ -115,9 +116,7 @@ export function roleObserverSteps(
     );
     for (const step of checkout) {
         const task = step.task as Fields;
-        const identity = expr(
-            '"' + String(step.name) + '-" + run.id + "-" + string(self._index)',
-        );
+        const identity = behaviorName(String(step.name), task.globalArgs, true);
         task.behaviorName = identity;
         if (task.globalArgs) {
             task.globalArgs = { ...task.globalArgs as Fields, name: identity };

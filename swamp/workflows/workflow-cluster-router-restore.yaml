@@ -347,7 +347,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/route-mutation-command'
-      behaviorName: '${{ "restore-result-" + run.id + "-" + string(self._index) }}'
+      behaviorName: '${{ "restore-result-" + string(self._index) }}'
       methodName: result
       inputs:
         stage: ${{ self.stage }}
@@ -386,7 +386,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/cluster-router-result'
-      behaviorName: ${{ "cluster-router-phase-" + run.id }}
+      behaviorName: '${{ "cluster-router-phase" }}'
       methodName: phase
       inputs:
         mode: restore

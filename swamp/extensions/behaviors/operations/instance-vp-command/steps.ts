@@ -16,7 +16,7 @@ export function vpCaptureSteps(
     a.add("local-directory", {
         type: "behavior",
         behaviorType: "command/shell",
-        behaviorName: e('"vp-local-"+run.id'),
+        behaviorName: e('"vp-local"'),
         methodName: "execute",
         inputs: {
             run: 'umask 077; mkdir -p -- "$ORBIT_DIRECTORY"',

@@ -76,7 +76,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/horizon-observation'
-      behaviorName: ${{ "horizon-observation-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "horizon-observation" }}'
       methodName: assets
       inputs: {}
   - name: prepare-assets
@@ -88,10 +88,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "horizon-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "horizon-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: &id002
-        name: ${{ "horizon-ssh-" + string(inputs.operation_id) }}
+        name: '${{ "horizon-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -117,7 +117,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "horizon-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "horizon-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: copy
       globalArgs: *id002
       inputs:
@@ -131,7 +131,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "horizon-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "horizon-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -158,7 +158,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/horizon-observation'
-      behaviorName: ${{ "horizon-observation-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "horizon-observation" }}'
       methodName: read
       inputs:
         stdout: ${{ steps.inspect.outputs.stdout }}
@@ -181,7 +181,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "horizon-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "horizon-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -223,7 +223,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "horizon-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "horizon-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -264,7 +264,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "horizon-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "horizon-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -317,7 +317,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "horizon-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "horizon-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -368,7 +368,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "horizon-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "horizon-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -427,7 +427,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "horizon-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "horizon-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -499,7 +499,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "horizon-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "horizon-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -570,7 +570,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "horizon-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "horizon-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       inputs:
         hosts: name:target
@@ -647,7 +647,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "horizon-result-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "horizon-result" }}'
       methodName: execute
       inputs:
         run: 'set -eu
@@ -673,7 +673,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "horizon-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "horizon-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id002
       inputs:

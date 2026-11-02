@@ -37,7 +37,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/instance-source-command'
-      behaviorName: ${{ "ren-inspect-assets-" + run.id }}
+      behaviorName: '${{ "ren-inspect-assets" }}'
       methodName: read
       inputs:
         action: inspect
@@ -51,10 +51,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "ren-filesystem-" + run.id }}
+      behaviorName: '${{ "ren-filesystem-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: script
       globalArgs: &id001
-        name: ${{ "instance-rename-" + run.id }}
+        name: '${{ "ren-filesystem-" + string(inputs.intent.ssh_execution.target.host) }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -78,7 +78,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "ren-top-" + run.id }}
+      behaviorName: '${{ "ren-top-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -102,7 +102,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "ren-common-" + run.id }}
+      behaviorName: '${{ "ren-common-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -127,7 +127,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "ren-worktrees-" + run.id }}
+      behaviorName: '${{ "ren-worktrees-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -152,7 +152,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/instance-source-command'
-      behaviorName: ${{ "ren-origin-assets-" + run.id }}
+      behaviorName: '${{ "ren-origin-assets" }}'
       methodName: read
       inputs:
         action: origin
@@ -166,7 +166,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "ren-origin-" + run.id }}
+      behaviorName: '${{ "ren-origin-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: script
       globalArgs: *id001
       inputs:
@@ -182,7 +182,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "ren-branch-" + run.id }}
+      behaviorName: '${{ "ren-branch-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -206,7 +206,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "ren-commit-" + run.id }}
+      behaviorName: '${{ "ren-commit-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -231,7 +231,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "ren-default-" + run.id }}
+      behaviorName: '${{ "ren-default-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -256,7 +256,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/instance-source-command'
-      behaviorName: ${{ "ren-result-" + run.id }}
+      behaviorName: '${{ "ren-result" }}'
       methodName: result
       inputs:
         kind: ${{ inputs.kind }}

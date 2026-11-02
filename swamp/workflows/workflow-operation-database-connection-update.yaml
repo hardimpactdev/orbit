@@ -44,7 +44,7 @@ jobs:
     <<: &placed {labels: {role: swamp}}
     writes: false
     task:
-      <<: &metadata {type: behavior, behaviorType: '@nckrtl/database-server-command-assets', behaviorName: '${{ "database-update-assets-" + run.id }}'}
+      <<: &metadata {type: behavior, behaviorType: '@nckrtl/database-server-command-assets', behaviorName: '${{ "database-update-assets" }}'}
       methodName: read
       inputs: {intent: '${{ inputs.intent }}'}
   - name: directory
@@ -56,9 +56,9 @@ jobs:
       <<: &ssh
         type: behavior
         behaviorType: '@swamp/ssh'
-        behaviorName: '${{ "database-update-" + string(inputs.operation_id) }}'
+        behaviorName: '${{ "database-update-" + string(inputs.intent.ssh.host) }}'
         globalArgs:
-          name: '${{ "database-update-" + string(inputs.operation_id) }}'
+          name: '${{ "database-update-" + string(inputs.intent.ssh.host) }}'
           transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity}
           hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]
       methodName: exec

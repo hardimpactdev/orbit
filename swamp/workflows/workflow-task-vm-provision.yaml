@@ -62,7 +62,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-enrollment-input'
-      behaviorName: ${{ "vm-provision-plan-"+run.id }}
+      behaviorName: '${{ "vm-provision-plan" }}'
       methodName: plan
       inputs:
         provider: ${{ inputs.intent.provider }}
@@ -118,7 +118,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-enrollment-input'
-      behaviorName: ${{ "vm-enrollment-input-"+run.id }}
+      behaviorName: '${{ "vm-enrollment-input" }}'
       methodName: guest
       inputs:
         intent: ${{ inputs.intent }}
@@ -163,7 +163,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-enrollment-input'
-      behaviorName: ${{ "vm-enrollment-result-"+run.id }}
+      behaviorName: '${{ "vm-enrollment-result" }}'
       methodName: forward
       inputs:
         receipt: ${{ steps.enrollment.outputs.result }}

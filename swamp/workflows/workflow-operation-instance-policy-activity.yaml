@@ -26,7 +26,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: '${{ "instance-policy-activity-" + string(inputs.operation_id) }}'
+          behaviorName: '${{ "instance-policy-activity" }}'
           methodName: execute
           inputs:
             run: |

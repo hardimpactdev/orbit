@@ -40,7 +40,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-server-command-assets'
-      behaviorName: ${{ "db-destroy-result-" + run.id }}
+      behaviorName: '${{ "db-destroy-result" }}'
       methodName: result
       inputs:
         completed: ${{ steps.remove.status == "succeeded" }}

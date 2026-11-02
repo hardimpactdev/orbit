@@ -37,7 +37,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-clone-command-assets'
-      behaviorName: ${{ "dbcm-" + run.id }}
+      behaviorName: '${{ "dbcm" }}'
       methodName: read
       inputs: {intent: '${{ inputs.intent }}'}
   - name: mysql
@@ -70,7 +70,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-clone-command-assets'
-      behaviorName: ${{ "dbcm-" + run.id }}
+      behaviorName: '${{ "dbcm" }}'
       methodName: result
       inputs: {expected: '${{ inputs.intent.variant == "mysql" ? ["mysql"] : ["sqlite"] }}', steps: '${{ steps }}'}
   - name: accept_result

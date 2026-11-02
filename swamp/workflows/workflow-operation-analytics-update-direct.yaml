@@ -52,7 +52,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/analytics-runtime'
-      behaviorName: ${{ "analytics-runtime-" + run.id }}
+      behaviorName: '${{ "analytics-runtime" }}'
       methodName: plan
       inputs:
         intent: ${{ inputs.intent }}
@@ -61,7 +61,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/process-command-assets'
-      behaviorName: ${{ "analytics-process-assets-" + run.id }}
+      behaviorName: '${{ "analytics-process-assets" }}'
       methodName: read
       inputs:
         control:
@@ -80,10 +80,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "analytics-ssh-" + run.id }}
+      behaviorName: '${{ "analytics-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: &id001
-        name: ${{ "analytics-runtime-" + run.id }}
+        name: '${{ "analytics-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -113,7 +113,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "analytics-ssh-" + run.id }}
+      behaviorName: '${{ "analytics-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: copy
       globalArgs: *id001
       inputs:
@@ -133,10 +133,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "analytics-ssh-" + run.id }}
+      behaviorName: '${{ "analytics-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: copy
       globalArgs:
-        name: ${{ "analytics-runtime-" + run.id }}
+        name: '${{ "analytics-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -167,7 +167,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "analytics-ssh-" + run.id }}
+      behaviorName: '${{ "analytics-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -193,7 +193,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/analytics-runtime'
-      behaviorName: ${{ "analytics-runtime-" + run.id }}
+      behaviorName: '${{ "analytics-runtime" }}'
       methodName: observe
       inputs:
         intent: ${{ inputs.intent }}
@@ -207,7 +207,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "analytics-ssh-" + run.id }}
+      behaviorName: '${{ "analytics-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -238,7 +238,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "analytics-ssh-" + run.id }}
+      behaviorName: '${{ "analytics-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -269,10 +269,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "analytics-ssh-" + run.id }}
+      behaviorName: '${{ "analytics-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs:
-        name: ${{ "analytics-runtime-" + run.id }}
+        name: '${{ "analytics-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -312,7 +312,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/analytics-runtime'
-      behaviorName: ${{ "analytics-runtime-" + run.id }}
+      behaviorName: '${{ "analytics-runtime" }}'
       methodName: observe
       inputs:
         intent: ${{ inputs.intent }}
@@ -366,7 +366,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "analytics-ssh-" + run.id }}
+      behaviorName: '${{ "analytics-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -435,7 +435,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "analytics-result-" + run.id }}
+      behaviorName: '${{ "analytics-result" }}'
       methodName: execute
       inputs:
         run: printf '%s\n' "$ORBIT_ANALYTICS_RESULT"
@@ -456,7 +456,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "analytics-status-" + run.id }}
+      behaviorName: '${{ "analytics-status" }}'
       methodName: execute
       inputs:
         run: test "$ORBIT_ANALYTICS_READY" = true

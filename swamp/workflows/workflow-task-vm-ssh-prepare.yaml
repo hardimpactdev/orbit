@@ -30,10 +30,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-ssh-bootstrap-"+run.id }}
+      behaviorName: '${{ "vm-ssh-bootstrap-" + string((inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution : inputs.intent.ssh_execution).target.host) }}'
       methodName: exec
       globalArgs: &id001
-        name: ${{ "vm-ssh-bootstrap-"+run.id }}
+        name: '${{ "vm-ssh-bootstrap-" + string((inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution : inputs.intent.ssh_execution).target.host) }}'
         transport:
           kind: ssh
           user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution
@@ -60,7 +60,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-ssh-bootstrap-"+run.id }}
+      behaviorName: '${{ "vm-ssh-bootstrap-" + string((inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution : inputs.intent.ssh_execution).target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -81,7 +81,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-ssh-bootstrap-"+run.id }}
+      behaviorName: '${{ "vm-ssh-bootstrap-" + string((inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution : inputs.intent.ssh_execution).target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -99,7 +99,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/node-bootstrap-command'
-      behaviorName: ${{ "vm-ssh-authorize-"+run.id }}
+      behaviorName: '${{ "vm-ssh-authorize" }}'
       methodName: authorized_key
       inputs:
         user: ${{ inputs.intent.user }}
@@ -113,7 +113,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-ssh-bootstrap-"+run.id }}
+      behaviorName: '${{ "vm-ssh-bootstrap-" + string((inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution : inputs.intent.ssh_execution).target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -133,7 +133,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-lifecycle-input'
-      behaviorName: ${{ "vm-ssh-input-"+run.id }}
+      behaviorName: '${{ "vm-ssh-input" }}'
       methodName: ssh_firewall
       inputs: {}
     dependsOn:
@@ -145,7 +145,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-ssh-bootstrap-"+run.id }}
+      behaviorName: '${{ "vm-ssh-bootstrap-" + string((inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution : inputs.intent.ssh_execution).target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -165,7 +165,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-ssh-bootstrap-"+run.id }}
+      behaviorName: '${{ "vm-ssh-bootstrap-" + string((inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution : inputs.intent.ssh_execution).target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -184,7 +184,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-ssh-bootstrap-"+run.id }}
+      behaviorName: '${{ "vm-ssh-bootstrap-" + string((inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution : inputs.intent.ssh_execution).target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -203,7 +203,7 @@ jobs:
     task: &id002
       type: behavior
       behaviorType: '@nckrtl/task-vm-ssh-input'
-      behaviorName: ${{ "vm-ssh-guest-"+run.id }}
+      behaviorName: '${{ "vm-ssh-guest" }}'
       methodName: observe
       inputs:
         intent: ${{ inputs.intent }}
@@ -217,10 +217,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-ssh-verify-"+run.id }}
+      behaviorName: '${{ "vm-ssh-verify-" + string(steps.guest.outputs.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs:
-        name: ${{ "vm-ssh-verify-"+run.id }}
+        name: '${{ "vm-ssh-verify-" + string(steps.guest.outputs.ssh_execution.target.host) }}'
         transport:
           kind: ssh
           user: ${{ steps.guest.outputs.ssh_execution.target.user }}

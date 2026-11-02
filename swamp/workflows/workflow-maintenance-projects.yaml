@@ -25,7 +25,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/project-maintenance-input'
-          behaviorName: '${{ "maintenance-input-" + run.id }}'
+          behaviorName: '${{ "maintenance-input" }}'
           methodName: schedule
           inputs:
             revision: '${{ inputs.revision }}'
@@ -40,7 +40,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: '${{ "maintenance-result-" + run.id }}'
+          behaviorName: '${{ "maintenance-result" }}'
           methodName: execute
           inputs:
             run: 'printf "%s\n" "$ORBIT_RESULT"'

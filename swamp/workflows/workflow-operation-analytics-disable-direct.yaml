@@ -129,7 +129,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/analytics-site'
-      behaviorName: ${{ "analytics-disable-result-" + run.id }}
+      behaviorName: '${{ "analytics-disable-result" }}'
       methodName: result
       inputs:
         result_json: ${{ inputs.intent.result_json }}

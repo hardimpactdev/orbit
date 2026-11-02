@@ -61,7 +61,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "vm-destroy-result-"+run.id }}
+      behaviorName: '${{ "vm-destroy-result" }}'
       methodName: execute
       inputs:
         run: 'printf ''%s\n'' "$RESULT"

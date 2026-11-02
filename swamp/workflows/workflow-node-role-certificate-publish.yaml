@@ -36,7 +36,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/node-role-certificate-assets'
-      behaviorName: ${{ "role-assets-" + run.id }}
+      behaviorName: '${{ "role-assets" }}'
       methodName: read
       inputs:
         leaf: ${{ inputs.leaf }}
@@ -117,7 +117,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/node-role-certificate-assets'
-      behaviorName: ${{ "role-request-info-" + run.id }}
+      behaviorName: '${{ "role-request-info" }}'
       methodName: decodeRequest
       inputs:
         leaf: ${{ inputs.leaf }}
@@ -134,7 +134,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "certificate-sign-" + run.id }}
+      behaviorName: '${{ "certificate-sign" }}'
       methodName: execute
       inputs:
         run: /usr/bin/python3 -B "$ORBIT_CERTIFICATE_SIGN_SCRIPT"
@@ -157,7 +157,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/node-role-certificate-assets'
-      behaviorName: ${{ "role-signed-info-" + run.id }}
+      behaviorName: '${{ "role-signed-info" }}'
       methodName: decodeSigned
       inputs:
         leaf: ${{ inputs.leaf }}
@@ -291,7 +291,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/node-role-certificate-assets'
-      behaviorName: ${{ "role-result-" + run.id }}
+      behaviorName: '${{ "role-result" }}'
       methodName: result
       inputs:
         leaf: ${{ inputs.leaf }}

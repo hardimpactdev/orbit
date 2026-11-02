@@ -40,7 +40,7 @@ Deno.test("Node, worker and SSH workflows have no shared forEach model identity 
     );
 });
 
-Deno.test("Node removal fan-outs isolate each run, phase and iteration and retain generated source", async () => {
+Deno.test("Node removal fan-outs isolate each target and iteration and retain generated source", async () => {
     const generated = nodeRemovalWorkflow();
     const published = parse(
         await Deno.readTextFile(
@@ -58,8 +58,13 @@ Deno.test("Node removal fan-outs isolate each run, phase and iteration and retai
             const name = String(
                 (step.task as Record<string, unknown>).behaviorName,
             );
-            assertEquals(name.includes("run.id"), true, String(step.name));
-            assertEquals(name.includes("self._index"), true, String(step.name));
+            // Named by target, never by run: each item has its own index or its own target.
+            assertEquals(name.includes("run.id"), false, String(step.name));
+            assertEquals(
+                name.includes("self._index") || name.includes("string(self."),
+                true,
+                String(step.name),
+            );
             names.push(name);
         }
     }

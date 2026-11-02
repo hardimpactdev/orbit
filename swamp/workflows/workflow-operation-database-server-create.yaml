@@ -24,7 +24,7 @@ jobs:
     <<: &placed {labels: {role: swamp}}
     writes: false
     task:
-      <<: &metadata {type: behavior, behaviorType: '@nckrtl/database-server-command-assets', behaviorName: '${{ "database-server-assets-" + run.id }}'}
+      <<: &metadata {type: behavior, behaviorType: '@nckrtl/database-server-command-assets', behaviorName: '${{ "database-server-assets" }}'}
       methodName: read
       inputs:
         intent: ${{ inputs.intent }}
@@ -34,7 +34,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/process-command-assets'
-      behaviorName: ${{ "db-process-assets-" + run.id }}
+      behaviorName: '${{ "db-process-assets" }}'
       methodName: read
       inputs:
         control: {process_id: '${{ inputs.intent.process_id }}', runtime: docker, name: '${{ inputs.intent.container }}', vite: null, on_demand: false}
@@ -42,7 +42,7 @@ jobs:
     <<: &remote {labels: {role: swamp}, allowFailure: true}
     writes: false
     task:
-      <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "database-server-" + string(inputs.operation_id) }}', globalArgs: {name: '${{ "database-server-" + string(inputs.operation_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity}, hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]}, methodName: exec}
+      <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "database-server-" + string(inputs.intent.ssh.host) }}', globalArgs: {name: '${{ "database-server-" + string(inputs.intent.ssh.host) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity}, hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]}, methodName: exec}
       inputs:
         hosts: name:server
         argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) }}']

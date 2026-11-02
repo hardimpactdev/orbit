@@ -48,7 +48,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-pi-assets'
-      behaviorName: ${{ "vm-pi-assets-"+run.id }}
+      behaviorName: '${{ "vm-pi-assets" }}'
       methodName: read
       inputs:
         intent: ${{ inputs.intent }}
@@ -57,10 +57,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ "vm-runtime-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: &id001
-        name: ${{ "vm-runtime-"+run.id }}
+        name: '${{ "vm-runtime-" + string(inputs.intent.ssh_execution.target.host) }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -88,7 +88,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ "vm-runtime-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: copy
       globalArgs: *id001
       inputs:
@@ -106,7 +106,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ "vm-runtime-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -127,7 +127,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-pi-assets'
-      behaviorName: ${{ "vm-pi-assets-"+run.id }}
+      behaviorName: '${{ "vm-pi-assets" }}'
       methodName: inspection
       inputs:
         task_vm_id: ${{ inputs.intent.task_vm_id }}
@@ -142,7 +142,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "vm-runtime-local-"+run.id }}
+      behaviorName: '${{ "vm-runtime-local" }}'
       methodName: execute
       inputs:
         run: 'install -d -m 0700 -- "$ORBIT_STAGE"
@@ -160,10 +160,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-pi-source-"+run.id }}
+      behaviorName: '${{ "vm-pi-source-" + string(inputs.intent.pi_artifact.ssh_execution.target.host) }}'
       methodName: copy
       globalArgs:
-        name: ${{ "vm-pi-source-"+run.id }}
+        name: '${{ "vm-pi-source-" + string(inputs.intent.pi_artifact.ssh_execution.target.host) }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.pi_artifact.ssh_execution.target.user }}
@@ -189,7 +189,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ "vm-runtime-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: copy
       globalArgs: *id001
       inputs:
@@ -207,7 +207,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ "vm-runtime-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -229,7 +229,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ "vm-runtime-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -251,7 +251,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ "vm-runtime-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -275,7 +275,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ "vm-runtime-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -295,7 +295,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ "vm-runtime-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -316,7 +316,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ "vm-runtime-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -335,7 +335,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ "vm-runtime-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -362,7 +362,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ "vm-runtime-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -380,7 +380,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ "vm-runtime-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -399,7 +399,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ "vm-runtime-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -418,7 +418,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ "vm-runtime-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -438,7 +438,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ "vm-runtime-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -463,7 +463,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "vm-runtime-local-"+run.id }}
+      behaviorName: '${{ "vm-runtime-local" }}'
       methodName: execute
       inputs:
         run: '/usr/bin/python3 -B - <<''PYTHON''
@@ -491,10 +491,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ "vm-runtime-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs:
-        name: ${{ "vm-runtime-"+run.id }}
+        name: '${{ "vm-runtime-" + string(inputs.intent.ssh_execution.target.host) }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -525,7 +525,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "vm-runtime-local-"+run.id }}
+      behaviorName: '${{ "vm-runtime-local" }}'
       methodName: execute
       inputs:
         run: 'rm -rf -- "$ORBIT_STAGE"
@@ -542,7 +542,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "vm-runtime-local-"+run.id }}
+      behaviorName: '${{ "vm-runtime-local" }}'
       methodName: execute
       inputs:
         run: '/usr/bin/python3 -B - <<''PYTHON''

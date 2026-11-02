@@ -48,10 +48,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "tool-adopt-" + run.id }}
+      behaviorName: '${{ "tool-adopt-" + string(inputs.ssh.target.host) }}'
       methodName: script
       globalArgs:
-        name: ${{ "tool-adopt-" + run.id }}
+        name: '${{ "tool-adopt-" + string(inputs.ssh.target.host) }}'
         transport:
           kind: ssh
           user: ${{ inputs.ssh.target.user }}
@@ -75,10 +75,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "tool-adopt-repository-" + run.id + "-" + string(self._index) }}
+      behaviorName: '${{ "tool-adopt-repository-" + string(inputs.ssh.target.host) + "-" + string(self._index) }}'
       methodName: exec
       globalArgs:
-        name: ${{ "tool-adopt-repository-" + run.id + "-" + string(self._index) }}
+        name: '${{ "tool-adopt-repository-" + string(inputs.ssh.target.host) + "-" + string(self._index) }}'
         transport: {kind: ssh, user: '${{ inputs.ssh.target.user }}', port: '${{ inputs.ssh.target.port }}', hostKeys: '${{ inputs.ssh.target.host_keys }}', identityFile: '${{ inputs.ssh.identity_file }}', identitiesOnly: true}
         hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]
       inputs: {hosts: 'name:target', sudo: false, argv: '${{ ["timeout","180","/usr/bin/python3","-I","-c",steps.assets.outputs.repository_body,"adopt",steps.assets.outputs.repository_json] }}'}

@@ -81,7 +81,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/analytics-site'
-      behaviorName: ${{ "analytics-assets-" + run.id }}
+      behaviorName: '${{ "analytics-assets" }}'
       methodName: assets
       inputs:
         base_url: ${{ inputs.intent.base_url }}
@@ -97,7 +97,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "analytics-site-" + run.id }}
+      behaviorName: '${{ "analytics-site" }}'
       methodName: execute
       inputs:
         run: /usr/bin/python3 -B "$ORBIT_ANALYTICS_SCRIPT"
@@ -281,7 +281,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/analytics-site'
-      behaviorName: ${{ "analytics-enable-result-" + run.id }}
+      behaviorName: '${{ "analytics-enable-result" }}'
       methodName: result
       inputs:
         result_json: ${{ inputs.intent.result_json }}

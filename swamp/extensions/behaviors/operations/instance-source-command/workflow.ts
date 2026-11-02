@@ -14,7 +14,7 @@ export function sourceSteps(
     const created = `${outputs("prepared")}.created`;
     const ssh = `${intent}.ssh_execution`;
     const globals = {
-        name: expr(`"${name}-" + run.id`),
+        name: expr(`"${name}-" + string(${ssh}.target.host)`),
         transport: {
             kind: "ssh",
             user: expr(`${ssh}.target.user`),
@@ -56,7 +56,7 @@ export function sourceSteps(
         add(suffix, {
             type: "behavior",
             behaviorType: "@nckrtl/instance-source-command",
-            behaviorName: expr(`"src-${steps.length}-" + run.id`),
+            behaviorName: expr(`"src-${steps.length}"`),
             methodName: method,
             inputs,
         });
@@ -70,7 +70,7 @@ export function sourceSteps(
         add(suffix, {
             type: "behavior",
             behaviorType: "@swamp/ssh",
-            behaviorName: expr(`"src-${steps.length}-" + run.id`),
+            behaviorName: expr(`"src-${steps.length}-" + string(${ssh}.target.host)`),
             methodName: "exec",
             globalArgs: globals,
             inputs: { hosts: "name:target", argv, ...extra },
@@ -85,7 +85,7 @@ export function sourceSteps(
         add(suffix + "-read", {
             type: "behavior",
             behaviorType: "@swamp/ssh",
-            behaviorName: expr(`"src-${steps.length}-" + run.id`),
+            behaviorName: expr(`"src-${steps.length}-" + string(${ssh}.target.host)`),
             methodName: "script",
             globalArgs: globals,
             inputs: {
@@ -184,7 +184,7 @@ export function sourceSteps(
     add("scripts-copy", {
         type: "behavior",
         behaviorType: "@swamp/ssh",
-        behaviorName: expr(`"${name}-copy-" + run.id`),
+        behaviorName: expr(`"${name}-copy-" + string(${ssh}.target.host)`),
         methodName: "copy",
         globalArgs: globals,
         inputs: {

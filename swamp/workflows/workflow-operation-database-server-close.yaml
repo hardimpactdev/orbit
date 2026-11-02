@@ -24,13 +24,13 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-server-command-assets'
-      behaviorName: '${{ "db-close-assets-" + run.id }}'
+      behaviorName: '${{ "db-close-assets" }}'
       methodName: read
       inputs: {intent: '${{ inputs.intent }}'}
   - name: directory
     <<: *placed
     task:
-      <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "database-close-" + string(inputs.operation_id) }}', methodName: exec, globalArgs: {name: '${{ "database-close-" + string(inputs.operation_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity}, hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]}}
+      <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "database-close-" + string(inputs.intent.ssh.host) }}', methodName: exec, globalArgs: {name: '${{ "database-close-" + string(inputs.intent.ssh.host) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity}, hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]}}
       inputs:
         hosts: name:server
         argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-database-close-" + string(inputs.operation_id) }}']
@@ -62,7 +62,7 @@ jobs:
     writes: false
     dependsOn: [{step: probe, condition: {type: always}}]
     task:
-      <<: &metadata {type: behavior, behaviorType: '@nckrtl/database-close-command-assets', behaviorName: '${{ "db-close-result-" + run.id }}'}
+      <<: &metadata {type: behavior, behaviorType: '@nckrtl/database-close-command-assets', behaviorName: '${{ "db-close-result" }}'}
       methodName: probe
       inputs:
         stdout: '${{ has(steps.probe.outputs) ? steps.probe.outputs.stdout : "" }}'

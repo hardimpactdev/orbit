@@ -30,16 +30,18 @@ Deno.test("Database SSH child names fit OpenSSH temporary control sockets with u
                 }[];
             }[];
         };
-        const expressions = prefixes.map((prefix) =>
-            '${{ "' + prefix + '" + run.id }}'
-        );
+        // Named by the SSH target, never by run (docs/flows/README.md).
         for (const job of workflow.jobs) {
             for (const { task } of job.steps) {
                 if (task.behaviorType !== "@swamp/ssh") continue;
                 assertEquals(
-                    expressions.includes(task.behaviorName ?? ""),
+                    prefixes.some((prefix) =>
+                        (task.behaviorName ?? "").startsWith('${{ "' + prefix + '" + string(')
+                    ),
                     true,
+                    task.behaviorName,
                 );
+                assertEquals(task.behaviorName?.includes("run.id"), false);
                 assertEquals(task.globalArgs?.name, task.behaviorName);
             }
         }
@@ -47,7 +49,7 @@ Deno.test("Database SSH child names fit OpenSSH temporary control sockets with u
         // Official safeFleetDir budgets the final path, so keep the full name short.
         for (const prefix of prefixes) {
             for (const base of ["/tmp/swamp-ssh", "/run/user/1000/swamp-ssh"]) {
-                const directory = base + "/" + prefix + crypto.randomUUID();
+                const directory = base + "/" + prefix + "255.255.255.255";
                 const temporary = directory +
                     "/afebf7b4834a.sock.HBR1rp5mk66BeRYl";
                 assertEquals(

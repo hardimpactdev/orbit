@@ -89,7 +89,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "workspace-routes-withdrawn-" + run.id }}
+      behaviorName: '${{ "workspace-routes-withdrawn" }}'
       methodName: execute
       inputs:
         run: timeout 5 test "$WITHDRAWN" = true
@@ -135,7 +135,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-cancel-result-"+run.id }}
+      behaviorName: '${{ "task-cancel-result" }}'
       methodName: execute
       inputs:
         run: "python3 - <<'PYTHON'\nimport json\nimport os\n\nvm = json.loads(os.environ[\"VM\"])\nprint(\n\

@@ -25,7 +25,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/tool-write-command'
-      behaviorName: '${{ "tw-assets-" + run.id }}'
+      behaviorName: '${{ "tw-assets" }}'
       methodName: assets
       inputs: {input: '${{ inputs.intent }}'}
   # Only when the Tool Manager is not ready yet: the shared setup child, which the development deploy also runs.
@@ -46,10 +46,10 @@ jobs:
     task: &source
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tw-source-" + run.id }}'
+      behaviorName: '${{ "tw-source-" + string(inputs.ssh.target.host) }}'
       methodName: exec
       globalArgs: &ssh
-        name: '${{ "tw-ssh-" + run.id }}'
+        name: '${{ "tw-source-" + string(inputs.ssh.target.host) }}'
         transport:
           kind: ssh
           user: '${{ inputs.ssh.target.user }}'
@@ -79,7 +79,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tw-check-" + run.id }}'
+      behaviorName: '${{ "tw-check-" + string(inputs.ssh.target.host) }}'
       methodName: exec
       globalArgs: *ssh
       inputs:
@@ -95,7 +95,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/tool-write-command'
-      behaviorName: '${{ "tw-decide-" + run.id }}'
+      behaviorName: '${{ "tw-decide" }}'
       methodName: decide
       inputs: {input: '${{ inputs.intent }}', check: '${{ steps["Check the candidate"] }}'}
   # apt as root with --no-remove, waiting up to 300 s for a busy lock; other managers as the managed account.
@@ -106,7 +106,7 @@ jobs:
     task: &write
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tw-write-" + run.id }}'
+      behaviorName: '${{ "tw-write-" + string(inputs.ssh.target.host) }}'
       methodName: exec
       globalArgs: *ssh
       inputs:
@@ -133,7 +133,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/tool-write-command'
-      behaviorName: '${{ "tw-result-" + run.id }}'
+      behaviorName: '${{ "tw-result" }}'
       methodName: result
       inputs:
         input: '${{ inputs.intent }}'

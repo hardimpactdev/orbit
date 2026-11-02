@@ -105,7 +105,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/cluster-router-result'
-      behaviorName: ${{ "cluster-router-result-" + run.id }}
+      behaviorName: '${{ "cluster-router-result" }}'
       methodName: read
       inputs:
         noop: ${{ inputs.intent.cluster_router.noop }}
@@ -118,7 +118,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/cluster-router-result'
-      behaviorName: ${{ "cluster-router-complete-" + run.id }}
+      behaviorName: '${{ "cluster-router-complete" }}'
       methodName: complete
       inputs:
         stdout: ${{ steps.result.outputs.stdout }}

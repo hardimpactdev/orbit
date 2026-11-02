@@ -22,7 +22,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/process-command-assets'
-      behaviorName: ${{ "process-assets-" + run.id }}
+      behaviorName: '${{ "process-assets" }}'
       methodName: lifecycle
       inputs: {control: '${{ inputs.intent.control }}'}
   - name: 'Make the asset directory'
@@ -31,9 +31,9 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "process-ssh-" + run.id }}
+      behaviorName: '${{ "process-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
-      globalArgs: {name: '${{ "process-lifecycle-" + run.id }}', transport: &id001 {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user }}', port: '${{
+      globalArgs: {name: '${{ "process-ssh-" + string(inputs.intent.ssh_execution.target.host) }}', transport: &id001 {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user }}', port: '${{
             inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: &id002 [{name: target, address: '${{
               inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]}
       inputs: {name: prepare, hosts: [target], argv: [/usr/bin/mkdir, -m, '0700', -p, '${{ "/tmp/orbit-process-" + run.id }}'], sudo: false}
@@ -43,9 +43,9 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "process-ssh-" + run.id }}
+      behaviorName: '${{ "process-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: copy
-      globalArgs: {name: '${{ "process-lifecycle-" + run.id }}', transport: *id001, hosts: *id002}
+      globalArgs: {name: '${{ "process-ssh-" + string(inputs.intent.ssh_execution.target.host) }}', transport: *id001, hosts: *id002}
       inputs: {name: scripts, direction: to, hosts: [target], src: '${{ steps["Resolve check assets"].outputs.scripts_directory }}', dst: '${{ "/tmp/orbit-process-" + run.id }}',
         recursive: true}
   - name: 'Inspect the Process'
@@ -54,9 +54,9 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "process-ssh-" + run.id }}
+      behaviorName: '${{ "process-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
-      globalArgs: {name: '${{ "process-lifecycle-" + run.id }}', transport: *id001, hosts: *id002}
+      globalArgs: {name: '${{ "process-ssh-" + string(inputs.intent.ssh_execution.target.host) }}', transport: *id001, hosts: *id002}
       inputs: {name: inspect, hosts: [target], argv: [/usr/bin/env, '${{ "ORBIT_PROCESS_CONTROL=" + steps["Resolve check assets"].outputs.control_json }}', /usr/bin/python3, '${{
             "/tmp/orbit-process-" + run.id + "/scripts" + "/inspect.py" }}'], sudo: true}
   - name: 'Read the observation'
@@ -65,7 +65,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/process-command-assets'
-      behaviorName: ${{ "process-observation-" + run.id }}
+      behaviorName: '${{ "process-observation" }}'
       methodName: decode
       inputs: {stdout: '${{ steps["Inspect the Process"].outputs.stdout }}'}
   - name: 'Disable it'
@@ -75,7 +75,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/systemd'
-      behaviorName: ${{ "process-boot-" + run.id }}
+      behaviorName: '${{ "process-boot-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: apply
       globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
           }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, service: '${{ inputs.intent.control.name }}', enabled: false}
@@ -87,7 +87,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/exec'
-      behaviorName: ${{ "process-stop-" + run.id }}
+      behaviorName: '${{ "process-stop-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: apply
       globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
           }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, command: '${{ "systemctl stop " + inputs.intent.control.name }}'}
@@ -99,7 +99,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/exec'
-      behaviorName: ${{ "process-reset-failed-" + run.id }}
+      behaviorName: '${{ "process-reset-failed-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: apply
       globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
           }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, command: '${{ "systemctl reset-failed " + inputs.intent.control.name
@@ -113,7 +113,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: ${{ "process-unit-" + run.id }}
+      behaviorName: '${{ "process-unit-" + string(inputs.intent.control.process_id) }}'
       methodName: apply
       globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
           }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, path: '${{ "/etc/systemd/system/" + inputs.intent.control.name
@@ -126,7 +126,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/directory'
-      behaviorName: ${{ "process-environments-" + run.id }}
+      behaviorName: '${{ "process-environments-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: apply
       globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
           }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, path: '${{ "/etc/orbit/processes/" + string(inputs.intent.control.process_id)
@@ -139,7 +139,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: ${{ "process-vite-environment-" + run.id }}
+      behaviorName: '${{ "process-vite-environment-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: apply
       globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
           }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, path: '${{ inputs.intent.control.vite != null ? inputs.intent.control.vite.path
@@ -152,7 +152,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/exec'
-      behaviorName: ${{ "process-reload-" + run.id }}
+      behaviorName: '${{ "process-reload-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: apply
       globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
           }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, command: systemctl daemon-reload}
@@ -164,7 +164,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/exec'
-      behaviorName: ${{ "process-container-stop-" + run.id }}
+      behaviorName: '${{ "process-container-stop-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: apply
       globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
           }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, command: '${{ "docker --host=unix:///var/run/docker.sock container
@@ -177,7 +177,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/exec'
-      behaviorName: ${{ "process-container-remove-" + run.id }}
+      behaviorName: '${{ "process-container-remove-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: apply
       globalArgs: {nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}', nodePort: '${{ inputs.intent.ssh_execution.target.port
           }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true, command: '${{ "docker --host=unix:///var/run/docker.sock container
@@ -192,9 +192,9 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "process-ssh-" + run.id }}
+      behaviorName: '${{ "process-ssh-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
-      globalArgs: {name: '${{ "process-lifecycle-" + run.id }}', transport: *id001, hosts: *id002}
+      globalArgs: {name: '${{ "process-ssh-" + string(inputs.intent.ssh_execution.target.host) }}', transport: *id001, hosts: *id002}
       inputs: {name: cleanup, hosts: [target], argv: [/usr/bin/rm, -rf, --, '${{ "/tmp/orbit-process-" + run.id }}'], sudo: true}
   - name: 'Report the result'
     labels: {role: swamp}
@@ -203,7 +203,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "process-result-" + run.id }}
+      behaviorName: '${{ "process-result" }}'
       methodName: execute
       inputs:
         run: printf '%s\n' '{"ready":true}'

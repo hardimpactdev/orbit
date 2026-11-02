@@ -15,7 +15,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-sqlite-command-assets'
-      behaviorName: ${{ "dbsm-" + run.id }}
+      behaviorName: '${{ "dbsm" }}'
       methodName: read
       inputs: {kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', action: check, run_id: '${{ run.id }}'}
   - name: export
@@ -34,7 +34,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-sqlite-command-assets'
-      behaviorName: ${{ "dbsm-" + run.id }}
+      behaviorName: '${{ "dbsm" }}'
       methodName: snapshot
       inputs: {stdout: '${{ steps.export.outputs.result.stdout }}', exit_code: '${{ steps.export.outputs.result.exitCode }}'}
   - name: prepare_target
@@ -53,7 +53,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-sqlite-command-assets'
-      behaviorName: ${{ "dbsm-" + run.id }}
+      behaviorName: '${{ "dbsm" }}'
       methodName: prepared
       inputs: {stdout: '${{ steps.prepare_target.outputs.result.stdout }}', exit_code: '${{ steps.prepare_target.outputs.result.exitCode }}'}
   - name: transfer_dir
@@ -64,7 +64,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "dbsc-" + run.id }}
+      behaviorName: '${{ "dbsc" }}'
       methodName: execute
       inputs: {run: 'umask 077
 
@@ -77,8 +77,8 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "dbss-" + run.id }}
-      globalArgs: {name: '${{ "dbss-" + run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.source_ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
+      behaviorName: '${{ "dbss-" + string(inputs.intent.source_ssh.host) }}'
+      globalArgs: {name: '${{ "dbss-" + string(inputs.intent.source_ssh.host) }}', transport: {kind: ssh, user: '${{ inputs.intent.source_ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
         hosts: [{name: server, address: '${{ inputs.intent.source_ssh.host }}', transport: {hostKeys: '${{ inputs.intent.source_ssh.host_keys }}'}}]}
       methodName: copy
       inputs: {hosts: 'name:server', src: '${{ steps.intent.outputs.source_path }}', dst: '${{ "/tmp/orbit-sqlite-transfer-" + run.id + "/snapshot.sqlite" }}', direction: from}
@@ -91,7 +91,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "dbsc-" + run.id }}
+      behaviorName: '${{ "dbsc" }}'
       methodName: execute
       inputs: {run: 'python3 -B ${{ steps.intent.outputs.directory + "/sqlite_verify_snapshot.py" }} ${{ "/tmp/orbit-sqlite-transfer-" + run.id + "/snapshot.sqlite" }} ${{ steps.snapshot.outputs.json
           }}'}
@@ -103,7 +103,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-sqlite-command-assets'
-      behaviorName: ${{ "dbsm-" + run.id }}
+      behaviorName: '${{ "dbsm" }}'
       methodName: artifact
       inputs: {path: '${{ "/tmp/orbit-sqlite-transfer-" + run.id + "/snapshot.sqlite" }}', run_id: '${{ run.id }}'}
     guard: ${{ !has(steps.prepared) || steps.prepared.status != "succeeded" || steps.prepared.outputs.state != "ready" }}
@@ -116,8 +116,8 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "dbst-" + run.id }}
-      globalArgs: {name: '${{ "dbst-" + run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.target_ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
+      behaviorName: '${{ "dbst-" + string(inputs.intent.target_ssh.host) }}'
+      globalArgs: {name: '${{ "dbst-" + string(inputs.intent.target_ssh.host) }}', transport: {kind: ssh, user: '${{ inputs.intent.target_ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity},
         hosts: [{name: server, address: '${{ inputs.intent.target_ssh.host }}', transport: {hostKeys: '${{ inputs.intent.target_ssh.host_keys }}'}}]}
       methodName: copy
       inputs: {hosts: 'name:server', src: '${{ "/tmp/orbit-sqlite-transfer-" + run.id + "/snapshot.sqlite" }}', dst: '${{ steps.prepared.outputs.incoming }}', direction: to}
@@ -194,7 +194,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "dbsc-" + run.id }}
+      behaviorName: '${{ "dbsc" }}'
       methodName: execute
       inputs: {run: 'rm -rf -- /tmp/orbit-sqlite-transfer-${{ run.id }}'}
   - name: result
@@ -217,7 +217,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-sqlite-command-assets'
-      behaviorName: ${{ "dbsm-" + run.id }}
+      behaviorName: '${{ "dbsm" }}'
       methodName: result
       inputs: {kind: '${{ inputs.kind }}', expected: '${{ has(steps.prepared) && steps.prepared.status == "succeeded" && steps.prepared.outputs.state == "complete" ? ["export","prepare_target","cleanup_source","cleanup_transfer"]
           : has(steps.prepared) && steps.prepared.status == "succeeded" && steps.prepared.outputs.state == "resume" ? ["export","prepare_target","install","cleanup_source","cleanup_transfer"]

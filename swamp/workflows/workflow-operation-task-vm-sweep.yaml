@@ -148,7 +148,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-sweep-input'
-      behaviorName: ${{ "swp-format-"+run.id }}
+      behaviorName: '${{ "swp-format" }}'
       methodName: result
       inputs:
         provider: ${{ inputs.intent.provider }}
@@ -162,7 +162,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "swp-result-"+run.id }}
+      behaviorName: '${{ "swp-result" }}'
       methodName: execute
       inputs:
         run: 'printf ''%s\n'' "$RESULT"

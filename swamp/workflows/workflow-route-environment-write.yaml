@@ -71,7 +71,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/route-mutation-command'
-      behaviorName: ${{ "route-assets-" + run.id }}
+      behaviorName: '${{ "route-assets" }}'
       methodName: environment
       inputs:
         intent: ${{ inputs.intent.write }}
@@ -84,10 +84,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-prepare-assets-" + run.id }}
+      behaviorName: '${{ "route-ssh-prepare-assets-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: exec
       globalArgs: &id001
-        name: ${{ "route-ssh-" + run.id }}
+        name: '${{ "route-ssh-prepare-assets-" + string(inputs.intent.connection.nodeHost) }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -115,7 +115,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-copy-assets-" + run.id }}
+      behaviorName: '${{ "route-ssh-copy-assets-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: copy
       globalArgs: *id001
       inputs:
@@ -129,7 +129,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-write-" + run.id }}
+      behaviorName: '${{ "route-ssh-write-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -155,7 +155,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-cleanup-assets-" + run.id }}
+      behaviorName: '${{ "route-ssh-cleanup-assets-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -169,7 +169,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/route-mutation-command'
-      behaviorName: ${{ "route-result-" + run.id }}
+      behaviorName: '${{ "route-result" }}'
       methodName: environmentResult
       inputs:
         stdout: ${{ steps.write.outputs.stdout }}

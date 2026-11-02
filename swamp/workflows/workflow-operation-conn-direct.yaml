@@ -20,7 +20,7 @@ jobs:
         task:
           type: behavior
           behaviorType: "@nckrtl/conn-direct"
-          behaviorName: '${{ "conn-operation-" + string(inputs.operation_id) }}'
+          behaviorName: '${{ "conn-operation" }}'
           methodName: apply
           globalArgs:
             caFile: /usr/local/share/ca-certificates/orbit-root.crt

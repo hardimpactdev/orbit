@@ -52,7 +52,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-sweep-input'
-      behaviorName: ${{ "swp-assets-"+run.id }}
+      behaviorName: '${{ "swp-assets" }}'
       methodName: assets
       inputs:
         scope: ${{ inputs.intent.scope }}
@@ -61,7 +61,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-lifecycle-input'
-      behaviorName: ${{ "swp-cloud-api-"+run.id }}
+      behaviorName: '${{ "swp-cloud-api" }}'
       methodName: api_assets
       inputs: {}
     dependsOn:
@@ -73,7 +73,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "swp-cloud-inventory-"+run.id }}
+      behaviorName: '${{ "swp-cloud-inventory" }}'
       methodName: execute
       inputs:
         run: 'exec python3 -B "$SCRIPT"
@@ -92,7 +92,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-sweep-input'
-      behaviorName: ${{ "swp-plan-"+run.id }}
+      behaviorName: '${{ "swp-plan" }}'
       methodName: plan
       inputs:
         intent: ${{ inputs.intent }}
@@ -133,7 +133,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "swp-cloud-after-"+run.id }}
+      behaviorName: '${{ "swp-cloud-after" }}'
       methodName: execute
       inputs:
         run: 'exec python3 -B "$SCRIPT"
@@ -152,7 +152,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-sweep-input'
-      behaviorName: ${{ "swp-after-plan-"+run.id }}
+      behaviorName: '${{ "swp-after-plan" }}'
       methodName: plan
       inputs:
         intent: ${{ inputs.intent }}
@@ -166,7 +166,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-sweep-input'
-      behaviorName: ${{ "swp-format-"+run.id }}
+      behaviorName: '${{ "swp-format" }}'
       methodName: terminal
       inputs:
         observed_names: ${{ steps["after-plan"].outputs.observed_names }}
@@ -180,7 +180,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "swp-result-"+run.id }}
+      behaviorName: '${{ "swp-result" }}'
       methodName: execute
       inputs:
         run: 'printf ''%s\n'' "$RESULT"

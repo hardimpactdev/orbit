@@ -68,7 +68,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/node-certificate-assets'
-      behaviorName: ${{ "route-cert-assets-" + run.id }}
+      behaviorName: '${{ "route-cert-assets" }}'
       methodName: read
       inputs:
         node_id: ${{ inputs.intent.node_id }}
@@ -78,7 +78,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-node-ssh-" + run.id }}
+      behaviorName: '${{ "route-node-ssh-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: exec
       globalArgs: &id001
         name: ${{ "route-ssh-" + inputs.parent_run_id + "-" + string(inputs.intent.node_id) }}
@@ -109,7 +109,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-node-ssh-" + run.id }}
+      behaviorName: '${{ "route-node-ssh-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: copy
       globalArgs: *id001
       inputs:
@@ -127,7 +127,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-node-ssh-" + run.id }}
+      behaviorName: '${{ "route-node-ssh-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -149,7 +149,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/node-certificate-assets'
-      behaviorName: ${{ "route-cert-request-info-" + run.id }}
+      behaviorName: '${{ "route-cert-request-info" }}'
       methodName: requests
       inputs:
         leaves: ${{ inputs.intent.leaves }}
@@ -163,7 +163,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-node-ssh-" + run.id }}
+      behaviorName: '${{ "route-node-ssh-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: copy
       globalArgs: *id001
       inputs:
@@ -180,7 +180,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "certificate-sign-" + run.id }}
+      behaviorName: '${{ "certificate-sign" }}'
       methodName: execute
       inputs:
         run: /usr/bin/python3 -B "$ORBIT_CERTIFICATE_SIGN_SCRIPT"
@@ -200,7 +200,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/node-certificate-assets'
-      behaviorName: ${{ "route-cert-signature-" + run.id }}
+      behaviorName: '${{ "route-cert-signature" }}'
       methodName: signed
       inputs:
         leaves: ${{ inputs.intent.leaves }}
@@ -215,7 +215,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-node-ssh-" + run.id }}
+      behaviorName: '${{ "route-node-ssh-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -236,7 +236,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-node-ssh-" + run.id }}
+      behaviorName: '${{ "route-node-ssh-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -257,7 +257,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-node-ssh-" + run.id }}
+      behaviorName: '${{ "route-node-ssh-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -278,7 +278,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-node-ssh-" + run.id }}
+      behaviorName: '${{ "route-node-ssh-" + string(inputs.intent.connection.nodeHost) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -296,7 +296,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "route-cert-cleanup-requests-" + run.id }}
+      behaviorName: '${{ "route-cert-cleanup-requests" }}'
       methodName: execute
       inputs:
         run: /usr/bin/rm -f -- "$ORBIT_CERTIFICATE_REQUESTS_FILE"
@@ -311,7 +311,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/node-certificate-assets'
-      behaviorName: ${{ "route-cert-result-" + run.id }}
+      behaviorName: '${{ "route-cert-result" }}'
       methodName: result
       inputs:
         leaves: ${{ inputs.intent.leaves }}

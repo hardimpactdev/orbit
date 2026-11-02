@@ -51,7 +51,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-sweep-input'
-      behaviorName: ${{ "swp-assets-"+run.id }}
+      behaviorName: '${{ "swp-assets" }}'
       methodName: assets
       inputs:
         scope: ${{ inputs.intent.scope }}
@@ -60,7 +60,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "swp-incus-inventory-"+run.id }}
+      behaviorName: '${{ "swp-incus-inventory-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: script
       inputs:
         hosts: name:target
@@ -68,7 +68,7 @@ jobs:
         sudo: true
         script: ${{ steps.assets.outputs.script_body }}
       globalArgs: &id001
-        name: ${{ "swp-host-"+run.id }}
+        name: '${{ "swp-incus-inventory-" + string(inputs.intent.ssh_execution.target.host) }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -88,7 +88,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-sweep-input'
-      behaviorName: ${{ "swp-plan-"+run.id }}
+      behaviorName: '${{ "swp-plan" }}'
       methodName: plan
       inputs:
         intent: ${{ inputs.intent }}
@@ -116,7 +116,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "swp-incus-after-instances-"+run.id }}
+      behaviorName: '${{ "swp-incus-after-instances-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: script
       inputs:
         hosts: name:target
@@ -133,7 +133,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-sweep-input'
-      behaviorName: ${{ "swp-volume-plan-"+run.id }}
+      behaviorName: '${{ "swp-volume-plan" }}'
       methodName: plan
       inputs:
         intent: ${{ inputs.intent }}
@@ -160,7 +160,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "swp-incus-after-"+run.id }}
+      behaviorName: '${{ "swp-incus-after-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: script
       inputs:
         hosts: name:target
@@ -177,7 +177,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-sweep-input'
-      behaviorName: ${{ "swp-after-plan-"+run.id }}
+      behaviorName: '${{ "swp-after-plan" }}'
       methodName: plan
       inputs:
         intent: ${{ inputs.intent }}
@@ -191,7 +191,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-sweep-input'
-      behaviorName: ${{ "swp-format-"+run.id }}
+      behaviorName: '${{ "swp-format" }}'
       methodName: terminal
       inputs:
         observed_names: ${{ steps["after-plan"].outputs.observed_names }}
@@ -205,7 +205,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "swp-result-"+run.id }}
+      behaviorName: '${{ "swp-result" }}'
       methodName: execute
       inputs:
         run: 'printf ''%s\n'' "$RESULT"

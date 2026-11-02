@@ -28,10 +28,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      behaviorName: '${{ "maintenance-ssh-" + string(inputs.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: &id001
-        name: ${{ "maintenance-ssh-"+run.id }}
+        name: '${{ "maintenance-ssh-" + string(inputs.ssh_execution.target.host) }}'
         transport:
           kind: ssh
           user: ${{ inputs.ssh_execution.target.user }}
@@ -55,7 +55,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: ${{ "maintenance-input-"+run.id }}
+      behaviorName: '${{ "maintenance-input" }}'
       methodName: inspect
       inputs:
         place: ${{ inputs.place }}
@@ -69,7 +69,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      behaviorName: '${{ "maintenance-ssh-" + string(inputs.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -90,7 +90,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: ${{ "maintenance-input-"+run.id }}
+      behaviorName: '${{ "maintenance-input" }}'
       methodName: plan
       inputs:
         place: ${{ inputs.place }}
@@ -108,8 +108,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: ${{ "tm-release-"+run.id+"-target-"+string(self._index)
-        }}
+      behaviorName: '${{ "tm-release-target-" + string(self._index) }}'
       methodName: release
       inputs:
         manager: ${{ inputs.place.manager }}
@@ -130,7 +129,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: ${{ "maintenance-input-"+run.id }}
+      behaviorName: '${{ "maintenance-input" }}'
       methodName: age
       inputs:
         place: ${{ inputs.place }}
@@ -142,7 +141,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "maintenance-expo-fetch-"+run.id }}
+      behaviorName: '${{ "maintenance-expo-fetch" }}'
       methodName: execute
       inputs:
         run: 'curl --fail --silent --show-error --location --output "$EXPO_ARCHIVE"
@@ -162,7 +161,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "maintenance-expo-catalog-"+run.id }}
+      behaviorName: '${{ "maintenance-expo-catalog" }}'
       methodName: execute
       inputs:
         run: 'tar -xzOf "$EXPO_ARCHIVE" package/bundledNativeModules.json
@@ -180,7 +179,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: ${{ "maintenance-expo-validate-"+run.id }}
+      behaviorName: '${{ "maintenance-expo-validate" }}'
       methodName: expo
       inputs:
         place: ${{ inputs.place }}
@@ -196,7 +195,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "maintenance-expo-cleanup-"+run.id }}
+      behaviorName: '${{ "maintenance-expo-cleanup" }}'
       methodName: execute
       inputs:
         run: 'rm -f -- "$EXPO_ARCHIVE"
@@ -214,7 +213,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      behaviorName: '${{ "maintenance-ssh-" + string(inputs.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -239,7 +238,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      behaviorName: '${{ "maintenance-ssh-" + string(inputs.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -264,7 +263,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      behaviorName: '${{ "maintenance-ssh-" + string(inputs.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -288,7 +287,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      behaviorName: '${{ "maintenance-ssh-" + string(inputs.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -308,7 +307,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: ${{ "maintenance-input-"+run.id }}
+      behaviorName: '${{ "maintenance-input" }}'
       methodName: inspect
       inputs:
         place: ${{ inputs.place }}
@@ -322,7 +321,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      behaviorName: '${{ "maintenance-ssh-" + string(inputs.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -343,7 +342,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: ${{ "maintenance-input-"+run.id }}
+      behaviorName: '${{ "maintenance-input" }}'
       methodName: verify
       inputs:
         place: ${{ inputs.place }}
@@ -366,8 +365,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: ${{ "tm-release-"+run.id+"-changed-"+string(self._index)
-        }}
+      behaviorName: '${{ "tm-release-changed-" + string(self._index) }}'
       methodName: release
       inputs:
         manager: ${{ inputs.place.manager }}
@@ -388,7 +386,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: ${{ "maintenance-input-"+run.id }}
+      behaviorName: '${{ "maintenance-input" }}'
       methodName: age
       inputs:
         place: ${{ inputs.place }}
@@ -400,7 +398,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: ${{ "maintenance-input-"+run.id }}
+      behaviorName: '${{ "maintenance-input" }}'
       methodName: restore
       inputs:
         place: ${{ inputs.place }}
@@ -416,10 +414,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      behaviorName: '${{ "maintenance-ssh-" + string(inputs.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs:
-        name: ${{ "maintenance-ssh-"+run.id }}
+        name: '${{ "maintenance-ssh-" + string(inputs.ssh_execution.target.host) }}'
         transport:
           kind: ssh
           user: ${{ inputs.ssh_execution.target.user }}
@@ -449,10 +447,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      behaviorName: '${{ "maintenance-ssh-" + string(inputs.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs:
-        name: ${{ "maintenance-ssh-"+run.id }}
+        name: '${{ "maintenance-ssh-" + string(inputs.ssh_execution.target.host) }}'
         transport:
           kind: ssh
           user: ${{ inputs.ssh_execution.target.user }}
@@ -482,10 +480,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      behaviorName: '${{ "maintenance-ssh-" + string(inputs.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs:
-        name: ${{ "maintenance-ssh-"+run.id }}
+        name: '${{ "maintenance-ssh-" + string(inputs.ssh_execution.target.host) }}'
         transport:
           kind: ssh
           user: ${{ inputs.ssh_execution.target.user }}
@@ -514,7 +512,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: ${{ "maintenance-input-"+run.id }}
+      behaviorName: '${{ "maintenance-input" }}'
       methodName: inspect
       inputs:
         place: ${{ inputs.place }}
@@ -529,7 +527,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: ${{ "maintenance-input-"+run.id }}
+      behaviorName: '${{ "maintenance-input" }}'
       methodName: synchronized
       inputs:
         place: ${{ inputs.place }}
@@ -545,7 +543,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "maintenance-path-result-"+run.id }}
+      behaviorName: '${{ "maintenance-path-result" }}'
       methodName: execute
       inputs:
         run: 'printf ''%s\n'' ''{"verified":true}''

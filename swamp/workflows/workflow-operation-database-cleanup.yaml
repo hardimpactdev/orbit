@@ -24,7 +24,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-sqlite-command-assets'
-      behaviorName: ${{ "dbsm-" + run.id }}
+      behaviorName: '${{ "dbsm" }}'
       methodName: result
       inputs: {kind: '${{ inputs.kind }}', expected: [cleanup], steps: '${{ steps }}'}
   - name: accept_result

@@ -48,7 +48,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-cloud-input'
-      behaviorName: ${{ "cloud-input-"+run.id }}
+      behaviorName: '${{ "cloud-input" }}'
       methodName: read
       inputs:
         intent: ${{ inputs.intent }}
@@ -58,7 +58,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "cloud-"+run.id }}
+      behaviorName: '${{ "cloud" }}'
       methodName: execute
       inputs:
         run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" list
@@ -78,7 +78,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "cloud-"+run.id }}
+      behaviorName: '${{ "cloud" }}'
       methodName: execute
       inputs:
         run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" plans
@@ -98,7 +98,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-cloud-input'
-      behaviorName: ${{ "cloud-input-"+run.id }}
+      behaviorName: '${{ "cloud-input" }}'
       methodName: choose
       inputs:
         intent: ${{ inputs.intent }}
@@ -116,7 +116,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "cloud-"+run.id }}
+      behaviorName: '${{ "cloud" }}'
       methodName: execute
       inputs:
         run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" create
@@ -140,7 +140,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "cloud-"+run.id }}
+      behaviorName: '${{ "cloud" }}'
       methodName: execute
       inputs:
         run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" discover
@@ -163,7 +163,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-cloud-input'
-      behaviorName: ${{ "cloud-input-"+run.id }}
+      behaviorName: '${{ "cloud-input" }}'
       methodName: choose
       inputs:
         intent: ${{ inputs.intent }}
@@ -178,7 +178,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "cloud-"+run.id }}
+      behaviorName: '${{ "cloud" }}'
       methodName: execute
       inputs:
         run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" observe
@@ -199,7 +199,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-cloud-input'
-      behaviorName: ${{ "cloud-input-"+run.id }}
+      behaviorName: '${{ "cloud-input" }}'
       methodName: observe
       inputs:
         intent: ${{ inputs.intent }}
@@ -214,7 +214,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "cloud-"+run.id }}
+      behaviorName: '${{ "cloud" }}'
       methodName: execute
       inputs:
         run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" start
@@ -236,7 +236,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "cloud-"+run.id }}
+      behaviorName: '${{ "cloud" }}'
       methodName: execute
       inputs:
         run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" observe
@@ -260,7 +260,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-cloud-input'
-      behaviorName: ${{ "cloud-input-"+run.id }}
+      behaviorName: '${{ "cloud-input" }}'
       methodName: result
       inputs:
         intent: ${{ inputs.intent }}

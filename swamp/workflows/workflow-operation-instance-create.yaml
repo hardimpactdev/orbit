@@ -31,7 +31,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-dev-command'
-          behaviorName: '${{ "ic-assets-" + run.id }}'
+          behaviorName: '${{ "ic-assets" }}'
           methodName: create_assets
           inputs: {intent: '${{ inputs.intent }}'}
       # Prepare: refusals before the first write (account, destination, branch in use, origin, ownership marker).
@@ -42,10 +42,10 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ic-prepare-" + run.id }}'
+          behaviorName: '${{ "ic-prepare-" + string(inputs.intent.ssh_execution.target.host) }}'
           methodName: exec
           globalArgs: &ssh
-            name: '${{ "ic-ssh-" + run.id }}'
+            name: '${{ "ic-prepare-" + string(inputs.intent.ssh_execution.target.host) }}'
             transport:
               kind: ssh
               user: '${{ inputs.intent.ssh_execution.target.user }}'
@@ -66,7 +66,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ic-source-" + run.id }}'
+          behaviorName: '${{ "ic-source-" + string(inputs.intent.ssh_execution.target.host) }}'
           methodName: exec
           globalArgs: *ssh
           inputs:
@@ -83,7 +83,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ic-environment-" + run.id }}'
+          behaviorName: '${{ "ic-environment-" + string(inputs.intent.ssh_execution.target.host) }}'
           methodName: exec
           globalArgs: *ssh
           inputs:
@@ -101,7 +101,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ic-setup-" + run.id }}'
+          behaviorName: '${{ "ic-setup-" + string(inputs.intent.ssh_execution.target.host) }}'
           methodName: exec
           globalArgs: *ssh
           inputs:
@@ -138,7 +138,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-dev-command'
-          behaviorName: '${{ "ic-finish-" + run.id }}'
+          behaviorName: '${{ "ic-finish" }}'
           methodName: create_result
           inputs:
             intent: '${{ inputs.intent }}'

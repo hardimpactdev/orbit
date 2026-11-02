@@ -32,7 +32,7 @@ export function roleRemovalJobs(afterJob: string) {
       dependsOn: [dep(previous)],
       steps: [{ name, writes: true, ...placement, task: {
         ...task(method, extra),
-        ...(placement.forEach ? { behaviorName: expr('"cert-remove-" + run.id + "-" + string(self._index)') } : {}),
+        ...(placement.forEach ? { behaviorName: expr('"cert-remove-" + string(self.participant)') } : {}),
       } }],
     });
     return name + "_job";

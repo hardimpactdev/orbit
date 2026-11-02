@@ -90,7 +90,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-server-command-assets'
-      behaviorName: ${{ "database-user-assets-" + run.id }}
+      behaviorName: '${{ "database-user-assets" }}'
       methodName: read
       inputs:
         intent: ${{ inputs.intent }}
@@ -101,9 +101,9 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "database-user-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "database-user-" + string(inputs.intent.ssh.host) }}'
       globalArgs: &id002
-        name: ${{ "database-user-" + string(inputs.operation_id) }}
+        name: '${{ "database-user-" + string(inputs.intent.ssh.host) }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh.user }}
@@ -137,7 +137,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "database-user-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "database-user-" + string(inputs.intent.ssh.host) }}'
       globalArgs: *id002
       methodName: copy
       inputs:
@@ -170,7 +170,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "database-user-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "database-user-" + string(inputs.intent.ssh.host) }}'
       globalArgs: *id002
       methodName: exec
       inputs:
@@ -214,7 +214,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "database-user-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "database-user-" + string(inputs.intent.ssh.host) }}'
       globalArgs: *id002
       methodName: exec
       inputs:
@@ -242,9 +242,9 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "database-user-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "database-user-" + string(inputs.intent.ssh.host) }}'
       globalArgs:
-        name: ${{ "database-user-" + string(inputs.operation_id) }}
+        name: '${{ "database-user-" + string(inputs.intent.ssh.host) }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh.user }}
@@ -300,7 +300,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-server-command-assets'
-      behaviorName: ${{ "database-user-assets-" + run.id }}
+      behaviorName: '${{ "database-user-assets" }}'
       methodName: result
       inputs:
         completed: ${{ has(steps.grant) && has(steps.grant.outputs) && steps.grant.outputs.exitCode == 0 }}
@@ -317,7 +317,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "database-user-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "database-user-" + string(inputs.intent.ssh.host) }}'
       globalArgs: *id002
       methodName: exec
       inputs:

@@ -37,7 +37,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/instance-source-command'
-      behaviorName: ${{ "reg-inspect-assets-" + run.id }}
+      behaviorName: '${{ "reg-inspect-assets" }}'
       methodName: read
       inputs:
         action: inspect
@@ -51,10 +51,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "reg-filesystem-" + run.id }}
+      behaviorName: '${{ "reg-filesystem-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: script
       globalArgs: &id001
-        name: ${{ "instance-register-" + run.id }}
+        name: '${{ "reg-filesystem-" + string(inputs.intent.ssh_execution.target.host) }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -78,7 +78,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "reg-top-" + run.id }}
+      behaviorName: '${{ "reg-top-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -102,7 +102,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "reg-common-" + run.id }}
+      behaviorName: '${{ "reg-common-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -127,7 +127,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "reg-worktrees-" + run.id }}
+      behaviorName: '${{ "reg-worktrees-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -152,7 +152,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/instance-source-command'
-      behaviorName: ${{ "reg-origin-assets-" + run.id }}
+      behaviorName: '${{ "reg-origin-assets" }}'
       methodName: read
       inputs:
         action: origin
@@ -166,7 +166,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "reg-origin-" + run.id }}
+      behaviorName: '${{ "reg-origin-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: script
       globalArgs: *id001
       inputs:
@@ -182,7 +182,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "reg-branch-" + run.id }}
+      behaviorName: '${{ "reg-branch-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -206,7 +206,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "reg-commit-" + run.id }}
+      behaviorName: '${{ "reg-commit-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -231,7 +231,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "reg-default-" + run.id }}
+      behaviorName: '${{ "reg-default-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -256,7 +256,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/instance-source-command'
-      behaviorName: ${{ "reg-result-" + run.id }}
+      behaviorName: '${{ "reg-result" }}'
       methodName: result
       inputs:
         kind: ${{ inputs.kind }}
@@ -279,7 +279,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/instance-source-command'
-      behaviorName: ${{ "reg-protect-assets-" + run.id }}
+      behaviorName: '${{ "reg-protect-assets" }}'
       methodName: read
       inputs:
         action: protect_environment
@@ -293,7 +293,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "reg-protect-environment-" + run.id }}
+      behaviorName: '${{ "reg-protect-environment-" + string(inputs.intent.ssh_execution.target.host) }}'
       methodName: script
       globalArgs: *id001
       inputs:
