@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task + full intent as inputs, R1-R4, single-swamp-node; DECISIONS 1 (token at admission, vault.get; signing is the one step→Gateway call), 2 (DNS held), scope (Process/Schedule definitions, same-Node preview Route); database.clone merged in as a step; .env through the vault as in instance.create. docs/reference/instance-cloning.md.
+  %% Target design: ADR 0244 task + full intent as inputs, R1-R4, single-swamp-node; DECISIONS 1 (token at admission, vault.get; signing is the one step→Gateway call), scope (Process/Schedule definitions, same-Node preview Route); database.clone merged in as a step; .env through the vault as in instance.create. docs/reference/instance-cloning.md.
   %% status: draft
   %% command: instance:clone
   autonumber
@@ -105,10 +105,13 @@ sequenceDiagram
   %%> - installs the certificate and adds the Caddy site for `shop.com.prod.orbit` on Node 14
   %%> - same-Node work: Caddy on Node 14 serves the Instance home
   %%> - reloads Caddy; other sites keep serving
-  Note over N: open: Nick decides<br/>DNS hold · native-dns-takeover
-  %%> DNS:
-  %%> - private DNS publication for the preview domain is held
-  %%> - Nick decides whether Route kinds publish DNS
+  Note over SW: Publish preview DNS<br/>Node 1 over @swamp/ssh
+  %%> What it does:
+  %%> - adds `shop.com.prod.orbit` to private DNS, pointing at Node 14
+  %%> Order:
+  %%> - after the site serves, so the name only resolves when it works
+  %%> How:
+  %%> - over SSH from 209 to the VPN Node (Node 1), with the `swamp` role's key
   SW->>N: Check the clone<br/>commit, .env, Route answers
   %%> What it does:
   %%> - checks the checked-out commit and the `.env` file
