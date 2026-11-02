@@ -1,6 +1,7 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task; DECISIONS round 2 (websocket.sync: no polling step, Gateway closes the task from Reverb's own reports, R1 no run).
+  %% Target design: ADR 0244 task; DECISIONS R1 + round 2 websocket.sync (no polling step, the Gateway closes the task from Reverb's own reports, no run).
   %% status: draft
+  %% command: websocket:sync
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -8,19 +9,60 @@ sequenceDiagram
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant N as Reverb<br/>on websocket Node
-  CLI->>GW: websocket:sync<br/>{wait: 60}
+  CLI->>GW: websocket:sync<br/>--wait=60 --operation-key=KEY
+  %%> Command:
+  %%> - `orbit websocket:sync --wait=60`
+  %%> - syntax: `[--wait=SECONDS] [--operation-key=KEY] [--json]`
+  %%> Input:
+  %%> - `--wait`: how long the CLI follows the task, 0 to 3600 seconds; default 60
+  %%> - optionally an operation key, to retry the same sync
+  %%> What it does:
+  %%> - waits until every serving Reverb process has applied the current registry, without a restart
   Note over GW: Pin current registry<br/>revision 18 · R1, no run
+  %%> Requirements:
+  %%> - a Node has the `websocket` role
+  %%> What it does:
+  %%> - records task #5125 for the current registry revision 18
+  %%> - a pending app change does not block it, and separate syncs do not replace each other
+  %%> Why no Swamp run:
+  %%> - nothing has to be done on a Node; Reverb pulls and reports itself (R1)
   GW-->>CLI: 202 Accepted<br/>task #5125
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show` until `--wait` ends
   loop each Reverb reconcile, 30 s
-    N->>GW: Pull the registry<br/>Reverb reconcile
-    N->>GW: Report applied revision<br/>per process, epoch
+    N->>GW: Pull the registry<br/>full snapshot
+    %%> What it does:
+    %%> - every Reverb process fetches the full snapshot on its own 30-second reconcile
+    %%> - an unchanged revision answers `304`
+    N->>GW: Report applied revision<br/>per process and boot
+    %%> What it does:
+    %%> - each process reports the revision it applied, with its boot identity
+    %%> Why:
+    %%> - a report from an old boot cannot confirm a replacement process
   end
   alt every process applied 18
-    Note over GW: Close task, succeeded<br/>backend: applied
+    Note over GW: Close the task<br/>succeeded · backend applied
+    %%> Result:
+    %%> - every serving Reverb process runs revision 18 or later with the same apps
+    %%> - task #5125 succeeds
   else stale, superseded, timeout
-    Note over GW: Close task, failed<br/>websocket.registry_pending
+    Note over GW: Close the task, failed<br/>websocket.registry_pending
+    %%> When:
+    %%> - a serving process is stale or missing after 5 minutes
+    %%> Result:
+    %%> - task #5125 fails; the registry stays as saved
+    %%> Retry:
+    %%> - run the same command again after the fix
   end
   loop every 2 s until terminal or --wait
     CLI->>GW: operation:show #5125
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended or `--wait` has passed
+    %%> When `--wait` passes first:
+    %%> - the CLI exits non-zero; the task keeps waiting, and nothing is undone
     GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
   end

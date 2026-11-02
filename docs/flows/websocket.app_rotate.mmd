@@ -1,0 +1,74 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task; DECISIONS R1 + round 2 websocket.sync (no Swamp run, the Gateway closes the task from Reverb's own reports). docs/reference/websocket-apps.md.
+  %% status: draft
+  %% command: websocket:app:rotate
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant N as Reverb<br/>on websocket Node
+  CLI->>GW: websocket:app:rotate<br/>hauzer --force
+  %%> Command:
+  %%> - `orbit websocket:app:rotate hauzer --force`
+  %%> - syntax: `<name> [--force] [--operation-key=KEY] [--json]`
+  %%> Confirmation:
+  %%> - without `--force`, the CLI asks first; the default is No
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: New secret, revision 21<br/>R1: no run · task #5152
+  %%> Requirements:
+  %%> - the app exists and is not `gateway`
+  %%> What it does:
+  %%> - keeps the app key, generates a new secret and advances the credential generation
+  %%> - updates the stored environment of every Instance that uses the app
+  %%> - saves registry revision 21; all of this in one transaction
+  %%> - records task #5152, which waits for revision 21
+  %%> Why no Swamp run:
+  %%> - nothing has to be done on a Node; Reverb pulls the registry itself (R1)
+  %%> Not included:
+  %%> - writing the Instances' `.env` files and reloading them; run `env:sync` per Instance (`input.app.instance_rollout` lists them)
+  GW-->>CLI: 202 Accepted<br/>task #5152
+  %%> What you get:
+  %%> - the task number, at once; never the secret
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  loop each Reverb reconcile, 30 s
+    N->>GW: Pull the registry<br/>full snapshot, revision 21
+    %%> What it does:
+    %%> - every Reverb process fetches the full snapshot on its own 30-second reconcile
+    %%> - it then accepts only the new secret and closes that app's sockets with code `4201`
+    %%> - other apps keep their connections; Reverb does not restart
+    N->>GW: Report applied revision<br/>per process and boot
+    %%> What it does:
+    %%> - each process reports the revision and credential generation it applied, with its boot identity
+  end
+  alt every process applied 21
+    Note over GW: Close the task<br/>succeeded · old secret revoked
+    %%> Result:
+    %%> - no serving Reverb process accepts the old secret
+    %%> - task #5152 succeeds
+  else a later revision replaced it
+    Note over GW: Close the task, failed<br/>websocket.registry_superseded
+    %%> When:
+    %%> - another rotation or a destroy of the app came first
+    %%> Result:
+    %%> - task #5152 fails; the registry keeps its latest state
+  else no fresh report in 5 min
+    Note over GW: Close the task, failed<br/>websocket.registry_pending
+    %%> When:
+    %%> - a serving process is stale or missing
+    %%> Result:
+    %%> - task #5152 fails; the new secret stays stored, and an offline Instance cannot delay the revocation
+    %%> Retry:
+    %%> - run `websocket:sync` after the fix
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5152
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end

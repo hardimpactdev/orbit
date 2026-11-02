@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 native Swamp schedules, nothing installed on Nodes; DECISIONS Schedules (Nick 2026-11-02), R1-R3.
+  %% Target design: ADR 0244 native Swamp schedules, one Swamp workflow per Schedule (Nick 2026-11-02), nothing installed on Nodes; R1-R3.
   %% status: draft
   %% command: schedule:create
   autonumber
@@ -13,14 +13,15 @@ sequenceDiagram
   participant N as Target Node<br/>reached over ssh
   CLI->>GW: schedule:create report<br/>--instance=42 --calendar=@daily
   %%> Command:
-  %%> - `orbit schedule:create report --instance=42 --calendar=@daily --command='php artisan report:send' --timeout=600`
+  %%> - `orbit schedule:create report --instance=42 --calendar='0 3 * * *' --command='php artisan report:send' --timeout=600`
   %%> - syntax: `<name> (--node=ID | --instance=ID | --project=ID --for=production) --calendar=CALENDAR --command=COMMAND [--timeout=SECONDS] [--no-start] [--idempotency-key=KEY]`
   %%> Input:
   %%> - the name as the argument, unique for its Node or Instance
   %%> - exactly one owner: a Node, an Instance, or a Project definition
   %%> - the calendar, the command line and the timeout (default 3,600 seconds)
   %%> Calendar:
-  %%> - a cron expression, the format Swamp schedules use, for example `0 3 * * *`, or a shorthand such as `@hourly` or `@daily`
+  %%> - a cron expression, the format Swamp schedules use, for example `0 3 * * *`, a 6-field form with seconds such as `20 * * * * *`, or a shorthand such as `@hourly` or `@daily`
+  %%> - it fires in serve's time zone (UTC); a Swamp trigger carries no time zone
   %%> - existing systemd calendars are converted once during the migration
   %%> - optionally `--no-start`, to create the Schedule disabled
   %%> Who can call it:
@@ -40,33 +41,40 @@ sequenceDiagram
   %%> - only a Project Schedule definition is recorded (R1); the answer comes at once
   %%> - production preparation later copies it into a disabled Instance Schedule
   %%> Exception:
-  %%> - production's per-minute Laravel schedulers keep their systemd timer on the Node until the serve load and outage test passes (ADR 0244)
+  %%> - production's per-minute schedulers (`laravel-scheduler`, `powersync-health`) keep their systemd timer on the Node until the serve load and outage test passes (ADR 0244)
   %%> - all other Node and Instance Schedules are native Swamp schedules on 209
   GW->>SW: Store the command<br/>vault: schedule-command-7f3c…
   %%> What it does:
   %%> - pushes the command line to a Swamp vault key on 209 (R3)
   %%> Why:
-  %%> - the command is operator input; it never goes into trigger inputs, run inputs or step output
+  %%> - the command is operator input; it never goes into workflow files, run inputs or step output
+  GW->>SW: Create the workflow<br/>workflow.create schedule-7f3c…
+  %%> What it does:
+  %%> - creates one small Swamp workflow for this Schedule on serve (Node 209), then writes its content with `workflow.edit`
+  %%> - its one step calls the shared `task-command-run` as a nested workflow
+  %%> - nothing is installed on Node 12; there is no Node work, so no run starts (R1)
+  %%> Fixed inside:
+  %%> - the full intent: Schedule 7f3c…, Node 12's address and SSH host keys, the user, the working directory, the shell and the timeout
+  %%> - the command's vault key name, never the command itself
+  %%> Stored:
+  %%> - in serve's `workflows/` directory beside the checked-in workflows; a release load keeps it
+  %%> - the Gateway's Schedule record stays the source; an identical create writes it again
   opt not created disabled
-    GW->>SW: Publish the trigger<br/>workflow.trigger.set
+    GW->>SW: Set its trigger<br/>workflow.trigger.set
     %%> What it does:
-    %%> - sets a native Swamp schedule trigger on serve (Node 209) for the workflow `task-command-run`
-    %%> - nothing is installed on Node 12; there is no Node work, so no run starts (R1)
-    %%> Inputs:
-    %%> - the calendar
-    %%> - the full intent: Schedule 7f3c…, Node 12's address and SSH host keys, the user, the working directory, the shell and the timeout
-    %%> - the command's vault key name, never the command itself
+    %%> - sets the cron trigger of `schedule-7f3c…` on serve
     %%> When:
-    %%> - skipped with `--no-start`; `schedule:enable` publishes it later
+    %%> - skipped with `--no-start`; `schedule:enable` sets it later
   end
   alt Swamp confirms
-    SW-->>GW: trigger set<br/>next fire 03:00
+    SW-->>GW: workflow and trigger set<br/>next fire 03:00
     %%> Returns:
-    %%> - the trigger is active, with its next fire time
+    %%> - the workflow exists and its trigger is active, with its next fire time
     GW-->>CLI: Schedule created<br/>active · next fire 03:00
     %%> Result:
     %%> - Schedule 7f3c… becomes active, only after Swamp confirms
-    %%> - with `--no-start`: active and disabled, with no next fire and no trigger
+    %%> - with `--no-start`: active and disabled, with no trigger
+    %%> - task #5140 is recorded as succeeded at once (R1)
     %%> What you get:
     %%> - the Schedule and its next fire, at once; there is nothing to follow
   else Swamp refuses or is down
@@ -76,19 +84,22 @@ sequenceDiagram
     Note over GW: Mark the Schedule failed<br/>rerun the same create
     %%> Result:
     %%> - Schedule 7f3c… stays recorded, marked failed, with its error code
-    %%> - the vault key stays; it holds no state on a Node
+    %%> - the vault key and a created workflow without a trigger may stay; they start nothing
     %%> Retry:
-    %%> - run the same command again; an identical create publishes the trigger again
+    %%> - run the same command again; an identical create writes the workflow and its trigger again
     GW--xCLI: create failed<br/>schedule.calendar_invalid or 503
     %%> Returns:
     %%> - `schedule.calendar_invalid` (422) for a refused calendar
     %%> - `swamp.schedule_publish_unavailable` (503) when serve does not answer
   end
   loop each calendar fire
-    Note over SW: Start a root run<br/>task-command-run
+    Note over SW: Start a root run<br/>schedule-7f3c…
     %%> What it does:
-    %%> - serve fires the trigger and starts one root run on 209
-    %%> - the run has the Schedule's timeout as its time budget
+    %%> - serve fires the trigger and starts one root run of `schedule-7f3c…` on 209
+    %%> - its step runs `task-command-run` with the fixed intent, within the Schedule's timeout
+    %%> Timing:
+    %%> - serve runs up to 4 scheduled runs at once; a fire can start late when all are busy
+    %%> - a Schedule never overlaps itself; a fire due while the last one runs waits
     SW->>N: Run the command<br/>@swamp/ssh, as the Schedule's user
     %%> How:
     %%> - checks the user and the working directory on Node 12
@@ -98,11 +109,11 @@ sequenceDiagram
     N-->>SW: exit code, output
     %%> Returns:
     %%> - the exit code; the output stays in the Swamp step
-    SW-->>GW: Run finished<br/>terminal event
+    SW-->>GW: Run started, finished<br/>commit feed
     %%> How the Gateway learns it:
-    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    %%> - its shared run reader sees the root run start and end; Swamp never calls the Gateway
     Note over GW: Record the fire<br/>task #5141 · trigger: schedule
     %%> Result:
-    %%> - each fire becomes a task, with trigger `schedule`
-    %%> - `last_run_at` and `last_run_status` of Schedule 7f3c… are set
+    %%> - each fire becomes a task, with trigger `schedule`, recorded when it starts
+    %%> - `last_run_at` and `last_run_status` of Schedule 7f3c… are set when it ends
   end

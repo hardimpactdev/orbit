@@ -24,7 +24,7 @@ class SqliteNative(DatabaseCommands):
  fail=unittest.TestCase.fail
  def setUp(self):
   super().setUp()
-  self.prepare_commands(['workflow-database-sqlite-export.yaml','workflow-database-sqlite-seed.yaml','workflow-database-sqlite-action.yaml','workflow-operation-database-sqlite-export.yaml','workflow-operation-database-sqlite-seed.yaml','workflow-operation-database-cleanup.yaml'])
+  self.prepare_commands(['workflow-database-sqlite-seed.yaml','workflow-database-sqlite-action.yaml','workflow-operation-database-sqlite-export.yaml','workflow-operation-database-sqlite-seed.yaml','workflow-operation-database-cleanup.yaml'])
   for name in ('sqlite_input.ts','cleanup_contract.ts'):shutil.copy(ROOT/'extensions/behaviors/operations/database'/name,self.repo/'extensions/behaviors/operations/database'/name)
   fake=self.repo/'fixture-ssh';fake.write_text('#!'+sys.executable+'\n'+'''import json,os,shlex,subprocess,sys,time
 from pathlib import Path
@@ -58,13 +58,11 @@ else:shutil.copy2(source,target)
   subprocess.run(['/usr/bin/sudo','-n','--','/usr/bin/python3','-B',str(script/'sqlite_actions.py'),'seedTarget','120'],input=json.dumps(target),capture_output=True,text=True)
   subprocess.run(['/usr/bin/sudo','-n','--','/usr/bin/python3','-B',str(script/'sqlite_source_cleanup.py'),json.dumps(self.intent)],capture_output=True,text=True)
  def run_kind(self,kind,success=True,flags=()):
-  self.public['kind']=kind;name={'database.sqlite_export':'operation-database-sqlite-export','database.sqlite_seed':'operation-database-sqlite-seed','database.sqlite_cleanup':'operation-database-cleanup'}[kind]
+  self.public['kind']=kind;name={'database.sqlite_seed':'operation-database-sqlite-seed','database.sqlite_cleanup':'operation-database-cleanup'}[kind]
   self.cli('workflow','validate',name);run=reply(self.cli('workflow','run',name,'--input',json.dumps(self.public),*flags,success=success).stdout);self.assertNotIn('private-sqlite-native-sentinel',json.dumps(self.history(run)));return run
  def action_names(self):return[x['action']for x in self.calls()]
  def test_cleanup_absent_clone_uses_no_vault_and_returns_absent(self):
   self.public['intent']={'cleanup':{'variant':'clone','directory':'/tmp/orbit-sqlite-clone-'+uuid.uuid4().hex},'source_ssh':self.intent['source_ssh']};run=self.run_kind('database.sqlite_cleanup');self.assertEqual(self.outcome(run),{'backend':'absent'});self.assertEqual(self.action_names(),['sqlite_cleanup'])
- def test_export_retains_native_private_file_and_cleans_source(self):
-  self.intent.pop('target');self.intent.pop('target_ssh');self.public['node_id']=9;run=self.run_kind('database.sqlite_export');self.assertEqual(self.outcome(run)['backend'],'active');self.assertEqual(self.outcome(run)['bytes'],self.db.stat().st_size);self.assertFalse(Path(self.source_desc['snapshot_path']).exists());raws=[p for p in(self.repo/'.swamp/data').rglob('raw')if b'private-sqlite-native-sentinel'in p.read_bytes()];self.assertEqual(len(raws),1)
  def test_seed_real_database_and_terminal_resume_never_replays_effect(self):
   marker=self.repo/'delivery';marker.touch();w=self.workflows['workflow-operation-database-sqlite-seed.yaml'];w['jobs'][-1]['steps'].append({'name':'delivery','dependsOn':[{'step':'accept_result','condition':{'type':'succeeded'}}],'task':{'type':'behavior','behaviorType':'command/shell','behaviorName':'fixture-delivery','methodName':'execute','inputs':{'run':'test ! -e '+str(marker)}}});self.save();first=self.run_kind('database.sqlite_seed',False);marker.unlink();before=self.calls();self.cli('workflow','resume','operation-database-sqlite-seed','--run',first['id']);self.assertEqual(self.calls(),before);self.assertEqual(self.outcome(first),{'backend':'active'});
   with contextlib.closing(sqlite3.connect(self.target/'db.sqlite'))as db:self.assertEqual(db.execute('SELECT v FROM proof').fetchone(),('private-sqlite-native-sentinel',))

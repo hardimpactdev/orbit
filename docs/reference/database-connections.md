@@ -144,7 +144,7 @@ A [production clone with a SQLite snapshot](/reference/instance-cloning#sqlite-s
 
 ### SQLite snapshots
 
-Standalone SQLite export, seed, seed abandonment and cleanup run as native workflows on Node 209 through official SSH. The Gateway supplies public source and target descriptors plus captured SSH identities and pins; these kinds need no vault execution copy.
+Standalone SQLite seed, seed abandonment and cleanup run as native workflows on Node 209 through official SSH. The Gateway supplies public source and target descriptors plus captured SSH identities and pins; these kinds need no vault execution copy.
 
 Seed uses separate snapshot, target preparation, transfer and installation steps. The target checks the exact size, SQLite integrity and digest before installation. Independent cleanup removes source and transfer scratch after started work. Failed or cancelled seed work also clears its target scratch without deleting an installed database. Seed abandonment removes only its recorded attempt. Terminal projection resumes without another completed effect. Native tests cover file ownership, replay, refusal and cleanup; Gateway tests cover input capture and bounded record changes.
 

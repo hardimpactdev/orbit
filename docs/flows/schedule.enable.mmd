@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 native Swamp schedules, nothing installed on Nodes; DECISIONS Schedules (Nick 2026-11-02), R1.
+  %% Target design: ADR 0244 native Swamp schedules, one Swamp workflow per Schedule (Nick 2026-11-02), nothing installed on Nodes; R1.
   %% status: draft
   %% command: schedule:enable
   autonumber
@@ -20,23 +20,21 @@ sequenceDiagram
   %%> When:
   %%> - after `schedule:create --no-start`, or for a copy that production preparation created disabled
   %%> Disable:
-  %%> - there is no `schedule:disable` command or kind today
-  %%> - disable is the same flow in reverse: the Gateway removes the trigger and records `disabled`, with no run and no Node work (R1)
-  %%> - a fire that already started finishes, and its result is still recorded
+  %%> - `schedule:disable` is the same flow in reverse; see its own chart
   Note over GW: Validate the Schedule<br/>Schedule 7f3c… · Instance 42
   %%> Requirements:
   %%> - your Node has an access grant to Node 12, which runs Instance 42
   %%> - Schedule 7f3c… is active, not failed or removing
+  %%> - its trigger is native; a per-minute production scheduler keeps its Node timer, and enable starts that timer as before
   %%> - Instance 42 is still on Node 12
   %%> Already enabled:
   %%> - the trigger is set again; enable is idempotent
-  GW->>SW: Publish the trigger<br/>workflow.trigger.set
+  GW->>SW: Set its trigger<br/>workflow.trigger.set
   %%> What it does:
-  %%> - sets the native Swamp schedule trigger on serve (Node 209) for `task-command-run`
+  %%> - sets the cron trigger of the Schedule's own workflow `schedule-7f3c…` on serve (Node 209)
   %%> - there is no Node work, so no run starts (R1)
   %%> Inputs:
-  %%> - the calendar and the full intent recorded at create
-  %%> - the command's vault key name, never the command
+  %%> - the workflow name and the calendar; the intent stays fixed inside the workflow
   alt Swamp confirms
     SW-->>GW: trigger set<br/>next fire 03:00
     %%> Returns:
@@ -44,6 +42,7 @@ sequenceDiagram
     Note over GW: Record result<br/>desired state: enabled
     %%> Result:
     %%> - Schedule 7f3c… is recorded as enabled, only after Swamp confirms
+    %%> - task #5140 is recorded as succeeded at once (R1)
     GW-->>CLI: Schedule enabled<br/>next fire 03:00
     %%> What you get:
     %%> - the result at once; there is nothing to follow
@@ -61,10 +60,12 @@ sequenceDiagram
     %%> - the error code; the Schedule is unchanged
   end
   loop each calendar fire
-    Note over SW: Start a root run<br/>task-command-run
+    Note over SW: Start a root run<br/>schedule-7f3c…
     %%> What it does:
-    %%> - serve fires the trigger and starts one root run on 209
-    %%> - the run has the Schedule's timeout as its time budget
+    %%> - serve fires the trigger and starts one root run of `schedule-7f3c…` on 209
+    %%> - its step runs `task-command-run` with the fixed intent, within the Schedule's timeout
+    %%> Timing:
+    %%> - serve runs up to 4 scheduled runs at once; a fire can start late when all are busy
     SW->>N: Run the command<br/>@swamp/ssh, as the Schedule's user
     %%> How:
     %%> - checks the user and the working directory on Node 12
@@ -74,11 +75,11 @@ sequenceDiagram
     N-->>SW: exit code, output
     %%> Returns:
     %%> - the exit code; the output stays in the Swamp step
-    SW-->>GW: Run finished<br/>terminal event
+    SW-->>GW: Run started, finished<br/>commit feed
     %%> How the Gateway learns it:
-    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    %%> - its shared run reader sees the root run start and end; Swamp never calls the Gateway
     Note over GW: Record the fire<br/>task #5141 · trigger: schedule
     %%> Result:
-    %%> - each fire becomes a task, with trigger `schedule`
+    %%> - each fire becomes a task, with trigger `schedule`, recorded when it starts
     %%> - `last_run_at` and `last_run_status` of Schedule 7f3c… are set
   end

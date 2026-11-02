@@ -1,0 +1,103 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, Recall analytics-plausible-via-swamp (disable keeps the Plausible site), DECISIONS 2 (DNS hold), R1-R4. docs/reference/analytics.md.
+  %% status: draft
+  %% command: instance:analytics:disable
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Node 12<br/>serves the host
+  CLI->>GW: instance:analytics:disable<br/>42 --yes
+  %%> Command:
+  %%> - `orbit instance:analytics:disable 42 --yes`
+  %%> - syntax: `<instance> [--yes] [--json]`
+  %%> Confirmation:
+  %%> - without `--yes`, the CLI asks first; the default is No
+  %%> - without a terminal, or with `--json`, `--yes` is required (`input.confirmation_required`)
+  %%> What it does:
+  %%> - removes every tracking host of Instance 42; Plausible keeps the site and its history
+  Note over GW: Validate, find the hosts<br/>Instance lock
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12
+  %%> - no other analytics or Route change runs for Instance 42; the Gateway holds one lock
+  %%> Decides:
+  %%> - whether any tracking host exists
+  alt Instance has no hosts
+    Note over GW: Nothing to remove<br/>R1: no run
+    %%> Result:
+    %%> - nothing changes; no Swamp run starts (R1)
+    GW-->>CLI: Analytics disabled<br/>no hosts
+    %%> What you get:
+    %%> - the final result at once; there is nothing to follow
+  else hosts exist
+    GW->>SW: Start run, full intent<br/>operation-analytics-disable
+    %%> What it does:
+    %%> - records task #5127 and starts one Swamp run on serve (Node 209)
+    %%> Inputs:
+    %%> - the tracking sites and certificates to remove, and their DNS records
+    %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
+    %%> Not included:
+    %%> - Plausible credentials; disable does not call Plausible
+    GW-->>CLI: 202 Accepted<br/>task #5127
+    %%> What you get:
+    %%> - the task number, at once
+    %%> Next:
+    %%> - the CLI follows the task with `operation:show`
+    SW->>N: Withdraw tracking sites<br/>validate · caddy reload
+    %%> How:
+    %%> - over SSH from 209 with `@swamp/ssh`
+    %%> What it does:
+    %%> - removes only the tracking sections; other sites stay; validates, then reloads Caddy without a restart
+    Note over SW: Remove private DNS<br/>open: Nick decides (DNS hold)
+    %%> What it does:
+    %%> - removes the hosts' private DNS records and waits the 31-second grace
+    %%> Open:
+    %%> - the DNS hold (`native-dns-takeover-held`) is in force; Nick decides how Route DNS is published
+    SW->>N: Remove unused certificates<br/>checks loaded Caddy first
+    %%> When:
+    %%> - only on a Router; tracking hosts on a Node-scoped Route have no Orbit certificate
+    %%> What it does:
+    %%> - deletes a tracking certificate only when the loaded Caddy config no longer uses it
+    SW->>N: Check the hosts are gone<br/>caddy config · no tracking site
+    %%> What it does:
+    %%> - reads the loaded Caddy config and checks no tracking site remains
+    alt every step passes
+      N-->>SW: no tracking sites
+      %%> Returns:
+      %%> - the check passed
+      SW-->>GW: Run succeeded<br/>terminal event
+      %%> How the Gateway learns it:
+      %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+      Note over GW: Delete tracking Routes<br/>binding gone · task succeeded
+      %%> Result:
+      %%> - the tracking Routes and the site binding are deleted
+      %%> - the Plausible site, its history and its goals stay
+      %%> - task #5127 succeeds
+    else a step fails
+      N--xSW: exit ≠ 0 or site remains
+      %%> When:
+      %%> - Caddy refuses the config, SSH fails, or a tracking site is still loaded
+      SW--xGW: Run failed<br/>error_code, failed step
+      %%> The Gateway reads:
+      %%> - which step failed and its error code
+      Note over GW: Keep Routes, mark failed<br/>task failed · rerun after a fix
+      %%> Result:
+      %%> - the tracking Routes and the site binding stay, marked failed; task #5127 fails
+      %%> On the Node:
+      %%> - sections already withdrawn stay withdrawn; there is no rollback
+      %%> Retry:
+      %%> - run the same command again; it skips what is already gone
+    end
+    loop every 2 s until terminal
+      CLI->>GW: operation:show #5127
+      %%> What it does:
+      %%> - asks for the task's status every 2 seconds until it has ended
+      GW-->>CLI: status + result
+      %%> Returns:
+      %%> - the current status, and the result once the task has ended
+    end
+  end

@@ -30,7 +30,10 @@ sequenceDiagram
   %%> - the same intent a calendar fire gets: user, working directory, shell, timeout and command
   GW->>SW: Start run, full intent<br/>task-command-run
   %%> What it does:
-  %%> - starts one root run on serve (Node 209), the same workflow a calendar fire starts
+  %%> - starts one root run of `task-command-run` on serve (Node 209), the workflow each calendar fire of `schedule-7f3c…` runs nested
+  %%> Why not `schedule-7f3c…` itself:
+  %%> - its inputs are fixed and carry no task number; the task's own run carries it, so the Gateway projects it like any task
+  %%> - every root run of `schedule-7f3c…` is then a calendar fire
   %%> Inputs:
   %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
   %%> - the user, the working directory, the shell and the timeout
@@ -40,21 +43,27 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
+  Note over SW: Read the check script<br/>@nckrtl/task-command-assets
+  %%> What it does:
+  %%> - reads the shipped check script on 209, to send it over SSH in argv
   SW->>N: Check user and directory<br/>@swamp/ssh · getent, test -d
   %%> What it does:
-  %%> - checks that the Schedule's user exists on Node 12
-  %%> - checks that the working directory exists, for example the Instance's application directory
+  %%> - checks that the Schedule's user exists on Node 12, with its home, shell and group
+  %%> - checks that the user can enter the working directory, for example the Instance's application directory
+  %%> - checks the command's hash against the recorded one, with the command on stdin
   %%> Why:
   %%> - the command fails early with a clear error instead of half-running
   SW->>N: Run the command<br/>sudo -u user, timeout, stdin
   %%> How:
-  %%> - reads the command with `vault.get` and checks its hash against the recorded one
-  %%> - sends it to Node 12 on stdin, never in argv
+  %%> - reads the command with `vault.get` and sends it to Node 12 on stdin, never in argv
   %%> Runs as:
   %%> - the Schedule's user, in its working directory, with its shell
   %%> - production Instances resolve `current` at start, so a new release changes later runs
   %%> Timeout:
   %%> - the Schedule's timeout is the run's time budget
+  Note over SW: Report the result<br/>error_code of the failed step
+  %%> What it does:
+  %%> - prints the public result on 209: ready, or `schedule.target_unavailable`, `schedule.artifact_conflict` or `schedule.run_failed`
   alt exit 0 in time
     N-->>SW: exit 0, output
     %%> Returns:

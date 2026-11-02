@@ -4,7 +4,7 @@ queueTimeout: 30
 description: Admitted SQLite actions through official SSH from Node 209; native recovery and public terminal projection.
 writes: true
 vaults: []
-inputs: {type: object, properties: {operation_id: {type: integer, minimum: 1}, node_id: {type: integer, minimum: 1}, kind: {type: string, enum: [database.sqlite_export, database.sqlite_seed,
+inputs: {type: object, properties: {operation_id: {type: integer, minimum: 1}, node_id: {type: integer, minimum: 1}, kind: {type: string, enum: [database.sqlite_seed,
         database.sqlite_cleanup]}, intent: {type: object}, execution_secrets: {type: object, additionalProperties: false}, action: {type: string, enum: [
         source_export, source_cleanup, target_prepare, target_install, target_recover, cleanup]}, snapshot: {type: object}}, required: [operation_id, node_id, kind, intent, execution_secrets,
     action], additionalProperties: false}
