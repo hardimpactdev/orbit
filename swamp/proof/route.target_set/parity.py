@@ -23,7 +23,7 @@ caddyfile = target("cat", "/etc/caddy/Caddyfile").stdout
 site = caddyfile.split(f"https://{domain} {{", 1)
 check(len(site) == 2, "the Caddy site still serves the domain")
 block = site[1].split("\n}\n", 1)[0]
-check("n-" + run in block, "the site's root is the new Instance's checkout")
+check("n-" + run in block, "the site's root is the new Instance's checkout:\n" + block)
 check("o-" + run not in block, "the site no longer names the old Instance's checkout")
 listen = target("ss", "-ltnH", "sport = :443").stdout.split()[3]
 handshake = target("openssl", "s_client", "-connect", listen, "-servername", domain, "-verify_hostname", domain, "-verify_return_error", "-CAfile", ROOT)
