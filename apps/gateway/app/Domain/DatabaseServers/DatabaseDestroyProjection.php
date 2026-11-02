@@ -6,6 +6,7 @@ namespace App\Domain\DatabaseServers;
 
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
@@ -22,19 +23,26 @@ final readonly class DatabaseDestroyProjection implements DirectOperationProject
 {
     public function input(Operation $operation): array
     {
-        $input = array_intersect_key($operation->input, array_flip(['driver', 'container', 'host', 'port', 'default_open', 'databases', 'users', 'test_prefixes', 'owners']));
+        $input = $operation->input;
         app(DatabaseDestroySafety::class)->assertNames(ValidatedData::stringList($input['databases'] ?? []), ValidatedData::stringList($input['test_prefixes'] ?? []));
-        $input['owners'] = (object) ($input['owners'] ?? []);
         if (app(DatabaseIntentSource::class)->ownerId($operation) === null) {
             throw new ResourceOperationException('database.destroy_intent_invalid', 'The removal belongs to another resource or Node.', 422);
         }
-        $input['ssh_execution'] = app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($operation->node_id));
-        $admin = ['vault' => 'orbit-control-inputs', 'key' => "database-server-{$operation->target_id}-admin"];
-        if (! $operation->status->terminal()) {
-            $admin = DatabaseServerAdminSecret::copy(DatabaseServer::query()->findOrFail($operation->target_id));
+        $server = DatabaseServer::query()->findOrFail($operation->target_id);
+        $driver = DatabaseDriver::from(ValidatedData::string($input['driver']));
+        $login = "/run/orbit-database-destroy-{$operation->id}.env";
+        $secrets = [];
+        if ($driver !== DatabaseDriver::Pgsql) {
+            $secrets['client_env'] = $operation->status->terminal()
+                ? ['vault' => 'orbit-control-inputs', 'key' => "database-server-{$server->id}-client-env"]
+                : DatabaseServerAdminSecret::clientEnvCopy($server);
         }
 
-        return ['intent' => $input, 'execution_secrets' => ['admin' => $admin]];
+        return ['intent' => ['driver' => $driver->value, 'container' => ValidatedData::string($input['container']), 'login' => $login,
+            'client' => DatabaseStatements::client($driver, ValidatedData::string($input['container']), $login),
+            'statements' => ValidatedData::object($input['statements']),
+            'ssh_execution' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($operation->node_id))],
+            'execution_secrets' => $secrets];
     }
 
     public function apply(Operation $operation, array $data): Operation

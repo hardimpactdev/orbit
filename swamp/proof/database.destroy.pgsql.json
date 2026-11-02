@@ -42,16 +42,16 @@
   },
   "phases": [
     {
-      "name": "Read the scripts",
+      "name": "Check for blockers",
       "job": "destroy",
-      "step": "Read the scripts",
-      "budget_seconds": 30
+      "step": "Check for blockers",
+      "budget_seconds": 60
     },
     {
       "name": "Drop databases and users",
       "job": "destroy",
       "step": "Drop databases and users",
-      "budget_seconds": 120
+      "budget_seconds": 60
     },
     {
       "name": "Check they are gone",
@@ -63,7 +63,7 @@
       "name": "Report the result",
       "job": "destroy",
       "step": "Report the result",
-      "budget_seconds": 30
+      "budget_seconds": 60
     }
   ],
   "parity": [
