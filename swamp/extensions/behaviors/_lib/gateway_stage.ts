@@ -603,6 +603,8 @@ function scriptProducts(job: Job, result: Record<string, unknown>, args: StageAr
 }
 
 /** Map a succeeded operation's result to the factory products of its stage. */
+const RETRY_LATER = ["operation.target_busy", "tasks.capacity_unavailable"];
+
 async function products(job: Job, op: Record<string, unknown>, http: Http, args: StageArgs): Promise<Pick<Job, "artifacts" | "evidence"> & { state?: Job["state"]; lastError?: string }> {
   const result = (op.result ?? {}) as Record<string, unknown>;
   const ev = (extra: Record<string, unknown> = {}) => ({ status: "succeeded", runId: String(job.operationId), operationId: job.operationId, ...extra });
@@ -1009,7 +1011,8 @@ async function runOperationStage(args: StageArgs, deps: Deps): Promise<Job> {
         ...current, operationId: Number(op.id), operationStatus: String(op.status), launches: current.launches + 1,
         launchedNow: true, lastError: null, nextReadAt: nextRead(clock(), op.poll_after_seconds),
       };
-    } else if (r.status === 409 && (r.body?.error as { code?: string } | undefined)?.code === "operation.target_busy") {
+    } else if (r.status === 409 && RETRY_LATER.includes(String((r.body?.error as { code?: string } | undefined)?.code))) {
+      // Busy target or no VM capacity yet: the same key is tried again on the next look.
       current = { ...current, lastError: errorCode(r) };
     } else if (r.status >= 400 && r.status < 500) {
       current = await withGroupOutcome(

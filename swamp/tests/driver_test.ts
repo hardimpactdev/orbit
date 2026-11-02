@@ -161,6 +161,9 @@ Deno.test("start begins exactly one work item in the driver's factory on the wor
   };
   await behavior.methods.start.execute({ workItem: "tg-2314" }, context);
   assertEquals(calls, [{ definition: "orbit-groups", method: "start", arguments: { workItem: "tg-2314" } }]);
+  const active = { ...context, queryData: recordQuery(() => Promise.resolve([{ status: "active" }])) };
+  await behavior.methods.start.execute({ workItem: "tg-2314" }, active);
+  assertEquals(calls.length, 1, "an active work item is not started again");
   const refused = { ...context, invokeModel: () => Promise.resolve({ ok: false, error: { message: "already started" } }) };
   let failed = false;
   await behavior.methods.start.execute({ workItem: "tg-2314" }, refused).catch(() => (failed = true));

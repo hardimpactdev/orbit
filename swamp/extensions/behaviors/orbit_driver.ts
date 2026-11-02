@@ -452,7 +452,7 @@ async function step(ctx: Ctx, workItem: string, killAt?: string): Promise<{ stat
 
 export const behavior = {
   type: "@nckrtl/orbit-driver",
-  version: "2026.11.02.2",
+  version: "2026.11.02.3",
   globalArguments: GlobalArgsSchema,
   resources: {
     launch: {
@@ -478,7 +478,9 @@ export const behavior = {
         rawCtx: Omit<Ctx, "definitionName"> & { definition: { name: string } },
       ) => {
         const ctx = Object.assign(rawCtx, { definitionName: rawCtx.definition.name }) as unknown as Ctx;
-        await call(ctx, ctx.globalArgs.factory, "start", { workItem: args.workItem });
+        // A repeated start of an active work item is a no-op, so group-start still supervises it.
+        const state = await latest<{ status?: string }>(ctx, ctx.globalArgs.factory, `state-${args.workItem}`);
+        if (state?.status !== "active") await call(ctx, ctx.globalArgs.factory, "start", { workItem: args.workItem });
         return { dataHandles: [] };
       },
     },

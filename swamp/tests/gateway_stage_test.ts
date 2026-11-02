@@ -211,6 +211,10 @@ Deno.test("a busy target keeps the stage running, a refusal fails it", async () 
   const b = await runStage(args("provision"), harness().deps(busy.http));
   assertEquals(b.state, "running");
   assertStringIncludes(b.lastError!, "target_busy");
+  const full = fakeGateway({ start: () => ({ status: 409, body: { error: { code: "tasks.capacity_unavailable", message: "waiting for recipe images" } } }) });
+  const c = await runStage(args("provision"), harness().deps(full.http));
+  assertEquals(c.state, "running", "no VM capacity yet waits; the same key is tried again");
+  assertEquals(c.evidence, null);
   const refused = fakeGateway({ start: () => ({ status: 409, body: { error: { code: "tasks.not_todo" } } }) });
   const r = await runStage(args("provision"), harness().deps(refused.http));
   assertEquals(r.state, "failed");
