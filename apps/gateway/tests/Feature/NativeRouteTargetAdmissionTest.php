@@ -92,6 +92,26 @@ it('moves a published development site in the one publish step, with no access c
         ->and([$plan['stage']['site_nodes'], $plan['router']['site_nodes'], $plan['retire_nodes'], $plan['probes']])->toBe([[], [], [], []]);
 });
 
+it('moves a published development site between two Instances on one Node', function (): void {
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('public-root');
+    $project = Project::query()->create(['name' => 'Shared', 'slug' => 'shared', 'repository_url' => 'https://example.test/shared.git', 'root' => 'public']);
+    $node = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-host-key', 'name' => 'shared-node', 'public_ssh_host' => '192.0.2.41',
+        'wireguard_ip' => '10.44.0.41', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active']);
+    $node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    $instances = array_map(static fn (string $name): Instance => Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => $name,
+        'checkout_path' => '/home/orbit/apps/'.$name, 'source_is_laravel' => false, 'status' => 'active']), ['old', 'new']);
+    $route = Route::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'domain' => 'shared.private.test', 'publication' => 'private', 'provenance' => 'explicit', 'status' => 'failed', 'sites_published' => true, 'failed_step' => 'native-create', 'error_code' => 'route.probe_failed']);
+    $route->targets()->create(['instance_id' => $instances[0]->id, 'position' => 0]);
+    $instances[0]->update(['status' => 'source_resolved']);
+
+    $operation = app(AdmitRouteOperationAction::class)->setTarget($route->fresh(), $instances[1]->id);
+
+    $caddy = collect($operation->input['route_target']['plan']['publish']['caddy'])->firstWhere('node_id', $node->id)['content'] ?? '';
+    expect($caddy)->toContain('shared.private.test')
+        ->and($caddy)->toContain('/home/orbit/apps/new')
+        ->and($caddy)->not->toContain('/home/orbit/apps/old');
+});
+
 it('admits an entire production pool without committing its cutover before the native root runs', function (): void {
     $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('public-root');
     $cluster = Cluster::query()->create(['name' => 'admission-pool', 'state' => 'active']);
