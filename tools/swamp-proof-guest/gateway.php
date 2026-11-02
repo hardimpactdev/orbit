@@ -14,7 +14,8 @@ declare(strict_types=1);
  *   fixture  stdin {roles: {node_id: [role]}, wireguard_keys: {node_id: public key}, vpn_subnet?, projects: [attributes],
  *            extensions: [name], task_groups: [attributes + subtasks: [attributes] + taskable?: {instance: id}],
  *            instances: [attributes], task_vms: [attributes], operations: [attributes],
- *            clusters: [{name, tld?, node_ids, router_node_id}], routes: [{id, attributes}]}: the records a kind fixture
+ *            clusters: [{name, tld?, node_ids, router_node_id}], routes: [{id, attributes}],
+ *            instance_updates: [{id, attributes}]}: the records a kind fixture
  *            needs beyond the seed, such as the VPN hub, peers with keys and the VPN subnet, a Project under the fixed
  *            id its Swamp configuration names, an extension, or a task group's owned workspace (the group and its
  *            subtasks, its Instance, its task VM and its provision Operation) for kinds that run in it.
@@ -144,6 +145,10 @@ if ($argv[1] === 'fixture') {
     // Attributes a prepared Route needs for a kind, such as a failed Route whose sites stay published.
     foreach ($input['routes'] ?? [] as $route) {
         Route::query()->findOrFail((int) $route['id'])->forceFill($route['attributes'])->save();
+    }
+    // The same for a prepared Instance, such as an old Route target that is no longer active.
+    foreach ($input['instance_updates'] ?? [] as $instance) {
+        Instance::query()->findOrFail((int) $instance['id'])->forceFill($instance['attributes'])->save();
     }
         // An active Cluster with its member Nodes and its Router, for kinds that move work between Nodes, such as transfer.
     foreach ($input['clusters'] ?? [] as $spec) {
