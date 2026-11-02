@@ -37,6 +37,7 @@ afterEach(function (): void {
 });
 
 it('admits a database role through the control worker with its complete public runtime plan', function (): void {
+    $this->node->forceFill(['agent_secret_hash' => null])->save();
     $operation = app(AdmitNodeRoleOperationAction::class)->add($this->node, RoleName::Database);
     $input = app(DirectOperation::class)->workflowInputs($operation);
 

@@ -72,7 +72,7 @@ final readonly class AdmitNodeRoleOperationAction
                 throw new RoleAssignmentException("Role [{$role->value}] is protected from generic mutation.");
             }
             $this->assign->preflight($node, $role);
-            if (! is_string($node->agent_secret_hash) || preg_match('/\A[a-f0-9]{64}\z/D', $node->agent_secret_hash) !== 1) {
+            if (! $nativeAdd && (! is_string($node->agent_secret_hash) || preg_match('/\A[a-f0-9]{64}\z/D', $node->agent_secret_hash) !== 1)) {
                 throw new ResourceOperationException('node.agent_rekey_required', 'The role needs the existing recorded Node agent identity.', 409);
             }
             $existing = $node->roles()->where('role', $role)->first();
