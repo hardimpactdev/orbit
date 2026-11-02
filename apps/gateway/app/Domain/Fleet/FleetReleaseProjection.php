@@ -75,11 +75,6 @@ final readonly class FleetReleaseProjection implements DirectOperationProjection
                 if ($node === null) {
                     continue;
                 }
-                if (($entry['error_code'] ?? null) === 'cli.foreign_binary') {
-                    app(NodeCliState::class)->markForeign($node);
-                } elseif (in_array($entry['outcome'] ?? null, ['converged', 'unchanged'], true)) {
-                    app(NodeCliState::class)->clear($node);
-                }
                 if (is_int($operation->input['rollout_id'] ?? null)) {
                     FleetRolloutNode::query()->where('fleet_rollout_id', $operation->input['rollout_id'])->where('node_id', $node->id)->update([
                         'outcome' => $entry['outcome'] === 'cancelled' ? FleetNodeOutcome::Deferred->value : $entry['outcome'], 'error_code' => $entry['error_code'] ?? null,

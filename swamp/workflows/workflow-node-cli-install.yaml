@@ -1,0 +1,244 @@
+id: 440d10ad-68c2-4f59-a3ae-0ce705a84e47
+name: node-cli-install
+description: Publish the admitted Orbit CLI and public profile through official resources, preserving newer releases.
+vaults: []
+queueTimeout: 60
+inputs:
+  type: object
+  properties:
+    node_id:
+      type: integer
+      minimum: 1
+    intent:
+      type: object
+  required:
+  - node_id
+  - intent
+  additionalProperties: false
+jobs:
+- name: cli
+  labels:
+    role: swamp
+  steps:
+  - name: cli_version
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "node-cli-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: &id001
+        name: ${{ "node-cli-ssh-" + string(inputs.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh.target.user }}
+          port: ${{ inputs.intent.ssh.target.port }}
+          identityFile: ${{ inputs.intent.ssh.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh.target.host_keys }}
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 65
+        argv: ${{ ["timeout", "60", "/usr/sbin/runuser", "-u", inputs.intent.cli.user, "--"] + ["/usr/local/bin/orbit", "--version"]
+          }}
+    allowFailure: true
+  - name: cli_self_update
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "node-cli-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 65
+        argv: ${{ ["timeout", "60", "/usr/sbin/runuser", "-u", inputs.intent.cli.user, "--"] + ["/usr/local/bin/orbit", "self-update",
+          "--help"] }}
+    allowFailure: true
+  - name: cli_plan
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-role-converge-command'
+      behaviorName: ${{ "cli-plan-" + string(inputs.node_id) }}
+      methodName: cli_plan
+      inputs:
+        release: ${{ inputs.intent.cli.release }}
+        observed: '${{ has(steps.cli_version.outputs) && has(steps.cli_version.outputs.stdout) ? steps.cli_version.outputs.stdout :
+          null }}'
+        self_update: ${{ steps.cli_self_update.status == "succeeded" }}
+    dependsOn:
+    - step: cli_version
+      condition:
+        type: always
+    - step: cli_self_update
+      condition:
+        type: always
+  - name: cli_fetch
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/fetch'
+      behaviorName: ${{ "node-cli-fetch-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs:
+        nodeHost: ${{ inputs.intent.ssh.target.host }}
+        nodeUser: ${{ inputs.intent.ssh.target.user }}
+        nodePort: ${{ inputs.intent.ssh.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh.identity_file }}
+        become: true
+        url: ${{ inputs.intent.cli.release.url }}
+        path: ${{ steps.cli_plan.outputs.path }}
+        checksum: ${{ "sha256:" + inputs.intent.cli.release.sha256 }}
+        owner: root
+        group: root
+        mode: '0755'
+      inputs: {}
+    dependsOn:
+    - step: cli_plan
+      condition:
+        type: succeeded
+    guard: ${{ !steps.cli_plan.outputs.install }}
+    writes: true
+  - name: cli_candidate
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "node-cli-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 65
+        argv: ${{ ["timeout", "60", "/usr/sbin/runuser", "-u", inputs.intent.cli.user, "--"] + [steps.cli_plan.outputs.path, "--version"]
+          }}
+    dependsOn:
+    - step: cli_fetch
+      condition:
+        type: succeeded
+    guard: ${{ !steps.cli_plan.outputs.install }}
+  - name: cli_candidate_proven
+    labels:
+      role: swamp
+    task:
+      type: assert
+      expr: steps.cli_candidate.outputs.stdout.trim() == "Orbit " + inputs.intent.cli.release.version
+      severity: high
+      message: cli.candidate_invalid
+    dependsOn:
+    - step: cli_candidate
+      condition:
+        type: succeeded
+    guard: ${{ !steps.cli_plan.outputs.install }}
+  - name: cli_link
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/link'
+      behaviorName: ${{ "node-cli-link-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs:
+        nodeHost: ${{ inputs.intent.ssh.target.host }}
+        nodeUser: ${{ inputs.intent.ssh.target.user }}
+        nodePort: ${{ inputs.intent.ssh.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh.identity_file }}
+        become: true
+        path: /usr/local/bin/orbit
+        ensure: present
+        target: ${{ "orbit-" + steps.cli_plan.outputs.version }}
+        owner: root
+        group: root
+      inputs: {}
+    dependsOn:
+    - step: cli_candidate_proven
+      condition:
+        type: succeeded
+    guard: ${{ !steps.cli_plan.outputs.install }}
+    writes: true
+  - name: cli_profile_directory
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/directory'
+      behaviorName: ${{ "node-cli-directory-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs:
+        nodeHost: ${{ inputs.intent.ssh.target.host }}
+        nodeUser: ${{ inputs.intent.ssh.target.user }}
+        nodePort: ${{ inputs.intent.ssh.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh.identity_file }}
+        become: true
+        path: /root/.orbit
+        ensure: present
+        owner: root
+        group: root
+        mode: '0700'
+      inputs: {}
+    dependsOn:
+    - step: cli_plan
+      condition:
+        type: succeeded
+    - step: cli_link
+      condition:
+        type: always
+    writes: true
+    guard: ${{ steps.exists(k, k in ["cli_fetch", "cli_candidate", "cli_candidate_proven", "cli_link"] && steps[k].status in ["failed","cancelled"])
+      }}
+  - name: cli_profile
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "node-cli-file-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs:
+        nodeHost: ${{ inputs.intent.ssh.target.host }}
+        nodeUser: ${{ inputs.intent.ssh.target.user }}
+        nodePort: ${{ inputs.intent.ssh.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh.identity_file }}
+        become: true
+        path: /root/.orbit/config.json
+        ensure: present
+        content: ${{ inputs.intent.cli.profile }}
+        owner: root
+        group: root
+        mode: '0600'
+      inputs: {}
+    dependsOn:
+    - step: cli_profile_directory
+      condition:
+        type: succeeded
+    writes: true
+  - name: result
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-role-converge-command'
+      behaviorName: ${{ "cli-result-" + string(inputs.node_id) }}
+      methodName: cli_native_result
+      inputs:
+        installed: ${{ steps.cli_plan.outputs.install }}
+        version: ${{ steps.cli_plan.outputs.version }}
+        configured: ${{ size(data.latest("node-cli-file-" + string(inputs.node_id), inputs.intent.ssh.target.host).attributes.changes)
+          > 0 }}
+    dependsOn:
+    - step: cli_profile
+      condition:
+        type: succeeded

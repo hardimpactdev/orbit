@@ -40,7 +40,7 @@ class RecipeNative(NativeTestCase):
         self.path=self.repo/'workflows/workflow-operation-fleet-recipe-direct.yaml'
         self.path.write_text(yaml.safe_dump(workflow,sort_keys=False))
         # The unselected native children still need static identities for validation.
-        for number,name in enumerate(['operation-route-caddy','operation-fleet-peer-dns','route-certificate-remove','route-lan-apply','node-caddy-package','node-caddy-sites','node-private-dns','node-php-runtime','node-route-residue']):
+        for number,name in enumerate(['operation-route-caddy','operation-fleet-peer-dns','route-certificate-remove','route-lan-apply','node-caddy-package','node-caddy-sites','node-private-dns','node-php-runtime','node-route-residue','node-cli-install']):
             child={'id':f'c9d03e50-2fe8-4ab8-83bf-{number:012d}','name':name,'inputs':yaml.safe_load((ROOT/f'workflows/workflow-{name}.yaml').read_text())['inputs'],'jobs':[{'name':'fake','steps':[{'name':'apply','task':{'type':'assert','expr':'true','message':'Fixture child succeeded'}}]}]}
             if name.startswith('node-'):
                 child['jobs'][0]['steps'][0]['task']={'type':'behavior','behaviorType':'@fixture/recipe-ssh','behaviorName':name,'methodName':'exec','inputs':{'argv':['native-child',name]}}
@@ -81,6 +81,8 @@ class RecipeNative(NativeTestCase):
         self.assertLess(calls.index('browser'),calls.index('javascript'))
         self.assertLess(calls.index('javascript'),calls.index('services'))
         self.assertLess(calls.index('verify'),calls.index('delivery'))
+        # The CLI publishes through the native node-cli-install child before verification.
+        self.assertLess(calls.index('native-child node-cli-install'),calls.index('verify'))
         result=next(s for j in self.history(root)['jobs'] for s in j['steps'] if s['name']=='result')
         public=json.loads(result['outputs']['stdout'])
         self.assertTrue(public['footprint']['footprint_proven'])

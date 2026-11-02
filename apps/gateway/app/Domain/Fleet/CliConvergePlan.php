@@ -7,6 +7,7 @@ namespace App\Domain\Fleet;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Nodes\NodeCliFootprint;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use Throwable;
 
@@ -19,7 +20,7 @@ final readonly class CliConvergePlan
     {
         $node->load('roles');
         $reason = $this->membership->exclusion($node);
-        if ($reason === null || $reason === 'foreign_cli') {
+        if ($reason === null) {
             return null;
         }
         if ($reason === 'roleless' && $node->roles()->where('role', '!=', RoleName::Gateway->value)
@@ -59,5 +60,18 @@ final readonly class CliConvergePlan
 
         return [...$input, 'release' => ['version' => $release->version, 'url' => $asset->url, 'sha256' => $asset->sha256],
             'profile' => NodeCliFootprint::configuration($gateway)];
+    }
+
+    /**
+     * The fleet row: the plan plus the SSH target the native CLI child reaches when the Node installs.
+     *
+     * @return array{user:string,release:?array{version:?string,url:string,sha256:string},profile:string,skip_reason:?string,plan_error:?string,ssh:?array<string,mixed>}
+     */
+    public function fleetInput(Node $node): array
+    {
+        $input = $this->input($node);
+
+        return [...$input, 'ssh' => $input['skip_reason'] === null && $input['plan_error'] === null
+            ? app(SwampSshExecutionInput::class)->forNode($node) : null];
     }
 }

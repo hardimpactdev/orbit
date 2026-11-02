@@ -1,5 +1,4 @@
 conn.gateway_sessions_revoke
-fleet.cli_converge
 node.bootstrap_host
 node.bootstrap_install
 node.bootstrap_probe

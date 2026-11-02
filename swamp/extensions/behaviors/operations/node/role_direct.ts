@@ -6,7 +6,7 @@ import { Globals } from "../_lib/direct.ts";
 import { GatewayOperation } from "../_lib/direct.ts";
 import { BaselineStage, convergeRoleBaseline } from "./role_direct_local.ts";
 import { RoleArgs, RoleSnapshot } from "./role_direct_contract.ts";
-import { CliConvergeResult, convergeCli } from "../fleet/cli_converge_local.ts";
+import { CliConvergeResult, CliNativeRun, nativeCliOutcome } from "../fleet/cli_converge_local.ts";
 import {
     gatewayCaddyOrdering,
     gatewayRoleSystem,
@@ -73,7 +73,7 @@ const FollowUpArgs = RoleArgs.extend({
     baseline: z.array(Outcome).max(16),
     footprints: z.array(FootprintOutcome).max(9),
 });
-const CliArgs = FollowUpArgs;
+const CliArgs = FollowUpArgs.extend({ native_cli: CliNativeRun });
 const ProjectArgs = FollowUpArgs.extend({
     cleanup: z.object({ ready: z.boolean() }).nullable().optional(),
     cli: CliConvergeResult.nullable(),
@@ -158,7 +158,6 @@ export function nodeRoleAdd(
     makeHttp: (ctx: Context) => Http = (ctx) =>
         gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
     footprint = convergeFootprintStage,
-    cli = convergeCli,
     selectSnapshot: (input: unknown) => unknown = (input) => input,
     gatewayActions = { order: gatewayCaddyOrdering, dns: gatewayRoleSystem },
 ) {
@@ -564,13 +563,11 @@ export function nodeRoleAdd(
                             "CLI observation changed the admitted role",
                         );
                     }
+                    // The native node-cli-install child published the CLI before this step; this records its outcome.
                     const outcome = CliConvergeResult.parse(
                         current.cancel_requested || ctx.signal?.aborted
                             ? { error_code: "operation.cancelled" }
-                            : await cli({
-                                ...snapshot.cli,
-                                agent_sha256: snapshot.agent_sha256,
-                            }, { signal: ctx.signal, source:cli===convergeCli?await Deno.readTextFile(ctx.extensionFile("scripts/cli.py")):undefined }),
+                            : nativeCliOutcome(snapshot.cli, args.native_cli),
                     );
                     await ctx.writeResource("cli_outcome", "cli", outcome);
                     return { ok: !Object.hasOwn(outcome, "error_code") };

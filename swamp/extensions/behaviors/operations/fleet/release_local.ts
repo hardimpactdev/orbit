@@ -1,6 +1,6 @@
 import { z } from "npm:zod@4.4.3";
 import { type NodeCommand, run } from "../_lib/node-commands.ts";
-import { CliInstallInput, installCli } from "./cli_install.ts";
+import { CliInstallInput } from "./cli_install.ts";
 import { CliConvergePlan } from "./cli_converge_local.ts";
 import { ReleaseProgram } from "./release_program.ts";
 
@@ -14,38 +14,22 @@ export const NodeRelease = CliConvergePlan.extend({
         version: z.string().min(1).max(128),
     }).strict().nullable(),
     daytime: z.boolean(),
+    // Public SSH descriptor the native CLI child uses; the private key stays on Node 209.
+    ssh: z.object({
+        control_node_id: z.literal(209),
+        identity_file: z.string().startsWith("/"),
+        target: z.object({
+            host: z.string().min(1),
+            user: z.string().min(1),
+            port: z.number().int().positive(),
+            host_keys: z.array(z.string().min(1)).min(1),
+        }).passthrough(),
+    }).passthrough().nullable(),
 }).strict();
 const Observer = z.union([
     z.object({ error_code: Code }).strict(),
     z.object({ changed: z.boolean(), version: z.string() }).strict(),
 ]);
-
-/** The canonical CLI lower owns policy; this family only observes its version afterward. */
-export async function publishCli(
-    node: z.infer<typeof NodeRelease>,
-    command: NodeCommand = run,
-    signal?: AbortSignal,
-    source?: string,
-) {
-    const result = await installCli({
-        user: node.user,
-        release: node.release,
-        profile: node.profile,
-    }, { command, signal, source });
-    if ("error_code" in result) return result;
-    const reply = await command(
-        ["/usr/local/bin/orbit", "--version"],
-        undefined,
-        node.user,
-        { deadlineMs: 60000, maxOutputBytes: 4096 },
-    );
-    const version = new TextDecoder().decode(reply.stdout).trim()
-        .match(/^Orbit (0\.[1-9][0-9]{0,9}\.0|[a-f0-9]{40})$/)?.[1];
-    if (!reply.success || !version) {
-        throw new Error("Installed CLI version has no confirmed observation");
-    }
-    return { ...result, version };
-}
 
 /** Distribute the admitted frozen observer binary, without asking the agent to act. */
 export async function publishObserver(

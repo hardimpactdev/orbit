@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Fleet\FleetReleaseProjection;
-use App\Domain\Fleet\NodeCliState;
+use App\Domain\Fleet\FleetRolloutMembership;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
@@ -11,6 +11,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\FleetRollout;
+use App\Models\NodeFootprint;
 use App\Models\Operation;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeRoutePublicationSocket;
@@ -50,7 +51,11 @@ it('admits a CLI subset and rejects an excluded Node before starting', function 
     $id = $this->postJson('/api/v1/fleet/cli/converge', ['node_ids' => [$this->dev->id]])->assertAccepted()->json('data.id');
     $operation = Operation::findOrFail($id);
     expect(array_column($operation->input['nodes'], 'node_id'))->toBe([$this->dev->id])
-        ->and($operation->input['nodes'][0]['agent'])->toBeNull()->and($this->agents->calls)->toBe([]);
+        ->and($operation->input['nodes'][0]['agent'])->toBeNull()->and($this->agents->calls)->toBe([])
+        ->and($operation->input['nodes'][0]['skip_reason'])->toBeNull()
+        ->and($operation->input['nodes'][0]['ssh']['target'])->toMatchArray(['host' => $this->dev->wireguard_ip, 'user' => $this->dev->user,
+            'host_keys' => ['ssh-ed25519 '.$this->dev->ssh_host_key]])
+        ->and($operation->input['nodes'][0]['ssh']['control_node_id'])->toBe(209);
     $this->postJson('/api/v1/fleet/cli/converge', ['node_ids' => [$this->gateway->id]])->assertUnprocessable();
 });
 
@@ -72,11 +77,9 @@ it('records only admitted results and keeps later Nodes pending after a halt', f
         ->and($rollout->nodes()->where('node_id', $this->prod->id)->sole()->outcome->value)->toBe('pending');
 });
 
-it('projects foreign CLI state only for an admitted Node', function (): void {
+it('admits a Node whatever CLI it runs; the native child replaces an unrecognized one', function (): void {
+    NodeFootprint::query()->create(['node_id' => $this->dev->id, 'artifacts' => [], 'digest' => 'prior', 'cli_state' => 'foreign']);
+    expect(app(FleetRolloutMembership::class)->exclusion($this->dev->refresh()))->toBeNull();
     $id = $this->postJson('/api/v1/fleet/cli/converge', ['node_ids' => [$this->dev->id]])->assertAccepted()->json('data.id');
-    $operation = Operation::findOrFail($id);
-    app(FleetReleaseProjection::class)->apply($operation, ['run_id' => $this->run, 'status' => 'succeeded',
-        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-        'result' => ['nodes' => [['node_id' => $this->dev->id, 'outcome' => 'skipped', 'error_code' => 'cli.foreign_binary', 'cli_version' => null, 'agent_version' => null, 'step' => 'cli', 'ok' => true]]]]);
-    expect(app(NodeCliState::class)->isForeign($this->dev->refresh()))->toBeTrue();
+    expect(Operation::findOrFail($id)->input['nodes'][0]['ssh'])->not->toBeNull();
 });

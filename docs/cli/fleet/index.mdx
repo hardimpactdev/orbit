@@ -18,3 +18,13 @@ After each verified Gateway release, the Gateway brings the managed workload Nod
 | [`fleet:rollout:resume`](/cli/fleet/rollout-resume) | Resume a halted rollout, optionally past one Node. |
 
 Both commands accept `--json`. JSON output contains only the response.
+
+## How it works
+
+The rollout publishes the CLI and the Node agent on each Node in turn. Each Node runs the `fleet-release-node` child, which runs the shared `node-cli-install` child from Node 209. Only the observer step runs on the Node itself.
+
+<div className="flow-at" data-chart="fleet/rollout"></div>
+
+`POST /api/v1/fleet/cli/converge` publishes only the CLI, through the same children.
+
+<div className="flow-at" data-chart="fleet/cli-converge"></div>

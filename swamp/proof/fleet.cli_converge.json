@@ -1,0 +1,50 @@
+{
+  "kind": "fleet.cli_converge",
+  "workflow": "operation-fleet-cli-converge",
+  "topology": "minimal",
+  "budget_seconds": 900,
+  "queue_timeout_seconds": 60,
+  "before_target": [
+    [
+      "sh",
+      "-c",
+      "rm -f /usr/local/bin/orbit && printf '%s\\n' '#!/bin/sh' 'echo custom-build' > /usr/local/bin/orbit && chmod 0755 /usr/local/bin/orbit"
+    ],
+    [
+      "sh",
+      "-c",
+      "test \"$(/usr/local/bin/orbit --version)\" = custom-build"
+    ]
+  ],
+  "request": {
+    "method": "POST",
+    "path": "fleet/cli/converge",
+    "body": {
+      "node_ids": [
+        "${node.target}"
+      ]
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Publish the CLI on the target",
+      "job": "nodes",
+      "step": "node-0",
+      "budget_seconds": 900
+    }
+  ],
+  "parity": "swamp/proof/fleet.cli_converge/parity.py",
+  "before_gateway": [
+    [
+      "runuser",
+      "-u",
+      "orbit",
+      "--",
+      "php",
+      "swamp/proof/fleet.recipe/prepare.php"
+    ]
+  ]
+}

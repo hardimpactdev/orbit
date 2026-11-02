@@ -15,7 +15,7 @@ final class FleetRolloutExclusionData extends Data
     public function __construct(
         public int $nodeId,
         public string $node,
-        /** `sandbox`, `inactive`, `platform`, `unmanaged`, `gateway`, `roleless`, or `foreign_cli`. */
+        /** `sandbox`, `inactive`, `platform`, `unmanaged`, `gateway`, or `roleless`. */
         public string $reason,
     ) {}
 }

@@ -45,14 +45,11 @@ jobs:
     forEach:
       item: node
       in: ${{ steps.prepare.outputs.nodes }}
-    labels:
-      node: ${{ string(self.node.node_id) }}
+    labels: {role: swamp}
     writes: true
     task:
-      type: behavior
-      behaviorType: '@nckrtl/fleet-release'
-      behaviorName: fleet-release-node-${{ self.node.node_id }}
-      methodName: node
+      type: workflow
+      workflowIdOrName: fleet-release-node
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}

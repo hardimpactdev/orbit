@@ -410,9 +410,9 @@ Completion requires a successful keyed installer step with `outcome: current|app
 
 ## Orbit CLI
 
-Every Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-and-order) runs the Orbit CLI. `fleet.cli_converge` records one intent for the selected Nodes and starts `operation-fleet-cli-converge`. The Gateway captures the release assets and public profile. Each native step publishes the CLI on its own Node worker. The two light Nodes require lane 21's proxy workers. It never invokes `cli.install` or `cli.self-update` on orbit-agent.
+Every Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-and-order) runs the Orbit CLI. `fleet.cli_converge` records one intent for the selected Nodes and starts `operation-fleet-cli-converge`. The Gateway captures the release assets, the public profile and each installing Node's SSH descriptor. For each Node in turn, the `fleet-release-node` child checks on Node 209 that the Node may publish, runs the native `node-cli-install` child from Node 209 over SSH, and records the outcome on Node 209. Only `fleet.rollout` then publishes the observer binary, on the Node's own worker. It never invokes `cli.install` or `cli.self-update` on orbit-agent.
 
-`POST /api/v1/fleet/cli/converge` selects the fleet, or the optional `node_ids` list. A selected ineligible Node is rejected. An unpublished release is skipped. Foreign files remain untouched and mark the Node as foreign; a later successful native publication clears the mark. Node workflows may compose the same Swamp publication action directly in their parent run.
+`POST /api/v1/fleet/cli/converge` selects the fleet, or the optional `node_ids` list. A selected ineligible Node is rejected. An unpublished release is skipped. Role add, role relocate and `fleet.recipe` run the same `node-cli-install` child in their parent run.
 
 | Item | Path or value |
 | --- | --- |
@@ -423,26 +423,21 @@ Every Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-an
 
 This is the layout `orbit self-update` keeps, so either one can update what the other installed. The profile holds no secret. The Gateway identifies the Node by its WireGuard address, as for every CLI call, and its certificate covers that address. `sudo orbit self-update` reads root's profile.
 
-Swamp runs the publication step and inspects the existing link locally. Both read the link path first and run a found binary as the managed user, never as root. A link may name only an `orbit-0.N.0` file beside it, without `/` or `..`. The file must be a `root`-owned ELF executable. Only then does the step run it with `--version`, which must print `Orbit 0.N.0` or, for a pre-release build, `Orbit <40-character commit>`.
+`node-cli-install` runs `/usr/local/bin/orbit --version` and `orbit self-update --help` as the managed user, never as root. It accepts `Orbit 0.N.0` or, for a pre-release build, `Orbit <40-character commit>`. Any other answer is not a valid Orbit version.
 
 | Found | Result |
 | --- | --- |
-| Nothing | Download the binary to `/usr/local/bin/orbit-<version>.orbit-candidate`, check its SHA-256 from the desired state and that it reports the release version, move it to `orbit-<version>`, and switch the link: `cli_installed` |
+| Nothing, or a version that is not a valid Orbit version | Install the admitted release: `cli_installed` |
 | An Orbit CLI that has `self-update` and is the desired release, a newer one, or a pre-release build | Leave it: `cli_present`. `orbit self-update` replaces it |
-| An older Orbit CLI release | Install the release as for a missing one. An older CLI's own self-update may refuse the current release, so the step does not rely on it |
-| An Orbit CLI without `self-update`, such as a pre-release build | An older CLI. Install the release as for a missing one, and keep the old file as `orbit.orbit-previous` |
-| Another link, a script, another program, or a file another user owns | Refuse with `cli.foreign_binary` without running a script. The fleet rollout leaves the Node out as `foreign_cli` until an operator moves the file aside |
+| An older Orbit CLI release, or one without `self-update` | Install the admitted release |
 
-Swamp takes the Node's update lock, `/run/lock/orbit-self-update.lock`, before it installs, and reads the path again under it, because a self-update may have changed it meanwhile. The download, the move, and the link switch run under that lock, which `orbit self-update` holds too ([Node agent](/reference/node-agent#install-and-upgrade)). A self-update that keeps it longer than 300 seconds fails the step with `node.update_busy`. A checksum mismatch deletes the candidate and fails with `cli.checksum_mismatch`; the link stays as it was. Then the step writes root's profile when it differs.
+To install, `@swamp/cfgmgmt/fetch` downloads the binary to `/usr/local/bin/orbit-<version>` with its SHA-256 from the desired state. The child runs that file with `--version` and requires the release version. Only then does `@swamp/cfgmgmt/link` switch `/usr/local/bin/orbit` to it. A failed download, checksum or version check leaves the link as it was. Then `@swamp/cfgmgmt/file` writes root's profile, `root:root` mode `0600`.
 
 | Code | Meaning |
 | --- | --- |
 | `cli.release_unavailable` | The CLI release is not published yet, so a missing CLI cannot be installed |
 | `cli.architecture_unsupported` | The release has no binary for the Node's architecture |
-| `cli.download_failed` | The download failed |
-| `cli.checksum_mismatch` | The download has another SHA-256. Nothing was installed |
-| `cli.candidate_invalid` | The download does not run, or reports another version. Nothing was installed |
-| `cli.foreign_binary` | `/usr/local/bin/orbit` is a link, a script, or a file Orbit did not install, such as a wrapper around a source checkout |
+| `cli.install_failed` | The download, its checksum, its version check, the link or the profile failed. The link stays as it was when the switch did not happen |
 | `cli.configuration_failed` | The profile could not be written, or the Gateway has no WireGuard address |
 
 ## Converge the Orbit footprint

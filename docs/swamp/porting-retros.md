@@ -261,3 +261,16 @@ Cancellation 8123 confirms task VM 323 destroyed at 2026-11-02T18:08:51Z. The la
 Orbit shrinks by 974 lines. Swamp behaviors shrink by 337, replaced scripts by 789, tests and fixtures by 440, and configuration by 9. Workflows grow by 11 for native declarations and dependencies. Proof fixtures grow by 217 for the actual recipe, public CLI catalog and receipt index. The other 373 lines cover chart labels, Gateway intent and parity transport.
 
 CI found one remaining consumer of the deleted file script in task VM hub convergence. The parallel fix `aa4362ae72` writes its nft filter and unit with one pinned SSH install argv each, with modes 0600 and 0644. This follow-up preserves that fix, bounds the commands and publishes its exact-label chart. Three native tests cover success, invalid policy, activation failure and missing rules. It adds no full hub receipt and claims no completed hub kind. The seven family receipts remain valid because their execution paths are unchanged.
+
+## Fleet CLI without a shipped script (rule 22)
+
+`cli.py` is gone. Every caller runs the native `node-cli-install` child: role add and relocate, `fleet.recipe`, and, through the new `fleet-release-node` child, `fleet.rollout` and `fleet.cli_converge`. The child plans on Node 209, publishes with `@swamp/cfgmgmt` fetch, link and file, keeps newer and commit builds, and writes the profile 0600 and root-owned. A file that reports no valid Orbit version is replaced by the admitted release; the Gateway records no foreign CLI state, and the rollout set has no `foreign_cli` reason.
+
+The fleet admissions carry each installing Node's public SSH descriptor. `fleet-release-node` shapes the result on 209; only `fleet.rollout` runs the residual `observer` step, still on the target Node's worker, so `fleet.rollout` is not all-native yet. A failed child records `cli.install_failed`; the result carries no separate download, checksum or busy code.
+
+| Fresh receipt on minimal@10 at `8394451478` | Runtime, one sample | Run budget / queue timeout |
+| --- | --- | --- |
+| `evidence/proof/fleet.cli_converge/20261102T183108Z-minimal.json` | 26.89 s | 900 / 60 s |
+| `evidence/proof/fleet.recipe/20261102T183327Z-minimal.json` | 135.06 s | 1800 / 60 s |
+
+The `fleet.cli_converge` fixture plants a script that prints `custom-build` at `/usr/local/bin/orbit` and checks it before the request; the run replaced it with Orbit 0.8725.0 and wrote the 0600 profile. `swamp/proof/receipts/fleet-cli-rule22.json` indexes both receipts. One shipped script is deleted. `fleet.rollout` is not proved here and is not rule 22 done while its observer step runs on the Node.

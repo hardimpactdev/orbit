@@ -7,7 +7,6 @@ namespace App\Domain\Nodes;
 use App\Data\Nodes\NodeData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
-use App\Domain\Fleet\NodeCliState;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationPublicView;
@@ -111,12 +110,6 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
                 $assignment->markConvergenceActive();
                 app(NodeFootprintProjection::class)->record($operation, ValidatedData::object($snapshot['footprint']),
                     ValidatedData::object($result['footprint']), $artifacts);
-                $cli = ValidatedData::object($result['cli']);
-                if (($cli['error_code'] ?? null) === 'cli.foreign_binary') {
-                    app(NodeCliState::class)->markForeign($assignment->node);
-                } elseif (($cli['outcome'] ?? null) !== 'skipped' && ! isset($cli['error_code'])) {
-                    app(NodeCliState::class)->clear($assignment->node);
-                }
             } elseif (($projected->state['role_target_completed'] ?? false) !== true) {
                 $assignment->markConvergenceFailed(ValidatedData::string($result['failed_step'] ?? 'operation'),
                     ValidatedData::string($result['error_code'] ?? 'operation.cancelled'));

@@ -1,6 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R1-R4, agent-frozen-until-swamp-port, single-swamp-node. docs/reference/gateway-recovery.md#fleet-rollout.
   %% Tightened: flow-tighten 2026-11-02, rule 22 (cfgmgmt fetch and link name the install steps).
+  %% Real steps 2026-11-02: prepare, node-N (fleet-release-node: gate, cli, record, observer), finish.
   %% status: draft
   %% command: none · after each verified Gateway release
   %% kind: fleet.rollout
@@ -32,32 +33,44 @@ sequenceDiagram
   %%> Inputs:
   %%> - the Nodes in order, each with its address and SSH host keys; the SSH identity comes from the `swamp` role
   %%> - the CLI release URL and digests, and the Node agent pin
+  Note over SW: Freeze the Node list<br/>prepare
+  %%> What it does:
+  %%> - reads the admitted intent once and records the Nodes in order
+  %%> Runs as:
+  %%> - a step on Node 209
   loop each Node, one at a time
-    SW->>N: Install the CLI release<br/>@swamp/cfgmgmt fetch · link
+    Note over SW: Check the Node may publish<br/>fleet-release-node · gate
+    %%> What it does:
+    %%> - the `fleet-release-node` child starts on Node 209; its `gate` step checks that every earlier Node succeeded, that the task is not cancelled, and that the Node's window is open
+    %%> - a skipped Node, a planning error or a closed window records the outcome without touching the Node
+    %%> Why:
+    %%> - the loop runs one Node at a time, so a failed Node stops every later one
+    SW->>N: Install the CLI release<br/>cli · node-cli-install
     %%> How:
-    %%> - Swamp reaches Node 12 over SSH from 209, with `@swamp/ssh`
+    %%> - Swamp reaches Node 12 over SSH from 209, with `@swamp/ssh` and the admitted host keys
     %%> What it does:
-    %%> - downloads the admitted release with `@swamp/cfgmgmt/fetch` and its `checksum`, publishes the root-owned binary and switches the link atomically with `@swamp/cfgmgmt/link`
-    %%> - a Node that already runs this release is left as it is
-    %%> Refuses:
-    %%> - a foreign file at `/usr/local/bin/orbit`; that Node is skipped as `foreign_cli`, not failed
-    SW->>N: Install the Node agent<br/>@swamp/cfgmgmt/fetch · sha256
+    %%> - reads `orbit --version`; a Node that runs this release, a newer one, or a commit build keeps it
+    %%> - otherwise downloads the release with `@swamp/cfgmgmt/fetch` and its `checksum`, checks the new file reports the release version, and switches the link with `@swamp/cfgmgmt/link`
+    %%> - a file that does not report a valid Orbit version is replaced by the admitted release
+    %%> - writes root's profile, 0600, with `@swamp/cfgmgmt/file`
+    Note over SW: Record the CLI outcome<br/>record
     %%> What it does:
-    %%> - the same step `node.converge` uses: installs the pinned Node agent only when its digest differs, then restarts `orbit-agent`
+    %%> - the `record` step on Node 209 records `converged` or `unchanged` with the CLI version, or `cli.install_failed`
+    SW->>N: Publish the Node agent<br/>observer · on Node 12
+    %%> When:
+    %%> - only in a rollout, and only after the Node's CLI succeeded
+    %%> What it does:
+    %%> - the `observer` step publishes the pinned observer binary only when its digest differs
     %%> Today:
-    %%> - the Node agent is frozen at its pin until it is stripped to an observer, so this step changes nothing
+    %%> - this step runs on Node 12's own worker, never on Node 209; it moves to `@swamp/cfgmgmt` when the observer delivery is replaced
+    %%> - the Node agent is frozen at its pin, so this step changes nothing
     %%> Not included:
     %%> - Caddy, DNS, PHP and role files; `node.converge` and `fleet.recipe` own those
-    SW->>N: Check the versions<br/>orbit --version · agent digest
-    %%> What it does:
-    %%> - reads the CLI version and the running Node agent's binary digest
-    %%> Why:
-    %%> - a Node only counts as converged when it shows the desired state
   end
+  Note over SW: Report each Node<br/>finish
+  %%> What it does:
+  %%> - reads each Node's `observer` output, or its `record` output when no observer ran, and returns one bounded result per Node
   alt every Node converged
-    N-->>SW: versions match
-    %%> Returns:
-    %%> - the check passed on the last Node
     SW-->>GW: Run succeeded<br/>terminal event · per Node
     %%> How the Gateway learns it:
     %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
@@ -67,9 +80,9 @@ sequenceDiagram
     %%> - unreachable Nodes changed nothing; they stay `pending` for the next catch-up
     %%> - task #5160 succeeds
   else a Node fails
-    N--xSW: exit ≠ 0 or no match
+    N--xSW: install or check failed
     %%> When:
-    %%> - a download, digest, publish or check fails on Node 12
+    %%> - a download, checksum, version check, link or observer publish fails on Node 12
     SW--xGW: Run failed<br/>Node 12 · error_code
     %%> What it does:
     %%> - Swamp visits no later Node, so one bad release breaks at most one Node

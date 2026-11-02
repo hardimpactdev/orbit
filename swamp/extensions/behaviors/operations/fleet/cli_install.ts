@@ -1,5 +1,4 @@
 import { z } from "npm:zod@4.4.3";
-import { type NodeCommand, run } from "../_lib/node-commands.ts";
 
 export const CliInstallInput = z.object({
     user: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/).refine((v) =>
@@ -15,62 +14,16 @@ export const CliInstallInput = z.object({
     }).strict().nullable(),
     profile: z.string().max(1024 * 1024),
 }).strict();
-export const CliInstallResult = z.union([
-    z.object({ installed: z.string().nullable(), configured: z.boolean() })
-        .strict(),
-    z.object({
-        error_code: z.enum([
-            "cli.foreign_binary",
-            "cli.release_needed",
-            "cli.update_busy",
-            "cli.download_failed",
-            "cli.checksum_mismatch",
-            "cli.candidate_invalid",
-            "cli.install_failed",
-        ]),
-    }).strict(),
-]);
-
-/** Shared lower for one placed Node step. Policy and publication stay here. */
-export async function installCli(
-    raw: z.infer<typeof CliInstallInput>,
-    { command = run, signal, source }: {
-        command?: NodeCommand;
-        signal?: AbortSignal;
-        source?: string;
-    } = {},
-): Promise<z.infer<typeof CliInstallResult>> {
-    const input = CliInstallInput.parse(raw);
-    signal?.throwIfAborted();
-    // Once publication starts, finish the bounded atomic effect and return its result.
-    const reply = await command(
-        [
-            "/usr/bin/python3",
-            "-I",
-            "-c",
-            source ?? (() => {
-                throw new Error(
-                    "The native root must supply the shipped CLI script",
-                );
-            })(),
-        ],
-        new TextEncoder().encode(JSON.stringify(input)),
-        "root",
-        { deadlineMs: 720000, maxOutputBytes: 4096 },
-    );
-    if (!reply.success) {
-        throw new Error("CLI installation has no bounded outcome");
-    }
-    const result = CliInstallResult.parse(
-        JSON.parse(new TextDecoder().decode(reply.stdout)),
-    );
-    if (
-        "installed" in result && result.installed !== null &&
-        result.installed !== input.release?.version
-    ) {
-        throw new Error(
-            "The CLI installer returned a different installed version",
-        );
-    }
-    return result;
+export const CliNativeResult = z.object({ installed: z.string().nullable(), configured: z.boolean(), version: z.string() }).strict();
+export const CliPlan = z.object({ install: z.boolean(), version: z.string(), path: z.string() }).strict();
+export const CliPlanInput = z.object({ release: CliInstallInput.shape.release, observed: z.string().nullable(), self_update: z.boolean() }).strict();
+export function cliPlan(raw: z.infer<typeof CliPlanInput>) {
+    const { release, observed, self_update } = CliPlanInput.parse(raw);
+    const line = observed?.trim().split("\n")[0] ?? null;
+    const current = line?.match(/^Orbit (0\.[1-9][0-9]{0,9}\.0|[a-f0-9]{40})$/)?.[1] ?? null;
+    // An unrecognized version is not a valid Orbit release, so the admitted verified release replaces it.
+    const install = !current || !self_update || Boolean(release && current.startsWith("0.") && Number(current.split(".")[1]) < Number(release.version.split(".")[1]));
+    if (install && !release) throw new Error("cli.release_needed");
+    const version = install ? release!.version : current!;
+    return CliPlan.parse({ install, version, path: "/usr/local/bin/orbit-" + version });
 }

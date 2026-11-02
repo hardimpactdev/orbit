@@ -1,0 +1,112 @@
+id: 3125b46d-bd66-4e0a-96bf-e336d7f182fc
+name: fleet-release-node
+description: Gate one fleet Node on 209, publish its CLI through the native child, record the outcome on 209, and for a rollout publish the observer on the Node.
+vaults: []
+queueTimeout: 60
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - fleet.rollout
+      - fleet.cli_converge
+    run_id:
+      type: string
+    target_node_id:
+      type: integer
+      minimum: 1
+    previous:
+      type: object
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - run_id
+  - target_node_id
+  - previous
+  additionalProperties: false
+jobs:
+- name: node
+  labels: {role: swamp}
+  steps:
+  - name: gate
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/fleet-release'
+      behaviorName: fleet-release-gate-${{ inputs.target_node_id }}
+      methodName: gate
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ inputs.run_id }}
+        target_node_id: ${{ inputs.target_node_id }}
+        previous: ${{ inputs.previous }}
+  - name: cli
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    dependsOn:
+    - step: gate
+      condition:
+        type: succeeded
+    guard: ${{ !steps.gate.outputs.install }}
+    task:
+      type: workflow
+      workflowIdOrName: node-cli-install
+      inputs:
+        node_id: ${{ inputs.target_node_id }}
+        intent:
+          ssh: ${{ steps.gate.outputs.ssh }}
+          cli: ${{ steps.gate.outputs.cli }}
+  - name: record
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - step: cli
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/fleet-release'
+      behaviorName: fleet-release-record-${{ inputs.target_node_id }}
+      methodName: record
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ inputs.run_id }}
+        target_node_id: ${{ inputs.target_node_id }}
+        gate: ${{ steps.gate.outputs }}
+        native_cli: '${{ {"status": has(steps.cli) ? steps.cli.status : "skipped", "result": has(steps.cli) && steps.cli.status == "succeeded" && has(steps.cli.outputs.result) ? steps.cli.outputs.result : null} }}'
+  # The residual observer effect stays placed on its own Node until it is replaced; only a rollout runs it.
+  - name: observer
+    labels:
+      node: ${{ string(inputs.target_node_id) }}
+    writes: true
+    dependsOn:
+    - step: record
+      condition:
+        type: succeeded
+    guard: ${{ inputs.kind != "fleet.rollout" || !steps.record.outputs.ok || steps.record.outputs.step != "cli" }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/fleet-release'
+      behaviorName: fleet-release-node-${{ inputs.target_node_id }}
+      methodName: observer
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ inputs.run_id }}
+        target_node_id: ${{ inputs.target_node_id }}
+        record: ${{ steps.record.outputs }}

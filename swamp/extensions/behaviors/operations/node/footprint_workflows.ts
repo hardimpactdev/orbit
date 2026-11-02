@@ -237,21 +237,38 @@ export function footprintWorkflow(
     ? { baseline: outputs(baseline), footprints: outputs(Stage.options) }
     : { outcomes: outputs(Stage.options) };
   if (role) {
+    const admission = "(has(steps.prepare_footprint) && has(steps.prepare_footprint.outputs) ? steps.prepare_footprint.outputs : steps.admit.outputs)";
+    const blocked = "!steps.admit.outputs.ready" + baseline.map((stage) => {
+      const name = key(stage);
+      return ` || !has(steps.${name}) || !has(steps.${name}.outputs) || !steps.${name}.outputs.ok`;
+    }).join("");
     jobs.push({
       name: "cli_job",
       dependsOn: jobs.map((job) => dependency(String(job.name), "always")),
       steps: [{
+        // The native child publishes the CLI and its profile from Node 209 through official resources.
+        name: "cli_install",
+        labels: { role: "swamp" },
+        writes: true,
+        allowFailure: true,
+        guard: expression(`${blocked} || ${admission}.snapshot.cli.skip_reason != null || ${admission}.snapshot.cli.plan_error != null`),
+        task: {
+          type: "workflow",
+          workflowIdOrName: "node-cli-install",
+          inputs: {
+            node_id: expression("inputs.node_id"),
+            intent: { ssh: expression(`${admission}.snapshot.ssh`), cli: expression(`${admission}.snapshot.cli`) },
+          },
+        },
+      }, {
         name: "cli",
         writes: true,
-        guard: expression(
-          "!steps.admit.outputs.ready" + baseline.map((stage) => {
-            const name = key(stage);
-            return ` || !has(steps.${name}) || !has(steps.${name}.outputs) || !steps.${name}.outputs.ok`;
-          }).join(""),
-        ),
+        dependsOn: [{ step: "cli_install", condition: { type: "always" } }],
+        guard: expression(blocked),
         task: task("cli", {
-          admission: expression(
-            "has(steps.prepare_footprint) && has(steps.prepare_footprint.outputs) ? steps.prepare_footprint.outputs : steps.admit.outputs",
+          admission: expression(admission),
+          native_cli: expression(
+            `{"status": has(steps.cli_install) ? steps.cli_install.status : "skipped", "result": has(steps.cli_install) && steps.cli_install.status == "succeeded" && has(steps.cli_install.outputs.result) ? steps.cli_install.outputs.result : null}`,
           ),
           ...results,
         }),

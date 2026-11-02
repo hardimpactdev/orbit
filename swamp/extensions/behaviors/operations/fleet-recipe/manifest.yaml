@@ -11,4 +11,3 @@ behaviors:
   - operations/fleet-recipe/fleet_release.ts
 additionalFiles:
   - scripts/recipe.py
-  - scripts/cli.py

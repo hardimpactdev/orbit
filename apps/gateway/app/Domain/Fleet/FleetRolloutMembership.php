@@ -21,8 +21,7 @@ use App\Models\TaskVm;
  * - it is `active` and runs Linux;
  * - the Gateway manages it over SSH: it has a WireGuard address and a pinned SSH host key;
  * - it holds at least one active role other than `gateway`;
- * - it is not the Gateway's own machine: it holds no `gateway` role and is not the serving host;
- * - its `/usr/local/bin/orbit` is not a CLI Orbit did not install ({@see NodeCliState}).
+ * - it is not the Gateway's own machine: it holds no `gateway` role and is not the serving host.
  *
  * Roleless Nodes, such as operator machines, and macOS Nodes are never visited. They update
  * themselves with `orbit self-update`. A task VM gets its agent and footprint when it is
@@ -66,7 +65,6 @@ final readonly class FleetRolloutMembership
         private ManagedNodeEligibility $eligibility,
         private GatewayServingHost $servingHost,
         private array $order = [],
-        private NodeCliState $cli = new NodeCliState,
     ) {}
 
     /**
@@ -108,7 +106,7 @@ final readonly class FleetRolloutMembership
     /**
      * Why the rollout leaves the Node out, or null when it is in the rollout set.
      *
-     * @return 'sandbox'|'inactive'|'platform'|'unmanaged'|'gateway'|'roleless'|'foreign_cli'|null
+     * @return 'sandbox'|'inactive'|'platform'|'unmanaged'|'gateway'|'roleless'|null
      */
     public function exclusion(Node $node): ?string
     {
@@ -134,11 +132,7 @@ final readonly class FleetRolloutMembership
             return 'gateway';
         }
 
-        if ($this->workloadRoles($node) === []) {
-            return 'roleless';
-        }
-
-        return $this->cli->isForeign($node) ? 'foreign_cli' : null;
+        return $this->workloadRoles($node) === [] ? 'roleless' : null;
     }
 
     /** The Node's rollout group: the latest group of its active roles. */

@@ -65,7 +65,6 @@ function fixture() {
     return Promise.resolve({ status: 200, body: { data: operation } });
   };
   let effects = 0;
-  const cliCalls: unknown[] = [];
   const root = nodeRoleAdd(
     () => {
       effects++;
@@ -73,10 +72,6 @@ function fixture() {
     },
     () => http,
     (stage) => Promise.resolve({ stage, ok: true }),
-    (input) => {
-      cliCalls.push(input);
-      return Promise.resolve({ error_code: "cli.foreign_binary" });
-    },
   );
   const ctx = {
     extensionFile: (path:string) => new URL("../fleet-recipe/"+path,import.meta.url).pathname,
@@ -97,7 +92,6 @@ function fixture() {
     calls,
     posts,
     writes,
-    cliCalls,
     effects: () => effects,
   };
 }
@@ -143,7 +137,7 @@ Deno.test("role projection records native baseline and canonical optional follow
       ok: true,
     })),
     footprints: Stage.options.map((stage) => ({ stage, ok: true })),
-    cli: { error_code: "cli.foreign_binary" },
+    cli: { error_code: "cli.install_failed" },
   }, f.ctx);
   assertEquals(f.posts.at(-1)?.status, "succeeded");
   const result = f.posts.at(-1)?.result as {
@@ -151,7 +145,7 @@ Deno.test("role projection records native baseline and canonical optional follow
     role_proven: boolean;
   };
   assertEquals(result.role_proven, true);
-  assertEquals(result.follow_up, "role-cli:cli.foreign_binary");
+  assertEquals(result.follow_up, "role-cli:cli.install_failed");
 });
 
 Deno.test("a known baseline refusal projects the owning role failure", async () => {
@@ -174,22 +168,27 @@ Deno.test("a known baseline refusal projects the owning role failure", async () 
   assertEquals(f.posts.at(-1)?.error_code, "role.prerequisite_failed");
 });
 
-Deno.test("CLI uses the canonical admitted public plan and pin", async () => {
+Deno.test("CLI records the native child outcome against the admitted plan", async () => {
   const f = fixture();
+  const release = { version: "0.7261.0", url: "https://github.com/hardimpactdev/orbit/releases/download/cli-v0.7261.0/orbit-linux-x86_64", sha256: "b".repeat(64) };
+  f.operation.input.cli = { ...f.operation.input.cli, release, skip_reason: null };
   const admission = await admitted(f);
-  await f.root.methods.cli.execute({
-    ...args,
-    admission,
-    baseline: BaselineStage.options.map((stage) => ({
-      stage,
-      ok: true,
-    })),
-    footprints: Stage.options.map((stage) => ({ stage, ok: true })),
-  }, f.ctx);
-  assertEquals(f.cliCalls, [{
-    ...admission.snapshot.cli,
-    agent_sha256: admission.snapshot.agent_sha256,
-  }]);
+  const run = (native_cli: unknown) =>
+    f.root.methods.cli.execute({
+      ...args,
+      admission,
+      baseline: BaselineStage.options.map((stage) => ({ stage, ok: true })),
+      footprints: Stage.options.map((stage) => ({ stage, ok: true })),
+      native_cli,
+    } as never, f.ctx);
+  const outcome = () => f.writes.filter((w) => w.name === "cli").at(-1)?.value;
+  assertEquals(await run({ status: "failed", result: null }), { ok: false });
+  assertEquals(outcome(), { error_code: "cli.install_failed" });
+  assertEquals(await run({ status: "succeeded", result: { installed: "0.7261.0", configured: true, version: "0.7261.0" } }), { ok: true });
+  assertEquals((outcome() as Record<string, unknown>).outcome, "cli_installed");
+  assertEquals(await run({ status: "succeeded", result: { installed: null, configured: false, version: "0.7262.0" } }), { ok: true });
+  assertEquals((outcome() as Record<string, unknown>).outcome, "cli_present");
+  assertEquals(f.effects(), 0);
 });
 
 Deno.test("native footprint failure cannot become a successful required part", async () => {

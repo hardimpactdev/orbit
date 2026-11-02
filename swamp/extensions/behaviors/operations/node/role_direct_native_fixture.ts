@@ -1,6 +1,5 @@
 import type { BaselineOutcome } from "./role_baseline_system.ts";
 import { gatewayHttp, type Http } from "../../automatic-deploy/gateway.ts";
-import { convergeCli } from "../fleet/cli_converge_local.ts";
 import type { footprintActions } from "./converge_footprint.ts";
 type StageAction = (args: {stage: Parameters<ReturnType<typeof footprintActions>>[0]; snapshot: Parameters<ReturnType<typeof footprintActions>>[1]; binary_changed:boolean}, gateway: Parameters<ReturnType<typeof footprintActions>>[2], signal?:AbortSignal)=>ReturnType<ReturnType<typeof footprintActions>>;
 import { footprintActions } from "./converge_footprint.ts";
@@ -122,14 +121,3 @@ export const fixtureFootprint: StageAction = async (
     ? { stage, ok: true, entry: { name: artifact.name, status: "unchanged" } }
     : { stage, ok: true };
 };
-export const fixtureCli: typeof convergeCli = (input, options) =>
-  convergeCli(input, {
-    ...options,
-    invoke: async (call) => {
-      const state = await read();
-      state.effects.push("native-cli-install");
-      state.cliInput = call;
-      await save(state);
-      return { installed: null, configured: true };
-    },
-  });

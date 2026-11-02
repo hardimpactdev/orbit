@@ -1,6 +1,4 @@
 import { z } from "npm:zod@4.4.3";
-import { installCli } from "./cli_install.ts";
-import { cliInstallError } from "./contract.ts";
 
 export const CliConvergePlan = z.object({
     user: z.string().min(1).max(64),
@@ -17,13 +15,9 @@ export const CliConvergePlan = z.object({
         "cli.configuration_failed",
     ]).nullable(),
 }).strict();
-export const CliConvergeLocalInput = CliConvergePlan.extend({
-    agent_sha256: z.string().regex(/^[a-f0-9]{64}$/),
-});
 const Refusal = z.object({
     error_code: z.enum([
         "agent.version_mismatch",
-        "cli.foreign_binary",
         "cli.release_unavailable",
         "node.update_busy",
         "cli.download_failed",
@@ -45,62 +39,35 @@ export const CliConvergeResult = z.union([
     Refusal,
 ]);
 
-/** One local action in its original placed root; no Gateway or child protocol. */
-export async function convergeCli(
-    raw: z.infer<typeof CliConvergeLocalInput>,
-    { signal, beforeEffect, invoke = installCli, source }: {
-        signal?: AbortSignal;
-        source?: string;
-        beforeEffect?: () => Promise<void>;
-        invoke?: (
-            input: Parameters<typeof installCli>[0],
-            options?: Parameters<typeof installCli>[1],
-        ) => Promise<unknown>;
-    } = {},
-): Promise<z.infer<typeof CliConvergeResult>> {
-    const input = CliConvergeLocalInput.parse(raw);
-    signal?.throwIfAborted();
-    if (input.skip_reason !== null) {
-        return {
-            completed: true,
-            outcome: "skipped",
-            reason: input.skip_reason,
-            version: null,
-            configured: false,
-        };
+export const CliNativeRun = z.object({
+    status: z.string(),
+    result: z.object({
+        installed: z.string().nullable(),
+        configured: z.boolean(),
+        version: z.string(),
+    }).strict().nullable(),
+}).strict();
+
+/** The outcome of the native `node-cli-install` child, in the public CLI result shape. */
+export function nativeCliOutcome(
+    raw: z.infer<typeof CliConvergePlan>,
+    native: z.infer<typeof CliNativeRun>,
+): z.infer<typeof CliConvergeResult> {
+    const plan = CliConvergePlan.parse(raw), run = CliNativeRun.parse(native);
+    if (plan.skip_reason !== null) {
+        return { completed: true, outcome: "skipped", reason: plan.skip_reason, version: null, configured: false };
     }
-    if (input.plan_error !== null) {
-        return Refusal.parse({ error_code: input.plan_error });
-    }
-    await beforeEffect?.();
-    signal?.throwIfAborted();
-    const result = z.record(z.string(), z.unknown()).parse(
-        await invoke({
-            user: input.user,
-            release: input.release,
-            profile: input.profile,
-        }, { signal, source }),
-    );
-    const code = cliInstallError(result);
-    if (code !== null) {
-        const refusal = Refusal.safeParse({ error_code: code });
-        if (!refusal.success) {
-            throw new Error("The CLI action returned an unknown refusal");
-        }
-        return refusal.data;
-    }
-    if (
-        result.installed !== null && result.installed !== input.release?.version
-    ) {
-        throw new Error(
-            "The CLI action returned a different installed version",
-        );
+    if (plan.plan_error !== null) return Refusal.parse({ error_code: plan.plan_error });
+    if (run.status !== "succeeded" || run.result === null) return { error_code: "cli.install_failed" };
+    const { installed, configured } = run.result;
+    if (installed !== null && installed !== plan.release?.version) {
+        throw new Error("The CLI child installed a different version");
     }
     return CliConvergeResult.parse({
         completed: true,
-        outcome: result.installed === null ? "cli_present" : "cli_installed",
+        outcome: installed === null ? "cli_present" : "cli_installed",
         reason: null,
-        version: result.installed,
-        configured: result.configured,
+        version: installed,
+        configured,
     });
 }

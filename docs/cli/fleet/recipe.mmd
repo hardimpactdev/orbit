@@ -318,19 +318,10 @@ sequenceDiagram
     %%> - checks fleet.window_closed
     %%> When:
     %%> - only when its native skip guard permits this action
-    SW->>SW: cli_asset
+    SW->>N: cli
     %%> What it does:
-    %%> - uses @nckrtl/node-role-converge-command.cli
-    %%> When:
-    %%> - only when its native skip guard permits this action
-    SW->>N: cli_command
-    %%> What it does:
-    %%> - uses @swamp/ssh.script
-    %%> When:
-    %%> - only when its native skip guard permits this action
-    SW->>SW: cli
-    %%> What it does:
-    %%> - uses @nckrtl/fleet-recipe-command.decode
+    %%> - runs node-cli-install: publishes the admitted CLI and its 0600 root-owned profile with `@swamp/cfgmgmt` fetch, link and file
+    %%> - a newer release or a commit build is left as it is; a file without a valid Orbit version is replaced
     %%> When:
     %%> - only when its native skip guard permits this action
     SW->>SW: verify_asset

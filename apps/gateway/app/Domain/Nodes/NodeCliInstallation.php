@@ -11,9 +11,6 @@ final readonly class NodeCliInstallation
 
     public const string Present = 'cli_present';
 
-    /** The Node state recorded while `/usr/local/bin/orbit` is a CLI Orbit did not install. */
-    public const string Foreign = 'foreign';
-
     public function __construct(
         /** `cli_installed` or `cli_present`. */
         public string $outcome,

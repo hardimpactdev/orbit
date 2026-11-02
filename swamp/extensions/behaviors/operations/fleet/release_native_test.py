@@ -18,14 +18,27 @@ class FleetReleaseNative(NativeTestCase):
         super().setUp()
         self.copy_behaviors('automatic-deploy', 'operations', 'node-worker')
         module = self.repo / 'extensions/behaviors/operations/fleet-recipe/fleet_release.ts'
-        module.write_text('import { http, cli, observer } from "./release_native_fixture.ts";\n' +
-                          module.read_text().replace('fleetRelease();', 'fleetRelease(cli, observer, () => http, () => new Date("2026-10-31T02:30:00Z"));'))
+        module.write_text('import { http, observer } from "./release_native_fixture.ts";\n' +
+                          module.read_text().replace('fleetRelease();', 'fleetRelease(observer, () => http, () => new Date("2026-10-31T02:30:00Z"));'))
         shutil.copy(ROOT / 'extensions/behaviors/operations/fleet/release_native_fixture.ts', module.parent)
-        for kind in ('rollout', 'cli-converge'):
-            name = 'workflow-operation-fleet-' + kind + '.yaml'
+        # The real node-cli-install child has its own native test; this one records the effect and fails on request.
+        (self.repo / 'extensions/behaviors/fleet-cli-fixture.ts').write_text('''import {z} from "npm:zod@4.4.3";
+export const behavior={type:"@fixture/fleet-cli",version:"2026.11.02.1",resources:{result:{schema:z.record(z.string(),z.unknown()),lifetime:"1d",garbageCollection:10}},methods:{
+install:{description:"Fake native CLI child",arguments:z.object({node_id:z.number(),version:z.string()}),execute:async(a:{node_id:number;version:string},ctx:any)=>{
+const state=JSON.parse(await Deno.readTextFile("fleet-native.json"));state.effects.push(`cli:${a.node_id}`);await Deno.writeTextFile("fleet-native.json",JSON.stringify(state));
+if(state.failure===a.node_id&&!state.uncertain)throw new Error("checksum mismatch");
+const result={installed:a.version,configured:true,version:a.version};await ctx.writeResource("result","result",result);return result;}}}};''')
+        (self.repo / 'workflows/workflow-node-cli-install.yaml').write_text(json.dumps({
+            'id': '440d10ad-68c2-4f59-a3ae-0ce705a84e47', 'name': 'node-cli-install', 'inputs': {'type': 'object', 'properties': {
+                'node_id': {'type': 'integer'}, 'intent': {'type': 'object'}}, 'required': ['node_id', 'intent']},
+            'jobs': [{'name': 'cli', 'steps': [{'name': 'result', 'task': {'type': 'behavior', 'behaviorType': '@fixture/fleet-cli',
+                'behaviorName': '${{ "cli-" + string(inputs.node_id) }}', 'methodName': 'install',
+                'inputs': {'node_id': '${{ inputs.node_id }}', 'version': '${{ inputs.intent.cli.release.version }}'}}}]}]}))
+        for name in ('workflow-operation-fleet-rollout.yaml', 'workflow-operation-fleet-cli-converge.yaml', 'workflow-fleet-release-node.yaml'):
             import yaml
             workflow = yaml.safe_load((ROOT / 'workflows' / name).read_text())
             for job in workflow['jobs']:
+                job.pop('labels', None)
                 for step in job['steps']:
                     step.pop('target', None); step.pop('labels', None)
                     step.pop('labels', None)
@@ -37,7 +50,9 @@ class FleetReleaseNative(NativeTestCase):
     def node(self, i):
         return {'node_id': i, 'row_id': i, 'user': 'node', 'release': {'version': '0.100.0', 'url': 'https://example.com/cli', 'sha256': 'a' * 64},
                 'profile': '{}', 'skip_reason': None, 'plan_error': None, 'daytime': True,
-                'agent': {'url': 'https://example.com/agent', 'sha256': 'b' * 64, 'version': '0.5.0'}}
+                'agent': {'url': 'https://example.com/agent', 'sha256': 'b' * 64, 'version': '0.5.0'},
+                'ssh': {'control_node_id': 209, 'identity_file': '/etc/orbit/swamp-role-worker/ssh-identity',
+                        'target': {'host': f'10.44.0.{i}', 'user': 'node', 'port': 22, 'host_keys': ['ssh-ed25519 AAAA']}}}
 
     def run_parent(self, kind='rollout', success=True):
         self.state['operation']['kind'] = 'fleet.' + kind.replace('-', '_')
@@ -47,6 +62,15 @@ class FleetReleaseNative(NativeTestCase):
         result = self.cli('workflow', 'run', workflow, '--input', json.dumps({'operation_id': 7, 'node_id': 1, 'kind': self.state['operation']['kind']}), success=success)
         state = json.loads((self.repo / 'fleet-native.json').read_text())
         return state, result
+
+    def test_only_the_rollout_observer_runs_on_its_node(self):
+        import yaml
+        steps = {step['name']: step for job in yaml.safe_load((ROOT / 'workflows/workflow-fleet-release-node.yaml').read_text())['jobs'] for step in job['steps']}
+        for name in ('gate', 'cli', 'record'):
+            self.assertEqual(steps[name]['labels'], {'role': 'swamp'}, name)
+        self.assertEqual(steps['observer']['labels'], {'node': '${{ string(inputs.target_node_id) }}'})
+        self.assertTrue(steps['observer']['guard'].startswith('${{ inputs.kind != "fleet.rollout" ||'))
+        self.assertEqual(steps['observer']['task']['methodName'], 'observer')
 
     def test_ordered_rollout_in_one_native_run(self):
         state, _ = self.run_parent()
@@ -65,13 +89,14 @@ class FleetReleaseNative(NativeTestCase):
         self.assertEqual(state['effects'], ['cli:2', 'observer:2', 'cli:3'])
         self.assertEqual(state['operation']['status'], 'failed')
         self.assertEqual(state['operation']['result']['halted_node_id'], 3)
+        self.assertEqual(state['operation']['result']['nodes'][1]['error_code'], 'cli.install_failed')
         self.assertEqual(state['operation']['result']['nodes'][2]['outcome'], 'pending')
 
     def test_uncertain_effect_stops_later_nodes_and_is_not_success(self):
         self.state['failure'] = 3
         self.state['uncertain'] = True
         state, _ = self.run_parent(success=False)
-        self.assertEqual(state['effects'], ['cli:2', 'observer:2', 'cli:3'])
+        self.assertEqual(state['effects'], ['cli:2', 'observer:2', 'cli:3', 'observer:3'])
         self.assertEqual(state['operation']['status'], 'failed')
         self.assertEqual(state['operation']['result']['error_code'], 'fleet.release_uncertain')
 

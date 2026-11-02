@@ -22,9 +22,16 @@ class DirectRoleNative(NativeTestCase):
         super().setUp()
         self.copy_behaviors('automatic-deploy', 'node-worker', 'operations')
         module = self.repo / 'extensions/behaviors/operations/fleet-recipe/node_role.ts'
-        module.write_text('import {fixtureHttp, fixtureBaseline, fixtureFootprint, fixtureCli} from "../node/role_direct_native_fixture.ts";\n' +
+        module.write_text('import {fixtureHttp, fixtureBaseline, fixtureFootprint} from "../node/role_direct_native_fixture.ts";\n' +
                           module.read_text().replace('export const behavior = nodeRoleAdd();',
-                            'export const behavior = nodeRoleAdd(fixtureBaseline, () => fixtureHttp, fixtureFootprint, fixtureCli);'))
+                            'export const behavior = nodeRoleAdd(fixtureBaseline, () => fixtureHttp, fixtureFootprint);'))
+        # The real node-cli-install child has its own native test; here it reports a published CLI.
+        (self.repo / 'workflows/workflow-node-cli-install.yaml').write_text(json.dumps({
+            'id': '440d10ad-68c2-4f59-a3ae-0ce705a84e47', 'name': 'node-cli-install', 'inputs': {'type': 'object', 'properties': {
+                'node_id': {'type': 'integer'}, 'intent': {'type': 'object'}}, 'required': ['node_id', 'intent']},
+            'jobs': [{'name': 'cli', 'steps': [{'name': 'result', 'task': {'type': 'behavior',
+                'behaviorType': '@nckrtl/node-role-converge-command', 'behaviorName': '${{ "cli-result-" + string(inputs.node_id) }}',
+                'methodName': 'cli_native_result', 'inputs': {'installed': True, 'version': '${{ inputs.intent.cli.release.version }}', 'configured': True}}}]}]}))
         removal = self.repo / 'extensions/behaviors/operations/node/role_removal.ts'
         removal.write_text('import {fixtureSourceHttp,fixtureCleanup,fixtureGrace} from "./role_removal_native_fixture.ts";\n' + removal.read_text().replace('export const behavior = roleRemoval();','export const behavior = roleRemoval(() => fixtureSourceHttp, fixtureCleanup, fixtureGrace);'))
         for filename, factory in [('role_metrics.ts', 'roleMetrics'), ('role_publication.ts', 'rolePublication'), ('role_certificates.ts', 'roleCertificates')]:
@@ -68,13 +75,13 @@ class DirectRoleNative(NativeTestCase):
         self.run_id = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]['id']
         return result
 
-    def test_one_native_root_composes_baseline_footprint_and_cli_without_children(self):
+    def test_one_native_root_composes_baseline_footprint_and_the_cli_child(self):
         self.run_workflow()
         state = self.read()
         self.assertEqual(state['operation']['status'], 'succeeded')
         self.assertEqual(state['effects'][:5], ['agent-install', 'caddy-package', 'prerequisites', 'ci-host', 'firewall'])
-        self.assertEqual(state['effects'][-1], 'native-cli-install')
-        self.assertEqual(len(state['effects']), 13)
+        self.assertEqual(len(state['effects']), 12)
+        self.assertEqual(state['operation']['result']['cli']['outcome'], 'cli_installed')
         self.assertEqual(len(state['operation']['result']['footprint']['artifacts']), 2)
         self.assertIsNone(state['operation']['result']['follow_up'])
         self.assertTrue(all('/direct-operations/91' in call['path'] for call in state['calls']))

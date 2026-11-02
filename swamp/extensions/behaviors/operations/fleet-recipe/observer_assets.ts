@@ -1,4 +1,4 @@
-import { CliInstallInput, CliInstallResult } from "../fleet/cli_install.ts";
+import { CliNativeResult, CliPlan, CliPlanInput, cliPlan } from "../fleet/cli_install.ts";
 import { NETWORK_PROGRAM } from "../node/network_native_program.ts";
 import { z } from "npm:zod@4.4.3";
 const Path = z.string().startsWith("/").max(4096);
@@ -47,11 +47,8 @@ export const behavior = {
     type: "@nckrtl/node-role-converge-command",
     version: "2026.11.01.2",
     resources: {
-        cli: {
-            schema: CliInstallResult,
-            lifetime: "1d",
-            garbageCollection: 10,
-        },
+        cli_plan: { schema: CliPlan, lifetime: "1d", garbageCollection: 10 },
+        cli_native: { schema: CliNativeResult, lifetime: "1d", garbageCollection: 10 },
         assets: { schema: Assets, lifetime: "1d", garbageCollection: 10 },
         observer_files: {
             schema: ObserverFiles,
@@ -66,26 +63,21 @@ export const behavior = {
         result: { schema: Result, lifetime: "1d", garbageCollection: 10 },
     },
     methods: {
-        cli: {
-            description:
-                "Bind the canonical CLI installation policy to admitted public input",
-            arguments: CliInstallInput,
-            execute: async (
-                args: z.infer<typeof CliInstallInput>,
-                ctx: Context,
-            ) => {
-                const input = CliInstallInput.parse(args);
-                const result = {
-                    script_body: (await Deno.readTextFile(
-                        ctx.extensionFile("scripts/cli.py"),
-                    )).replace(
-                        "json.load(sys.stdin)",
-                        "json.loads(" +
-                            JSON.stringify(JSON.stringify(input)) +
-                            ")",
-                    ),
-                };
-                await ctx.writeResource("assets", "assets", result);
+        cli_plan: {
+            description: "Select publication from the observed CLI version and self-update support",
+            arguments: CliPlanInput,
+            execute: async (args: z.infer<typeof CliPlanInput>, ctx: Context) => {
+                const plan = cliPlan(args);
+                await ctx.writeResource("cli_plan", "plan", plan);
+                return plan;
+            },
+        },
+        cli_native_result: {
+            description: "Shape the public result of native CLI publication",
+            arguments: z.object({ installed: z.boolean(), version: z.string(), configured: z.boolean() }).strict(),
+            execute: async (args: { installed: boolean; version: string; configured: boolean }, ctx: Context) => {
+                const result = CliNativeResult.parse({ installed: args.installed ? args.version : null, version: args.version, configured: args.configured });
+                await ctx.writeResource("cli_native", "result", result);
                 return result;
             },
         },
@@ -96,15 +88,6 @@ export const behavior = {
                 z.object({}).strict().parse(JSON.parse(args.stdout));
                 const result = { ready: true, changed: true };
                 await ctx.writeResource("result", "result", result);
-                return result;
-            },
-        },
-        cli_result: {
-            description: "Decode the canonical public CLI outcome",
-            arguments: z.object({ stdout: z.string() }).strict(),
-            execute: async (args: { stdout: string }, ctx: Context) => {
-                const result = CliInstallResult.parse(JSON.parse(args.stdout));
-                await ctx.writeResource("cli", "cli", result);
                 return result;
             },
         },
