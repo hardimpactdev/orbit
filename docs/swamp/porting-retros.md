@@ -109,6 +109,13 @@ Lane 26 adds one row for each receipt from the topology loop ([F13](/swamp/porti
 
 | Receipt | Kinds | Topology and version | Result | What the proof caught | Fault | Lesson |
 | --- | --- | --- | --- | --- | --- | --- |
+| `evidence/proof/tool.install/20261102T124136Z-minimal.json` | `tool.install` | minimal@7, `4d1065e2cc` | Pass: 12.55 s | Native end state and legacy public parity | None | Official resources or bounded argv replace package scripts |
+| `evidence/proof/tool.update/20261102T124202Z-minimal.json` | `tool.update` | minimal@7, `4d1065e2cc` | Pass: 8.49 s | Native end state and legacy public parity | None | Official resources or bounded argv replace package scripts |
+| `evidence/proof/tool.remove/20261102T124227Z-minimal.json` | `tool.remove` | minimal@7, `4d1065e2cc` | Pass: 12.47 s | Native end state and legacy public parity | None | Official resources or bounded argv replace package scripts |
+| `evidence/proof/tool.install.constraint-blocked/20261102T124236Z-minimal.json` | `tool.install.constraint-blocked` | minimal@7, `4d1065e2cc` | Pass: 6.49 s | Native end state and legacy public parity | None | Official resources or bounded argv replace package scripts |
+| `evidence/proof/tool.remove.source-failure/20261102T124319Z-minimal.json` | `tool.remove.source-failure` | minimal@7, `4d1065e2cc` | Pass: 14.57 s | Native end state and legacy public parity | None | Official resources or bounded argv replace package scripts |
+| `evidence/proof/tool.install.first-use/20261102T124351Z-minimal.json` | `tool.install.first-use` | minimal@7, `4d1065e2cc` | Pass: 28.80 s | Native end state and legacy public parity | None | Official resources or bounded argv replace package scripts |
+| `evidence/proof/metrics.credentials_reset/20261102T124421Z-minimal.json` | `metrics.credentials_reset` | minimal@7, `4d1065e2cc` | Pass: 6.46 s | Native end state and legacy public parity | None | Official resources or bounded argv replace package scripts |
 | `evidence/proof/metrics.credentials_reset/20261102T114754Z-minimal.json` | `metrics.credentials_reset` | minimal@6, `63b33e155b` | Pass: 4.44 s | Integer target IDs need a string environment assignment in argv; parity reads `target_id` | Fixture | Bounded curl argv takes private config on stdin and exposes only HTTP status |
 | `evidence/proof/vault.setup/20261102T114220Z-minimal.json` | `vault.setup` | minimal@6, `20ac40bacc` | Pass: 32.57 s; verification 23.420 s, cleanup 6.523 s | The fixture's stale APT index referenced a removed package; refresh it before installing test dependencies | Fixture | Native cleanup removes the Bitwarden session before the end assert; the terminal reader projects only public metadata |
 | `evidence/proof/instance.create/20261101T214907Z-minimal.json`, `…setup-failure/20261101T214919Z-minimal.json` | `instance.create` (success with a development Process; setup failure) | minimal@2 | Pass: 24.7 s and 8.5 s, up to receipt 414 s | An unused `vp_materialize` in the create intent needed the agent delivery manifest (HTTP 500) | Kind | Compute only what the workflow reads; the minimal topology finds hidden build-output dependencies |
@@ -131,15 +138,23 @@ Before this retro, the Orbit change is +884 lines. Swamp grows by 763: behaviors
 
 ## Rule 22 Tools, AI-router and Metrics follow-up
 
-Tools removes 15 package scripts. Frozen adoption keeps its nine shared query/repository/setup files; the Node observer pass and node-bootstrap family own those remaining boundaries. The official Homebrew resource cannot set the required bottle flag, managed prefix or environment, so Homebrew uses bounded SSH argv. APT uses its official end check; typed observations and a native assert replace the result reporter.
+### Tools package scripts
 
-A failed repository step now reports `tool.repository_failed`; the fingerprint assert retains `tool.repository_key_mismatch`. No new shipped-script gap is added.
+The package conversion deletes 15 scripts and their manifest entries. Frozen adoption keeps nine shared query, repository and setup files. The observer pass owns adoption; node-bootstrap owns the remaining pinned manager installers. Those boundaries remain under Nick's earlier freeze. No new script gap is added, and the whole Tools family is not yet marked rule 22 done.
 
-The final Tools source passes seven native graph tests, 24 Deno tests and 81 targeted Gateway tests. Its fresh proof is blocked before topology staging: group 2507, provision Operation 7755 created task VM 264 on Shark, then stayed running without a current step or result for eight minutes. Placement succeeded.
+Homebrew uses bounded argv because the official resource cannot set the bottle flag, managed prefix or environment. APT uses its official package check. Typed observations and a native assert replace the result reporter. The repository resource writes its source without refreshing its index, so one bounded argv refreshes only that source before reading its candidate. The managed Linux Vite+ launcher selects the actual recipe store. A failed refresh reports `tool.repository_unavailable`; a failed fingerprint assert keeps `tool.repository_key_mismatch`.
 
-Group cancellation refuses with `operation.target_busy`; Operation 7755 accepted a cancellation request but remains running, so the same lifecycle lock also blocks VM cleanup. The earlier lane VMs are destroyed. Tools stays unpushed pending a topology receipt. The earlier install completed in 14.59 s, but its receipt failed an obsolete assertion that prohibited public apt output in native history; the corrected parity check protects the API result.
+All six Tools fixtures pass on minimal@7 at `4d1065e2cc`: install, unchanged update, exact removal, constraint refusal, failed source cleanup and Vite+ first use. Their run times are 12.55, 8.49, 12.47, 6.49, 14.57 and 28.80 seconds. The observed nearest-rank p95 is 28.80 seconds for this six-fixture sample. Budgets are 300 seconds, except first use at 900; queue timeout is 60 seconds. Seven native graph tests, 25 Deno tests and 81 targeted Gateway tests pass.
 
-Metrics removed its Python HTTP action; its sample and observed p95 are 4.44 s, with a 180 s run budget and 60 s queue timeout. Commit `f949341b7c` updates its declaration to native terminal data after the shared selector contract changed; Required checks passed on that fix. The receipt uses disposable Grafana and the topology CA, with no production data or scale. AI-router source removal had no production caller and was deleted with its tests; deletion needs no execution receipt.
+Before this receipt update, the Tools commits remove 119 net Orbit lines. In `swamp/`, behaviors add 60 lines for typed argv and observations, workflows remove 27, scripts remove 259, and tests/fixtures remove 95. The proof caught the missing scoped apt refresh and the assumed Vite+ store path. Its transport fixture also needed atomic state writes because independent reads run in parallel. The topology uses disposable Nodes and the proof CA, with no production data or scale.
+
+### Metrics and AI-router
+
+Metrics removed its Python HTTP action. Its final minimal@7 receipt at `4d1065e2cc` passes in 6.46 seconds with a 180-second budget and 60-second queue timeout. The native selector fix is included. AI-router source removal had no production caller and was deleted with its tests; deletion needs no execution receipt.
+
+### Proof VM cleanup
+
+Group 2511 completed the proofs. Cancel Operation 7792 destroyed task VM 266 and reported the provider absent and settled. The earlier lane VMs are destroyed. Group 2507 remains held under the explicit one-topology instruction: provision Operation 7755 accepted cancellation but has not settled, and group cancellation returns `operation.target_busy`. No serve restart or reload was used to recover that production lifecycle fault.
 
 ## Rule 22 Process and Horizon follow-up
 
