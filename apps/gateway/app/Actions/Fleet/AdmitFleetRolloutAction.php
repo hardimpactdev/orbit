@@ -63,7 +63,8 @@ final readonly class AdmitFleetRolloutAction
         if ($nodes === [] || ($nodeIds !== null && count($nodes) !== count($nodeIds))) {
             throw new ResourceOperationException('fleet.rollout_not_ready', 'The requested Nodes are not pending rollout members.', 409);
         }
-        $operation = $this->start->execute('fleet.rollout', 'fleet_rollout', $plan['rollout'], $root, [
+        // Its steps run on the Swamp Node and read and record this intent, so that Node owns it.
+        $operation = $this->start->execute('fleet.rollout', 'fleet_rollout', $plan['rollout'], Node::query()->findOrFail(209)->id, [
             'rollout_id' => $plan['rollout'], 'commit' => $plan['commit'], 'nodes' => $nodes,
             'remaining' => count($plan['targets']) - count($nodes),
             'participant_node_ids' => array_values(array_unique([$root, 209, ...array_column($nodes, 'node_id')])),

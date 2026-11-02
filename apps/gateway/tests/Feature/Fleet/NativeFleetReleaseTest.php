@@ -11,6 +11,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\FleetRollout;
+use App\Models\Node;
 use App\Models\NodeFootprint;
 use App\Models\Operation;
 use Tests\Support\FakeAgentCommandRunner;
@@ -23,6 +24,8 @@ beforeEach(function (): void {
     app(GatewayServingHost::class)->remember($this->gateway);
     $this->dev = FleetFixtures::node('native-fleet-dev', [RoleName::AppDev]);
     $this->prod = FleetFixtures::node('native-fleet-prod', [RoleName::AppProd]);
+    $this->swamp = Node::query()->forceCreate(['id' => 209, 'name' => 'swamp', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'public_ssh_host' => '192.0.2.209', 'wireguard_ip' => '10.44.0.209', 'user' => 'orbit']);
     $this->agents = new FakeAgentCommandRunner;
     app()->instance(AgentCommandRunner::class, $this->agents);
     $this->run = 'a075eb23-7ac4-4487-80d1-57a038a92676';
@@ -37,7 +40,8 @@ beforeEach(function (): void {
 it('admits the whole rollout into one native run without Node actions or children', function (): void {
     $id = $this->withHeader('Idempotency-Key', 'fleet-native-rollout')->postJson('/api/v1/fleet/rollout')->assertAccepted()->json('data.id');
     $operation = Operation::findOrFail($id);
-    expect($operation->kind)->toBe('fleet.rollout')->and($operation->node_id)->toBe($this->gateway->id)
+    // The steps run on Node 209 and record the intent there, so Node 209 owns it.
+    expect($operation->kind)->toBe('fleet.rollout')->and($operation->node_id)->toBe(209)
         ->and(array_column($operation->input['nodes'], 'node_id'))->toBe([$this->dev->id, $this->prod->id])
         ->and($operation->input['nodes'][0]['daytime'])->toBeTrue()
         ->and($operation->input['nodes'][1]['daytime'])->toBeFalse()
@@ -50,7 +54,7 @@ it('admits the whole rollout into one native run without Node actions or childre
 it('admits a CLI subset and rejects an excluded Node before starting', function (): void {
     $id = $this->postJson('/api/v1/fleet/cli/converge', ['node_ids' => [$this->dev->id]])->assertAccepted()->json('data.id');
     $operation = Operation::findOrFail($id);
-    expect(array_column($operation->input['nodes'], 'node_id'))->toBe([$this->dev->id])
+    expect($operation->node_id)->toBe(209)->and(array_column($operation->input['nodes'], 'node_id'))->toBe([$this->dev->id])
         ->and($operation->input['nodes'][0]['agent'])->toBeNull()->and($this->agents->calls)->toBe([])
         ->and($operation->input['nodes'][0]['skip_reason'])->toBeNull()
         ->and($operation->input['nodes'][0]['ssh']['target'])->toMatchArray(['host' => $this->dev->wireguard_ip, 'user' => $this->dev->user,
