@@ -87,8 +87,8 @@ sequenceDiagram
   %%> - binds `0.0.0.0`, an IPv6 wildcard or a public address
   SW->>N: Wait until healthy<br/>@swamp/ssh exec · timeout 60
   %%> What it does:
-  %%> - one bounded command: `timeout 60` around the server's own probe, run in the container until it answers
-  %%> - MySQL and PostgreSQL accept TCP only after first-start initialization; 60 s without an answer fails the step
+  %%> - one bounded command: `timeout 60` around Docker's health status, read until it reports `healthy`
+  %%> - Docker owns the probe, which uses TCP: MySQL and PostgreSQL accept it only after first-start initialization; 60 s without `healthy` fails the step
   %%> Why:
   %%> - Swamp has no wait primitive, so one bounded command waits (Q-WAIT)
   SW->>N: Check the admin login<br/>docker exec -i · SELECT 1
@@ -102,7 +102,7 @@ sequenceDiagram
     SW->>N: Remove the first-start env<br/>recreate · wait again
     %%> What it does:
     %%> - one bounded command removes `app-mysql` and starts it again without `--env-file`; the data volume keeps the password
-    %%> - waits for the server's probe again; this is the end check for mysql and pgsql
+    %%> - waits for Docker to report it healthy again; this is the end check for mysql and pgsql
     %%> Result:
     %%> - the password is absent from the container environment and `docker inspect`
   end

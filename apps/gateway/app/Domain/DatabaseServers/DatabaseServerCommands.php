@@ -21,20 +21,21 @@ final readonly class DatabaseServerCommands
     {
         $driver = DatabaseDriver::from($input['driver']);
         $name = $input['container'];
-        $wait = 'until '.self::probe($driver).' >/dev/null 2>&1; do sleep 1; done';
+        // Docker owns the probe; the wait reads its health status, so it ends at the first healthy report.
+        $wait = 'until [ "$(docker inspect --format "{{.State.Health.Status}}" "$1")" = healthy ]; do sleep 1; done';
 
         return [
             'acl_path' => $input['volume'] === null ? '' : "/var/lib/docker/volumes/{$input['volume']}/_data/users.acl",
             // A rerun keeps an existing container and continues from it; the first start reads its password from stdin.
             'start' => ['sh', '-c', 'name=$1; shift; docker container inspect "$name" >/dev/null 2>&1 || exec "$@"', 'sh', $name,
                 ...$this->run($input, $input['initialize'] ? $input['spec'] : $input['scrub_spec'], $input['initialize'])],
-            // Q-WAIT: one bounded probe loop. MySQL and PostgreSQL accept TCP only after first-start initialization.
-            'wait' => ['timeout', '60', 'docker', 'exec', $name, 'sh', '-c', $wait],
+            // Q-WAIT: one bounded wait. The probe uses TCP, which MySQL and PostgreSQL accept only after initialization.
+            'wait' => ['timeout', '60', 'sh', '-c', $wait, 'sh', $name],
             'login_client' => DatabaseStatements::login($driver, $name, match ($driver) {
                 DatabaseDriver::Pgsql => 'postgres', DatabaseDriver::Redis => 'default', default => 'root'
             }, $driver === DatabaseDriver::Pgsql ? 'postgres' : 'mysql'),
             // The final container runs without the password variable on the same volume; the step waits for it again.
-            'scrub' => ['timeout', '180', 'sh', '-c', 'name=$1; wait=$2; shift 2; docker rm --force "$name" >/dev/null && "$@" >/dev/null && exec timeout 60 docker exec "$name" sh -c "$wait"',
+            'scrub' => ['timeout', '180', 'sh', '-c', 'name=$1; wait=$2; shift 2; docker rm --force "$name" >/dev/null && "$@" >/dev/null && exec timeout 60 sh -c "$wait" sh "$name"',
                 'sh', $name, $wait, ...$this->run($input, $input['scrub_spec'], false)],
         ];
     }

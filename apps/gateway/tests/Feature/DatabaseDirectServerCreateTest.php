@@ -43,7 +43,7 @@ it('records a server whose run inputs hold vault key names, never a secret', fun
     expect(str_contains($start, '--env-file /dev/stdin'))->toBe($driver !== 'redis');
     expect(implode(' ', $commands['scrub']))->not->toContain('--env-file');
     expect($start)->toContain('orbit.process.id='.$server->process_id)->toContain('--health-start-period 300s');
-    expect(array_slice($commands['wait'], 0, 5))->toBe(['timeout', '60', 'docker', 'exec', $intent['container']]);
+    expect($commands['wait'])->toBe(['timeout', '60', 'sh', '-c', 'until [ "$(docker inspect --format "{{.State.Health.Status}}" "$1")" = healthy ]; do sleep 1; done', 'sh', $intent['container']]);
     expect($commands['acl_path'])->toBe($driver === 'redis' ? '/var/lib/docker/volumes/orbit-proof-data/_data/users.acl' : '');
     expect(array_keys($input['execution_secrets']))->toBe(['login', 'start', ...($driver === 'redis' ? ['acl'] : [])]);
     expect(json_encode($input))->not->toContain($server->root_password);
