@@ -1,0 +1,34 @@
+---
+title: "self-update"
+sidebarTitle: "Overview"
+description: "Update this machine's orbit CLI to the Gateway's release."
+covers:
+  - apps/cli/app/Commands/SelfUpdate/**
+  - apps/gateway/app/Http/Controllers/Api/GatewayDesiredFleetStatesController.php
+---
+
+`self-update` updates this machine's `orbit` CLI to the active Gateway's release. It replaces the `orbit` binary with the CLI release of the Gateway's commit, after a SHA-256 check. It never touches `orbit-agent`: a Node gets the agent from the Gateway through [install on mismatch](/reference/node-agent#install-on-mismatch). [Orbit self-update](/reference/self-update) describes the desired fleet state, each step, and the checks.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`self-update`](/cli/self-update/self-update) | Update the CLI. |
+
+The command accepts `--json`.
+
+## The newer-release notice
+
+After any other command that reached the Gateway, the CLI prints one line on standard error when the Gateway's fleet runs a newer CLI release, at most once a day:
+
+```text
+Orbit 0.4681.0 is available (this is 0.4600.0). Run orbit self-update.
+```
+
+It appears only when standard error is a terminal and `CI` is unset, and never in JSON output. [The newer-release notice](/reference/self-update#the-newer-release-notice) describes the headers and the throttle.
+
+## Related
+
+- [`gateway`](/cli/gateway) shows the desired fleet state in `gateway:status`.
+- [CLI binaries](/reference/cli-binaries) describes the published releases.
+- [Node agent](/reference/node-agent#install-and-upgrade) describes the agent pin.

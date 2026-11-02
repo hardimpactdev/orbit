@@ -347,29 +347,26 @@ describe('command vocabulary', function (): void {
 });
 
 describe('command reference', function (): void {
-    it('documents every product command in a docs/cli section', function (): void {
-        $sections = cli_reference_sections();
-        $undocumented = array_values(array_filter(
-            array_keys(cli_reference_commands()),
-            static fn (string $name): bool => cli_reference_section($sections, $name) === null,
-        ));
+    it('documents every product command on a docs/cli page', function (): void {
+        $pages = cli_reference_pages();
+        $undocumented = array_values(array_diff(array_keys(cli_reference_commands()), array_keys($pages)));
 
-        expect($undocumented)->toBe([], 'Add an `## orbit <command>` section to docs/cli for: '.implode(', ', $undocumented));
+        expect($undocumented)->toBe([], 'Add a docs/cli/<family>/<command>.mdx page titled `orbit <command>` for: '.implode(', ', $undocumented));
     });
 
-    it('documents every argument and option in the command section', function (): void {
-        $sections = cli_reference_sections();
+    it('documents every argument and option on the command page', function (): void {
+        $pages = cli_reference_pages();
         $gaps = [];
 
         foreach (cli_reference_commands() as $name => $command) {
-            $section = cli_reference_section($sections, $name);
-            if ($section === null) {
+            $page = $pages[$name] ?? null;
+            if ($page === null) {
                 continue;
             }
 
             $definition = $command->getNativeDefinition();
             foreach ($definition->getArguments() as $argument) {
-                if (preg_match('/[`<\[]'.preg_quote($argument->getName(), '/').'[`>\].=]/', $section) !== 1) {
+                if (preg_match('/[`<\[]'.preg_quote($argument->getName(), '/').'[`>\].=]/', $page) !== 1) {
                     $gaps[] = "{$name} argument {$argument->getName()}";
                 }
             }
@@ -377,13 +374,13 @@ describe('command reference', function (): void {
                 if ($option->getName() === 'json') {
                     continue;
                 }
-                if (preg_match('/--'.preg_quote($option->getName(), '/').'(?![a-z0-9-])/', $section) !== 1) {
+                if (preg_match('/--'.preg_quote($option->getName(), '/').'(?![a-z0-9-])/', $page) !== 1) {
                     $gaps[] = "{$name} option --{$option->getName()}";
                 }
             }
         }
 
-        expect($gaps)->toBe([], 'Document these in the command section under docs/cli: '.implode(', ', $gaps));
+        expect($gaps)->toBe([], 'Document these on the command page under docs/cli: '.implode(', ', $gaps));
     });
 });
 
@@ -1531,69 +1528,22 @@ function cli_reference_commands(): array
 }
 
 /**
- * Every `orbit <command>` heading in docs/cli with the text up to the next heading of the same or a higher level.
+ * Each command page in docs/cli/<family>, keyed by the command its `orbit <command>` title names.
  *
- * @return list<array{heading: string, text: string}>
+ * @return array<string, string>
  */
-function cli_reference_sections(): array
+function cli_reference_pages(): array
 {
-    $sections = [];
+    $pages = [];
 
-    foreach (glob(base_path('../../docs/cli/*.mdx')) ?: [] as $path) {
-        $lines = explode("\n", (string) file_get_contents($path));
-        $fenced = false;
-        $open = null;
-
-        foreach ($lines as $line) {
-            if (str_starts_with($line, '```')) {
-                $fenced = ! $fenced;
-            }
-            $level = ! $fenced && preg_match('/^(#{2,4}) (.*)$/', $line, $heading) === 1 ? strlen($heading[1]) : null;
-
-            if ($level !== null && $open !== null && $level <= $open['level']) {
-                $sections[] = ['heading' => $open['heading'], 'text' => $open['text']];
-                $open = null;
-            }
-            if ($level !== null && str_starts_with($heading[2], 'orbit ')) {
-                $open = ['level' => $level, 'heading' => $heading[2], 'text' => ''];
-
-                continue;
-            }
-            if ($open !== null) {
-                $open['text'] .= $line."\n";
-            }
-        }
-
-        if ($open !== null) {
-            $sections[] = ['heading' => $open['heading'], 'text' => $open['text']];
+    foreach (glob(base_path('../../docs/cli/*/*.mdx')) ?: [] as $path) {
+        $contents = (string) file_get_contents($path);
+        if (preg_match('/\A---\ntitle: "orbit (\S+)"\n/', $contents, $title) === 1) {
+            $pages[$title[1]] = $contents;
         }
     }
 
-    return $sections;
-}
-
-/**
- * The section whose heading names the command, or else the section whose usage block starts with it.
- *
- * @param  list<array{heading: string, text: string}>  $sections
- */
-function cli_reference_section(array $sections, string $name): ?string
-{
-    $pattern = '/(?<![a-z0-9:-])'.preg_quote($name, '/').'(?![a-z0-9:-])/';
-
-    foreach ($sections as $section) {
-        if (preg_match($pattern, $section['heading']) === 1) {
-            return $section['text'];
-        }
-    }
-
-    foreach ($sections as $section) {
-        if (preg_match('/^orbit '.preg_quote($name, '/').'(?: |$)/m', $section['text']) === 1) {
-            return $section['text'];
-        }
-    }
-
-    return null;
+    return $pages;
 }
 
 function orbitProductCommandNames(): array

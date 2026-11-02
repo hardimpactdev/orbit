@@ -5,7 +5,20 @@
       "group": "Fleet",
       "order": 4,
       "pages": [
-        "cli/tool"
+        {
+          "group": "tool",
+          "pages": [
+            "cli/tool/index",
+            "cli/tool/manager-list",
+            "cli/tool/scan",
+            "cli/tool/adopt",
+            "cli/tool/install",
+            "cli/tool/list",
+            "cli/tool/show",
+            "cli/tool/update",
+            "cli/tool/remove"
+          ]
+        }
       ]
     }
   ]

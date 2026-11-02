@@ -1,39 +1,31 @@
 #!/usr/bin/env python3
-"""Write docs/flows-data.js: each command's flow charts, for docs/flow.js on the command pages.
+"""Write docs/flows-data.js: the flow charts the CLI pages place, for docs/flow.js.
 
-A command's charts are the kinds its Gateway route starts (`x-orbit-kinds` in docs/openapi.json, from
-#[StartsOperation]) that have a docs/flows/<kind>.mmd. Only commands with an `## orbit <command>` heading
-in docs/cli are listed. Without docs/openapi.json (build it with bin/build-api), no chart is attached.
+A page places a chart with `<div className="flow-at" data-chart="<family>/<name>"></div>`, which names
+docs/cli/<family>/<name>.mmd. Charts that no page places are left out. bin/check-flows checks the placements.
 """
 import json
 import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+PLACEMENT = re.compile(r'<div className="flow-at" data-chart="([a-z0-9-]+/[a-z0-9-]+)"></div>')
 
 
-def attachments(spec, headings, charts):
-    """Map each CLI command heading to the charted kinds its route starts."""
-    commands = {}
-    by_id = {command.replace(':', '-'): command for command in headings}
-    for methods in spec.get('paths', {}).values():
-        for operation in methods.values():
-            command = by_id.get(operation.get('operationId')) if isinstance(operation, dict) else None
-            kinds = [kind for kind in operation.get('x-orbit-kinds', []) if kind in charts] if command else []
-            if kinds:
-                commands.setdefault(command, []).extend(k for k in kinds if k not in commands.get(command, []))
-    return commands
+def placed(cli):
+    """Each placed chart's name with its kind and source, in page order."""
+    charts = {}
+    for page in sorted(cli.glob('*/*.mdx')):
+        for name in PLACEMENT.findall(page.read_text()):
+            src = (cli / f'{name}.mmd').read_text()
+            charts[name] = {'kind': re.search(r'^\s*%% kind:\s*(\S+)', src, re.M).group(1), 'src': src}
+    return charts
 
 
 if __name__ == '__main__':
-    charts = {path.stem: path.read_text() for path in sorted((ROOT / 'docs/flows').glob('*.mmd'))}
-    headings = {m for page in (ROOT / 'docs/cli').glob('*.mdx') for m in re.findall(r'^## orbit (\S+)$', page.read_text(), re.M)}
-    spec_path = ROOT / 'docs/openapi.json'
-    commands = attachments(json.loads(spec_path.read_text()) if spec_path.exists() else {}, headings, charts)
-    used = sorted({kind for kinds in commands.values() for kind in kinds})
-    data = {'commands': dict(sorted(commands.items())), 'charts': {kind: charts[kind] for kind in used}}
+    charts = placed(ROOT / 'docs/cli')
     (ROOT / 'docs/flows-data.js').write_text(
-        '// Built by bin/docs-flows from docs/flows/*.mmd and docs/openapi.json. Do not edit.\n'
-        f'window.orbitFlows = {json.dumps(data, indent=1, ensure_ascii=False)}\n'
+        '// Built by bin/docs-flows from the charts that docs/cli pages place. Do not edit.\n'
+        f'window.orbitFlows = {json.dumps({"charts": charts}, indent=1, ensure_ascii=False)}\n'
     )
-    print(f'docs/flows-data.js: {len(used)} of {len(charts)} charts on {len(commands)} command sections')
+    print(f'docs/flows-data.js: {len(charts)} charts placed on docs/cli pages')

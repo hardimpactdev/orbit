@@ -5,7 +5,16 @@
       "group": "Fleet",
       "order": 3,
       "pages": [
-        "cli/firewall"
+        {
+          "group": "firewall",
+          "pages": [
+            "cli/firewall/index",
+            "cli/firewall/allow",
+            "cli/firewall/deny",
+            "cli/firewall/list",
+            "cli/firewall/remove"
+          ]
+        }
       ]
     }
   ]

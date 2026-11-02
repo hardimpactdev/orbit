@@ -1,0 +1,26 @@
+---
+title: "orbit cluster:router:set"
+sidebarTitle: "cluster:router:set"
+description: "Set or replace the Cluster Router. The Router must be an active member Node."
+---
+
+```bash
+orbit cluster:router:set <cluster> <node> [--idempotency-key=KEY]
+```
+
+Use `--idempotency-key=KEY` to retry the same Operation admission after a lost response.
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `cluster` | yes | Numeric Cluster ID. |
+| `node` | yes | Numeric Node ID of an active member. |
+
+```bash
+orbit cluster:router:set 3 7
+```
+
+Replacement keeps the current Router active until its replacement is ready, promotes the candidate, and then cleans up the old assignment. Each Cluster has one Router operation owner. A concurrent Router change on the same Cluster waits up to 30 seconds and then fails with `cluster.router_busy`. A replacement that another Router change left unfinished fails with `cluster.router_transition_conflict`. A Node that is not an active member fails with `cluster.router_node_invalid`.
+
+## How it works
+
+<div className="flow-at" data-chart="cluster/router-set"></div>

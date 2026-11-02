@@ -70,7 +70,7 @@ A Node systemd Process accepts `user`. The CLI flag is `--user`, and the API fie
 
 The Gateway reads the named account through the agent's `account.lookup` and defaults the working directory to that account's home. An explicit working directory overrides this default. JSON includes `user`, and it is null when the Process uses the derived account. The Gateway does not create the account. It refuses `root` and accounts with UID zero. An absent account or an invalid account home fails create with `process.user_unavailable` (HTTP 422).
 
-Instance Processes, Docker Processes, presets, and Project definitions reject `user`. The API returns HTTP 422 and names the field `user`. [`process:create`](/cli/process#orbit-processcreate) returns `process.option_invalid` for a rejected combination and `process.user_invalid` for a name that fails the pattern, and it sends no request. For example, `--user=deploy` runs the unit as the existing account `deploy`. The Node must be an active Linux Node with a WireGuard address. macOS returns `process.platform_unsupported` (HTTP 422) before SSH. A Node Process stays when an Instance is removed. The Gateway refuses to remove a Node that still owns a Process with `node.has_processes`. [Offline removal](/reference/node-provisioning#remove-a-node) of an unreachable Node deletes its Process records without remote cleanup.
+Instance Processes, Docker Processes, presets, and Project definitions reject `user`. The API returns HTTP 422 and names the field `user`. [`process:create`](/cli/process/create) returns `process.option_invalid` for a rejected combination and `process.user_invalid` for a name that fails the pattern, and it sends no request. For example, `--user=deploy` runs the unit as the existing account `deploy`. The Node must be an active Linux Node with a WireGuard address. macOS returns `process.platform_unsupported` (HTTP 422) before SSH. A Node Process stays when an Instance is removed. The Gateway refuses to remove a Node that still owns a Process with `node.has_processes`. [Offline removal](/reference/node-provisioning#remove-a-node) of an unreachable Node deletes its Process records without remote cleanup.
 
 `process:create` and `process:list` take exactly one owner: `--instance`, `--node`, or `--project` for a definition. The API sends `target_type` as `instance` or `node` with a positive `target_id`. Update, start, stop, restart, logs, and destroy take the Process ID and use that record's owner.
 
@@ -155,7 +155,7 @@ A preset needs a development Instance target. The Gateway refuses a Node target 
 
 ## Create a Process
 
-Create queues installation of the unit or container. With `start`, it also starts it. An identical create keeps the existing Process and its desired state and returns an Operation. A different specification with the same owner and name returns `process.name_taken` (409) and changes nothing. To change a Process, use [`process:update`](/cli/process#orbit-processupdate), which keeps its ID and links. Back up container-layer data before an update that replaces a Docker container.
+Create queues installation of the unit or container. With `start`, it also starts it. An identical create keeps the existing Process and its desired state and returns an Operation. A different specification with the same owner and name returns `process.name_taken` (409) and changes nothing. To change a Process, use [`process:update`](/cli/process/update), which keeps its ID and links. Back up container-layer data before an update that replaces a Docker container.
 
 On a Node with the active `app-dev` role, a systemd Instance Process installs without a boot start. A Docker Instance Process there maps restart policy `always` to Docker `unless-stopped`, so an idle stop survives a Docker daemon restart. Node Processes on the same Node keep the normal behavior. The Gateway starts it with `systemctl start` and does not enable the unit. After a reboot the Process stays down until `process:start` or the next HTTP wake. [Hibernation](/reference/app-dev-runtime-hibernation) describes idle stop, `keep_alive`, and wake.
 
@@ -188,7 +188,7 @@ JSON requests for ordinary systemd Processes accept `required_mount_paths`, a pu
 
 Create defaults to an empty list; update omission preserves the stored list, and explicit `[]` clears it. Null is invalid. Docker accepts only an empty list; presets own their configuration and reject this explicit field. The list does not create mounts or prove that a mounted directory contains the intended state. State migration needs a separate admitted mount definition, identity check and ordered handoff; this option does not authorize a Serve self-update.
 
-[`process:update`](/cli/process#orbit-processupdate) changes only the fields the caller sends. `PATCH /api/v1/processes/{process}` accepts optional `runtime`, `command`, `image`, `working_directory`, `environment`, `ports`, `volumes`, `restart_policy`, `keep_alive`, `restart_on_deploy`, `user`, and `required_mount_paths` where allowed. Omitted fields keep their stored values, including runtime, image, and command.
+[`process:update`](/cli/process/update) changes only the fields the caller sends. `PATCH /api/v1/processes/{process}` accepts optional `runtime`, `command`, `image`, `working_directory`, `environment`, `ports`, `volumes`, `restart_policy`, `keep_alive`, `restart_on_deploy`, `user`, and `required_mount_paths` where allowed. Omitted fields keep their stored values, including runtime, image, and command.
 
 The resulting specification must satisfy the runtime rules. The Process ID, name, owner, and desired state stay the same; identity, preset, and initial-start fields cannot be changed. A supplied environment map or list replaces that whole field. An empty map or list clears it. Explicit `working_directory: null` restores the Docker image default or the systemd owner default; omission keeps the current directory. Create defaults do not apply to updates. The CLI, PHP SDK, and MCP use the same partial-update contract.
 
@@ -303,7 +303,7 @@ A definition change touches only the Project. It makes no remote call and does n
 
 [Cloning](/reference/instance-cloning) a production Instance copies the Project's definitions into that Instance. The Gateway captures every definition whose `environments` include `production`, once for each target. It ignores every other definition and the candidate's own Processes and Schedules.
 
-Each Process definition becomes a new Instance Process with its own ID, installed stopped. Each Schedule definition becomes a new Instance Schedule with its own UUID, installed with its timer disabled. The copies do not need a selected release, and preparation runs no application code. Start them with [`process:start`](/cli/process#orbit-processstart) and [`schedule:enable`](/cli/schedule#orbit-scheduleenable) when the Instance is ready.
+Each Process definition becomes a new Instance Process with its own ID, installed stopped. Each Schedule definition becomes a new Instance Schedule with its own UUID, installed with its timer disabled. The copies do not need a selected release, and preparation runs no application code. Start them with [`process:start`](/cli/process/start) and [`schedule:enable`](/cli/schedule/enable) when the Instance is ready.
 
 A copy that the Instance already has by name stops preparation with `process.name_taken` or `schedule.retry_conflict`. The Gateway does not adopt the existing record. A retry installs only the unfinished copies from the captured set. It does not read the definitions again, rewrite a finished copy, or stop a copy that an operator started.
 
@@ -311,7 +311,7 @@ A copy is independent. Changing or removing a copy does not change the definitio
 
 ## Inspect with Doctor
 
-[Doctor](/cli/doctor#what-each-family-checks) reads each registered Process with a focused `systemctl show` or filtered Docker state command. It compares presence and running/stopped state with intent. A systemd `activating/auto-restart` snapshot is crash-loop evidence; a cumulative restart count alone is not. Doctor takes no timed samples. A stopped non-keep-alive Process desired running is healthy only when its managed hibernation marker is proven absent. The owning native Process operations retain configuration validation.
+[Doctor](/cli/doctor/doctor#what-each-family-checks) reads each registered Process with a focused `systemctl show` or filtered Docker state command. It compares presence and running/stopped state with intent. A systemd `activating/auto-restart` snapshot is crash-loop evidence; a cumulative restart count alone is not. Doctor takes no timed samples. A stopped non-keep-alive Process desired running is healthy only when its managed hibernation marker is proven absent. The owning native Process operations retain configuration validation.
 
 ## Why it works this way
 

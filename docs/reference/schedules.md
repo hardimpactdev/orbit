@@ -165,7 +165,7 @@ Schedule operations return these codes in the Orbit error envelope. The CLI chec
 
 ## Inspect Schedule drift
 
-Schedule creation, enable/disable and native run results own Schedule validation. [Doctor](/cli/doctor#what-each-family-checks) does not read Schedule command files, timers, credentials or orphan inventories.
+Schedule creation, enable/disable and native run results own Schedule validation. [Doctor](/cli/doctor/doctor#what-each-family-checks) does not read Schedule command files, timers, credentials or orphan inventories.
 
 ## Why it works this way
 

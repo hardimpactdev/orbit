@@ -1,0 +1,16 @@
+---
+title: "orbit gateway:release:rollback"
+sidebarTitle: "gateway:release:rollback"
+description: "Switch the active Gateway back to a retained release, then follow it."
+---
+
+```bash
+orbit gateway:release:rollback [<release>] [--yes] [--json]
+```
+
+| Argument or option | Meaning |
+| --- | --- |
+| `release` | The 12-digit id of a retained release. In a terminal, an omitted value opens a list of the releases that went live. |
+| `--yes` | Confirm the code rollback without a prompt. Required with `--json` or without a terminal. |
+
+The Gateway checks that the target is a retained release before it queues anything. Rollback switches code and leaves the database in place. Confirm with `--yes` for noninteractive or JSON calls; the interactive prompt defaults to No. Declining fails with `input.cancelled`, and nothing is queued. Database restore is an explicit operator step described in [Gateway recovery](/reference/gateway-recovery#roll-back). Output and exit status follow `gateway:release:deploy`.

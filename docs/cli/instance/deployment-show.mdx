@@ -1,0 +1,19 @@
+---
+title: "orbit instance:deployment:show"
+sidebarTitle: "instance:deployment:show"
+description: "Show one recorded deployment: a detail tree of its identity and outcome, then the phases and steps it went through as a table, then its log."
+---
+
+```bash
+orbit instance:deployment:show <deployment> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `deployment` | yes | Numeric deployment ID from `instance:deployment:list`. |
+
+The detail tree shows the Instance ID, release, branch, commit, started and finished times, duration, status, failed step, error code, selected release, and who triggered it. The phases table repeats the `phase` and `step_name` values the run recorded. The log reproduces the run's standard output and standard error lines in order.
+
+```bash
+orbit instance:deployment:show 42
+```

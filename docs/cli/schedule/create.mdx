@@ -1,0 +1,36 @@
+---
+title: "orbit schedule:create"
+sidebarTitle: "schedule:create"
+description: "Create one Schedule for a Node or an Instance, or record a Project Schedule definition."
+---
+
+```bash
+orbit schedule:create <name> (--node=ID | --instance=ID | --project=ID --for=production) --calendar=CALENDAR --command=COMMAND [--idempotency-key=KEY] [options]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `name` | yes | 1 through 63 lowercase ASCII letters or digits, with hyphens only between them. Unique within the owner. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--node=ID` | none | Positive Node ID. |
+| `--instance=ID` | none | Positive Instance ID. |
+| `--project=ID` | none | Numeric Project ID for a definition. |
+| `--for=production` | none | Definition environments. Required with `--project`. Only definitions for `production` are copied. |
+| `--calendar=CALENDAR` | none | A cron expression that Swamp accepts, such as `0 3 * * *`, `20 * * * * *` with seconds, or `@daily`. It fires in UTC. A Project definition takes a systemd calendar, such as `daily` or `Mon..Fri 02:00`. |
+| `--command=COMMAND` | none | One non-empty line of at most 4,096 bytes. |
+| `--timeout=SECONDS` | `3600` | Execution timeout, 1 through 86,400 seconds. |
+| `--no-start` | off | Create an Instance Schedule disabled, without a trigger. |
+
+The CLI checks the name, calendar, command, and timeout before it sends a request. Swamp then accepts or refuses the calendar. A definition has no host yet, so its calendar is checked when production preparation copies the definition.
+
+```bash
+orbit schedule:create daily-report --node=7 --calendar='0 3 * * *' --command='php report.php'
+orbit schedule:create hourly-report --instance=12 --calendar=@hourly --command='php artisan report:send' --no-start
+orbit schedule:create hourly-report --project=1 --for=production --calendar=hourly --command='php artisan report:send' --timeout=600
+```
+
+## How it works
+
+<div className="flow-at" data-chart="schedule/create"></div>

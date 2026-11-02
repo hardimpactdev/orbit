@@ -5,7 +5,15 @@
       "group": "Operations",
       "order": 4,
       "pages": [
-        "cli/operation"
+        {
+          "group": "operation",
+          "pages": [
+            "cli/operation/index",
+            "cli/operation/list",
+            "cli/operation/show",
+            "cli/operation/cancel"
+          ]
+        }
       ]
     }
   ]

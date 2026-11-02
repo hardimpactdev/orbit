@@ -1,0 +1,24 @@
+---
+title: "orbit node:converge"
+sidebarTitle: "node:converge"
+description: "Re-apply the Gateway-rendered Orbit footprint of a Node: its agent files, Caddyfile, PHP runtime policy, temporary-file cleanup and applicable network artifacts. Only an active VPN owner receives the private DNS listener; a Gateway-only Node is a resolver client. It never changes an Instance or a role, so it works on a Node that owns Instances, unlike `node:add`."
+---
+
+```bash
+orbit node:converge <node> [--force] [--idempotency-key=KEY] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--force` | Re-apply every artifact, not only the ones whose digest changed. Each artifact still leaves a matching live copy alone |
+| `--idempotency-key=KEY` | Reuse the same key to repeat admission safely |
+
+The Gateway returns HTTP 202 with an Operation for every admitted target. The CLI follows its steps and prints the final Operation with `--json`. Worker-backed standalone requests use one native Swamp DAG. Workerless Nodes 1 and 18 and existing parent callers keep their current execution path. Unsupported applicable artifacts refuse before native Node effects; a matching digest does not prove an unsupported action. A Node that is not an active, managed Linux Node fails with `node.converge_unsupported`. [Converge the Orbit footprint](/reference/node-provisioning#converge-the-orbit-footprint) lists the artifacts and error codes.
+
+```bash
+orbit node:converge beast
+```
+
+## How it works
+
+<div className="flow-at" data-chart="node/converge"></div>

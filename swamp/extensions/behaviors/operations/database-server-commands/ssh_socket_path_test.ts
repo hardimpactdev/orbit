@@ -29,7 +29,7 @@ Deno.test("Database SSH child names fit OpenSSH temporary control sockets with u
                 }[];
             }[];
         };
-        // Named by the SSH target, never by run (docs/flows/README.md).
+        // Named by the SSH target, never by run (docs/cli/README.md).
         for (const job of workflow.jobs) {
             for (const { task } of job.steps) {
                 if (task.behaviorType !== "@swamp/ssh") continue;

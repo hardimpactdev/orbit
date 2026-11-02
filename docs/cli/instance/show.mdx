@@ -1,0 +1,18 @@
+---
+title: "orbit instance:show"
+sidebarTitle: "instance:show"
+---
+
+Show one Instance. Human output shows the [assigned SSR port](/reference/assigned-ssr-ports) as `SSR port` beside `Vite port`, and JSON has `ssr_port`. Both are empty when no SSR port is assigned.
+
+Production output includes the recorded user, home, selected branch, and deploy steps in phase and placement order. It also shows `Auto deploy`: `off`, or the merge check that gates it, with the state of the last [automatic deployment](/reference/deployments#automatic-deployments) tick and any pause. A development default shows it too. JSON has the same under `auto_deploy`.
+
+Human output lists the Instance's Routes with their domain, web root, and status. JSON has them under `routes`; `route` stays the Instance's own Route. See [Serve several web roots](/reference/routes#serve-several-web-roots).
+
+```bash
+orbit instance:show <instance> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Numeric Instance ID. |

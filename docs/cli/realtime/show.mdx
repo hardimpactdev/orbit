@@ -1,0 +1,11 @@
+---
+title: "orbit realtime:show"
+sidebarTitle: "realtime:show"
+description: "Ask the active Gateway where its Reverb server is and which key and channel a client uses."
+---
+
+```bash
+orbit realtime:show [--json]
+```
+
+Human output shows `Status` (`configured` or `not configured`), `URL`, `Channel`, and `Key`. The key is public. The Reverb app secret never leaves the Gateway. `URL` and `Key` show `—` when no Node holds an active `websocket` role. JSON returns `{ "url", "key", "channel", "request_id" }`, with `url` and `key` null in that case. `channel` is always `orbit`.

@@ -1,0 +1,15 @@
+---
+title: "orbit gateway:use"
+sidebarTitle: "gateway:use"
+description: "Select an existing profile as the active Gateway. The command changes no pin and no trust store."
+---
+
+```bash
+orbit gateway:use <name> [--json]
+```
+
+```bash
+orbit gateway:use production
+```
+
+An unknown name fails with `gateway.profile_not_found`. JSON returns `active_gateway` with the selected name.

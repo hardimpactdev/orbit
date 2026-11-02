@@ -48,7 +48,7 @@ The existing observer recovered the terminal result during normal Gateway releas
 
 ## Publish the approved 209 SSH key
 
-`POST /api/v1/nodes/{node}/ssh-access/converge` accepts an empty JSON object and returns one `node.ssh_access_converge` Operation with HTTP 202. The caller needs the normal directed access to the target Node. `Idempotency-Key` reuses the same admission. A matching active or successful publication also returns its existing Operation. The caller cannot select a key, endpoint, credential, command or script. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/node.ssh_access_converge.mmd) shows the steps.
+`POST /api/v1/nodes/{node}/ssh-access/converge` accepts an empty JSON object and returns one `node.ssh_access_converge` Operation with HTTP 202. The caller needs the normal directed access to the target Node. `Idempotency-Key` reuses the same admission. A matching active or successful publication also returns its existing Operation. The caller cannot select a key, endpoint, credential, command or script. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/node/ssh-access-converge.mmd) shows the steps.
 
 Orbit only adds its own keys to the managed account's `~/.ssh/authorized_keys`: the `swamp` role's public key, then each operator key that Orbit records. Orbit records no operator keys yet. It never removes, reorders or changes another line, so operator keys that Orbit does not manage keep their access.
 

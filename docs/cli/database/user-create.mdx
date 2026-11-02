@@ -1,0 +1,35 @@
+---
+title: "orbit database:user:create"
+sidebarTitle: "database:user:create"
+---
+
+Add a user to a database on a MySQL or PostgreSQL [server](/reference/database-servers#add-a-user), for example a read-only user in production.
+
+```bash
+orbit database:user:create <slug> --username=USER [--read-only] [--replication] [--idempotency-key=KEY] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `slug` | yes | Connection slug of a database on a server. |
+
+| Option | Meaning |
+| --- | --- |
+| `--username=USER` | Username. A 1-32 character identifier. |
+| `--read-only` | Grant read-only access. Without either grant flag, MySQL users get all database privileges and PostgreSQL users get data-write grants. |
+| `--replication` | PostgreSQL only: `LOGIN REPLICATION` with read-only grants on current and future public tables owned by the managed owner. Requires `wal_level=logical`. Can be combined with `--read-only`. |
+
+The command never takes the password as an argument, so it stays out of the process list and shell history. When standard input is a pipe or a file, the command reads the password from it and drops trailing line breaks. On a terminal, it asks for the password with a hidden prompt labelled `Password`; cancelling the prompt exits 1 and sends nothing. A terminal that may not prompt, with `--json` or `--no-interaction`, or an empty pipe returns `database.password_required` before any request.
+
+```bash
+orbit database:user:create dlf-leden --username=reporting --read-only
+printf '%s' "$PASSWORD" | orbit database:user:create dlf-leden --username=reporting --read-only --json
+```
+
+A connection without a server returns `database.server_required`, and a connection on a Valkey server returns `database.driver_unsupported`. The user of a connection on the same server returns `database.name_conflict`. Creating the same user again sets its password, privileges, and replication attribute. Omitting `--replication` removes the attribute. An existing PostgreSQL role outside this connection also returns `database.name_conflict`. The Gateway stores the password encrypted, so it can [publish it to Vaultwarden](/reference/vaultwarden#database-user-passwords). No response returns it.
+
+`--replication` returns `database.driver_unsupported` outside PostgreSQL and `database.wal_level_not_logical` when the live server is not configured for logical replication. Orbit leaves server configuration unchanged. App migrations own publications and their table lists; see [Logical replication users](/reference/database-servers#logical-replication-users).
+
+## How it works
+
+<div className="flow-at" data-chart="database/user-create"></div>

@@ -5,7 +5,14 @@
       "group": "Operations",
       "order": 7,
       "pages": [
-        "cli/fleet"
+        {
+          "group": "fleet",
+          "pages": [
+            "cli/fleet/index",
+            "cli/fleet/rollout-status",
+            "cli/fleet/rollout-resume"
+          ]
+        }
       ]
     }
   ]

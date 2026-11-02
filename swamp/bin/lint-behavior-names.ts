@@ -1,6 +1,6 @@
 import { parse } from "jsr:@std/yaml@1.0.12";
 
-// A behavior is named after its target, never its run (docs/flows/README.md).
+// A behavior is named after its target, never its run (docs/cli/README.md).
 // Each name a run makes stays behind as an auto-definition, and serve scans
 // them all on every lookup by id (https://swamp-club.com/lab/4280). A fresh
 // name is allowed only when the workflow deletes it with `swamp behavior delete`.

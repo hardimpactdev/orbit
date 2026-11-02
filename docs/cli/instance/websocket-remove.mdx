@@ -1,0 +1,24 @@
+---
+title: "orbit instance:websocket:remove"
+sidebarTitle: "instance:websocket:remove"
+description: "Remove the Reverb app from an Instance and clear its stored keys. Other stored keys stay in place."
+---
+
+```bash
+orbit instance:websocket:remove <app> --instance=SELECTOR [--force] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `app` | yes | Name of the app on the Instance. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--instance=SELECTOR` | required | Positive Instance ID or exact Route domain. |
+| `--force` | off | Confirm removal without prompting. Interactive confirmation defaults to No. A JSON or non-interactive call without `--force` returns `websocket.confirmation_required`. Interactive decline, Ctrl-C, and EOF cancel with `input.cancelled`. |
+
+```bash
+orbit instance:websocket:remove hauzer --instance=12 --force
+```
+
+An app that is not on the Instance returns `websocket.attachment_missing`.

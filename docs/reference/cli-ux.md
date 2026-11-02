@@ -12,7 +12,7 @@ covers:
 
 This page tells authors and reviewers of commands in `apps/cli` how Orbit collects input and presents results. It defines the shared design standard. A command's adoption record states which requirements the command meets and how they were verified. This standard alone does not make a command compliant.
 
-`gateway:release:rollback` uses `--yes` to confirm a code switch that leaves the database in place. Its interactive confirmation defaults to No; see [the command contract](/cli/gateway#orbit-gatewayreleaserollback).
+`gateway:release:rollback` uses `--yes` to confirm a code switch that leaves the database in place. Its interactive confirmation defaults to No; see [the command contract](/cli/gateway/release-rollback).
 
 `database:server:close` reports whether an adopted Valkey server now requires its admin password. A refusal keeps the clients' addresses and the reason visible in human output, and preserves `database.server_in_use` in JSON. See [Database servers](/reference/database-servers#close-an-adopted-server).
 
@@ -20,7 +20,7 @@ This page tells authors and reviewers of commands in `apps/cli` how Orbit collec
 
 When removing a command, remove its response fixtures and CLI replay tests together. `bin/cli-contract --changed` accepts that retirement. A remaining fixture without a replay still fails; a replay that uses a deleted fixture still runs and fails.
 
-The docs-first addition for [fixed repository analysis](/cli/tasks#orbit-tasksanalyze) uses existing operation following, cancellation, and failure rendering, not a new progress mechanism. Runtime verification must keep complete bounded report/provenance bytes in JSON while making the human outcome (`ready`, `action_required`, `blocked`, or `changed`) distinct from operation status and scanner exit. A valid blocked report is not a generic green success, and following cancellation is not proof that descendants have stopped. Its native request/refusal contract stays in Tasks; exact help, human renderings, and terminal verification belong to runtime delivery.
+The docs-first addition for [fixed repository analysis](/cli/tasks/analyze) uses existing operation following, cancellation, and failure rendering, not a new progress mechanism. Runtime verification must keep complete bounded report/provenance bytes in JSON while making the human outcome (`ready`, `action_required`, `blocked`, or `changed`) distinct from operation status and scanner exit. A valid blocked report is not a generic green success, and following cancellation is not proof that descendants have stopped. Its native request/refusal contract stays in Tasks; exact help, human renderings, and terminal verification belong to runtime delivery.
 
 ## Scope and authority
 
@@ -207,7 +207,7 @@ macOS enrollment and removal reuse that progress tree and JSON result. Their rec
 
 Streams and prompt flows have no recorded canonical rendering yet. The `design:node-add` sketch under `apps/cli/design` is the reference for a prompt flow until its real command lands. [Gateway response fixtures](/reference/gateway-response-fixtures) describes how a family gains recorded renderings.
 
-The Tasks JSON rendering preserves the distinction between a watched branch pull request and the reviewed pull request Orbit opened. The canonical [watched task result](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/tasks/tasks-show/watched.json) includes `watched_pr_url`, `watched_pr_number`, and `watched_pr_state` with a null `pr_url`. Unwatched task results keep all three watched fields null. Do not substitute the watched URL for `pr_url`. The [Tasks command contract](/cli/tasks#orbit-tasksshow) owns these fields; the human rendering still uses the reviewed pull request.
+The Tasks JSON rendering preserves the distinction between a watched branch pull request and the reviewed pull request Orbit opened. The canonical [watched task result](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/tasks/tasks-show/watched.json) includes `watched_pr_url`, `watched_pr_number`, and `watched_pr_state` with a null `pr_url`. Unwatched task results keep all three watched fields null. Do not substitute the watched URL for `pr_url`. The [Tasks command contract](/cli/tasks/show) owns these fields; the human rendering still uses the reviewed pull request.
 
 `tasks:agent:show` reuses the progress tree and prints the read as a detail tree. Each transcript entry follows under a heading with its time, kind, and label. Its recordings are [default.human.txt](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/tasks/tasks-agent-show/default.human.txt) for a live thread, [delta.human.txt](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/tasks/tasks-agent-show/delta.human.txt) for a read after a cursor, [pending.human.txt](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/tasks/tasks-agent-show/pending.human.txt) for a thread that has not started, and [archived.human.txt](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/tasks/tasks-agent-show/archived.human.txt) for a saved transcript.
 
@@ -221,9 +221,9 @@ Subtask detail output adds a `Topology` property when the subtask declares workl
 
 ## Command reference
 
-Every visible product command has its own section in `docs/cli`, headed `## orbit <command>`. Two closely related commands can share one heading, such as `orbit gateway:release:auto:enable and disable`, when the section shows a usage line for each. The section names every argument as `` `name` `` or `<name>`, and every option as `--option`. `--json` is documented once per page.
+Every visible product command has its own page, `docs/cli/<family>/<command>.mdx`, titled `orbit <command>`. The page names every argument as `` `name` `` or `<name>`, and every option as `--option`. `--json` is documented once per page.
 
-`apps/cli/tests/Feature/CommandSurfaceTest.php` reads the registered commands and fails when a command has no section or its section misses an argument or option. CI runs that test on every pull request, including a pull request that changes only docs.
+`apps/cli/tests/Feature/CommandSurfaceTest.php` reads the registered commands and fails when a command has no page or its page misses an argument or option. CI runs that test on every pull request, including a pull request that changes only docs.
 
 ## Verification and adoption
 
@@ -231,7 +231,7 @@ Each supported public command has an adoption record with its source identity, s
 
 Check success, empty results, invalid and missing input, cancellation, consent, warnings, partial results, and failures wherever the command supports them. Check human, JSON, streaming, noninteractive, piped, and decorated paths that exist for that command. Expected command failures are successful verification only when a verifier asserts the exact intended result and absence of forbidden side effects.
 
-The [`node:wireguard-key`](/cli/node#orbit-nodewireguard-key) command uses shared Node selection, a validated key prompt, and an indeterminate progress operation for hub convergence. Its [command tests](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Feature/Nodes/SetNodeWireGuardKeyCommandTest.php) check prompt cancellation, invalid-key retry, missing or invalid supplied input before Gateway access, and human/JSON success and failure contracts. The [recorded outputs](https://github.com/hardimpactdev/orbit/tree/main/apps/cli/tests/Expected/nodes/node-wireguard-key) preserve the request ID and safe error codes. Review its interactive behavior with a real terminal recording as well as these text assertions.
+The [`node:wireguard-key`](/cli/node/wireguard-key) command uses shared Node selection, a validated key prompt, and an indeterminate progress operation for hub convergence. Its [command tests](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Feature/Nodes/SetNodeWireGuardKeyCommandTest.php) check prompt cancellation, invalid-key retry, missing or invalid supplied input before Gateway access, and human/JSON success and failure contracts. The [recorded outputs](https://github.com/hardimpactdev/orbit/tree/main/apps/cli/tests/Expected/nodes/node-wireguard-key) preserve the request ID and safe error codes. Review its interactive behavior with a real terminal recording as well as these text assertions.
 
 ### Recording
 

@@ -12,7 +12,7 @@ covers:
 
 ## Problem
 
-Bootstrap puts `gateway` and `vpn` on one Node. Later you may want the Gateway on a new machine while the WireGuard hub and private DNS stay where they are. [`node:role:relocate`](/cli/node#orbit-noderolerelocate) moves `websocket` and `metrics` with the same command. It refuses `swamp`, because serve on that Node runs the relocation.
+Bootstrap puts `gateway` and `vpn` on one Node. Later you may want the Gateway on a new machine while the WireGuard hub and private DNS stay where they are. [`node:role:relocate`](/cli/node/role-relocate) moves `websocket` and `metrics` with the same command. It refuses `swamp`, because serve on that Node runs the relocation.
 
 A `websocket` move preserves every [Reverb app](/reference/websocket-apps) in the Gateway database. It copies only the server's Laravel `APP_KEY` when the target lacks one. The target converge renders all apps, so each Project keeps its app credentials after the move.
 

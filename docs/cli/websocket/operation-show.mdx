@@ -1,0 +1,11 @@
+---
+title: "orbit websocket:operation:show"
+sidebarTitle: "websocket:operation:show"
+description: "Show whether every required Reverb process has applied a saved change. A stale or missing process keeps the operation pending."
+---
+
+```bash
+orbit websocket:operation:show <id> [--json]
+```
+
+The `id` argument is the registry UUID in the normal Operation’s `input.registry_operation_id`. This read exposes current process reports; `operation:show` follows the numeric Operation ID.

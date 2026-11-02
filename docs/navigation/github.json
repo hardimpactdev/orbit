@@ -5,7 +5,16 @@
       "group": "Fleet",
       "order": 5,
       "pages": [
-        "cli/github"
+        {
+          "group": "github",
+          "pages": [
+            "cli/github/index",
+            "cli/github/app-install",
+            "cli/github/app-sync",
+            "cli/github/app-show",
+            "cli/github/app-destroy"
+          ]
+        }
       ]
     }
   ]

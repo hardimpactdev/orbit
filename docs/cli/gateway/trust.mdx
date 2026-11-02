@@ -1,0 +1,24 @@
+---
+title: "orbit gateway:trust"
+sidebarTitle: "gateway:trust"
+description: "Trust the root CA of the active Gateway in the operating-system trust store, or confirm that it is already trusted."
+---
+
+```bash
+orbit gateway:trust [--accept-ca-change] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--accept-ca-change` | Accept a certificate that differs from the profile's pin. Use it only after you check the new fingerprint. |
+
+```bash
+orbit gateway:trust
+orbit gateway:trust --accept-ca-change
+```
+
+JSON output returns `gateway`, `status`, `sha256`, `ca_path`, and `request_id`. The command uses the error codes of `gateway:add`, and fails with `gateway.profile_missing` when no profile is active. Without `--accept-ca-change`, a Gateway that presents another certificate fails with `gateway.ca_changed` before anything is installed.
+
+<Note>
+`gateway.ca_profile_update_failed` means that the certificate is already in the trust store but the profile changed during the command. Check which profile is active and run `gateway:trust` again.
+</Note>

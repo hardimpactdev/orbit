@@ -50,7 +50,7 @@ orbit websocket:app:destroy hauzer
 
 The Gateway deletes the app and publishes a new registry revision. Each process stops accepting the app and closes only its sockets with code 4001. It refuses the `gateway` app with `websocket.app_reserved` (409). It refuses an app that an Instance still holds with `websocket.app_in_use` (409). Remove the app from each Instance first.
 
-The CLI asks for confirmation, with No selected. Use `--force` to confirm in JSON or non-interactive mode. See [`websocket:app:destroy`](/cli/websocket#orbit-websocketappdestroy).
+The CLI asks for confirmation, with No selected. Use `--force` to confirm in JSON or non-interactive mode. See [`websocket:app:destroy`](/cli/websocket/app-destroy).
 
 A saved change stays pending until every serving process confirms it. The API records a normal Operation and returns HTTP 202 without waiting for process reports. Reverb applies the revision through its existing periodic reconciliation. The CLI follows the Operation without restarting Reverb.
 

@@ -1,0 +1,61 @@
+---
+title: "project"
+sidebarTitle: "Overview"
+description: "Create, inspect, update, and remove Projects. A Project owns one repository, a type, and the source defaults that Instances inherit."
+covers:
+  - apps/cli/app/Commands/Project*/**
+  - packages/php-sdk/src/Requests/Projects/{Create,Show,Update,Destroy}ProjectRequest.php
+  - packages/php-sdk/src/Requests/Projects/ListProjectsRequest.php
+  - packages/php-sdk/src/Responses/Projects/{ProjectResponse,ProjectsResponse,ProjectIdentityResponse}.php
+---
+
+A Project records one Git repository and the defaults for running it. [Projects](/reference/projects) owns the fields, types, update lifecycle, and error codes. [Applications](/domains/applications) shows how a Project becomes an Instance.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`project:create`](/cli/project/create) | Create a Project from a slug, a type, and a repository URL. |
+| [`project:list`](/cli/project/list) | List Projects. |
+| [`project:show`](/cli/project/show) | Show one Project. |
+| [`project:update`](/cli/project/update) | Change a Project and reconcile its Instances. |
+| [`project:destroy`](/cli/project/destroy) | Remove a Project. |
+| [`project:dev-deploy-step:list`](/cli/project/dev-deploy-step-list) | List development deploy steps. |
+| [`project:dev-deploy-step:create`](/cli/project/dev-deploy-step-create) | Record a development deploy step. |
+| [`project:dev-deploy-step:update`](/cli/project/dev-deploy-step-update) | Change a development deploy step. |
+| [`project:dev-deploy-step:destroy`](/cli/project/dev-deploy-step-destroy) | Remove a development deploy step. |
+| [`project:excluded-node:add`](/cli/project/excluded-node-add) | Keep a Project off an `app-dev` Node. |
+| [`project:excluded-node:list`](/cli/project/excluded-node-list) | List the Nodes a Project cannot use. |
+| [`project:excluded-node:remove`](/cli/project/excluded-node-remove) | Let a Project use an `app-dev` Node again. |
+| [`project:document:list`](/cli/project/document-list) | List the entries in a Project Documents folder. |
+| [`project:document:search`](/cli/project/document-search) | Find Project Document entries by name or path. |
+| [`project:document:show`](/cli/project/document-show) | Show the metadata of one entry. |
+| [`project:document:create`](/cli/project/document-create) | Create a folder or a file. |
+| [`project:document:update`](/cli/project/document-update) | Rename or move an entry. |
+| [`project:document:read`](/cli/project/document-read) | Print a file's text. |
+| [`project:document:upload`](/cli/project/document-upload) | Write local bytes as a new file version. |
+| [`project:document:write`](/cli/project/document-write) | Write text as a new file version. |
+| [`project:document:download`](/cli/project/document-download) | Save a file version to a new local file. |
+| [`project:document:versions`](/cli/project/document-versions) | List a file's versions. |
+| [`project:document:restore-version`](/cli/project/document-restore-version) | Make an earlier version the newest one. |
+| [`project:document:archive`](/cli/project/document-archive) | Archive an entry. |
+| [`project:document:restore`](/cli/project/document-restore) | Restore an archived entry. |
+| [`project:document:remove`](/cli/project/document-remove) | Permanently remove an entry. |
+| [`project:document-storage:show`](/cli/project/document-storage-show) | Show the private document storage and its status. |
+| [`project:document-storage:update`](/cli/project/document-storage-update) | Configure the private document storage. |
+| [`project:review-and-merge:enable`](/cli/project/review-and-merge-enable) | Review every push and incoming pull request, and merge reviewed green heads. |
+| [`project:review-and-merge:disable`](/cli/project/review-and-merge-disable) | Turn off the review-and-merge flow. |
+
+Every command accepts `--json`.
+
+## Project Documents
+
+The `project:document` commands browse, change, and version the documents of a Project. The `project:document-storage` commands configure the Gateway's private storage for them. They belong to the `documents` [extension](/cli/extension): `list`, `help`, and completion hide them while it is off, and a direct call fails with `extension.disabled`. Each command has its own section below, and [Project Documents](/reference/project-documents#cli-contract) owns the full contract.
+
+Mutations require an observed `--expected-revision`; permanent removal also requires `--yes` without a terminal. JSON mode preserves the API envelope. Local validation uses `input.invalid` and exit 2. Local download integrity or filesystem failures use `project_documents.local_io_failed` and exit 1. On `project_documents.revision_conflict`, preserve the draft and reread metadata rather than retrying automatically.
+
+## Related
+
+- [`instance`](/cli/instance) creates and manages the Instances of a Project.
+- [`process`](/cli/process) and [`schedule`](/cli/schedule) record Project definitions with `--project`.
+- [`route`](/cli/route) creates explicit domains for a Project.

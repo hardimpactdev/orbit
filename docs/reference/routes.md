@@ -72,7 +72,7 @@ Route responses show target IDs and positions. They never show infrastructure ad
 
 ### Check Route status with Doctor
 
-Use the native Route Operation result for Route status. [Doctor](/cli/doctor#what-each-family-checks) does not repeat Route lifecycle or configuration validation.
+Use the native Route Operation result for Route status. [Doctor](/cli/doctor/doctor#what-each-family-checks) does not repeat Route lifecycle or configuration validation.
 
 ## Select a domain and scope
 
@@ -511,7 +511,7 @@ A `pending` replacement renders a site only after its certificate step completes
 
 ### Change an Instance Route domain
 
-[`instance:rename INSTANCE --domain=DOMAIN`](/cli/instance#orbit-instancerename) changes the domain of an active development checkout's own single-target Project Route. The API is `POST /api/v1/instances/{instance}/rename` with `{"domain":"login-redirect.orbit-website.test"}`. It can also record a branch already checked out by supplying `branch` in the same request. This operation does not rename the Instance, move its checkout, or change its placement.
+[`instance:rename INSTANCE --domain=DOMAIN`](/cli/instance/rename) changes the domain of an active development checkout's own single-target Project Route. The API is `POST /api/v1/instances/{instance}/rename` with `{"domain":"login-redirect.orbit-website.test"}`. It can also record a branch already checked out by supplying `branch` in the same request. This operation does not rename the Instance, move its checkout, or change its placement.
 
 Unlike an ordinary operator-requested `route:update`, Instance rename permits a domain change when the Route has `provenance=generated`. It uses the same replacement and convergence path as an [explicit domain change](#change-an-explicit-domain): reserve the new domain, prepare certificates and Caddy, synchronize the Laravel URL, publish DNS, cut over, and clean up the old projections. A successful rename returns the Instance with the new Route and URL; the old domain stops serving it. The replacement has a new Route ID.
 
@@ -632,7 +632,7 @@ When an operation needs several owners, it takes them in this order: Node lifecy
 
 ## Check Routes with Doctor
 
-Native Route operations own site, certificate, DNS, firewall and forwarding validation. Their results carry the outcome. [Doctor](/cli/doctor#what-each-family-checks) does not repeat these checks or reads related Nodes for a Route. Its role and Process checks cover current service/runtime liveness only.
+Native Route operations own site, certificate, DNS, firewall and forwarding validation. Their results carry the outcome. [Doctor](/cli/doctor/doctor#what-each-family-checks) does not repeat these checks or reads related Nodes for a Route. Its role and Process checks cover current service/runtime liveness only.
 
 ## Why it works this way
 

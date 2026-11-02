@@ -1,0 +1,32 @@
+---
+title: "orbit vault:setup"
+sidebarTitle: "vault:setup"
+description: "Check and store the Gateway's Vaultwarden account, organization, and collection."
+---
+
+```bash
+orbit vault:setup --url=<origin> --client-id=<id> --client-secret-file=<path> --master-password-file=<path> --organization=<name-or-id> --collection=<name-or-id> [--idempotency-key=KEY] [--json]
+```
+
+Use `--idempotency-key=KEY` to retry the same Operation admission after a lost response.
+
+| Option | Required | Meaning |
+| --- | --- | --- |
+| `--url` | yes | Vaultwarden origin on a `.orbit` host, for example `https://vault.orbit`. Must use HTTPS. |
+| `--client-id` | yes | The `client_id` of the Gateway account's personal API key, such as `user.<uuid>`. |
+| `--client-secret-file` | yes | File that contains only the API key's `client_secret`. |
+| `--master-password-file` | yes | File that contains only the account's master password. |
+| `--organization` | yes | Organization name or ID. |
+| `--collection` | yes | Collection name or ID in that organization. |
+
+The CLI never accepts the client secret or the master password as an argument. Setup can run again with a new API key or master password. Another organization or collection needs [`vault:teardown`](/cli/vault/teardown) first. The output is the [status](/cli/vault/status).
+
+```bash
+orbit vault:setup --url=https://vault.orbit --client-id=user.3f0c… \
+  --client-secret-file=./client-secret --master-password-file=./master-password \
+  --organization=Orbit --collection=Databases
+```
+
+## How it works
+
+<div className="flow-at" data-chart="vault/setup"></div>

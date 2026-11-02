@@ -49,7 +49,9 @@ function docsImpactFixture(): string
     $root = sys_get_temp_dir().'/orbit-docs-impact-'.bin2hex(random_bytes(6));
     $GLOBALS['docsImpactFixtureRoots'][] = $root;
     mkdir($root.'/docs/reference', 0777, true);
-    mkdir($root.'/docs/cli', 0777, true);
+    foreach (['node', 'doctor', 'env', 'instance', 'gateway', 'websocket', 'route'] as $family) {
+        mkdir($root.'/docs/cli/'.$family, 0777, true);
+    }
     mkdir($root.'/apps/gateway/routes', 0777, true);
     mkdir($root.'/apps/gateway/app/Domain/Tasks', 0777, true);
     mkdir($root.'/apps/cli/app/Commands', 0777, true);
@@ -70,10 +72,12 @@ function docsImpactFixture(): string
     file_put_contents($root.'/docs/reference/widgets.md', "---\ntitle: Widgets\ncovers:\n  - \"apps/gateway/app/Models/**\"\n---\nWidgets\n");
     file_put_contents($root.'/docs/reference/environment-variables.md', "---\ntitle: Environment\n---\nEnvironment\n");
     file_put_contents($root.'/docs/reference/mcp.mdx', "---\ntitle: MCP\n---\nMCP\n");
-    file_put_contents($root.'/docs/cli/node.mdx', "---\ntitle: Node\n---\nNode\n");
-    file_put_contents($root.'/docs/cli/doctor.mdx', "---\ntitle: Doctor\n---\nDoctor\n");
-    file_put_contents($root.'/docs/cli/env.mdx', "---\ntitle: Environment command\n---\nEnvironment command\n");
-    file_put_contents($root.'/docs/cli/instance.mdx', "---\ntitle: Instance\n---\nInstance\n");
+    file_put_contents($root.'/docs/cli/node/index.mdx', "---\ntitle: Node\n---\nNode\n");
+    file_put_contents($root.'/docs/cli/node/list.mdx', "---\ntitle: \"orbit node:list\"\n---\nList Nodes\n");
+    file_put_contents($root.'/docs/cli/doctor/doctor.mdx', "---\ntitle: Doctor\n---\nDoctor\n");
+    file_put_contents($root.'/docs/cli/doctor/index.mdx', "---\ntitle: Doctor\n---\nDoctor\n");
+    file_put_contents($root.'/docs/cli/env/index.mdx', "---\ntitle: Environment command\n---\nEnvironment command\n");
+    file_put_contents($root.'/docs/cli/instance/index.mdx', "---\ntitle: Instance\n---\nInstance\n");
     file_put_contents($root.'/apps/gateway/routes/api.php', "<?php Route::get('/api/v1/widgets', [WidgetController::class, 'index']); Route::put('/api/v1/widgets', [WidgetController::class, 'update']);\n");
     file_put_contents($root.'/apps/gateway/app/Http/Controllers/Api/WidgetController.php', "<?php class WidgetController { public function update(UpdateWidgetRequest \$request) {} }\n");
     file_put_contents($root.'/apps/gateway/app/Http/Requests/Widgets/UpdateWidgetRequest.php', "<?php class UpdateWidgetRequest {}\n");
@@ -224,7 +228,7 @@ it('docs impact extracts node error literals from CLI support code', function ()
     file_put_contents($root.'/'.$path, "<?php return ['code' => 'node.setting_unknown'];\n");
     $report = new DocsImpact($root)->report(null, [$path]);
 
-    expect(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/node.mdx')
+    expect(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/node/index.mdx')
         ->and(collect($report['surfaces'])->pluck('reason')->implode(' '))->toContain('node.setting_unknown');
 });
 
@@ -234,29 +238,30 @@ it('docs impact extracts required error codes passed to gateway failure renderer
     file_put_contents($root.'/'.$path, "<?php renderGatewayFailure(requiredCode: 'node.setting_required');\n");
     $report = new DocsImpact($root)->report(null, [$path]);
 
-    expect(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/node.mdx')
+    expect(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/node/index.mdx')
         ->and(collect($report['surfaces'])->pluck('reason')->implode(' '))->toContain('node.setting_required');
 });
 
 it('docs impact extracts literal error-code constants from CLI exception classes', function (): void {
     $root = docsImpactFixture();
-    file_put_contents($root.'/docs/cli/gateway.mdx', "---\ntitle: Gateway\n---\nGateway\n");
+    file_put_contents($root.'/docs/cli/gateway/index.mdx', "---\ntitle: Gateway\n---\nGateway\n");
     mkdir($root.'/apps/cli/app/Exceptions', 0777, true);
     $path = 'apps/cli/app/Exceptions/GatewayConfigException.php';
     file_put_contents($root.'/'.$path, "<?php final class GatewayConfigException { public const string CONFIG_NOT_PRIVATE = 'gateway.config_not_private'; }\n");
     $report = new DocsImpact($root)->report(null, [$path]);
 
-    expect(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/gateway.mdx')
+    expect(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/gateway/index.mdx')
         ->and(collect($report['surfaces'])->pluck('reason')->implode(' '))->toContain('gateway.config_not_private')
         ->and($report['errors'])->toBe([]);
 });
 
-it('docs impact reports a new CLI option to its family page', function (): void {
+it('docs impact reports a new CLI option to its command page', function (): void {
     $root = docsImpactFixture();
     $report = new DocsImpact($root)->report(null, ['apps/cli/app/Commands/NodeList.php']);
 
     expect($report['verdict'])->toBe('docs_required')
-        ->and(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/node.mdx');
+        ->and(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/node/list.mdx')
+        ->not->toContain('docs/cli/node/index.mdx');
 });
 
 it('docs impact reports changes selected by a covers glob', function (): void {
@@ -282,7 +287,7 @@ it('docs impact maps Doctor issue enum cases to the Doctor page', function (): v
     $report = new DocsImpact($root)->report(null, [$path]);
 
     expect($report['verdict'])->toBe('docs_required')
-        ->and(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/doctor.mdx')
+        ->and(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/doctor/doctor.mdx')
         ->and(collect($report['surfaces'])->pluck('reason')->implode(' '))->toContain('widget.missing');
 });
 
@@ -411,14 +416,14 @@ it('docs impact reports MCP tool ownership and generator status', function (): v
 
 it('docs impact maps Reverb app commands to the websocket reference', function (string $action): void {
     $root = docsImpactFixture();
-    file_put_contents($root.'/docs/cli/websocket.mdx', "---\ntitle: Websocket\n---\nReverb apps\n");
+    file_put_contents($root.'/docs/cli/websocket/app-'.$action.'.mdx', "---\ntitle: \"orbit websocket:app:{$action}\"\n---\nReverb apps\n");
     $path = 'apps/cli/app/Commands/WebSocketAppCommand.php';
     file_put_contents($root.'/'.$path, "<?php class WebSocketAppCommand { protected \$signature = 'websocket:app:{$action}'; }\n");
 
     $report = new DocsImpact($root)->report(null, [$path]);
 
     expect($report['errors'])->toBe([])
-        ->and(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/websocket.mdx');
+        ->and(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/websocket/app-'.$action.'.mdx');
 })->with(['create', 'list', 'show', 'destroy']);
 
 it('docs impact rejects unknown CLI families instead of guessing an owner', function (): void {
@@ -437,7 +442,7 @@ it('docs impact detects CLI command registration changes', function (): void {
     file_put_contents($root.'/'.$path, "<?php return ['paths' => [app_path('Commands')]];\n");
     $report = new DocsImpact($root)->report(null, [$path]);
 
-    expect(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/node.mdx')
+    expect(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/node/index.mdx')
         ->and(collect($report['surfaces'])->pluck('kind'))->toContain('cli_registration');
 });
 
@@ -446,10 +451,11 @@ it('docs impact maps Instance environment CLI commands to the env page', functio
     $path = 'apps/cli/app/Commands/Instances/UpdateInstanceEnvironmentCommand.php';
     mkdir(dirname($root.'/'.$path), 0777, true);
     file_put_contents($root.'/'.$path, "<?php class UpdateInstanceEnvironmentCommand { protected \$signature = 'instance:env-update'; UpdateAppInstanceEnvironmentRequest::class; }\n");
+    file_put_contents($root.'/docs/cli/instance/env-update.mdx', "---\ntitle: \"orbit instance:env-update\"\n---\nUpdate\n");
     $report = new DocsImpact($root)->report(null, [$path]);
 
     expect(collect($report['impacted_pages'])->pluck('page'))
-        ->toContain('docs/cli/instance.mdx', 'docs/cli/env.mdx');
+        ->toContain('docs/cli/instance/env-update.mdx', 'docs/cli/env/index.mdx');
 });
 
 it('docs impact expands planned directories and reports covered domain paths', function (): void {
@@ -466,7 +472,7 @@ it('docs impact resolves planned Doctor files and rejects unknown planned config
         'apps/gateway/config/runtime.php',
     ]);
 
-    expect(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/doctor.mdx')
+    expect(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/doctor/doctor.mdx')
         ->and($report['errors'])->toContain('Unable to resolve planned surface [apps/gateway/config/runtime.php]; provide an existing path or a covers: owner.');
 });
 
@@ -558,7 +564,7 @@ PHP);
     file_put_contents($root.'/'.$registration, "<?php return ['paths' => [app_path('Commands')]];\n");
     $report = new DocsImpact($root)->report(null, [$path, $registration]);
 
-    expect(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/doctor.mdx')
+    expect(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/doctor/index.mdx')
         ->and(collect($report['surfaces'])->pluck('kind'))->toContain('cli_signature', 'cli_registration')
         ->and($report['errors'])->toBe([]);
 });
@@ -751,7 +757,7 @@ it('docs impact ignores comment-only CLI command edits and unchanged source erro
     $report = new DocsImpact($root)->report('HEAD', [$path, 'apps/gateway/database/migrations/2026_01_01_create_orphans.php']);
 
     expect($report['errors'])->toBe([])
-        ->and(collect($report['impacted_pages'])->pluck('page'))->not->toContain('docs/cli/node.mdx');
+        ->and(collect($report['impacted_pages'])->pluck('page'))->not->toContain('docs/cli/node/index.mdx');
 });
 
 it('docs impact reports deleted and signature-removed CLI command owners', function (): void {
@@ -760,7 +766,7 @@ it('docs impact reports deleted and signature-removed CLI command owners', funct
     exec('git -C '.escapeshellarg($root).' rm -q '.escapeshellarg($path));
     $report = new DocsImpact($root)->report('HEAD', [$path]);
 
-    expect(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/node.mdx');
+    expect(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/node/list.mdx');
 
     file_put_contents($root.'/'.$path, "<?php class NodeList { protected \$signature = 'node:list'; }\n");
     exec('git -C '.escapeshellarg($root).' add '.escapeshellarg($path));
@@ -768,12 +774,12 @@ it('docs impact reports deleted and signature-removed CLI command owners', funct
     file_put_contents($root.'/'.$path, "<?php class NodeList {}\n");
     $removedSignature = new DocsImpact($root)->report('HEAD', [$path]);
 
-    expect(collect($removedSignature['impacted_pages'])->pluck('page'))->toContain('docs/cli/node.mdx');
+    expect(collect($removedSignature['impacted_pages'])->pluck('page'))->toContain('docs/cli/node/list.mdx');
 });
 
 it('docs impact marks both CLI owners when a command changes families', function (): void {
     $root = docsImpactFixture();
-    file_put_contents($root.'/docs/cli/route.mdx', "---\ntitle: Route\n---\nRoute\n");
+    file_put_contents($root.'/docs/cli/route/list.mdx', "---\ntitle: \"orbit route:list\"\n---\nRoute\n");
     $path = 'apps/cli/app/Commands/NodeList.php';
     file_put_contents($root.'/'.$path, "<?php class NodeList { protected \$signature = 'node:list'; }\n");
     exec('git -C '.escapeshellarg($root).' add .');
@@ -782,7 +788,7 @@ it('docs impact marks both CLI owners when a command changes families', function
 
     $report = new DocsImpact($root)->report('HEAD', [$path]);
 
-    expect(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/node.mdx', 'docs/cli/route.mdx');
+    expect(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/node/list.mdx', 'docs/cli/route/list.mdx');
 });
 
 it('docs impact ignores comment-only changes to actual CLI commands with error identifiers', function (): void {

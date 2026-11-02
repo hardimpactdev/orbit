@@ -1,0 +1,19 @@
+---
+title: "orbit project:document-storage:update"
+sidebarTitle: "project:document-storage:update"
+description: "Configure the private object storage. Omitted settings stay unchanged. In a terminal, credentials use masked prompts. Secret values are never command-line arguments."
+---
+
+```bash
+orbit project:document-storage:update [--endpoint=URL] [--region=REGION] [--bucket=BUCKET] [--access-key-id-file=PATH --secret-access-key-file=PATH] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--endpoint=URL` | HTTPS storage origin. |
+| `--region=REGION` | Signing region. |
+| `--bucket=BUCKET` | Bucket name. |
+| `--access-key-id-file=PATH` | File that holds the access key ID. |
+| `--secret-access-key-file=PATH` | File that holds the secret access key. Give both credential files together in noninteractive mode. |
+
+A credential file is UTF-8. One final newline is stripped.

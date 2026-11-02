@@ -415,7 +415,7 @@ Run this on the Gateway when the Gateway refuses the agent's reports because its
 php artisan orbit:node-agent-rekey <node-id> [--attempt=N]
 ```
 
-The same attempt number returns the same task; a higher number makes a new key again. The Node must be an active, managed Linux Node with stored SSH host keys. Rekey and `node:converge` share one lock per Node. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/node.agent_rekey.mmd) shows the steps.
+The same attempt number returns the same task; a higher number makes a new key again. The Node must be an active, managed Linux Node with stored SSH host keys. Rekey and `node:converge` share one lock per Node. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/node/agent-rekey.mmd) shows the steps.
 
 The run reaches the Node over official SSH from 209 with the shipped `agent_key.py`; it calls no agent command. `Make a new agent key` keeps the old key as `secret.previous`, writes 32 random bytes as 64 hex characters with one rename, and prints only the SHA-256 verifier. `Restart the Node agent` restarts `orbit-agent.service`. `Check the Node agent` checks that the agent is active and the key matches the verifier, removes `secret.previous`, and is the terminal result. The Gateway stores the verifier only from that result; until then the old verifier stays valid.
 
@@ -604,7 +604,7 @@ Doctor reads current host facts through official `@swamp/ssh` from Node209. The 
 
 On managed Linux Nodes, Doctor checks `orbit-agent.service` and the freshness of the Gateway's cached continuous observation at result comparison time. It reports `node.agent_missing`, `node.agent_inactive`, or `node.agent_view_stale`. Provisioning owns agent binary, secret and configuration verification; Doctor does not duplicate it. The agent remains an observer.
 
-See [Doctor](/cli/doctor#what-each-family-checks) for the current scope, skipped families and recovery rules.
+See [Doctor](/cli/doctor/doctor#what-each-family-checks) for the current scope, skipped families and recovery rules.
 
 ## Checks
 

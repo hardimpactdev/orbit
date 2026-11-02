@@ -1,0 +1,17 @@
+---
+title: "orbit database:server:destroy"
+sidebarTitle: "database:server:destroy"
+description: "Remove a server. The Gateway refuses with `database.server_in_use` while a connection points to it. It keeps the data volume."
+---
+
+```bash
+orbit database:server:destroy <slug> [--force] [--idempotency-key=KEY] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--force` | Confirm without prompting. Interactive confirmation defaults to No. A JSON or non-interactive call without `--force` returns `database.confirmation_required`. |
+
+## How it works
+
+<div className="flow-at" data-chart="database/server-destroy"></div>

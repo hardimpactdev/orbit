@@ -1,0 +1,15 @@
+---
+title: "orbit project:document:update"
+sidebarTitle: "project:document:update"
+description: "Rename or move an entry."
+---
+
+```bash
+orbit project:document:update <project> <entry> [--name=NAME] [--parent=ID|root] --expected-revision=N [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--name=NAME` | New name. |
+| `--parent=ID\|root` | Destination folder, or `root`. |
+| `--expected-revision=N` | Revision you observed. Every mutation needs it. On `project_documents.revision_conflict`, read the metadata again rather than retrying. |

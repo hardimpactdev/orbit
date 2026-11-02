@@ -1,0 +1,17 @@
+---
+title: "orbit project:document:download"
+sidebarTitle: "project:document:download"
+description: "Save a file version to a new local file, or print it to stdout."
+---
+
+```bash
+orbit project:document:download <project> <entry> --output=PATH|- [--version=ID] [--json]
+orbit project:document:download acme 12 --output=downloaded-spec.pdf
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--output=PATH` | New local file. Download never overwrites an existing file. `-` writes raw bytes to stdout, which must not be a terminal. |
+| `--version=ID` | Version to download. The newest version by default. |
+
+The CLI verifies the size and digest before it publishes the file. `--json` returns the body as base64 instead, and refuses `--output`. A local failure returns `project_documents.local_io_failed` and exit 1.

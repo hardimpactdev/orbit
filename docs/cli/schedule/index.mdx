@@ -1,0 +1,48 @@
+---
+title: "schedule"
+sidebarTitle: "Overview"
+description: "Create, run, inspect, enable, and remove recurring commands that Swamp fires on a Node or an Instance, and record Project-owned Schedule definitions."
+covers:
+  - apps/cli/app/Commands/Schedules/**
+  - apps/cli/app/Commands/Concerns/RendersProjectRuntimeDefinitions.php
+---
+
+A Schedule runs one command on a calendar for a Node or an Instance. Swamp on Node 209 fires it from the Schedule's own workflow; nothing is installed on the Node. The `schedule` family creates Schedules, runs them by hand, reads their logs, enables a disabled Schedule, and removes them. It also records Project Schedule definitions. [Schedules](/reference/schedules) describes the exception for per-minute production schedulers.
+
+[Schedules](/reference/schedules) describes the fields, the execution context, the host artifacts, and the error codes. [Processes and schedules](/reference/processes-and-schedules) describes Project definitions and their Instance copies.
+
+Writes return an Operation. Create, enable and destroy answer with an Operation that has already ended; a run is followed until it ends. `--json` prints the final Operation and its steps. Use `--idempotency-key` to retry the same admission. Project definition writes keep their existing responses.
+
+## Choose the owner
+
+`schedule:create` needs exactly one selector. The CLI refuses two selectors, no selector, `--for` without `--project`, and `--no-start` with `--node` before it sends a request.
+
+| Selector | Owner | Result |
+| --- | --- | --- |
+| `--node=ID` | Node | The command runs as the Node's managed user. The Schedule starts enabled. |
+| `--instance=ID` | Instance | The command runs as the Instance's runtime user in its checkout or `current` release. The Schedule can start disabled. |
+| `--project=ID --for=production` | Project definition | The Gateway records a definition. Production preparation copies it into a stopped Instance Schedule. |
+
+`schedule:list`, `schedule:show`, `schedule:update`, and `schedule:destroy` take `--project` to work on definitions. `schedule:run`, `schedule:logs`, `schedule:enable` and `schedule:disable` take the UUID of an installed Schedule.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`schedule:create`](/cli/schedule/create) | Create one Node or Instance Schedule, or record one Project definition. |
+| [`schedule:list`](/cli/schedule/list) | List the Schedules you may address, or one Project's definitions. |
+| [`schedule:show`](/cli/schedule/show) | Show one Schedule or one definition. |
+| [`schedule:update`](/cli/schedule/update) | Replace one Project Schedule definition. |
+| [`schedule:run`](/cli/schedule/run) | Run one Schedule now without changing its calendar. |
+| [`schedule:logs`](/cli/schedule/logs) | Return the newest journal lines. |
+| [`schedule:enable`](/cli/schedule/enable) | Set the trigger of a disabled Schedule. |
+| [`schedule:disable`](/cli/schedule/disable) | Remove the trigger of a Schedule. |
+| [`schedule:destroy`](/cli/schedule/destroy) | Remove one Schedule or one definition. |
+
+Every command accepts `--json`. Output shows `desired_timer_state` apart from the lifecycle `status`, and every result includes the request ID. `schedule:destroy` asks for confirmation, and the default is No.
+
+## Related
+
+- [`process`](/cli/process) manages long-running services. Process commands do not operate on Schedules.
+- [`doctor`](/cli/doctor) with `--family=schedule` reports Schedule drift.
+- [`instance:destroy`](/cli/instance/destroy) removes every Schedule of the Instance.

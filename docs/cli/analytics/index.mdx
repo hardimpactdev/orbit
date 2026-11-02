@@ -1,0 +1,28 @@
+---
+title: "analytics"
+sidebarTitle: "Overview"
+description: "Pin the Plausible Community Edition version that the analytics role runs, and store the Stats API key the Gateway uses to read visits."
+covers:
+  - apps/cli/app/Commands/Analytics/**
+  - packages/php-sdk/src/Requests/Analytics/**
+  - packages/php-sdk/src/Responses/Analytics/**
+---
+
+The `analytics` role runs Plausible Community Edition for the fleet as one Docker Process named `plausible`. The `analytics` family changes the version that Process runs and stores the Stats API key the Gateway uses to read visits. [`node:role:add`](/cli/node/role-add) assigns the role and [`node:role:remove`](/cli/node/role-remove) removes it.
+
+The [Analytics role](/reference/analytics) reference owns the storage Processes, the private dashboard, and what removal keeps. [Instance analytics stats](/reference/instance-analytics-stats) owns the read that uses the stored key.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`analytics:update`](/cli/analytics/update) | Pin another Plausible version and replace the `plausible` Process. |
+| [`analytics:credentials`](/cli/analytics/credentials) | Show whether a Stats API key is stored, store one, or clear it. |
+
+Every command accepts `--json`. The caller must be the Gateway Node or hold an access grant to it.
+
+## Related
+
+- [`node`](/cli/node) assigns and removes the analytics role.
+- [`process`](/cli/process) reads the logs of the `plausible` Process and restarts it.
+- [`instance:analytics`](/cli/instance) publishes a tracking host.

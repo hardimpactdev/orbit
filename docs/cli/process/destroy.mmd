@@ -1,0 +1,113 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, DECISIONS 4 + R1-R4 (process.stop shape: 209, @swamp/ssh, full intent as inputs).
+  %% status: draft
+  %% command: process:destroy
+  %% kind: process.destroy
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>reached over ssh
+  CLI->>GW: process:destroy 417<br/>--yes
+  %%> Command:
+  %%> - `orbit process:destroy 417 --yes`
+  %%> - syntax: `process:destroy <process> [--project=ID] [--yes] [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the numeric Process ID; `--yes` skips the confirmation
+  %%> Not handled here:
+  %%> - `--project` removes a Project definition only; it starts no run (R1)
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Validate, record the task<br/>Process 417: removing · #5130
+  %%> Requirements:
+  %%> - your Node has an access grant to the Process's Node
+  %%> - no Route points to the Process, else `process.has_routes`
+  %%> - the Process is not required by a Database server
+  %%> Result:
+  %%> - Process 417 marked removing; the record stays until the run succeeds
+  %%> - task #5130 recorded with the full intent
+  GW->>SW: Start run, full intent<br/>operation-process-destroy
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209); every step runs there
+  %%> Inputs:
+  %%> - `kind`: process.destroy
+  %%> - the unit or container name and runtime, and for Vite the Instance environment path
+  %%> - the Node's address and SSH host keys; the SSH identity comes from the `swamp` role
+  GW-->>CLI: 202 Accepted<br/>task #5130
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  alt systemd
+    SW->>N: Disable and stop the unit<br/>@swamp/cfgmgmt/systemd
+    %%> What it does:
+    %%> - converges stopped and disabled; an absent unit is already done
+    SW->>N: Stop the unit<br/>@swamp/ssh exec · systemctl stop
+    %%> What it does:
+    %%> - stops a loaded unit, including one that is transitioning
+    SW->>N: Remove the unit<br/>@swamp/cfgmgmt/file
+    %%> What it does:
+    %%> - removes the admitted unit file
+    SW->>N: Remove env files<br/>@swamp/cfgmgmt/directory
+    %%> What it does:
+    %%> - removes the Process environment directory
+    opt Vite dev Process
+      SW->>N: Remove the dev environment<br/>@swamp/cfgmgmt/file
+      %%> What it does:
+      %%> - removes the Instance Vite environment file
+    end
+    SW->>N: Reload systemd<br/>@swamp/ssh exec · daemon-reload
+    %%> What it does:
+    %%> - reloads systemd after unit removal
+    SW->>N: Check the unit<br/>@swamp/cfgmgmt/systemd check
+    %%> Result:
+    %%> - records that the removed unit is inactive
+    SW->>N: Check unit removal<br/>@swamp/cfgmgmt/file check
+    %%> Result:
+    %%> - records whether the unit file is absent
+  else docker
+    SW->>N: Remove the container<br/>@swamp/cfgmgmt/docker_container
+    %%> What it does:
+    %%> - removes the container with ensure absent; volumes stay
+    SW->>N: Check container removal<br/>cfgmgmt/docker_container check
+    %%> Result:
+    %%> - records whether the container is absent
+  end
+  SW->>SW: Accept the Process<br/>native assert
+  %%> What it does:
+  %%> - accepts only absent runtime files or an absent container
+  alt all removed
+    N-->>SW: unit gone
+    %%> Returns:
+    %%> - nothing of Process 417 is left on the Node
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event and reads the result step once; Swamp never calls the Gateway
+    Note over GW: Delete the record<br/>Process 417 removed
+    %%> Result:
+    %%> - the Process record is deleted
+    %%> - task #5130 succeeds
+  else a step fails
+    N--xSW: exit ≠ 0
+    %%> When:
+    %%> - SSH or a runtime action fails
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Keep the record, failed<br/>task failed · repeat destroy
+    %%> Result:
+    %%> - Process 417 keeps its record, marked with the error code
+    %%> - repeat `process:destroy` to converge
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5130
+    %%> What it does:
+    %%> - asks for the task status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end

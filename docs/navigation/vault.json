@@ -5,7 +5,16 @@
       "group": "Applications",
       "order": 6,
       "pages": [
-        "cli/vault"
+        {
+          "group": "vault",
+          "pages": [
+            "cli/vault/index",
+            "cli/vault/setup",
+            "cli/vault/status",
+            "cli/vault/sync",
+            "cli/vault/teardown"
+          ]
+        }
       ]
     }
   ]

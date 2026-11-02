@@ -1,0 +1,23 @@
+---
+title: "orbit metrics:enable"
+sidebarTitle: "metrics:enable"
+description: "Enable the Metrics role on one active Node."
+---
+
+```bash
+orbit metrics:enable [node] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `node` | when the command cannot prompt | Node ID or name. In a terminal, the command lists the active Nodes and asks. With `--json` or without a terminal, it fails with `metrics.node_required`. |
+
+```bash
+orbit metrics:enable beast
+```
+
+The API accepts a native Operation, and the CLI follows it to its terminal result. `--json` returns the Operation and public result. A second enable fails with `node.role_conflict`. Recover a failed step through the existing native Operation recovery path.
+
+## How it works
+
+<div className="flow-at" data-chart="metrics/enable"></div>

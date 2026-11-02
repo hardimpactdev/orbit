@@ -23,7 +23,7 @@ The CLI requires consent. `--yes` confirms without a prompt and is required for 
 
 ## Native order
 
-The run follows the [destroy flow](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/instance.destroy.mmd), one shipped script per Node phase. Admission already removed the Instance's native Schedules. `Verify the source` captures source ownership, repository identity, branch and the complete linked-worktree inventory before removing anything. A normal removal then fetches origin with the read token and refuses unpushed work (`Check work is pushed`).
+The run follows the [destroy flow](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/destroy.mmd), one shipped script per Node phase. Admission already removed the Instance's native Schedules. `Verify the source` captures source ownership, repository identity, branch and the complete linked-worktree inventory before removing anything. A normal removal then fetches origin with the read token and refuses unpushed work (`Check work is pushed`).
 
 The run stops and removes each Process through the canonical Process child, and runs the Project teardown commands, passed as run inputs, as the managed account. It removes owned SQLite files with the official `@swamp/cfgmgmt/file` behavior, drops owned databases and users on each Database server through the `operation-database-destroy` workflow that `database:destroy` uses, and withdraws the captured Route publications through the shared Route mutation. It finalizes linked worktrees before their owning checkout, then checks that the checkout and the Process units are gone. The Gateway deletes owned records only after native success.
 

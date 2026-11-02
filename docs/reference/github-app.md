@@ -87,7 +87,7 @@ The [CI cache setup step](/reference/instance-setup#import-ci-main-caches) inste
 
 ## Register and install
 
-Run [`orbit github:app:install`](/cli/github#orbit-githubappinstall) from a machine whose browser can reach the Gateway's private HTTPS address.
+Run [`orbit github:app:install`](/cli/github/app-install) from a machine whose browser can reach the Gateway's private HTTPS address.
 
 | Run | The command |
 | --- | --- |
@@ -302,7 +302,7 @@ A read that fails for a repository reason keeps its own error code, such as `pro
 
 A Gateway restored from its backup keeps the App, because the backup holds the database and the encryption key. [Gateway recovery](/reference/gateway-recovery) describes that backup. A new Gateway without the backup has no private key, and GitHub never shows a key again. Run `github:app:install` on the new Gateway to register a new App, install it on each account again, and delete the old App on GitHub.
 
-[`orbit github:app:destroy`](/cli/github#orbit-githubappdestroy) deletes the stored App ID, slug, and private key. Orbit then reads every repository without a credential and cannot publish task pull requests. GitHub has no API that deletes an App registration, so the command prints the GitHub page where you delete it.
+[`orbit github:app:destroy`](/cli/github/app-destroy) deletes the stored App ID, slug, and private key. Orbit then reads every repository without a credential and cannot publish task pull requests. GitHub has no API that deletes an App registration, so the command prints the GitHub page where you delete it.
 
 ## Why it works this way
 

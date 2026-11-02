@@ -58,7 +58,7 @@ A new process boot clears its confirmation, and a verified shutdown or offline a
 orbit node:role:relocate <node> websocket --force
 ```
 
-Relocate copies the server's `APP_KEY` to the target when the target has none, and never overwrites one. The apps are Gateway records, so they do not move. It converges the target and points `reverb.orbit` at it. It then waits 31 seconds, the private DNS answer TTL plus one second, so clients that resolved the old address resolve again. Then it removes the runtime and publication from the source. The Reverb checkout stays on the source. Clients keep the same key. [`node:role:relocate`](/cli/node#orbit-noderolerelocate) describes `--from` for a target that already holds the role.
+Relocate copies the server's `APP_KEY` to the target when the target has none, and never overwrites one. The apps are Gateway records, so they do not move. It converges the target and points `reverb.orbit` at it. It then waits 31 seconds, the private DNS answer TTL plus one second, so clients that resolved the old address resolve again. Then it removes the runtime and publication from the source. The Reverb checkout stays on the source. Clients keep the same key. [`node:role:relocate`](/cli/node/role-relocate) describes `--from` for a target that already holds the role.
 
 ### Remove the role
 

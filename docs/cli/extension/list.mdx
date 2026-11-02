@@ -1,0 +1,11 @@
+---
+title: "orbit extension:list"
+sidebarTitle: "extension:list"
+description: "List every extension with its Gateway state."
+---
+
+```bash
+orbit extension:list [--json]
+```
+
+Human output is a table with the columns EXTENSION, STATE, and DETAIL. JSON returns an `extensions` array. Each entry has `extension` and `enabled`, which is null when the state is unknown. An unknown entry also has `state`, with the error `code`, `message`, and `request_id`.

@@ -13,7 +13,18 @@
       "group": "Fleet",
       "order": 6,
       "pages": [
-        "cli/metrics"
+        {
+          "group": "metrics",
+          "pages": [
+            "cli/metrics/index",
+            "cli/metrics/enable",
+            "cli/metrics/status",
+            "cli/metrics/credentials",
+            "cli/metrics/exporter-enable",
+            "cli/metrics/exporter-disable",
+            "cli/metrics/disable"
+          ]
+        }
       ]
     }
   ]

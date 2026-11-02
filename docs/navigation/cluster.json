@@ -5,7 +5,23 @@
       "group": "Fleet",
       "order": 2,
       "pages": [
-        "cli/cluster"
+        {
+          "group": "cluster",
+          "pages": [
+            "cli/cluster/index",
+            "cli/cluster/create",
+            "cli/cluster/list",
+            "cli/cluster/show",
+            "cli/cluster/update",
+            "cli/cluster/activate",
+            "cli/cluster/deactivate",
+            "cli/cluster/node-add",
+            "cli/cluster/node-remove",
+            "cli/cluster/router-set",
+            "cli/cluster/router-unset",
+            "cli/cluster/destroy"
+          ]
+        }
       ]
     }
   ]

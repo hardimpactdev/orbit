@@ -1,0 +1,17 @@
+---
+title: "orbit vault:sync"
+sidebarTitle: "vault:sync"
+description: "Publish changes now. The run also recreates published items that are gone from Vaultwarden and rewrites ones that someone changed there."
+---
+
+```bash
+orbit vault:sync [--idempotency-key=KEY] [--json]
+```
+
+Use `--idempotency-key=KEY` to retry the same Operation admission after a lost response.
+
+The output is the [status](/cli/vault/status). The scheduler runs the same reconcile every minute, so this command is needed only to see the result at once. When a change failed, the Gateway returns `vault.sync_failed` and the command exits with a failure.
+
+## How it works
+
+<div className="flow-at" data-chart="vault/sync"></div>

@@ -27,7 +27,7 @@ Do these steps in Vaultwarden first:
 
 Vaultwarden must run behind an Orbit Route, such as `https://vault.orbit`. Setup accepts only an HTTPS origin on a `.orbit` host, with no user info, path, query, or fragment. Sync uses the official CLI's TLS verification with the Orbit public root added to its trust store. It never disables verification. Admission limits the destination to that managed HTTPS origin.
 
-Then run [`vault:setup`](/cli/vault#orbit-vaultsetup) with the Vaultwarden origin, the API key, the master password, and the organization and collection, each by name or ID. The Gateway records the encrypted setup intent. Its Swamp worker logs in, unlocks the account, and checks that it can write to the collection. The Gateway stores the configuration only after Swamp returns proven safe metadata. Setup can run again, for example with a new API key or master password. It refuses another organization or collection with `vault.items_published` while items are published, because they would stay behind in the old one. Run [`vault:teardown`](#tear-down) first.
+Then run [`vault:setup`](/cli/vault/setup) with the Vaultwarden origin, the API key, the master password, and the organization and collection, each by name or ID. The Gateway records the encrypted setup intent. Its Swamp worker logs in, unlocks the account, and checks that it can write to the collection. The Gateway stores the configuration only after Swamp returns proven safe metadata. Setup can run again, for example with a new API key or master password. It refuses another organization or collection with `vault.items_published` while items are published, because they would stay behind in the old one. Run [`vault:teardown`](#tear-down) first.
 
 No response or Activity entry returns the API key or the master password. The MCP `vault-setup` tool takes them as arguments, so they reach the agent's transcript. Run setup with the CLI, which reads them from files, when that matters.
 
@@ -44,7 +44,7 @@ The Gateway publishes one item for each of these:
 | A `mysql` or `pgsql` [Database connection](/reference/database-connections) with a host, port, database, username, and password | The connection slug | The connection's own |
 | A [Database user](/reference/database-servers#add-a-user) whose password Orbit stores | `<slug> (<username>)` | The user's, with the connection's host, port, and database |
 
-Redis and SQLite connections get no item. A `mysql` or `pgsql` connection that lacks one of the fields, and a Database user whose password Orbit does not store, are listed as skipped in [`vault:status`](/cli/vault#orbit-vaultstatus).
+Redis and SQLite connections get no item. A `mysql` or `pgsql` connection that lacks one of the fields, and a Database user whose password Orbit does not store, are listed as skipped in [`vault:status`](/cli/vault/status).
 
 Each item is a Secure Note in the configured collection. The official Bitwarden CLI owns sync authentication and encryption. Its custom fields follow schema version 1 of Vault's Database item:
 
@@ -62,7 +62,7 @@ The note says that Orbit manages the item. Orbit overwrites changes made in Vaul
 
 ### Database user passwords
 
-[`database:user:create`](/cli/database#orbit-databaseusercreate) stores the user's password encrypted on the Database user record. No response returns it. A user created before Orbit stored passwords has no item until `database:user:create` sets the password again.
+[`database:user:create`](/cli/database/user-create) stores the user's password encrypted on the Database user record. No response returns it. A user created before Orbit stored passwords has no item until `database:user:create` sets the password again.
 
 ## Sync
 
@@ -90,7 +90,7 @@ The publishing ledger identifies Orbit's items. Do not add items with an `orbit.
 
 A failed change fails the native run. The publishing ledger stays unchanged, and the next run reconciles remote state before retrying. Earlier successful mutations can remain in Vaultwarden. Database operations never wait for Vaultwarden, so an outage delays only the copy. The scheduled command exits with failure while the Gateway records an error. The generic executor health command reports unclaimed or stalled Operations, including queued initial setup, in Activity and Operation assistance. Starting intent does not update `last_synced_at` or clear an error; successful completion does.
 
-[`vault:sync`](/cli/vault#orbit-vaultsync) runs the same reconcile at once, including the hourly check. It returns HTTP 202 with an Operation; follow that Operation until completion. A failed Operation records its safe error code, and a later run retries. Only one Operation holds the Vault target at a time.
+[`vault:sync`](/cli/vault/sync) runs the same reconcile at once, including the hourly check. It returns HTTP 202 with an Operation; follow that Operation until completion. A failed Operation records its safe error code, and a later run retries. Only one Operation holds the Vault target at a time.
 
 ## Status
 
@@ -110,7 +110,7 @@ A failed change fails the native run. The publishing ledger stays unchanged, and
 
 ## Tear down
 
-[`vault:teardown`](/cli/vault#orbit-vaultteardown) permanently deletes published items whose recorded ID and decrypted `orbit.source` still match in the configured organization and collection, then deletes the stored configuration and publishing ledger. It preserves unrecorded copies, including copies with an `orbit.source` field, and items whose source differs from the ledger.
+[`vault:teardown`](/cli/vault/teardown) permanently deletes published items whose recorded ID and decrypted `orbit.source` still match in the configured organization and collection, then deletes the stored configuration and publishing ledger. It preserves unrecorded copies, including copies with an `orbit.source` field, and items whose source differs from the ledger.
 
 Teardown refuses before deletion if a matching published item also belongs to another collection, because Vaultwarden deletes the whole item. It needs Vaultwarden to answer. With `--keep-items`, it leaves the items in Vaultwarden and does not contact it. After a later setup on the same collection, sync can adopt items for wanted sources and preserves the remaining unrecorded items. If Vaultwarden cannot delete an item, teardown fails and keeps the setup and the items it did not delete, so it can run again.
 

@@ -107,7 +107,7 @@ The Gateway reports its version in `gateway:status`. When `APP_VERSION` is unset
 
 ### Load Swamp
 
-Swamp serve on Node 209 reads `swamp/` from a Git checkout of the Orbit repository at `/home/orbit/apps/orbit-monorepo-staging/checkout`, and runs with `--hot-reload`. A release loads Swamp in one step, after the migration and before the switch. The release runner records one `gateway.swamp_load` intent with the release commit and waits up to 600 seconds for its native terminal. The `operation-gateway-swamp-load` workflow runs one `command/shell` step on 209:
+Swamp serve on Node 209 reads `swamp/` from a Git checkout of the Orbit repository at `/home/orbit/apps/orbit-monorepo-staging/checkout`, and runs with `--hot-reload`. A release loads Swamp in one step, after the migration and before the switch. The release runner records one `gateway.swamp_load` intent with the release commit and waits up to 600 seconds for its native terminal. The `operation-gateway-swamp-load` workflow follows its [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/swamp-load.mmd) and runs one `command/shell` step on 209:
 
 1. it fetches the commit and checks it out in the serve checkout, fast-forward only;
 2. it renders serve's grants from `swamp/config/gateway-workflow-grants.json` and `swamp/config/serve-grants.json` into `swamp/grants/`;

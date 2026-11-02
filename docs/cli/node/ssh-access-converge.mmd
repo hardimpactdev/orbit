@@ -1,0 +1,101 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, DECISIONS R2-R4 and 5 (one swamp-role SSH identity); Orbit only adds its own keys and never rewrites authorized_keys (Nov 1 incident); flow-tighten rule 22.
+  %% status: draft
+  %% command: node:ssh-access:converge
+  %% kind: node.ssh_access_converge
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>reached over ssh
+  CLI->>GW: node:ssh-access:converge<br/>12 · Node id
+  %%> Command:
+  %%> - MCP tool `node-ssh-access-converge` with node `12`; API `POST /nodes/12/ssh-access/converge`
+  %%> - syntax: `<node>`
+  %%> Input:
+  %%> - the Node only; the keys come from Orbit's records, never from the request
+  %%> What it does:
+  %%> - makes Node 12's managed account accept the Swamp Node's SSH identity and the operator keys recorded in Orbit
+  %%> - keeps every other key in `authorized_keys` exactly as it is
+  %%> Who can call it:
+  %%> - the MCP tool and the API; the `orbit` CLI has no command for it yet
+  Note over GW: Validate, list the keys<br/>task #5133 · Node 12
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12
+  %%> - Node 12 is an active, managed Linux Node with stored SSH host keys
+  %%> - its managed account is not `root`
+  %%> - no other SSH access change runs for Node 12; the Gateway holds one lock per Node
+  %%> Builds:
+  %%> - Orbit's keys: the `swamp` role's public key from Node 209, then each operator key recorded in Orbit, in a stable order
+  %%> - their digest
+  %%> Reuse:
+  %%> - a succeeded or running task with the same digest for Node 12 is returned instead of a new one
+  %%> Result:
+  %%> - task #5133 recorded with the full intent; no private key in it
+  GW->>SW: Start run, full intent<br/>operation-node-ssh-access
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - Orbit's keys and their digest, and the managed account
+  %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
+  GW-->>CLI: 202 Accepted<br/>task #5133
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>N: Add the Orbit keys<br/>@swamp/cfgmgmt/authorized_key
+  %%> What it does:
+  %%> - adds each of Orbit's keys to the managed account's `authorized_keys` when it is missing, one behavior per key
+  %%> Never:
+  %%> - removes, reorders or changes another line, so operator keys Orbit does not manage keep their access
+  %%> How:
+  %%> - the official `@swamp/cfgmgmt/authorized_key` behavior over SSH from 209, as the managed account
+  %%> Not included:
+  %%> - a Node that does not accept the `swamp` role identity yet; Node bootstrap adds that first key
+  SW->>N: Log in with Swamp identity<br/>@swamp/ssh exec · true
+  %%> What it does:
+  %%> - opens a new SSH session with the `swamp` role identity only, and runs `true`
+  %%> Returns:
+  %%> - the end check; the Gateway reads it from Swamp's run data
+  %%> Why:
+  %%> - access only counts as ready when the Swamp identity really logs in
+  alt login works
+    N-->>SW: exit 0
+    %%> Returns:
+    %%> - every check passed
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record the keys' digest<br/>access ready · task succeeded
+    %%> Result:
+    %%> - Node 12's SSH access digest is the digest of Orbit's keys
+    %%> - task #5133 succeeds
+  else a step fails
+    N--xSW: write refused or denied
+    %%> When:
+    %%> - a key cannot be added, or the Swamp identity is refused
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Keep the old digest<br/>task failed · rerun is safe
+    %%> Result:
+    %%> - Node 12's recorded SSH access stays as it was
+    %%> - task #5133 fails
+    %%> On the Node:
+    %%> - added keys stay; there is no rollback
+    %%> - other keys are never touched, so operator access stays
+    %%> Retry:
+    %%> - run the same command again after fixing the cause; keys already there are left as they are
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5133
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end

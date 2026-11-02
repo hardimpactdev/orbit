@@ -1,0 +1,23 @@
+---
+title: "orbit node:network:converge"
+sidebarTitle: "node:network:converge"
+description: "Converge a Node's WireGuard peer and publish the current peer list on the VPN hub. The Gateway captures the Node's saved network policy and admits one native Swamp Operation. The CLI follows that Operation to its terminal result."
+---
+
+```bash
+orbit node:network:converge <node> [--idempotency-key=KEY] [--json]
+```
+
+`node` accepts an ID or exact Node name. Reuse `--idempotency-key` to retry the
+same admission. This command accepts no credentials, scripts, pins, or placement
+options. It requires an active managed peer selected for worker rollout. The VPN
+hub uses its exact logical worker; it never runs on another Node as a fallback.
+A failed publication restores the saved peer configuration and resolver policy.
+An interrupted publication restores its transaction baseline before reapplying
+the complete desired configuration and DNS policy.
+
+Role removal and relocation return one native Operation. The CLI follows the parent through all source and target work. `node:role:add --converge` selects `node.role_converge` and uses the same target DAG. Each command accepts `--idempotency-key` for an admission retry. A confirmed relocation target remains active if later source cleanup fails; the parent reports that cleanup failure. Offline cleanup is unavailable until its owning native path can prove the retained effects.
+
+## How it works
+
+<div className="flow-at" data-chart="node/network-converge"></div>

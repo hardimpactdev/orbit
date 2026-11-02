@@ -1,0 +1,92 @@
+---
+title: "extension"
+sidebarTitle: "Overview"
+description: "Enable or disable optional Gateway extensions for every Orbit client."
+covers:
+  - "apps/gateway/app/Http/Middleware/RequireEnabledExtension.php"
+  - "apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php"
+  - "apps/gateway/app/Domain/Extensions/**"
+  - "apps/gateway/app/Http/Controllers/Api/ExtensionsController.php"
+  - "apps/gateway/app/Actions/Extensions/**"
+  - "apps/gateway/app/Http/Mcp/{ExtensionAwareCallTool,ExtensionAwareExecuteTools,ToolManifest}.php"
+  - "apps/cli/app/Commands/Extension/**"
+  - "apps/cli/app/Services/Extensions/**"
+  - "apps/cli/app/Support/{ExtensionCommandVisibility,GatedExtensionCommand}.php"
+  - "apps/web/src/api/extensions.ts"
+---
+
+An extension is an optional Gateway feature. Each extension has one switch, and the Gateway stores it. The switch decides for every client whether the extension's CLI commands, MCP tools, API operations, and web pages are available. A disabled extension is invisible in every client, and the Gateway refuses its operations. [Extensions](/reference/extensions) describes how an extension is built.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`extension:list`](/cli/extension/list) | List the extensions and their state. |
+| [`extension:enable`](/cli/extension/enable) | Enable one extension for every client. |
+| [`extension:disable`](/cli/extension/disable) | Disable one extension for every client. |
+
+Each command accepts `--json`. Enable and disable need Gateway access.
+
+## Extensions
+
+| Extension | What it adds |
+| --- | --- |
+| `tasks` | The [`tasks`](/cli/tasks) family, its MCP tools and API operations, and the Tasks pages. See [Tasks](/reference/tasks). |
+| `ai-router` | The [`ai-router`](/cli/ai-router) family, its MCP tools and API operations, and the AI router pages. See [ai-router](/reference/ai-router). |
+| `documents` | The [`project:document`](/cli/project#project-documents) and `project:document-storage` commands, their MCP tools and API operations, and the Project Documents page. See [Project Documents](/reference/project-documents). |
+| `vault` | The [`vault`](/cli/vault) family, its MCP tools and API operations, and the scheduled Vaultwarden sync. See [Vaultwarden](/reference/vaultwarden). |
+| `conn` | The Conn API under `/api/v1/conn` and its MCP tools, which Conn devices and T3 servers call. It has no CLI commands. See [Conn layer](/reference/conn). |
+
+The Gateway lists the extensions that its registered extension providers declare. A new install starts with every extension off. An install that already used Project Documents, Vaultwarden publishing, or Conn keeps that extension on after it updates. [Defaults](/reference/extensions#defaults) lists the rule for each one.
+## What a disabled extension does
+
+| Client | Behavior |
+| --- | --- |
+| API | The operations stay registered. Each one refuses with HTTP 409 `extension.disabled` and changes nothing. |
+| MCP | `tools/list` and `/mcp/search` omit the tools. A direct `tools/call` or `execute_tools` call returns a tool error with `extension.disabled`. See [MCP errors](/reference/mcp#tools). A connected client sees the change when it lists the tools again. See [tool list changes](/reference/mcp#tool-list-changes). |
+| CLI | `list`, `help`, and completion hide the family. A direct call reaches the Gateway, which refuses it with `extension.disabled`. |
+| Web app | Navigation hides the extension's pages. The app reads the switches every 30 seconds. |
+
+`tasks:status` is a core view. It stays available while `tasks` is disabled. Disabling an extension keeps its data, such as tasks, documents, or the ai-router collector. Background work that finishes recorded work keeps running, such as the cleanup of deleted document bytes. The Vaultwarden sync stops while `vault` is off and catches up when it is on again.
+
+A nested empty object in a tool argument stays an object through a direct `tools/call` and through `execute_tools`. [MCP](/reference/mcp) describes that shape.
+
+## Extension state in the CLI
+
+The CLI asks the Gateway for the switches at most once per process: when it lists commands or shows help, when it runs `extension:list`, and when it runs a AI router extension command. The request has a 2-second deadline, which includes its one retry after a connection failure. The CLI stores no copy.
+
+When the CLI cannot read the switches, the state is unknown, not disabled. This happens when no Gateway profile is active, the Gateway CA is not trusted, or the Gateway does not answer in time.
+
+- `extension:list` shows `UNKNOWN` and the cause, such as `gateway.profile_missing`, `gateway.ca_untrusted`, or `gateway.unreachable`.
+- `list` and `help` hide the extension commands.
+- A AI router extension command fails with `extension.state_unknown` and sends no request.
+
+Direct `tasks:*`, `project:document:*`, `project:document-storage:*`, and `vault:*` calls do not require switch discovery. They send the request even when discovery is denied or times out. The Gateway enforces the switch and returns `extension.disabled` while the extension is off.
+
+The `gateway:*` commands need no extension state, so you can add, select, trust, or remove a profile and try again.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `extension.unknown` | The CLI does not know the slug. It sends no request. The API and MCP refuse an unknown slug with `validation.failed` (422). |
+| `extension.disabled` | The extension is disabled at the Gateway (HTTP 409). |
+| `extension.dependency_disabled` | A dependency of the extension is off (HTTP 409). `error.details.dependency` names it. |
+| `extension.required` | An enabled extension depends on the one being disabled (HTTP 409). `error.details.required_by` names it. |
+| `extension.state_unknown` | The CLI could not read the switches, so it ran no extension command. |
+
+## Why it works this way
+
+Each extension has one switch, and the Gateway owns it. A switch on each operator's machine could not hide Gateway routes, MCP tools, or web pages, so two operators could see different products. A cached copy in the CLI would become a second source of truth, so the CLI asks the Gateway in each process.
+
+The switch only shows or hides. Setting up ai-router needs a Node, a cache connection, an upstream URL, and a key, so that stays in the extension's own setup command. Every extension then keeps the same small switch contract, and one extension has one switch name.
+
+API routes stay registered while an extension is off and refuse with `extension.disabled`. Removing routes at runtime would make the OpenAPI document, the SDK, and the generated MCP tools change with runtime state. MCP filters tools before listing, search, and execution, so no path can find or run a disabled tool.
+
+An unknown state is not a disabled state. Treating an unreachable Gateway as "disabled" would hide commands for a reason that has nothing to do with the switch, and the operator would look in the wrong place.
+
+## Related
+
+- [`tasks`](/cli/tasks) describes task operations.
+- [`ai-router`](/cli/ai-router) describes collector setup, teardown, and quota commands.
+- [Using the CLI](/cli/overview#select-a-gateway) describes Gateway selection.

@@ -1,7 +1,7 @@
 /**
  * The swamp role's runtime as official steps over SSH from 209 (flow-tighten rule 22): the SSH identity, serve and
  * its workers. Serve and running workers are never restarted; a changed unit takes effect at the next restart.
- * Charts: docs/flows/node.role_converge.mmd, node.role_add.mmd.
+ * Charts: docs/cli/node/role-converge.mmd, node.role_add.mmd.
  */
 import { dotless } from "../_lib/behavior_name.ts";
 

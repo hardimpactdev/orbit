@@ -1,0 +1,15 @@
+---
+title: "orbit tasks:turn"
+sidebarTitle: "tasks:turn"
+---
+
+Run one turn on the current subtask of an external group. Orbit records the receipt and workspace evidence without advancing the lifecycle. See [Run an external turn](/reference/tasks#run-an-external-turn).
+
+```bash
+orbit tasks:turn <group> --subtask=43 --role=implementer --prompt="Implement the brief." --thread=new --idempotency-key=feature.implement.c1
+orbit tasks:turn 42 --subtask=43 --role=reviewer --prompt="Review the checked commit." --thread=new --check=19 --json
+```
+
+`--model` selects a new thread's model. A continued thread keeps its model. A consult uses a reviewer thread and preserves the working tree.
+
+Pair `--analysis=<operation-id>` with `--analysis-plan-sha256=<digest>` to attach complete usable [analysis evidence](/cli/tasks/analyze). Neither option is valid alone. Freshness is checked under the workspace lease before the first accepted send; accepted-send recovery retains the exact combined prompt and original send key. A reviewer still needs an eligible ordinary `--check` on that candidate.

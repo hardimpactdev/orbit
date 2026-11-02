@@ -1,0 +1,33 @@
+---
+title: "orbit firewall:allow"
+sidebarTitle: "firewall:allow"
+description: "Allow traffic to one destination port or port range, optionally from one source."
+---
+
+```bash
+orbit firewall:allow <port> --node=ID [--from=SOURCE] [--protocol=PROTO] [--label=TEXT]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `port` | yes | Destination port from 1 through 65535, or an ordered range such as `8000:8100`. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--node=ID` | required | Numeric target Node ID. |
+| `--from=SOURCE` | `any` | Source IPv4 or IPv6 address, a CIDR such as `10.6.0.0/24`, or `any`. |
+| `--protocol=PROTO` | both | `tcp` or `udp`. Omit it for both. |
+| `--label=TEXT` | none | Free text that describes the rule. |
+
+```bash
+orbit firewall:allow 5432 --node=7 --from=10.6.0.0/24 --protocol=tcp --label="office postgres"
+orbit firewall:allow 6000:6100 --node=7 --protocol=udp
+```
+
+A running Operation keeps its Node firewall target and returns `operation.target_busy` to another admission. To change a rule, remove it and create it again. Human output follows the UFW step and reports `Firewall rule succeeded.` with the Operation and request IDs.
+
+Use `--idempotency-key=KEY` to retry the same admission without creating another Operation. Keep the same key, Node and input.
+
+## How it works
+
+<div className="flow-at" data-chart="firewall/allow"></div>

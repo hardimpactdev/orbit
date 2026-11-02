@@ -5,7 +5,13 @@
       "group": "Fleet",
       "order": 8,
       "pages": [
-        "cli/dns"
+        {
+          "group": "dns",
+          "pages": [
+            "cli/dns/index",
+            "cli/dns/resolve"
+          ]
+        }
       ]
     }
   ]

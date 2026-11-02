@@ -1,0 +1,25 @@
+---
+title: "profile"
+sidebarTitle: "Overview"
+description: "Profile one HTTP request from the operator machine and show its timings."
+covers:
+  - apps/cli/app/Commands/Profile/**
+  - apps/cli/app/Services/Profile/**
+---
+
+`profile` sends one GET from this machine and reports its timings. Name an absolute HTTP or HTTPS URL, or pass `--instance` to profile an Instance at the URL that the Gateway records for it. [Gateway profiles](/cli/gateway) are a separate local configuration.
+
+The request always leaves this machine. The command never opens an SSH session and never asks the Gateway to send the request. With `--instance`, it asks the Gateway only for the URL.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`profile`](/cli/profile/profile) | Profile one HTTP request from this machine. |
+
+The command accepts `--json`.
+
+## Related
+
+- [`gateway`](/cli/gateway) manages Gateway connection profiles. Those profiles are unrelated to this command.
+- [`doctor`](/cli/doctor) compares the Gateway's records with Node state.

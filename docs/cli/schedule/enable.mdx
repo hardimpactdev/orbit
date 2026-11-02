@@ -1,0 +1,13 @@
+---
+title: "orbit schedule:enable"
+sidebarTitle: "schedule:enable"
+description: "Set the trigger of one Schedule. The command is idempotent. Use it after `schedule:create --no-start`, or for a copy that production preparation created disabled. `schedule` is the UUID of an installed Schedule."
+---
+
+```bash
+orbit schedule:enable <schedule> [--idempotency-key=KEY] [--json]
+```
+
+## How it works
+
+<div className="flow-at" data-chart="schedule/enable"></div>

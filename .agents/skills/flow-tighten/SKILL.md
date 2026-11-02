@@ -1,11 +1,11 @@
 ---
 name: flow-tighten
-description: Use when designing a new Orbit command or changing one, and when reviewing or drafting its flow chart (docs/flows/<kind>.mmd), to make the flow as short and efficient as it can be. Also use when asked to tighten, simplify or optimize a command's flow.
+description: Use when designing a new Orbit command or changing one, and when reviewing or drafting its flow chart (docs/cli/<family>/<command>.mmd), to make the flow as short and efficient as it can be. Also use when asked to tighten, simplify or optimize a command's flow.
 ---
 
 # Tighten a flow chart
 
-Every Orbit command is designed as a flow chart first, and the code follows the chart. A chart can look complete and still do too much. Use this skill when you design a new command, and when you review an existing chart. It finds the steps a flow can lose or merge, and proposes the shorter ideal flow. The chart rules in [docs/flows/README.md](../../../docs/flows/README.md) still apply. This skill adds the efficiency rules. For the command's CLI input and output, use [`designing-cli-commands`](../designing-cli-commands/SKILL.md).
+Every Orbit command is designed as a flow chart first, and the code follows the chart. A chart can look complete and still do too much. Use this skill when you design a new command, and when you review an existing chart. It finds the steps a flow can lose or merge, and proposes the shorter ideal flow. The chart rules in [docs/cli/README.md](../../../docs/cli/README.md) still apply. This skill adds the efficiency rules. For the command's CLI input and output, use [`designing-cli-commands`](../designing-cli-commands/SKILL.md).
 
 ## What a good flow looks like
 

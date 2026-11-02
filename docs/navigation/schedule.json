@@ -5,7 +5,21 @@
       "group": "Applications",
       "order": 8,
       "pages": [
-        "cli/schedule"
+        {
+          "group": "schedule",
+          "pages": [
+            "cli/schedule/index",
+            "cli/schedule/create",
+            "cli/schedule/list",
+            "cli/schedule/show",
+            "cli/schedule/update",
+            "cli/schedule/run",
+            "cli/schedule/logs",
+            "cli/schedule/enable",
+            "cli/schedule/disable",
+            "cli/schedule/destroy"
+          ]
+        }
       ]
     }
   ]

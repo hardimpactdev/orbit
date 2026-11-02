@@ -1,0 +1,18 @@
+---
+title: "orbit node:excluded-project:add"
+sidebarTitle: "node:excluded-project:add"
+---
+
+Keep a Project off this `app-dev` Node for development placement. The Node must have an active `app-dev` role. `project:excluded-node:add` writes the same exclusion from the Project side. [Development node exclusions](/reference/development-node-exclusions) owns the rules.
+
+```bash
+orbit node:excluded-project:add <project> --node=NODE [--json]
+orbit node:excluded-project:add 4 --node=sabre
+```
+
+| Argument or option | Meaning |
+| --- | --- |
+| `project` | Numeric Project ID. |
+| `--node=NODE` | Node ID or name. |
+
+In a terminal, an omitted Project or Node opens a searchable selector. JSON and noninteractive calls must name both.

@@ -1,0 +1,25 @@
+---
+title: "orbit instance:transfer"
+sidebarTitle: "instance:transfer"
+---
+
+Move an active development Instance to another `app-dev` Node. Both Nodes must belong to active Clusters. The transfer stops the source, copies it into an independent checkout, moves or replaces its Route, and deletes the old placement. See [Instance transfer](/reference/instance-transfer).
+
+```bash
+orbit instance:transfer <instance> <node> [--name=NAME] [--sqlite-source-path=PATH] [--force] [--idempotency-key=KEY] [--json]
+```
+
+Use these options to select the destination and confirm downtime.
+
+| Option | Meaning |
+| --- | --- |
+| `--name=NAME` | Optional destination name. |
+| `--sqlite-source-path=PATH` | Optional SQLite database to copy from the source. |
+| `--force` | Confirm downtime and deletion of the old placement. |
+| `--json` | Return machine-readable output without prompts. Requires `--force` for consent. |
+
+Without `--force`, an interactive call asks for default-No consent naming the source, destination and effect. JSON and noninteractive calls without `--force` return `instance.confirmation_required` before mutation.
+
+## How it works
+
+<div className="flow-at" data-chart="instance/transfer"></div>

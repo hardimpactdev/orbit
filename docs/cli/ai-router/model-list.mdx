@@ -1,0 +1,13 @@
+---
+title: "orbit ai-router:model:list"
+sidebarTitle: "ai-router:model:list"
+description: "List the models CLIProxyAPI offers, from the collector snapshot."
+---
+
+```bash
+orbit ai-router:model:list [--json]
+```
+
+Each item is `{id, provider}`. The command does not call CLIProxyAPI. `provider` follows the [owned_by mapping](/reference/ai-router#models), including `anthropic` to `claude`. `google` and `meta` keep those names, and no AI router provider serves them. While the collector is not set up, the command fails with `ai_router.disabled`. A snapshot with no models returns an empty list. Run `ai-router:setup` again, then wait for the next poll, before expecting models from a collector that was deployed earlier. When a later poll cannot read one auth file, the snapshot keeps that file's models from the previous poll.
+
+When a model has no `owned_by`, `provider` comes from that model's auth file, using the same mapping. A model with neither is absent from the list.

@@ -1,0 +1,32 @@
+---
+title: "orbit node:remove"
+sidebarTitle: "node:remove"
+description: "Remove a Node through one native Swamp Operation. The Gateway keeps the Node record until cleanup succeeds. The CLI follows the Operation and reports its final result."
+---
+
+```bash
+orbit node:remove <node> [--force] [--offline] [--idempotency-key=KEY] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--force` | Confirm removal without a prompt. Required without a terminal and with `--json`. |
+| `--offline` | Remove an unreachable Node. Swamp probes it first. A reachable Node keeps every online guard. |
+| `--idempotency-key=KEY` | Recover the same Operation after a lost start response. |
+
+```bash
+orbit node:remove 7
+orbit node:remove 7 --offline --force
+```
+
+Remove Instances, Database servers, Schedules, active Routes and firewall rules first. Online removal also requires no roles or Processes. The caller, Gateway and VPN Nodes are protected. Drain task VMs and clear the task VM host setting before removing their host.
+
+An unreachable Node keeps its host state. The final Operation result lists `roles_shed` and `retained_on_node`. Human output shows the same retained state. macOS retains `user`, `package-managers` and `host-wireguard`. An iPadOS peer retains `host-wireguard`. Online Linux removal retires its observer and worker only after the serving fleet is clean.
+
+A failed cleanup retains the Node record. Swamp restores membership and serving publications in the same run. If restoration fails or retirement has an uncertain outcome, the Operation reports `node.removal_rollback_failed`. Ctrl-C stops following; it leaves the Operation running. Use `operation:show` to follow it again.
+
+[Remove a Node](/reference/node-provisioning#remove-a-node) describes placement, cleanup and restoration.
+
+## How it works
+
+<div className="flow-at" data-chart="node/remove"></div>

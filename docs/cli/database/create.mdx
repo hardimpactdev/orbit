@@ -1,0 +1,60 @@
+---
+title: "orbit database:create"
+sidebarTitle: "database:create"
+---
+
+Register an existing database, or create a new one on a [Database server](/reference/database-servers#create-a-database-on-a-server). On a Valkey server, `--server` creates an [ACL user](/reference/database-servers#create-an-acl-user-on-a-valkey-server) instead. The Gateway encrypts the password before it writes the row.
+
+```bash
+orbit database:create <slug> --driver=DRIVER [--idempotency-key=KEY] [options]
+orbit database:create <slug> --server=SERVER [--instance=INSTANCE] [--locale=LOCALE] [--idempotency-key=KEY]
+orbit database:create <slug> --server=SERVER --pattern=PATTERN ... --allow=RULE ... [--database=INDEX] [--idempotency-key=KEY]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `slug` | yes | Lowercase kebab name of at most 63 characters. |
+
+| Option | Meaning |
+| --- | --- |
+| `--driver=DRIVER` | `mysql`, `pgsql`, `sqlite`, or `redis`. |
+| `--node=NODE` | Numeric Node ID or registered Node name to associate. The `database` role is not required. |
+| `--host=HOST` | Hostname or IP address for mysql, pgsql, and redis, without userinfo or port. |
+| `--port=PORT` | TCP port for mysql, pgsql, and redis. Defaults to `3306` for mysql, `5432` for pgsql, and `6379` for redis. |
+| `--database=NAME` | Database name for mysql and pgsql, or the numeric database index for redis. With `--server`, only the index on a Valkey server. |
+| `--path=PATH` | Unix absolute sqlite path of at most 1024 characters. |
+| `--username=USER` | Username. Required for mysql and pgsql. Optional for redis; omit it when the server has none. |
+| `--password=SECRET` | Password. Required for mysql and pgsql. Optional for redis. |
+| `--server=SERVER` | Server slug. Creates a MySQL or PostgreSQL database and owner, or a Valkey ACL user, on that server. Excludes every other option except `--instance`, `--locale` and `--test-processes` on PostgreSQL, and `--pattern`, `--allow`, and `--database` on a Valkey server. |
+| `--locale=LOCALE` | With a PostgreSQL `--server`: builtin `C.UTF-8` or `C`. Omission inherits the image default. |
+| `--instance=INSTANCE` | Numeric Instance ID. With `--server` on a MySQL or PostgreSQL server, attaches the new database to the Instance under prefix `DB`, creates its test database, and makes the Instance its owner. |
+| `--test-processes=N` | PostgreSQL with `--server` and `--instance` only. Creates 1–32 parallel worker databases; default 8. See [test databases](/reference/database-connections#test-databases) for Laravel settings. |
+| `--pattern=PATTERN` | With `--server` on a Valkey server: a key pattern that the user may reach. It starts with a literal key prefix, not a glob character. Required there. Repeat it for more patterns. |
+| `--allow=RULE` | With `--server` on a Valkey server: a command category such as `@list`, or a command such as `eval`, that the user may run. `@all` and `@scripting` are refused. Required there. Repeat it for more rules. |
+
+| Driver | Required fields | Optional fields |
+| --- | --- | --- |
+| `mysql` | `--host`, `--database`, `--username`, `--password` | `--node`, `--port` |
+| `pgsql` | `--host`, `--database`, `--username`, `--password` | `--node`, `--port` |
+| `sqlite` | `--path` | `--node`, `--username`, `--password` |
+| `redis` | `--host` | `--node`, `--port`, `--database`, `--username`, `--password` |
+
+```bash
+orbit database:create app --driver=mysql --host=db.example.test --database=app --username=app --password=secret
+orbit database:create local --driver=sqlite --path=/var/lib/app/database.sqlite
+orbit database:create postgres --driver=pgsql --node=beast --host=10.44.0.7 --database=app --username=app --password=secret
+orbit database:create cache --driver=redis --host=127.0.0.1 --database=0
+orbit database:create dlf-leden --server=beast-mysql --instance=60
+orbit database:create app-dev --server=services-postgres --instance=60 --test-processes=8
+orbit database:create gateway-queue --server=services-valkey --database=1 --pattern='orbit-gateway:*' --allow=@list --allow=eval
+```
+
+The Gateway answers `validation.failed` when a mysql, pgsql, or redis record includes `--path`, when a sqlite record includes `--host`, `--port`, or `--database`, when a redis record omits `--host`, or when the request includes an unsupported field. An identical Instance-owned PostgreSQL create retry [restores missing test pool members](/reference/database-servers#repair-a-postgresql-test-pool) and returns a repair Operation. Other duplicate slugs return `database.slug_conflict` and leave the existing record unchanged.
+
+Query, tables, schema, and describe refuse a redis connection with `database.driver_unsupported`. An Instance gets the stored `--host` and `--port` unchanged, also on the `--node` Node. Use an address that every Instance can reach, such as the database Node's WireGuard address.
+
+With `database:create --server=<pgsql-server>`, `--locale=C.UTF-8` or `--locale=C` selects the builtin PostgreSQL locale provider with UTF8 encoding and template0. The response records `locale`. Omit it to inherit the image default. The option is refused for other drivers and registration.
+
+## How it works
+
+<div className="flow-at" data-chart="database/create"></div>

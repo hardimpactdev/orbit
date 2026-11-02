@@ -1,0 +1,42 @@
+---
+title: "database"
+sidebarTitle: "Overview"
+description: "Run MySQL, PostgreSQL and Valkey servers, create databases and ACL users on them, and register, inspect, update, and destroy the mysql, pgsql, sqlite, and redis connections that Instances can attach."
+covers:
+  - apps/cli/app/Commands/Database/**
+---
+
+A Database connection is a Gateway record with an encrypted password. The `database` family manages the records and inspects a registered database. `database:server` runs a MySQL, PostgreSQL or Valkey server as a Docker Node Process and keeps its admin password in the Gateway. [Database servers](/reference/database-servers) describes the servers.
+
+[Database connections](/reference/database-connections) describes the driver fields, the API, inspection, and the keys that an attachment writes. Attach a connection to an Instance with [`instance:database:add`](/cli/instance/database-add). Attachment commands require `--instance=SELECTOR`. An omitted or empty selector returns `database.instance_required` before the CLI sends a request.
+
+Server create, close and destroy, managed database create and destroy, user create, and SQL writes start Operations. Their CLI commands follow the steps to completion. Use `--idempotency-key=KEY` to repeat the same start after a lost response. Registry create, update and destroy, and all reads, keep their record responses.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`database:create`](/cli/database/create) | Register an existing database, or create a database or an ACL user on a server. |
+| [`database:list`](/cli/database/list) | List registered connections. |
+| [`database:show`](/cli/database/show) | Show one connection. |
+| [`database:update`](/cli/database/update) | Replace the supplied fields on one connection. |
+| [`database:server:create`](/cli/database/server-create) | Run a MySQL, PostgreSQL or Valkey server as a Docker Node Process. |
+| [`database:server:list`](/cli/database/server-list) | List the servers. |
+| [`database:server:show`](/cli/database/server-show) | Show one server. |
+| [`database:server:destroy`](/cli/database/server-destroy) | Remove a server that no connection uses. |
+| [`database:server:close`](/cli/database/server-close) | Give `default` the admin password on an adopted Valkey server. |
+| [`database:user:create`](/cli/database/user-create) | Add a user to a database on a MySQL or PostgreSQL server. |
+| [`database:user:list`](/cli/database/user-list) | List the users Orbit created for a connection. |
+| [`database:destroy`](/cli/database/destroy) | Destroy one connection record. |
+| [`database:query`](/cli/database/query) | Run one SQL statement against a registered connection. |
+| [`database:tables`](/cli/database/tables) | List tables on a registered connection. |
+| [`database:schema`](/cli/database/schema) | Show columns for every table on a registered connection. |
+| [`database:describe`](/cli/database/describe) | Show columns for one table on a registered connection. |
+
+Every command accepts `--json`, and every result includes the request ID. No output contains a password; `has_password` shows whether one is stored. `database:destroy` asks for confirmation, and the default is No. JSON and piped calls need `--force`.
+
+## Related
+
+- [`instance:database:add`](/cli/instance/database-add) and [`instance:database:remove`](/cli/instance/database-remove) attach and detach a connection on one Instance.
+- [Database servers](/reference/database-servers) explains how a server keeps its root password.
+- [`doctor --family=database_connection`](/cli/doctor) reports missing, unhealthy, or mismatched attachments.

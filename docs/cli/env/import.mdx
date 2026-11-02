@@ -1,0 +1,24 @@
+---
+title: "orbit env:import"
+sidebarTitle: "env:import"
+description: "Import the Instance's `.env` into stored configuration. The Gateway never reads `.env.example`."
+---
+
+```bash
+orbit env:import --instance=SELECTOR [--replace] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--replace` | Replace stored keys that the file also holds. Stored keys that the file lacks stay. |
+
+Without `--replace`, a file key that is already stored returns `env.import_conflict`, and nothing is stored. For a Laravel Instance, import stores `APP_URL` as `https://{{instance.domain}}`.
+
+```bash
+orbit env:import --instance=12
+orbit env:import --instance=shop.example.test --replace
+```
+
+## How it works
+
+<div className="flow-at" data-chart="env/import"></div>

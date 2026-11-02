@@ -25,7 +25,7 @@ final readonly class DocsImpact
         'project-documents:probes:repair' => 'docs/reference/project-documents.md',
         'tasks:tick' => 'docs/reference/tasks.md',
         'tasks:lease:release' => 'docs/reference/tasks.md',
-        'orbit:activity-finalize-interrupted' => 'docs/cli/activity.mdx',
+        'orbit:activity-finalize-interrupted' => 'docs/cli/activity/index.mdx',
         'orbit:deploy-development-defaults' => 'docs/reference/deployments.md',
         'orbit:desired-fleet-state' => 'docs/reference/self-update.md',
         'orbit:vault-sync' => 'docs/reference/vaultwarden.md',
@@ -38,7 +38,7 @@ final readonly class DocsImpact
         'orbit:private-dns-serve' => 'docs/reference/gateway-trust.md',
         'orbit:gateway-web' => 'docs/reference/gateway-trust.md',
         'orbit:agent-view-publish' => 'docs/reference/node-agent.md',
-        'orbit:activity-redact' => 'docs/cli/activity.mdx',
+        'orbit:activity-redact' => 'docs/cli/activity/index.mdx',
         'orbit:bootstrap' => 'docs/reference/gateway-trust.md',
         'orbit:node-dns-repair' => 'docs/reference/node-agent.md',
         'orbit:node-provision' => 'docs/reference/node-agent.md',
@@ -288,7 +288,7 @@ final readonly class DocsImpact
                 $directory = dirname($directory);
             }
         }
-        $documents = glob($this->root.'/docs/{reference,cli,solutions}/*.{md,mdx}', GLOB_BRACE) ?: [];
+        $documents = glob($this->root.'/docs/{reference,cli,cli/*,solutions}/*.{md,mdx}', GLOB_BRACE) ?: [];
         $findings = [];
         $historicalRatchet = $this->ratchetPages ?? $this->committedRatchetPages();
         $currentRatchet = $this->ratchetPages ?? $this->currentRatchetPages();
@@ -435,6 +435,19 @@ final readonly class DocsImpact
         return preg_match('/^\\s*([a-z][a-z0-9-]*(?::[a-z0-9-]+)*)/i', $signature, $match) === 1 ? strtolower($match[1]) : '';
     }
 
+    /**
+     * The page that documents a CLI command: docs/cli/<family>/<rest of the name, colons as hyphens>.mdx, or the
+     * page that owns its whole family.
+     */
+    private function cliCommandPage(string $signature): string
+    {
+        $family = $this->commandFamily($signature);
+        $name = $this->commandName($signature);
+        $page = str_contains($name, ':') ? str_replace(':', '-', explode(':', $name, 2)[1]) : $name;
+
+        return self::CLI_FAMILY_OWNERS[$family] ?? "docs/cli/{$family}/{$page}.mdx";
+    }
+
     private function commandFamily(string $signature): string
     {
         if (preg_match('/^\s*([a-z][a-z0-9-]*(?::[a-z0-9-]+)*)/i', $signature, $match) !== 1) {
@@ -497,7 +510,7 @@ final readonly class DocsImpact
     private function extractPlannedPath(string $path, array $pages, array &$surfaces, array &$impacts, array &$errors): void
     {
         if (preg_match('#(?:^|/)Domain/Doctor(?:/|$)#', $path) === 1 || preg_match('#(?:^|/)config/doctor(?:\.php)?$#i', $path) === 1) {
-            $this->addSurface($surfaces, $impacts, $path, 'doctor_issue_code', 'docs/cli/doctor.mdx', "Planned Doctor surface {$path}");
+            $this->addSurface($surfaces, $impacts, $path, 'doctor_issue_code', 'docs/cli/doctor/doctor.mdx', "Planned Doctor surface {$path}");
 
             return;
         }
@@ -640,7 +653,7 @@ final readonly class DocsImpact
             $families[$family] = true;
         }
         foreach (array_keys($families) as $family) {
-            $page = self::CLI_FAMILY_OWNERS[$family] ?? 'docs/cli/'.$family.'.mdx';
+            $page = self::CLI_FAMILY_OWNERS[$family] ?? 'docs/cli/'.$family.'/index.mdx';
             $this->addSurface($surfaces, $impacts, $path, 'cli_registration', $page, "CLI family {$family} is registered through {$path}");
         }
     }
@@ -669,9 +682,9 @@ final readonly class DocsImpact
 
             return;
         }
-        $page = self::CLI_FAMILY_OWNERS[$family] ?? 'docs/cli/'.$family.'.mdx';
+        $page = $this->cliCommandPage($command);
         if (! is_file($this->root.'/'.$page)) {
-            $errors[] = "CLI family [{$family}] has no documentation owner at {$page}.";
+            $errors[] = "CLI command [{$this->commandName($command)}] has no documentation page at {$page}.";
             $this->addSurface($surfaces, $impacts, $path, 'cli_signature', 'unowned', "missing CLI owner {$page} for {$command}");
 
             return;
@@ -679,7 +692,7 @@ final readonly class DocsImpact
         preg_match('/protected\s+\$description\s*=\s*[\'"]([^\'"]*)/', $source, $description);
         $this->addSurface($surfaces, $impacts, $path, 'cli_signature', $page, "CLI command {$command} in {$path}; description ".trim($description[1] ?? ''));
         if ($family === 'env' || str_contains(strtolower($source), 'instance .env') || str_contains($source, "'.env'") || preg_match('/(?:Update|Import|Synchronize)(?:App)?InstanceEnvironmentRequest/', $source) === 1) {
-            $this->addSurface($surfaces, $impacts, $path, 'instance_environment_command', 'docs/cli/env.mdx', "CLI command reads or changes Instance .env in {$path}");
+            $this->addSurface($surfaces, $impacts, $path, 'instance_environment_command', 'docs/cli/env/index.mdx', "CLI command reads or changes Instance .env in {$path}");
         }
     }
 
@@ -733,7 +746,7 @@ final readonly class DocsImpact
             : 'unknown';
         foreach ($matches[1] as [$identifier, $offset]) {
             $line = substr_count(substr($source, 0, $offset), "\n") + 1;
-            $this->addSurface($surfaces, $impacts, $path, 'doctor_issue_code', 'docs/cli/doctor.mdx', "Doctor {$family} issue code {$identifier} in {$path}:{$line}");
+            $this->addSurface($surfaces, $impacts, $path, 'doctor_issue_code', 'docs/cli/doctor/doctor.mdx', "Doctor {$family} issue code {$identifier} in {$path}:{$line}");
         }
     }
 
@@ -763,11 +776,10 @@ final readonly class DocsImpact
             $owners = [];
             if (str_starts_with($path, 'apps/cli/')) {
                 if (preg_match('/protected\s+\$signature\s*=\s*[\'"]([^\'"]+)/', $source, $signature) === 1) {
-                    $family = $this->commandFamily($signature[1]);
-                    $owners[] = self::CLI_FAMILY_OWNERS[$family] ?? 'docs/cli/'.$family.'.mdx';
+                    $owners[] = $this->cliCommandPage($signature[1]);
                 } elseif (preg_match('/^([a-z][a-z0-9]*)\./', $identifier, $familyMatch) === 1 && in_array($familyMatch[1], self::CLI_FAMILIES, true)) {
                     $family = $familyMatch[1];
-                    $owners[] = self::CLI_FAMILY_OWNERS[$family] ?? 'docs/cli/'.$family.'.mdx';
+                    $owners[] = self::CLI_FAMILY_OWNERS[$family] ?? 'docs/cli/'.$family.'/index.mdx';
                 }
             } elseif ($this->isApiPath($path)) {
                 $owners = [];
@@ -988,7 +1000,7 @@ final readonly class DocsImpact
             if ($page === null && str_contains($command, ':')) {
                 $family = explode(':', $command, 2)[0];
                 if (in_array($family, self::CLI_FAMILIES, true)) {
-                    $page = self::CLI_FAMILY_OWNERS[$family] ?? 'docs/cli/'.$family.'.mdx';
+                    $page = self::CLI_FAMILY_OWNERS[$family] ?? 'docs/cli/'.$family.'/index.mdx';
                 }
             }
             if ($page === null) {
@@ -1145,7 +1157,7 @@ final readonly class DocsImpact
     private function coveringPages(): array
     {
         $result = [];
-        $documents = glob($this->root.'/docs/{reference,cli,solutions}/*.{md,mdx}', GLOB_BRACE) ?: [];
+        $documents = glob($this->root.'/docs/{reference,cli,cli/*,solutions}/*.{md,mdx}', GLOB_BRACE) ?: [];
         foreach ($documents as $file) {
             $relative = 'docs/'.substr($file, strlen($this->root.'/docs/'));
             if (preg_match('/^covers\s*:\s*\R((?:^[ \t]+.*\R?)*)/m', $this->frontmatter($this->read($relative)), $block) !== 1) {

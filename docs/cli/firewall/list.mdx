@@ -1,0 +1,17 @@
+---
+title: "orbit firewall:list"
+sidebarTitle: "firewall:list"
+description: "List the operator rules recorded for one Node with their port, protocol, source, action, label, and lifecycle status."
+---
+
+```bash
+orbit firewall:list --node=ID
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--node=ID` | Numeric target Node ID. |
+
+Human output uses a read-only table with PORT, PROTOCOL, SOURCE, ACTION, LABEL, and STATUS columns, sorted by port, protocol, and source. A rule for both protocols shows `any`. Values wrap inside their cells; below the minimum width, labeled records retain every field. An empty result says `No firewall rules.`.
+
+A rule's `status` is `provisioning`, `active`, `failed`, or `removing`. A failed rule keeps `failed_step` and `error_code` so the same command can be repeated after the cause is fixed. Orbit-owned `orbit:` rules are not part of this list.

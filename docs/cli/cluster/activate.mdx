@@ -1,0 +1,15 @@
+---
+title: "orbit cluster:activate"
+sidebarTitle: "cluster:activate"
+description: "Activate a Cluster. An active Cluster serves its private domains and LAN ingress by itself, so this is an `activate` and `deactivate` pair, not an `update` option."
+---
+
+```bash
+orbit cluster:activate <cluster> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `cluster` | yes | Numeric Cluster ID. |
+
+Activating a Cluster that has a TLD runs the same checks as setting a TLD on an active Cluster: one active Router, no non-member Node that owns the TLD, and a valid domain, scope, and target for every affected Route. Activating an active Cluster changes nothing. The errors are those of [`cluster:update`](/cli/cluster/update), without `cluster.update_required`.

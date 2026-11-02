@@ -1,0 +1,14 @@
+---
+title: "orbit project:document:remove"
+sidebarTitle: "project:document:remove"
+description: "Permanently remove an entry. The confirmation names the Project, the entry, and whether the removal is recursive."
+---
+
+```bash
+orbit project:document:remove <project> <entry> --expected-revision=N [--recursive] [--yes] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--recursive` | Also remove the descendants of a folder. |
+| `--yes` | Confirm without a prompt. Required for JSON and noninteractive calls. |

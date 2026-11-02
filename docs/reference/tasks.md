@@ -909,7 +909,7 @@ The owner is the only record of task workspace ownership:
 
 Task operations include agent turns, checks, pushes, commit signing, and `.mcp.json` writes. Orbit refuses them on any other Instance.
 
-Task cleanup never removes an Instance without that task as its recorded owner. To remove another Instance explicitly, run [`instance:destroy`](/cli/instance#orbit-instancedestroy).
+Task cleanup never removes an Instance without that task as its recorded owner. To remove another Instance explicitly, run [`instance:destroy`](/cli/instance/destroy).
 
 A task VM holds only its task's workspace, and destroying the VM waits only for that workspace. Any other Instance row on the VM's Node describes a checkout inside the VM, so it goes with the VM and never keeps the VM alive.
 
@@ -1149,7 +1149,7 @@ A snapshot replaces the browser transcript. Entries merge by id and kind, so an 
 
 ### Read a thread
 
-`GET /api/v1/task-groups/{group}/agents/{session}` reads the thread as one JSON response. The CLI command [`tasks:agent:show`](/cli/tasks#orbit-tasksagentshow) and the MCP tool `tasks-agent-show` call it. An agent polls it to follow a thread without a stream.
+`GET /api/v1/task-groups/{group}/agents/{session}` reads the thread as one JSON response. The CLI command [`tasks:agent:show`](/cli/tasks/agent-show) and the MCP tool `tasks-agent-show` call it. An agent polls it to follow a thread without a stream.
 
 A first read returns a transcript snapshot. If it exceeds the Gateway budget, the snapshot keeps the newest entries that fit and starts with an explicit truncation marker. It holds the same redacted content as the first event of the stream, plus `archived`. To poll, pass the previous answer's `cursor` as the `after_sequence` query. When the thread's Pi server can resume from that cursor, the read returns a delta: only the entries added or changed after it, and the current state. Otherwise it returns a snapshot again. `kind` says which one the answer is.
 

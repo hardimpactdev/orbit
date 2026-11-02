@@ -1,0 +1,20 @@
+---
+title: "fleet"
+sidebarTitle: "Overview"
+description: "Show the fleet rollout that follows each Gateway release, and resume it after a halt."
+covers:
+  - apps/cli/app/Commands/Fleet/**
+  - packages/php-sdk/src/Requests/Fleet/**
+  - packages/php-sdk/src/Responses/Fleet/**
+---
+
+After each verified Gateway release, the Gateway brings the managed workload Nodes to the same release, one Node at a time. The `fleet` family shows that rollout and resumes it after a halt. [Fleet rollout](/reference/gateway-recovery#fleet-rollout) explains the rollout set, the order, the steps on each Node, and the catch-up.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`fleet:rollout:status`](/cli/fleet/rollout-status) | Show the newest rollout, each Node's result, and the Nodes it leaves out. |
+| [`fleet:rollout:resume`](/cli/fleet/rollout-resume) | Resume a halted rollout, optionally past one Node. |
+
+Both commands accept `--json`. JSON output contains only the response.

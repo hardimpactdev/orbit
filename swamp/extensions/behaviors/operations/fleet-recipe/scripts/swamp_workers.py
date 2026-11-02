@@ -1,4 +1,4 @@
-"""The release Swamp load's two gaps, run as the serve account after each checkout (docs/flows/gateway.swamp_load.mmd).
+"""The release Swamp load's two gaps, run as the serve account after each checkout (docs/cli/gateway/swamp-load.mmd).
 
 `grants <repo>` renders serve's grants: the Gateway's from its manifest, whose schedule producer marks serve's format
 can't hold, and serve's others. No official behavior renders grants.

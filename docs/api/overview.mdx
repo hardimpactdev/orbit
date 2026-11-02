@@ -22,7 +22,7 @@ Redirects are never followed. The Gateway answers JSON for every endpoint except
 
 There is no token. The Gateway identifies a caller by the WireGuard address that delivered the request and requires that address to belong to an active Node. A request from any other source receives HTTP 403 with the code `peer.identity_unknown`. Two endpoints are public: `GET /api/v1/gateway/status` and `GET /api/v1/ca/root`.
 
-The identified Node must also hold Node access to the Node that the request acts on. A Node always has access to itself; an operator grants other edges with [`node:access:add`](/cli/node#orbit-nodeaccessadd). A request without the required edge receives HTTP 403 with `node_access.required` and, in `details`, the consumer and serving Node identities. Collection endpoints such as `GET /api/v1/nodes` return only the records the caller may address.
+The identified Node must also hold Node access to the Node that the request acts on. A Node always has access to itself; an operator grants other edges with [`node:access:add`](/cli/node/access-add). A request without the required edge receives HTTP 403 with `node_access.required` and, in `details`, the consumer and serving Node identities. Collection endpoints such as `GET /api/v1/nodes` return only the records the caller may address.
 
 Three endpoints are called by Nodes and Caddy rather than operators: the Schedule completion callback, the Grafana authorization check, and the app-dev runtime activation page. The API sidebar groups them under Node callbacks.
 
@@ -87,7 +87,7 @@ The list is newest first. `before_id` returns older rows. `status`, `command`, `
 
 ## Set an unmanaged Node's WireGuard public key
 
-`PATCH /api/v1/nodes/{node}/wireguard-key` serves [`node:wireguard-key`](/cli/node#orbit-nodewireguard-key). The path takes a positive numeric Node ID; name resolution belongs to the CLI. The caller must be an active WireGuard peer with access to the target Node, under the usual identity and access rules.
+`PATCH /api/v1/nodes/{node}/wireguard-key` serves [`node:wireguard-key`](/cli/node/wireguard-key). The path takes a positive numeric Node ID; name resolution belongs to the CLI. The caller must be an active WireGuard peer with access to the target Node, under the usual identity and access rules.
 
 Send exactly one required member, `wireguard_public_key`, without a wrapper:
 
@@ -105,7 +105,7 @@ Before saving or projecting, the Gateway refuses a public key assigned to any ot
 
 On success the Gateway returns HTTP 200 with the standard Node record in `data`, including `wireguard_public_key`, and `meta.request_id`. It records Activity with command `node:wireguard-key`, caller, target, status, and request ID, without recording the request body. Authorized refusals and projection failures also record Activity under that command. The updated Node uses the normal `node.updated` broadcast contract.
 
-The request stores the key and synchronously reconverges the existing [WireGuard hub](/reference/node-provisioning#wireguard-hub) on the `vpn` Node. It does not change the target's tunnel, keys on disk, address, SSH identity, roles, or lifecycle status. A repeated identical key still projects the hub. A projection failure returns an error rather than a successful Node response; the stored key remains so the caller can repair the hub and retry the same request. `vpn.configuration_invalid`, `vpn.server_lock_failed`, `vpn.server_config_invalid`, `vpn.server_config_install_failed`, and `vpn.server_start_failed` use HTTP 422 with the failed step in `error.details.step`, and never raw remote output. The CLI's [WireGuard key error table](/cli/node#wireguard-key-errors) owns the recovery instructions. Unknown IDs return the standard HTTP 404 response, and identity or access failures use the standard HTTP 403 codes.
+The request stores the key and synchronously reconverges the existing [WireGuard hub](/reference/node-provisioning#wireguard-hub) on the `vpn` Node. It does not change the target's tunnel, keys on disk, address, SSH identity, roles, or lifecycle status. A repeated identical key still projects the hub. A projection failure returns an error rather than a successful Node response; the stored key remains so the caller can repair the hub and retry the same request. `vpn.configuration_invalid`, `vpn.server_lock_failed`, `vpn.server_config_invalid`, `vpn.server_config_install_failed`, and `vpn.server_start_failed` use HTTP 422 with the failed step in `error.details.step`, and never raw remote output. The CLI's [WireGuard key error table](/cli/node/wireguard-key#errors) owns the recovery instructions. Unknown IDs return the standard HTTP 404 response, and identity or access failures use the standard HTTP 403 codes.
 
 Registry save, hub publication, and Activity completion are not one atomic operation. A crash after save but before publication can leave the new stored key and old live hub configuration. A crash after publication but before completion can leave the new live configuration while Activity later ends with `activity.interrupted`. Activity alone cannot distinguish those states; the code describes an interrupted request, not an HTTP refusal or proof of rollback. There is no guaranteed rollback or automatic reconciliation after a crash. Restore an authorized management path to the Gateway, using another active peer with access to the target if necessary, then submit the same desired key again. Replay rechecks collisions and republishes even if the stored value already matches. The operator still owns the unmanaged target's local tunnel configuration.
 
@@ -119,7 +119,7 @@ This entry is the docs-first endpoint contract. The generated API sidebar and Op
 
 ## Set an unmanaged Node's platform
 
-`PATCH /api/v1/nodes/{node}/platform` serves [`node:platform`](/cli/node#orbit-nodeplatform). The path takes a positive numeric Node ID. The caller needs access to the target Node.
+`PATCH /api/v1/nodes/{node}/platform` serves [`node:platform`](/cli/node/platform). The path takes a positive numeric Node ID. The caller needs access to the target Node.
 
 Send exactly one member, `platform`, set to `linux`, `macos`, or `ipados`:
 

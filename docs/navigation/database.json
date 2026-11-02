@@ -5,7 +5,28 @@
       "group": "Applications",
       "order": 4,
       "pages": [
-        "cli/database"
+        {
+          "group": "database",
+          "pages": [
+            "cli/database/index",
+            "cli/database/create",
+            "cli/database/list",
+            "cli/database/show",
+            "cli/database/update",
+            "cli/database/server-create",
+            "cli/database/server-list",
+            "cli/database/server-show",
+            "cli/database/server-destroy",
+            "cli/database/server-close",
+            "cli/database/user-create",
+            "cli/database/user-list",
+            "cli/database/destroy",
+            "cli/database/query",
+            "cli/database/tables",
+            "cli/database/schema",
+            "cli/database/describe"
+          ]
+        }
       ]
     }
   ]

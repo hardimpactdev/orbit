@@ -1,0 +1,19 @@
+---
+title: "orbit instance:analytics:disable"
+sidebarTitle: "instance:analytics:disable"
+description: "Remove every tracking host of an Instance."
+---
+
+```bash
+orbit instance:analytics:disable <instance> [--yes] [--json]
+```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--yes` | off | Confirm without prompting. Interactive confirmation defaults to No. A JSON or non-interactive call without `--yes` returns `input.confirmation_required`. |
+
+Plausible stops receiving visits for the Instance as soon as the hosts are gone. The data already in Plausible stays. Running the command again for an Instance without hosts succeeds and changes nothing.
+
+## How it works
+
+<div className="flow-at" data-chart="instance/analytics-disable"></div>

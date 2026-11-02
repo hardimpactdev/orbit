@@ -1,0 +1,37 @@
+---
+title: "orbit node:platform"
+sidebarTitle: "node:platform"
+description: "Set the platform of an unmanaged Node. Use it to record what an operator-owned peer runs, such as an iPad on `ipados`. The command changes only the stored platform. It does not contact the machine."
+---
+
+```bash
+orbit node:platform <node> <platform> [--json]
+```
+
+| Argument or option | Meaning |
+| --- | --- |
+| `node` | Existing Node ID or exact name. No current-Node default. |
+| `platform` | `linux`, `macos`, or `ipados`. |
+| `--json` | Noninteractive output using the standard Node response and request ID. |
+
+```bash
+orbit node:platform ipad ipados
+```
+
+A terminal prompts for an omitted Node with the shared Node data list labeled `Node`, then for an omitted platform with the list labeled `Platform`. With `--json` or without interactive input, a missing argument fails before the request. Cancelling a prompt exits 1 and changes nothing.
+
+The target must be an unmanaged Node: it has no pinned SSH host fingerprint and no role assignment. The Gateway refuses any other Node with `node.platform_managed` (HTTP 409) and changes nothing. A managed Node's platform comes from enrollment, which observes the machine. Repeating the stored platform succeeds and writes nothing.
+
+`ipados` is only for unmanaged peers. `node:add` does not accept it, and Orbit runs nothing on an `ipados` Node. [iPadOS peers](/reference/node-provisioning#ipados-peers) lists what the Gateway refuses or skips.
+
+Progress uses `Set Node platform`, `Setting Node platform`, and `Set Node platform`. Success prints `Platform set to <platform> for Node #<id> [<name>].` and `Request ID: <uuid>`. JSON emits only the standard Node response. Errors use the standard error envelope and exit 1.
+
+## Errors
+
+| Code | Meaning and recovery |
+| --- | --- |
+| `node.reference_required` | The CLI got no Node in noninteractive or JSON mode. Supply an ID or name. |
+| `node.platform_required` | The CLI got no platform in noninteractive or JSON mode. Supply `linux`, `macos`, or `ipados`. |
+| `validation.failed` | The platform is not one of the three values, or the API body is invalid. Nothing changes. |
+| `node.platform_managed` | The Node has a pinned SSH host fingerprint or a role. Nothing changes. Enrollment owns a managed Node's platform. |
+| `node.provisioning_busy` | Another lifecycle operation owns this Node's name lock. Nothing changes; retry when it finishes. |

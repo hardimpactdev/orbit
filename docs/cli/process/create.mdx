@@ -1,0 +1,82 @@
+---
+title: "orbit process:create"
+sidebarTitle: "process:create"
+description: "Install one systemd service or Docker container, stopped or started, or record a Project definition."
+---
+
+```bash
+orbit process:create <name> (--instance=ID-or-domain | --node=ID-or-name | --project=ID --for=production) [--idempotency-key=KEY] [options]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `name` | yes | At most 63 characters, unique within the owner. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--instance=ID-or-domain` | none | Positive Instance ID or the exact Route domain of a development Instance. |
+| `--node=ID-or-name` | none | Node ID or registered Node name. The CLI resolves a name through the Node list. |
+| `--user=NAME` | managed user | Systemd account for a Node Process. One letter or underscore, then at most 31 letters, digits, underscores, or hyphens. |
+| `--project=ID` | none | Numeric Project ID for a definition. |
+| `--for=production` | none | Definition environments. Required with `--project`. Only definitions for `production` are copied. |
+| `--preset=PRESET` | none | Configure a development Instance Process. The supported value is `vp-dev`. Refused with `--project`. |
+| `--runtime=RUNTIME` | `systemd` | `systemd` or `docker`. |
+| `--command=ARG` | none | One argument. Repeat it for each argument, at most 64 of 4,096 bytes each. A systemd command starts with an absolute executable. |
+| `--image=IMAGE` | none | Docker image. |
+| `--working-directory=PATH` | see [runtimes](/reference/processes-and-schedules#runtimes) | Absolute working directory override. Omit for Docker to keep the image's `WORKDIR`. |
+| `--environment=NAME=VALUE` | empty map | Docker environment variable. Repeat as needed; the CLI sends a name-to-value map, not a list. |
+| `--port=HOST:CONTAINER[/tcp\|udp]` | none | Docker published port. Repeat as needed. |
+| `--volume=SOURCE:TARGET[:ro]` | none | Docker volume. Repeat as needed. |
+| `--restart=POLICY` | `never` | `never`, `on-failure`, `always`, or `unless-stopped`. |
+| `--keep-alive` | off | Keep the Process running through app-dev idle hibernation. |
+| `--no-restart-on-deploy` | off | Opt an installed Process out of automatic restart after production deploy or rollback activation. Not accepted for Project definitions. |
+| `--start` | off | Start the Process after it installs. Not accepted for a definition. |
+
+A preset owns the runtime, command, working directory, and environment, and refuses those options. It also refuses `--user`.
+
+`--user` is accepted only with `--node` and a systemd runtime. An Instance, Docker, a preset, or a Project definition returns `process.option_invalid` and sends no request. A name that fails the pattern returns `process.user_invalid` and sends no request. The API field is `user`, and `CreateProcessRequest` takes the same argument. `root` is refused as `process.user_invalid`. The Gateway checks the named account with `getent passwd` over SSH and returns `process.user_unavailable` when it is absent or its home is invalid. The default working directory is that account's home; `--working-directory` overrides it. [Processes and schedules](/reference/processes-and-schedules#owners) describes the option.
+
+```bash
+orbit process:create assets --instance=orbit.test --preset=vp-dev --start
+```
+
+Install a Vite development server on an Instance and start it:
+
+```bash
+orbit process:create vite \
+  --instance=12 \
+  --command=/usr/local/bin/vp \
+  --command=run \
+  --command=dev \
+  --restart=always \
+  --start
+```
+
+Run a shared Postgres container on a Node:
+
+```bash
+orbit process:create postgres \
+  --node=beast \
+  --runtime=docker \
+  --image=postgres:18 \
+  --port=5432:5432 \
+  --volume=postgres-data:/var/lib/postgresql/data
+```
+
+Record a queue worker definition that production copies receive:
+
+```bash
+orbit process:create queue \
+  --project=1 \
+  --for=production \
+  --command=/usr/bin/php \
+  --command=artisan \
+  --command=queue:work \
+  --restart=on-failure
+```
+
+A production Process can be installed only after `instance:deploy` selects a release. Starting a Process uses the release selected by `current`; changing `current` does not restart an already running Process.
+
+## How it works
+
+<div className="flow-at" data-chart="process/create"></div>

@@ -5,7 +5,13 @@
       "group": "Operations",
       "order": 0,
       "pages": [
-        "cli/doctor"
+        {
+          "group": "doctor",
+          "pages": [
+            "cli/doctor/index",
+            "cli/doctor/doctor"
+          ]
+        }
       ]
     }
   ]

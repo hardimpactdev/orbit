@@ -186,7 +186,7 @@ The refresh never touches another Instance's socket and never reloads a service.
 
 ## Doctor
 
-Native PHP runtime provisioning validates its configuration. [Doctor](/cli/doctor#what-each-family-checks) checks role-service liveness and does not repeat PHP package, pool or configuration validation.
+Native PHP runtime provisioning validates its configuration. [Doctor](/cli/doctor/doctor#what-each-family-checks) checks role-service liveness and does not repeat PHP package, pool or configuration validation.
 
 ## Check a Node
 

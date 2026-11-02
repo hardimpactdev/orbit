@@ -80,7 +80,7 @@ Import, update, and synchronization use the Instance's recorded owning Node. A R
 
 ## Native environment synchronization
 
-`instance.sync_environment` records one Instance intent and starts one Swamp run on Node 209 ([flow](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/instance.sync_environment.mmd)). At admission the Gateway renders the files and records the key names and the sha256 of each file, never a value.
+`instance.sync_environment` records one Instance intent and starts one Swamp run on Node 209 ([flow](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/env/sync.mmd)). At admission the Gateway renders the files and records the key names and the sha256 of each file, never a value.
 
 When the run starts, it pushes the rendered files into the vault key `instance-environment-<operation>`. The steps reach the owning Node over official `@swamp/ssh`: they check for foreign keys, write `.env` and merge the managed `.env.testing` keys with the files from `vault.get` on stdin, and check each file's sha256. No step calls the Gateway, and no per-Node worker takes part. The Gateway records the result and the admitted key names from the terminal run. If the stored values change between admission and run start, the run does not start and the task fails with `env.configuration_changed`.
 
@@ -196,7 +196,7 @@ A production [deployment](/reference/deployments) synchronizes the stored config
 
 ## Synchronize during a domain change
 
-A development [Instance rename](/cli/instance#orbit-instancerename) updates Laravel `.env` and cached `app.url` through Route convergence, and records the stored APP_URL only after that operation succeeds. If a failed replacement remains, requesting the original domain is not a rollback or a no-op: it returns `route.domain_change_conflict` without another branch or environment mutation. Retry the pending destination to finish the replacement.
+A development [Instance rename](/cli/instance/rename) updates Laravel `.env` and cached `app.url` through Route convergence, and records the stored APP_URL only after that operation succeeds. If a failed replacement remains, requesting the original domain is not a rollback or a no-op: it returns `route.domain_change_conflict` without another branch or environment mutation. Retry the pending destination to finish the replacement.
 
 A domain change of a production Route rewrites the production `.env` inside the Route operation. It uses the same checks and writer as synchronization. It resolves `{{instance.domain}}` against the new Route, although the public operations refuse an Instance while its Route changes. Stored values stay the same, so a placeholder `APP_URL` changes and a literal `APP_KEY` does not.
 
@@ -210,7 +210,7 @@ When a step fails before the new slug is published, the Gateway restores the sto
 
 ## Inspect the projection with Doctor
 
-Environment synchronization and deployment own configuration projection and validation. [Doctor](/cli/doctor#what-each-family-checks) does not read `.env` files or framework caches.
+Environment synchronization and deployment own configuration projection and validation. [Doctor](/cli/doctor/doctor#what-each-family-checks) does not read `.env` files or framework caches.
 
 ## Storage and recovery
 

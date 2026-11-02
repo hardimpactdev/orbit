@@ -1,0 +1,31 @@
+---
+title: "orbit route:target:set"
+sidebarTitle: "route:target:set"
+description: "Set the Instance target, or send a complete production target set."
+---
+
+```bash
+orbit route:target:set <route> <target> [--targets=ID]... [--reassign=ID:ROUTE]... [--remove=ID]... [--idempotency-key=KEY]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `route` | yes | Numeric Route ID. |
+| `target` | yes | Numeric Instance ID, or the first ID of a production target set. |
+
+| Option | Meaning |
+| --- | --- |
+| `--targets=ID` | The next Instance ID of the ordered target set. Repeat it for each ID. |
+| `--reassign=ID:ROUTE` | A detached Instance ID and its destination Route ID. Repeat it for each Instance. |
+| `--remove=ID` | A detached Instance ID that you allow Orbit to remove. Repeat it for each Instance. |
+
+```bash
+orbit route:target:set 9 12
+orbit route:target:set 9 12 --targets=15 --reassign=18:4 --remove=19
+```
+
+Without pool options, the command sets one target. With them, it sends the complete target set and a disposition for each detached Instance. [Change a production target set](/reference/routes#change-a-production-target-set) lists the rules and error codes. A single-target request that would take an Instance from another Route, or detach an active Instance from its only Route, returns `route.target_conflict` and changes nothing. A production target set can take an Instance from another Route in the same Cluster.
+
+## How it works
+
+<div className="flow-at" data-chart="route/target-set"></div>

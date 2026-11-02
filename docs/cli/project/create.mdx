@@ -1,0 +1,32 @@
+---
+title: "orbit project:create"
+sidebarTitle: "project:create"
+---
+
+```bash
+orbit project:create <slug> <type> <repository> [options]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `slug` | Unique Project slug. |
+| `type` | `monorepo`, `laravel-app`, `symfony-app`, `laravel-package`, or `node-package`. |
+| `repository` | HTTPS or SSH Git URL. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--name=NAME` | the slug | Display name. |
+| `--source-access=VALUE` | `github_app` | `github_app` or `gh_cli`. How Orbit reads a private `github.com` repository. See [Source access](/reference/projects#source-access). |
+| `--default-branch=BRANCH` | the remote default | Stored default branch. The Gateway verifies that an explicit branch exists. |
+| `--root=PATH` | `.` for `laravel-package` and `node-package`; `public` otherwise | Normalized repository-relative root that Instances inherit. `.` means the repository root. |
+| `--task-check=COMMAND` | none | Command that task baselines and handoffs run in the workspace. See [Project check](/reference/tasks#project-check). |
+| `--task-workspace-routed=true\|false` | true | Whether new task workspaces get a Route. See [Task workspace routing](/reference/projects#task-workspace-routing). |
+
+```bash
+orbit project:create acme laravel-app git@github.com:acme/site.git
+orbit project:create support laravel-package git@github.com:acme/support.git
+orbit project:create node-kit node-package git@github.com:acme/node-kit.git --task-check="vp run check"
+orbit project:create leden laravel-app git@github.com:acme/leden.git --source-access=gh_cli
+```
+
+A retry with the same values returns the existing Project.

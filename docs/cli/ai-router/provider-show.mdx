@@ -1,0 +1,15 @@
+---
+title: "orbit ai-router:provider:show"
+sidebarTitle: "ai-router:provider:show"
+description: "Show one provider's pool and accounts."
+---
+
+```bash
+orbit ai-router:provider:show <provider> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `provider` | yes | Provider slug, such as `codex` or `claude`. |
+
+A provider that is not in the snapshot fails with `resource.not_found`.

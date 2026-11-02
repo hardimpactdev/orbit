@@ -1,0 +1,43 @@
+---
+title: "vault"
+sidebarTitle: "Overview"
+description: "Set up, check, run, and tear down the copy of database credentials into a Vaultwarden collection."
+covers:
+  - apps/cli/app/Commands/Vault/**
+  - packages/php-sdk/src/{Requests,Responses}/Vault/**
+---
+
+The Gateway publishes its MySQL and PostgreSQL credentials into one Vaultwarden collection and keeps them current. See [Vaultwarden](/reference/vaultwarden).
+
+These commands belong to the `vault` [extension](/cli/extension). `list` and `help` hide them while the Gateway reports `vault` off. A direct call reaches the Gateway, which refuses it with `extension.disabled`.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`vault:setup`](/cli/vault/setup) | Store the Vaultwarden account, organization, and collection. |
+| [`vault:status`](/cli/vault/status) | Show the setup and the state of the published items. |
+| [`vault:sync`](/cli/vault/sync) | Publish changes now and repair changed or missing items. |
+| [`vault:teardown`](/cli/vault/teardown) | Delete the published items and the stored account. |
+
+Every command accepts `--json`.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `extension.disabled` | The `vault` extension is off on the Gateway. |
+| `input.confirmation_required` | `vault:teardown` ran without `--yes` where it cannot ask. |
+| `input.cancelled` | The operator declined the `vault:teardown` question. |
+| `input.invalid` | `vault:setup` has no `--client-id`, `--organization`, or `--collection`. |
+| `vault.secret_required` | `vault:setup` has no `--client-secret-file` or `--master-password-file`. |
+| `vault.secret_invalid` | A secret file is unreadable or empty. |
+| `vault.url_invalid` | `--url` is not an HTTPS origin. The Gateway also refuses a host outside `.orbit`. |
+| `vault.sync_failed` | `vault:sync` could not make at least one change. |
+
+[Vaultwarden errors](/reference/vaultwarden#api) lists the Gateway errors.
+
+## Related
+
+- [Vaultwarden](/reference/vaultwarden)
+- [`database`](/cli/database)

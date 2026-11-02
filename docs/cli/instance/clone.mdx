@@ -1,0 +1,34 @@
+---
+title: "orbit instance:clone"
+sidebarTitle: "instance:clone"
+description: "Clone a candidate into a prepared production Instance. The candidate supplies source, stored environment values, and an optional SQLite snapshot. The Project supplies production Process and Schedule definitions."
+---
+
+```bash
+orbit instance:clone <candidate> <node> <name> --preview-name=NAME [--idempotency-key=KEY] [options]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `candidate` | yes | Numeric candidate Instance ID. |
+| `node` | yes | Numeric destination Node ID with the active `app-prod` role. |
+| `name` | yes | Target production Instance name. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--preview-name=NAME` | required | Preview name that the Gateway combines with the destination Node TLD. |
+| `--branch=BRANCH` | the candidate branch | Target branch that must exist in the Project repository. |
+| `--sqlite-source-path=PATH` | none | Absolute path to one SQLite database on the candidate to seed `database.sqlite`. |
+
+Give the production Node a TLD with `node:add --tld` first: `shop.com` on a Node with TLD `prod.orbit` becomes the preview `shop.com.prod.orbit`. The candidate must be clean, and its commit must be in the Project repository.
+
+```bash
+orbit node:add production production.example --role=app-prod --tld=prod.orbit
+orbit instance:clone 12 9 primary --preview-name=shop.com --sqlite-source-path=/srv/orbit/apps/acme/default/database/database.sqlite
+```
+
+Cloning ends with an active Instance and no release. The result shows key-only warnings for copied development service references and paths outside the production home; `--json` returns them in `warnings`. Review these hints with `env:update` and `env:sync`; Orbit leaves application service settings unchanged. See [environment copying](/reference/instance-cloning#what-the-clone-gets) for the detection rules. Update the environment, record deploy steps, then run `instance:deploy`. See [Instance cloning](/reference/instance-cloning#next-steps).
+
+## How it works
+
+<div className="flow-at" data-chart="instance/clone"></div>

@@ -37,7 +37,7 @@ class BuildPlanTest(unittest.TestCase):
         self.assertEqual({'php', 'cli', 'api-reference', 'web'}, self.selected(['packages/php-sdk/src/Request.php']))
 
     def test_flow_charts_run_the_kind_coverage_and_step_name_checks(self):
-        self.assertEqual({'docs', 'api-reference'}, self.selected(['docs/flows/firewall.allow.mmd']))
+        self.assertEqual({'docs', 'api-reference'}, self.selected(['docs/cli/firewall/allow.mmd']))
         self.assertEqual({'swamp', 'docs'}, self.selected(['swamp/workflows/workflow-operation-firewall-direct.yaml']))
 
     def test_docs_only_skips_code_builds(self):

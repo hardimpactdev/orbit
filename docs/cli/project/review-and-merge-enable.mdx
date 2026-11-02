@@ -1,0 +1,18 @@
+---
+title: "orbit project:review-and-merge:enable"
+sidebarTitle: "project:review-and-merge:enable"
+---
+
+Turn on the [review-and-merge flow](/reference/tasks#review-and-merge): Orbit reviews every push and incoming pull request, and merges reviewed green heads. The flow keeps acting by itself after the command returns, so it is an `enable` and `disable` pair, not a `project:update` option. Set the merge check first with `project:update --merge-check`.
+
+```bash
+orbit project:review-and-merge:enable <project> [--json]
+orbit project:update 46 --merge-check="Required checks"
+orbit project:review-and-merge:enable 46
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `project` | yes | Numeric Project ID. |
+
+The Gateway refuses with HTTP 422 `validation.failed` when the Project has no merge check, on `merge_check`, or does not read through the GitHub App, on `review_and_merge`. It refuses a strict or unreadable branch policy as [Review and merge](/reference/projects#review-and-merge) describes.

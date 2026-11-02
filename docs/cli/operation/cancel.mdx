@@ -1,0 +1,20 @@
+---
+title: "orbit operation:cancel"
+sidebarTitle: "operation:cancel"
+description: "Record a cancellation request for the native workflow. Swamp applies the kind's cancellation boundary and records the final outcome. A cancellation request does not prove that execution has stopped."
+---
+
+```bash
+orbit operation:cancel <operation> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `operation` | yes | Numeric operation ID. |
+
+The command returns the record at once and does not wait for the operation to stop. A cancel of an operation that already ended changes nothing.
+
+```bash
+orbit operation:cancel 42
+orbit operation:show 42
+```
