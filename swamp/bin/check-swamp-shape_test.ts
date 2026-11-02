@@ -843,6 +843,17 @@ Deno.test("Route private DNS grace allows only the approved file, step and liter
   const labelsOnly = JSON.parse(source);
   delete labelsOnly.jobs[0].steps[0].target;
   assertEquals(analyzeYaml(file, JSON.stringify(labelsOnly)).findings, []);
+  const roleOnly = structuredClone(labelsOnly);
+  roleOnly.jobs[0].steps[0].labels = { role: "swamp" };
+  assertEquals(analyzeYaml(file, JSON.stringify(roleOnly)).findings, []);
+  for (const labels of [{ role: "other" }, { role: "swamp", node: "209" }]) {
+    const changed = structuredClone(labelsOnly);
+    changed.jobs[0].steps[0].labels = labels;
+    assert(analyzeYaml(file, JSON.stringify(changed)).findings.some((f) => f.rule === "custom-control"));
+  }
+  const roleAndTarget = structuredClone(roleOnly);
+  roleAndTarget.jobs[0].steps[0].target = "orbit-node-209";
+  assert(analyzeYaml(file, JSON.stringify(roleAndTarget)).findings.some((f) => f.rule === "custom-control"));
   const targetOnly = JSON.parse(source);
   delete targetOnly.jobs[0].steps[0].labels;
   assertEquals(analyzeYaml(file, JSON.stringify(targetOnly)).findings, []);

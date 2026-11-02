@@ -1496,7 +1496,8 @@ export function analyzeYaml(
       (step.target !== undefined || step.labels !== undefined) &&
       worker209(path) &&
       (step.labels === undefined ||
-        Object.keys(labels).join() === "node" && labels.node === "209") &&
+        Object.keys(labels).join() === "node" && labels.node === "209" ||
+        Object.keys(labels).join() === "role" && labels.role === "swamp") &&
       Object.keys(task).sort().join() ===
         "behaviorName,behaviorType,inputs,methodName,type" &&
       task.type === "behavior" && task.behaviorType === "command/shell" &&
