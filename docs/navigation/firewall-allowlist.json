@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 241,
+      "pages": [
+        "decisions/0241-firewall-source-allowlists"
+      ]
+    }
+  ]
+}

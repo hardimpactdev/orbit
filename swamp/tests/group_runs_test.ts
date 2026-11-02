@@ -4,6 +4,7 @@ import {
   claimGroupRun,
   clearedFailures,
   ensureGroupRun,
+  handoffGroupRun,
   failedRun,
   type GroupRun,
   type GroupRunControl,
@@ -257,6 +258,7 @@ Deno.test("forty independent group drives progress concurrently beyond one invoc
   );
   let active = 0, peak = 0, progressed = 0, totalCalls = 0;
   const counts: number[] = [];
+  const successors: Record<string, unknown>[] = [];
   const results = await Promise.allSettled(
     Array.from({ length: 40 }, async (_, index) => {
       const workItem = `tg-${index + 1}`;
@@ -335,6 +337,10 @@ Deno.test("forty independent group drives progress concurrently beyond one invoc
           return Promise.resolve({ name });
         },
         logger: { info() {}, warning() {} },
+        launchRun: (input: Record<string, unknown>) => {
+          successors.push(input);
+          return Promise.resolve(`successor-${index}`);
+        },
       };
       try {
         await groupRun.methods.drive.execute(request, context);
@@ -345,6 +351,9 @@ Deno.test("forty independent group drives progress concurrently beyond one invoc
   );
   assertEquals(progressed, 39);
   assertEquals(results.filter((r) => r.status === "rejected").length, 1);
+  // Each group waiting on its running job hands itself to generation 2, paced; no poll.
+  assertEquals(successors.length, 39);
+  assert(successors.every((s) => s.generation === 2 && s.pace === "busy"));
   assert(peak > 1, "groups must be in flight concurrently");
   assert(
     totalCalls > 100,
@@ -849,4 +858,68 @@ Deno.test("existing owners hold all four slots across ticks; terminal owners rel
   } finally {
     await Deno.remove(root, { recursive: true });
   }
+});
+
+Deno.test("only the owning run hands its group to the next generation, without a poll", async () => {
+  const intent = { workItem: "tg-2314", factory: "orbit-groups", generation: 3, key: "tg-2314.g3", runId: "run-3" };
+  let saved: GroupRun = intent;
+  const launched: string[] = [];
+  const control = {
+    read: () => Promise.resolve(saved),
+    owner: () => Promise.resolve(intent),
+    save: (next: GroupRun) => {
+      saved = next;
+      return Promise.resolve();
+    },
+    launch: (next: GroupRun) => {
+      launched.push(next.key);
+      return Promise.resolve("run-4");
+    },
+  };
+  await assertRejects(() => handoffGroupRun({ ...intent, runId: "run-other" }, control), Error, "owning run");
+  assertEquals(launched, []);
+  const next = await handoffGroupRun(intent, control);
+  assertEquals(launched, ["tg-2314.g4"]);
+  assertEquals(next, { ...intent, generation: 4, key: "tg-2314.g4", runId: "run-4" });
+  assertEquals(saved, next);
+});
+
+Deno.test("a group blocked on operator input stops its chain until an event wakes it", async () => {
+  const { behavior: groupRun } = await import("../extensions/behaviors/orbit_group_run.ts");
+  const request = { workItem: "tg-2348", factory: "factory", generation: 4, key: "tg-2348.g4", runId: "owner-4" };
+  const definition = "orbit-group-tg-2348";
+  const records = new Map<string, unknown>([
+    [`${definition}/intent`, request],
+    [`${definition}/owner`, request],
+    ["factory/state-tg-2348", { startedAt: "2026-11-02T06:22:00Z" }],
+    ["factory/status-tg-2348", {
+      started: true, stage: { id: "plan", cycle: 1, terminal: false }, unresolvedBindings: [],
+      transitions: [{ name: "authorized", to: "analyze", manual: false, satisfied: false, cycleLimitBlocked: false,
+        gates: [{ type: "artifact-exists", pass: false, reasons: ["artifact 'plan' is missing"] }] }],
+    }],
+  ]);
+  const launched: unknown[] = [];
+  const context = {
+    globalArgs: groupRun.globalArguments.parse({ factory: "factory", preapprovalModel: "original" }),
+    repoDir: "/fixture",
+    definition: { name: definition },
+    queryData: recordQuery((predicate: string) => {
+      const match = /modelName == "([^"]+)" && name == "([^"]+)"/.exec(predicate);
+      const value = match ? records.get(`${match[1]}/${match[2]}`) : undefined;
+      return Promise.resolve(value ? [value] : []);
+    }),
+    invokeModel: () => Promise.resolve({ ok: true }),
+    writeResource: (_spec: string, name: string, value: Record<string, unknown>) => {
+      records.set(`${definition}/${name}`, value);
+      return Promise.resolve({ name });
+    },
+    logger: { info() {}, warning() {} },
+    launchRun: (input: Record<string, unknown>) => {
+      launched.push(input);
+      return Promise.resolve("successor");
+    },
+  };
+  await groupRun.methods.drive.execute(request, context);
+  assertEquals(launched, [], "no generation polls a group that waits for a plan");
+  assertEquals(records.get(`${definition}/result`), { terminal: false, idle: true });
 });

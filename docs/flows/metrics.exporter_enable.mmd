@@ -1,0 +1,99 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, DECISIONS R1-R4 (process.stop shape), official @swamp/cfgmgmt behaviors, single-swamp-node. docs/reference/metrics.md.
+  %% status: reviewed
+  %% command: metrics:exporter:enable
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane M icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Node 12<br/>gets the exporters
+  participant M as Metrics Node<br/>Prometheus
+  CLI->>GW: metrics:exporter:enable 12<br/>Node id
+  %%> Command:
+  %%> - `orbit metrics:exporter:enable 12`
+  %%> - syntax: `<node>`
+  %%> What it does:
+  %%> - makes Prometheus on the Metrics Node collect CPU, memory, disk and container metrics from Node 12
+  %%> - shows up in Grafana at `https://metrics.orbit`
+  Note over GW: Check eligible, record<br/>preference · task #5140
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12
+  %%> - a Node has the `metrics` role
+  %%> - Node 12 is an active, managed Linux Node with a WireGuard address; never a task VM
+  %%> - no other exporter change runs for this Metrics Node; the Gateway holds one lock
+  %%> Builds:
+  %%> - the complete new Prometheus configuration, with Node 12 added as a target
+  %%> Result:
+  %%> - Node 12's exporter preference recorded as `enabled`
+  %%> - task #5140 recorded with the full intent
+  %%> - nothing has happened on any Node yet
+  GW->>SW: Start run, full intent<br/>operation-metrics-exporter
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - Node 12's and the Metrics Node's addresses and SSH host keys
+  %%> - the exporter unit settings and the complete Prometheus configuration
+  GW-->>CLI: 202 Accepted<br/>task #5140
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>N: Install the exporters<br/>node-exporter · cAdvisor
+  %%> What it does:
+  %%> - installs `prometheus-node-exporter` (machine metrics) and cAdvisor (container metrics)
+  %%> - writes a drop-in so both listen only on Node 12's WireGuard address, ports 9100 and 9102
+  %%> - starts both, and restarts them if they stop
+  %%> How:
+  %%> - official `@swamp/cfgmgmt` behaviors (apt, fetch, file, systemd) over SSH from 209
+  SW->>N: Allow the Metrics Node<br/>ufw · ports 9100, 9102
+  %%> What it does:
+  %%> - adds firewall allows on Node 12 for the Metrics Node's address only
+  SW->>N: Check the endpoints<br/>both answer on WireGuard
+  %%> What it does:
+  %%> - checks once that both exporters answer on their ports
+  SW->>M: Publish the config<br/>validate, reload Prometheus
+  %%> What it does:
+  %%> - validates the new Prometheus configuration with `promtool` before using it
+  %%> - publishes it and tells Prometheus to reload it while running (SIGHUP or its reload endpoint)
+  %%> - no restart, so collection from every other Node continues without a gap; Grafana keeps running
+  %%> When a restart is needed:
+  %%> - only when the Prometheus container itself changes, which is a role update, not an exporter change
+  %%> - checks once that Prometheus loaded the new configuration
+  alt all steps pass
+    M-->>SW: Prometheus ready
+    %%> Returns:
+    %%> - Prometheus is running with Node 12 as a target
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record result<br/>exporter active · task succeeded
+    %%> Result:
+    %%> - Node 12's exporter recorded as active
+    %%> - task #5140 succeeds
+  else a step fails
+    N--xSW: unit or check fails
+    %%> When:
+    %%> - an install, unit, firewall step or endpoint check fails, or the configuration doesn't validate
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Keep the preference<br/>failed · resume the failed step
+    %%> Result:
+    %%> - the preference stays `enabled`; the exporter is marked failed
+    %%> - task #5140 fails
+    %%> Retry:
+    %%> - Swamp resumes from the failed step; finished steps don't run again
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5140
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end

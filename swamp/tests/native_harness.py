@@ -49,7 +49,7 @@ class NativeTestCase(unittest.TestCase):
                 for job in workflow.get('jobs', []):
                     for step in job.get('steps', []):
                         task = step.get('task', {})
-                        if task.get('behaviorName') in ('orbit-certificate-signing-http', '${{ "certificate-sign-" + run.id }}'):
+                        if task.get('behaviorName') in ('orbit-certificate-signing-http', '${{ "certificate-sign" }}'):
                             task.setdefault('inputs', {})['run'] = '${{ model["orbit-certificate-signing-http"].input.globalArguments.run }}'
                             changed = True
                 if changed:

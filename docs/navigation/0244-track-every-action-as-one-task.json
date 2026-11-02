@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 244,
+      "pages": [
+        "decisions/0244-track-every-action-as-one-task"
+      ]
+    }
+  ]
+}

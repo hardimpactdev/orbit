@@ -3,7 +3,10 @@
 declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\SwampRoleUnits;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\Nodes\NodeRoleRuntimeSource;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\Fleet\FleetFixtures;
@@ -40,6 +43,25 @@ it('returns one idempotent asynchronous role intent without executing a Node com
         ->and($operation->input['_role']['role'])->toBe($role);
     expect($first->getContent())->not->toContain(str_repeat('e', 64), 'secret_hash');
 })->with(['database', 'ci-runner']);
+
+it('admits the swamp role as a Caddy role of its own Node and keeps it a singleton', function (): void {
+    $ack = $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'swamp'])->assertAccepted();
+    $snapshot = Operation::query()->findOrFail($ack->json('data.id'))->input['_role'];
+    expect($snapshot['role'])->toBe('swamp')
+        ->and($snapshot['publication']['caddy_node_ids'])->toBe([$this->node->id])
+        ->and($snapshot['prerequisites']['packages'])->toContain('caddy')
+        ->and($snapshot['metrics_fleet'])->toBeNull()
+        ->and($snapshot['runtime'])->toBe(['role' => 'swamp', 'node_id' => $this->node->id, 'assignment_id' => $snapshot['assignment_id'],
+            'agent_sha256' => $snapshot['agent_sha256'], 'user' => $this->node->user, 'workers' => ['a', 'b'],
+            'units' => SwampRoleUnits::for($this->node->user, $this->node->id),
+            'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($this->node)]);
+    expect(app(NodeRoleRuntimeSource::class)->resolveRoleMaterial($snapshot, $this->node->id)->value)->toBeNull();
+
+    $other = FleetFixtures::node('role-http-other');
+    $other->forceFill(['agent_secret_hash' => str_repeat('e', 64)])->save();
+    config(['swamp_workers.nodes' => [$this->node->id, $other->id]]);
+    $this->postJson("/api/v1/nodes/{$other->id}/roles", ['role' => 'swamp'])->assertUnprocessable();
+});
 
 it('hydrates only the existing owned hash through the real shared private reader', function (): void {
     $ack = $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'database'])->assertAccepted();

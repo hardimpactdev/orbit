@@ -138,7 +138,7 @@ analytics.orbit {
 }
 ```
 
-The Swamp exception admits exactly one hostname on port 443. Set `ORBIT_TASK_VMS_SWAMP_HOST=swamp.orbit` in the Gateway environment for the private Swamp Route. It accepts one DNS hostname, without a scheme, port, path, wildcard, or list. It does not admit subdomains, other ports, public Ingress sites, or blocks with extra hostnames. The normal client-range guard still applies. An unset or empty value admits no Swamp site.
+The Swamp exception admits exactly one hostname on port 443. Set `ORBIT_TASK_VMS_SWAMP_HOST=swamp.orbit` in the Gateway environment for the private Swamp Route on the `swamp` Node. It accepts one DNS hostname, without a scheme, port, path, wildcard, or list. It does not admit subdomains, other ports, public Ingress sites, or blocks with extra hostnames. The normal client-range guard still applies. An unset or empty value admits no Swamp site.
 
 Until task VMs are configured, no site has the task VM pair. Setting `swamp_host` also counts as configuring task VMs.
 
@@ -152,7 +152,7 @@ The `websocket` role runs the read-only `caddy.check-addresses` command before i
 
 ### When a build runs
 
-A command that changes Caddy sites commits its change first. Then it requests a build for each Node whose sites changed. Route and Instance commands, deploys, Metrics, service metrics, AI router, and the convergence and removal of `app-dev`, `app-prod`, `router`, `ingress`, `websocket`, and `analytics` all do this. No publisher requests a build inside a database transaction.
+A command that changes Caddy sites commits its change first. Then it requests a build for each Node whose sites changed. Route and Instance commands, deploys, Metrics, service metrics, AI router, and the convergence and removal of `app-dev`, `app-prod`, `router`, `ingress`, `websocket`, `analytics`, and `swamp` all do this. No publisher requests a build inside a database transaction.
 
 A command that adds a site publishes the site's certificate before the build, because `caddy validate` loads every certificate file the Caddyfile names. A command that removes a site builds first and removes the certificate afterwards. A certificate step that replaces a certificate that a live site uses reloads Caddy itself under the [Node lock](#how-a-build-is-pushed), because a build with an unchanged render does not reload.
 

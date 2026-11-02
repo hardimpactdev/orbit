@@ -64,9 +64,16 @@ Deno.test("step inputs read one bounded data record, never a query or version hi
 });
 const pollFile = "scripts/poll.py";
 const externalPoll = `import time
+import json
+import urllib.request
+
+ORIGIN = 'https://api.provider.example/v1/'
 
 def api(method, path):
-    raise RuntimeError("fixture is never executed")
+    request = urllib.request.Request(ORIGIN + path, method=method)
+    with urllib.request.urlopen(request, timeout=5) as response:
+        raw = response.read()
+        return json.loads(raw)
 
 def wait_started():
     while True:
@@ -109,6 +116,233 @@ async function phaseControls(files: Map<string, string>) {
       f.rule === "custom-control"
     );
 }
+// Frozen provider shape 2ee89ab0c2ad4b6abc37fe83485229ba062a15cf; source analysis only.
+const incusPoll =
+  "\"\"\"Observe one admitted Incus VM until started; the caller supplies a literal timeout.\"\"\"\nimport json\nimport subprocess\nimport sys\nimport time\n\n\ndef observe(project, name):\n    rows = json.loads(subprocess.check_output([\n        '/usr/bin/sudo', '-n', '--', '/usr/bin/incus', '--project', project,\n        'list', '--format', 'json', '--', name,\n    ], text=True, stderr=subprocess.PIPE))\n    if not isinstance(rows, list) or len(rows) != 1:\n        raise SystemExit('task_vm.provider_identity_invalid: expected exactly one Incus VM')\n    row = rows[0]\n    if row.get('name') != name or row.get('type') != 'virtual-machine':\n        raise SystemExit('task_vm.provider_identity_invalid: Incus returned another instance')\n    return row\n\n\ndef wait_started(project, name):\n    while True:\n        row = observe(project, name)\n        state = row['status']\n        if state == 'Running':\n            return [{'name': row['name'], 'type': row['type'], 'status': state}]\n        if state not in ('Stopped', 'Starting'):\n            raise SystemExit('task_vm.not_settled: Incus reached an unsupported start state')\n        time.sleep(1)\n\n\ndef main():\n    try:\n        print(json.dumps(wait_started(sys.argv[1], sys.argv[2])))\n    except (subprocess.CalledProcessError, OSError):\n        print('task_vm.provider_observation_failed: Incus state read failed', file=sys.stderr)\n        return 1\n    except (ValueError, KeyError, IndexError, TypeError):\n        print('task_vm.provider_observation_invalid: invalid Incus state receipt', file=sys.stderr)\n        return 1\n    return 0\n\n\nif __name__ == '__main__':\n    raise SystemExit(main())\n";
+const incusFile = "extensions/behaviors/provider/scripts/incus_wait.py";
+const incusArgv =
+  '${{ inputs.action == "start" ? ["timeout", "120", "/usr/bin/python3", "-I", "-c", steps.input.outputs.start_script, inputs.intent.vm.project, inputs.intent.name] : steps.input.outputs.observe_argv }}';
+function incusFiles(
+  source = incusPoll,
+  argv: unknown = incusArgv,
+  second?: unknown,
+) {
+  const exec = (value: unknown, name: string) => ({
+    name,
+    task: {
+      type: "behavior",
+      behaviorType: "@swamp/ssh",
+      behaviorName: name,
+      methodName: "exec",
+      inputs: { argv: value, timeoutSec: 180 },
+    },
+  });
+  return new Map([
+    [incusFile, source],
+    [
+      "extensions/behaviors/provider/metadata.ts",
+      `export const behavior = {type: '@example/provider', methods: {read: {async execute(_args, ctx) {return {dataHandles: [await ctx.writeResource('input', 'input', {start_script: await Deno.readTextFile(ctx.extensionFile('scripts/incus_wait.py'))})]};}}}};`,
+    ],
+    [
+      "workflows/incus.yaml",
+      JSON.stringify({
+        name: "example",
+        queueTimeout: 10,
+        jobs: [{
+          name: "power",
+          target: "orbit-node-209",
+          steps: [
+            {
+              name: "input",
+              task: {
+                type: "behavior",
+                behaviorType: "@example/provider",
+                behaviorName: "input",
+                methodName: "read",
+                inputs: {},
+              },
+            },
+            exec(argv, "incus-after"),
+            ...(second === undefined ? [] : [exec(second, "another")]),
+          ],
+        }],
+      }),
+    ],
+  ]);
+}
+Deno.test("official SSH proves the shipped Incus list poll under a literal argv timeout", async () => {
+  assertEquals(await phaseControls(incusFiles()), []);
+  assertEquals(
+    await phaseControls(
+      incusFiles(incusPoll, [
+        "timeout",
+        "120",
+        "/usr/bin/python3",
+        "-I",
+        "-c",
+        "${{ steps.input.outputs.start_script }}",
+        "default",
+        "vm",
+      ]),
+    ),
+    [],
+  );
+});
+for (
+  const [name, source] of [
+    [
+      "retried mutation",
+      incusPoll.replace(
+        "'list', '--format', 'json'",
+        "'start', '--format', 'json'",
+      ),
+    ],
+    [
+      "extra mutation",
+      incusPoll.replace(
+        "row = observe(project, name)",
+        "subprocess.check_call(['incus', 'start', name])\n        row = observe(project, name)",
+      ),
+    ],
+    [
+      "shell command",
+      incusPoll.replace("text=True,", "shell=True, text=True,"),
+    ],
+    [
+      "unchecked command",
+      incusPoll.replace(
+        "subprocess.check_output",
+        "subprocess.getoutput",
+      ),
+    ],
+    [
+      "suppressed read failure",
+      incusPoll.replace(
+        "        row = observe(project, name)",
+        "        try:\n            row = observe(project, name)\n        except Exception:\n            row = {'status': 'Starting'}",
+      ),
+    ],
+    [
+      "computed interval",
+      incusPoll.replace("time.sleep(1)", "time.sleep(interval)"),
+    ],
+  ]
+) {
+  Deno.test(`Incus poll rejects ${name}`, async () => {
+    assert((await phaseControls(incusFiles(source))).length > 0);
+  });
+}
+for (
+  const [name, argv, second] of [
+    [
+      "missing timeout",
+      incusArgv.replace('["timeout", "120", ', "["),
+      undefined,
+    ],
+    [
+      "computed timeout",
+      incusArgv.replace('"120"', "inputs.budget"),
+      undefined,
+    ],
+    [
+      "second unbounded invocation",
+      incusArgv,
+      incusArgv.replace('["timeout", "120", ', "["),
+    ],
+    [
+      "unbounded conditional branch",
+      incusArgv.replace(
+        "steps.input.outputs.observe_argv",
+        '["/usr/bin/python3", "-I", "-c", steps.input.outputs.start_script]',
+      ),
+      undefined,
+    ],
+  ]
+) {
+  Deno.test(`Incus argv rejects ${name}`, async () => {
+    assert(
+      (await phaseControls(incusFiles(incusPoll, argv, second))).length >
+        0,
+    );
+  });
+}
+Deno.test("a concatenated conditional branch cannot hide an unbounded body invocation", async () => {
+  const argv = incusArgv.replace(
+    "steps.input.outputs.observe_argv",
+    '["/usr/bin/python3", "-I", "-c", steps.input.outputs.start_script] + []',
+  );
+  assert((await phaseControls(incusFiles(incusPoll, argv))).length > 0);
+});
+for (const builtin of ["isinstance", "len"]) Deno.test(`Incus poll rejects a shadowed ${builtin} guard`, async () => {
+  const source = incusPoll.replace("def observe(", `def ${builtin}(*args):\n    subprocess.check_call(['/usr/bin/incus', 'start', 'vm'])\n    return True\n\ndef observe(`);
+  assert((await phaseControls(incusFiles(source))).length > 0);
+});
+for (const [name, value, ssh] of [
+  ["bracket step", '${{ steps["input"].outputs.start_script }}', false],
+  ["history record", '${{ data.latest("input", "input").attributes.start_script }}', false],
+  ["dynamic producer output", '${{ steps.input.outputs[inputs.field] }}', false],
+  ["dynamic producer and field", '${{ ["/usr/bin/python3", "-I", "-c", steps[inputs.producer].outputs[inputs.key]] }}', true],
+  ["fully dynamic step selectors", '${{ steps[inputs.producer][inputs.outputs][inputs.key] }}', false],
+  ["fully dynamic history selectors", '${{ data.latest("input", "input")[inputs.attributes][inputs.key] }}', false],
+  ["dynamic history field", '${{ data.latest("input", "input").attributes[inputs.field] }}', false],
+  ["bracket SSH argv", '${{ ["/usr/bin/python3", "-c", steps["input"].outputs.start_script] }}', true],
+  ["bracket output", '${{ steps.input.outputs["start_script"] }}', false],
+  ["escaped bracket output", '${{ steps.input.outputs["start_\\u0073cript"] }}', false],
+  ["joined bracket output", '${{ steps.input.outputs["start_" + "script"] }}', false],
+  ["concatenation", "${{ steps.input.outputs.start_script + '' }}", false],
+] as const) Deno.test(`body-key accounting rejects an additional ${name} use`, async () => {
+  const files = incusFiles();
+  const workflow = JSON.parse(files.get("workflows/incus.yaml")!);
+  workflow.jobs[0].steps.push({name: "hidden", task: {
+    type: "behavior", behaviorType: ssh ? "@swamp/ssh" : "command/shell",
+    behaviorName: "hidden", methodName: ssh ? "exec" : "execute",
+    inputs: ssh ? {argv: value} : {run: 'python3 -c "$SCRIPT"', env: {SCRIPT: value}},
+  }});
+  files.set("workflows/incus.yaml", JSON.stringify(workflow));
+  assert((await phaseControls(files)).length > 0);
+});
+Deno.test("Incus interval equal to or longer than the timeout is refused", async () => {
+  for (const seconds of [120, 121]) {
+    assert((await phaseControls(incusFiles(incusPoll.replace("time.sleep(1)", `time.sleep(${seconds})`)))).length > 0);
+  }
+});
+Deno.test("an additional shell use of an SSH script body invalidates its bound", async () => {
+  const files = incusFiles();
+  const workflow = JSON.parse(files.get("workflows/incus.yaml")!);
+  workflow.jobs[0].steps.push({
+    name: "unbounded",
+    task: {
+      type: "behavior",
+      behaviorType: "command/shell",
+      behaviorName: "unbounded",
+      methodName: "execute",
+      inputs: {
+        run: 'python3 -c "$SCRIPT"',
+        env: { SCRIPT: "${{ steps.input.outputs.start_script }}" },
+      },
+    },
+  });
+  files.set("workflows/incus.yaml", JSON.stringify(workflow));
+  assert((await phaseControls(files)).length > 0);
+});
+Deno.test("Incus reads are not admitted by a local shell timeout or another transport", async () => {
+  const files = incusFiles();
+  files.set(
+    "workflows/incus.yaml",
+    phaseWorkflow([`timeout 120 python3 ${incusFile}`]),
+  );
+  assert((await phaseControls(files)).length > 0);
+  const other = incusFiles();
+  other.set(
+    "workflows/incus.yaml",
+    other.get("workflows/incus.yaml")!.replaceAll(
+      '"@swamp/ssh"',
+      '"@example/ssh"',
+    ),
+  );
+  assert((await phaseControls(other)).length > 0);
+});
+
 Deno.test("phase script accepts a literal-bounded external-state poll and a shorter single wait", async () => {
   const files = new Map([
     [
@@ -122,6 +356,200 @@ Deno.test("phase script accepts a literal-bounded external-state poll and a shor
     ["scripts/grace.sh", "#!/bin/bash\ntimeout 35 /usr/bin/sleep 31\n"],
   ]);
   assertEquals(await phaseControls(files), []);
+});
+Deno.test("Python polls prove external origins and propagate HTTP errors before reading state", async () => {
+  for (const client of ["requests", "httpx"]) {
+    const checked = externalPoll.slice(
+      externalPoll.indexOf("def wait_started"),
+    )
+      .replace(
+        "state = api('GET', 'server/example')['state']",
+        `response = ${client}.get('https://api.provider.example/state', timeout=5)
+        response.raise_for_status()
+        state = response.json()['state']`,
+      );
+    const source = `import time\nimport ${client}\n${checked}`;
+    const findings = (script: string) =>
+      phaseControls(
+        new Map([
+          [
+            "workflows/phase.yaml",
+            phaseWorkflow(["timeout 30 python3 scripts/poll.py"]),
+          ],
+          [pollFile, script],
+        ]),
+      );
+    assertEquals(await findings(source), []);
+    for (
+      const rejected of [
+        source.replace("        response.raise_for_status()\n", ""),
+        source.replace("response.json()['state']", "response.text")
+          .replace("        response.raise_for_status()\n", ""),
+        source.replace(
+          "        response.raise_for_status()",
+          "        if response.status_code == 200:\n            response.raise_for_status()",
+        ),
+        source.replace(
+          "        response.raise_for_status()",
+          "        try:\n            response.raise_for_status()\n        except Exception:\n            pass",
+        ),
+        source.replace("api.provider.example", "gw.orbit"),
+        source.replace("api.provider.example", "api.gateway.example"),
+        source.replace("api.provider.example", "10.7.0.14"),
+        source.replace("api.provider.example", "localhost"),
+        source.replace(
+          "https://api.provider.example",
+          "http://api.provider.example",
+        ),
+        source.replace("import " + client, ""),
+      ]
+    ) assert((await findings(rejected)).length > 0, rejected);
+  }
+});
+for (const [name, read] of [
+  ["httpx Gateway state", "httpx.get('https://gw.orbit/api/v1/operations/5').text"],
+  ["requests unchecked HTTP error body", "requests.get('https://api.provider.example/state').text"],
+]) {
+  Deno.test(`phase poll rejects ${name}`, async () => {
+    const source = "import time\nimport httpx\nimport requests\n" +
+      externalPoll.slice(externalPoll.indexOf("def wait_started"))
+        .replace("api('GET', 'server/example')['state']", read);
+    assert((await phaseControls(new Map([
+      ["workflows/phase.yaml", phaseWorkflow(["timeout 30 python3 scripts/poll.py"])],
+      [pollFile, source],
+    ]))).length > 0);
+  });
+}
+Deno.test("poll proofs follow only sibling shipped modules and reject tolerant helpers", async () => {
+  const helpers = externalPoll.slice(0, externalPoll.indexOf("def wait_started"));
+  const waiting = externalPoll.slice(externalPoll.indexOf("def wait_started"));
+  const findings = (source: string, helper: string, path = "scripts/provider_http.py") => phaseControls(new Map([
+    ["workflows/phase.yaml", phaseWorkflow(["timeout 30 python3 scripts/poll.py"])],
+    [pollFile, source],
+    [path, helper],
+  ]));
+  for (const imported of ["from provider_http import api", "from .provider_http import api", "import provider_http"]) {
+    const call = imported === "import provider_http" ? waiting.replace("api(", "provider_http.api(") : waiting;
+    assertEquals(await findings(`import time\n${imported}\n${call}`, helpers), []);
+  }
+  const source = "import time\nfrom provider_http import api\n" + waiting;
+  assert((await findings(source, helpers, "other/provider_http.py")).length > 0);
+  assert((await findings(source, helpers.replace("api.provider.example", "gw.orbit"))).length > 0);
+  const tolerant = helpers.replace("    with urllib.request.urlopen", "    try:\n        with urllib.request.urlopen")
+    .replace("        raw = response.read()", "            raw = response.read()")
+    .replace("        return json.loads(raw)", "            return json.loads(raw)\n    except Exception:\n        return {'state': 'maintenance'}");
+  assert((await findings(source, tolerant)).length > 0);
+});
+Deno.test("the shipped UpCloud strict sibling read passes; its tolerant API cannot poll", async () => {
+  const helper = Deno.readTextFileSync(new URL("../extensions/behaviors/operations/task-vm-lifecycle/scripts/upcloud.py", import.meta.url));
+  const waiting = externalPoll.slice(externalPoll.indexOf("def wait_started"));
+  const findings = (method: string) => phaseControls(new Map([
+    ["workflows/phase.yaml", phaseWorkflow(["timeout 30 python3 scripts/poll.py"])],
+    ["scripts/upcloud.py", helper],
+    [pollFile, `import time\nfrom upcloud import ${method}\n` + waiting.replace("api('GET', 'server/example')['state']", method === "poll_read" ? "poll_read('server/example')['server']['state']" : "api('GET', 'server/example')['server']['state']")],
+  ]));
+  assertEquals(await findings("poll_read"), []);
+  assert((await findings("api")).length > 0);
+});
+Deno.test("an enclosing context manager cannot suppress a failed poll", async () => {
+  const start = externalPoll.indexOf("def wait_started():");
+  const header = externalPoll.slice(0, start) + "from contextlib import suppress\n\n";
+  const body = externalPoll.slice(start).split("\n");
+  const suppressed = header + body[0] + "\n    with suppress(Exception):\n" +
+    body.slice(1).map((line) => "    " + line).join("\n");
+  assert((await phaseControls(new Map([
+    ["workflows/phase.yaml", phaseWorkflow(["timeout 30 python3 scripts/poll.py"])],
+    [pollFile, suppressed],
+  ]))).length > 0);
+});
+Deno.test("provider wrappers are proved from source, never from their name", async () => {
+  const findings = (source: string) =>
+    phaseControls(
+      new Map([
+        [
+          "workflows/phase.yaml",
+          phaseWorkflow(["timeout 30 python3 scripts/poll.py"]),
+        ],
+        [pollFile, source],
+      ]),
+    );
+  assertEquals(await findings(externalPoll), []);
+  for (
+    const rejected of [
+      externalPoll.replace(
+        "def api(method, path):",
+        "@retry\ndef api(method, path):",
+      ),
+      externalPoll.replace("api.provider.example", "gw.orbit"),
+      externalPoll.replace("ORIGIN + path", "path + ORIGIN"),
+      externalPoll.replace(
+        "with urllib.request.urlopen(request, timeout=5) as response:\n        raw = response.read()\n        return json.loads(raw)",
+        "try:\n        with urllib.request.urlopen(request, timeout=5) as response:\n            raw = response.read()\n            return json.loads(raw)\n    except Exception:\n        return {'state': 'maintenance'}",
+      ),
+      externalPoll.replace(
+        "request = urllib.request.Request(ORIGIN + path, method=method)",
+        "request = urllib.request.Request(ORIGIN + path, method='POST')",
+      ),
+      externalPoll.replace(
+        "return json.loads(raw)",
+        "return {'state': 'started'}",
+      ),
+      externalPoll.replace(
+        "state = api('GET', 'server/example')['state']",
+        "state = other.get(api('GET', 'server/example'))",
+      ),
+      externalPoll.replace(
+        "def api(method, path):",
+        "def api(method, path):\n    return {'state': 'maintenance'}",
+      ),
+    ]
+  ) assert((await findings(rejected)).length > 0, rejected);
+});
+Deno.test("shell polls use the same parsed external origin and real errexit flags", async () => {
+  const findings = (source: string) =>
+    phaseControls(
+      new Map([
+        [
+          "workflows/phase.yaml",
+          phaseWorkflow(["bash scripts/poll.sh"]),
+        ],
+        ["scripts/poll.sh", source],
+      ]),
+    );
+  const body = shellPoll.replace("#!/bin/bash\nset -e\n", "");
+  assertEquals(await findings(`timeout 30 bash -e -c '${body}'`), []);
+  assertEquals(
+    await findings(
+      `timeout 30 bash -e -c '${body.replace("/state", "/gateway-state")}'`,
+    ),
+    [],
+  );
+  for (const option of ["--noprofile", "--restricted", "--rcfile"]) {
+    assert(
+      (await findings(`timeout 30 bash ${option} -c '${body}'`)).length >
+        0,
+      option,
+    );
+  }
+  for (
+    const origin of [
+      "gw.orbit",
+      "10.7.0.14",
+      "127.0.0.2",
+      "[::1]",
+      "localhost",
+      "api.internal",
+      "provider.example@gw.orbit",
+      "provider.example:444",
+    ]
+  ) {
+    assert(
+      (await findings(
+        `timeout 30 bash -e -c '${body.replace("provider.example", origin)}'`,
+      )).length > 0,
+      origin,
+    );
+  }
 });
 Deno.test("phase script resolves the shipped metadata asset through the step environment", async () => {
   const files = new Map([
@@ -398,8 +826,7 @@ Deno.test("Route private DNS grace allows only the approved file, step and liter
       name: "grace",
       steps: [{
         name: "wait-private-dns-ttl",
-        target: "orbit-node-209",
-        labels: { node: "209" },
+        labels: { role: "swamp" },
         task: {
           type: "behavior",
           behaviorType: "command/shell",
@@ -413,10 +840,9 @@ Deno.test("Route private DNS grace allows only the approved file, step and liter
   const source = JSON.stringify(workflow);
   assertEquals(analyzeYaml(file, source).findings, []);
   const labelsOnly = JSON.parse(source);
-  delete labelsOnly.jobs[0].steps[0].target;
-  assertEquals(analyzeYaml(file, JSON.stringify(labelsOnly)).findings, []);
   const targetOnly = JSON.parse(source);
   delete targetOnly.jobs[0].steps[0].labels;
+  targetOnly.jobs[0].steps[0].target = "orbit-node-209";
   assertEquals(analyzeYaml(file, JSON.stringify(targetOnly)).findings, []);
   const rejected = (path: string, source: string) =>
     assert(
@@ -428,7 +854,7 @@ Deno.test("Route private DNS grace allows only the approved file, step and liter
   const unplaced = structuredClone(labelsOnly);
   delete unplaced.jobs[0].steps[0].labels;
   rejected(file, JSON.stringify(unplaced));
-  for (const labels of [{ node: "18" }, { node: 209 }, {}]) {
+  for (const labels of [{ node: "18" }, { node: 209 }, { node: "209" }, { role: "swamp", node: "209" }, {}]) {
     const changed = structuredClone(labelsOnly);
     changed.jobs[0].steps[0].labels = labels;
     rejected(file, JSON.stringify(changed));
@@ -442,7 +868,7 @@ Deno.test("Route private DNS grace allows only the approved file, step and liter
     placement.target = "orbit-node-18";
     rejected(file, JSON.stringify(changed));
     placement.target = "orbit-node-209";
-    assertEquals(analyzeYaml(file, JSON.stringify(changed)).findings, []);
+    rejected(file, JSON.stringify(changed));
   }
   for (const path of [
     "workflows/other.yaml",
@@ -452,10 +878,9 @@ Deno.test("Route private DNS grace allows only the approved file, step and liter
   for (const [from, to] of [
     ['"name":"grace"', '"name":"other"'],
     ['"name":"wait-private-dns-ttl"', '"name":"other"'],
-    ['"target":"orbit-node-209"', '"target":"orbit-node-210"'],
-    ['"node":"209"', '"node":"210"'],
-    ['"node":"209"', '"node":209'],
-    ['"node":"209"', '"node":"209","other":"value"'],
+    ['"role":"swamp"', '"role":"other"'],
+    ['"role":"swamp"', '"role":"swamp","other":"value"'],
+    ['"labels":{"role":"swamp"}', '"target":"orbit-node-210"'],
     ['"type":"behavior"', '"type":"model_method"'],
     ['"behaviorType":"command/shell"', '"behaviorType":"@example/shell"'],
     ['"behaviorName":"route-dns-grace"', '"behaviorName":"other"'],
@@ -488,6 +913,58 @@ Deno.test("Route private DNS grace allows only the approved file, step and liter
 const officialSshFixture = Deno.readTextFileSync(
   new URL("../tests/fixtures/shape/official-ssh-vault.yaml", import.meta.url),
 );
+Deno.test("a vault value may be the whole content of a 0600 cfgmgmt file on a 209 worker, and nothing else", () => {
+  const vault = "${{ vault.get(inputs.execution_secrets.login.vault, inputs.execution_secrets.login.key) }}";
+  const workflow = {
+    name: "database-login",
+    vaults: ["orbit-control-inputs"],
+    inputs: {
+      type: "object",
+      additionalProperties: false,
+      required: ["execution_secrets"],
+      properties: {
+        execution_secrets: {
+          type: "object",
+          additionalProperties: false,
+          required: ["login"],
+          properties: {
+            login: {
+              type: "object",
+              additionalProperties: false,
+              required: ["vault", "key"],
+              properties: {
+                vault: { type: "string", enum: ["orbit-control-inputs"] },
+                key: { type: "string", pattern: "^login-[1-9][0-9]*$" },
+              },
+            },
+          },
+        },
+      },
+    },
+    jobs: [{
+      name: "login",
+      labels: { role: "swamp" },
+      steps: [{
+        name: "write",
+        task: {
+          type: "behavior",
+          behaviorType: "@swamp/cfgmgmt/file",
+          behaviorName: "login-file",
+          methodName: "apply",
+          globalArgs: { path: "/run/login.env", ensure: "present", content: vault, mode: "0600", nodeHost: "10.0.0.5" },
+          inputs: {},
+        },
+      }],
+    }],
+  };
+  const file = "workflows/workflow-database-login.yaml";
+  const source = JSON.stringify(workflow);
+  assertEquals(analyzeYaml(file, source).findings.filter((f) => f.rule === "vault-placement"), []);
+  for (const changed of [source.replace('"mode":"0600"', '"mode":"0644"'), source.replace(vault, "prefix " + vault)]) {
+    assert(analyzeYaml(file, changed).findings.some((f) => f.rule === "vault-placement"));
+  }
+});
+
 Deno.test("official SSH vault stdin and env require a 209 worker and closed execution descriptors", () => {
   const vault =
     "${{ vault.get(inputs.execution_secrets.material.vault, inputs.execution_secrets.material.key) }}";

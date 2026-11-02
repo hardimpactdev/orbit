@@ -12,6 +12,8 @@ use App\Actions\Clusters\ListClustersAction;
 use App\Actions\Clusters\ShowClusterAction;
 use App\Actions\Clusters\UpdateClusterAction;
 use App\Data\Clusters\ClusterData;
+use App\Data\Clusters\UpdateClusterData;
+use App\Domain\Clusters\ClusterState;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
@@ -73,6 +75,19 @@ final class ClustersController extends Controller
         ]);
     }
 
+    /** An active Cluster serves its private domains and LAN ingress by itself, so this is an enable command, not an update flag. */
+    #[RequiresNodeAccess(ServingNode::ClusterOwning)]
+    public function activate(Request $request, Cluster $cluster, UpdateClusterAction $action): JsonResponse
+    {
+        return $this->state($request, $cluster, $action, ClusterState::Active);
+    }
+
+    #[RequiresNodeAccess(ServingNode::ClusterOwning)]
+    public function deactivate(Request $request, Cluster $cluster, UpdateClusterAction $action): JsonResponse
+    {
+        return $this->state($request, $cluster, $action, ClusterState::Inactive);
+    }
+
     #[RequiresNodeAccess(ServingNode::ClusterOwning)]
     public function destroy(Request $request, Cluster $cluster, DestroyClusterAction $action): JsonResponse
     {
@@ -112,5 +127,15 @@ final class ClustersController extends Controller
     private function meta(Request $request): array
     {
         return ['request_id' => $request->attributes->getString('orbit.request_id')];
+    }
+
+    private function state(Request $request, Cluster $cluster, UpdateClusterAction $action, ClusterState $state): JsonResponse
+    {
+        $data = new UpdateClusterData(nameProvided: false, name: null, tldProvided: false, tld: null, stateProvided: true, state: $state);
+
+        return response()->json([
+            'data' => ClusterData::fromModel($action->execute($cluster, $data))->toArray(),
+            'meta' => $this->meta($request),
+        ]);
     }
 }

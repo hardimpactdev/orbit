@@ -283,7 +283,7 @@ class VaultRealHttp(NativeTestCase):
                          scope='isolated dev; not live fleet workflow/grant proof')
             print(json.dumps(proof))
         finally:
-            subprocess.run(['docker', 'rm', '--force', name + '-worker'], stdout=subprocess.DEVNULL,
+            subprocess.run(['docker', 'rm', '--force', '--volumes', name + '-worker'], stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL, timeout=15)
             for proxy in proxies:
                 proxy.shutdown(); proxy.server_close()
@@ -300,7 +300,7 @@ class VaultRealHttp(NativeTestCase):
                 if seeded and not scanned:
                     php('scan')
             finally:
-                subprocess.run(['docker', 'rm', '--force', name], stdout=subprocess.DEVNULL,
+                subprocess.run(['docker', 'rm', '--force', '--volumes', name], stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL, timeout=15)
 
 

@@ -22,6 +22,11 @@
                     "manager": "vp",
                     "scan_state": "complete",
                     "packages": []
+                },
+                {
+                    "manager": "apt",
+                    "scan_state": "unsupported",
+                    "packages": []
                 }
             ]
         },

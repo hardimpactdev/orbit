@@ -18,6 +18,7 @@ use App\Http\Requests\Operations\StartsOperation;
 use App\Http\Requests\Tools\AdoptToolRequest;
 use App\Http\Requests\Tools\ListToolsRequest;
 use App\Http\Requests\Tools\StoreToolRequest;
+use App\Http\Requests\Tools\UpdateToolRequest;
 use App\Models\Tool;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -57,9 +58,9 @@ final class ToolsController extends Controller
     }
 
     #[StartsOperation('tool.update')]
-    public function update(Request $request, string $tool, UpdateToolAction $action): JsonResponse
+    public function update(UpdateToolRequest $request, string $tool, UpdateToolAction $action): JsonResponse
     {
-        return response()->json(['data' => OperationData::fromModel($action->execute(Tool::query()->findOrFail($tool)))->toArray(), 'meta' => $this->meta($request)], 202);
+        return response()->json(['data' => OperationData::fromModel($action->execute(Tool::query()->findOrFail($tool), $request->repository()))->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     #[StartsOperation('tool.remove')]

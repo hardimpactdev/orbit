@@ -103,7 +103,8 @@ def references(source, php=False):
                     index = wrappers[t]
                 elif receiver == 'AgentSchemas' and t == 'inputSchema':
                     index = 0
-            elif not php and t in ('command', 'localAgent', 'call'):
+            elif not php and t in ('command', 'localAgent', 'call') and NAME.fullmatch(literal(ts[i + 2][0]) or 'dynamic.name'):
+                # Agent commands are dotted; a local helper called with another literal is not a wrapper.
                 index = 0
             if index is not None:
                 args = groups(ts, i + 1)
@@ -147,8 +148,7 @@ def check(root, resources, binary_cache=None):
     names = {c['name'] for c in json.loads(contract_bytes)['commands']}
     failures = []
     count = 0
-    paths = ['apps/gateway/app', 'apps/gateway/extensions'] if (root / 'apps/gateway').is_dir() else ['extensions', 'workflows']
-    for base in paths:
+    for base in ('apps/gateway/app', 'apps/gateway/extensions', 'swamp/extensions', 'swamp/workflows'):
         for path in sorted((root / base).rglob('*')):
             if path.suffix not in ('.php', '.ts', '.js', '.py', '.yaml', '.yml') or any(part in ('tests', 'fixtures', 'vendor', 'node_modules') for part in path.relative_to(root).parts) or re.search(r'(?:_test|\.test|_fixture|_canary)', path.name):
                 continue
@@ -166,7 +166,7 @@ def main():
     parser.add_argument('--resources', type=Path)
     parser.add_argument('--binary-cache', type=Path, help='Verify the snapshot with the checksum-verified published binary (CI).')
     args = parser.parse_args()
-    resources = args.resources or args.root / ('apps/gateway/resources/agent' if (args.root / 'apps/gateway').is_dir() else 'config/frozen-agent')
+    resources = args.resources or args.root / 'apps/gateway/resources/agent'
     try:
         count, failures = check(args.root, resources, args.binary_cache)
     except (ValueError, KeyError, OSError) as error:

@@ -1,0 +1,114 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, DECISIONS 1 (token minted at admission, vault) and R2-R4, swamp-tasks-model. docs/reference/tasks.md#publish-an-external-group.
+  %% status: draft
+  %% command: tasks:publish
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane GH icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Task VM<br/>reached over ssh
+  participant GH as GitHub<br/>repository · PRs
+  CLI->>GW: tasks:publish 42<br/>--check=17 --title=… --body=…
+  %%> Command:
+  %%> - `orbit tasks:publish 42 --check=17 --title="Deliver the feature" --body="Adds the feature."`
+  %%> - syntax: `[group] --check=ID [--title=TEXT --body=TEXT] [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the task group, and the passed handoff check whose commit is published
+  %%> - optionally a title and body together, to open or update the pull request; without them it only pushes
+  Note over GW: Check the candidate<br/>task #5165 · mint push token
+  %%> Requirements:
+  %%> - your Node has an access grant to the Gateway
+  %%> - group 42 is an open external group with its own task VM workspace
+  %%> - check 17 passed for group 42, and required hosted CI passed on its commit, else `tasks.commit_not_checked`
+  %%> - no other task runs on group 42; the Gateway holds one lock per group
+  %%> What it does:
+  %%> - captures the repository, default branch, commit, checked tree and the task VM's SSH target
+  %%> - mints a token for that one repository with `contents: write`, `pull_requests: write` and `workflows: write`, and pushes it to the vault as `task-publish-5165` after commit (R3)
+  %%> Result:
+  %%> - task #5165 recorded with the full intent
+  GW->>SW: Start run, full intent<br/>operation-task-publish
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - the commit, tree, branch `task-42`, default branch and the optional title and body
+  %%> - the vault key name of the token, never the token
+  GW-->>CLI: 202 Accepted<br/>task #5165
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>N: Check the workspace<br/>HEAD + tree = check 17
+  %%> How:
+  %%> - Swamp reaches the task VM over SSH from 209, with `@swamp/ssh`
+  %%> What it does:
+  %%> - checks that HEAD and the whole working tree still equal the checked candidate
+  %%> Refuses:
+  %%> - a moved candidate: `tasks.head_moved`; nothing is pushed
+  SW->>N: Export the commit<br/>git bundle · copy to 209
+  %%> What it does:
+  %%> - exports exactly the checked commit as a Git bundle and copies it to 209
+  %%> Why:
+  %%> - the task VM never gets a GitHub token, and its Git configuration is never loaded
+  Note over SW: Import into a bare repo<br/>scratch repository on 209
+  %%> What it does:
+  %%> - imports the bundle into a disposable bare repository on 209; only this repository uses the token
+  SW->>GH: Read the remote tip<br/>git ls-remote task-42
+  %%> What it does:
+  %%> - reads the branch `task-42` with the token from `vault.get`
+  %%> - an identical tip skips the push; a divergent tip fails with `tasks.not_fast_forward`
+  SW->>GH: Push the branch<br/>git push task-42 · no force
+  %%> What it does:
+  %%> - pushes the checked commit to `task-42` without force
+  %%> Refuses:
+  %%> - an installation without `Workflows` write when the commit changes `.github/workflows/`: `tasks.workflows_permission`
+  opt with --title and --body
+    SW->>GH: Open or update the PR<br/>task-42 → default branch
+    %%> What it does:
+    %%> - looks for an open pull request from `task-42`; updates its title and body when found, else opens one
+    %%> Not included:
+    %%> - no reviewers, no brief coverage, no board status change
+  end
+  SW->>GH: Revoke the token<br/>DELETE /installation/token
+  %%> What it does:
+  %%> - revokes the token and removes the scratch repository, on success and on failure
+  %%> If it fails:
+  %%> - the run still reports its result; the token expires within one hour
+  alt pushed
+    GH-->>SW: PR #57 · head sha
+    %%> Returns:
+    %%> - the branch, commit, and the PR number and URL, or null PR fields for a push alone
+    SW-->>GW: Run succeeded<br/>terminal event · PR
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record the publication<br/>watch PR #57 · task done
+    %%> Result:
+    %%> - group 42 watches PR #57; its board status and settle metrics stay as they are
+    %%> - task #5165 succeeds
+  else a step fails
+    GH--xSW: refused or no reply
+    %%> When:
+    %%> - the workspace moved, the tip diverged, the push or PR write was refused, or a reply was lost
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code, such as `tasks.push_failed`
+    Note over GW: Mark the task failed<br/>group kept · rerun after a fix
+    %%> Result:
+    %%> - task #5165 fails; group 42 and its workspace stay as they are
+    %%> On GitHub:
+    %%> - a push or PR that started stays; there is no rollback
+    %%> Retry:
+    %%> - run the same command again: a new task gets a new token and reads the tip and the PR again before any write
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5165
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end

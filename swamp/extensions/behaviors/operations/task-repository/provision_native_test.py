@@ -1,5 +1,6 @@
 """Execute the Tasks source/setup DAG against a frozen VM-child receipt fixture."""
 
+import hashlib
 import json
 import os
 import shlex
@@ -59,6 +60,7 @@ class NativeProvision(fixture.NativeRepository):
                     "repository": str(self.workspace),
                     "repository_identity": "github:acme/test",
                     "default_branch": "main",
+                    "start_commit": self.start,
                     "branch": "task-30",
                     "user": "orbit",
                     "project_type": "monorepo",
@@ -148,10 +150,10 @@ export const model = {
             ),
         ]:
             for job in flow["jobs"]:
-                self.assertEqual(job.pop("target"), "orbit-node-209")
+                self.assertEqual(job.pop("labels"), {"role": "swamp"})
                 self.assertNotIn("labels", job)
                 for step in job["steps"]:
-                    self.assertEqual(step.pop("target"), "orbit-node-209")
+                    self.assertEqual(step.pop("labels"), {"role": "swamp"})
                     self.assertNotIn("labels", step)
             encoded = (
                 json.dumps(flow)
@@ -195,6 +197,56 @@ export const model = {
         steps = {row["name"]: row for row in history["jobs"][0]["steps"]}
         return history, steps
 
+    def proof_delivery(self, fail=False):
+        secret = os.urandom(32).hex()
+        self.secrets = (secret,)
+        self.cli("vault", "create", "local_encryption", "orbit-control-inputs")
+        self.cli("vault", "put", "orbit-control-inputs", "swamp-proof-club-api-key", input=secret)
+        self.inputs["intent"].update(project_id=62, proof_club_required=True)
+        self.inputs["execution_secrets"]["proof_club"] = {
+            "vault": "orbit-control-inputs", "key": "swamp-proof-club-api-key"
+        }
+        marker = self.repo / "private-delivery-public-receipt.json"
+        ssh = self.repo / "tools/ssh"
+        # The official SSH transport remains real; only its remote effect is substituted.
+        script = "#!" + sys.executable + "\n" + """import hashlib,json,shlex,subprocess,sys
+from pathlib import Path
+args=sys.argv[1:]
+if '-M' in args or '-O' in args:raise SystemExit(0)
+argv=shlex.split(args[-1]);material=sys.stdin.buffer.read()
+if any('/home/orbit/.config/swamp/club-api-key' in value for value in argv):
+    assert hashlib.sha256(material).hexdigest()==DIGEST
+    Path(MARKER).write_text(json.dumps({'user':argv[-1],'private_stdin_received':True}))
+    if FAIL:
+        print('fixture private destination refused',file=sys.stderr);raise SystemExit(1)
+    print(json.dumps({'stored':True}));raise SystemExit(0)
+r=subprocess.run(argv,input=material,capture_output=True)
+sys.stdout.buffer.write(r.stdout);sys.stderr.buffer.write(r.stderr)
+raise SystemExit(r.returncode)
+"""
+        script = script.replace("DIGEST", repr(hashlib.sha256(secret.encode()).hexdigest()))
+        script = script.replace("MARKER", repr(str(marker))).replace("FAIL", repr(fail))
+        ssh.write_text(script)
+        ssh.chmod(0o755)
+        history, steps = self.execute_provision(success=not fail)
+        self.assertEqual(json.loads(marker.read_text()), {"user":"orbit", "private_stdin_received":True})
+        self.assertEqual(steps["vm"]["outputs"]["result"]["vm_copy_keys"], [])
+        return history, steps
+
+    def test_proof_club_copy_is_parent_only_private_ssh_stdin_and_never_native_history(self):
+        history, steps = self.proof_delivery()
+        self.assertEqual(history["status"], "succeeded")
+        self.assertEqual(steps["proof_club"]["status"], "succeeded")
+        self.assertNotIn("error_code", json.loads(steps["result"]["outputs"]["stdout"]))
+
+    def test_private_delivery_refusal_keeps_vm_facts_but_never_claims_group_source_success(self):
+        history, steps = self.proof_delivery(fail=True)
+        receipt = json.loads(steps["result"]["outputs"]["stdout"])
+        self.assertEqual(history["status"], "failed")
+        self.assertEqual(receipt["failed_step"], "proof_club")
+        self.assertTrue(receipt["ready"])
+        self.assertNotIn("source", receipt)
+
     def test_full_source_and_ordered_setup_use_original_root_and_return_own_receipt(
         self,
     ):
@@ -209,6 +261,7 @@ export const model = {
         history, steps = self.execute_provision()
         result = json.loads(steps["result"]["outputs"]["stdout"])
         self.assertEqual(history["status"], "succeeded")
+        self.assertEqual(steps["proof_club"]["status"], "skipped")
         self.assertEqual(self.checkout.joinpath("order").read_text(), "firstsecond")
         self.assertEqual(result["starting_commit"], self.start)
         self.assertEqual(result["analysis_base"]["base"], self.start)
@@ -221,6 +274,19 @@ export const model = {
         self.assertEqual(
             steps["vm"]["outputs"]["result"]["root_kind"], "tasks.provision"
         )
+
+    def test_task_branch_starts_at_the_admitted_commit_not_the_newer_default_branch_head(
+        self,
+    ):
+        (self.workspace / "red").write_text("newer head\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "Red head")
+        history, steps = self.execute_provision()
+        result = json.loads(steps["result"]["outputs"]["stdout"])
+        self.assertEqual(history["status"], "succeeded")
+        self.assertEqual(result["starting_commit"], self.start)
+        self.assertEqual(result["analysis_base"]["base"], self.start)
+        self.assertFalse(self.checkout.joinpath("red").exists())
 
     def test_git_execution_copy_stays_on209_and_out_of_guest_configuration_and_history(
         self,
@@ -281,7 +347,9 @@ export const model = {
         self.git("add", ".")
         self.git("commit", "-qm", "Unsupported PHP")
         self.inputs["intent"]["workspace"].update(
-            project_type="laravel-app", skip_profile=False
+            project_type="laravel-app",
+            skip_profile=False,
+            start_commit=self.git("rev-parse", "HEAD"),
         )
         history, steps = self.execute_provision(success=False)
         result = json.loads(steps["result"]["outputs"]["stdout"])

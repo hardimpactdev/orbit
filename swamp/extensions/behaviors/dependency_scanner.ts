@@ -214,10 +214,10 @@ export const finishScanMethod = {
         status?: string;
         outputs?: { result_json?: string; scan_succeeded?: boolean };
       } | undefined;
-    const usable = step("scan")?.status === "succeeded" &&
-      step("verify_head")?.status === "succeeded";
+    const usable = step("Scan the lockfiles")?.status === "succeeded" &&
+      step("Check head is unchanged")?.status === "succeeded";
     let result: Record<string, unknown>;
-    if (usable) result = JSON.parse(step("scan")!.outputs!.result_json!);
+    if (usable) result = JSON.parse(step("Scan the lockfiles")!.outputs!.result_json!);
     else {
       const index = await failProjectScan(
         args.project,
@@ -233,7 +233,7 @@ export const finishScanMethod = {
             );
           },
         },
-        step("scan")?.status === "succeeded"
+        step("Scan the lockfiles")?.status === "succeeded"
           ? "source_head_unverified"
           : "source_acquisition_failed",
       );

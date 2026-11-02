@@ -23,7 +23,12 @@ Each direct declaration names a workflow and a small result projection. There ar
 
 Passwords and SQL use the shared private-material API for the exact root run and admitted Node custody. They remain inside the effect callback. They do not enter Operation public input, results, native JSON resources or logs. The Gateway deletes encrypted intent after the Operation and its 24-hour retry window finish. Public Operation history remains.
 
-Create reserves names and credentials without probing a server. A matching retry reuses them. Swamp checks the live owner and grants before creating or adopting existing names. A MySQL exact grant escapes underscores. Destruction refuses system names and prefixes, attached connections and foreign owners. PostgreSQL destruction fences admission and restores it after a refused or failed drop. Create and user admission refuse while removal targets the same server; removal refuses while creation is unfinished.
+Both database actions refuse a server Node without a stored SSH host key (`swamp.ssh_target_unavailable`) before they record anything. Create and user admission refuse while removal targets the same server; removal refuses while creation is unfinished.
+
+- Create reserves names and credentials without probing a server. A matching retry reuses them.
+- Swamp refuses a database that exists for another owner (`database.name_conflict`) before any change. A MySQL exact grant escapes underscores.
+- The connection becomes active only after the owner logs in with its own password (`database.owner_login_failed` otherwise).
+- Destruction refuses system names and prefixes, names that are not plain identifiers, and attached connections. It refuses blockers before any drop.
 
 ## Instance database steps
 
@@ -37,7 +42,7 @@ Successful projections make bounded record changes: attach a created or cloned c
 
 ## Native database clones
 
-Standalone `database.clone` captures its non-secret source, target and SSH identities at admission. One209 workflow uses official SSH for each action. MySQL creation reuses the native create DAG with one password-only execution copy; a replayable copy action checks the source and target ownership again before resetting the admitted targets and importing. SQLite keeps the local reflink path and consistent-backup alternative. Cross-Node snapshots travel through official SSH copy via a private209 scratch directory, with size and digest verification before installation.
+Standalone `database.clone` captures its non-secret source, target and SSH identities at admission. One209 workflow uses official SSH for each action. MySQL creation runs the clone-only `database-clone-create` child with one password-only execution copy, until `instance.clone` replaces standalone clone; a replayable copy action checks the source and target ownership again before resetting the admitted targets and importing. SQLite keeps the local reflink path and consistent-backup alternative. Cross-Node snapshots travel through official SSH copy via a private209 scratch directory, with size and digest verification before installation.
 
 The native child completes source, incoming-file and209 scratch cleanup before returning its public result. A failed child is retried as a whole by root resume; a successful child is skipped when only terminal projection resumes. Missing outcomes fail without attaching the target. The Gateway stores credentials and projects the final connection and attachment; steps make no Gateway calls. Instance-parent clone and transfer composition remains in its existing parent workflow.
 
@@ -140,11 +145,11 @@ An Instance owns a database that Orbit created for it: by `database:create --ser
 
 A [production clone with a SQLite snapshot](/reference/instance-cloning#sqlite-seed) also registers an owned connection named `<project>-<instance>` on the target Node. Its path is `<production_home>/database.sqlite`. Orbit attaches it under `DB` and synchronizes the production `.env` before the clone completes. An interrupted clone reuses the connection and attachment when it resumes; the candidate's `DB_*` values do not copy.
 
-[`instance:destroy`](/reference/instance-removal#owned-databases) drops each database the Instance owns, with its test databases and user, and deletes the record. Deleting the record of a database on a server drops the database the same way. Before any drop, Orbit checks the complete [removal set](/reference/database-servers#remove-a-database). A blocker returns `database.in_use` (409) without changing databases or records. A server failure keeps the record for retry. Orbit never drops a database that it only registered.
+[`instance:destroy`](/reference/instance-removal#owned-databases) drops each database the Instance owns, with its test databases and user, and deletes the record. Deleting the record of a database on a server drops the database the same way. Before any drop, Orbit checks the complete [removal set](/reference/database-servers#remove-a-database). A blocker returns `database.in_use` (409) without changing databases or records. A server failure keeps the record for retry. Admission records each database's Node and its stored SSH host pin, so a retry reaches the same host. Orbit never drops a database that it only registered.
 
 ### SQLite snapshots
 
-Standalone SQLite export, seed, seed abandonment and cleanup run as native workflows on Node 209 through official SSH. The Gateway supplies public source and target descriptors plus captured SSH identities and pins; these kinds need no vault execution copy.
+Standalone SQLite seed, seed abandonment and cleanup run as native workflows on Node 209 through official SSH. The Gateway supplies public source and target descriptors plus captured SSH identities and pins; these kinds need no vault execution copy.
 
 Seed uses separate snapshot, target preparation, transfer and installation steps. The target checks the exact size, SQLite integrity and digest before installation. Independent cleanup removes source and transfer scratch after started work. Failed or cancelled seed work also clears its target scratch without deleting an installed database. Seed abandonment removes only its recorded attempt. Terminal projection resumes without another completed effect. Native tests cover file ownership, replay, refusal and cleanup; Gateway tests cover input capture and bounded record changes.
 

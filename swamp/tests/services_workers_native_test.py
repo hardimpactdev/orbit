@@ -50,7 +50,7 @@ class ContainerWorkerTest(unittest.TestCase):
      assert result['status']=='succeeded'
      assert (cache/'placement-proof').exists()
    finally:
-    subprocess.run(['docker','rm','-f',name],capture_output=True,timeout=20)
+    subprocess.run(['docker','rm','-f','-v',name],capture_output=True,timeout=20)
     if serve is not None:
      serve.terminate()
      try:serve.wait(timeout=15)

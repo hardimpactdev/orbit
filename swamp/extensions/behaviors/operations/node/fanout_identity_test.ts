@@ -2,7 +2,6 @@ import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { analyzeYaml } from "../../../../bin/check-swamp-shape.ts";
 import { nodeRemovalWorkflow } from "../node-removal-command/workflows.ts";
-import { sshAccessWorkflow } from "../node-bootstrap/ssh_access_workflow.ts";
 
 const ownedWorkflow = (name: string) =>
     /(?:^|[-_.])(?:node|workers?|ssh)(?:[-_.]|$)/.test(name);
@@ -40,7 +39,7 @@ Deno.test("Node, worker and SSH workflows have no shared forEach model identity 
     );
 });
 
-Deno.test("Node removal fan-outs isolate each run, phase and iteration and retain generated source", async () => {
+Deno.test("Node removal fan-outs isolate each target and iteration and retain generated source", async () => {
     const generated = nodeRemovalWorkflow();
     const published = parse(
         await Deno.readTextFile(
@@ -58,29 +57,15 @@ Deno.test("Node removal fan-outs isolate each run, phase and iteration and retai
             const name = String(
                 (step.task as Record<string, unknown>).behaviorName,
             );
-            assertEquals(name.includes("run.id"), true, String(step.name));
-            assertEquals(name.includes("self._index"), true, String(step.name));
+            // Named by target, never by run: each item has its own index or its own target.
+            assertEquals(name.includes("run.id"), false, String(step.name));
+            assertEquals(
+                name.includes("self._index") || name.includes("string(self."),
+                true,
+                String(step.name),
+            );
             names.push(name);
         }
     }
     assertEquals(names.length > 5, true);
-});
-
-Deno.test("SSH key convergence declares its bootstrap vault in generated and published source", async () => {
-    const generated = sshAccessWorkflow();
-    const source = await Deno.readTextFile(
-        new URL("workflow-operation-node-ssh-access-converge.yaml", workflows),
-    );
-    assertEquals(parse(source), generated);
-    assertEquals((generated as Record<string, unknown>).vaults, [
-        "orbit-control-inputs",
-    ]);
-    assertEquals(
-        analyzeYaml(
-            "workflows/workflow-operation-node-ssh-access-converge.yaml",
-            source,
-        ).findings
-            .filter((finding) => finding.rule === "workflow-vault-declaration"),
-        [],
-    );
 });

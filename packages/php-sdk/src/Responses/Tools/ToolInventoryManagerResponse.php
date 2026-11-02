@@ -89,7 +89,7 @@ final readonly class ToolInventoryManagerResponse
      * @return array{
      *     manager: string,
      *     scan_state: string,
-     *     packages: list<array<string, bool|int|string|null>>,
+     *     packages: list<array<string, mixed>>,
      *     request_id: string
      * }
      */

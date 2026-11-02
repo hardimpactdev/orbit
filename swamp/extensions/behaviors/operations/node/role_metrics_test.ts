@@ -255,7 +255,7 @@ Deno.test("role Metrics generator keeps one root, exact placements, and rollback
   for (const job of jobs) {
     for (const step of job.steps) {
       if (step.forEach) {
-        assertEquals(step.target, '${{ "orbit-node-" + string(self.id) }}');
+        assertEquals(step.labels, { node: "${{ string(self.id) }}" });
         assertEquals(step.labels, { node: "${{ string(self.id) }}" });
       }
     }

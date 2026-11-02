@@ -2,11 +2,20 @@
 
 declare(strict_types=1);
 
+use App\Commands\Database\CreateDatabaseUserCommand;
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use App\Support\Console\CommandPrompts;
+use App\Support\Console\ConsoleMode;
+use App\Support\Console\PromptAborted;
+use App\Support\Console\PromptContext;
+use App\Support\Console\StandardInputReader;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Laravel\Prompts\Key;
+use Laravel\Prompts\Prompt;
+use Laravel\Prompts\Terminal;
 use Orbit\Sdk\Requests\DatabaseConnections\AddInstanceDatabaseRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseUserRequest;
@@ -23,7 +32,9 @@ use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Tester\CommandTester;
+use Tests\Support\FakeStandardInput;
 
 const DATABASE_CLI_SECRET = 'db-cli-secret-44c1';
 
@@ -246,13 +257,13 @@ it('destroys a connection after --force', function (): void {
         ->toBeInstanceOf(DestroyDatabaseConnectionRequest::class);
 });
 
-it('adds a user through the connection-scoped request and hides the password', function (bool $replication): void {
+it('adds a user with the piped password through the connection-scoped request and hides it', function (bool $replication): void {
     $mockClient = database_cli_operation_mock(CreateDatabaseUserRequest::class, 'database_user.create');
+    app()->instance(StandardInputReader::class, FakeStandardInput::piped(DATABASE_CLI_SECRET."\n"));
 
     [$exit, $output] = database_cli_display('database:user:create', [
         'slug' => 'app',
         '--username' => 'reporting',
-        '--password' => DATABASE_CLI_SECRET,
         '--read-only' => ! $replication,
         '--replication' => $replication,
         '--json' => true,
@@ -272,6 +283,56 @@ it('adds a user through the connection-scoped request and hides the password', f
             'replication' => $replication,
         ]);
 })->with(['read-only' => [false], 'replication' => [true]]);
+
+it('asks for the password with a hidden prompt on a terminal and sends what was typed', function (): void {
+    $mockClient = database_cli_operation_mock(CreateDatabaseUserRequest::class, 'database_user.create');
+    $stdin = FakeStandardInput::terminal();
+    app()->instance(StandardInputReader::class, $stdin);
+    $command = new DatabaseUserPromptCommand(new DatabaseUserPromptTerminal([...str_split(DATABASE_CLI_SECRET), Key::ENTER]));
+    $command->setLaravel(app());
+    $tester = new CommandTester($command);
+
+    $exit = PromptContext::preserve(function () use ($tester): int {
+        Prompt::fallbackWhen(false);
+
+        return $tester->execute(['slug' => 'app', '--username' => 'reporting']);
+    });
+
+    expect($exit)->toBe(0)->and($stdin->reads)->toBe(0)
+        ->and($tester->getDisplay())->toContain('Password')->not->toContain(DATABASE_CLI_SECRET);
+    $mockClient->assertSent(static fn ($request): bool => $request instanceof CreateDatabaseUserRequest
+        && $request->body()->all()['password'] === DATABASE_CLI_SECRET);
+});
+
+it('refuses a terminal that may not prompt and an empty pipe before it sends a request', function (StandardInputReader $stdin, array $options): void {
+    $mockClient = database_cli_operation_mock(CreateDatabaseUserRequest::class, 'database_user.create');
+    app()->instance(StandardInputReader::class, $stdin);
+
+    [$exit, $output] = database_cli_display('database:user:create', ['slug' => 'app', '--username' => 'reporting', '--json' => true, ...$options]);
+
+    expect($exit)->toBe(1)
+        ->and(json_decode(trim($output), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('database.password_required');
+    $mockClient->assertNothingSent();
+})->with([
+    'terminal with --json' => [FakeStandardInput::terminal(), []],
+    'empty pipe' => [FakeStandardInput::piped("\n"), []],
+]);
+
+it('refuses a terminal under --no-interaction without reading standard input', function (): void {
+    $mockClient = database_cli_operation_mock(CreateDatabaseUserRequest::class, 'database_user.create');
+    $stdin = FakeStandardInput::terminal();
+    app()->instance(StandardInputReader::class, $stdin);
+
+    [$exit, $output] = database_cli_display('database:user:create', ['slug' => 'app', '--username' => 'reporting', '--no-interaction' => true]);
+
+    expect($exit)->toBe(1)->and($stdin->reads)->toBe(0)
+        ->and($output)->toContain('Pipe the password on standard input');
+    $mockClient->assertNothingSent();
+});
+
+it('has no --password option, so a password cannot reach argv', function (): void {
+    expect(app(Kernel::class)->all()['database:user:create']->getDefinition()->hasOption('password'))->toBeFalse();
+});
 
 it('creates a database on a server with only the slug, the server, and the Instance', function (): void {
     $mockClient = database_cli_operation_mock(CreateDatabaseConnectionRequest::class, 'database.create');
@@ -697,3 +758,49 @@ it('requires a server and Instance for worker counts before sending a request', 
     $this->artisan('database:create', ['slug' => 'app', '--test-processes' => '4', '--json' => true, ...$options])->assertExitCode(1);
     expect($mockClient->getLastPendingRequest())->toBeNull();
 })->with(['no server' => [[]], 'no Instance' => [['--server' => 'pg']]]);
+
+final class DatabaseUserPromptCommand extends CreateDatabaseUserCommand
+{
+    public function __construct(private readonly Terminal $terminal)
+    {
+        parent::__construct();
+    }
+
+    protected function consoleMode(?OutputInterface $output = null): ConsoleMode
+    {
+        return new ConsoleMode(false, true, false, false, 100);
+    }
+
+    protected function commandPrompts(): CommandPrompts
+    {
+        return new CommandPrompts($this->consoleMode(), $this->output, $this->terminal);
+    }
+}
+
+final class DatabaseUserPromptTerminal extends Terminal
+{
+    /** @param list<string> $keys */
+    public function __construct(private array $keys)
+    {
+        parent::__construct();
+    }
+
+    public function read(): string
+    {
+        return array_shift($this->keys) ?? throw new PromptAborted('Input ended.');
+    }
+
+    public function setTty(string $mode): void {}
+
+    public function restoreTty(): void {}
+
+    public function cols(): int
+    {
+        return 100;
+    }
+
+    public function lines(): int
+    {
+        return 40;
+    }
+}

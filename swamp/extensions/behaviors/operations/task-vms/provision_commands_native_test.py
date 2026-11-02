@@ -50,6 +50,11 @@ elif args[:3] == ["config", "metadata", "show"]:
     reply = "templates:\n  /var/lib/cloud/seed/nocloud-net/user-data: {template: cloud-init.tpl}\n  /etc/hostname: {template: hostname.tpl}\n"
 elif args[:3] == ["config", "metadata", "edit"]:
     state["metadata"] = sys.stdin.read()
+elif args[0] == "wait":
+    # Native `incus wait <vm> ipv4` returns once a lease exists and exits nonzero at its timeout.
+    if state.get("lease_after_wait"):
+        state["no_address"] = False
+    failure = bool(state.get("no_address"))
 elif args[0] == "start":
     state["running"] = True
     if state.get("lose_start_reply"):
@@ -84,17 +89,17 @@ raise SystemExit(result.returncode)
         self.source = yaml.safe_load((ROOT / "workflows/workflow-task-vm-provider-incus.yaml").read_text())
         self.assertEqual(self.source["jobs"][0]["name"], "provider")
         for job in self.source["jobs"]:
-            self.assertEqual(job.pop("target"), "orbit-node-209")
+            self.assertEqual(job.pop("labels"), {"role": "swamp"})
             self.assertNotIn("labels", job)
             for step in job["steps"]:
-                self.assertEqual(step.pop("target"), "orbit-node-209")
+                self.assertEqual(step.pop("labels"), {"role": "swamp"})
                 self.assertNotIn("labels", step)
                 task = step["task"]
                 if task.get("behaviorType") == "@swamp/ssh":
                     task["globalArgs"]["sshBinary"] = str(fake)
         (self.repo / "workflows/workflow-task-vm-provider-incus.yaml").write_text(yaml.safe_dump(self.source, sort_keys=False))
         self.intent = {
-            "host_ssh_execution": {"control_node_id":209,"identity_file":"/run/credentials/orbit-node-worker.service/proxy-ssh-identity","public_key":"ssh-ed25519 PUBLIC","target":{"name":"target","host":"192.0.2.9","user":"orbit","port":22,"host_keys":["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG"]}},
+            "host_ssh_execution": {"control_node_id":209,"identity_file":"/etc/orbit/swamp-role-worker/ssh-identity","public_key":"ssh-ed25519 PUBLIC","target":{"name":"target","host":"192.0.2.9","user":"orbit","port":22,"host_keys":["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG"]}},
             "task_vm_id": 12, "node_id": 9, "host_node_id": 9, "guest_node_id": 210,
             "gateway_node_id": 14, "issuer_node_id": 209, "model_router_node_id": 6,
             "provider": "incus", "name": "tvm-12", "image_fingerprint": "a" * 64,
@@ -180,6 +185,15 @@ raise SystemExit(result.returncode)
         self.run_provider()
         state = self.read()
         self.assertEqual(state["initial_config"]["devices"]["topology-seed"]["source"], "tvm-12-topology-seed")
+
+    def test_inspection_waits_natively_for_the_first_lease_before_its_one_read(self):
+        self.state.update(no_address=True, lease_after_wait=True)
+        self.save()
+        self.run_provider()
+        calls = [call[2:] for call in self.read()["calls"]]
+        wait = calls.index(["wait", "tvm-12", "ipv4", "--timeout", "120", "--interval", "1"])
+        self.assertEqual(calls[wait + 1][0], "list")
+        self.assertEqual([call[0] for call in calls].count("start"), 1)
 
     def test_pending_address_fails_after_one_final_observation(self):
         self.state["no_address"] = True

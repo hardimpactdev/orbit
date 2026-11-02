@@ -6,8 +6,8 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Routes\RouteOperationProjection;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\WebSocket\DirectWebSocketProjection;
 use App\Infrastructure\Certificates\FilesystemRootCertificate;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
@@ -190,7 +190,7 @@ it('rechecks the original live intent after signing before releasing a public bu
 });
 
 it('does not infer signing authority from certificate-looking input on another kind', function (): void {
-    $this->operation->update(['kind' => 'firewall.inspect', 'input' => ['certificates' => [$this->leaf]]]);
+    $this->operation->update(['kind' => 'firewall.allow', 'input' => ['certificates' => [$this->leaf]]]);
     $this->postJson($this->path, $this->body)->assertForbidden()->assertJsonPath('error.code', 'certificate.intent_missing');
 });
 
@@ -310,7 +310,7 @@ function direct_sign_websocket_parent(string $kind, array $input): void
 
             public function definitions(): array
             {
-                return [$this->kind => ['workflow' => 'test-websocket-signing', 'projection' => DirectWebSocketProjection::class]];
+                return [$this->kind => ['workflow' => 'test-websocket-signing', 'projection' => RouteOperationProjection::class]];
             }
         }]));
     }

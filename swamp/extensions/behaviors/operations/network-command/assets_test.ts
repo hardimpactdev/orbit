@@ -60,10 +60,10 @@ Deno.test("public peer keys must match existing identity and not collide", () =>
 Deno.test("both direct roots select209 exclusively and expose one action per SSH step", () => {
     for (const network of [true, false]) {
         const w = workflow(network);
-        assertEquals(w.target, "orbit-node-209");
+        assertEquals(w.labels, { role: "swamp" });
         for (const step of w.jobs[0].steps) {
-            assertEquals(step.target, "orbit-node-209");
-            assertEquals(Object.hasOwn(step, "labels"), false);
+            assertEquals(step.labels, { role: "swamp" });
+            assertEquals(Object.hasOwn(step, "target"), false);
             const task = step.task as {
                 behaviorType: string;
                 methodName: string;

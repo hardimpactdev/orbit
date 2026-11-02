@@ -62,19 +62,19 @@ inputs:
   additionalProperties: false
 jobs:
   - name: prepare
-    target: orbit-node-209
+    labels: {role: swamp}
     steps:
       - name: paths
-        target: orbit-node-209
+        labels: {role: swamp}
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "icl-" + run.id + "-0" }}'
+          behaviorName: '${{ "icl-0" }}'
           methodName: paths
           inputs:
             intent: '${{ inputs.intent }}'
       - name: mint
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: paths
             condition:
@@ -82,7 +82,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: '${{ "icl-" + run.id + "-1" }}'
+          behaviorName: '${{ "icl-1" }}'
           methodName: execute
           inputs:
             run: python3 -B "$ORBIT_MINT"
@@ -92,7 +92,7 @@ jobs:
               ORBIT_RUN_ID: '${{ run.id }}'
               ORBIT_GIT_REFERENCES: '${{ inputs.intent.execution_references_json }}'
       - name: candidate-branch
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: mint
             condition:
@@ -100,10 +100,10 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "icl-" + run.id + "-2" }}'
+          behaviorName: '${{ ("icl-2-" + string(inputs.intent.candidate.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: &ref_2
-            name: '${{ "icl-candidate-" + run.id }}'
+            name: '${{ ("icl-2-" + string(inputs.intent.candidate.ssh_execution.target.host)).split(".").join("-") }}'
             transport:
               kind: ssh
               user: '${{ inputs.intent.candidate.ssh_execution.target.user }}'
@@ -127,7 +127,7 @@ jobs:
               - branch
               - '--show-current'
       - name: candidate-commit
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: candidate-branch
             condition:
@@ -135,7 +135,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "icl-" + run.id + "-3" }}'
+          behaviorName: '${{ ("icl-3-" + string(inputs.intent.candidate.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_2
           inputs:
@@ -152,7 +152,7 @@ jobs:
               - '--verify'
               - 'HEAD^{commit}'
       - name: candidate-status
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: candidate-commit
             condition:
@@ -160,7 +160,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "icl-" + run.id + "-4" }}'
+          behaviorName: '${{ ("icl-4-" + string(inputs.intent.candidate.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_2
           inputs:
@@ -177,7 +177,7 @@ jobs:
               - '--porcelain'
               - '--untracked-files=all'
       - name: candidate-submodules
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: candidate-status
             condition:
@@ -185,7 +185,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "icl-" + run.id + "-5" }}'
+          behaviorName: '${{ ("icl-5-" + string(inputs.intent.candidate.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_2
           inputs:
@@ -202,7 +202,7 @@ jobs:
               - status
               - '--recursive'
       - name: candidate-origin-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: candidate-submodules
             condition:
@@ -210,13 +210,13 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "icl-" + run.id + "-6" }}'
+          behaviorName: '${{ "icl-6" }}'
           methodName: read
           inputs:
             action: origin
             input: '${{ inputs.intent.candidate }}'
       - name: candidate-origin
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: candidate-origin-assets
             condition:
@@ -224,7 +224,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "icl-" + run.id + "-7" }}'
+          behaviorName: '${{ ("icl-7-" + string(inputs.intent.candidate.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: script
           globalArgs: *ref_2
           inputs:
@@ -232,7 +232,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["candidate-origin-assets"].outputs.script_body }}'
       - name: candidate
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: candidate-origin
             condition:
@@ -240,7 +240,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "icl-" + run.id + "-8" }}'
+          behaviorName: '${{ "icl-8" }}'
           methodName: cloneCandidate
           inputs:
             intent: '${{ inputs.intent.candidate }}'
@@ -250,17 +250,17 @@ jobs:
             status: '${{ steps["candidate-status"].outputs }}'
             submodules: '${{ steps["candidate-submodules"].outputs }}'
       - name: source-worktrees
-        target: orbit-node-209
+        labels: {role: swamp}
         guard: >-
           ${{ steps.exists(key, steps[key].status == "failed") || (!(inputs.intent.source.seed_repository != null && inputs.intent.resolve.seed_commit != null)
           || (inputs.intent.retained_source != null)) }}
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-0-" + run.id }}'
+          behaviorName: '${{ ("src-0-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: &ref_3
-            name: '${{ "source-" + run.id }}'
+            name: '${{ ("src-0-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
             transport:
               kind: ssh
               user: '${{ inputs.intent.ssh_execution.target.user }}'
@@ -287,7 +287,7 @@ jobs:
             condition:
               type: succeeded
       - name: source-branch-available
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-worktrees
             condition:
@@ -299,7 +299,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-1-" + run.id }}'
+          behaviorName: '${{ "src-1" }}'
           methodName: branchAvailable
           inputs:
             resolve: '${{ inputs.intent.resolve }}'
@@ -308,7 +308,7 @@ jobs:
               ${{ inputs.intent.source.seed_repository != null && inputs.intent.resolve.seed_commit != null && !(inputs.intent.retained_source != null) ?
               steps["source-worktrees"].outputs : {"stdout":""} }}
       - name: source-branch-accepted
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-branch-available
             condition:
@@ -323,7 +323,7 @@ jobs:
           severity: high
           message: instance.branch_in_use
       - name: source-prepare-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-branch-accepted
             condition:
@@ -335,13 +335,13 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-3-" + run.id }}'
+          behaviorName: '${{ "src-3" }}'
           methodName: read
           inputs:
             action: prepare_directory
             input: '${{ inputs.intent }}'
       - name: source-prepare-read
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-prepare-assets
             condition:
@@ -353,7 +353,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-4-" + run.id }}'
+          behaviorName: '${{ ("src-4-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: script
           globalArgs: *ref_3
           inputs:
@@ -361,7 +361,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["source-prepare-assets"].outputs.script_body }}'
       - name: source-prepared
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-prepare-read
             condition:
@@ -373,12 +373,12 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-5-" + run.id }}'
+          behaviorName: '${{ "src-5" }}'
           methodName: decode
           inputs:
             observation: '${{ steps["source-prepare-read"].outputs }}'
       - name: source-init
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-prepared
             condition:
@@ -392,7 +392,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-6-" + run.id }}'
+          behaviorName: '${{ ("src-6-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -408,7 +408,7 @@ jobs:
               - init
               - '--quiet'
       - name: source-worktree
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-init
             condition:
@@ -422,7 +422,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-7-" + run.id }}'
+          behaviorName: '${{ ("src-7-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -441,7 +441,7 @@ jobs:
               - '${{ inputs.intent.source.checkout }}'
               - '${{ inputs.intent.resolve.seed_commit == null ? "HEAD" : inputs.intent.resolve.seed_commit }}'
       - name: source-origin-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-worktree
             condition:
@@ -453,7 +453,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-8-" + run.id }}'
+          behaviorName: '${{ "src-8" }}'
           methodName: read
           inputs:
             action: origin
@@ -461,7 +461,7 @@ jobs:
               checkout: '${{ inputs.intent.source.checkout }}'
               allow_empty: '${{ steps["source-prepared"].outputs.owned }}'
       - name: source-origin-read
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-origin-assets
             condition:
@@ -473,7 +473,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-9-" + run.id }}'
+          behaviorName: '${{ ("src-9-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: script
           globalArgs: *ref_3
           inputs:
@@ -481,7 +481,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["source-origin-assets"].outputs.script_body }}'
       - name: source-origin-proof
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-origin-read
             condition:
@@ -493,14 +493,14 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-10-" + run.id }}'
+          behaviorName: '${{ "src-10" }}'
           methodName: origin
           inputs:
             expected: '${{ inputs.intent.source.repository }}'
             observation: '${{ steps["source-origin-read"].outputs }}'
             allow_empty: '${{ steps["source-prepared"].outputs.owned }}'
       - name: source-origin-configure
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-origin-proof
             condition:
@@ -512,7 +512,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-11-" + run.id }}'
+          behaviorName: '${{ ("src-11-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -529,7 +529,7 @@ jobs:
               - remote.origin.url
               - '${{ inputs.intent.source.repository }}'
       - name: source-git-directory
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-origin-configure
             condition:
@@ -541,7 +541,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-12-" + run.id }}'
+          behaviorName: '${{ ("src-12-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -557,7 +557,7 @@ jobs:
               - rev-parse
               - '--absolute-git-dir'
       - name: source-marker-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-git-directory
             condition:
@@ -569,7 +569,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-13-" + run.id }}'
+          behaviorName: '${{ "src-13" }}'
           methodName: read
           inputs:
             action: mark_source
@@ -578,7 +578,7 @@ jobs:
               prepare_id: '${{ inputs.intent.source.prepare_id }}'
               git_directory: '${{ steps["source-git-directory"].outputs.stdout }}'
       - name: source-marker-read
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-marker-assets
             condition:
@@ -590,7 +590,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-14-" + run.id }}'
+          behaviorName: '${{ ("src-14-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: script
           globalArgs: *ref_3
           inputs:
@@ -598,7 +598,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["source-marker-assets"].outputs.script_body }}'
       - name: source-paths
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-marker-read
             condition:
@@ -610,12 +610,12 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-15-" + run.id }}'
+          behaviorName: '${{ "src-15" }}'
           methodName: paths
           inputs:
             intent: '${{ inputs.intent }}'
       - name: source-scripts-directory
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-paths
             condition:
@@ -627,7 +627,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-16-" + run.id }}'
+          behaviorName: '${{ ("src-16-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -637,7 +637,7 @@ jobs:
               - '-p'
               - '${{ "/tmp/orbit-source-" + run.id + "-source" }}'
       - name: source-scripts-copy
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-scripts-directory
             condition:
@@ -649,7 +649,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "source-copy-" + run.id }}'
+          behaviorName: '${{ ("source-copy-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: copy
           globalArgs: *ref_3
           inputs:
@@ -659,7 +659,7 @@ jobs:
             recursive: true
             direction: to
       - name: source-fetch
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-scripts-copy
             condition:
@@ -671,7 +671,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-18-" + run.id }}'
+          behaviorName: '${{ ("src-18-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -684,7 +684,7 @@ jobs:
               - '${{ inputs.intent.source.repository }}'
             stdin: '${{ vault.get(inputs.execution_secrets.git_read.vault,inputs.execution_secrets.git_read.key) }}'
       - name: source-refs
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-fetch
             condition:
@@ -696,7 +696,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-19-" + run.id }}'
+          behaviorName: '${{ ("src-19-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -714,7 +714,7 @@ jobs:
               - refs/heads
               - refs/remotes/origin
       - name: source-selected
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-refs
             condition:
@@ -726,13 +726,13 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-20-" + run.id }}'
+          behaviorName: '${{ "src-20" }}'
           methodName: select
           inputs:
             resolve: '${{ inputs.intent.resolve }}'
             refs: '${{ steps["source-refs"].outputs }}'
       - name: source-checkout
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-selected
             condition:
@@ -744,7 +744,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-21-" + run.id }}'
+          behaviorName: '${{ ("src-21-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -764,7 +764,7 @@ jobs:
               - '${{ steps["source-selected"].outputs.branch }}'
               - '${{ steps["source-selected"].outputs.reference }}'
       - name: source-commit
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-checkout
             condition:
@@ -776,7 +776,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-22-" + run.id }}'
+          behaviorName: '${{ ("src-22-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_3
           inputs:
@@ -793,7 +793,7 @@ jobs:
               - '--verify'
               - 'HEAD^{commit}'
       - name: source-profile-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-commit
             condition:
@@ -805,13 +805,13 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-23-" + run.id }}'
+          behaviorName: '${{ "src-23" }}'
           methodName: read
           inputs:
             action: profile
             input: '${{ inputs.intent }}'
       - name: source-profile-read
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-profile-assets
             condition:
@@ -823,7 +823,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-24-" + run.id }}'
+          behaviorName: '${{ ("src-24-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: script
           globalArgs: *ref_3
           inputs:
@@ -831,7 +831,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["source-profile-assets"].outputs.script_body }}'
       - name: source-result
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-profile-read
             condition:
@@ -843,7 +843,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-25-" + run.id }}'
+          behaviorName: '${{ "src-25" }}'
           methodName: provisioningResult
           inputs:
             intent: '${{ inputs.intent }}'
@@ -851,7 +851,7 @@ jobs:
             branch: '${{ steps["source-selected"].outputs.branch }}'
             commit: '${{ steps["source-commit"].outputs }}'
       - name: environment
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-result
             condition:
@@ -859,10 +859,10 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "icl-" + run.id + "-35" }}'
+          behaviorName: '${{ ("icl-35-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs:
-            name: '${{ "icl-target-" + run.id }}'
+            name: '${{ ("icl-35-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
             transport:
               kind: ssh
               user: '${{ inputs.intent.ssh_execution.target.user }}'
@@ -882,25 +882,25 @@ jobs:
               - '${{ inputs.intent.environment_path }}'
             stdin: '${{ vault.get(inputs.execution_secrets.environment.vault,inputs.execution_secrets.environment.key) }}'
   - name: clone-vp-capture
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
       - job: prepare
         condition:
           type: succeeded
     steps:
       - name: clone-vp-local-directory
-        target: orbit-node-209
+        labels: {role: swamp}
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: '${{ "vp-local-"+run.id }}'
+          behaviorName: '${{ "vp-local" }}'
           methodName: execute
           inputs:
             run: umask 077; mkdir -p -- "$ORBIT_DIRECTORY"
             env:
               ORBIT_DIRECTORY: '${{ "/tmp/orbit-instance-"+run.id }}'
       - name: clone-vp-project-asset
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: clone-vp-local-directory
             condition:
@@ -908,7 +908,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-vp-assets'
-          behaviorName: '${{ "idm-clone--1-" + run.id }}'
+          behaviorName: '${{ "idm-clone-1" }}'
           methodName: read
           inputs:
             action: project_material
@@ -916,7 +916,7 @@ jobs:
               application: '${{ inputs.intent.application }}'
               destination: '${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}'
       - name: clone-vp-project
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: clone-vp-project-asset
             condition:
@@ -924,10 +924,10 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-clone--2-" + run.id }}'
+          behaviorName: '${{ ("ids-clone-2-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: script
           globalArgs: &ref_4
-            name: '${{ "id-clone-vp-" + run.id }}'
+            name: '${{ ("ids-clone-2-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
             transport:
               kind: ssh
               user: '${{ inputs.intent.ssh_execution.target.user }}'
@@ -943,7 +943,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["clone-vp-project-asset"].outputs.script_body }}'
       - name: clone-vp-private-copy
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: clone-vp-project
             condition:
@@ -951,7 +951,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-clone--3-" + run.id }}'
+          behaviorName: '${{ ("ids-clone-3-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: copy
           globalArgs: *ref_4
           inputs:
@@ -960,7 +960,7 @@ jobs:
             dst: '${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}'
             direction: from
       - name: clone-vp-requirements
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: clone-vp-private-copy
             condition:
@@ -968,23 +968,23 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-vp-requirements'
-          behaviorName: '${{ "idm-clone--4-" + run.id }}'
+          behaviorName: '${{ "idm-clone-4" }}'
           methodName: capture
           inputs:
             path: '${{ "/tmp/orbit-instance-" + run.id + "/project.json" }}'
   - name: clone-vp-install
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
       - job: clone-vp-capture
         condition:
           type: succeeded
     steps:
       - name: clone-vp-manager-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         task:
           type: behavior
           behaviorType: '@nckrtl/node-tool-setup-assets'
-          behaviorName: '${{ "idm-clone--0-" + run.id + "-" + string(self._index) }}'
+          behaviorName: '${{ "idm-clone-0-" + string(self._index) }}'
           methodName: read
           inputs:
             setup: '${{ inputs.intent.vp_setup }}'
@@ -994,7 +994,7 @@ jobs:
             ${{ steps["clone-vp-requirements"].outputs.manager_required ? (steps["clone-vp-requirements"].outputs.runtime == null ? [] :
             [steps["clone-vp-requirements"].outputs.runtime]) : [] }}
       - name: clone-vp-manager
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: clone-vp-manager-assets
             condition:
@@ -1002,10 +1002,10 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-clone--1-" + run.id + "-" + string(self._index) }}'
+          behaviorName: '${{ ("ids-clone-1-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
           methodName: script
           globalArgs: &ref_5
-            name: '${{ "id-clone-vp-" + run.id }}'
+            name: '${{ ("ids-clone-1-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
             transport:
               kind: ssh
               user: '${{ inputs.intent.ssh_execution.target.user }}'
@@ -1023,7 +1023,7 @@ jobs:
             sudo: true
         forEach: *ref_0
       - name: clone-vp-manager-ready
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: clone-vp-manager-assets
             condition:
@@ -1039,7 +1039,7 @@ jobs:
           severity: high
           message: The admitted VP manager was not prepared.
       - name: clone-vp-cli
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: clone-vp-manager-ready
             condition:
@@ -1047,7 +1047,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-clone--3-" + run.id + "-" + string(self._index) }}'
+          behaviorName: '${{ ("ids-clone-3-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_5
           inputs:
@@ -1061,7 +1061,7 @@ jobs:
           item: runtime
           in: '${{ steps["clone-vp-requirements"].outputs.runtime == null ? [] : [steps["clone-vp-requirements"].outputs.runtime] }}'
       - name: clone-vp-cli-ready
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: clone-vp-cli
             condition:
@@ -1069,14 +1069,14 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-vp-requirements'
-          behaviorName: '${{ "idm-clone--4-" + run.id + "-" + string(self._index) }}'
+          behaviorName: '${{ "idm-clone-4-" + string(self._index) }}'
           methodName: cli
           inputs:
             runtime: '${{ self.runtime }}'
             observation: '${{ steps["clone-vp-cli-0"].outputs }}'
         forEach: *ref_1
       - name: clone-vp-install
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: clone-vp-cli-ready
             condition:
@@ -1084,7 +1084,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-clone--5-" + run.id + "-" + string(self._index) }}'
+          behaviorName: '${{ ("ids-clone-5-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_5
           inputs:
@@ -1103,7 +1103,7 @@ jobs:
             env: *ref_6
         forEach: *ref_1
       - name: clone-vp-inventory
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: clone-vp-install
             condition:
@@ -1111,7 +1111,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-clone--6-" + run.id + "-" + string(self._index) }}'
+          behaviorName: '${{ ("ids-clone-6-" + string(inputs.intent.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_5
           inputs:
@@ -1126,7 +1126,7 @@ jobs:
             env: *ref_6
         forEach: *ref_1
       - name: clone-vp-verify
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: clone-vp-inventory
             condition:
@@ -1134,14 +1134,14 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-vp-requirements'
-          behaviorName: '${{ "idm-clone--7-" + run.id + "-" + string(self._index) }}'
+          behaviorName: '${{ "idm-clone-7-" + string(self._index) }}'
           methodName: verify
           inputs:
             runtime: '${{ self.runtime }}'
             inventory: '${{ steps["clone-vp-inventory-0"].outputs }}'
         forEach: *ref_1
       - name: clone-vp-result
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: clone-vp-manager-assets
             condition:
@@ -1170,24 +1170,24 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-vp-requirements'
-          behaviorName: '${{ "idm-clone--8-" + run.id }}'
+          behaviorName: '${{ "idm-clone-8" }}'
           methodName: result
           inputs:
             name: clone-vp
             steps: '${{ steps }}'
   - name: clone
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
       - job: clone-vp-install
         condition:
           type: succeeded
     steps:
       - name: result
-        target: orbit-node-209
+        labels: {role: swamp}
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "icl-" + run.id + "-36" }}'
+          behaviorName: '${{ "icl-36" }}'
           methodName: cloneResult
           inputs:
             intent: '${{ inputs.intent }}'

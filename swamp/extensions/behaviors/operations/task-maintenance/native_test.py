@@ -89,10 +89,10 @@ class NativeMaintenance(fixture.NativeRepository):
                 (ROOT / f"workflows/workflow-{name}.yaml").read_text()
             )
             for job in flow["jobs"]:
-                job.pop("target", None)
+                job.pop("target", None); job.pop("labels", None)
                 job.pop("labels", None)
                 for step in job["steps"]:
-                    self.assertEqual(step.pop("target"), "orbit-node-209")
+                    self.assertEqual(step.pop("labels"), {"role": "swamp"})
                     step.pop("labels", None)
                     # Keep the production inputs and graph, changing only local placement and temp namespace.
                     task = step["task"]

@@ -12,7 +12,7 @@ const Resource = z.object({ stdout: z.string(), exitCode: z.number().int() });
 
 export const behavior = {
     type: "@nckrtl/database-create-command-assets",
-    version: "2026.10.31.1",
+    version: "2026.11.02.3",
     resources: {
         item: {
             schema: z.object({ json: z.string() }),

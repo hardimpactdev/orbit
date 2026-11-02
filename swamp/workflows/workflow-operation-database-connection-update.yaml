@@ -1,5 +1,6 @@
 id: 22d37697-fc3f-4df0-9e26-ad6d0f78c431
 name: operation-database-connection-update
+queueTimeout: 30
 description: Read an admitted Valkey index limit over official SSH, or project a record-only update.
 writes: true
 vaults: [orbit-control-inputs]
@@ -37,13 +38,13 @@ inputs:
   additionalProperties: false
 jobs:
 - name: update
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: assets
-    <<: &placed {target: orbit-node-209}
+    <<: &placed {labels: {role: swamp}}
     writes: false
     task:
-      <<: &metadata {type: behavior, behaviorType: '@nckrtl/database-server-command-assets', behaviorName: '${{ "database-update-assets-" + run.id }}'}
+      <<: &metadata {type: behavior, behaviorType: '@nckrtl/database-server-command-assets', behaviorName: '${{ "database-update-assets" }}'}
       methodName: read
       inputs: {intent: '${{ inputs.intent }}'}
   - name: directory
@@ -55,10 +56,10 @@ jobs:
       <<: &ssh
         type: behavior
         behaviorType: '@swamp/ssh'
-        behaviorName: '${{ "database-update-" + string(inputs.operation_id) }}'
+        behaviorName: '${{ ("database-update-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
         globalArgs:
-          name: '${{ "database-update-" + string(inputs.operation_id) }}'
-          transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity}
+          name: '${{ ("database-update-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
+          transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity}
           hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]
       methodName: exec
       inputs:

@@ -53,21 +53,19 @@ inputs:
   additionalProperties: false
 jobs:
 - name: bootstrap
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
   labels:
     node: ${{ string(inputs.node_id) }}
   steps:
   - name: inspect-platform
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
     labels: &id001
       node: ${{ string(inputs.node_id) }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "bootstrap-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "bootstrap-ssh-" + string(inputs.node_id) }}'
       methodName: exec
       globalArgs: &id002
-        name: ${{ "bootstrap-ssh-" + string(inputs.operation_id) }}
+        name: '${{ "bootstrap-ssh-" + string(inputs.node_id) }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.bootstrap.target.user }}
@@ -85,12 +83,11 @@ jobs:
         - uname
         - -sm
   - name: inspect-host-key
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
     labels: *id001
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "bootstrap-ssh-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "bootstrap-ssh-" + string(inputs.node_id) }}'
       methodName: collect-host-public-key
       globalArgs: *id002
       inputs:
@@ -100,7 +97,6 @@ jobs:
       condition:
         type: succeeded
   - name: probe-host
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
     labels: *id001
     dependsOn:
     - step: inspect-host-key
@@ -109,7 +105,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/node-bootstrap-probe-result'
-      behaviorName: ${{ "bootstrap-result-" + string(inputs.operation_id) }}
+      behaviorName: '${{ "bootstrap-result-" + string(inputs.node_id) }}'
       methodName: read
       inputs:
         bootstrap: ${{ inputs.intent.bootstrap }}

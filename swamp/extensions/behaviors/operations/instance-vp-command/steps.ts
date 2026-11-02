@@ -16,7 +16,7 @@ export function vpCaptureSteps(
     a.add("local-directory", {
         type: "behavior",
         behaviorType: "command/shell",
-        behaviorName: e('"vp-local-"+run.id'),
+        behaviorName: e('"vp-local"'),
         methodName: "execute",
         inputs: {
             run: 'umask 077; mkdir -p -- "$ORBIT_DIRECTORY"',
@@ -155,12 +155,12 @@ export function vpPreparationJobs(
 ): Fields[] {
     return [{
         name: name + "-capture",
-        target: "orbit-node-209",
+        labels: { role: "swamp" },
         dependsOn: [{ job: dependencyJob, condition: { type: "succeeded" } }],
         steps: vpCaptureSteps(name, intent),
     }, {
         name: name + "-install",
-        target: "orbit-node-209",
+        labels: { role: "swamp" },
         dependsOn: [{
             job: name + "-capture",
             condition: { type: "succeeded" },

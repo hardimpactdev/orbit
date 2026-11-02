@@ -1,0 +1,122 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, DECISIONS R1 (record-only change starts no run), R2, R4. Same shape as tool.install.
+  %% status: reviewed
+  %% command: tool:remove
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>reached over ssh
+  CLI->>GW: tool:remove 31<br/>Tool id · --yes
+  %%> Command:
+  %%> - `orbit tool:remove 31 --yes`
+  %%> - syntax: `<tool> [--yes]`
+  %%> Input:
+  %%> - the Tool's id, as `tool:list --node=ID` shows it
+  %%> Confirmation:
+  %%> - without `--yes`, the CLI first asks "Remove Tool ripgrep (apt on Node #12) by uninstalling it and deleting its record?"; the default is No
+  %%> - without a terminal, or with `--json`, `--yes` is required
+  Note over GW: Validate, lock the manager<br/>task #5135 · ripgrep on Node 12
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12
+  %%> - Tool 31 exists
+  %%> - no other change runs for this Tool Manager on Node 12; the Gateway holds one lock per Node and Tool Manager
+  %%> Decides:
+  %%> - whether the package must leave the Node, or only the record goes
+  alt package belongs to a role
+    Note over GW: Delete only the record<br/>R1: no run, package stays
+    %%> When:
+    %%> - the package is owned by a Node role, for example a PHP extension such as `php8.5-xml`
+    %%> Result:
+    %%> - Tool 31's record is deleted
+    %%> - the package stays installed, because the role still needs it
+    %%> - no Swamp run starts (R1)
+    GW-->>CLI: Tool removed<br/>package kept for the role
+    %%> What you get:
+    %%> - the final result at once; there is nothing to follow
+  else Orbit installed it
+    GW->>SW: Start run, full intent<br/>operation-tool-remove
+    %%> What it does:
+    %%> - starts one Swamp run on serve (Node 209)
+    %%> Inputs:
+    %%> - the package, Tool Manager, and whether its apt source is still used by another Tool
+    %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
+    GW-->>CLI: 202 Accepted<br/>task #5135
+    %%> What you get:
+    %%> - the task number, at once
+    %%> Next:
+    %%> - the CLI follows the task with `operation:show`
+    SW->>N: Plan the removal<br/>e.g. apt-get --simulate remove
+    %%> What it does:
+    %%> - asks the Tool Manager what removing the package would also remove
+    %%> Refuses:
+    %%> - a plan that removes any other package; then the run stops here and nothing changes
+    %%> Per Tool Manager:
+    %%> - `apt`: `apt-get --simulate remove`; the plan may contain only this package
+    %%> - `brew`: refuses when another formula still depends on it
+    %%> - `brew-cask`: checks the cask is safe to uninstall
+    %%> - `composer`, `vp`: no plan needed; global packages have no system dependents
+    SW->>N: Remove the package<br/>e.g. dpkg --remove
+    %%> What it does:
+    %%> - removes exactly this package, so dependency changes can't pull in more removals
+    %%> - no purge, no autoremove
+    %%> Per Tool Manager:
+    %%> - `apt`: `dpkg --remove`, as root
+    %%> - `brew`, `brew-cask`: `brew uninstall`, as the Node's account
+    %%> - `composer`, `vp`: removes the global package, as the Node's managed user
+    %%> Busy apt lock:
+    %%> - it waits for the lock within the run's time budget, then fails
+    SW->>N: Check it is gone<br/>package query
+    %%> What it does:
+    %%> - asks the Tool Manager again; the package must be absent
+    %%> Why:
+    %%> - the Tool only counts as removed when the Node shows it
+    alt package is gone
+      N-->>SW: ripgrep absent
+      %%> Returns:
+      %%> - the check passed
+      opt last Tool from that apt source
+        SW->>N: Remove the apt source<br/>no Tool uses it anymore
+        %%> When:
+        %%> - only when this was the last Tool installed from a signed apt repository
+        %%> What it does:
+        %%> - removes the apt source and its signing key from the Node
+        %%> If it fails:
+        %%> - the removal still succeeds; the package is already gone
+        %%> - the unused apt source stays recorded, and the next `tool:remove` or `tool:install` from it cleans it up
+      end
+      SW-->>GW: Run succeeded<br/>terminal event
+      %%> How the Gateway learns it:
+      %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+      Note over GW: Delete the Tool<br/>record gone · task succeeded
+      %%> Result:
+      %%> - Tool 31's record is deleted
+      %%> - an apt repository record is deleted when its source was removed; otherwise it stays recorded for a later cleanup
+      %%> - task #5135 succeeds
+    else a step fails
+      N--xSW: plan too wide or exit ≠ 0
+      %%> When:
+      %%> - the plan would remove other packages, the removal fails, or the package is still there
+      SW--xGW: Run failed<br/>error_code, failed step
+      %%> The Gateway reads:
+      %%> - which step failed and its error code
+      Note over GW: Mark the Tool failed<br/>keeps 14.1.1 · rerun after a fix
+      %%> Result:
+      %%> - Tool 31 stays, marked failed, with its recorded version
+      %%> - task #5135 fails
+      %%> Retry:
+      %%> - run the same command again
+    end
+    loop every 2 s until terminal
+      CLI->>GW: operation:show #5135
+      %%> What it does:
+      %%> - asks for the task's status every 2 seconds until it has ended
+      GW-->>CLI: status + result
+      %%> Returns:
+      %%> - the current status, and the result once the task has ended
+    end
+  end

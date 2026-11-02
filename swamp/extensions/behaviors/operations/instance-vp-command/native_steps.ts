@@ -1,3 +1,4 @@
+import { dotless } from "../_lib/behavior_name.ts";
 type Fields = Record<string, unknown>;
 export const expression = (value: string) => "${{ " + value + " }}";
 /** Pure native graph construction. Each effect is a separately placed official action. */
@@ -9,7 +10,7 @@ export function instanceActions(
 ) {
     const steps: Fields[] = [];
     const globals = {
-        name: expression('"id-' + name.slice(0, 10) + '-" + run.id'),
+        name: expression(dotless('"id-' + name.slice(0, 10) + '-" + string(' + ssh + ".target.host)")),
         transport: {
             kind: "ssh",
             user: expression(ssh + ".target.user"),
@@ -26,7 +27,7 @@ export function instanceActions(
         const prior = steps.at(-1)?.name ?? dependency;
         const step: Fields = {
             name: name + "-" + suffix,
-            target: "orbit-node-209",
+            labels: { role: "swamp" },
             ...(prior
                 ? {
                     dependsOn: [{
@@ -58,7 +59,7 @@ export function instanceActions(
             type: "behavior",
             behaviorType,
             behaviorName: expression(
-                '"idm-' + name.slice(0, 6) + "-" + steps.length + '-" + run.id',
+                '"idm-' + name.slice(0, 6) + "-" + steps.length + '"',
             ),
             methodName: method,
             inputs,
@@ -74,7 +75,7 @@ export function instanceActions(
             type: "behavior",
             behaviorType: "@swamp/ssh",
             behaviorName: expression(
-                '"ids-' + name.slice(0, 6) + "-" + steps.length + '-" + run.id',
+                dotless('"ids-' + name.slice(0, 6) + "-" + steps.length + '-" + string(' + ssh + ".target.host)"),
             ),
             methodName,
             globalArgs: globals,

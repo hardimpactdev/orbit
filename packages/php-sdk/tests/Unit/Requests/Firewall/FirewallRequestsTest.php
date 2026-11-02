@@ -6,26 +6,25 @@ use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Firewall\AllowFirewallRuleRequest;
 use Orbit\Sdk\Requests\Firewall\DenyFirewallRuleRequest;
-use Orbit\Sdk\Requests\Firewall\InspectFirewallRequest;
 use Orbit\Sdk\Requests\Firewall\ListFirewallRulesRequest;
 use Orbit\Sdk\Requests\Firewall\RemoveFirewallRuleRequest;
+use Orbit\Sdk\Responses\Firewall\FirewallRuleResponse;
 use Orbit\Sdk\Responses\Firewall\FirewallRulesResponse;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
-use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
-it('maps allow and deny requests to fixed named-rule payloads', function (
+it('maps allow and deny requests to port-identity payloads', function (
     string $requestClass,
     string $action,
 ): void {
     $request = new $requestClass(
         nodeId: 7,
-        name: 'private-web',
+        port: '443',
         source: '192.0.2.0/24',
         protocol: 'tcp',
-        port: '443',
+        label: 'office web',
     );
     $mock = new MockClient([
         $request::class => MockResponse::make(firewall_sdk_envelope($action), 201),
@@ -38,10 +37,10 @@ it('maps allow and deny requests to fixed named-rule payloads', function (
         ->toBe("/api/v1/nodes/7/firewall-rules/{$action}")
         ->and($request->body()->all())
         ->toBe([
-            'name' => 'private-web',
+            'port' => '443',
             'source' => '192.0.2.0/24',
             'protocol' => 'tcp',
-            'port' => '443',
+            'label' => 'office web',
         ])
         ->and($response)
         ->toBeInstanceOf(OperationResponse::class)
@@ -55,22 +54,12 @@ it('maps allow and deny requests to fixed named-rule payloads', function (
     'deny' => [DenyFirewallRuleRequest::class, 'deny'],
 ]);
 
-it('omits firewall fields that the Gateway defaults', function (): void {
-    $request = new AllowFirewallRuleRequest(
-        nodeId: 7,
-        name: 'private-web',
-        source: null,
-        protocol: null,
-        port: '443',
-    );
-
-    expect($request->body()->all())->toBe([
-        'name' => 'private-web',
-        'port' => '443',
-    ]);
+it('omits firewall fields that the Gateway reads as any', function (): void {
+    expect(new AllowFirewallRuleRequest(7, '443')->body()->all())->toBe(['port' => '443'])
+        ->and(new RemoveFirewallRuleRequest(7, '443')->body()->all())->toBe(['port' => '443']);
 });
 
-it('lists and removes stable names within one node', function (): void {
+it('lists rules and removes one by its port, source, and protocol', function (): void {
     $list = new ListFirewallRulesRequest(7);
     $listMock = new MockClient([
         ListFirewallRulesRequest::class => MockResponse::make([
@@ -88,8 +77,10 @@ it('lists and removes stable names within one node', function (): void {
         ->toBeInstanceOf(FirewallRulesResponse::class)
         ->and($listResponse->rules)
         ->toHaveCount(1)
-        ->and($listResponse->rules[0]->name)
-        ->toBe('private-web')
+        ->and($listResponse->rules[0]->label)
+        ->toBe('office web')
+        ->and($listResponse->rules[0]->toArray())
+        ->not->toHaveKey('name')
         ->and($listResponse->rules[0]->backendStatus)
         ->toBeNull()
         ->and($listResponse->requestId)
@@ -97,16 +88,18 @@ it('lists and removes stable names within one node', function (): void {
         ->and($listMock->getLastPendingRequest()?->headers()->get('X-Orbit-Request-Id'))
         ->toBe('11111111-1111-4111-8111-111111111111');
 
-    $remove = new RemoveFirewallRuleRequest(7, 'private web/edge');
+    $remove = new RemoveFirewallRuleRequest(7, '8000:8100', 'any', 'udp');
     $removeMock = new MockClient([
         RemoveFirewallRuleRequest::class => MockResponse::make(firewall_sdk_envelope('allow', backendStatus: 'absent')),
     ]);
     $removeResponse = firewall_sdk_connector($removeMock)->send($remove)->dto();
 
     expect($remove->getMethod())
-        ->toBe(Method::DELETE)
+        ->toBe(Method::POST)
         ->and($remove->resolveEndpoint())
-        ->toBe('/api/v1/nodes/7/firewall-rules/private%20web%2Fedge')
+        ->toBe('/api/v1/nodes/7/firewall-rules/remove')
+        ->and($remove->body()->all())
+        ->toBe(['port' => '8000:8100', 'source' => 'any', 'protocol' => 'udp'])
         ->and($removeResponse)
         ->toBeInstanceOf(OperationResponse::class)
         ->and($removeResponse->kind)->toBe('firewall.remove')
@@ -118,15 +111,7 @@ it('lists and removes stable names within one node', function (): void {
 it('throws a structured 503 failure when the firewall backend is inactive', function (
     string $requestClass,
 ): void {
-    $request = $requestClass === RemoveFirewallRuleRequest::class
-        ? new RemoveFirewallRuleRequest(7, 'private-web')
-        : new $requestClass(
-            nodeId: 7,
-            name: 'private-web',
-            source: '192.0.2.0/24',
-            protocol: 'tcp',
-            port: '443',
-        );
+    $request = new $requestClass(7, '443', '192.0.2.0/24', 'tcp');
     $mock = new MockClient([
         $request::class => MockResponse::make(
             [
@@ -188,7 +173,7 @@ function firewall_sdk_data(string $action, ?string $backendStatus = 'active'): a
         'id' => 11,
         'node_id' => 7,
         'node' => 'app-dev',
-        'name' => 'private-web',
+        'label' => 'office web',
         'action' => $action,
         'source' => '192.0.2.0/24',
         'protocol' => 'tcp',
@@ -211,28 +196,14 @@ function firewall_sdk_request_id(): string
 }
 
 it('forwards the exact firewall admission retry key', function (): void {
-    $allow = new AllowFirewallRuleRequest(7, 'proof', null, null, '65431', 'proof-allow');
-    $remove = new RemoveFirewallRuleRequest(7, 'proof', 'proof-remove');
+    $allow = new AllowFirewallRuleRequest(7, '65431', idempotencyKey: 'proof-allow');
+    $remove = new RemoveFirewallRuleRequest(7, '65431', idempotencyKey: 'proof-remove');
     expect($allow->headers()->get('Idempotency-Key'))->toBe('proof-allow');
     expect($remove->headers()->get('Idempotency-Key'))->toBe('proof-remove');
 });
 
-it('starts a bodyless native firewall inspection and preserves the operation contract', function (): void {
-    $request = new InspectFirewallRequest(7, 'inspect-node-7');
-    $mock = new MockClient([
-        $request::class => MockResponse::make([
-            'data' => ['id' => 42, 'kind' => 'firewall.inspect', 'target_type' => 'node_firewall', 'target_id' => 7,
-                'status' => 'queued', 'sequence' => 1, 'result' => null],
-            'meta' => ['request_id' => firewall_sdk_request_id()],
-        ], 202),
-    ]);
-
-    $operation = firewall_sdk_connector($mock)->send($request)->dto();
-
-    expect($request->getMethod())->toBe(Method::POST)
-        ->and($request->resolveEndpoint())->toBe('/api/v1/nodes/7/firewall-inspection')
-        ->and($mock->getLastPendingRequest()?->headers()->get('Idempotency-Key'))->toBe('inspect-node-7')
-        ->and($request)->not->toBeInstanceOf(HasBody::class)
-        ->and($operation)->toBeInstanceOf(OperationResponse::class)
-        ->and($operation->kind)->toBe('firewall.inspect')->and($operation->status)->toBe('queued');
+it('reads an absent label as null', function (): void {
+    $response = FirewallRuleResponse::fromGatewayData([...firewall_sdk_data('deny'), 'label' => null, 'protocol' => 'any'], firewall_sdk_request_id());
+    expect($response->label)->toBeNull()
+        ->and($response->toArray())->toMatchArray(['label' => null, 'protocol' => 'any']);
 });

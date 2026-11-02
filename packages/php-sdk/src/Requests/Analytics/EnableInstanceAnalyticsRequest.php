@@ -21,7 +21,7 @@ final class EnableInstanceAnalyticsRequest extends GatewayRequest implements Has
     protected Method $method = Method::POST;
 
     /** @param list<string> $hosts
-     * @param list<array<string,mixed>> $goals
+     * @param  list<array<string,mixed>>  $goals
      */
     public function __construct(
         private readonly int $instanceId,

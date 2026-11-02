@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use App\Support\Console\StandardInputReader;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Saloon\Http\Faking\MockClient;
+use Tests\Support\FakeStandardInput;
 
 require_once __DIR__.'/../../Helpers/DatabaseOperationFixtures.php';
 
@@ -40,8 +42,9 @@ describe('database user contract', function (): void {
     });
 
     it('renders a PostgreSQL replication user from recorded create and list responses', function (): void {
-        run_database_operation_contract('database-connections/database-user-create/replication', 'database:user:create', ['slug' => 'catalog', '--username' => 'sync_reader', '--password' => 'fixture-secret', '--replication' => true], 'database-connections/database-user-create/replication.human.txt', 0);
-        run_database_operation_contract('database-connections/database-user-create/replication', 'database:user:create', ['slug' => 'catalog', '--username' => 'sync_reader', '--password' => 'fixture-secret', '--replication' => true, '--json' => true], 'database-connections/database-user-create/replication.json', 0);
+        app()->instance(StandardInputReader::class, FakeStandardInput::piped("fixture-secret\n"));
+        run_database_operation_contract('database-connections/database-user-create/replication', 'database:user:create', ['slug' => 'catalog', '--username' => 'sync_reader', '--replication' => true], 'database-connections/database-user-create/replication.human.txt', 0);
+        run_database_operation_contract('database-connections/database-user-create/replication', 'database:user:create', ['slug' => 'catalog', '--username' => 'sync_reader', '--replication' => true, '--json' => true], 'database-connections/database-user-create/replication.json', 0);
         run_contract('database-connections/database-user-list/replication', 'database:user:list', ['slug' => 'catalog'], 'database-connections/database-user-list/replication.human.txt', 0);
         run_contract('database-connections/database-user-list/replication', 'database:user:list', ['slug' => 'catalog', '--json' => true], 'database-connections/database-user-list/replication.json', 0);
     });

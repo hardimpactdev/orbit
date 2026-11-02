@@ -2,10 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Actions\Routes\AdmitRouteOperationAction;
 use App\Actions\Routes\RouteTargetState;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Routes\RouteOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Instance;
@@ -27,24 +25,16 @@ beforeEach(function (): void {
     $this->route->targets()->create(['instance_id' => $this->instance->id, 'position' => 0]);
     $this->socket = new FakeRoutePublicationSocket;
     app()->instance(WebSocketClient::class, $this->socket);
-    $this->runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
-    config(['dependency_detection.services_node_id' => $this->control->id, 'swamp.run_token' => 'fixture.fake', 'swamp.direct_writers' => []]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
 });
 
-it('admits the immutable empty target set without host work or a callback', function (): void {
-    $this->deleteJson('/api/v1/routes/'.$this->route->id.'/target')->assertAccepted();
-    $operation = Operation::query()->sole();
+it('clears the target set as a record-only write without a run or an Operation', function (): void {
+    $this->deleteJson('/api/v1/routes/'.$this->route->id.'/target')->assertOk()
+        ->assertJsonPath('data.id', $this->route->id)->assertJsonPath('data.targets', []);
     expect($this->route->fresh()->targets)->toBeEmpty()
-        ->and($operation->worker)->toBeNull();
-    expect($this->socket->sent)->toHaveCount(1);
-    $request = $this->socket->sent[0]['payload'];
-    expect($request['workflowIdOrName'])->toBe('operation-route-target-unset')
-        ->and($request['inputs']['intent'])->toBe(['route_id' => $this->route->id, 'target_ids' => []]);
-    $path = '/api/v1/direct-operations/'.$operation->id;
-    $this->postJson($path.'/result', ['run_id' => $this->runId, 'status' => 'succeeded',
-        'started_at' => '2026-10-31T04:30:00.000Z', 'finished_at' => '2026-10-31T04:30:01.000Z', 'result' => ['ready' => true]])
-        ->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
+        ->and(Operation::query()->count())->toBe(0)
+        ->and($this->socket->sent)->toBe([]);
+    $this->deleteJson('/api/v1/routes/'.$this->route->id.'/target')->assertOk();
 });
 
 it('preserves active targets and refuses ownership drift', function (): void {
@@ -54,13 +44,4 @@ it('preserves active targets and refuses ownership drift', function (): void {
     expect(fn () => app(RouteTargetState::class)->clear($this->route, []))->toThrow(ResourceOperationException::class, 'owner changed');
     expect($this->route->targets()->pluck('instance_id')->all())->toBe([$this->instance->id]);
     expect(Operation::query()->count())->toBe(0);
-});
-
-it('preserves a later target association when the immutable unset run completes', function (): void {
-    $operation = app(AdmitRouteOperationAction::class)->clearTarget($this->route);
-    $this->route->targets()->create(['instance_id' => $this->instance->id, 'position' => 0]);
-    app(RouteOperationProjection::class)->apply($operation, ['run_id' => $this->runId, 'status' => 'succeeded',
-        'started_at' => '2026-10-31T04:30:00.000Z', 'finished_at' => '2026-10-31T04:30:01.000Z', 'result' => ['ready' => true]]);
-    expect($operation->fresh()->status->value)->toBe('succeeded')
-        ->and($this->route->targets()->pluck('instance_id')->all())->toBe([$this->instance->id]);
 });

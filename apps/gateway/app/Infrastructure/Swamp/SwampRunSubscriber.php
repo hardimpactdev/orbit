@@ -28,7 +28,7 @@ final class SwampRunSubscriber
     /** @var array<string,int> */
     private array $requests = [];
 
-    /** @var array<int,true> One lookup per uncertain Operation in this observer, never a timer retry. */
+    /** @var array<string,true> One lookup per uncertain start or timeout, never a timer retry. */
     private array $lookedUp = [];
 
     /** @var array<int,int> Gateway deadlines, populated by committed records and startup recovery. */
@@ -74,7 +74,7 @@ final class SwampRunSubscriber
     {
         $operation = Operation::query()->find($operationId);
         if ($operation !== null) {
-            $operation = app(ExpireOperationAction::class)->execute($operation);
+            $operation = $this->expire($operation);
         }
         if ($operation === null || ($operation->status->terminal() && ! ExpireOperationAction::awaitsSettlement($operation))) {
             $request = $this->following[$operationId]['request'] ?? null;
@@ -86,14 +86,15 @@ final class SwampRunSubscriber
             return;
         }
         $definition = app(DirectOperation::class)->definition($operation->kind);
-        $deadline = $definition === null || ExpireOperationAction::awaitsSettlement($operation) ? null : OperationRunBudgets::deadline($operation);
+        $deadline = $definition === null || ExpireOperationAction::awaitsSettlement($operation) || isset($this->queued[$operationId]) ? null : OperationRunBudgets::deadline($operation);
         if ($deadline !== null) {
             $this->deadlines[$operationId] = $deadline->getTimestamp();
         }
+        $lookup = (ExpireOperationAction::awaitsSettlement($operation) ? 'timeout:' : 'start:').$operationId;
         if ($definition !== null && app(DirectOperation::class)->usesNativeTerminal($operation)
-            && ! isset($operation->state['swamp_run_id']) && $operation->error_code === 'swamp.start_uncertain'
-            && ! isset($this->lookedUp[$operationId])) {
-            $this->lookedUp[$operationId] = true;
+            && ! isset($operation->state['swamp_run_id']) && ($operation->error_code === 'swamp.start_uncertain' || ExpireOperationAction::awaitsSettlement($operation))
+            && ! isset($this->lookedUp[$lookup])) {
+            $this->lookedUp[$lookup] = true;
             try {
                 Bus::dispatch(new RecoverUnboundSwampRun($operation->id));
                 $operation->refresh();
@@ -116,6 +117,11 @@ final class SwampRunSubscriber
     /** One pass beside the existing Gateway observer's Reverb receive loop. */
     public function pass(): void
     {
+        OperationRunBudgets::duringTick(fn () => $this->receivePass());
+    }
+
+    private function receivePass(): void
+    {
         if (! $this->started) {
             $this->recover();
             $this->started = true;
@@ -126,7 +132,7 @@ final class SwampRunSubscriber
             }
             $operation = Operation::query()->find($operationId);
             if ($operation !== null) {
-                app(ExpireOperationAction::class)->execute($operation);
+                $this->expire($operation);
             }
             unset($this->deadlines[$operationId]);
             $this->follow($operationId);
@@ -170,6 +176,24 @@ final class SwampRunSubscriber
             $this->close();
             $this->scheduleReconnect();
         }
+    }
+
+    /** At a bound deadline, let the existing single history read arbitrate before any failure alert. */
+    private function expire(Operation $operation): Operation
+    {
+        $deadline = OperationRunBudgets::deadline($operation);
+        $run = $operation->state['swamp_run_id'] ?? null;
+        if (! $operation->status->terminal() && $deadline !== null && ! $deadline->isFuture()
+            && is_string($run) && Str::isUuid($run) && app(DirectOperation::class)->usesNativeTerminal($operation)) {
+            if (! isset($this->queued[$operation->id])) {
+                Bus::dispatch(new ProjectSwampTerminal($operation->id, $run, null, atDeadline: true));
+                $this->queued[$operation->id] = $run;
+            }
+
+            return $operation->refresh();
+        }
+
+        return app(ExpireOperationAction::class)->execute($operation);
     }
 
     private function scheduleReconnect(): void
@@ -232,6 +256,11 @@ final class SwampRunSubscriber
         }
         $event = $message['event'] ?? null;
         $run = is_array($event) ? ($event['run'] ?? null) : null;
+        if ($type === 'event' && $entry['attached'] && is_array($event) && is_int($event['seq'] ?? null) && $event['seq'] > 0
+            && (! isset($event['parentRunId']) || $event['parentRunId'] === $entry['run'])) {
+            app(NativeRunProgress::class)->apply($operationId, $entry['run'], $event);
+        }
+
         if ($type !== 'event' || ! $entry['attached'] || ! is_array($event) || isset($event['parentRunId'])
             || ! is_int($event['seq'] ?? null) || $event['seq'] < 1
             || ! in_array($event['kind'] ?? null, ['completed', 'cancelled'], true) || ! is_array($run)
@@ -245,6 +274,12 @@ final class SwampRunSubscriber
     private function project(int $operationId, ?string $status): void
     {
         $entry = $this->following[$operationId];
+        if (($this->queued[$operationId] ?? null) === $entry['run']) {
+            $current = Operation::query()->find($operationId);
+            if ($current === null || ! ExpireOperationAction::awaitsSettlement($current)) {
+                return;
+            }
+        }
         try {
             Bus::dispatch(new ProjectSwampTerminal($operationId, $entry['run'], $status));
             $this->queued[$operationId] = $entry['run'];

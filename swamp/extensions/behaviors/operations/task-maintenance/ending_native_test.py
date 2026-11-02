@@ -99,9 +99,9 @@ export const behavior={type:"@fixture/destroy",version:"2026.11.01.1",resources:
             (ROOT / "workflows/workflow-task-workspace-teardown.yaml").read_text()
         )
         for job in flow["jobs"]:
-            job.pop("target", None)
+            job.pop("target", None); job.pop("labels", None)
             for step in job["steps"]:
-                self.assertEqual(step.pop("target"), "orbit-node-209")
+                self.assertEqual(step.pop("labels"), {"role": "swamp"})
                 step.pop("labels", None)
                 for key, value in list(step["task"].get("inputs", {}).items()):
                     if isinstance(value, str):
@@ -129,10 +129,10 @@ export const behavior={type:"@fixture/destroy",version:"2026.11.01.1",resources:
         )
         self.flow["name"] = "task-repository-fixture"
         for job in self.flow["jobs"]:
-            self.assertEqual(job.pop("target"), "orbit-node-209")
+            self.assertEqual(job.pop("labels"), {"role": "swamp"})
             job.pop("labels", None)
             for step in job["steps"]:
-                self.assertEqual(step.pop("target"), "orbit-node-209")
+                self.assertEqual(step.pop("labels"), {"role": "swamp"})
                 step.pop("labels", None)
                 inputs = step["task"].get("inputs", {})
                 for key, value in list(inputs.items()):

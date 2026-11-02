@@ -101,7 +101,7 @@ final readonly class TaskVmDestroyIntent
         if ($workspace !== null && $node instanceof Node) {
             $routeIds = app(NodeRemovalPolicy::class)->workspaceRouteIds($node, $workspace);
             foreach ($workspace->routes()->whereIn('routes.id', $routeIds)->orderBy('routes.id')->get() as $route) {
-                $capture = app(NativeRouteLifecycleInput::class)->capture($route, [], removing: true, deletedWorkloadNodeId: $node->id);
+                $capture = app(NativeRouteLifecycleInput::class)->capture($route, [], removing: true, deletedWorkloadNodeId: $node->id, restorable: false);
                 if ($capture['execution_secrets'] !== []) {
                     throw new \LogicException('Deleted workspace withdrawal must not write guest environment material.');
                 }
@@ -198,6 +198,7 @@ final readonly class TaskVmDestroyIntent
         }
     }
 
+    /** The sweep selects group-less VMs; cancel selects group VMs. */
     private function available(TaskVm $vm, ?Instance $workspace = null, ?Operation $ownOperation = null): void
     {
         $operations = Operation::query()->whereNotIn('status', OperationStatus::terminalValues())

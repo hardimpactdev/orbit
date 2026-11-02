@@ -29,7 +29,7 @@ Deno.test("withdrawal certificate cleanup stays visible per scope after the obso
         true,
     );
     const cleanup = steps.find((step) => step.name === "withdraw_cleanup")!;
-    assertEquals(cleanup.target, "orbit-node-209");
+    assertEquals(cleanup.labels, { role: "swamp" });
     assertEquals(cleanup.forEach, {
         item: "part",
         in: "${{ inputs.intent.route_mutations.forward.cleanup }}",

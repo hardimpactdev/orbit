@@ -33,7 +33,8 @@
                 "started_at": null,
                 "finished_at": "2026-01-01T00:00:00+00:00",
                 "poll_after_seconds": null,
-                "assistance": null
+                "assistance": null,
+                "error": null
             },
             "deployment": null
         },

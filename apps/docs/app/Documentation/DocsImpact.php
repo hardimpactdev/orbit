@@ -95,7 +95,9 @@ final readonly class DocsImpact
                     }
                 }
             }
-            if (preg_match('#(?:^|/)(?:tests?|node_modules)/#', $path) === 1) {
+            // Test inputs need no docs owner: test folders, test files beside their source, and swamp/proof's
+            // topology proof fixtures and parity checks. A test only references the codes its source owns.
+            if (preg_match('#(?:^|/)(?:tests?|node_modules)/|^swamp/proof/|(?:^|/)test_[^/]*\.py$|_test\.(?:ts|py)$#', $path) === 1) {
                 continue;
             }
 
@@ -1463,6 +1465,10 @@ final readonly class DocsImpact
         $path = preg_replace('/\{[^}]+\}/', '{}', trim($path, '/')) ?? trim($path, '/');
         if (str_starts_with($path, 'api/')) {
             $path = substr($path, 4);
+        }
+
+        if (str_starts_with($path, 'v1/')) {
+            $path = substr($path, 3);
         }
 
         return $path;

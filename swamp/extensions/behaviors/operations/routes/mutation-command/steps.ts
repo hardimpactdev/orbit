@@ -1,7 +1,8 @@
 import { nodeCertificateGroups } from "../../certificates/batch_steps.ts";
+import { behaviorName } from "../../_lib/behavior_name.ts";
 type Fields = Record<string, unknown>;
 const expr = (value: string) => "${{ " + value + " }}";
-const coordinator = { target: "orbit-node-209" };
+const coordinator = { labels: { role: "swamp" } };
 const completed = { type: "always" };
 /** Compose native children under the real parent Operation, without callbacks or effects in TS. */
 export function routeMutationSteps(
@@ -14,6 +15,8 @@ export function routeMutationSteps(
     withdrawal = false,
 ): Fields[] {
     const side = `${intent}.${mode}`;
+    const artifact = (phase: string, kind: string, item = "self.part") =>
+        `${intent}.artifacts.${kind}[${item}.${phase}.${kind}]`;
     const predicate = guard?.replace(/^\$\{\{\s*|\s*\}\}$/g, "");
     const selected = (list: string) => expr(list);
     const common = {
@@ -101,12 +104,16 @@ export function routeMutationSteps(
             host_keys: expr("self.part.host_keys"),
             control_node_id: expr("self.part.control_node_id"),
             connection: expr("self.part.connection"),
-            before: expr(`self.part.${from}.caddy`),
-            after: expr(`self.part.${to}.caddy`),
+            before: expr(artifact(from, "caddy")),
+            after: expr(artifact(to, "caddy")),
             direction: "forward",
             retain_removed: retainRemoved,
             alternatives: expr(
-                "[self.part.before.caddy,self.part.prepared.caddy,self.part.withdrawn.caddy,self.part.after.caddy]",
+                `[${
+                    ["before", "prepared", "withdrawn", "after"].map((phase) =>
+                        artifact(phase, "caddy")
+                    ).join(",")
+                }]`,
             ),
         });
     }
@@ -120,10 +127,14 @@ export function routeMutationSteps(
                 control_node_id: expr("self.part.control_node_id"),
                 connection: expr("self.part.connection"),
                 host_keys: expr("self.part.host_keys"),
-                before: expr("self.part.before.dns"),
-                after: expr(`self.part.${stage}.dns`),
+                before: expr(artifact("before", "dns")),
+                after: expr(artifact(stage, "dns")),
                 alternatives: expr(
-                    "[self.part.before.dns,self.part.prepared.dns,self.part.withdrawn.dns,self.part.after.dns]",
+                    `[${
+                        ["before", "prepared", "withdrawn", "after"].map(
+                            (phase) => artifact(phase, "dns"),
+                        ).join(",")
+                    }]`,
                 ),
             },
         );
@@ -132,7 +143,9 @@ export function routeMutationSteps(
         child(
             "dns_grace",
             "route-dns-grace",
-            `${side}.publications.exists(p,p.before.dns != null && p.before.dns.digest != p.after.dns.digest) ? [{}] : []`,
+            `${side}.publications.exists(p,p.before.dns != null && ${
+                artifact("before", "dns", "p")
+            }.digest != ${artifact("after", "dns", "p")}.digest) ? [{}] : []`,
             {},
         );
     }
@@ -149,8 +162,8 @@ export function routeMutationSteps(
             host_keys: expr("self.part.host_keys"),
             control_node_id: expr("self.part.control_node_id"),
             connection: expr("self.part.connection"),
-            before: expr("self.part.before.php"),
-            after: expr("self.part.after.php"),
+            before: expr(artifact("before", "php")),
+            after: expr(artifact("after", "php")),
             direction: mode,
         });
     }
@@ -227,9 +240,7 @@ export function routeMutationSteps(
         task: {
             type: "behavior",
             behaviorType: "@nckrtl/route-mutation-command",
-            behaviorName: expr(
-                `"${name}-result-" + run.id + "-" + string(self._index)`,
-            ),
+            behaviorName: behaviorName(name + "-result", undefined, true),
             methodName: "result",
             inputs: {
                 stage: expr("self.stage"),

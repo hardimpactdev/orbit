@@ -1,4 +1,0 @@
-{
-    "kinds": ["conn.pairing_revoke"],
-    "workflow": "operation-conn-pairing-revoke"
-}

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Operations\OperationOutcome;
+use App\Domain\Operations\OperationStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Activity;
@@ -60,10 +61,10 @@ it('starts sync with full public intent and one shared vault execution copy on r
     Http::assertNothingSent();
 });
 
-it('rolls back admission when the canonical vault copy is refused', function (): void {
+it('fails the admitted Operation before its run when the canonical vault copy is refused', function (): void {
     $this->copyFails = true;
     $this->postJson('/api/v1/vault/sync')->assertStatus(503)->assertJsonPath('error.code', 'swamp.vault_sync_unavailable');
-    expect(Operation::query()->count())->toBe(0);
+    expect(Operation::query()->sole())->status->toBe(OperationStatus::Failed)->error_code->toBe('swamp.vault_sync_unavailable');
     expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put']);
 });
 

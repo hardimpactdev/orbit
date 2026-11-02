@@ -9,6 +9,7 @@ if (is_array($directWriters)) {
 
 return [
     'address' => env('ORBIT_SWAMP_ADDRESS', 'swamp.orbit'),
+    'proof_club_api_key' => env('ORBIT_SWAMP_PROOF_CLUB_API_KEY', ''),
     'read_token' => env('ORBIT_SWAMP_READ_TOKEN', ''),
     'run_token' => env('ORBIT_SWAMP_RUN_TOKEN', ''),
     'direct_writers' => $directWriters,

@@ -1496,7 +1496,7 @@ export function analyzeYaml(
       (step.target !== undefined || step.labels !== undefined) &&
       worker209(path) &&
       (step.labels === undefined ||
-        Object.keys(labels).join() === "node" && labels.node === "209") &&
+        Object.keys(labels).join() === "role" && labels.role === "swamp") &&
       Object.keys(task).sort().join() ===
         "behaviorName,behaviorType,inputs,methodName,type" &&
       task.type === "behavior" && task.behaviorType === "command/shell" &&
@@ -1541,6 +1541,20 @@ export function analyzeYaml(
     return field.join(".") === "transport.identityContent" ||
       field.length === 4 && field[0] === "hosts" && /^\d+$/.test(field[1]) &&
         field[2] === "transport" && field[3] === "identityContent";
+  };
+  // Script audit Q-SECRET (Nick, 2026-11-02): official cfgmgmt file writes a vault value as 0600 file content on the Node.
+  // Its data keeps only the content hash, so a whole vault.get may be that content and nothing else.
+  const protectedFileContent = (path: string[]) => {
+    if (
+      !file.startsWith("workflows/") || path.length !== 7 || path[0] !== "jobs" ||
+      path[2] !== "steps" || path[4] !== "task" || path[5] !== "globalArgs" ||
+      path[6] !== "content"
+    ) return false;
+    const jobs = Array.isArray(data.jobs) ? data.jobs : [];
+    const steps = object(jobs[Number(path[1])]).steps;
+    const task = object(object(Array.isArray(steps) ? steps[Number(path[3])] : undefined).task);
+    return task.type === "behavior" && task.behaviorType === "@swamp/cfgmgmt/file" &&
+      task.methodName === "apply" && object(task.globalArgs).mode === "0600" && worker209(path);
   };
   const wholeVault = (value: unknown) => {
     if (typeof value !== "string") return false;
@@ -1600,7 +1614,7 @@ export function analyzeYaml(
       ) add("secret-env-source");
       if (
         /vault\.get\s*\(/.test(value) &&
-        !((nativeIdentity || nativeStdin) && wholeVault(value)) && !(vaultEnv &&
+        !((nativeIdentity || nativeStdin || protectedFileContent(path)) && wholeVault(value)) && !(vaultEnv &&
           /^\s*\$\{\{\s*vault\.get\([\s\S]*\)\s*\}\}\s*$/.test(
             value,
           ) &&
@@ -2050,7 +2064,8 @@ export async function toolFindings(
           ],
           JSON.stringify({
             source,
-            phase_seconds: phases.get(file) ?? 0,
+            phase_seconds: phases.get(file)?.seconds ?? 0,
+            phase_ssh: phases.get(file)?.ssh ?? false,
             sources: Object.fromEntries(
               [...sources].filter(([path]) =>
                 path.endsWith(".py") &&
@@ -2118,8 +2133,8 @@ export function analyze(
   const shellPhases = Object.fromEntries(
     [...phases].filter(([file]) => file.endsWith(".sh"))
       .map((
-        [file, seconds],
-      ) => [file, { source: sources.get(file), seconds }]),
+        [file, bound],
+      ) => [file, { source: sources.get(file), seconds: bound.seconds }]),
   );
   let boundedShell: Record<string, boolean> = {};
   if (Object.keys(shellPhases).length) {

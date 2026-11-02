@@ -13,6 +13,6 @@ final readonly class AdoptToolAction
 
     public function execute(AdoptToolData $data): Operation
     {
-        return $this->operations->execute('adopt', $data->nodeId, $data->manager, $data->package, $data->versionConstraint);
+        return $this->operations->execute('adopt', $data->nodeId, $data->manager, $data->package, $data->versionConstraint, repository: $data->repository);
     }
 }

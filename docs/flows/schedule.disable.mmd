@@ -1,0 +1,58 @@
+sequenceDiagram
+  %% Target design: ADR 0244 native Swamp schedules, one Swamp workflow per Schedule (Nick 2026-11-02), nothing installed on Nodes; R1.
+  %% status: draft
+  %% command: schedule:disable
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>reached over ssh
+  CLI->>GW: schedule:disable 7f3c…<br/>Schedule UUID
+  %%> Command:
+  %%> - `orbit schedule:disable 7f3c9a2e-41d0-4b8a-9c11-2f6e0d5b7a10`
+  %%> - syntax: `<schedule> [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the UUID of the Schedule, as `schedule:list` shows it
+  %%> When:
+  %%> - to stop the calendar fires for a while; `schedule:enable` starts them again
+  %%> Not stopped:
+  %%> - a fire that already started finishes, and its result is still recorded
+  Note over GW: Validate the Schedule<br/>Schedule 7f3c… · Instance 42
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12, which runs Instance 42
+  %%> - Schedule 7f3c… is active, not failed or removing
+  %%> - its trigger is native; a per-minute production scheduler keeps its Node timer and cannot be disabled here
+  %%> Already disabled:
+  %%> - the trigger is removed again; disable is idempotent
+  GW->>SW: Remove the trigger<br/>workflow.trigger.remove
+  %%> What it does:
+  %%> - removes the cron trigger of `schedule-7f3c…` on serve (Node 209); the workflow stays
+  %%> - there is no Node work, so no run starts (R1)
+  alt Swamp confirms
+    SW-->>GW: trigger removed<br/>no next fire
+    %%> Returns:
+    %%> - the workflow has no trigger; serve starts no new fire
+    Note over GW: Record result<br/>desired state: disabled
+    %%> Result:
+    %%> - Schedule 7f3c… is recorded as disabled, only after Swamp confirms
+    %%> - task #5140 is recorded as succeeded at once (R1)
+    GW-->>CLI: Schedule disabled<br/>no next fire
+    %%> What you get:
+    %%> - the result at once; there is nothing to follow
+  else Swamp refuses or is down
+    SW--xGW: no confirmation<br/>refused or unreachable
+    %%> When:
+    %%> - serve on 209 does not answer, or refuses the trigger
+    Note over GW: Keep the prior state<br/>desired state: enabled
+    %%> Result:
+    %%> - Schedule 7f3c… stays enabled; nothing changed
+    %%> Retry:
+    %%> - run the same command again; it is safe
+    GW--xCLI: 503 publish unavailable<br/>swamp.schedule_publish_unavailable
+    %%> Returns:
+    %%> - the error code; the Schedule is unchanged
+  end

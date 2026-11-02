@@ -40,9 +40,10 @@ base before the extraction, so the frozen checker enforces the same contract.
 
 The required Gateway boot check compares the loaded `DirectOperation` registry,
 including extension contributions, with `config/gateway-workflow-grants.json`.
-Each declared workflow needs one exact entry for `user:orbit-gateway` with both
-`run` and `read`. Missing actions or workflows fail CI. Wildcards, other
-principals or actions, duplicate entries and retired declaration entries fail.
+`user:orbit-gateway` needs exactly one `*` entry with `run` and `read`, which
+covers every workflow. Only a declared schedule input producer has its own exact
+entry, with `run`, `read` and `write`. A missing wildcard, another exact entry,
+other principals or actions, and duplicate or retired entries fail CI.
 Version 2 also checks each kind's public `execution_copies` declarations against the manifest's `vaults` entries. Each entry names one exact vault, an anchored key pattern, and only `write` plus same-key `read`. Missing, broader, duplicate or retired entries fail. The approved patterns cover positive database intent IDs, Vault-sync and Conn-revoke UUIDv4 keys, and the existing exact bootstrap identity key.
 
 Update the declaration and expected policy together. The check also runs when
@@ -113,11 +114,13 @@ generic extension or field-name exemption: raw input values, concatenation,
 `identityFile`, other method inputs, argv and other extension types remain outside this
 recognition. Existing command-env checks remain in place.
 
+Official `@swamp/cfgmgmt/file` `apply` also accepts one whole `vault.get(...)` expression as `task.globalArgs.content` when the same step sets `mode: '0600'` and selects a 209 worker (script audit Q-SECRET, Nick, 2026-11-02). Its data keeps only the content hash. Any other field, mode or concatenation stays a `vault-placement` finding.
+
 Official `@swamp/ssh` `exec` also accepts one whole `vault.get(...)` expression at
 `task.inputs.stdin`. This applies only to workflow `behavior` tasks with
 `behaviorType: '@swamp/ssh'` or `model_method` tasks with
 `modelType: '@swamp/ssh'`, and literal `methodName: exec`. The effective placement
-must select Node 209 with `target: orbit-node-209` or labels `{node: '209'}`.
+must select Node 209 with `labels: {role: swamp}`, `target: orbit-node-209` or labels `{node: '209'}`.
 Use target-only placement for new workflows. The checks accept a single target
 or node label, including inherited placement. Matching dual selectors remain
 accepted during the existing workflow migration; conflicting selectors fail.
@@ -151,6 +154,8 @@ The scanner resolves TypeScript literals, templates, tagged templates,
 concatenation, constant aliases and joins. It inspects nested subprocesses and
 reports evidence for multi-command behavior files. Custom sleeps, timer helpers,
 polling, retries and lock calls are counted separately.
+
+A phase script invoked by official `@swamp/ssh.exec` may poll checked, read-only Incus VM state under a literal `timeout` argv. The gate binds the script body to its shipped source and checks every invocation, including conditional branches. Every body-output key occurrence must belong to a proved argv slot; bracket keys, escaped or joined keys, history reads, concatenation and unresolved selectors cannot earn a bound. It accepts fixed-interval `incus list --format json` observations that propagate command failures. Mutations, suppressed read failures, computed intervals and missing or computed bounds remain rejected. This does not admit local-shell Incus polls or another SSH transport.
 
 The approved Route private DNS grace is the sole sleep exception. It matches only
 `workflows/workflow-route-dns-grace.yaml`, job `grace`, step
@@ -250,9 +255,9 @@ retained Gateway client and therefore keeps that dependency in the shape audit.
 
 The required jobs are `Swamp shape gate`, `Swamp workflow validate` and
 `Swamp Deno tests`. The reusable workflow splits every Operations test file
-across ten parallel jobs with Deno's native `--shard` and directory flags.
+across eight parallel jobs with Deno's native `--shard` and directory flags.
 Four general shards exclude the database effect directories (`local-sql-effects/`,
-`read-effects/`, `create-effects/`, `write-effects/`, `server-create-effects/`)
+`read-effects/`, `write-effects/`)
 and `process-commands/`. Each excluded directory has its own job. The database
 engine cases use separate native test modules, so `--parallel` runs their
 unchanged effects concurrently. New files enter the general shards automatically,
@@ -267,9 +272,9 @@ cancelled or skipped shards fail
 the aggregate. The root `Required checks` continues to require this reusable
 workflow.
 
-The reusable workflow accepts `working-directory` and
-`base-ref`. Its bytes can be copied to Orbit's root `.github/workflows/` and called
-with `working-directory: swamp`; lane24 adds it to `Required checks`. Every
+The reusable workflow lives only in Orbit's root
+`.github/workflows/swamp-shape.yml`. It accepts `working-directory` and
+`base-ref`, and `Required checks` calls it with `working-directory: swamp`. Every
 workflow must validate on the checksum-verified runtime pin. All Operations Deno
 tests run with four workers per shard, including disposable database effect tests.
 

@@ -13,6 +13,8 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\DestroyInstanceRequest;
+use Orbit\Sdk\Requests\Instances\DisableInstanceAutoDeployRequest;
+use Orbit\Sdk\Requests\Instances\EnableInstanceAutoDeployRequest;
 use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
 use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
 use Orbit\Sdk\Requests\Instances\RenameInstanceRequest;
@@ -642,51 +644,45 @@ describe('instance:update', function (): void {
     });
 });
 
-describe('instance:update --auto-deploy', function (): void {
-    it('turns automatic deployment on, shows the gate, and sends only that field', function (): void {
+describe('instance:auto-deploy:enable and disable', function (): void {
+    it('turns automatic deployment on, shows the gate, and sends no body', function (): void {
         $payload = [...instance_payload(), 'production_user' => 'orbit-app-3', 'auto_deploy' => instance_auto_deploy_payload(['enabled' => true, 'gate' => 'Required checks', 'result' => 'up_to_date', 'commit' => str_repeat('c', 40)])];
-        $mock = MockClient::global([UpdateInstanceRequest::class => instance_mock_response(payload: $payload)]);
+        $mock = MockClient::global([EnableInstanceAutoDeployRequest::class => instance_mock_response(payload: $payload)]);
 
-        expect(Artisan::call('instance:update', ['instance' => '5', '--auto-deploy' => 'true']))->toBe(0);
+        expect(Artisan::call('instance:auto-deploy:enable', ['instance' => '5']))->toBe(0);
 
         expect(instance_source_text(Artisan::output()))->toContain('Auto deploy on, after Required checks passes', 'Auto deploy state up_to_date cccccccccccc')
-            ->not->toContain('Deployment branch')
-            ->and($mock->getLastRequest()?->body()->all())->toBe(['auto_deploy' => true]);
+            ->and($mock->getLastRequest())->toBeInstanceOf(EnableInstanceAutoDeployRequest::class);
     });
 
     it('warns when every commit deploys without a merge check', function (): void {
         $warning = 'The Project has no merge_check, so every new commit on the branch deploys without a check.';
         $payload = [...instance_payload(), 'production_user' => 'orbit-app-3', 'auto_deploy' => instance_auto_deploy_payload(['enabled' => true, 'warning' => $warning])];
-        MockClient::global([UpdateInstanceRequest::class => instance_mock_response(payload: $payload)]);
+        MockClient::global([EnableInstanceAutoDeployRequest::class => instance_mock_response(payload: $payload)]);
 
-        expect(Artisan::call('instance:update', ['instance' => '5', '--auto-deploy' => 'true']))->toBe(0);
+        expect(Artisan::call('instance:auto-deploy:enable', ['instance' => '5']))->toBe(0);
 
         expect(instance_source_text(Artisan::output()))->toContain('Auto deploy on, without a merge check', $warning);
     });
 
-    it('turns automatic deployment off together with the branch', function (): void {
-        $payload = instance_payload();
-        $payload['deployment_branch'] = 'release';
-        $mock = MockClient::global([UpdateInstanceRequest::class => instance_mock_response(payload: $payload)]);
+    it('turns automatic deployment off', function (): void {
+        $mock = MockClient::global([DisableInstanceAutoDeployRequest::class => instance_mock_response(payload: instance_payload())]);
 
-        expect(Artisan::call('instance:update', ['instance' => '5', '--branch' => 'release', '--auto-deploy' => 'false']))->toBe(0);
+        expect(Artisan::call('instance:auto-deploy:disable', ['instance' => '5']))->toBe(0);
 
-        expect(instance_source_text(Artisan::output()))->toContain('Deployment branch release', 'Auto deploy off')
-            ->and($mock->getLastRequest()?->body()->all())->toBe(['branch' => 'release', 'auto_deploy' => false]);
+        expect(instance_source_text(Artisan::output()))->toContain('Auto deploy off')
+            ->and($mock->getLastRequest())->toBeInstanceOf(DisableInstanceAutoDeployRequest::class);
     });
 
-    it('refuses a value other than true or false, and an update without a field, before it sends anything', function (array $options, string $code): void {
+    it('refuses an update without a field before it sends anything', function (): void {
         $mock = MockClient::global([UpdateInstanceRequest::class => instance_mock_response()]);
 
-        $this->artisan('instance:update', ['instance' => '5', '--json' => true, ...$options])
-            ->expectsOutputToContain($code)
+        $this->artisan('instance:update', ['instance' => '5', '--json' => true])
+            ->expectsOutputToContain('instance.update_required')
             ->assertExitCode(1);
 
         expect($mock->getLastRequest())->toBeNull();
-    })->with([
-        'yes' => [['--auto-deploy' => 'yes'], 'instance.auto_deploy_invalid'],
-        'nothing' => [[], 'instance.update_required'],
-    ]);
+    });
 
     it('shows a paused production Instance and how to resume it', function (): void {
         $payload = [...instance_payload(), 'production_user' => 'orbit-app-3', 'production_home' => '/home/orbit-app-3', 'auto_deploy' => instance_auto_deploy_payload([
@@ -697,7 +693,7 @@ describe('instance:update --auto-deploy', function (): void {
 
         expect(Artisan::call('instance:show', ['instance' => '5']))->toBe(0);
 
-        expect(instance_source_text(Artisan::output()))->toContain('Auto deploy paused rollback (deployment 41); run instance:update 5 --auto-deploy=true to resume');
+        expect(instance_source_text(Artisan::output()))->toContain('Auto deploy paused rollback (deployment 41); run instance:auto-deploy:enable 5 to resume');
     });
 });
 

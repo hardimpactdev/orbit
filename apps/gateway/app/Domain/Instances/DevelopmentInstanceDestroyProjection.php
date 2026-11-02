@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Actions\Instances\ProjectDirectInstanceDestroyAction;
+use App\Domain\DatabaseServers\DatabaseDestroyOwnedProjection;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
@@ -30,28 +31,29 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
         unset($native['execution_secrets']);
         $detail = ValidatedData::object($input['direct_destroy']);
         $database = ValidatedData::object($detail['database']);
-        if (($database['servers'] ?? []) !== []) {
-            throw new ResourceOperationException('instance.destroy_unsupported', 'Managed server removal requires its complete native parent.');
-        }
-        $public = Arr::only($input, ['removal_id', 'node_id', 'instance_id', 'project_id', 'name', 'force', 'inventory_digest', 'repository', 'source_pending', 'protected_source_roots', 'members', 'direct_destroy']);
+        // Owned server databases drop through the canonical server child; its password copies are named after the database intent.
+        [$database['servers'], $serverCopies] = DatabaseDestroyOwnedProjection::servers(ValidatedData::integer($database['intent_id']),
+            $database['servers'] ?? [], ! $operation->status->terminal());
+        $detail['database'] = $database;
+        $public = [...Arr::only($input, ['removal_id', 'node_id', 'instance_id', 'project_id', 'name', 'force', 'inventory_digest', 'repository', 'source_pending', 'protected_source_roots', 'members']), 'direct_destroy' => $detail];
         $programs = ValidatedData::object(app(InstanceDestroyTeardownSecret::class)->resolve($operation, $operation->target_id, '', 'teardown')->value);
-        $commands = [];
+        $teardown = [];
         foreach (InstanceLifecycleInput::members($programs) as $member) {
             $instance = Instance::query()->findOrFail(ValidatedData::integer($member['instance_id']));
-            foreach (InstanceLifecycleInput::members(['members' => $member['steps']]) as $position => $step) {
-                $index = count($commands);
-                $field = 'teardown_'.$index;
-                $sha = hash('sha256', ValidatedData::string($step['command']));
-                $commands[] = ['index' => $position, 'secret_field' => $field, 'timeout_seconds' => $step['timeout_seconds'], 'name' => $step['name']];
-                $secrets[$field] = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'instance-destroy-'.$operation->id.'-teardown-'.$index, json_encode([
-                    'command' => $step['command'], 'sha256' => $sha, 'directory' => $instance->checkout_path,
-                    'instance_id' => $instance->id, 'instance_name' => $instance->name, 'seed_path' => '', 'seed_commit' => '',
-                ], JSON_THROW_ON_ERROR));
+            foreach (InstanceLifecycleInput::members(['members' => $member['steps']]) as $step) {
+                $command = ValidatedData::string($step['command']);
+                $teardown[] = ['name' => $step['name'], 'command' => $command, 'sha256' => hash('sha256', $command), 'timeout_seconds' => $step['timeout_seconds'],
+                    'directory' => $instance->checkout_path, 'instance_id' => $instance->id, 'instance_name' => $instance->name, 'seed_path' => '', 'seed_commit' => ''];
             }
         }
+        $members = InstanceLifecycleInput::members($input);
+        $fetches = $input['force'] !== true && array_filter($members, static fn (array $member): bool => ($member['failed_creation'] ?? false) !== true) !== [];
+        $reference = InstanceGitHubReadTokens::reference($operation);
+        $git = $fetches ? app(InstanceGitHubReadTokens::class)->start($operation)
+            : app(SwampCommandStep::class)->executionCopy($reference['vault'], $reference['key'], '{"github_token":null}');
 
-        return ['intent' => [...$public, ...$native, 'source_capture' => $sourceCapture, 'teardown_commands' => $commands, 'execution_references_json' => json_encode(['git_read' => InstanceGitHubReadTokens::reference($operation)], JSON_THROW_ON_ERROR)],
-            'execution_secrets' => [...$secrets, 'git_read' => InstanceGitHubReadTokens::reference($operation)]];
+        return ['intent' => [...$public, ...$native, 'source_capture' => $sourceCapture, 'teardown_steps' => $teardown],
+            'execution_secrets' => [...$secrets, ...$serverCopies, 'git_read' => $git]];
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -87,10 +89,10 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
             return InstanceRemovalStep::SourcePreparation;
         }
 
-        return match (true) {
-            str_starts_with($step, 'remove-source') => InstanceRemovalStep::SourceFinalization,
-            str_starts_with($step, 'withdraw') => InstanceRemovalStep::RouteTargetClear,
-            preg_match('/\A(?:destroy-(?:schedules|processes|runtime|teardown|sqlite|database)|runtime|databases)/', $step) === 1 => InstanceRemovalStep::RuntimeCleanup,
+        return match ($step) {
+            'Remove the source', 'Check it is gone' => InstanceRemovalStep::SourceFinalization,
+            'Withdraw the Route', 'Remove DNS records' => InstanceRemovalStep::RouteTargetClear,
+            'Stop, remove Processes', 'Run teardown steps', 'Remove SQLite files', 'Drop owned databases' => InstanceRemovalStep::RuntimeCleanup,
             default => InstanceRemovalStep::SourcePreparation,
         };
     }

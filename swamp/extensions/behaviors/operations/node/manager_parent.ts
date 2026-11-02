@@ -3,7 +3,7 @@ import { Result, ToolIntentInput } from "../tools/direct-contract.ts";
 import { toolNode } from "../tools/node.ts";
 import { localTool } from "../tools/local.ts";
 
-const Manager = z.enum(["apt", "vp", "composer"]);
+const Manager = z.enum(["vp", "composer"]);
 const Parent = z.object({
   operation_id: z.number().int().positive(),
   node_id: z.number().int().positive(),
@@ -22,10 +22,7 @@ const ManagerInput = z.object({
   architecture: ToolIntentInput.shape.architecture,
   user: ToolIntentInput.shape.user,
   materialize: ToolIntentInput.shape.materialize,
-}).strict().refine((v) =>
-  (v.manager !== "apt" || v.materialize === null) &&
-  (v.materialize === null || v.materialize.user === v.user)
-);
+}).strict().refine((v) => v.materialize === null || v.materialize.user === v.user);
 export const ParentManagerInput = z.object({
   parent: Parent,
   manager: ManagerInput,
@@ -58,7 +55,6 @@ export function parentManagerAction(invoke = localTool) {
       intent: {
         operation_id: parent.operation_id,
         node_id: parent.node_id,
-        kind: "tool.manager_converge",
         run_id: parent.run_id,
         input: ToolIntentInput.parse({
           ...manager,

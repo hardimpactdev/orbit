@@ -1,13 +1,14 @@
 import { type Action, actionsFor } from "../api/actions";
 import { GatewayError } from "../api/client";
 import type { FirewallRule } from "../api/types";
+import { firewallIdentity } from "../fleet/firewall";
 import { recordTitle } from "../fleet/fleet";
 import { type Target, ui } from "./store";
 
 /** A firewall rule's menu names the rule; its page names what the rule does. Every other family uses one title. */
 const menuTitle = (target: Target): string =>
     target.kind === "firewall"
-        ? (target.row as FirewallRule).name
+        ? ((target.row as FirewallRule).label ?? firewallIdentity(target.row as FirewallRule))
         : recordTitle(target.kind, target.row);
 
 /** Opens the actions menu for a record, at the pointer or in the middle of the screen. */

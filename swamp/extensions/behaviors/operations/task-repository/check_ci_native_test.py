@@ -112,10 +112,10 @@ class NativeCheckCI(NativePublicationFixture):
 
         flow = rewrite(flow)
         for job in flow["jobs"]:
-            job.pop("target", None)
+            job.pop("target", None); job.pop("labels", None)
             job.pop("labels", None)
             for step in job["steps"]:
-                step.pop("target", None)
+                step.pop("target", None); step.pop("labels", None)
                 step.pop("labels", None)
         return flow
 

@@ -30,11 +30,7 @@ beforeEach(function (): void {
         'registry_token' => 'test-registry-secret',
     ]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
-    config(['swamp.run_token' => 'fixture.shared']);
-    $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
-        'kind' => 'started', 'workflowName' => 'operation-websocket-registry', 'runId' => (string) Str::uuid()]]];
-    app()->instance(WebSocketClient::class, $socket);
+    app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
 });
 
 it('commits once and reports pending until both current process boots confirm', function (): void {
@@ -59,7 +55,11 @@ it('commits once and reports pending until both current process boots confirm', 
         $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip])->withoutHeader('Authorization')
             ->getJson('/api/v1/websocket-operations/'.$operationId)->assertOk()
             ->assertJsonPath('operation.state', $i === 0 ? 'pending' : 'applied');
+        // The last current boot's report closes the task; no Swamp run confirms it.
+        expect(Operation::query()->findOrFail($response->json('data.id'))->status->value)->toBe($i === 0 ? 'queued' : 'succeeded');
     }
+    expect(Operation::query()->findOrFail($response->json('data.id'))->result)->toBe(['outcome' => 'succeeded', 'data' => ['backend' => 'applied']])
+        ->and(app(WebSocketClient::class)->sent)->toBe([]);
     Http::assertNothingSent();
 });
 

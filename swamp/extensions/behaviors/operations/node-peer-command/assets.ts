@@ -50,7 +50,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/node-peer-command",
-    version: "2026.10.31.1",
+    version: "2026.11.01.1",
     resources: {
         script: { schema: Output, lifetime: "1d", garbageCollection: 10 },
         state: { schema: State, lifetime: "1d", garbageCollection: 10 },

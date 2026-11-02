@@ -6,6 +6,7 @@ namespace App\Domain\Tools;
 
 enum ToolInventoryPackageKind: string
 {
+    case Deb = 'deb';
     case Formula = 'formula';
     case Cask = 'cask';
     case Global = 'global';

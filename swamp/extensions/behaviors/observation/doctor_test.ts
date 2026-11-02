@@ -96,7 +96,7 @@ Deno.test("one native exec per focused fact, without a script bundle or private 
 Deno.test("all retired families return zero checks and no recovery scope", () => {
     const value = intent();
     value.families = Families.filter((f) =>
-        !["node", "role", "process"].includes(f)
+        !["node", "role", "process", "firewall"].includes(f)
     );
     assertEquals(planReads(value), []);
     for (const family of report(value, {}).nodes[0].families) {
@@ -140,7 +140,12 @@ Deno.test("failed, absent, cancelled and malformed reads stay unverifiable witho
         const value = intent();
         value.nodes.push({
             ...node(14),
-            resources: { node_checks: [], processes: [] },
+            resources: {
+                node_checks: [],
+                processes: [],
+                firewall_expected: [],
+                firewall_rules: [],
+            },
             roles: [],
         });
         const results = facts(value), key = readFor(value, "platform").key;
@@ -303,4 +308,60 @@ Deno.test("native read failure recovery uses only the new Node check scope after
         healthy.observed_checks["node:9"].includes("node.inspection_failed"),
     );
     assert(!healthy.observed_checks["9"].includes("node.inspection_failed"));
+});
+
+Deno.test("Doctor matches source allows and their deny by tuple without false drift", () => {
+    const comment = "orbit rex";
+    const base = {
+        comment,
+        direction: "in",
+        destination: "any",
+        port: "7297",
+        protocol: "tcp",
+        in_interface: null,
+        out_interface: null,
+        family: "v4",
+    };
+    const value = Input.parse({
+        nodes: [{
+            ...node(),
+            resources: {
+                firewall_rules: [{ id: 11, name: "7297/tcp from any", status: "active" }],
+                firewall_expected: [
+                    {
+                        name: "7297/tcp from any",
+                        shape: {
+                            ...base,
+                            action: "allow",
+                            source: "10.44.0.6",
+                        },
+                    },
+                    {
+                        name: "7297/tcp from any",
+                        shape: { ...base, action: "deny", source: "any" },
+                    },
+                ],
+            },
+        }],
+        families: ["firewall"],
+        collect_problems: false,
+    });
+    const read = planReads(value)[0];
+    assertEquals(read.argv, ["/usr/sbin/ufw", "status", "numbered"]);
+    const allow = "7297/tcp ALLOW IN 10.44.0.6 # " + comment;
+    const deny = "7297/tcp DENY IN Anywhere # " + comment;
+    const trust = "Anywhere ALLOW IN 10.44.0.0/24 # orbit:wireguard-members";
+    const observe = (rows: string[]) =>
+        report(value, {
+            [read.key]: step("Status: active\n" + rows.join("\n")),
+        });
+    assertEquals(codes(observe([allow, deny, trust])), []);
+    assertEquals(codes(observe([allow.replace(" # " + comment, ""), deny, trust])), []);
+    assert(codes(observe([deny, trust])).includes("firewall.rule_missing"));
+    value.nodes[0].resources.firewall_rules[0].status = "failed";
+    assert(
+        codes(observe([allow, deny, trust])).includes(
+            "firewall.lifecycle_not_active",
+        ),
+    );
 });

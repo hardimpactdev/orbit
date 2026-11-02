@@ -97,9 +97,9 @@ final readonly class NodeSideResidue
                 'Caddy configuration that serves the ingress role on every address',
                 'Orbit firewall rules for public HTTP and HTTPS on the ingress role',
             ],
-            // VPN stays protected from removal. Router and Database leave no
-            // role-owned host projection; Docker stays installed.
-            RoleName::Vpn, RoleName::Router, RoleName::Database => [],
+            // VPN stays protected from removal. Router, Database and Swamp leave no
+            // role-owned host projection; Docker stays installed, and swamp.orbit is a Route.
+            RoleName::Vpn, RoleName::Router, RoleName::Database, RoleName::Swamp => [],
         };
     }
 }

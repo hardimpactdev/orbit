@@ -1,10 +1,8 @@
 import { z } from "npm:zod@4.4.3";
-import { SeedTarget, SnapshotSource } from "../database/sqlite_input.ts";
+import { SeedSource, SeedTarget } from "../database/sqlite_input.ts";
 import { CleanupInput } from "../database/cleanup_contract.ts";
 const Kind = z.enum([
-    "database.sqlite_export",
     "database.sqlite_seed",
-    "database.sqlite_seed_abandon",
     "database.sqlite_cleanup",
 ]);
 const Action = z.enum([
@@ -13,7 +11,6 @@ const Action = z.enum([
     "source_cleanup",
     "target_prepare",
     "target_install",
-    "target_cleanup",
     "target_recover",
     "cleanup",
 ]);
@@ -23,17 +20,15 @@ const Ssh = z.object({
     host_keys: z.array(z.string()).min(1),
 }).strict();
 const Plan = z.object({
-    source: SnapshotSource,
-    target: SeedTarget.optional(),
+    source: SeedSource,
+    target: SeedTarget,
     source_ssh: Ssh,
-    target_ssh: Ssh.optional(),
+    target_ssh: Ssh,
 }).strict().refine((i) =>
     i.source.transport_user === i.source_ssh.user &&
-    (!i.target ||
-        i.source.variant === "seed" &&
-            i.source.operation === i.target.operation &&
-            i.source.target_instance_id === i.target.target_instance_id &&
-            i.target.transport_user === i.target_ssh?.user)
+    i.source.operation === i.target.operation &&
+    i.source.target_instance_id === i.target.target_instance_id &&
+    i.target.transport_user === i.target_ssh.user
 );
 const Cleanup = z.object({ cleanup: CleanupInput, source_ssh: Ssh }).strict()
     .refine((i) =>
@@ -101,7 +96,7 @@ const Public = z.union([
 const unknown = () => ({ error_code: "database.sqlite_outcome_unknown" });
 export const behavior = {
     type: "@nckrtl/database-sqlite-command-assets",
-    version: "2026.11.01.1",
+    version: "2026.11.02.1",
     files: {
         snapshot: {
             description: "Private SQLite export",
@@ -181,28 +176,12 @@ export const behavior = {
                     sudo = i.cleanup.variant === "seed";
                 } else {
                     const i = Plan.parse(raw.intent);
-                    if (raw.kind !== "database.sqlite_export" && !i.target) {
-                        throw Error("database.sqlite_intent_invalid");
-                    }
-                    if (
-                        raw.kind === "database.sqlite_export" &&
-                        a.startsWith("target_")
-                    ) throw Error("database.sqlite_intent_invalid");
-                    if (
-                        raw.kind === "database.sqlite_seed_abandon" &&
-                        !["check", "target_cleanup", "source_cleanup"].includes(
-                            a,
-                        )
-                    ) throw Error("database.sqlite_intent_invalid");
                     if (a === "cleanup") {
                         throw Error("database.sqlite_intent_invalid");
                     }
-                    const target = a.startsWith("target_");
-                    ssh = target ? Ssh.parse(i.target_ssh) : i.source_ssh;
-                    sudo = target || i.source.variant === "seed";
-                    sourcePath = i.source.variant === "clone"
-                        ? i.source.directory + "/snapshot.sqlite"
-                        : i.source.snapshot_path;
+                    ssh = a.startsWith("target_") ? i.target_ssh : i.source_ssh;
+                    sudo = true;
+                    sourcePath = i.source.snapshot_path;
                 }
                 if (["target_prepare", "target_install"].includes(a)) {
                     Snapshot.parse(raw.snapshot);
@@ -366,22 +345,17 @@ export const behavior = {
                 kind: Kind,
                 expected: z.array(z.string()),
                 steps: Steps,
-                export_step: z.string().optional(),
             }).strict(),
             execute: async (
                 args: {
                     kind: z.infer<typeof Kind>;
                     expected: string[];
                     steps: z.infer<typeof Steps>;
-                    export_step?: string;
                 },
                 ctx: Context,
             ) => {
                 let result: Record<string, unknown> = {
-                    backend: [
-                            "database.sqlite_cleanup",
-                            "database.sqlite_seed_abandon",
-                        ].includes(args.kind)
+                    backend: args.kind === "database.sqlite_cleanup"
                         ? "absent"
                         : "active",
                 };
@@ -405,23 +379,6 @@ export const behavior = {
                             name === "cleanup_transfer" && out.stdout === ""
                         ) continue;
                         Public.parse(decode(out.stdout));
-                        if (
-                            args.kind === "database.sqlite_export" &&
-                            name === args.export_step
-                        ) {
-                            Object.assign(
-                                result,
-                                Snapshot.parse(
-                                    Object.fromEntries(
-                                        Object.entries(decode(out.stdout))
-                                            .filter(([key]) =>
-                                                ["bytes", "sha256", "mode"]
-                                                    .includes(key)
-                                            ),
-                                    ),
-                                ),
-                            );
-                        }
                     } catch {
                         result = unknown();
                         break;

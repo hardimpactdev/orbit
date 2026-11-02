@@ -10,6 +10,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\NativeRouteMutationPlan;
 use App\Domain\Routes\NativeRouteNodeMutationInput;
 use App\Domain\Routes\NativeRouteNodeRender;
+use App\Domain\Routes\NativeRoutePublicationArtifacts;
 use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -61,11 +62,11 @@ it('reserves a canonical rename and captures both identities without changing th
         ->and($this->route->fresh()->domain)->toBe('development.snapshot.old.test')
         ->and(Operation::query()->count())->toBe(0)
         ->and(app(RouteRenderContext::class)->nodeId())->toBeNull();
-    $node = collect($input['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->node->id);
+    $node = collect($input['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($input['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->node->id);
     expect($node['before']['caddy']['content'])->toContain('development.snapshot.old.test')->not->toContain('development.snapshot.new.test')
         ->and($node['after']['caddy']['content'])->toContain('development.snapshot.new.test')->not->toContain('development.snapshot.old.test')
         ->and($node['connection']['nodeHost'])->toBe('10.44.0.41');
-    $restored = collect($input['route_mutations']['restore']['publications'])->firstWhere('node_id', $this->node->id);
+    $restored = collect($input['route_mutations']['restore']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($input['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->node->id);
     expect($restored['connection']['nodeHost'])->toBe('10.44.0.31')
         ->and($input['participant_node_ids'])->toContain($this->node->id, $this->gateway->id, 209)
         ->and($input['execution_secrets'])->toBe([]);
@@ -75,7 +76,7 @@ it('keeps recorded domains and captures address changes even without Route mutat
     $input = $this->capture->capture($this->node, new NativeRouteNodeRender($this->node->id, '10.44.0.41', 'old.test'), null);
     expect($input['route_mutations']['batch']['changes'])->toBe([])
         ->and($input['route_mutations']['forward']['routes'][0]['domain'])->toBe('development.snapshot.old.test');
-    $publication = collect($input['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->gateway->id);
+    $publication = collect($input['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($input['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->gateway->id);
     expect($publication['after']['dns']['records'])->toContain('host-record=development.snapshot.old.test,10.44.0.41')
         ->and($publication['before']['dns']['records'])->toContain('host-record=development.snapshot.old.test,10.44.0.31');
 });
@@ -89,15 +90,15 @@ it('keeps an enrollment role site only in prospective Route publications before 
 
     $input = $this->capture->capture($this->node, $candidate, null);
 
-    $publication = collect($input['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->node->id);
+    $publication = collect($input['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($input['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->node->id);
     expect($publication['before']['caddy']['content'])->not->toContain('# orbit: websocket reverb.orbit');
     foreach (['prepared', 'withdrawn', 'after'] as $phase) {
         expect($publication[$phase]['caddy']['content'])->toContain('# orbit: websocket reverb.orbit', '10.44.0.41');
     }
-    $dns = collect($input['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->gateway->id);
+    $dns = collect($input['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($input['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->gateway->id);
     expect($dns['after']['dns']['records'])->toContain('host-record=reverb.orbit,10.44.0.41')
         ->and($dns['before']['dns']['records'])->not->toContain('host-record=reverb.orbit,10.44.0.41');
-    $restore = collect($input['route_mutations']['restore']['publications'])->firstWhere('node_id', $this->node->id);
+    $restore = collect($input['route_mutations']['restore']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($input['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->node->id);
     expect($restore['before']['caddy']['content'])->not->toContain('# orbit: websocket reverb.orbit')
         ->and($this->node->fresh()->getAttributes())->toBe($stored)
         ->and(Setting::query()->get()->toArray())->toBe($settings)
@@ -114,7 +115,7 @@ it('retains stored role certificates in before while applying captured withdrawa
 
     $input = $this->capture->capture($this->node, $candidate, null);
 
-    $publication = collect($input['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->node->id);
+    $publication = collect($input['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($input['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->node->id);
     expect($publication['before']['caddy']['content'])->toContain('# orbit: websocket reverb.orbit');
     foreach (['prepared', 'withdrawn', 'after'] as $phase) {
         expect($publication[$phase]['caddy']['content'])->not->toContain('# orbit: websocket reverb.orbit');
@@ -206,7 +207,7 @@ it('captures public address-only changes while preserving literal public hostnam
     $input = $this->capture->capture($this->node, $this->candidate, null);
     expect($input['route_mutations']['batch']['changes'])->toBe([])
         ->and($input['route_mutations']['forward']['routes'][0]['domain'])->toBe('development.snapshot.old.test');
-    $publication = collect($input['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->node->id);
+    $publication = collect($input['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($input['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->node->id);
     expect($publication)->not->toBeNull()
         ->and($publication['connection']['nodeHost'])->toBe('10.44.0.41')
         ->and($input['route_mutations']['restore']['routes'][0]['domain'])->toBe('development.snapshot.old.test');
@@ -216,7 +217,7 @@ it('preserves literal tracking sites while rendering an address-only change', fu
     $this->gateway->roles()->create(['role' => 'analytics', 'status' => 'active']);
     $tracking = instance_analytics_tracking($this->instance, 'tracker.literal.test');
     $input = $this->capture->capture($this->node, new NativeRouteNodeRender($this->node->id, '10.44.0.41', 'old.test'), null);
-    $publication = collect($input['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->node->id);
+    $publication = collect($input['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($input['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->node->id);
     expect($publication['before']['caddy']['content'])->toContain('tracker.literal.test')
         ->and($publication['after']['caddy']['content'])->toContain('tracker.literal.test')
         ->and($tracking->fresh()->domain)->toBe('tracker.literal.test')
@@ -233,7 +234,7 @@ it('captures tracking placement through its owner and applies it only at termina
     expect($input['route_mutations']['analytics_changes'])->toHaveCount(1)
         ->and($tracking->fresh()->node_id)->toBe($this->node->id)
         ->and($input['route_mutations']['forward']['routes'][1]['domain'])->toBe('tracker.literal.test');
-    $publication = collect($input['route_mutations']['forward']['publications'])->firstWhere('node_id', $router->id);
+    $publication = collect($input['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($input['route_mutations']['artifacts'], $row))->firstWhere('node_id', $router->id);
     expect($publication['after']['caddy']['content'])->toContain('tracker.literal.test');
     app(NativeRouteMutationPlan::class)->applyTerminal($input['route_mutations'], ['ready' => true, 'restored' => false]);
     expect($tracking->fresh()->cluster_id)->toBe($cluster->id)->and($tracking->fresh()->node_id)->toBeNull()
@@ -248,7 +249,7 @@ it('publishes an address change on a Node that serves only a custom proxy', func
     $proxy->customProxy()->create(['node_id' => $node->id, 'upstream' => 'http://127.0.0.1:8787']);
     $proxy->update(['status' => 'active', 'sites_published' => true]);
     $input = $this->capture->capture($node, new NativeRouteNodeRender($node->id, '10.44.0.62', 'proxy.test'), null);
-    $publication = collect($input['route_mutations']['forward']['publications'])->firstWhere('node_id', $node->id);
+    $publication = collect($input['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($input['route_mutations']['artifacts'], $row))->firstWhere('node_id', $node->id);
     expect($input['route_mutations']['batch']['changes'])->toBe([])
         ->and($publication['serves_routes'])->toBeTrue()
         ->and($publication['before']['caddy']['content'])->toContain('10.44.0.61', 'proxy.literal.test')
@@ -268,8 +269,8 @@ it('renders the full enrollment candidate only after actual capture and restores
     $candidate = route_enrollment_candidate($this->node);
     $capture = $this->capture->capture($this->node,
         new NativeRouteNodeRender($this->node->id, $candidate->wireguardIp, $candidate->tld, enrollment: $candidate), null);
-    $forward = collect($capture['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->node->id);
-    $restore = collect($capture['route_mutations']['restore']['publications'])->firstWhere('node_id', $this->node->id);
+    $forward = collect($capture['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->node->id);
+    $restore = collect($capture['route_mutations']['restore']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->node->id);
     expect($forward['before']['caddy']['content'])->toContain('10.44.0.31')->not->toContain('10.44.0.41')
         ->and($forward['after']['caddy']['content'])->toContain('10.44.0.41')
         ->and($forward['after']['php']['account_user'])->toBe('newuser')
@@ -325,7 +326,7 @@ it('captures candidate LAN upstreams and firewall tuples with actual restoration
         '10.44.0.41', '192.0.2.41', 22, $cluster->id, 'old.test', '192.168.6.41', null, null);
     $capture = $this->capture->capture($this->node,
         new NativeRouteNodeRender($this->node->id, $candidate->wireguardIp, $candidate->tld, enrollment: $candidate), $cluster->id);
-    $routerPublication = collect($capture['route_mutations']['forward']['publications'])->firstWhere('node_id', $router->id);
+    $routerPublication = collect($capture['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['route_mutations']['artifacts'], $row))->firstWhere('node_id', $router->id);
     expect($routerPublication['before']['caddy']['content'])->toContain('192.168.6.31')->not->toContain('192.168.6.41')
         ->and($routerPublication['after']['caddy']['content'])->toContain('192.168.6.41')->not->toContain('192.168.6.31')
         ->and(collect($capture['route_mutations']['forward']['retire_lan'])->firstWhere('node_id', $this->node->id)['rules'][0]['ensure'])->toBe('present')
@@ -343,7 +344,7 @@ it('captures pending publication for a provisional role target without an actual
     $certificates = app(NodeRoleCertificateInput::class)->capture($this->node, RoleName::WebSocket);
     $capture = $this->capture->capture($this->node,
         new NativeRouteNodeRender($this->node->id, $candidate->wireguardIp, $candidate->tld, $certificates, $candidate), null);
-    $row = collect($capture['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->node->id);
+    $row = collect($capture['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->node->id);
     expect($row)->not->toBeNull()->and($row['host_keys'])->toBeNull()
         ->and($row['after']['caddy']['content'])->toContain('10.44.0.41')
         ->and($row['before']['caddy']['content'])->not->toContain('10.44.0.41')
@@ -356,7 +357,7 @@ it('keeps stored BEFORE readiness even under a caller certificate scope and rest
     $context = app(RouteRenderContext::class);
     $context->renderRoleCertificates($outer, function () use ($context): void {
         $capture = $this->capture->capture($this->node, $this->candidate, null);
-        $row = collect($capture['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->node->id);
+        $row = collect($capture['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->node->id);
         expect($row['before']['caddy']['content'])->not->toContain('# orbit: websocket reverb.orbit')
             ->and($context->roleCertificatePublished($this->node->id, 'websocket'))->toBeTrue();
     });

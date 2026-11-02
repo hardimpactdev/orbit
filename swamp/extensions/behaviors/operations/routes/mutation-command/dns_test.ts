@@ -69,3 +69,15 @@ Deno.test("PHP empty-map arrays preserve unrelated concurrent catalog entries", 
     });
     assertEquals(result.overrides["node:10"], { "other.test": "10.0.0.2" });
 });
+
+Deno.test("a removed Node's requester goes even when a stale id from a reused address holds it", () => {
+    const catalog = (requesters: Record<string, number>) => JSON.stringify({ records: {}, suffixes: {}, overrides: {}, requesters });
+    const state = (requesters: Record<string, number>) => ({ records: "# Managed by Orbit.\n", catalog: catalog(requesters) });
+    const before = state({ "10.44.0.129": 227, "10.44.0.15": 209 }),
+        after = state({ "10.44.0.15": 209 }),
+        current = state({ "10.44.0.129": 202, "10.44.0.15": 209, "10.44.0.131": 207 });
+    const removed = JSON.parse(mergeDns(before, after, current, [before, after]).catalog).requesters;
+    assertEquals(removed, { "10.44.0.15": 209, "10.44.0.131": 207 });
+    const added = JSON.parse(mergeDns(after, before, current, [after, before]).catalog).requesters;
+    assertEquals(added["10.44.0.129"], 227, "an added Node replaces the stale id on its address");
+});

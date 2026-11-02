@@ -17,7 +17,9 @@
             "task_check": null,
             "task_workspace_routed": true,
             "review_and_merge": false,
-            "merge_check": null
+            "merge_check": null,
+            "php_version": null,
+            "is_laravel": false
         },
         "meta": {
             "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"

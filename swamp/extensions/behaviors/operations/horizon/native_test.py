@@ -66,10 +66,10 @@ shutil.copytree(src,dst/src.name,dirs_exist_ok=True)
         (self.repo/'host-state.json').write_text(json.dumps({'active':False,'calls':[]}))
         workflow = yaml.safe_load((ROOT/'workflows/workflow-operation-process-horizon-handoff.yaml').read_text())
         for job in workflow['jobs']:
-            self.assertEqual(job.pop('target'), 'orbit-node-209')
+            self.assertEqual(job.pop('labels'), {'role': 'swamp'})
             self.assertNotIn('labels', job)
             for step in job['steps']:
-                self.assertEqual(step.pop('target'), 'orbit-node-209')
+                self.assertEqual(step.pop('labels'), {'role': 'swamp'})
                 self.assertNotIn('labels', step)
                 if step['task']['behaviorType'] == '@swamp/ssh':
                     step['task']['globalArgs'].update(sshBinary=str(self.ssh), scpBinary=str(self.scp))

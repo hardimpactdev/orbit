@@ -20,6 +20,12 @@ Route::middleware([
     Route::patch('clusters/{cluster}', [ClustersController::class, 'update'])
         ->whereNumber('cluster')
         ->name('cluster:update');
+    Route::post('clusters/{cluster}/activate', [ClustersController::class, 'activate'])
+        ->whereNumber('cluster')
+        ->name('cluster:activate');
+    Route::post('clusters/{cluster}/deactivate', [ClustersController::class, 'deactivate'])
+        ->whereNumber('cluster')
+        ->name('cluster:deactivate');
     Route::delete('clusters/{cluster}', [ClustersController::class, 'destroy'])
         ->whereNumber('cluster')
         ->name('cluster:destroy');

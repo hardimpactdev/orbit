@@ -13,7 +13,7 @@ use App\Support\ValidatedData;
 /** One complete post-transition desired fleet; no before/after impact simulation or host effects. */
 final readonly class NodeRoleMetricsInput
 {
-    public function __construct(private MetricsFleetCapture $fleet) {}
+    public function __construct(private MetricsFleetCapture $fleet, private RoleRegistry $roles = new RoleRegistry) {}
 
     /** Capture after the owning transaction records the changed role assignment.
      * The removed Metrics assignment supplies its own full disabled fleet.
@@ -27,6 +27,9 @@ final readonly class NodeRoleMetricsInput
         }
         if ($changed->role === RoleName::Metrics) {
             return $this->fleet->captureFor($changed, $changed->status !== LifecycleStatus::Removing);
+        }
+        if (! $this->roles->definition($changed->role)->metrics) {
+            return null;
         }
         $assignments = NodeRole::query()->where('role', RoleName::Metrics)
             ->whereIn('status', [LifecycleStatus::Active, LifecycleStatus::Provisioning])

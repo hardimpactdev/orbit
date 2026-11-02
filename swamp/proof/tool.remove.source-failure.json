@@ -1,0 +1,28 @@
+{
+  "kind": "tool.remove",
+  "workflow": "operation-tool-remove-209",
+  "topology": "minimal",
+  "budget_seconds": 300,
+  "queue_timeout_seconds": 30,
+  "note": "Nick, 2026-11-01: dropping the last Tool's apt source is best-effort. The source file is made immutable, so its removal fails; the package is gone, so the task still succeeds.",
+  "clean_target": [
+    ["sh", "-c", "chattr -i /etc/apt/sources.list.d/orbit-rex.sources /etc/apt/keyrings/orbit-rex.gpg /etc/apt/preferences.d/orbit-rex.pref 2>/dev/null; dpkg --purge rex >/dev/null 2>&1; rm -f /etc/apt/sources.list.d/orbit-rex.sources /etc/apt/keyrings/orbit-rex.gpg /etc/apt/preferences.d/orbit-rex.pref; true"]
+  ],
+  "prepare": [
+    {"method": "POST", "path": "tools", "body": {"node_id": "${node.target}", "manager": "apt", "package": "rex", "repository": {"name": "rex", "uris": ["https://pkgs.superlogical.com/rex/apt"], "suites": ["preview"], "components": ["main"], "signing_key": {"url": "https://pkgs.superlogical.com/rex/keys/rex-archive-keyring.gpg", "fingerprint": "E28636AC71905C6DDE40C1EDFAA6B80F641307A7"}}}},
+    {"method": "GET", "path": "tools?node_id=${node.target}", "operation": false, "bind": "tool", "match": {"package": "rex"}, "body": {}}
+  ],
+  "before_target": [
+    ["chattr", "+i", "/etc/apt/sources.list.d/orbit-rex.sources"]
+  ],
+  "request": {"method": "DELETE", "path": "tools/${tool.id}", "body": {}},
+  "expect": {"status": "succeeded"},
+  "phases": [
+    {"name": "Plan the removal", "job": "tools", "step": "Plan the removal", "budget_seconds": 60},
+    {"name": "Remove the package", "job": "tools", "step": "Remove the package", "budget_seconds": 120},
+    {"name": "Check it is gone", "job": "tools", "step": "Check it is gone", "budget_seconds": 60},
+    {"name": "Remove the apt source", "job": "tools", "step": "Remove the apt source", "budget_seconds": 60},
+    {"name": "result", "job": "tools", "step": "result", "budget_seconds": 30}
+  ],
+  "parity": "swamp/proof/tool.remove.source-failure/parity.py"
+}

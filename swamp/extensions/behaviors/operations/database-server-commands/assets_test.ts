@@ -15,37 +15,6 @@ Deno.test("server files contain only public admitted inputs and native bundle pa
         intent_json: '{"driver":"mysql","process_id":42}',
     });
 });
-Deno.test("server plan selects creation, no-op and replacement using observed specs", async () => {
-    const spec = "b".repeat(64);
-    const plan = (state: unknown) =>
-        behavior.methods.plan.execute(
-            { stdout: JSON.stringify(state), spec },
-            context,
-        );
-    assertEquals(await plan({ present: false, state: "absent" }), {
-        present: false,
-        state: "absent",
-        replace: false,
-        rollback_slot: "rollback-stopped",
-    });
-    assertEquals(
-        (await plan({ present: true, state: "running", spec })).replace,
-        false,
-    );
-    assertEquals(
-        await plan({ present: true, state: "running", spec: "c".repeat(64) }),
-        {
-            present: true,
-            state: "running",
-            spec: "c".repeat(64),
-            replace: true,
-            rollback_slot: "rollback-running",
-        },
-    );
-    await assertRejects(() =>
-        plan({ present: true, state: "running", spec: "not-a-spec" })
-    );
-});
 Deno.test("server result refuses missing completion and retains bounded action refusal", async () => {
     const result = behavior.methods.result.execute;
     assertEquals(
@@ -146,4 +115,18 @@ Deno.test("SQL user result uses its fixed fallback without exporting diagnostics
         stdout: '{"error_code":"database.user_create_outcome_unknown"}\n',
         exitCode: 1,
     });
+});
+
+Deno.test("every script a behavior resolves ships in the manifest and exists", async () => {
+    const dir = new URL(".", import.meta.url);
+    const manifest = await Deno.readTextFile(new URL("manifest.yaml", dir));
+    const shipped = new Set([...manifest.matchAll(/^\s+- (scripts\/\S+)$/gm)].map((m) => m[1]));
+    for await (const entry of Deno.readDir(dir)) {
+        if (!entry.name.endsWith(".ts") || entry.name.endsWith("_test.ts")) continue;
+        const source = await Deno.readTextFile(new URL(entry.name, dir));
+        for (const [, path] of source.matchAll(/extensionFile\("([^"]+)"\)/g)) {
+            assertEquals(shipped.has(path), true, `${entry.name} resolves ${path}, which the manifest does not ship`);
+            await Deno.stat(new URL(path, dir));
+        }
+    }
 });

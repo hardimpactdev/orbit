@@ -8,14 +8,11 @@ import type { Http } from "../../automatic-deploy/gateway.ts";
 const identity = {
     operation_id: 17,
     node_id: 9,
-    kind: "vault.setup" as const,
+    kind: "vault.teardown" as const,
     run_id: "a075eb23-7ac4-4487-80d1-57a038a92676",
 };
 for (
-    const [kind, backend] of [[
-        "vault.setup",
-        "configured",
-    ], ["vault.teardown", "absent"]] as const
+    const [kind, backend] of [["vault.teardown", "absent"]] as const
 ) {
     Deno.test(`${kind} fetches private input and projects only safe metadata`, async () => {
         const projections: unknown[] = [];
@@ -103,7 +100,7 @@ Deno.test("Vault secret-bearing exceptions and malformed output become bounded r
         });
     }
 });
-Deno.test("Vault setup cannot accept a sync backend and a failed read cannot execute", async () => {
+Deno.test("Vault teardown cannot accept a sync backend and a failed read cannot execute", async () => {
     const http: Http = () =>
         Promise.resolve({ status: 200, body: { data: { configuration: {} } } });
     assertEquals(
@@ -138,7 +135,7 @@ Deno.test({
         let budget = 0;
         const error = await assertRejects(() =>
             localCollection(
-                "setup",
+                "teardown",
                 { master_password: "private-sentinel" },
                 "/missing/ca",
                 undefined,
@@ -193,7 +190,7 @@ for (
                     data: {
                         id: 17,
                         node_id: 9,
-                        kind: "vault.setup",
+                        kind: "vault.teardown",
                         input: {},
                         status: "queued",
                         cancel_requested: false,

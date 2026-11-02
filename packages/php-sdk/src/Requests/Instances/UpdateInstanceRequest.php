@@ -28,7 +28,6 @@ final class UpdateInstanceRequest extends GatewayRequest implements HasBody
         private readonly ?string $branch = null,
         private readonly ?array $sharedPaths = null,
         private readonly bool $sharedPathsProvided = false,
-        private readonly ?bool $autoDeploy = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -44,13 +43,12 @@ final class UpdateInstanceRequest extends GatewayRequest implements HasBody
         );
     }
 
-    /** @return array{branch?: string, shared_paths?: list<string>|null, auto_deploy?: bool} */
+    /** @return array{branch?: string, shared_paths?: list<string>|null} */
     protected function defaultBody(): array
     {
         return [
             ...($this->branch === null ? [] : ['branch' => $this->branch]),
             ...($this->sharedPathsProvided ? ['shared_paths' => $this->sharedPaths] : []),
-            ...($this->autoDeploy === null ? [] : ['auto_deploy' => $this->autoDeploy]),
         ];
     }
 }

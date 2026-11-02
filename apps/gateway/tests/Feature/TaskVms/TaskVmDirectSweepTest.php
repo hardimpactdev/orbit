@@ -10,6 +10,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\TaskVmSweepProjection;
 use App\Domain\TaskVms\TaskVmUpCloud;
@@ -204,3 +205,28 @@ it('settles cancellation and interruption without inventing a missing observatio
     expect($operation->fresh()->status)->toBe($status === 'interrupted' ? OperationStatus::Failed : OperationStatus::Cancelled)
         ->and($operation->fresh()->lock_key)->toBeNull()->and($vm->fresh()->state)->toBe(TaskVmState::Ready);
 })->with(['cancelled', 'interrupted']);
+
+it('releases a failed image cleanup claim only after successful final absence', function (string $remaining): void {
+    $build = TaskVmImageBuild::query()->create(['host_node_id' => $this->host->id, 'state' => 'failed']);
+    TaskVmImageBuild::query()->whereKey($build->id)->update(['updated_at' => now()->subHours(25)]);
+    $operation = directSweepAdmit();
+    expect($build->fresh()->cleanup_started_at)->not->toBeNull();
+    $names = $remaining === '' ? [] : [$build->builder_vm_name.($remaining === 'builder' ? '' : $remaining)];
+
+    directSweepProject($operation, $names);
+
+    expect($build->fresh()->cleanup_started_at === null)->toBe($remaining === '');
+    expect($build->fresh()->state)->toBe(TaskVmImageBuildState::Failed);
+})->with(['absent' => '', 'builder' => 'builder', 'smoke' => '-smoke', 'old attempt smoke' => '-attempt-2-smoke']);
+
+it('keeps an image cleanup claim when the native sweep does not succeed', function (string $status): void {
+    $build = TaskVmImageBuild::query()->create(['host_node_id' => $this->host->id, 'state' => 'failed']);
+    TaskVmImageBuild::query()->whereKey($build->id)->update(['updated_at' => now()->subHours(25)]);
+    $operation = directSweepAdmit();
+
+    app(TaskVmSweepProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => $status,
+        'started_at' => '2026-11-01T00:00:00Z', 'finished_at' => '2026-11-01T00:00:01Z',
+        'result' => [], 'error_code' => $status === 'failed' ? 'operation.native_failed' : null]);
+
+    expect($build->fresh()->cleanup_started_at)->not->toBeNull();
+})->with(['failed', 'cancelled']);

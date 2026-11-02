@@ -1,0 +1,89 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, DECISIONS R1 (an external API call is an effect, so it is a run), R2-R4. docs/reference/conn.md#native-pairing-revocation.
+  %% status: draft
+  %% command: none · Conn API (conn-pairing-revoke)
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane T3 icon=server pill=target tone=purple
+  participant CLI as Conn / MCP<br/>Conn app · MCP
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant T3 as T3 server<br/>T3 auth API
+  CLI->>GW: Revoke Node 4, env-beast<br/>POST …/env-beast/pairings/revoke
+  %%> Command:
+  %%> - `POST /api/v1/conn/environments/env-beast/pairings/revoke` with `node_id` 4
+  %%> - syntax: the MCP tool `conn-pairing-revoke` with `environment` and an optional `node_id`
+  %%> Input:
+  %%> - the T3 server, and the Node whose pairings go; without `node_id` it is the caller
+  %%> Not included:
+  %%> - there is no `orbit` command; WireGuard access does not change
+  Note over GW: Select the pairings<br/>task #5171 · session to vault
+  %%> Requirements:
+  %%> - the `conn` extension is on; the caller is an active Node
+  %%> - env-beast is registered and the Gateway's admin session there has not expired
+  %%> - no other revocation runs for env-beast; the Gateway holds one lock per server
+  %%> What it does:
+  %%> - captures Node 4's open pairings on env-beast: their client labels and link IDs
+  %%> - pushes the admin session to the Swamp vault as `conn-session-5171` after commit (R3)
+  %%> Why a run:
+  %%> - calling T3's API is an effect; the Gateway's only execution primitives are mint and sign
+  GW->>SW: Start run, full intent<br/>operation-conn-pairing-revoke
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209); no Node is a target
+  %%> Inputs:
+  %%> - the T3 server URL, the captured labels and link IDs, and the vault key names; never the session
+  GW-->>CLI: 202 Accepted<br/>task #5171
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the caller waits on the task and shows its progress
+  SW->>T3: List client sessions<br/>GET /api/auth/clients
+  %%> How:
+  %%> - HTTPS from 209, with the admin session from `vault.get`
+  %%> What it does:
+  %%> - reads every client session on env-beast and selects those with the captured labels
+  %%> Refuses:
+  %%> - a failed or invalid read stops the run before any revoke; it never counts as an empty list
+  SW->>T3: Revoke the sessions<br/>POST /api/auth/clients/revoke
+  %%> What it does:
+  %%> - revokes each selected session, one per step; a session already gone counts as revoked
+  %%> Keeps:
+  %%> - the Gateway's own current session and every other label
+  SW->>T3: Revoke unused links<br/>POST pairing-links/revoke
+  %%> What it does:
+  %%> - revokes each captured pairing link that was never used, one per step
+  alt every revoke done
+    T3-->>SW: 2 sessions revoked
+    %%> Returns:
+    %%> - each revoke answered
+    SW-->>GW: Run succeeded<br/>terminal event · revoked
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Mark pairings revoked<br/>revoked_at · task done
+    %%> Result:
+    %%> - Node 4's pairings on env-beast get `revoked_at`, and their stored links are removed
+    %%> - the device loses env-beast at once; its other servers and Orbit access stay
+    %%> - task #5171 succeeds
+  else listing or a revoke fails
+    T3--xSW: 401 or no answer
+    %%> When:
+    %%> - T3 refuses the admin session, cannot be reached, or answers with invalid data
+    SW--xGW: Run failed<br/>conn.revocation_failed
+    %%> The Gateway reads:
+    %%> - which step failed and its safe error code
+    Note over GW: Mark revoked ones only<br/>task failed · rerun is safe
+    %%> Result:
+    %%> - pairings whose sessions were revoked are marked revoked; the rest stay open; task #5171 fails
+    %%> Retry:
+    %%> - safe: run it again; it lists the sessions again and skips those already gone
+  end
+  loop wait with progress until terminal
+    CLI->>GW: operation:show #5171
+    %%> What it does:
+    %%> - waits on the task and shows each step label as progress
+    GW-->>CLI: progress + result
+    %%> Returns:
+    %%> - the progress, and the number of revoked sessions once the task has ended
+  end

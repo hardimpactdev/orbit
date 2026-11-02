@@ -238,7 +238,8 @@ A commit qualifies when all of these hold.
 - Every such run has completed with conclusion `success`. Any other state or conclusion fails this rule, including a queued or running run.
 - Every such run was created by GitHub Actions (`app.slug` is `github-actions`). Another App with `checks: write` could create a run with the same name. Its run never makes a commit green, and it disqualifies the commit.
 - The commit strictly descends from the deployed commit. The compare API must report `ahead`, with the deployed commit as the merge base.
-- The `Gateway release inputs` check also passes those name, SHA, completion, and App rules. Swamp-only changes skip it and never become Gateway release candidates.
+- The `Gateway release inputs` check also passes those name, SHA, completion, and App rules.
+- On main, the `Gateway release inputs` check runs for every commit, because a Gateway release also loads Swamp.
 - The commit has not failed a release.
 
 The check name, SHA, completion, and App rules also apply to [`bin/pr-head-check`](https://github.com/hardimpactdev/orbit/blob/main/bin/pr-head-check) and the [task merge gate](/reference/tasks#execution-ownership). The task merge gate first excludes workflow runs superseded by a newer run of the same workflow, event, and branch on the commit, and counts only `pull_request` suites. The release reader and `bin/pr-head-check` count every returned run of the required name.
@@ -352,9 +353,3 @@ The Gateway is private, so GitHub cannot reach it. It lists installations and pu
 ### Cache the installation for the branch list
 
 The Gateway is private, so GitHub cannot push a merge event to it. Swamp owns task PR polling and lifecycle decisions. Gateway read primitives cache the installation identity and renew a refused token.
-
-## Production smoke permission
-
-The repository registration manifest requests `Actions: write` for production-smoke dispatch. This affects new registrations only. The Gateway operator updates Actions to read and write in the existing GitHub App's repository permissions, saves the change, then accepts the permission update on each installation that will run smoke. This is an operator step; Orbit never changes an existing App registration or accepts installation permissions. Keep all other permissions unchanged. Enable no Project until the paired Gateway and Swamp feature ships.
-
-A dispatch uses a token scoped to that Project repository with only Actions write. Result reads keep a separate Actions-read token. An installation without Actions write receives `422 instance.smoke_invalid` with an instruction to complete this upgrade. CI receives only the tested commit, deployment ID and HTTPS base URL; no Gateway, Swamp, production or maintainer credential is sent.

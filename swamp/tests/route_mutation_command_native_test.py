@@ -60,8 +60,8 @@ class RouteMutationFixture(NativeTestCase):
                     "host_keys": [PIN],
                     "serves_routes": True,
                     **{
-                        side: {"caddy": {}, "php": {}, "dns": {"digest": side}}
-                        for side in ("before", "prepared", "withdrawn", "after")
+                        side: {"caddy": 0, "php": 0, "dns": index}
+                        for index, side in enumerate(("before", "prepared", "withdrawn", "after"))
                     },
                 }
                 for node in (9, 10)
@@ -74,7 +74,7 @@ class RouteMutationFixture(NativeTestCase):
             "execution_secrets": {
                 "route_material_0": {"vault": "orbit-control-inputs", "key": "fixture"}
             },
-            "intent": {"route_mutations": {"forward": self.plan, "restore": self.plan}},
+            "intent": {"route_mutations": {"schema_version": 2, "artifacts": {"caddy": [{}], "php": [{}], "dns": [{"digest": side} for side in ("before", "prepared", "withdrawn", "after")]}, "forward": self.plan, "restore": self.plan}},
         }
         script = """import json,os
 from pathlib import Path
@@ -364,7 +364,7 @@ class RouteEnvironmentNative(NativeTestCase):
             parent = yaml.safe_load(
                 (ROOT / "workflows/workflow-operation-route-removal.yaml").read_text()
             )
-            parent.pop("target", None)
+            parent.pop("target", None); parent.pop("labels", None)
             parent.pop("labels", None)
             selection = self.repo / "extensions/behaviors/fixture_selection.ts"
             selection.write_text('''import {z} from "npm:zod@4.4.3";
@@ -376,7 +376,7 @@ methods:{read:{description:"Return the disposable offline selection",arguments:s
             environment = next(j for j in parent["jobs"] if j["name"] == "environment")
             environment["dependsOn"] = [{"job": "selection", "condition": {"type": "succeeded"}}]
             for step in environment["steps"]:
-                step.pop("target", None)
+                step.pop("target", None); step.pop("labels", None)
             parent["jobs"] = [{"name": "selection", "steps": [{"name": "selected", "task": {
                 "type": "behavior", "behaviorType": "@fixture/removal-selection",
                 "behaviorName": "selected", "methodName": "read",
@@ -392,7 +392,7 @@ methods:{read:{description:"Return the disposable offline selection",arguments:s
                 (ROOT / "workflows/workflow-operation-route-update.yaml").read_text()
             )
             for step in parent["jobs"][0]["steps"]:
-                step.pop("target", None)
+                step.pop("target", None); step.pop("labels", None)
                 step.pop("labels", None)
             (self.repo / "workflows/workflow-operation-route-update.yaml").write_text(
                 yaml.safe_dump(parent, sort_keys=False)

@@ -55,7 +55,7 @@ export function deployDirect(ports: Ports = {}) {
     };
     return {
         type: "@nckrtl/instance-deploy-direct",
-        version: "2026.11.01.2",
+        version: "2026.11.01.3",
         globalArguments: Globals,
         resources: {
             rollbackExecution: rollback.resources.rollbackExecution,

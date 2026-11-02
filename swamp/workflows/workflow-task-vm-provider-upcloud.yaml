@@ -41,24 +41,24 @@ inputs:
   additionalProperties: false
 jobs:
 - name: provider
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: input
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-cloud-input'
-      behaviorName: ${{ "cloud-input-"+run.id }}
+      behaviorName: '${{ "cloud-input" }}'
       methodName: read
       inputs:
         intent: ${{ inputs.intent }}
     dependsOn: []
   - name: list
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "cloud-"+run.id }}
+      behaviorName: '${{ "cloud" }}'
       methodName: execute
       inputs:
         run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" list
@@ -74,11 +74,11 @@ jobs:
       condition:
         type: succeeded
   - name: plans
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "cloud-"+run.id }}
+      behaviorName: '${{ "cloud" }}'
       methodName: execute
       inputs:
         run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" plans
@@ -94,11 +94,11 @@ jobs:
       condition:
         type: succeeded
   - name: choose
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-cloud-input'
-      behaviorName: ${{ "cloud-input-"+run.id }}
+      behaviorName: '${{ "cloud-input" }}'
       methodName: choose
       inputs:
         intent: ${{ inputs.intent }}
@@ -112,11 +112,11 @@ jobs:
       condition:
         type: succeeded
   - name: create
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "cloud-"+run.id }}
+      behaviorName: '${{ "cloud" }}'
       methodName: execute
       inputs:
         run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" create
@@ -136,11 +136,11 @@ jobs:
         type: succeeded
     allowFailure: true
   - name: discover
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "cloud-"+run.id }}
+      behaviorName: '${{ "cloud" }}'
       methodName: execute
       inputs:
         run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" discover
@@ -159,11 +159,11 @@ jobs:
       condition:
         type: succeeded
   - name: selected
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-cloud-input'
-      behaviorName: ${{ "cloud-input-"+run.id }}
+      behaviorName: '${{ "cloud-input" }}'
       methodName: choose
       inputs:
         intent: ${{ inputs.intent }}
@@ -174,11 +174,11 @@ jobs:
       condition:
         type: succeeded
   - name: inspect
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "cloud-"+run.id }}
+      behaviorName: '${{ "cloud" }}'
       methodName: execute
       inputs:
         run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" observe
@@ -195,11 +195,11 @@ jobs:
       condition:
         type: succeeded
   - name: observed
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-cloud-input'
-      behaviorName: ${{ "cloud-input-"+run.id }}
+      behaviorName: '${{ "cloud-input" }}'
       methodName: observe
       inputs:
         intent: ${{ inputs.intent }}
@@ -210,11 +210,11 @@ jobs:
       condition:
         type: succeeded
   - name: start
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "cloud-"+run.id }}
+      behaviorName: '${{ "cloud" }}'
       methodName: execute
       inputs:
         run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" start
@@ -232,11 +232,11 @@ jobs:
         type: succeeded
     allowFailure: true
   - name: observe
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "cloud-"+run.id }}
+      behaviorName: '${{ "cloud" }}'
       methodName: execute
       inputs:
         run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" observe
@@ -256,11 +256,11 @@ jobs:
       condition:
         type: succeeded
   - name: provider
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-cloud-input'
-      behaviorName: ${{ "cloud-input-"+run.id }}
+      behaviorName: '${{ "cloud-input" }}'
       methodName: result
       inputs:
         intent: ${{ inputs.intent }}

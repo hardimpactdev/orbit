@@ -1,5 +1,6 @@
 id: 2c1fb8bb-5e46-4f5e-b742-99e7801684d9
 name: operation-route-caddy-delta
+queueTimeout: 30
 description: Compose captured public sections and apply them with official file actions.
 vaults: []
 inputs:
@@ -89,17 +90,17 @@ inputs:
   additionalProperties: false
 jobs:
 - name: publication
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: read-current
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-read-current-" + run.id }}
+      behaviorName: '${{ ("route-ssh-read-current-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &id001
-        name: ${{ "route-ssh-" + run.id }}
+        name: '${{ ("route-ssh-read-current-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -120,11 +121,11 @@ jobs:
           set -eu
           if sudo /usr/bin/test -f /etc/caddy/Caddyfile; then sudo /usr/bin/cat /etc/caddy/Caddyfile; fi
   - name: compose
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-publication-command'
-      behaviorName: ${{ "route-delta-compose-" + run.id }}
+      behaviorName: '${{ "route-delta-compose" }}'
       methodName: caddy
       inputs:
         node_id: ${{ inputs.intent.node_id }}
@@ -143,11 +144,11 @@ jobs:
       condition:
         type: succeeded
   - name: apply-config
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-apply-config-" + run.id }}
+      behaviorName: '${{ ("route-ssh-apply-config-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -168,11 +169,11 @@ jobs:
       condition:
         type: succeeded
   - name: validate
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-validate-" + run.id }}
+      behaviorName: '${{ ("route-ssh-validate-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -187,11 +188,11 @@ jobs:
       condition:
         type: succeeded
   - name: reload
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-reload-" + run.id }}
+      behaviorName: '${{ ("route-ssh-reload-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -206,18 +207,18 @@ jobs:
       condition:
         type: succeeded
 - name: completion
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn:
   - job: publication
     condition:
       type: succeeded
   steps:
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "route-delta-result-" + run.id }}
+      behaviorName: '${{ "route-delta-result" }}'
       methodName: execute
       inputs:
         run: printf '{"ready":true,"version":"%s"}\n' "$ORBIT_VERSION"

@@ -82,7 +82,7 @@ flowchart TD
   W2 -. "read, project" .-> G
 ```
 
-`StartInstanceRollbackAction` snapshots the deployment intent, then calls `InstanceDeploymentAvailability::assertAvailable`. For a production Instance that check throws `operation.kind_unavailable`, because `OperationKinds::supports('children')` returns false since Kit was removed. The smoke-driven rollback (`InstanceSmokeRecoveryAction`, `InstanceSmokeControlAction`) calls the same check and stops there too. A development Instance stops earlier: the rollback intent snapshot resolves the deployment config, which throws `deployment_config.unavailable` (409) for an Instance that is not on app-prod.
+`StartInstanceRollbackAction` snapshots the deployment intent, then calls `InstanceDeploymentAvailability::assertAvailable`. For a production Instance that check throws `operation.kind_unavailable`, because `OperationKinds::supports('children')` returns false since Kit was removed. A development Instance stops earlier: the rollback intent snapshot resolves the deployment config, which throws `deployment_config.unavailable` (409) for an Instance that is not on app-prod.
 
 If the Gateway registered the workflow, it would run as two jobs on the production Node's own worker, not on 209. Job `rollback` holds one TypeScript behavior step. It reads the Operation from the Gateway, projects `running`, then runs four stages locally: two release inspections, the `current` swap, the PHP refresh, and the Process restarts. It never guesses a selection: a failed read-back sets `selection_confirmed: false`. Two inputs do not line up: admission records only `{instance_id, release, deployment}`, while the behavior also requires `php_input` and `runtime_definitions`. The smoke input has no top-level `release`.
 
@@ -152,7 +152,6 @@ Runs on: Gateway.
 
 - One deployment row of kind `rollback` with release, commit, status, `failed_step` and `error_code`.
 - In the same transaction, block the rolled-away commits and pause auto-deploy, whatever the outcome.
-- Smoke rollback checks its guard before effects and again after activation (`instance.smoke_rollback_invalid`, `instance.smoke_selection_changed`, `instance.smoke_rollback_target_missing`).
 
 Budget (PLAN F8): the legacy deadline was 900 s; the PHP cache refresh had 30 s.
 
@@ -182,9 +181,11 @@ A draft in the frozen F13 request format (`swamp-proof-fixture-v0.md`). The topo
     "argv": ["orbit", "instance:rollback", "${capture.production_id}", "--release=${capture.release_a}", "--json"],
     "operation": "$.id"
   },
-  "expect": {"status": "succeeded", "result": {"selected_release": "${capture.release_a}"}}
+  "expect": {"status": "succeeded", "outputs": {"job": "rollback", "step": "rollback", "match": {"status": "succeeded"}}}
 }
 ```
+
+The parity check reads the Operation with `operation:show` and requires `result.selected_release` to equal `${capture.release_a}`.
 
 Gaps the fixture exposes:
 

@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/database-server-command-scripts'
-version: 2026.10.31.1
+version: 2026.11.02.6
 visibility: private
 license: MIT
 description: Database server command files and public result shaping.
@@ -12,12 +12,7 @@ behaviors:
   - operations/database-server-commands/destroy_plan.ts
   - operations/database-server-commands/create_assets.ts
 additionalFiles:
-  - scripts/process.py
   - scripts/server_common.py
-  - scripts/inspect_policy.py
-  - scripts/write_acl.py
-  - scripts/ready.py
-  - scripts/wait_ready.py
   - scripts/user_common.py
   - scripts/user_wal.py
   - scripts/user_apply.py
@@ -60,6 +55,5 @@ additionalFiles:
   - scripts/sqlite_cleanup.py
   - scripts/sqlite_target_prepare.py
   - scripts/sqlite_target_install.py
-  - scripts/sqlite_target_cleanup.py
   - scripts/sqlite_verify_snapshot.py
   - scripts/sqlite_target_recover.py

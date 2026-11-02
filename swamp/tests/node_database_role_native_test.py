@@ -73,7 +73,7 @@ print(json.dumps(result))
             flow.pop('target',None)
             for job in flow['jobs']:
                 for step in job['steps']:
-                    self.assertEqual(step.pop('target'),'orbit-node-209')
+                    self.assertEqual(step.pop('labels'),{'role': 'swamp'})
                     task=step['task']
                     if task.get('behaviorType')=='@swamp/ssh':task['globalArgs']['sshBinary']=str(binary)
             (self.repo/'workflows'/('workflow-'+flow['name']+'.yaml')).write_text(yaml.safe_dump(flow,sort_keys=False))
@@ -81,7 +81,7 @@ print(json.dumps(result))
         for job in caddy['jobs']:
             job.pop('target');self.assertNotIn('labels',job)
             for step in job['steps']:
-                self.assertEqual(step.pop('target'),'orbit-node-209');self.assertNotIn('labels',step)
+                self.assertEqual(step.pop('labels'),{'role': 'swamp'});self.assertNotIn('labels',step)
                 task=step['task']
                 if task.get('behaviorType')=='@swamp/ssh':task['globalArgs']['sshBinary']=str(binary)
         (self.repo/'workflows/workflow-operation-route-caddy.yaml').write_text(yaml.safe_dump(caddy,sort_keys=False))

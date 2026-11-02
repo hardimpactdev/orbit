@@ -1,0 +1,11 @@
+manifestVersion: 1
+name: '@nckrtl/instance-environment-scripts'
+version: 2026.11.02.1
+visibility: private
+license: MIT
+description: Instance .env sync and production runtime refresh scripts, run over official SSH.
+behaviors:
+  - operations/instance-environment/assets.ts
+additionalFiles:
+  - scripts/environment.py
+  - scripts/refresh.py

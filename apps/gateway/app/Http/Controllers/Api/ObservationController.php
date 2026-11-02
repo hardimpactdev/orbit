@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Doctor\StartDoctorAction;
-use App\Actions\Observation\StartObservationMaintenance;
 use App\Data\Operations\OperationData;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Http\Authorization\RequiresNodeAccess;
@@ -28,12 +27,6 @@ final class ObservationController extends Controller
     public function health(ObservationRequest $request, StartDoctorAction $action): JsonResponse
     {
         return $this->collect($request, $action, true);
-    }
-
-    #[StartsOperation('observation.maintain')]
-    public function maintain(ObservationRequest $request, string $routine, StartObservationMaintenance $action): JsonResponse
-    {
-        return $this->respond($request, OperationData::fromModel($action->execute($routine, $request->attributes->getString('orbit.request_id')))->toArray(), 202);
     }
 
     private function collect(ObservationRequest $request, StartDoctorAction $action, bool $horizonOnly = false): JsonResponse

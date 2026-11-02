@@ -11,6 +11,7 @@ use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolNodeEligibility;
 use App\Domain\Tools\ToolOperationException;
 use App\Domain\Tools\ToolOutcome;
+use App\Infrastructure\Tools\AptInventoryInspector;
 use App\Infrastructure\Tools\HomebrewInventoryInspector;
 use App\Infrastructure\Tools\VpInventoryInspector;
 use App\Models\Node;
@@ -27,6 +28,7 @@ final readonly class ScanToolInventoryAction
     public function __construct(
         private HomebrewInventoryInspector $homebrew,
         private VpInventoryInspector $vp,
+        private AptInventoryInspector $apt,
         private ToolNodeEligibility $eligibility,
     ) {}
 
@@ -70,13 +72,13 @@ final readonly class ScanToolInventoryAction
     {
         $byManager = [];
 
-        foreach ([...$this->homebrew->inspect($node), $this->vp->inspect($node)] as $scan) {
+        foreach ([...$this->homebrew->inspect($node), $this->vp->inspect($node), $this->apt->inspect($node)] as $scan) {
             $byManager[$scan->manager->value] = $scan;
         }
 
         $ordered = [];
 
-        foreach ([ToolManagerName::Brew, ToolManagerName::BrewCask, ToolManagerName::Vp] as $manager) {
+        foreach ([ToolManagerName::Brew, ToolManagerName::BrewCask, ToolManagerName::Vp, ToolManagerName::Apt] as $manager) {
             $scan = $byManager[$manager->value] ?? null;
 
             if (! $scan instanceof ToolInventoryScan || $scan->manager !== $manager) {

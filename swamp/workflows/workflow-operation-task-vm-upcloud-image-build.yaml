@@ -3,7 +3,6 @@ name: operation-task-vm-upcloud-image-build
 tags: {}
 jobs:
 - name: admission
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
   labels: {node: '${{ string(inputs.node_id) }}'}
   steps:
   - name: intent
@@ -11,7 +10,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-upcloud-image-build'
-      behaviorName: ${{ "task-vm-upcloud-image-" + run.id }}
+      behaviorName: '${{ "task-vm-upcloud-image" }}'
       methodName: admit
       inputs: {operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}'}
 - name: build
@@ -19,7 +18,6 @@ jobs:
   - job: admission
     condition:
       type: succeeded
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
   labels: {node: '${{ string(inputs.node_id) }}'}
   steps:
   - name: prepare
@@ -27,7 +25,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-upcloud-image-build'
-      behaviorName: ${{ "task-vm-upcloud-image-" + run.id }}
+      behaviorName: '${{ "task-vm-upcloud-image" }}'
       methodName: step
       inputs: {operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', stage: prepare}
   - name: launch-builder
@@ -35,7 +33,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-upcloud-image-build'
-      behaviorName: ${{ "task-vm-upcloud-image-" + run.id }}
+      behaviorName: '${{ "task-vm-upcloud-image" }}'
       methodName: step
       inputs: {operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', stage: launch-builder}
     dependsOn:
@@ -45,7 +43,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-upcloud-image-build'
-      behaviorName: ${{ "task-vm-upcloud-image-" + run.id }}
+      behaviorName: '${{ "task-vm-upcloud-image" }}'
       methodName: step
       inputs: {operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', stage: boot-builder}
     dependsOn:
@@ -55,7 +53,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-upcloud-image-build'
-      behaviorName: ${{ "task-vm-upcloud-image-" + run.id }}
+      behaviorName: '${{ "task-vm-upcloud-image" }}'
       methodName: step
       inputs: {operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', stage: apt-source}
     dependsOn:
@@ -65,7 +63,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-upcloud-image-build'
-      behaviorName: ${{ "task-vm-upcloud-image-" + run.id }}
+      behaviorName: '${{ "task-vm-upcloud-image" }}'
       methodName: step
       inputs: {operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', stage: packages}
     dependsOn:
@@ -75,7 +73,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-upcloud-image-build'
-      behaviorName: ${{ "task-vm-upcloud-image-" + run.id }}
+      behaviorName: '${{ "task-vm-upcloud-image" }}'
       methodName: step
       inputs: {operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', stage: javascript}
     dependsOn:
@@ -85,7 +83,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-upcloud-image-build'
-      behaviorName: ${{ "task-vm-upcloud-image-" + run.id }}
+      behaviorName: '${{ "task-vm-upcloud-image" }}'
       methodName: step
       inputs: {operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', stage: rust}
     dependsOn:
@@ -95,7 +93,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-upcloud-image-build'
-      behaviorName: ${{ "task-vm-upcloud-image-" + run.id }}
+      behaviorName: '${{ "task-vm-upcloud-image" }}'
       methodName: step
       inputs: {operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', stage: agent}
     dependsOn:
@@ -105,7 +103,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-upcloud-image-build'
-      behaviorName: ${{ "task-vm-upcloud-image-" + run.id }}
+      behaviorName: '${{ "task-vm-upcloud-image" }}'
       methodName: step
       inputs: {operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', stage: pi}
     dependsOn:
@@ -115,7 +113,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-upcloud-image-build'
-      behaviorName: ${{ "task-vm-upcloud-image-" + run.id }}
+      behaviorName: '${{ "task-vm-upcloud-image" }}'
       methodName: step
       inputs: {operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', stage: prepare-image}
     dependsOn:
@@ -125,7 +123,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-upcloud-image-build'
-      behaviorName: ${{ "task-vm-upcloud-image-" + run.id }}
+      behaviorName: '${{ "task-vm-upcloud-image" }}'
       methodName: step
       inputs: {operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', stage: clean}
     dependsOn:
@@ -135,7 +133,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-upcloud-image-build'
-      behaviorName: ${{ "task-vm-upcloud-image-" + run.id }}
+      behaviorName: '${{ "task-vm-upcloud-image" }}'
       methodName: step
       inputs: {operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', stage: stop-builder}
     dependsOn:
@@ -145,7 +143,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-upcloud-image-build'
-      behaviorName: ${{ "task-vm-upcloud-image-" + run.id }}
+      behaviorName: '${{ "task-vm-upcloud-image" }}'
       methodName: step
       inputs: {operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', stage: templatize}
     dependsOn:
@@ -155,7 +153,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-upcloud-image-build'
-      behaviorName: ${{ "task-vm-upcloud-image-" + run.id }}
+      behaviorName: '${{ "task-vm-upcloud-image" }}'
       methodName: step
       inputs: {operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', stage: delete-builder}
     dependsOn:
@@ -165,7 +163,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-upcloud-image-build'
-      behaviorName: ${{ "task-vm-upcloud-image-" + run.id }}
+      behaviorName: '${{ "task-vm-upcloud-image" }}'
       methodName: step
       inputs: {operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', stage: launch-smoke}
     dependsOn:
@@ -175,7 +173,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-upcloud-image-build'
-      behaviorName: ${{ "task-vm-upcloud-image-" + run.id }}
+      behaviorName: '${{ "task-vm-upcloud-image" }}'
       methodName: step
       inputs: {operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', stage: boot-smoke}
     dependsOn:
@@ -185,7 +183,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-upcloud-image-build'
-      behaviorName: ${{ "task-vm-upcloud-image-" + run.id }}
+      behaviorName: '${{ "task-vm-upcloud-image" }}'
       methodName: step
       inputs: {operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', stage: smoke}
     dependsOn:
@@ -195,7 +193,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-upcloud-image-build'
-      behaviorName: ${{ "task-vm-upcloud-image-" + run.id }}
+      behaviorName: '${{ "task-vm-upcloud-image" }}'
       methodName: step
       inputs: {operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', stage: delete-smoke}
     dependsOn:
@@ -205,7 +203,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-upcloud-image-build'
-      behaviorName: ${{ "task-vm-upcloud-image-" + run.id }}
+      behaviorName: '${{ "task-vm-upcloud-image" }}'
       methodName: step
       inputs: {operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', stage: promote}
     dependsOn:
@@ -215,7 +213,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-upcloud-image-build'
-      behaviorName: ${{ "task-vm-upcloud-image-" + run.id }}
+      behaviorName: '${{ "task-vm-upcloud-image" }}'
       methodName: step
       inputs: {operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', stage: prune}
     dependsOn:
@@ -225,7 +223,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-upcloud-image-build'
-      behaviorName: ${{ "task-vm-upcloud-image-" + run.id }}
+      behaviorName: '${{ "task-vm-upcloud-image" }}'
       methodName: step
       inputs: {operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', stage: complete}
     dependsOn:
@@ -238,7 +236,6 @@ jobs:
   - job: build
     condition:
       type: always
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
   labels: {node: '${{ string(inputs.node_id) }}'}
   steps:
   - name: owned-cleanup
@@ -246,6 +243,6 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-upcloud-image-build'
-      behaviorName: ${{ "task-vm-upcloud-image-" + run.id }}
+      behaviorName: '${{ "task-vm-upcloud-image" }}'
       methodName: cleanup
       inputs: {operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}'}

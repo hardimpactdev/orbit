@@ -267,6 +267,7 @@ function tool_data(array $overrides = []): array
         'manager' => 'vp',
         'package' => '@openai/codex',
         'version_constraint' => null,
+        'repository' => null,
         'status' => 'installed',
         'installed_version' => null,
         'failed_operation' => null,

@@ -1,0 +1,67 @@
+id: 04961808-4346-47a8-aa0e-6e44f1d0cf5a
+name: operation-gateway-swamp-load
+description: Check out one Gateway release commit in the serve checkout on Node209 and confirm serve loaded it.
+queueTimeout: 120
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [gateway.swamp_load]}
+    intent:
+      type: object
+      properties:
+        sha: {type: string, pattern: '^[a-f0-9]{40}$'}
+      required: [sha]
+      additionalProperties: false
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+  - name: load
+    steps:
+      - name: load
+        labels: {role: swamp}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "gateway-swamp-load" }}'
+          methodName: execute
+          inputs:
+            env:
+              RELEASE_SHA: '${{ inputs.intent.sha }}'
+            # Fast-forward the serve checkout and render serve's grants. Manifest additionalFiles that differ from
+            # serve's start restart serve, which drains first (https://swamp-club.com/lab/4282); the release then loads
+            # again. Otherwise serve reloads both, and the served workflows are compared with the commit.
+            run: |
+              set -eu
+              export HOME=/home/orbit SWAMP_HOME=/home/orbit/.swamp SWAMP_CONFIG_DIR=/home/orbit/.config/swamp
+              export SWAMP_API_KEY_FILE=/home/orbit/.config/swamp/api-key SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1
+              cd /home/orbit/apps/orbit-monorepo-staging/checkout
+              previous=$(git rev-parse HEAD)
+              timeout 120 git fetch --quiet origin "$RELEASE_SHA"
+              git merge-base --is-ancestor "$previous" "$RELEASE_SHA"
+              git checkout --quiet --detach "$RELEASE_SHA"
+              test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+              role=swamp/extensions/behaviors/operations/fleet-recipe/scripts/swamp_workers.py
+              python3 -I "$role" grants swamp
+              restart=$(python3 -I "$role" release-restart "$RELEASE_SHA")
+              if [ "$restart" != '{}' ]; then
+                jq -cn --arg sha "$RELEASE_SHA" --arg previous "$previous" --argjson restart "$restart" \
+                  '{sha: $sha, previous: $previous} + $restart'
+                exit 0
+              fi
+              timeout 120 /home/orbit/.local/bin/swamp serve reload --server ws://127.0.0.1:9418 \
+                --token-file /home/orbit/.config/swamp/serve-driver-token --json \
+                | jq -e '.success == true and ((.errors // []) | length) == 0' >/dev/null
+              timeout 90 /home/orbit/.local/bin/swamp access reload --server ws://127.0.0.1:9418 \
+                --token-file /home/orbit/.config/swamp/serve-driver-token --json | jq -e '.success == true' >/dev/null
+              # Schedules write their own schedule-<uuid> workflows into serve at any time; only the commit's are compared.
+              tracked='[.results[] | select(.name | test("^schedule-[0-9a-f-]{36}$") | not) | [.id, .name]] | sort'
+              disk=$(timeout 60 /home/orbit/.local/bin/swamp workflow list --repo-dir swamp --json | jq -ec "$tracked")
+              live=$(timeout 60 /home/orbit/.local/bin/swamp workflow list --server ws://127.0.0.1:9418 \
+                --token-file /home/orbit/.config/swamp/serve-driver-token --json | jq -ec "$tracked")
+              test "$disk" = "$live"
+              jq -cn --arg sha "$RELEASE_SHA" --arg previous "$previous" --argjson workflows "$(printf '%s' "$live" | jq length)" \
+                '{sha: $sha, previous: $previous, workflows: $workflows}'

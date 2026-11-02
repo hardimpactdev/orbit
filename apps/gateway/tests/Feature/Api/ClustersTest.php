@@ -201,7 +201,7 @@ describe('Cluster lifecycle', function (): void {
         };
 
         $this
-            ->patchJson("/api/v1/clusters/{$cluster->id}", ['state' => 'active'])
+            ->postJson("/api/v1/clusters/{$cluster->id}/activate")
             ->assertOk();
 
         expect($cluster->refresh()->state)
@@ -225,7 +225,7 @@ describe('Cluster lifecycle', function (): void {
         );
 
         $this
-            ->patchJson("/api/v1/clusters/{$cluster->id}", ['state' => 'active'])
+            ->postJson("/api/v1/clusters/{$cluster->id}/activate")
             ->assertServerError();
 
         expect($cluster->refresh()->state)
@@ -241,7 +241,7 @@ describe('Cluster lifecycle', function (): void {
         ]);
 
         $this
-            ->patchJson("/api/v1/clusters/{$cluster->id}", ['state' => 'active'])
+            ->postJson("/api/v1/clusters/{$cluster->id}/activate")
             ->assertOk()
             ->assertJsonPath('data.state', 'active')
             ->assertJsonPath('data.tld', null)
@@ -298,7 +298,7 @@ describe('Cluster lifecycle', function (): void {
         $dns = clusters_dns_reconciler();
 
         $this
-            ->patchJson("/api/v1/clusters/{$withTld->id}", ['state' => 'active'])
+            ->postJson("/api/v1/clusters/{$withTld->id}/activate")
             ->assertConflict()
             ->assertJsonPath('error.code', 'cluster.router_required');
         $this
@@ -314,7 +314,7 @@ describe('Cluster lifecycle', function (): void {
             ->toBe(['expand', 'prune']);
     });
 
-    it('validates combined updates against their proposed final state', function (): void {
+    it('changes the TLD by update and the state only by activate or deactivate', function (): void {
         $cluster = Cluster::query()->create([
             'name' => 'development',
             'tld' => 'beast',
@@ -322,22 +322,25 @@ describe('Cluster lifecycle', function (): void {
         ]);
 
         $this
-            ->patchJson("/api/v1/clusters/{$cluster->id}", [
-                'tld' => null,
-                'state' => 'active',
-            ])
+            ->patchJson("/api/v1/clusters/{$cluster->id}", ['tld' => null])
             ->assertOk()
-            ->assertJsonPath('data.tld', null)
+            ->assertJsonPath('data.tld', null);
+        $this
+            ->postJson("/api/v1/clusters/{$cluster->id}/activate")
+            ->assertOk()
             ->assertJsonPath('data.state', 'active');
 
         $this
-            ->patchJson("/api/v1/clusters/{$cluster->id}", [
-                'tld' => 'beast',
-                'state' => 'inactive',
-            ])
+            ->postJson("/api/v1/clusters/{$cluster->id}/deactivate")
             ->assertOk()
-            ->assertJsonPath('data.tld', 'beast')
             ->assertJsonPath('data.state', 'inactive');
+        $this
+            ->patchJson("/api/v1/clusters/{$cluster->id}", ['tld' => 'beast'])
+            ->assertOk()
+            ->assertJsonPath('data.tld', 'beast');
+        $this
+            ->patchJson("/api/v1/clusters/{$cluster->id}", ['state' => 'active'])
+            ->assertUnprocessable();
     });
 
     it('owns state and TLD updates outside their transaction and leaves name-only updates independent', function (): void {
@@ -356,7 +359,7 @@ describe('Cluster lifecycle', function (): void {
             ->patchJson("/api/v1/clusters/{$cluster->id}", ['tld' => 'beast'])
             ->assertOk();
         $this
-            ->patchJson("/api/v1/clusters/{$cluster->id}", ['state' => 'inactive'])
+            ->postJson("/api/v1/clusters/{$cluster->id}/deactivate")
             ->assertOk();
 
         expect($owner->entries)
@@ -397,7 +400,7 @@ describe('Cluster lifecycle', function (): void {
         ]);
 
         $this
-            ->patchJson("/api/v1/clusters/{$cluster->id}", ['state' => 'active'])
+            ->postJson("/api/v1/clusters/{$cluster->id}/activate")
             ->assertConflict()
             ->assertJsonPath('error.code', 'cluster.tld_conflict');
 
@@ -410,7 +413,7 @@ describe('Cluster lifecycle', function (): void {
             ->putJson("/api/v1/clusters/{$cluster->id}/nodes/{$matching->id}")
             ->assertOk();
         $this
-            ->patchJson("/api/v1/clusters/{$cluster->id}", ['state' => 'active'])
+            ->postJson("/api/v1/clusters/{$cluster->id}/activate")
             ->assertOk()
             ->assertJsonPath('data.state', 'active')
             ->assertJsonPath('data.tld', 'beast');

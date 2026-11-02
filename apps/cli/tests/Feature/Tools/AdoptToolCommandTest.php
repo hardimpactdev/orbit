@@ -35,7 +35,7 @@ afterEach(function (): void {
 });
 
 it('requires consent before any adoption request when it cannot prompt', function (array $arguments): void {
-    $mock = MockClient::global(gateway_fixture_mock('tools/tool-adopt/adopted'));
+    $mock = MockClient::global();
 
     $result = CommandFixture::run(['tool:adopt', ...$arguments]);
     expect($result['status'])->toBe(1)->and($result['stderr'])->toBe('');
@@ -51,7 +51,7 @@ it('requires consent before any adoption request when it cannot prompt', functio
 ]);
 
 it('rejects invalid identity before consent or a request', function (array $arguments, string $code): void {
-    $mock = MockClient::global(gateway_fixture_mock('tools/tool-adopt/adopted'));
+    $mock = MockClient::global();
 
     $result = CommandFixture::run(['tool:adopt', ...$arguments, '--yes', '--json']);
     expect($result['status'])->toBe(1)->and($result['stderr'])->toBe('');

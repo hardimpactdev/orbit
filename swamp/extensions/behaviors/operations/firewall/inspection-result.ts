@@ -2,7 +2,7 @@ import { isIP } from "node:net";
 import { z } from "npm:zod@4.4.3";
 
 const Limit = 256 * 1024;
-const Shape = z.object({
+export const Shape = z.object({
     comment: z.string(),
     action: z.enum(["allow", "deny"]),
     direction: z.enum(["in", "out", "fwd"]),
@@ -30,9 +30,8 @@ const Row = z.object({
 export const Snapshot = z.object({
     backend: z.enum(["active", "inactive"]),
     observed_at: z.iso.datetime(),
-    live: z.array(Shape.extend({ family: z.literal("v4") })).max(512),
-    comparison: z.object({ live: z.array(Row).max(512), missing: z.array(Row) })
-        .strict(),
+    live: z.array(Row).max(512),
+    missing: z.array(Row),
 }).strict();
 const Args = z.object({ stdout: z.string(), expected: z.array(Expected) })
     .strict();
@@ -119,8 +118,8 @@ export function inspectionResult(input: z.infer<typeof Args>) {
     if (live.length > 512) throw new Error("firewall.inspection_too_large");
     if (backend === "inactive" && live.length) return unavailable();
     const expected = args.expected.filter((e) => e.shape.family !== "v6");
-    const named = (shape: Rule) =>
-        /^orbit:node:\d+:firewall:/.test(shape.comment);
+    // Orbit's own rules carry `orbit` or `orbit <label>` and match by tuple, never by comment.
+    const named = (shape: Rule) => /^orbit( |$)/.test(shape.comment);
     const bounds = (port: string) => port.split(":").map(Number);
     const matches = (actual: Rule, intended: Rule, port = intended.port) =>
         Object.entries({ ...intended, port }).every(([key, value]) =>
@@ -141,8 +140,7 @@ export function inspectionResult(input: z.infer<typeof Args>) {
             expected.find((e) => e.shape.comment === shape.comment)?.name ??
                 expected.find((e) => named(e.shape) && exact(shape, e.shape))
                     ?.name ??
-                (/^orbit:node:\d+:firewall:(.+)$/.exec(shape.comment)?.[1] ??
-                    (shape.comment || "unmanaged"));
+                (shape.comment || "unmanaged");
         return Row.parse({
             name,
             comment: shape.comment,
@@ -157,7 +155,9 @@ export function inspectionResult(input: z.infer<typeof Args>) {
         });
     };
     const classified = live.map((rule) => {
-        const owners = expected.filter((e) => e.shape.comment === rule.comment);
+        const owners = named(rule)
+            ? []
+            : expected.filter((e) => e.shape.comment === rule.comment);
         const candidates = owners.length
             ? owners
             : expected.filter((e) => named(e.shape) && exact(rule, e.shape));
@@ -188,47 +188,12 @@ export function inspectionResult(input: z.infer<typeof Args>) {
         : [];
     const result = Snapshot.parse({
         backend,
-        live,
         observed_at: new Date().toISOString(),
-        comparison: { live: classified, missing },
+        live: classified,
+        missing,
     });
     if (new TextEncoder().encode(JSON.stringify(result)).length >= Limit) {
         throw new Error("firewall.inspection_too_large");
     }
     return result;
 }
-export const behavior = {
-    type: "@nckrtl/firewall-inspection",
-    version: "2026.11.01.2",
-    resources: {
-        result: {
-            schema: z.object({ stdout: z.string(), exitCode: z.literal(0) }),
-            lifetime: "1d",
-            garbageCollection: 10,
-        },
-    },
-    methods: {
-        inspect: {
-            description:
-                "Parse and compare one native pinned SSH UFW observation against admitted intent",
-            arguments: Args,
-            execute: async (
-                args: z.infer<typeof Args>,
-                ctx: {
-                    writeResource(
-                        spec: string,
-                        name: string,
-                        value: unknown,
-                    ): Promise<unknown>;
-                },
-            ) => ({
-                dataHandles: [
-                    await ctx.writeResource("result", "result", {
-                        stdout: JSON.stringify(inspectionResult(args)),
-                        exitCode: 0,
-                    }),
-                ],
-            }),
-        },
-    },
-};

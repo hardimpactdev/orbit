@@ -6,6 +6,7 @@ use App\Domain\Doctor\DoctorFamily;
 use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\AgentThreadSendLease;
+use App\Models\AptRepository;
 use App\Models\Cluster;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -95,6 +96,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         TaskWorkspaceOperation::class,
         InstanceEnvironmentValue::class,
         ToolManagerRecord::class,
+        AptRepository::class,
         Setting::class,
         ProjectDocumentStorage::class,
         ProjectDocumentEntry::class,

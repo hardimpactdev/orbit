@@ -1,14 +1,12 @@
 """Migrated family source must never select an effect-Node worker."""
-import shutil
 import unittest
 from pathlib import Path
 
 import yaml
-from native_harness import NativeTestCase
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = (
-    'operation-schedule-create', 'operation-schedule-control', 'operation-schedule-run',
+    'operation-schedule-create', 'operation-schedule-control', 'task-command-run',
     'operation-schedule-destroy', 'operation-database-read', 'operation-vault-sync',
     'operation-conn-pairing-revoke', 'operation-route-update', 'operation-task-publish',
 )
@@ -50,41 +48,21 @@ class MigratedWorkerRetirement(unittest.TestCase):
                 placed_steps = list(steps(workflow))
                 self.assertTrue(placed_steps)
                 for placement, task in placed_steps:
-                    # Matching duals remain temporarily supported by the canonical lower.
-                    if 'target' in placement:
-                        self.assertEqual(placement['target'], 'orbit-node-209')
-                    else:
-                        self.assertEqual(placement.get('labels'), {'node': '209'})
-                    if 'labels' in placement:
-                        self.assertEqual(placement['labels'], {'node': '209'})
+                    self.assertNotIn('target', placement)
+                    self.assertEqual(placement.get('labels'), {'role': 'swamp'})
                     if task.get('type') == 'workflow':
                         pending.append(task['workflowIdOrName'])
 
     def test_effect_node_expression_is_detected_in_a_nested_scope(self):
-        workflow = {'target': 'orbit-node-209', 'jobs': [{'steps': [
-            {'target': '${{ "orbit-node-" + string(inputs.node_id) }}', 'task': {'type': 'assert'}}]}]}
-        self.assertNotEqual(next(steps(workflow))[0]['target'], 'orbit-node-209')
+        workflow = {'labels': {'role': 'swamp'}, 'jobs': [{'steps': [
+            {'labels': {'node': '${{ string(inputs.node_id) }}'}, 'task': {'type': 'assert'}}]}]}
+        self.assertNotEqual(next(steps(workflow))[0]['labels'], {'role': 'swamp'})
 
     def test_retired_issuer_workflows_and_proxy_behavior_are_absent(self):
         for name in ('node-proxy-workers-setup', 'node-proxy-preflight', 'node-worker-enroll', 'node-worker-rotation'):
             self.assertFalse((ROOT / 'workflows' / f'workflow-{name}.yaml').exists())
-        for name in ('proxy.ts', 'proxy-install.ts', 'proxy-runtime.ts'):
+        for name in ('proxy.ts', 'proxy-install.ts', 'proxy-runtime.ts', 'rotation.ts'):
             self.assertFalse((ROOT / 'extensions/behaviors/node-worker' / name).exists())
-
-
-class RetiredLifecycleNative(NativeTestCase):
-    def test_retired_type_cannot_create_an_enrollment_model(self):
-        source = ROOT / 'extensions/behaviors'
-        target = self.repo / 'extensions/behaviors/node-worker'
-        target.mkdir(parents=True)
-        shutil.copy(source / 'node-worker/rotation.ts', target)
-        library = self.repo / 'extensions/behaviors/operations/_lib'
-        library.mkdir(parents=True)
-        shutil.copy(source / 'operations/_lib/local-worker.ts', library)
-        result = self.cli('behavior', 'create', '@nckrtl/node-worker-lifecycle', 'retired-worker', success=False)
-        if 'auth_gate_blocked' in result.stdout + result.stderr:
-            self.skipTest('isolated native fixture needs an existing Swamp account credential')
-        self.assertIn('Unknown behavior type: @nckrtl/node-worker-lifecycle', result.stdout + result.stderr)
 
 
 if __name__ == '__main__':

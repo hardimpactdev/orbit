@@ -21,7 +21,8 @@
                             "registered": false,
                             "tool_id": null,
                             "adoption": "supported",
-                            "adoption_block": null
+                            "adoption_block": null,
+                            "repository": null
                         }
                     ]
                 },
@@ -33,6 +34,11 @@
                 {
                     "manager": "vp",
                     "scan_state": "conflicting",
+                    "packages": []
+                },
+                {
+                    "manager": "apt",
+                    "scan_state": "unsupported",
                     "packages": []
                 }
             ]

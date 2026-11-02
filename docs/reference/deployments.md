@@ -2,12 +2,13 @@
 title: "Instance releases"
 description: "How production Instances build releases and select current code, and how development defaults deploy in their checkout."
 covers:
-  - apps/gateway/app/Domain/{Instances/Deployment/**,Instances/Smoke/**,Instances/ProductionWebRootManager.php,Projects/*DeployStep*.php}
-  - apps/gateway/app/Actions/Instances/{StartInstanceDeployAction,StartInstanceRollbackAction,RestartInstanceProcessesAction,InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction,*InstanceSmoke*Action,*InstanceDeployStep*Action}.php
-  - apps/gateway/app/Infrastructure/Instances/{GitHubInstanceSmoke,SmokeArtifactEvidence,RemoteProductionDeployment,DevelopmentCheckoutProgram,ProductionApplicationPaths,ProductionWebRootProgram,RemoteProductionWebRootManager}.php
+  - apps/gateway/app/Domain/{Instances/Deployment/**,Instances/ProductionWebRootManager.php,Projects/*DeployStep*.php}
+  - apps/gateway/app/Actions/Instances/{StartInstanceDeployAction,StartInstanceRollbackAction,RestartInstanceProcessesAction,InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction,*InstanceDeployStep*Action}.php
+  - apps/gateway/app/Infrastructure/Instances/{RemoteProductionDeployment,DevelopmentCheckoutProgram,ProductionApplicationPaths,ProductionWebRootProgram,RemoteProductionWebRootManager}.php
   - apps/agent/src/commands/{production,production_tests,production_home,production_home_tests,deploy_step,dev_deploy,dev_deploy_tests}.rs
-  - apps/gateway/app/Http/{Controllers/Api/{InstanceSmokeController,InstanceDeploymentsController,InstanceDeployStepsController,InstanceReleasesController,InstanceRollbacksController,ProjectDevelopmentDeployStepsController},Requests/Projects/*ProjectDevelopmentDeployStepRequest}.php
+  - apps/gateway/app/Http/{Controllers/Api/{InstanceDeploymentsController,InstanceDeployStepsController,InstanceReleasesController,InstanceRollbacksController,ProjectDevelopmentDeployStepsController},Requests/Projects/*ProjectDevelopmentDeployStepRequest}.php
   - apps/gateway/{app/{Models/{InstanceDeployment,InstanceDeployStep,ProjectDevelopmentDeployStep},Data/Instances/InstanceDeploymentData}.php,database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_05_000000_add_caller_node_id_to_instance_deployments}.php}
+  - swamp/extensions/behaviors/automatic-deploy/**
   - packages/php-sdk/src/{Requests/Projects/*DevelopmentDeployStep*,Responses/{Projects/*DevelopmentDeployStep*,Deployments/InstanceDeploymentResponse}}.php
 ---
 
@@ -255,7 +256,7 @@ A deployment reads the branch and the steps once, when it starts. Then it runs t
 
 Each Process restart uses the normal Process restart action and reports success or failure in deployment events. A failure stops the deployment before after-activation steps and cleanup. The new release stays selected.
 
-Deployment environment synchronization only writes files. It does not run the explicit env-sync runtime refresh or restart Processes before activation. Explicit [production env-sync](/reference/environment-variables#synchronize) refreshes PHP and uses the same Process restart action afterward, reporting restarted Process IDs in its response.
+Deployment environment synchronization only writes files. It does not run the explicit env-sync runtime refresh or restart Processes before activation. Explicit [production env-sync](/reference/environment-variables#synchronize) refreshes PHP and uses the same Process restart action afterward, reporting restarted Process IDs in its Operation result.
 
 Orbit skips PHP refresh for an Instance that does not serve PHP. A changed resolved release restarts the dedicated service so its workers enter the new application directory.
 
@@ -316,7 +317,7 @@ A default deploys its default branch's head. Its deployed commit is its `seed_co
 Swamp decides when a production Instance deploys after you turn automatic deployment on:
 
 ```bash
-orbit instance:update <instance> --auto-deploy=true
+orbit instance:auto-deploy:enable <instance>
 ```
 
 The tick starts from the commit of the Instance's newest succeeded deployment or rollback. Until a first deployment succeeds, it reports `not_deployed`; deploy the Instance by hand once. It reads the head of the deployment branch: the `--branch` that `instance:update` set, or the Instance's branch.
@@ -342,7 +343,7 @@ A pending check that passes is normally selected on the next tick, within one mi
 
 The green-commit walk reads the head's own check run too, so one walk answers both questions. The tick walks again only when the head changed, while the head's check has not finished, or on the first tick at least 5 minutes after it failed. A `no_green_commit` answer stays until the head, the deployed commit, or the blocked commits change.
 
-Without a `merge_check`, the tick deploys every new head. `instance:update` accepts that and warns about it. A `merge_check` is read through the [GitHub App](/reference/github-app). A Project that reads through the GitHub CLI, or is not on `github.com`, cannot gate: `instance:update --auto-deploy=true` refuses it with `instance.auto_deploy_gate_unreadable` while it has a `merge_check`.
+Without a `merge_check`, the tick deploys every new head. `instance:auto-deploy:enable` accepts that and warns about it. A `merge_check` is read through the [GitHub App](/reference/github-app). A Project that reads through the GitHub CLI, or is not on `github.com`, cannot gate: `instance:auto-deploy:enable` refuses it with `instance.auto_deploy_gate_unreadable` while it has a `merge_check`.
 
 #### Failures of automatic deployments
 
@@ -386,21 +387,20 @@ The [ADR 0238 trial](/decisions/0238-trial-two-swamp-slices-before-a-wider-move)
 | `GET /api/v1/instances/{instance}/deployment-source/checks?commit=<sha>` | The Project's configured `gate` and exact latest check `runs`, with name, head SHA, App slug, status, and conclusion. Empty runs never prove success. |
 | `GET /api/v1/instances/{instance}/deploy/automatic/receipt?request_key=<key>&commit=<sha>` | Exact keyed admission lookup, bound to caller, automatic command, Instance, and commit. Returns `request_key`, `found`, `operation`, and retained `deployment`, when available. Conflicting input returns `operation.idempotency_conflict`. |
 | `PUT /api/v1/instances/{instance}/auto-deploy/policy` | Publish the public policy projection with the observed `resumed_after`, `last_deployment_id`, and `history_version`. A changed cursor or history returns `instance.auto_deploy_observation_changed`. |
-| `POST /api/v1/instances/{instance}/auto-deploy/events` | Admit a keyed `instance.policy_event` Activity through one placed native step and terminal projection. Other event types return `operation.kind_unavailable`. |
 
-Follow the Operation to read its delivery receipt. Notification events remain unavailable until their native notification path is ported. Activity delivery uses its original request key after a lost response. Its terminal projection records the admitted Activity once. Activity delivery does not release deployment holds, change retry limits, or admit another deployment.
+The policy never posts its events. Each fire of `automatic-production-deploy` prints the events it raised in its terminal `result` step: the notable Activity entries and the alerts for a failed deploy, a pause and a stalled commit. The Gateway reads that result from the run and records each event once, as an Activity entry or a release alert. A fire whose Instance tick failed still prints its result, with the failure's error code: a policy refusal keeps its own code, and any other error is `automatic.tick_failed`. Its `failures` assert then ends the run failed.
 
 The source listing contains at most 100 reachable commits, and the walk returns at most 20 first-parent candidates. `reached_base` says the walk reached `base`, including when the last candidate names it as its first parent. `truncated` says the candidate bound or a missing parent cut the walk short. Reaching the repository root without `base` returns both flags false. Swamp can fail closed on a truncated walk. Each returned candidate carries an exact ancestry comparison with `base`. The source reads accept full 40- or 64-character commit SHAs.
 
 The commits and checks reads require the Project's GitHub App access. They return `instance.auto_deploy_gate_unreadable` for another source provider and `instance.auto_deploy_gate_unavailable` when the upstream read fails. They expose evidence, not a green-commit decision. Swamp applies the policy and checks that the walk's head matches its fresh head. A moved branch does not silently change a selected commit.
 
-Instance list/show and broadcasts expose `auto_deploy.policy_owner`, `auto_deploy.resumed_after`, `auto_deploy.blocked`, and `auto_deploy.history_version`. The cursor is set only by `instance:update --auto-deploy=true`. The block list combines durable rollback blocks and retained rolled-away history without waiting for a tick. When automatic deployment is off, only permanent smoke blocks are returned and the history version is null; these reads make no policy-history query. The smoke failure contract also records a permanent block before recovery; those blocks remain visible even when automatic deployment is disabled. Swamp keeps its retry and gate state itself. Deployment list/show expose `kind` (`deploy` or `rollback`); origin is recorded in `triggered_by`, with the authorized automatic caller in `caller_node_id`.
+Instance list/show and broadcasts expose `auto_deploy.policy_owner`, `auto_deploy.resumed_after`, `auto_deploy.blocked`, and `auto_deploy.history_version`. The cursor is set only by `instance:auto-deploy:enable`. The block list combines durable rollback blocks and retained rolled-away history without waiting for a tick. When automatic deployment is off, the block list is empty and the history version is null; these reads make no policy-history query. Swamp keeps its retry and gate state itself. Deployment list/show expose `kind` (`deploy` or `rollback`); origin is recorded in `triggered_by`, with the authorized automatic caller in `caller_node_id`.
 
 A found automatic receipt is the original operation, including its bound caller in `input.caller_node_id`, status, result, and error. Follow that operation and read fresh deployment history before deciding what happened. A missing receipt means only that no admission is recorded at the read: an earlier request might still be in flight. It never authorizes a retry. A worker-lost outcome or a terminal operation without required effect evidence stays unresolved. Keyed operations are retained. Neither lookup nor outcome resolution starts work.
 
 ### Clear an unresolved admission hold
 
-Pause new decisions with `orbit instance:update <instance> --auto-deploy=false`. Read the exact receipt using the original Swamp caller, Instance, commit, and request key. Never resend the automatic POST to discover its outcome.
+Pause new decisions with `orbit instance:auto-deploy:disable <instance>`. Read the exact receipt using the original Swamp caller, Instance, commit, and request key. Never resend the automatic POST to discover its outcome.
 
 Use `POST /api/v1/instances/{instance}/deploy/automatic/resolve` (MCP `instance-deploy-automatic-resolve`) with `request_key` and `commit`. By default it resolves the authenticated Node's key. A Node with Gateway access may pass `caller_node_id` to resolve for the original caller. The CLI is `orbit instance:deploy:automatic:resolve <instance> <request_key> <commit> --caller-node=<original-node-id>`; omit the flag for your own key. Activity records the acting Node and the original caller. Admission and resolution serialize under the same Instance database lock.
 
@@ -451,7 +451,7 @@ Swamp deployment rows copy the authorized Gateway peer's Node ID from the operat
 
 | `triggered_by` | Meaning |
 | --- | --- |
-| `swamp:auto-deploy` | Swamp production or development policy admitted through the automatic endpoint. `caller_node_id` identifies the authorized Gateway peer. Policy event operations and fenced automatic admission receipts use the same origin. |
+| `swamp:auto-deploy` | Swamp production or development policy admitted through the automatic endpoint. `caller_node_id` identifies the authorized Gateway peer. Fenced automatic admission receipts use the same origin. |
 | `orbit:auto-deploy` | The previous PHP automatic runner's label. Existing rows keep this label, including early Swamp admissions. No labels or caller IDs are backfilled. |
 | A Node name | A manual deployment or rollback by that Node. |
 
@@ -558,116 +558,6 @@ Every production Instance comes from a clone, and its first deployment builds th
 
 The production home exists before the first release is selected. Deployment and runtime consumers must not treat that pre-release home as a selected release.
 
-## Production smoke
-
-Automatic production smoke is deferred. Orbit has no native smoke execution backend. The following context and recovery contracts do not establish that dispatch is available. Gateway executor fixtures do not apply to native Swamp runs.
-
-The deferred contract lets Swamp opt a Project into production smoke after a successful production deploy. The Gateway exposes the selected release. Dispatching the repository's GitHub Actions browser-test workflow against its public HTTPS origin requires the unbuilt native backend. This feature adds no schedule or opt-in. Separate keyed recovery endpoints can block a proven failing SHA and request a guarded rollback; they do not repair, resume or merge. Swamp owns baseline admission, deadlines and acceptance policy. This page owns the Gateway wire contract. The private [Swamp implementation reference](https://github.com/hardimpactdev/orbit-swamp/blob/main/docs/production-smoke-contract.md) is supporting material.
-
-`GET /api/v1/instances/{instance}/smoke/context` and MCP `instance-smoke-context` require Gateway Node access. They return `instance_id`, `project_id`, `repository_url`, `production`, `base_urls`, `selected` and `retained_releases`. Context reads the actual selected retained release on the Node and matches a successful deploy or rollback history row. `selected` is null without matching evidence; otherwise it contains `deployment_id`, the full 40-character `commit` and `release`. A production Instance must be active on an active Node with an active app-prod role and no active app-dev role. URLs are HTTPS origins of active public Project-owned Routes targeting that Instance. A development Instance cannot admit smoke.
-
-The complete feature ships as a pair with [orbit-swamp#52](https://github.com/hardimpactdev/orbit-swamp/pull/52). The context endpoint is read-only and works without dispatch permission. Before opt-in, the Gateway operator must complete the [GitHub App permission upgrade](/reference/github-app#production-smoke-permission). No live registration, installation or Project setting changes during release preparation.
-
-### Dispatch and receipt
-
-`POST /api/v1/instances/{instance}/smoke` and MCP `instance-smoke` require Gateway Node access and an `Idempotency-Key`. The JSON object has exactly `deployment_id`, `commit` (40 lowercase hex characters), `release`, `base_url` (an active Route HTTPS origin), `workflow` (`.github/workflows/<name>.yml` or `.yaml`) and `ref` (the workflow's Git ref). A missing repository or App installation is `422 instance.smoke_invalid`; GitHub outages are `503 instance.smoke_github_unavailable`. Invalid input, ownership, eligibility or missing Actions write returns `422 instance.smoke_invalid`. A changed selected deployment returns `409 instance.smoke_selection_changed`. Other access, queue and idempotency errors keep their existing codes. Admission binds the authenticated caller, Instance and full Request, plus the repository and Route. It returns `202` with an `instance.smoke` Operation targeting `instance_smoke`/Instance ID, separate from the deploy lock.
-
-The Gateway rechecks selection before its first send, resolves the workflow identity and workflow-ref SHA separately from the tested commit, then records send intent before the GitHub POST. It never retries a send with recorded intent, including after a lost reply or worker restart. GitHub receives only `commit`, `deployment_id` and `base_url`. Waiting releases the queue worker. Bounded reads reconcile exactly one workflow_dispatch run matching the workflow, resolved ref SHA, deployment/SHA run name and admission time. Missing or ambiguous matches stay unresolved.
-
-`GET /api/v1/instances/{instance}/smoke/receipt?request_key=...` and MCP `instance-smoke-receipt` look up the original caller/Instance/key. They never dispatch. The response has `request_key`, `found`, `operation` and `smoke`; a missing receipt has false, null and null. A result repeats every original Request field and adds `state`, nullable `run_id`, `run_attempt`, `workflow_sha`, `run_url` and `conclusion`, nonnegative `tests`, `failures`, `errors`, `skipped`, redacted UTF-8 `output` (at most 64 KiB), and `artifacts` with name and safe GitHub URL. All fields are present, including nulls. Keyed operations and evidence are retained.
-
-A pass requires a completed successful run and matching attempt-specific target JSON and JUnit from the repository's `production-smoke-<run_id>-<attempt>` artifact, with positive tests and zero failures, errors and skips. The JSON binds checkout commit, deployment ID, URL, run ID and attempt. Unknown, expired, corrupt or mismatched evidence, uncertain dispatch, and missing or ambiguous runs report pending or unknown, never failed. Only JUnit failures or errors report failed. Clean JUnit with a failure, timed_out or cancelled GitHub conclusion reports unknown with `instance.smoke_run_unsuccessful` on the Operation. Skipped-only or empty test evidence is unknown.
-
-The Gateway reports evidence. Swamp alone enforces its original deadline, missing-result policy and fresh selection check; new selection or configuration never rewrites recorded evidence.
-
-A new admission for another deployment requests cancellation of any older non-terminal smoke on that Instance and retains its receipt as unknown. A running read honours cancellation at its next boundary. Until that holder yields, admission returns `409 operation.target_busy`; Swamp retries the identical key and body on the follow-up observation, after the native ten-second wait. A busy refusal never means that tests failed. Preparing a send retries at most three times before intent exists and refreshes the workflow ref SHA on each attempt. A definite dispatch refusal reports unknown immediately with `instance.smoke_dispatch_refused`; an uncertain send is never repeated.
-
-Artifact transport outages remain pending until a later read or the observation deadline. Digest, archive and schema mismatches are terminal unknown with `instance.smoke_evidence_invalid`. The Gateway allows 60 seconds of clock skew when matching creation time.
-
-The repository workflow must name its run `Smoke <deployment_id> <commit>` and publish `production-smoke-<run_id>-<run_attempt>`. Its zip contains `storage/framework/testing/smoke-target.json` and `storage/framework/testing/smoke.xml`. Target JSON string fields are `commit`, `deployment_id`, `base_url`, `run_id` and `run_attempt`. JUnit must be UTF-8 without a document type or external entities. Output is stored once in the retained observation; step and Operation results contain only state metadata.
-
-### Wire contract and errors
-
-All three endpoints require Gateway Node access and use the normal `{data, meta}` envelope. POST requires `Idempotency-Key`. IDs and counts are integers, SHA values have 40 lowercase hex characters, and every field below is present, including nulls. `OperationData` is the [operation record](/reference/operations#the-record), including its bound input, target and error code.
-
-```typescript
-type Selection = { deployment_id: number; commit: string; release: string };
-type Context = {
-  instance_id: number; project_id: number; repository_url: string;
-  production: boolean; base_urls: string[];
-  selected: Selection | null; retained_releases: string[];
-};
-type Request = Selection & { base_url: string; workflow: string; ref: string };
-type Result = Request & {
-  state: "pending" | "passed" | "failed" | "unknown";
-  run_id: number | null; run_attempt: number | null; workflow_sha: string | null;
-  run_url: string | null; conclusion: string | null;
-  tests: number; failures: number; errors: number; skipped: number;
-  output: string; artifacts: { name: string; url: string }[];
-};
-type Receipt = {
-  request_key: string; found: boolean;
-  operation: OperationData | null; smoke: Result | null;
-};
-```
-
-Observation ends 720 seconds after admission: Swamp's 600-second budget plus 120 seconds of queue slack. GitHub rate-limit responses, including primary and secondary 403 limits, stay pending. Other 401/403 responses end unknown with `instance.smoke_github_auth`. The Gateway reuses the encrypted cached Actions-read credential across polls. Invalid JUnit reports expose zero counts. Inactive workflows, path mismatches and refs without a full SHA end immediately with `instance.smoke_invalid` and a safe reason.
-
-| Status or outcome | Code | Meaning |
-| --- | --- | --- |
-| 422 admission refusal | `instance.smoke_invalid` | Invalid target/configuration, missing repository/installation or Actions write |
-| 503 admission refusal | `instance.smoke_github_unavailable` | Retryable GitHub outage; no operation admitted |
-| 409 admission refusal | `operation.target_busy` | Prior holder has not yielded; retry the identical admission |
-| Unknown receipt | `instance.smoke_run_unsuccessful` | Clean JUnit with an unsuccessful GitHub conclusion |
-| Unknown receipt | `instance.smoke_github_auth` | GitHub denied a read without rate-limit evidence |
-| Unknown receipt | `instance.smoke_observation_expired` | The 720-second observation limit expired |
-
-
-### Verified smoke failure and guarded rollback
-
-This contract pairs with [orbit-swamp#57](https://github.com/hardimpactdev/orbit-swamp/pull/57). Live recovery stays disabled. No Project or Schedule is enabled. The later deploy-writer hold, alerts, restored smoke and conditional resume require separate work and an explicitly authorized production proof.
-
-All routes below require Gateway Node access, normal JSON envelopes and positive integer IDs. `Selection` retains the definition above. `Failure` adds `smoke_request_key` to Selection. `Rollback` has exactly `failure_key`, `expected: Selection`, `target: Selection` and `target_smoke_request_key`. Both POSTs require `Idempotency-Key`. The block key is `smoke-failure.<instance>.<deployment>`; rollback appends `.rollback`.
-
-| Route under `/api/v1/instances/{instance}/smoke` | MCP | Data |
-| --- | --- | --- |
-| `POST /failure` | `instance-smoke-failure` | 200 Block |
-| `GET /failure/receipt?request_key=...` | `instance-smoke-failure-receipt` | 200 BlockReceipt |
-| `POST /rollback` | `instance-smoke-rollback` | 202 instance.rollback Operation |
-| `GET /rollback/receipt?request_key=...` | `instance-smoke-rollback-receipt` | 200 RollbackReceipt |
-
-Block is `{request_key, instance_id, failure: Failure, blocked: true}`. BlockReceipt is `{request_key, found, block: Block | null}`. RollbackReceipt is `{request_key, found, operation: OperationData | null, deployment: (Selection & {status: running | succeeded | failed}) | null}`. Required nullable fields remain present. A missing receipt has `found: false` and null evidence. GET never creates effects. Identical POST retries return the original receipt; changed caller, Instance or full body refuses with `operation.idempotency_conflict`.
-
-The Gateway independently reads the caller-bound stored smoke receipt. It requires the exact deployment SHA/release, admitted repository and active public Project Route, positive non-skipped tests, failure/error counts, and the run/attempt/workflow/target evidence already verified by the smoke reader. A workflow conclusion alone cannot block. Missing, pending, unknown or cancelled evidence cannot block or roll back. A newer selected release does not invalidate an already verified failure.
-
-Under the existing Instance deploy-writer lock, one database transaction stores the immutable keyed failure in `auto_deploy_state.smoke_failures` and its SHA in `auto_deploy_state.blocked`. Smoke blocks are exempt from the ordinary recent rollback-block bound. The receipt and block survive selection changes, target pruning, recovery failure and resume. Recording failure does not pause or resume automation.
-
-Rollback requires that caller's recorded failure and block, exact current `expected` selection, and the requested target's prior passed smoke plus retained SHA and release. The target has a lower deployment ID and a different SHA and release from the failed deployment. It never chooses another target.
-
-Admission and queued execution check these guards under the existing Instance deploy-writer lock. The native `instance.rollback` operation uses its existing Instance target lock, resumable steps, history and manual-pause semantics. After activation, a resumed operation checks the selected target instead of the old expected release. Success also verifies the selected target SHA/release under the lock; its rollback deployment ID is new. No revert commit or data change is made. No automatic resume occurs.
-
-Changed selection is `409 instance.smoke_selection_changed`; a pruned or mismatched retained target is `409 instance.smoke_rollback_target_missing`. Unverified failure or ownership is `422 instance.smoke_failure_invalid`; invalid rollback proof/body is `422 instance.smoke_rollback_invalid`. Existing access, queue and operation-lock errors remain. Failed/cancelled rollback or unreadable receipts require assistance using the original key and target; the permanent block remains.
-
-### Smoke holds and conditional recovery
-
-The Gateway stores a smoke hold separately from operator pause state in `auto_deploy_state.smoke_control`. Both automatic-deploy admission and queued execution refuse `instance.smoke_held`. A hold never disables `auto_deploy`, clears a failed-SHA block, or changes main. Manual recovery remains available.
-
-Gateway peers use `POST /api/v1/instances/{instance}/smoke/control` with an `Idempotency-Key` and `{action: hold|alert|release, hold_key, expected: {deployment_id,commit,release}, smoke_request_key: string|null, rollback_request_key: string|null}`. Replies contain `{request_key,instance_id,action,hold_key,held,resumed,reason}`; `GET .../control/receipt?request_key=...` returns `{request_key,found,control}`. Keys bind the caller, Instance and complete body. Only an active Orbit production Instance with a public Route qualifies.
-
-A hold snapshots operator controls and existing manual pause. An alert raises release assistance and the configured notification; partial delivery stays recorded and can be retried. Missing or ambiguous smoke evidence keeps the release live and the hold in place. Release requires a fresh, verified passing receipt for the exact current selection.
-
-It removes only its own hold and assistance. Resume advances the manual-pause cursor only when automation was enabled and unpaused at acquisition, operator controls did not change, and every subsequent manual row belongs to this recovery. Other manual work and explicit operator controls win. Blocks on failed commits remain permanent.
-
-A smoke rollback records whether it superseded a queued automatic deployment. If so, `POST .../smoke/redeploy` accepts the same control body with `action: redeploy` and admits a native pinned `instance.deploy` for the restored selection. Admission and worker execution verify the hold, caller, selected target and completed owned rollback. Its keyed receipt at `GET .../redeploy/receipt?request_key=...` includes the operation and deployment. Smoke the resulting selected release before release and conditional resume. Failure at any recovery step retains the hold and requires assistance; it never tries successively older releases.
-
-### Repair tasks after smoke failure
-
-Gateway peers create one repair group for a recorded production smoke failure with `POST /api/v1/instances/{instance}/smoke/repair`, `{failure_key}`, and required `Idempotency-Key: <failure_key>.repair`. `GET .../repair/receipt?request_key=...` returns the original receipt without creating work. Creation returns `{request_key,instance_id,project_id,failure_key,group_id,task_id}` inside `data`; lookup returns `{request_key,found,repair}`. The key binds caller, Instance and complete input. A replay returns the same group even after it ends or recovery changes. A new failed deployment has a new key. Missing or ambiguous smoke results cannot create a repair.
-
-Admission independently verifies the recorded block, failed deployment identity, hosted ownership and executed failing JUnit. It creates the group and saves its receipt in one transaction under the Instance writer lock. Repair creation does not depend on rollback success and never changes deploy holds, pause state, code or blocks. Tasks must be enabled. The normal task creation action chooses the configured default agent. The group uses external orchestration with one repair child and the normal task factory; it starts no Gateway task tick.
-
-The brief includes the failed SHA and release, smoke output and artifact links, the source commit, available associated PR and CI evidence, recovery receipt links and the migration compatibility constraint. Output is redacted and bounded; full smoke evidence remains in its original receipt. Unavailable GitHub context is stated and does not prevent a repair. The repair must add a regression test and the missing smoke coverage. Swamp records its factory handoff before starting the existing factory and reconciles its state after restarts. Live creation remains disabled with the recovery effects gate until the production pilot is authorized.
-
 ## Runtime composition
 
 The production deploy parent composes PHP installation, environment synchronization, Process and Schedule installation, and Process restart inside its one native root. The Gateway captures the owned definitions and projects only their reported outcomes. No executor Node uses a Gateway runtime-command exception. PHP profile and package policy remains the canonical admitted preparation plan; all runtime commands run locally in Swamp.
@@ -703,7 +593,9 @@ When a development deploy runs, it leaves Process definitions, Route publication
 
 ### Automatic policy
 
-A development start explicitly refused by Swamp or unavailable before sending does not create deployment history. The next scheduled policy observation releases that failed pending admission and may admit a fresh automatic deployment on a later tick. An uncertain start retains its pending intent until its outcome is known.
+A development start explicitly refused by Swamp or unavailable before sending does not create deployment history. This includes a failed execution-copy vault synchronization with zero attempts and no result, which happens before workflow submission. The next scheduled policy observation releases that failed pending admission and may admit a fresh automatic deployment on a later tick. An uncertain start retains its pending intent until its outcome is known.
+
+Policy checkpoints stay durable before and after keyed admission. When one tick writes a state resource several times, its native output contains only the last handle for that resource name. Earlier checkpoint handles are not duplicate method outputs.
 
 Swamp owns development discovery, branch checks, backoff, retry limits and admission. An `interrupted` Operation is terminal, like a failed Operation: after its deployment evidence is settled, the policy applies the normal failure backoff before admitting the branch head again. The existing automatic workflow keeps its minute cadence. Discovery uses the Gateway's canonical eligibility, including ambiguous or inactive role placement. Each native source action and Project command has its own timeout. The Gateway exposes records and projects the public decision; its PHP automatic-deploy command and scheduler entry are removed.
 

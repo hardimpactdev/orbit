@@ -1,0 +1,43 @@
+{
+  "kind": "firewall.deny-ssh",
+  "workflow": "operation-firewall-direct",
+  "topology": "minimal",
+  "budget_seconds": 300,
+  "expect": {
+    "http_status": 422,
+    "error_code": "firewall.protected_port"
+  },
+  "phases": [
+    {
+      "name": "assets",
+      "job": "firewall",
+      "step": "assets",
+      "budget_seconds": 60
+    },
+    {
+      "name": "apply",
+      "job": "firewall",
+      "step": "apply",
+      "budget_seconds": 60
+    },
+    {
+      "name": "accepted",
+      "job": "firewall",
+      "step": "accepted",
+      "budget_seconds": 60
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "nodes/${node.target}/firewall-rules/deny",
+    "body": {
+      "port": "22",
+      "protocol": "tcp"
+    }
+  },
+  "parity": [
+    "swamp/proof/firewall/check.py",
+    "-22/tcp DENY Anywhere",
+    "-22/tcp (v6) DENY Anywhere (v6)"
+  ]
+}

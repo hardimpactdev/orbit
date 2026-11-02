@@ -1,12 +1,16 @@
 import { stringify } from "jsr:@std/yaml@1.0.12";
 type Fields = Record<string, unknown>;
+import { behaviorName } from "../_lib/behavior_name.ts";
 const ex = (source: string) => "${{ " + source + " }}";
-const placed = { target: "orbit-node-209" };
+const placed = { labels: { role: "swamp" } };
 const settled = {
     type: "or",
     conditions: [{ type: "succeeded" }, { type: "skipped" }],
 };
 const dep = (step: string) => [{ step, condition: settled }];
+const byTarget = (family: string, source: string) =>
+    behaviorName(family, { hosts: [{ address: ex(source + ".target.host") }] }, true);
+const byIndex = (family: string) => behaviorName(family, undefined, true);
 const resource = (
     name: string,
     methodName: string,
@@ -17,13 +21,14 @@ const resource = (
     task: {
         type: "behavior",
         behaviorType: "@nckrtl/node-removal-command",
-        behaviorName: ex(JSON.stringify(name + "-") + "+run.id"),
+        // Named with its type: fixed names such as `result` recur across behavior types.
+        behaviorName: ex(JSON.stringify(name + "-node-removal-command")),
         methodName,
         inputs,
     },
 });
 const globals = (source: string, name: string): Fields => ({
-    name: ex(JSON.stringify(name + "-") + '+run.id+"-"+string(self._index)'),
+    name: byTarget(name, source),
     transport: {
         kind: "ssh",
         user: ex(source + ".target.user"),
@@ -62,9 +67,7 @@ function action(
     sudo = true,
 ): Fields[] {
     const each = { item: "action", in: ex(items) };
-    const identity = ex(
-        JSON.stringify(name + "-") + '+run.id+"-"+string(self._index)',
-    );
+    const identity = byTarget(name, "self.action.ssh");
     return [{
         ...resource(name + "_assets", "read", {
             action: method,
@@ -77,10 +80,7 @@ function action(
                 action: method,
                 input: ex("self.action.input"),
             }).task as Fields),
-            behaviorName: ex(
-                JSON.stringify(name + "-assets-") +
-                    '+run.id+"-"+string(self._index)',
-            ),
+            behaviorName: byIndex(name + "-assets"),
         },
     }, {
         name,
@@ -119,8 +119,17 @@ function workflow(
         const prior = typeof step.guard === "string"
             ? step.guard.slice(3, -2).trim()
             : "";
+        const tokenPhase = name === "operation-node-remove" &&
+            [
+                "worker_tokens",
+                "access_tokens",
+                "tokens",
+                "revoke_worker",
+                "revoke_access",
+            ].includes(String(step.name));
         step.guard = ex(
             'steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled")' +
+                (tokenPhase ? " || inputs.intent.task_vm_guest" : "") +
                 (prior ? " || (" + prior + ")" : ""),
         );
     }
@@ -173,7 +182,7 @@ function workflow(
             "Public input, native209 actions and typed terminal output; no Gateway callbacks.",
         vaults: [],
         inputs,
-        target: "orbit-node-209",
+        labels: { role: "swamp" },
         concurrency: 1,
         jobs,
     };
@@ -353,7 +362,7 @@ export function nodeRemovalWorkflow() {
             task: {
                 type: "behavior",
                 behaviorType: "command/shell",
-                behaviorName: ex('"node-remove-probe-"+run.id'),
+                behaviorName: ex('"node-remove-probe"'),
                 methodName: "execute",
                 inputs: {
                     run: 'python3 "$PROBE_SCRIPT" "$PROBE_HOST" "$PROBE_PORT"',
@@ -441,11 +450,9 @@ export function nodeRemovalWorkflow() {
         task: {
             type: "behavior",
             behaviorType: "@swamp/ssh",
-            behaviorName: ex(
-                '"node-remove-reload-"+run.id+"-"+string(self._index)',
-            ),
+            behaviorName: byTarget("node-remove-reload", "self.action.ssh"),
             methodName: "exec",
-            globalArgs: globals("self.action.ssh", "reload"),
+            globalArgs: globals("self.action.ssh", "node-remove-reload"),
             inputs: {
                 hosts: "name:target",
                 sudo: true,
@@ -464,7 +471,7 @@ export function nodeRemovalWorkflow() {
         task: {
             type: "behavior",
             behaviorType: "command/shell",
-            behaviorName: ex(JSON.stringify(name + "-") + "+run.id"),
+            behaviorName: ex(JSON.stringify(name)),
             methodName: "execute",
             inputs: {
                 run,
@@ -506,14 +513,19 @@ export function nodeRemovalWorkflow() {
             cli + " worker token revoke '${{ self.token }}'" + cliFlags,
             "tokens",
         ),
-        forEach: { item: "token", in: ex("steps.tokens.outputs.worker") },
+        forEach: {
+            item: "token",
+            in: ex(
+                "inputs.intent.task_vm_guest ? [] : steps.tokens.outputs.worker",
+            ),
+        },
         task: {
             ...(shell(
                 "revoke_worker",
                 cli + " worker token revoke '${{ self.token }}'" + cliFlags,
                 "tokens",
             ).task as Fields),
-            behaviorName: ex('"revoke-worker-"+run.id+"-"+string(self._index)'),
+            behaviorName: byIndex("revoke-worker"),
         },
     });
     steps.push({
@@ -522,14 +534,19 @@ export function nodeRemovalWorkflow() {
             cli + " access token revoke '${{ self.token }}'" + cliFlags,
             "revoke_worker",
         ),
-        forEach: { item: "token", in: ex("steps.tokens.outputs.server") },
+        forEach: {
+            item: "token",
+            in: ex(
+                "inputs.intent.task_vm_guest ? [] : steps.tokens.outputs.server",
+            ),
+        },
         task: {
             ...(shell(
                 "revoke_access",
                 cli + " access token revoke '${{ self.token }}'" + cliFlags,
                 "revoke_worker",
             ).task as Fields),
-            behaviorName: ex('"revoke-access-"+run.id+"-"+string(self._index)'),
+            behaviorName: byIndex("revoke-access"),
         },
     });
     steps.push(
@@ -554,7 +571,7 @@ export function nodeRemovalWorkflow() {
         task: {
             type: "behavior",
             behaviorType: "@nckrtl/node-role-converge-command",
-            behaviorName: ex('"peer-assets-"+run.id+"-"+string(self._index)'),
+            behaviorName: byIndex("peer-assets"),
             methodName: "dns",
             inputs: {
                 dns_server: ex("self.peer.dns_server"),
@@ -571,9 +588,9 @@ export function nodeRemovalWorkflow() {
         task: {
             type: "behavior",
             behaviorType: "@swamp/ssh",
-            behaviorName: ex('"peer-ssh-"+run.id+"-"+string(self._index)'),
+            behaviorName: byTarget("peer-ssh", "self.peer.ssh"),
             methodName: "script",
-            globalArgs: globals("self.peer.ssh", "peer"),
+            globalArgs: globals("self.peer.ssh", "peer-ssh"),
             inputs: {
                 hosts: "name:target",
                 sudo: true,
@@ -600,9 +617,7 @@ export function nodeRemovalWorkflow() {
         task: {
             type: "behavior",
             behaviorType: "@nckrtl/node-role-converge-command",
-            behaviorName: ex(
-                '"metrics-assets-"+run.id+"-"+string(self._index)',
-            ),
+            behaviorName: byIndex("metrics-assets"),
             methodName: "read",
             inputs: { action: "file", input: ex("self.file.input") },
         },
@@ -615,7 +630,7 @@ export function nodeRemovalWorkflow() {
         task: {
             type: "behavior",
             behaviorType: "@swamp/ssh",
-            behaviorName: ex('"metrics-"+run.id+"-"+string(self._index)'),
+            behaviorName: byTarget("metrics", "self.file.ssh"),
             methodName: "script",
             globalArgs: globals("self.file.ssh", "metrics"),
             inputs: {
@@ -637,9 +652,7 @@ export function nodeRemovalWorkflow() {
         task: {
             type: "behavior",
             behaviorType: "@swamp/ssh",
-            behaviorName: ex(
-                '"metrics-reload-"+run.id+"-"+string(self._index)',
-            ),
+            behaviorName: byTarget("metrics-reload", "self.owner.ssh"),
             methodName: "exec",
             globalArgs: globals("self.owner.ssh", "metrics-reload"),
             inputs: {
@@ -674,7 +687,7 @@ export function nodeRemovalWorkflow() {
         task: {
             type: "behavior",
             behaviorType: "command/shell",
-            behaviorName: ex('"node-remove-result-"+run.id'),
+            behaviorName: ex('"node-remove-result"'),
             methodName: "execute",
             inputs: {
                 run: "printf '%s\\n' \"$RESULT\"",

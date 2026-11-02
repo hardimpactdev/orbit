@@ -61,10 +61,11 @@ export function mergeCaddy(
     current: string,
     alternatives: string[] = [],
     retainRemoved = false,
+    beforeHadServedGroups = false,
 ) {
     const original = caddySections(before), desired = caddySections(after);
     if (!current) {
-        if (original.groups.size) {
+        if (beforeHadServedGroups || original.groups.size) {
             throw new Error("caddy.current_config_missing");
         }
         current = original.header;

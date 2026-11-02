@@ -30,7 +30,7 @@ console.log(JSON.stringify(workflow));'''
         workflow = json.loads(response.stdout)
         for job in workflow["jobs"]:
             for step in job["steps"]:
-                step.pop("target", None)
+                step.pop("target", None); step.pop("labels", None)
                 step.pop("labels", None)
         (self.repo / "workflows/workflow-role-metrics-fixture.yaml").write_text(json.dumps(workflow))
         fleet = [{"node_id": node_id, "address": f"10.44.0.{node_id}", "agent_sha256": "a" * 64,
@@ -58,7 +58,7 @@ console.log(JSON.stringify(workflow));'''
         for job in self.source["jobs"]:
             for step in job["steps"]:
                 if "forEach" in step:
-                    self.assertEqual(step["target"], '${{ "orbit-node-" + string(self.id) }}')
+                    self.assertEqual(step["labels"], {'node': '${{ string(self.id) }}'})
                     self.assertEqual(step["labels"], {"node": "${{ string(self.id) }}"})
 
     def test_confirmed_service_failure_restores_members_before_commit(self):

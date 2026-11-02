@@ -1,0 +1,124 @@
+sequenceDiagram
+  %% Target design: ADR 0244 (one task:cancel; ending a group with cleanup is its own action kind), docs/reference/tasks.md "Cancel a stuck task", DECISIONS R2-R4, flow-design-decisions 1 (token minted at admission).
+  %% status: draft
+  %% command: tasks:cancel
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane VM icon=server pill=target tone=amber
+  %% lane H icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant VM as Task VM<br/>tvm-88 over ssh
+  participant H as Incus host<br/>Node 14 · VM power
+  CLI->>GW: tasks:cancel 42<br/>--yes
+  %%> Command:
+  %%> - `orbit tasks:cancel 42 --yes`
+  %%> - syntax: `[group] [--yes] [--json]`
+  %%> Input:
+  %%> - the task group id; omitting it uses the standard selector
+  %%> Confirmation:
+  %%> - without `--yes`, the CLI first asks to cancel group 42 and remove its task VM; the default is No
+  %%> Also:
+  %%> - `tasks:complete 42` admits the same ending when its pull request merged or closed; the group then ends `completed`
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool `tasks-cancel` send the same request
+  Note over GW: Validate, record the end<br/>task #5141 · group 42 ending
+  %%> Requirements:
+  %%> - your Node has Gateway access, and the Tasks extension is on
+  %%> - group 42 is not `completed`, and not `settling` with a pull request (complete it instead)
+  %%> - no other ending task holds `task_group:42`
+  %%> Result:
+  %%> - task #5141 recorded with the full intent: VM 88, Node 14, the workspace, its Route, the teardown steps and the last approved commit
+  %%> - a group with no workspace ends `cancelled` at once, with no run (R1)
+  GW->>SW: Cancel the group run<br/>native cancel · task #5140
+  %%> What it does:
+  %%> - cancels the group's root task; Swamp cancels its running Pi turn or check and tears down their SSH sessions
+  %%> Busy:
+  %%> - the Gateway waits briefly for the terminal event within the budget; a run that does not end returns `operation.target_busy`, and nothing changes
+  opt approved work not on origin
+    GW->>SW: Push token<br/>vault: task-publish-token-…
+    %%> When:
+    %%> - a subtask was approved but its commit was never pushed
+    %%> Why:
+    %%> - this run is short, so the Gateway mints the token at admission and writes it to the vault
+  end
+  GW->>SW: Start run, full intent<br/>operation-task-cancel
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - VM 88, Node 14, the checkout path and its SSH host key; the SSH identity comes from the `swamp` role
+  GW-->>CLI: 202 Accepted<br/>task #5141
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>H: Read the VM power<br/>provider state · VM 88
+  %%> What it does:
+  %%> - asks the provider whether VM 88 runs, is stopped, or is gone
+  %%> Why:
+  %%> - guest steps run only on a running VM
+  opt approved work not on origin
+    SW->>VM: Push approved work<br/>git bundle · task-42 · no force
+    %%> What it does:
+    %%> - exports the approved commit as a Git bundle and pushes it from 209, so you can open a pull request from `task-42`
+    %%> - uncommitted changes are never pushed
+    %%> If it fails:
+    %%> - the run stops before any removal, so the work stays in the VM
+  end
+  Note over SW: Withdraw the Route<br/>@swamp/ssh · only this workspace
+  %%> When:
+  %%> - only when one Route targets this workspace alone; a shared or foreign Route refuses the end
+  %%> What it does:
+  %%> - removes the Route's Caddy site on its Node before the VM goes
+  opt VM still running
+    SW->>VM: Run teardown steps<br/>Project teardown · own timeouts
+    %%> When:
+    %%> - only while VM 88 runs; a stopped VM skips guest teardown
+  end
+  SW->>H: Destroy the task VM<br/>delete VM · revoke model key
+  %%> What it does:
+  %%> - deletes VM 88 and revokes its model key
+  %%> Per provider:
+  %%> - Incus: `incus delete` on Node 14 over SSH
+  %%> - UpCloud overflow: the UpCloud API from 209
+  SW->>H: Check the VM is gone<br/>provider absence
+  %%> Why:
+  %%> - the VM only counts as removed when the provider no longer has it
+  alt every step passes
+    H-->>SW: VM 88 absent
+    %%> Returns:
+    %%> - the check passed
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record result<br/>group 42 cancelled · VM 88 gone
+    %%> Result:
+    %%> - group 42 and its open subtasks are `cancelled`; comments, threads and transcripts stay as history
+    %%> - the workspace Instance, its Route record, VM 88 and the `tvm-88` Node record are removed
+    %%> - task #5141 succeeds
+  else a step fails
+    H--xSW: exit ≠ 0 or VM still there
+    %%> When:
+    %%> - the push, Route withdrawal, teardown or deletion fails
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Keep the records<br/>group asks for help · rerun cancel
+    %%> Result:
+    %%> - task #5141 fails; group 42 keeps its status, its workspace and VM 88, and asks for `removal_failure` assistance
+    %%> On the Node:
+    %%> - steps done before the failure stay; there is no rollback
+    %%> Retry:
+    %%> - run `tasks:cancel 42` again after fixing the cause; it is a new task, and done steps find nothing left to do
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5141
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end

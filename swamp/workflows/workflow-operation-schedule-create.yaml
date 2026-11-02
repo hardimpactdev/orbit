@@ -23,24 +23,24 @@ inputs:
   additionalProperties: false
 jobs:
   - name: schedule
-    target: orbit-node-209
+    labels: {role: swamp}
     steps:
       - name: units
-        target: orbit-node-209
+        labels: {role: swamp}
         task:
           type: behavior
           behaviorType: '@nckrtl/schedule-run-assets'
-          behaviorName: ${{ "schedule-units-" + string(inputs.operation_id) }}
+          behaviorName: '${{ "schedule-units" }}'
           methodName: lifecycle
           inputs: {schedule: '${{ inputs.intent.schedule }}'}
       - name: files
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: [{step: units, condition: {type: succeeded}}]
         forEach: {item: unit, in: '${{ ["service", "timer"] }}'}
         task:
           type: behavior
           behaviorType: '@swamp/cfgmgmt/file'
-          behaviorName: ${{ "schedule-unit-" + self.unit + "-" + string(inputs.operation_id) }}
+          behaviorName: '${{ ("schedule-unit-" + string(inputs.intent.ssh_execution.target.host) + "-" + self.unit + "-" + string(self._index)).split(".").join("-") }}'
           methodName: apply
           globalArgs:
             nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
@@ -56,12 +56,12 @@ jobs:
             mode: "0644"
           inputs: {}
       - name: reload
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: [{step: files, condition: {type: succeeded}}]
         task:
           type: behavior
           behaviorType: '@swamp/cfgmgmt/exec'
-          behaviorName: ${{ "schedule-reload-" + string(inputs.operation_id) }}
+          behaviorName: '${{ ("schedule-reload-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: apply
           globalArgs:
             nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
@@ -72,12 +72,12 @@ jobs:
             command: systemctl daemon-reload
           inputs: {}
       - name: timer
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: [{step: reload, condition: {type: succeeded}}]
         task:
           type: behavior
           behaviorType: '@swamp/cfgmgmt/systemd'
-          behaviorName: ${{ "schedule-timer-" + string(inputs.operation_id) }}
+          behaviorName: '${{ ("schedule-timer-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: apply
           globalArgs:
             nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
@@ -90,13 +90,13 @@ jobs:
             ensure: '${{ inputs.intent.schedule.desired == "enabled" ? "running" : "stopped" }}'
           inputs: {}
       - name: remove_obsolete
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: [{step: timer, condition: {type: succeeded}}]
         forEach: {item: suffix, in: '${{ [".sh", ".complete"] }}'}
         task:
           type: behavior
           behaviorType: '@swamp/cfgmgmt/file'
-          behaviorName: '${{ "schedule-remove_obsolete-" + (self.suffix == ".sh" ? "script" : "complete") + "-" + string(inputs.operation_id) }}'
+          behaviorName: '${{ ("schedule-remove_obsolete-" + string(inputs.intent.ssh_execution.target.host) + "-" + (self.suffix == ".sh" ? "script" : "complete") + "-" + string(self._index)).split(".").join("-") }}'
           methodName: apply
           globalArgs:
             nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
@@ -108,12 +108,12 @@ jobs:
             ensure: absent
           inputs: {}
       - name: result
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: [{step: remove_obsolete, condition: {type: succeeded}}]
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: ${{ "schedule-result-" + string(inputs.operation_id) }}
+          behaviorName: '${{ "schedule-result" }}'
           methodName: execute
           inputs:
             run: |

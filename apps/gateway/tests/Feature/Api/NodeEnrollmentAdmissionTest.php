@@ -55,7 +55,7 @@ it('records a fresh enrollment without installing an agent or claiming an observ
     expect($operation->state['enrollment_intent']['existed'])->toBeFalse();
     expect(array_column($operation->input['_node_plan'], 'key'))->toBe([
         'add-begin', 'add-bootstrap-probe', 'add-bootstrap-install', 'add-bootstrap-host', 'add-bootstrap-verify',
-        'add-network', 'add-apt', 'add-role-app-dev', 'add-activate', 'add-footprint', 'add-cli', 'add-commit',
+        'add-network', 'add-role-app-dev', 'add-activate', 'add-footprint', 'add-cli', 'add-commit',
     ]);
 });
 

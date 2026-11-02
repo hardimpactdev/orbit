@@ -1,6 +1,0 @@
-{
-  "kinds": [
-    "vault.sync"
-  ],
-  "workflow": "operation-vault-sync"
-}

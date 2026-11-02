@@ -7,10 +7,14 @@ namespace Orbit\Sdk\Responses\Tools;
 use InvalidArgumentException;
 use Orbit\Sdk\Support\CredentialRedactor;
 use Orbit\Sdk\Support\GatewayRequestId;
+use Orbit\Sdk\Support\ToolRepositoryData;
 use SensitiveParameter;
 
 final readonly class ToolInventoryPackageResponse
 {
+    /** @var array<string, mixed>|null */
+    public ?array $repository;
+
     public string $manager;
 
     public string $package;
@@ -35,6 +39,7 @@ final readonly class ToolInventoryPackageResponse
 
     private const string TOKEN_PATTERN = '/\A[a-z][a-z0-9]*(?:[_-][a-z0-9]+)*\z/D';
 
+    /** @param array<string, mixed>|null $repository */
     public function __construct(
         #[SensitiveParameter]
         string $manager,
@@ -53,7 +58,10 @@ final readonly class ToolInventoryPackageResponse
         ?string $adoptionBlock,
         #[SensitiveParameter]
         string $requestId,
+        #[SensitiveParameter]
+        ?array $repository = null,
     ) {
+        $this->repository = $repository === null ? null : new CredentialRedactor()->redactArray($repository);
         if ($toolId !== null && $toolId < 1) {
             throw new InvalidArgumentException('Invalid Tool inventory response identifier.');
         }
@@ -86,6 +94,7 @@ final readonly class ToolInventoryPackageResponse
             adoption: self::requiredString($data, 'adoption'),
             adoptionBlock: self::nullableString($data, 'adoption_block'),
             requestId: $requestId,
+            repository: ToolRepositoryData::fromGateway($data['repository'] ?? null),
         );
     }
 
@@ -100,6 +109,7 @@ final readonly class ToolInventoryPackageResponse
      *     tool_id: int|null,
      *     adoption: string,
      *     adoption_block: string|null,
+     *     repository: array<string, mixed>|null,
      *     request_id: string
      * }
      */
@@ -115,6 +125,7 @@ final readonly class ToolInventoryPackageResponse
             'tool_id' => $this->toolId,
             'adoption' => $this->adoption,
             'adoption_block' => $this->adoptionBlock,
+            'repository' => $this->repository,
             'request_id' => $this->requestId,
         ];
     }

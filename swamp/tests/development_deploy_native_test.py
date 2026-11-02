@@ -48,7 +48,7 @@ else:
         self.workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-instance-deploy-direct.yaml').read_text())
         workflow['jobs'] = workflow['jobs'][:2]
         for job in workflow['jobs']:
-            self.assertEqual(job.pop('target'), 'orbit-node-209')
+            self.assertEqual(job.pop('labels'), {'role': 'swamp'})
             for step in job['steps']:
                 task = step['task']
                 if task.get('behaviorType') == '@swamp/ssh':
@@ -133,9 +133,9 @@ else:
     def test_production_branch_does_not_evaluate_development_transport_or_commands(self):
         workflow = self.workflow
         for job in workflow['jobs']:
-            job.pop('target', None)
+            job.pop('target', None); job.pop('labels', None)
             for step in job['steps']:
-                step.pop('target', None)
+                step.pop('target', None); step.pop('labels', None)
                 if job['name'] in ('deploy', 'failure'):
                     step['task'] = {'type': 'behavior', 'behaviorType': 'command/shell', 'behaviorName': 'production-' + step['name'],
                         'methodName': 'execute', 'inputs': {'run': 'true'}}

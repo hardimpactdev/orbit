@@ -3,8 +3,10 @@
 declare(strict_types=1);
 
 use Orbit\Sdk\GatewayConnector;
+use Orbit\Sdk\Requests\Clusters\ActivateClusterRequest;
 use Orbit\Sdk\Requests\Clusters\AddClusterNodeRequest;
 use Orbit\Sdk\Requests\Clusters\CreateClusterRequest;
+use Orbit\Sdk\Requests\Clusters\DeactivateClusterRequest;
 use Orbit\Sdk\Requests\Clusters\DestroyClusterRequest;
 use Orbit\Sdk\Requests\Clusters\ListClustersRequest;
 use Orbit\Sdk\Requests\Clusters\RemoveClusterNodeRequest;
@@ -100,14 +102,14 @@ describe('Cluster requests', function (): void {
             ]);
     });
 
-    it('transports Cluster state without enforcing policy', function (): void {
-        $request = new UpdateClusterRequest(
-            clusterId: 3,
-            hasState: true,
-            state: 'future-state',
-        );
+    it('activates and deactivates through their own bodyless POST requests', function (): void {
+        $activate = new ActivateClusterRequest(3);
+        $deactivate = new DeactivateClusterRequest(3);
 
-        expect($request->body()->all())->toBe(['state' => 'future-state']);
+        expect($activate->getMethod())->toBe(Method::POST)
+            ->and($activate->resolveEndpoint())->toBe('/api/v1/clusters/3/activate')
+            ->and($deactivate->getMethod())->toBe(Method::POST)
+            ->and($deactivate->resolveEndpoint())->toBe('/api/v1/clusters/3/deactivate');
     });
 
     it('attaches and sets a Router through bodyless PUT requests', function (): void {
@@ -147,6 +149,8 @@ describe('Cluster requests', function (): void {
         $request = match ($requestClass) {
             ShowClusterRequest::class => new ShowClusterRequest(3),
             UpdateClusterRequest::class => new UpdateClusterRequest(3, hasName: true, name: 'development'),
+            ActivateClusterRequest::class => new ActivateClusterRequest(3),
+            DeactivateClusterRequest::class => new DeactivateClusterRequest(3),
             DestroyClusterRequest::class => new DestroyClusterRequest(3),
             AddClusterNodeRequest::class => new AddClusterNodeRequest(3, 7),
             RemoveClusterNodeRequest::class => new RemoveClusterNodeRequest(3, 7, true),
@@ -158,6 +162,8 @@ describe('Cluster requests', function (): void {
     })->with([
         ShowClusterRequest::class,
         UpdateClusterRequest::class,
+        ActivateClusterRequest::class,
+        DeactivateClusterRequest::class,
         DestroyClusterRequest::class,
         AddClusterNodeRequest::class,
         RemoveClusterNodeRequest::class,

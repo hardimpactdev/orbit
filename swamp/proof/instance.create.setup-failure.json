@@ -1,0 +1,78 @@
+{
+  "kind": "instance.create.setup-failure",
+  "workflow": "operation-instance-create",
+  "topology": "minimal",
+  "budget_seconds": 100,
+  "queue_timeout_seconds": 10,
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "projects",
+      "operation": false,
+      "bind": "project",
+      "body": {
+        "slug": "proof-create-failure",
+        "name": "Proof create failure",
+        "type": "node-package",
+        "root": ".",
+        "repository_url": "https://github.com/octocat/Spoon-Knife.git",
+        "default_branch": "main"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "projects/${project.id}/setup-steps",
+      "operation": false,
+      "body": {
+        "name": "marker",
+        "command": "printf proof-private-setup-output; echo proof-setup-refused >&2; exit 3",
+        "timeout_seconds": 10
+      }
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "instances",
+    "body": {
+      "project_id": "${project.id}",
+      "node_id": "${node.target}",
+      "name": "p-${proof.run}"
+    }
+  },
+  "expect": {
+    "status": "failed"
+  },
+  "phases": [
+    {
+      "name": "prepare",
+      "job": "create",
+      "step": "prepare",
+      "budget_seconds": 10
+    },
+    {
+      "name": "source",
+      "job": "create",
+      "step": "source",
+      "budget_seconds": 20
+    },
+    {
+      "name": "environment",
+      "job": "create",
+      "step": "environment",
+      "budget_seconds": 10
+    },
+    {
+      "name": "setup",
+      "job": "create",
+      "step": "setup",
+      "budget_seconds": 15
+    },
+    {
+      "name": "finish",
+      "job": "create",
+      "step": "finish",
+      "budget_seconds": 10
+    }
+  ],
+  "parity": "swamp/proof/instance.create/parity.py"
+}

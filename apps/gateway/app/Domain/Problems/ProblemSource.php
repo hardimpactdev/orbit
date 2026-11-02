@@ -11,4 +11,5 @@ enum ProblemSource: string
     case Log = 'log';
     case Assist = 'assist';
     case Release = 'release';
+    case Swamp = 'swamp';
 }

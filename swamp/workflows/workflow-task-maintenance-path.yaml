@@ -21,17 +21,17 @@ inputs:
   - remote_assets
 jobs:
 - name: inspect
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: inspect-before
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &id001
-        name: ${{ "maintenance-ssh-"+run.id }}
+        name: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.ssh_execution.target.user }}
@@ -51,11 +51,11 @@ jobs:
         stdin: ${{ inputs.place_json }}
         timeoutSec: 3600
   - name: before
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: ${{ "maintenance-input-"+run.id }}
+      behaviorName: '${{ "maintenance-input-task-maintenance-input" }}'
       methodName: inspect
       inputs:
         place: ${{ inputs.place }}
@@ -65,11 +65,11 @@ jobs:
       condition:
         type: succeeded
   - name: audit-before
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -86,11 +86,11 @@ jobs:
       condition:
         type: succeeded
   - name: plan
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: ${{ "maintenance-input-"+run.id }}
+      behaviorName: '${{ "maintenance-input-task-maintenance-input" }}'
       methodName: plan
       inputs:
         place: ${{ inputs.place }}
@@ -101,15 +101,14 @@ jobs:
       condition:
         type: succeeded
 - name: target_releases
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: release-${{ self._index }}
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: ${{ "tm-release-"+run.id+"-target-"+string(self._index)
-        }}
+      behaviorName: '${{ "tm-release-target-" + string(self._index) }}'
       methodName: release
       inputs:
         manager: ${{ inputs.place.manager }}
@@ -123,26 +122,26 @@ jobs:
     condition:
       type: succeeded
 - name: update
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: target-age
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: ${{ "maintenance-input-"+run.id }}
+      behaviorName: '${{ "maintenance-input-task-maintenance-input" }}'
       methodName: age
       inputs:
         place: ${{ inputs.place }}
         changed: ${{ steps.plan.outputs.release_targets }}
         readings: ${{ steps }}
-  - target: orbit-node-209
+  - labels: {role: swamp}
     guard: ${{ steps.plan.outputs.expo_url == null }}
     name: expo-fetch
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "maintenance-expo-fetch-"+run.id }}
+      behaviorName: '${{ "maintenance-expo-fetch" }}'
       methodName: execute
       inputs:
         run: 'curl --fail --silent --show-error --location --output "$EXPO_ARCHIVE"
@@ -156,13 +155,13 @@ jobs:
     - step: target-age
       condition:
         type: succeeded
-  - target: orbit-node-209
+  - labels: {role: swamp}
     guard: ${{ steps.plan.outputs.expo_url == null }}
     name: expo-catalog
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "maintenance-expo-catalog-"+run.id }}
+      behaviorName: '${{ "maintenance-expo-catalog" }}'
       methodName: execute
       inputs:
         run: 'tar -xzOf "$EXPO_ARCHIVE" package/bundledNativeModules.json
@@ -174,13 +173,13 @@ jobs:
     - step: expo-fetch
       condition:
         type: succeeded
-  - target: orbit-node-209
+  - labels: {role: swamp}
     guard: ${{ steps.plan.outputs.expo_url == null }}
     name: expo-validate
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: ${{ "maintenance-expo-validate-"+run.id }}
+      behaviorName: '${{ "maintenance-expo-validate" }}'
       methodName: expo
       inputs:
         place: ${{ inputs.place }}
@@ -190,13 +189,13 @@ jobs:
     - step: expo-catalog
       condition:
         type: succeeded
-  - target: orbit-node-209
+  - labels: {role: swamp}
     guard: ${{ steps.plan.outputs.expo_url == null }}
     name: expo-cleanup
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "maintenance-expo-cleanup-"+run.id }}
+      behaviorName: '${{ "maintenance-expo-cleanup" }}'
       methodName: execute
       inputs:
         run: 'rm -f -- "$EXPO_ARCHIVE"
@@ -210,11 +209,11 @@ jobs:
         type: always
     allowFailure: true
   - name: prepare
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -235,11 +234,11 @@ jobs:
         - type: skipped
     guard: ${{ steps.plan.outputs.prepare == null }}
   - name: manifest
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -260,11 +259,11 @@ jobs:
         - type: skipped
     guard: ${{ inputs.place.mode != "package" }}
   - name: update
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -284,11 +283,11 @@ jobs:
         - type: succeeded
         - type: skipped
   - name: inspect-after
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -304,11 +303,11 @@ jobs:
       condition:
         type: succeeded
   - name: after
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: ${{ "maintenance-input-"+run.id }}
+      behaviorName: '${{ "maintenance-input-task-maintenance-input" }}'
       methodName: inspect
       inputs:
         place: ${{ inputs.place }}
@@ -318,11 +317,11 @@ jobs:
       condition:
         type: succeeded
   - name: audit-after
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -339,11 +338,11 @@ jobs:
       condition:
         type: succeeded
   - name: verify
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: ${{ "maintenance-input-"+run.id }}
+      behaviorName: '${{ "maintenance-input-task-maintenance-input" }}'
       methodName: verify
       inputs:
         place: ${{ inputs.place }}
@@ -359,15 +358,14 @@ jobs:
     condition:
       type: succeeded
 - name: changed_releases
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: release-changed-${{ self._index }}
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: ${{ "tm-release-"+run.id+"-changed-"+string(self._index)
-        }}
+      behaviorName: '${{ "tm-release-changed-" + string(self._index) }}'
       methodName: release
       inputs:
         manager: ${{ inputs.place.manager }}
@@ -381,14 +379,14 @@ jobs:
     condition:
       type: succeeded
 - name: finalize
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: age-verified
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: ${{ "maintenance-input-"+run.id }}
+      behaviorName: '${{ "maintenance-input-task-maintenance-input" }}'
       methodName: age
       inputs:
         place: ${{ inputs.place }}
@@ -396,11 +394,11 @@ jobs:
         readings: ${{ steps }}
         prefix: release-changed
   - name: restore-plan
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: ${{ "maintenance-input-"+run.id }}
+      behaviorName: '${{ "maintenance-input-task-maintenance-input" }}'
       methodName: restore
       inputs:
         place: ${{ inputs.place }}
@@ -412,14 +410,14 @@ jobs:
         type: succeeded
     guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
   - name: restore-ranges
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: ${{ "maintenance-ssh-"+run.id }}
+        name: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.ssh_execution.target.user }}
@@ -445,14 +443,14 @@ jobs:
         type: succeeded
     guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
   - name: synchronize-lock
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: ${{ "maintenance-ssh-"+run.id }}
+        name: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.ssh_execution.target.user }}
@@ -478,14 +476,14 @@ jobs:
         type: succeeded
     guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
   - name: inspect-restored
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "maintenance-ssh-"+run.id }}
+      behaviorName: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: ${{ "maintenance-ssh-"+run.id }}
+        name: '${{ ("maintenance-ssh-" + string(inputs.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.ssh_execution.target.user }}
@@ -510,11 +508,11 @@ jobs:
         type: succeeded
     guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
   - name: restored
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: ${{ "maintenance-input-"+run.id }}
+      behaviorName: '${{ "maintenance-input-task-maintenance-input" }}'
       methodName: inspect
       inputs:
         place: ${{ inputs.place }}
@@ -525,11 +523,11 @@ jobs:
         type: succeeded
     guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
   - name: synchronized
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-maintenance-input'
-      behaviorName: ${{ "maintenance-input-"+run.id }}
+      behaviorName: '${{ "maintenance-input-task-maintenance-input" }}'
       methodName: synchronized
       inputs:
         place: ${{ inputs.place }}
@@ -541,11 +539,11 @@ jobs:
         type: succeeded
     guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "maintenance-path-result-"+run.id }}
+      behaviorName: '${{ "maintenance-path-result" }}'
       methodName: execute
       inputs:
         run: 'printf ''%s\n'' ''{"verified":true}''

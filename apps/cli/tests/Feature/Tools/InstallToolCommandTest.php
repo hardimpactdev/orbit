@@ -7,6 +7,8 @@ use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Orbit\Sdk\Requests\Tools\InstallToolRequest;
 use Orbit\Sdk\Responses\Tools\ToolManagerResponse;
 use Orbit\Sdk\Responses\Tools\ToolManagersResponse;
@@ -43,8 +45,11 @@ function install_payload(string $outcome = 'applied'): array
 
 it('sends supplied manager and constraint without manager lookup', function (): void {
     $id = '33333333-3333-4333-8333-333333333333';
+    $operation = ['id' => 11, 'kind' => 'tool.install', 'target_type' => 'node_tools', 'target_id' => 12, 'status' => 'succeeded', 'sequence' => 3];
     $mock = MockClient::global([
-        InstallToolRequest::class => MockResponse::make(['data' => install_payload(), 'meta' => ['request_id' => $id]]),
+        InstallToolRequest::class => MockResponse::make(['data' => $operation, 'meta' => ['request_id' => $id]], 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => MockResponse::make(['data' => $operation, 'meta' => ['request_id' => $id]]),
     ]);
     $this->artisan('tool:install', [
         'package' => '@openai/codex',
@@ -53,17 +58,11 @@ it('sends supplied manager and constraint without manager lookup', function (): 
         '--constraint' => '^1.2',
         '--json' => true,
     ])->assertSuccessful();
-    $request = $mock->getLastPendingRequest();
-    expect($request?->getMethod()->value)
-        ->toBe('POST')
-        ->and($request?->getUrl())
-        ->toBe('https://10.44.0.1/api/v1/tools')
-        ->and($request?->body()->all())
-        ->toBe([
-            'node_id' => 12,
-            'manager' => 'unlisted',
-            'package' => '@openai/codex',
-            'version_constraint' => '^1.2',
+    $mock->assertSent(static fn ($request): bool => $request instanceof InstallToolRequest
+        && $request->getMethod()->value === 'POST'
+        && $request->resolveEndpoint() === '/api/v1/tools'
+        && $request->body()->all() === [
+            'node_id' => 12, 'manager' => 'unlisted', 'package' => '@openai/codex', 'version_constraint' => '^1.2',
         ]);
 });
 

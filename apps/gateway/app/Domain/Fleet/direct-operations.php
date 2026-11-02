@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\Fleet\DockerMigrationProjection;
 use App\Domain\Fleet\FleetReleaseProjection;
 use App\Domain\Fleet\PeerDnsProjection;
 use App\Domain\Fleet\RecipeDirectProjection;
@@ -15,13 +14,6 @@ return [
         'workflow_inputs' => true,
         'terminal_result' => ['job' => 'result', 'step' => 'result'],
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^recipe-operation-[1-9][0-9]*-observer$']],
-    ],
-    'fleet.docker_migrate' => [
-        'workflow' => 'operation-fleet-docker-migrate',
-        'projection' => DockerMigrationProjection::class,
-        'workflow_inputs' => true,
-        'terminal_result' => ['job' => 'result', 'step' => 'result'],
-        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*$']],
     ],
     'fleet.rollout' => [
         'workflow' => 'operation-fleet-rollout',

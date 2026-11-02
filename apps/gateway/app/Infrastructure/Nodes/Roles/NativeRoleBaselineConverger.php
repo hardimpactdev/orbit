@@ -107,6 +107,7 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
             RoleName::Metrics => throw new ResourceOperationException('operation.kind_unavailable', 'Metrics requires its native parent workflow.', 503),
             RoleName::WebSocket => $this->websocket ?? app(WebSocketRoleBaseline::class),
             RoleName::Analytics => throw new ResourceOperationException('operation.kind_unavailable', 'Analytics requires its native parent workflow.', 503),
+            RoleName::Swamp => throw new ResourceOperationException('operation.kind_unavailable', 'Swamp requires its native parent workflow.', 503),
             RoleName::Router => $this->router ?? app(RouterRoleBaseline::class),
             RoleName::Database => $this->database ?? app(DatabaseRoleBaseline::class),
             RoleName::CiRunner => $this->ciRunner ?? app(CiRunnerRoleBaseline::class),

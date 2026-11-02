@@ -4,6 +4,7 @@ description: "How the Gateway publishes database credentials into a Vaultwarden 
 covers:
   - apps/gateway/app/Infrastructure/Certificates/OrbitCaCurlFactory.php
   - apps/gateway/extensions/vault/**
+  - swamp/extensions/behaviors/operations/vault-sync/**
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
 ---
 
@@ -200,7 +201,13 @@ Direct setup, sync, and teardown results carry only collection identifiers and l
 
 ## Direct Swamp writer
 
-`vault.setup` and `vault.teardown` retain `operation-vault-direct`. Their credentials stay in the effect callback and protected stdin. Only bounded public metadata reaches their results. Terminal replay does not read deleted credentials or project the ledger twice.
+`vault.setup` uses `operation-vault-setup`. The Gateway pushes one execution copy into the Swamp vault and passes the full public intent and names-only descriptor. A Swamp role worker verifies the account and collection with the official Bitwarden CLI. It creates a harmless test item because CLI collection exports omit write permissions. Native cleanup deletes that item, logs out and removes the private scratch directory. A native assert checks verification and cleanup. A cleanup failure marks the Operation failed, even after successful account verification.
+
+Only the successful terminal result stores the setup; a failure preserves the previous configuration and publishing ledger. Each new setup verifies its supplied credentials; native resume retains completed steps. Verification fails with its own native exit code; the Gateway maps it to the public Vault refusal code without reading failed-step output.
+
+The pinned CLI caches the account KDF as public disk-state metadata. Setup reads that metadata to preserve the PBKDF2-SHA256 constraint and iteration limit, without a second HTTP client or cryptography implementation.
+
+`vault.teardown` retains `operation-vault-direct`. Its credentials stay in the effect callback and protected stdin. Only bounded public metadata reaches its result. Terminal replay does not read deleted credentials or project the ledger twice.
 
 ### Native sync with the official Bitwarden CLI
 

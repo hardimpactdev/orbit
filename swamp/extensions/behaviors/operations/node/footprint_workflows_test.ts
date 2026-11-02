@@ -74,16 +74,27 @@ Deno.test("shared chain installs the admitted agent before role effects and foot
                 ],
         );
         for (let index = 1; index <= stages.length; index++) {
-            assertEquals(jobs[index].dependsOn, [{
-                job: jobs[index - 1].name,
+            const [previous, ...others] = jobs[index].dependsOn ?? [];
+            // The runtime stage follows the stage before the swamp role's native steps, and reports those on any outcome.
+            const prior = jobs.slice(0, index).filter((job) =>
+                jobs[index].name !== "runtime_job" ||
+                !job.name.startsWith("swamp_")
+            ).at(-1)!;
+            assertEquals(previous, {
+                job: prior.name,
                 condition: { type: "succeeded" },
-            }]);
+            });
+            assertEquals(
+                others,
+                jobs[index].name === "runtime_job"
+                    ? [{ job: "swamp_proven_job", condition: { type: "always" } }]
+                    : [],
+            );
         }
-        assertEquals(
-            workflow.target,
-            '${{ "orbit-node-" + string(inputs.node_id) }}',
-        );
-        assertEquals("labels" in workflow, false);
+        assertEquals(workflow.labels, {
+            node: "${{ string(inputs.node_id) }}",
+        });
+        assertEquals("target" in workflow, false);
         const children = jobs.flatMap((job) => job.steps).filter((step) =>
             step.task.type === "workflow"
         );

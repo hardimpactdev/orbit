@@ -20,10 +20,7 @@ inputs:
       type: integer
       enum:
       - 209
-    kind:
-      type: string
-      enum:
-      - project.detect
+    kind: {type: string, const: project.detect}
     intent:
       type: object
     execution_secrets:
@@ -66,24 +63,24 @@ reports:
   - '@swamp/workflow-summary'
 jobs:
 - name: detect
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
-  - name: input
-    target: orbit-node-209
+  - name: Read the admitted input
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/project-maintenance-input'
-      behaviorName: ${{ "project-input-" + string(inputs.operation_id) }}
+      behaviorName: project-input
       methodName: read
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
-  - name: begin
-    target: orbit-node-209
+  - name: Begin the scan
+    labels: {role: swamp}
     dependsOn:
-    - step: input
+    - step: Read the admitted input
       condition:
         type: succeeded
     task:
@@ -91,53 +88,36 @@ jobs:
       modelIdOrName: orbit-gateway
       methodName: begin_scan
       inputs:
-        project: ${{ steps.input.outputs.project }}
+        project: ${{ steps["Read the admitted input"].outputs.project }}
         runId: ${{ run.id }}
-  - name: checkout
-    target: orbit-node-209
+  - name: Clone the default branch
+    labels: {role: swamp}
     dependsOn:
-    - step: begin
+    - step: Begin the scan
       condition:
         type: succeeded
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "project-checkout-" + run.id }}
+      behaviorName: project-checkout
       methodName: execute
       inputs:
-        run: 'git clone --depth=1 --branch "$ORBIT_BRANCH" -- "$ORBIT_URL" "$ORBIT_SOURCE"
+        run: 'git clone --quiet --depth=1 --branch "$ORBIT_BRANCH" -- "$ORBIT_URL" "$ORBIT_SOURCE" && git -C "$ORBIT_SOURCE" rev-parse HEAD
 
           '
         env:
-          ORBIT_BRANCH: ${{ steps.input.outputs.project.defaultBranch }}
-          ORBIT_URL: ${{ steps.input.outputs.clone_url }}
+          ORBIT_BRANCH: ${{ steps["Read the admitted input"].outputs.project.defaultBranch }}
+          ORBIT_URL: ${{ steps["Read the admitted input"].outputs.clone_url }}
           ORBIT_SOURCE: ${{ "/home/orbit/.cache/orbit-dependency-scans/" + run.id }}
           GIT_TERMINAL_PROMPT: '0'
           GIT_CONFIG_COUNT: '1'
           GIT_CONFIG_KEY_0: http.https://github.com/.extraheader
           GIT_CONFIG_VALUE_0: ${{ vault.get(inputs.execution_secrets.git_authorization.vault, inputs.execution_secrets.git_authorization.key)
             }}
-  - name: head
-    target: orbit-node-209
+  - name: Read open maintenance PRs
+    labels: {role: swamp}
     dependsOn:
-    - step: checkout
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "project-head-" + run.id }}
-      methodName: execute
-      inputs:
-        run: 'git -C "$ORBIT_SOURCE" rev-parse HEAD
-
-          '
-        env:
-          ORBIT_SOURCE: ${{ "/home/orbit/.cache/orbit-dependency-scans/" + run.id }}
-  - name: evidence
-    target: orbit-node-209
-    dependsOn:
-    - step: input
+    - step: Read the admitted input
       condition:
         type: succeeded
     task:
@@ -145,19 +125,19 @@ jobs:
       workflowIdOrName: project-dependency-evidence
       inputs:
         operation_id: ${{ inputs.operation_id }}
-        project: ${{ steps.input.outputs.project }}
-        groups: ${{ steps.input.outputs.groups }}
-        pr_urls: ${{ steps.input.outputs.pr_urls }}
-        previous_pr: ${{ steps.input.outputs.previous_pr }}
+        project: ${{ steps["Read the admitted input"].outputs.project }}
+        groups: ${{ steps["Read the admitted input"].outputs.groups }}
+        pr_urls: ${{ steps["Read the admitted input"].outputs.pr_urls }}
+        previous_pr: ${{ steps["Read the admitted input"].outputs.previous_pr }}
         execution_secrets:
           github_token: ${{ inputs.execution_secrets.github_token }}
-  - name: scan
-    target: orbit-node-209
+  - name: Scan the lockfiles
+    labels: {role: swamp}
     dependsOn:
-    - step: head
+    - step: Clone the default branch
       condition:
         type: succeeded
-    - step: evidence
+    - step: Read open maintenance PRs
       condition:
         type: succeeded
     task:
@@ -165,38 +145,38 @@ jobs:
       modelIdOrName: orbit-gateway
       methodName: scan
       inputs:
-        project: ${{ steps.input.outputs.project }}
+        project: ${{ steps["Read the admitted input"].outputs.project }}
         runId: ${{ run.id }}
         root: ${{ "/home/orbit/.cache/orbit-dependency-scans/" + run.id }}
-        commit: ${{ steps.head.outputs.stdout.trim() }}
-        evidence: ${{ steps.evidence.outputs.evidence.evidence }}
-  - name: head_now
-    target: orbit-node-209
+        commit: ${{ steps["Clone the default branch"].outputs.stdout.trim() }}
+        evidence: ${{ steps["Read open maintenance PRs"].outputs.evidence.evidence }}
+  - name: Read the branch head
+    labels: {role: swamp}
     dependsOn:
-    - step: scan
+    - step: Scan the lockfiles
       condition:
         type: succeeded
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "project-head-now-" + run.id }}
+      behaviorName: project-head-now
       methodName: execute
       inputs:
         run: 'git ls-remote --exit-code -- "$ORBIT_URL" "$ORBIT_REF"
 
           '
         env:
-          ORBIT_URL: ${{ steps.input.outputs.clone_url }}
+          ORBIT_URL: ${{ steps["Read the admitted input"].outputs.clone_url }}
           GIT_TERMINAL_PROMPT: '0'
           GIT_CONFIG_COUNT: '1'
           GIT_CONFIG_KEY_0: http.https://github.com/.extraheader
           GIT_CONFIG_VALUE_0: ${{ vault.get(inputs.execution_secrets.git_authorization.vault, inputs.execution_secrets.git_authorization.key)
             }}
-          ORBIT_REF: ${{ steps.input.outputs.source_ref }}
-  - name: verify_head
-    target: orbit-node-209
+          ORBIT_REF: ${{ steps["Read the admitted input"].outputs.source_ref }}
+  - name: Check head is unchanged
+    labels: {role: swamp}
     dependsOn:
-    - step: head_now
+    - step: Read the branch head
       condition:
         type: succeeded
     task:
@@ -204,23 +184,23 @@ jobs:
       modelIdOrName: orbit-gateway
       methodName: assert_scan_head
       inputs:
-        project: ${{ steps.input.outputs.project }}
+        project: ${{ steps["Read the admitted input"].outputs.project }}
         runId: ${{ run.id }}
-        head: ${{ steps.head_now.outputs.stdout }}
-        scan_succeeded: ${{ steps.scan.outputs.scan_succeeded }}
-  - name: finalize
-    target: orbit-node-209
+        head: ${{ steps["Read the branch head"].outputs.stdout }}
+        scan_succeeded: ${{ steps["Scan the lockfiles"].outputs.scan_succeeded }}
+  - name: Finish the scan
+    labels: {role: swamp}
     dependsOn:
-    - step: checkout
+    - step: Clone the default branch
       condition:
         type: always
-    - step: evidence
+    - step: Read open maintenance PRs
       condition:
         type: always
-    - step: scan
+    - step: Scan the lockfiles
       condition:
         type: always
-    - step: verify_head
+    - step: Check head is unchanged
       condition:
         type: always
     task:
@@ -228,57 +208,57 @@ jobs:
       modelIdOrName: orbit-gateway
       methodName: finish_scan
       inputs:
-        project: ${{ steps.input.outputs.project }}
+        project: ${{ steps["Read the admitted input"].outputs.project }}
         runId: ${{ run.id }}
         steps: ${{ steps }}
-  - name: result
-    target: orbit-node-209
+  - name: Report the result
+    labels: {role: swamp}
     dependsOn:
-    - step: finalize
+    - step: Finish the scan
       condition:
         type: succeeded
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "project-detect-result-" + string(inputs.operation_id) }}
+      behaviorName: project-detect-result
       methodName: execute
       inputs:
         run: 'printf ''%s\n'' "$ORBIT_RESULT"
 
           '
         env:
-          ORBIT_RESULT: ${{ steps.finalize.outputs.result_json }}
-  - name: outcome
-    target: orbit-node-209
+          ORBIT_RESULT: ${{ steps["Finish the scan"].outputs.result_json }}
+  - name: Fail on an error
+    labels: {role: swamp}
     dependsOn:
-    - step: result
+    - step: Report the result
       condition:
         type: succeeded
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "project-scan-outcome-" + run.id }}
+      behaviorName: project-scan-outcome
       methodName: execute
       inputs:
         run: test "$ORBIT_SCAN_SUCCEEDED" = true
         env:
-          ORBIT_SCAN_SUCCEEDED: ${{ string(steps.finalize.outputs.scan_succeeded) }}
-  - name: cleanup
-    target: orbit-node-209
+          ORBIT_SCAN_SUCCEEDED: ${{ string(steps["Finish the scan"].outputs.scan_succeeded) }}
+  - name: Remove the clone
+    labels: {role: swamp}
     dependsOn:
-    - step: checkout
+    - step: Clone the default branch
       condition:
         type: always
-    - step: result
+    - step: Report the result
       condition:
         type: always
-    - step: outcome
+    - step: Fail on an error
       condition:
         type: always
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "project-detect-cleanup-" + string(inputs.operation_id) }}
+      behaviorName: project-detect-cleanup
       methodName: execute
       inputs:
         run: 'rm -rf -- "$ORBIT_SOURCE"

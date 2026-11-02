@@ -106,10 +106,10 @@ if name in ('caddy','php-fpm8.4') and os.environ.get('FIXTURE_FAIL')=='validate'
                     + "/' + self.pool.version + '/fpm/pool.d/orbit-scopes.conf' }}"
                 )
             for job in workflow["jobs"]:
-                self.assertEqual(job.pop("target"), "orbit-node-209")
+                self.assertEqual(job.pop("labels"), {"role": "swamp"})
                 self.assertNotIn("labels", job)
                 for step in job["steps"]:
-                    self.assertEqual(step.pop("target"), "orbit-node-209")
+                    self.assertEqual(step.pop("labels"), {"role": "swamp"})
                     self.assertNotIn("labels", step)
             (
                 self.repo / f"workflows/workflow-operation-route-{family}-delta.yaml"

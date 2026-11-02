@@ -23,7 +23,7 @@ class VaultSyncFixture(NativeTestCase):
             (ROOT / "workflows/workflow-operation-vault-sync.yaml").read_text()
         )
         for step in [step for job in workflow["jobs"] for step in job["steps"]]:
-            self.assertEqual(step.pop("target"), "orbit-node-209")
+            self.assertEqual(step.pop("labels"), {"role": "swamp"})
             self.assertNotIn("labels", step)
         (self.repo / "workflows/workflow-operation-vault-sync.yaml").write_text(
             yaml.safe_dump(workflow, sort_keys=False)
@@ -342,7 +342,7 @@ class VaultSyncNative(VaultSyncFixture):
         self.assertEqual(state["deletes"], ["published", "second"])
         self.assertEqual([row["id"] for row in state["ciphers"]], ["copy"])
         for index in range(2):
-            self.cli("model", "get", f"vault-sync-7-delete-{index}")
+            self.cli("model", "get", f"vault-sync-delete-{index}")
 
     def test_early_failures_clean_cache_and_emit_failure(self):
         for command in ("config", "login", "unlock"):

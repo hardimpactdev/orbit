@@ -8,7 +8,7 @@ import urllib.request
 ORIGIN = 'https://api.upcloud.com/1.3'
 
 
-def api(method, path, body=None):
+def _api(method, path, body=None):
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, req, fp, code, msg, headers, newurl):
             return None
@@ -17,16 +17,25 @@ def api(method, path, body=None):
         data=None if body is None else json.dumps(body).encode(),
         headers={'Authorization': 'Bearer ' + os.environ['ORBIT_UPCLOUD_TOKEN'], 'Content-Type': 'application/json', 'Accept': 'application/json'},
     )
+    with urllib.request.build_opener(NoRedirect).open(req, timeout=60) as response:
+        raw = response.read(1048577)
+        if len(raw) > 1048576:
+            raise ValueError('oversize')
+        return json.loads(raw) if raw.strip() else {}
+
+
+def api(method, path, body=None):
     try:
-        with urllib.request.build_opener(NoRedirect).open(req, timeout=60) as response:
-            raw = response.read(1048577)
-            if len(raw) > 1048576:
-                raise ValueError('oversize')
-            return json.loads(raw) if raw.strip() else {}
+        return _api(method, path, body)
     except urllib.error.HTTPError as error:
         if error.code == 404:
             return {}
         raise
+
+
+def poll_read(path):
+    """A GET observation must fail on every HTTP error, including missing VMs."""
+    return _api('GET', path)
 
 
 def public_server(server):

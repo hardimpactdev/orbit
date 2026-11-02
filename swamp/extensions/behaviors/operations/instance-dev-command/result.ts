@@ -2,70 +2,65 @@ import { z } from "npm:zod@4.4.3";
 export const Public = z.record(z.string(), z.unknown());
 export const Step = z.object({ status: z.string(), outputs: Public.optional() })
     .passthrough();
-type Steps = Record<string, z.infer<typeof Step>>;
-export function createResult(intent: Record<string, unknown>, steps: Steps) {
-    if (intent.already_active === true) {
-        return {
-            ready: true,
-            stdout: JSON.stringify({
-                ready: true,
-                instance_id: intent.instance_id,
-                already_active: true,
-            }),
-        };
+type Phase = z.infer<typeof Step> | null | undefined;
+type Phases = {
+    prepare: Phase;
+    source: Phase;
+    environment: Phase;
+    setup: Phase;
+    processes: string[];
+};
+
+/** The public JSON a script step printed, or null when the step did not finish its script. */
+function printed(step: Phase): Record<string, unknown> | null {
+    if (step?.status !== "succeeded" || step.outputs === undefined) return null;
+    try {
+        return Public.parse(JSON.parse(String(step.outputs.stdout)));
+    } catch {
+        return null;
     }
-    const success = (name: string) => steps[name]?.status === "succeeded";
-    const source = success("source-result")
-        ? steps["source-result"].outputs
-        : undefined;
-    const seeded = success("env-capture")
-        ? steps["env-capture"].outputs
-        : undefined;
-    const environment = success("env-write") && success("env-capture")
-        ? steps["env-capture"].outputs
-        : undefined;
-    const requirements = success("vp-requirements")
-        ? steps["vp-requirements"].outputs
-        : undefined;
-    const runtime = requirements?.runtime;
-    let failure = source
-        ? !environment
-            ? "environment"
-            : !requirements || !success("vp-result") ||
-                    steps["vp-result"].outputs?.ready !== true
-            ? "vp"
-            : undefined
-        : "source";
-    const commands = z.array(Public).parse(intent.setup_commands);
-    if (
-        !failure &&
-        commands.some((_, index) => {
-            const step = steps["finish-setup-" + index + "-0"];
-            return !success("finish-setup-" + index + "-0") ||
-                step.outputs?.exitCode !== 0;
-        })
-    ) failure = "setup";
+}
+
+/**
+ * Map the phase steps to the terminal receipt: the checked-out commit, or the first phase that did not finish.
+ * The Gateway already holds the rendered environment, the branch and the Project's profile.
+ */
+export function createResult(intent: Record<string, unknown>, phases: Phases) {
+    if (intent.already_active === true) {
+        const result = {
+            ready: true,
+            instance_id: intent.instance_id,
+            already_active: true,
+        };
+        return { ready: true, stdout: JSON.stringify(result) };
+    }
+    const source = printed(phases.source);
+    const outcomes: [string, Record<string, unknown> | null][] = [
+        ["prepare", printed(phases.prepare)],
+        ["source", source],
+        ["environment", printed(phases.environment)],
+        ["setup", printed(phases.setup)],
+        ["processes", {
+            ready: phases.processes.every((status) => status === "succeeded"),
+        }],
+    ];
+    const failed = outcomes.find(([, outcome]) => outcome?.ready !== true);
     const result = {
         instance_id: intent.instance_id,
-        ready: failure === undefined,
+        ready: failed === undefined,
         name_converted_from: intent.name_converted_from ?? null,
-        ...(source ? { source } : {}),
-        ...(seeded ? { environment_seeded_keys: seeded.keys } : {}),
-        ...(environment ? { environment_keys: environment.keys } : {}),
-        ...(requirements && success("vp-result") &&
-                steps["vp-result"].outputs?.ready === true
-            ? { vp_environment: runtime }
-            : {}),
-        ...(failure
+        ...(source?.ready === true ? { commit: source.commit } : {}),
+        ...(failed
             ? {
-                failed_step: failure,
-                error_code: failure === "source" &&
-                        steps["source-branch-available"]?.outputs
-                                ?.error_code === "instance.branch_in_use"
-                    ? "instance.branch_in_use"
-                    : "instance.create_" + failure + "_failed",
+                failed_step: failed[0],
+                error_code: typeof failed[1]?.error_code === "string"
+                    ? failed[1].error_code
+                    : "instance.create_" + failed[0] + "_failed",
+                ...(typeof failed[1]?.failed_command === "string"
+                    ? { failed_command: failed[1].failed_command }
+                    : {}),
             }
             : {}),
     };
-    return { ready: !failure, stdout: JSON.stringify(result) };
+    return { ready: failed === undefined, stdout: JSON.stringify(result) };
 }

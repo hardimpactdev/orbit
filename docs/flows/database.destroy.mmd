@@ -1,0 +1,147 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, DECISIONS R1-R4, 5 (swamp role SSH identity), round 2 bugs (server admin password by its own vault key), flow-tighten (rule 22: no ownership probe or fence), script audit Q-DBAUTH (one docker exec per action, statement on stdin) and Q-SECRET (login file via cfgmgmt file). docs/reference/database-servers.md#remove-a-database.
+  %% status: draft
+  %% command: database:destroy
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Node 12<br/>beast-mysql server
+  CLI->>GW: database:destroy shop<br/>--force
+  %%> Command:
+  %%> - `orbit database:destroy shop --force`
+  %%> - syntax: `<slug> [--force] [--idempotency-key=KEY]`
+  %%> Input:
+  %%> - the connection slug, as `database:list` shows it
+  %%> Confirmation:
+  %%> - without `--force`, the CLI asks first; the default is No
+  %%> - with `--json` or without a terminal, `--force` is required (`database.confirmation_required`)
+  Note over GW: Check, plan the removal<br/>task #5124 · lock beast-mysql
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12
+  %%> - no Instance attaches `shop` (`database.connection_attached`); detach with `instance:database:remove` first
+  %%> - AI router setup and Analytics do not use it
+  %%> - no database creation or other removal runs on `beast-mysql`; the Gateway holds one lock per Database server
+  %%> Plans:
+  %%> - the databases: `shop`, its test database and, on PostgreSQL, the recorded test pool
+  %%> - the users Orbit created for `shop` that no other connection on the server uses
+  %%> - system databases such as `mysql` or `postgres` are refused before any run
+  %%> Decides:
+  %%> - whether only the record goes, or the database must leave the server
+  alt connection without a server
+    Note over GW: Delete only the record<br/>R1: no run, database stays
+    %%> When:
+    %%> - a registered external database or SQLite file, or a Valkey connection that logs in as `default`
+    %%> Result:
+    %%> - connection `shop` is deleted
+    %%> - the database itself stays where it is; Orbit never created it
+    %%> - no Swamp run starts (R1)
+    GW-->>CLI: Connection destroyed<br/>database kept
+    %%> What you get:
+    %%> - the final result at once; there is nothing to follow
+  else database on a server
+    GW->>SW: Start run, full intent<br/>operation-database-destroy
+    %%> What it does:
+    %%> - starts one Swamp run on serve (Node 209)
+    %%> Inputs:
+    %%> - the planned databases, test prefix, test pool and unshared users
+    %%> - the vault key name `database-server-3-admin`; the admin password itself never enters the intent
+    %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
+    GW-->>CLI: 202 Accepted<br/>task #5124
+    %%> What you get:
+    %%> - the task number, at once
+    %%> Next:
+    %%> - the CLI follows the task with `operation:show`
+    opt MySQL or Valkey server
+      SW->>N: Write the client login<br/>cfgmgmt file · 0600 env file
+      %%> What it does:
+      %%> - writes the server's admin login, from its vault key `database-server-3-client-env`, to a root-only 0600 file
+      %%> Why:
+      %%> - `docker exec --env-file` hands it to the client; it never enters argv, stdin or a statement
+      %%> Not included:
+      %%> - PostgreSQL uses local trust inside the container and needs no login
+    end
+    opt MySQL with a test prefix
+      SW->>N: Find the test databases<br/>docker exec · SELECT on stdin
+      %%> What it does:
+      %%> - lists the databases under the recorded test prefix, plain names only
+    end
+    SW->>N: Check for blockers<br/>docker exec · query on stdin
+    %%> How:
+    %%> - one `docker exec -i` with the statement the Gateway rendered at admission on standard input
+    %%> What it does:
+    %%> - checks the whole set before the first drop; any row is a blocker
+    %%> Blocks:
+    %%> - PostgreSQL: sessions, replication slots, prepared transactions, subscriptions, outside dependencies of a removed role
+    %%> - MySQL: connected clients, metadata locks, outside definers, cross-schema foreign keys
+    %%> Refuses:
+    %%> - any blocker gives `database.in_use`; nothing is dropped
+    %%> Not included:
+    %%> - Valkey has no databases and skips this check
+    SW->>N: Drop databases and users<br/>docker exec · DROP on stdin
+    %%> What it does:
+    %%> - drops each planned database and each unshared user; a missing one counts as removed
+    %%> Per driver:
+    %%> - Valkey: `ACL DELUSER` for each user, then `ACL SAVE`; the user's keys stay
+    %%> Not included:
+    %%> - no ownership probe and no connection fence (flow-tighten rule 22); a client that connects between the check and the drop is cut off
+    SW->>N: Check they are gone<br/>docker exec · query on stdin
+    %%> What it does:
+    %%> - checks that no planned database or user is left on the server
+    %%> Why:
+    %%> - the removal only counts when the server shows it
+    opt MySQL or Valkey server
+      SW->>N: Remove the client login<br/>always runs · cfgmgmt file absent
+      %%> When:
+      %%> - always, as the last Node step, whether the steps above passed or failed
+      %%> What it does:
+      %%> - removes the 0600 login file from Node 12
+    end
+    Note over SW: Report the result<br/>backend · failed_step · error_code
+    %%> What it does:
+    %%> - maps the first failed step to its error code, for example `database.in_use`
+    Note over SW: Fail on an error<br/>assert · exit code 0
+    %%> What it does:
+    %%> - fails the run when the report holds an `error_code`, so the task fails with that code
+    alt every step passes
+      N-->>SW: set absent
+      %%> Returns:
+      %%> - the check passed for every database and user
+      SW-->>GW: Run succeeded<br/>terminal event
+      %%> How the Gateway learns it:
+      %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+      Note over GW: Delete the connection<br/>users too · task succeeded
+      %%> Result:
+      %%> - connection `shop` and its recorded users are deleted
+      %%> - task #5124 succeeds
+    else blocked or a drop fails
+      N--xSW: in use or exit ≠ 0
+      %%> When:
+      %%> - a blocker, an ownership refusal, a failed drop, or a lost SSH connection
+      SW--xGW: Run failed<br/>error_code, failed step
+      %%> The Gateway reads:
+      %%> - which step failed and its error code, for example `database.in_use`
+      Note over GW: Mark the connection failed<br/>task failed · rerun after a fix
+      %%> Result:
+      %%> - connection `shop` stays, marked failed, with its users and attachments
+      %%> - task #5124 fails
+      %%> On the Node:
+      %%> - after a blocker, nothing was dropped
+      %%> - after a failed drop, the dropped objects stay gone; there is no rollback
+      %%> Retry:
+      %%> - stop the clients or remove the blockers, then run the same command again
+      %%> - a rerun repeats the checks and counts missing objects as removed
+    end
+    loop every 2 s until terminal
+      CLI->>GW: operation:show #5124
+      %%> What it does:
+      %%> - asks for the task's status every 2 seconds until it has ended
+      GW-->>CLI: status + result
+      %%> Returns:
+      %%> - the current status, and the result once the task has ended
+    end
+  end

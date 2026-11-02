@@ -1,3 +1,4 @@
+import { dotless } from "../_lib/behavior_name.ts";
 import {
     roleActionSteps,
     rolePackageSteps,
@@ -5,7 +6,7 @@ import {
 import { routeMutationSteps } from "../routes/mutation-command/steps.ts";
 type Fields = Record<string, unknown>;
 const expr = (s: string) => "${{ " + s + " }}";
-const placement = { target: "orbit-node-209" };
+const placement = { labels: { role: "swamp" } };
 const completed = { type: "always" };
 const after = (
     name: string,
@@ -31,7 +32,10 @@ const envelope = {
 };
 export function sshGlobals(intent = "inputs.intent") {
     return {
-        name: expr('"cluster-router-ssh-" + run.id'),
+        name: expr(dotless(
+            '"cluster-router-ssh-" + string(' + intent +
+                ".connection.nodeHost)",
+        )),
         transport: {
             kind: "ssh",
             user: expr(intent + ".connection.nodeUser"),
@@ -135,7 +139,7 @@ export function clusterRouterWorkflow(): Fields {
         task: {
             type: "behavior",
             behaviorType: "@nckrtl/cluster-router-result",
-            behaviorName: expr('"cluster-router-result-" + run.id'),
+            behaviorName: expr('"cluster-router-result"'),
             methodName: "read",
             inputs: {
                 noop: expr("inputs.intent.cluster_router.noop"),
@@ -151,7 +155,7 @@ export function clusterRouterWorkflow(): Fields {
         task: {
             type: "behavior",
             behaviorType: "@nckrtl/cluster-router-result",
-            behaviorName: expr('"cluster-router-complete-" + run.id'),
+            behaviorName: expr('"cluster-router-complete"'),
             methodName: "complete",
             inputs: { stdout: expr("steps.result.outputs.stdout") },
         },
@@ -216,7 +220,7 @@ export function publicationWorkflow(mode: "forward" | "restore"): Fields {
         task: {
             type: "behavior",
             behaviorType: "@nckrtl/cluster-router-result",
-            behaviorName: expr('"cluster-router-phase-" + run.id'),
+            behaviorName: expr('"cluster-router-phase"'),
             methodName: "phase",
             inputs: {
                 mode,
@@ -313,9 +317,14 @@ export function probeWorkflow(): Fields {
                 task: {
                     type: "behavior",
                     behaviorType: "@swamp/ssh",
-                    behaviorName: expr('"cluster-router-probe-" + run.id'),
+                    behaviorName: expr(
+                        dotless('"cluster-router-probe-" + string(inputs.intent.connection.nodeHost)'),
+                    ),
                     methodName: "exec",
-                    globalArgs: sshGlobals(),
+                    globalArgs: {
+                        ...sshGlobals(),
+                        name: expr(dotless('"cluster-router-probe-" + string(inputs.intent.connection.nodeHost)')),
+                    },
                     inputs: {
                         hosts: "name:target",
                         argv: expr(

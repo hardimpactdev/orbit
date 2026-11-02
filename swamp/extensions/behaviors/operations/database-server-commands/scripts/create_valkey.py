@@ -49,6 +49,8 @@ def set_user(i, m, _item):
         "-@dangerous",
         "-function",
         "-script",
+        # FLUSHDB clears only the client's selected index; give each such user its own index. FLUSHALL stays denied.
+        *(["+flushdb"] if "flushdb" in i["allow"] else []),
     ]
     if valkey(i, m, "ACL", "SETUSER", i["username"], *rules, private=True) != "OK":
         raise Refused("database.server_command_failed")

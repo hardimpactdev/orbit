@@ -6,14 +6,21 @@ namespace App\Providers\Domains;
 
 use App\Domain\Operations\OperationSecretOutputStore;
 use App\Domain\Operations\OperationSecretSource;
+use App\Domain\TaskVms\TaskVmImageProjection;
 use App\Domain\TaskVms\TaskVmModelAdmission;
 use App\Infrastructure\TaskVms\TaskVmImageArtifactSource;
 use App\Infrastructure\TaskVms\TaskVmImageBootstrapStore;
 use App\Infrastructure\TaskVms\TaskVmSecretSource;
+use App\Models\Operation;
 use Illuminate\Support\ServiceProvider;
 
 final class TaskVmsServiceProvider extends ServiceProvider
 {
+    public function boot(): void
+    {
+        Operation::updated(static fn (Operation $operation) => app(TaskVmImageProjection::class)->changed($operation));
+    }
+
     public function register(): void
     {
         $this->app->scoped(TaskVmModelAdmission::class);

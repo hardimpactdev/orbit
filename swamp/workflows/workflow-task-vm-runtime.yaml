@@ -41,26 +41,26 @@ inputs:
   additionalProperties: false
 jobs:
 - name: runtime
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-pi-assets'
-      behaviorName: ${{ "vm-pi-assets-"+run.id }}
+      behaviorName: '${{ "vm-pi-assets" }}'
       methodName: read
       inputs:
         intent: ${{ inputs.intent }}
   - name: prepare-guest-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &id001
-        name: ${{ "vm-runtime-"+run.id }}
+        name: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -84,11 +84,11 @@ jobs:
       condition:
         type: succeeded
   - name: copy-guest-assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: copy
       globalArgs: *id001
       inputs:
@@ -102,11 +102,11 @@ jobs:
       condition:
         type: succeeded
   - name: inspect
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -123,11 +123,11 @@ jobs:
       condition:
         type: succeeded
   - name: inspection
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-pi-assets'
-      behaviorName: ${{ "vm-pi-assets-"+run.id }}
+      behaviorName: '${{ "vm-pi-assets" }}'
       methodName: inspection
       inputs:
         task_vm_id: ${{ inputs.intent.task_vm_id }}
@@ -138,11 +138,11 @@ jobs:
       condition:
         type: succeeded
   - name: prepare-local-artifact
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "vm-runtime-local-"+run.id }}
+      behaviorName: '${{ "vm-runtime-local" }}'
       methodName: execute
       inputs:
         run: 'install -d -m 0700 -- "$ORBIT_STAGE"
@@ -156,14 +156,14 @@ jobs:
         type: succeeded
     guard: ${{ steps.inspection.outputs.current }}
   - name: fetch-artifact
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-pi-source-"+run.id }}
+      behaviorName: '${{ ("vm-pi-source-" + string(inputs.intent.pi_artifact.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: copy
       globalArgs:
-        name: ${{ "vm-pi-source-"+run.id }}
+        name: '${{ ("vm-pi-source-" + string(inputs.intent.pi_artifact.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.pi_artifact.ssh_execution.target.user }}
@@ -185,11 +185,11 @@ jobs:
         type: succeeded
     guard: ${{ steps.inspection.outputs.current }}
   - name: deliver-artifact
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: copy
       globalArgs: *id001
       inputs:
@@ -203,11 +203,11 @@ jobs:
         type: succeeded
     guard: ${{ steps.inspection.outputs.current }}
   - name: stage-artifact
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -225,11 +225,11 @@ jobs:
         type: succeeded
     guard: ${{ steps.inspection.outputs.current }}
   - name: install
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -247,11 +247,11 @@ jobs:
         type: succeeded
     guard: ${{ steps.inspection.outputs.current }}
   - name: verify-artifact
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -271,11 +271,11 @@ jobs:
       condition:
         type: always
   - name: trust
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -291,11 +291,11 @@ jobs:
       condition:
         type: succeeded
   - name: model-configuration
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -312,11 +312,11 @@ jobs:
       condition:
         type: succeeded
   - name: bearer-file
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -331,11 +331,11 @@ jobs:
       condition:
         type: succeeded
   - name: unit
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -358,11 +358,11 @@ jobs:
       condition:
         type: succeeded
   - name: reload
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -376,11 +376,11 @@ jobs:
       condition:
         type: succeeded
   - name: service
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -395,11 +395,11 @@ jobs:
       condition:
         type: succeeded
   - name: restart
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -414,11 +414,11 @@ jobs:
       condition:
         type: succeeded
   - name: verify-process
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -434,11 +434,11 @@ jobs:
       condition:
         type: succeeded
   - name: probe
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -459,11 +459,11 @@ jobs:
       condition:
         type: succeeded
   - name: receipt
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "vm-runtime-local-"+run.id }}
+      behaviorName: '${{ "vm-runtime-local" }}'
       methodName: execute
       inputs:
         run: '/usr/bin/python3 -B - <<''PYTHON''
@@ -487,14 +487,14 @@ jobs:
       condition:
         type: succeeded
   - name: cleanup-guest
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-runtime-"+run.id }}
+      behaviorName: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: ${{ "vm-runtime-"+run.id }}
+        name: '${{ ("vm-runtime-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -521,11 +521,11 @@ jobs:
       condition:
         type: completed
   - name: cleanup-local
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "vm-runtime-local-"+run.id }}
+      behaviorName: '${{ "vm-runtime-local" }}'
       methodName: execute
       inputs:
         run: 'rm -rf -- "$ORBIT_STAGE"
@@ -538,11 +538,11 @@ jobs:
       condition:
         type: always
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "vm-runtime-local-"+run.id }}
+      behaviorName: '${{ "vm-runtime-local" }}'
       methodName: execute
       inputs:
         run: '/usr/bin/python3 -B - <<''PYTHON''

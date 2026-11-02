@@ -33,14 +33,6 @@ class CollectionTest(unittest.TestCase):
         self.assertNotIn('private-sentinel', encrypted)
         self.assertEqual(crypto.decrypt(encrypted, key), b'private-sentinel')
         with self.assertRaises(program['Refusal']): crypto.decrypt(encrypted, b'z' * 64)
-    def test_setup_matches_one_writable_collection(self):
-        remote = Remote()
-        result = program['reconcile']('setup', self.config(), remote)
-        self.assertEqual(result['backend'], 'configured')
-        self.assertEqual(result['collection_id'], 'collection')
-        remote.snapshot['collections'][0]['read_only'] = True
-        with self.assertRaises(program['Refusal']) as error: program['reconcile']('setup', self.config(), remote)
-        self.assertEqual(error.exception.code, 'vault.collection_read_only')
     def test_teardown_deletes_only_exact_ledger_matches_in_the_configured_scope(self):
         other_org = self.cipher('other-org', 'database:1'); other_org['organization_id'] = 'other'
         other_collection = self.cipher('other-collection', 'database:1'); other_collection['collection_ids'] = ['other']
@@ -69,6 +61,6 @@ class CollectionTest(unittest.TestCase):
         self.assertEqual(remote.deleted, [])
     def test_unknown_input_and_secret_bearing_exceptions_have_only_bounded_refusals(self):
         self.assertEqual(program['main']({'action':'other','configuration':{'master_password':'sentinel'}}),('failed',{'error_code':'vault.action_invalid'}))
-        self.assertEqual(program['main']({'action':'setup','configuration':{'master_password':'sentinel'}}),('failed',{'error_code':'vault.unreachable'}))
+        self.assertEqual(program['main']({'action':'teardown','configuration':{'master_password':'sentinel'}}),('failed',{'error_code':'vault.unreachable'}))
 
 if __name__=='__main__': unittest.main()

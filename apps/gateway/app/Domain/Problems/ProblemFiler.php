@@ -81,7 +81,7 @@ final readonly class ProblemFiler
     private function refreshIncidents(): array
     {
         $failures = [];
-        $rows = ProblemFingerprint::query()->whereIn('source', [ProblemSource::Doctor, ProblemSource::Release])->orderBy('id')->get(['id']);
+        $rows = ProblemFingerprint::query()->whereIn('source', [ProblemSource::Doctor, ProblemSource::Release, ProblemSource::Swamp])->orderBy('id')->get(['id']);
         foreach ($rows as $row) {
             try {
                 DB::transaction(function () use ($row): void {
@@ -245,7 +245,7 @@ final readonly class ProblemFiler
                     });
             })
             ->where(function (Builder $query): void {
-                $query->whereIn('source', [ProblemSource::Doctor, ProblemSource::Release])
+                $query->whereIn('source', [ProblemSource::Doctor, ProblemSource::Release, ProblemSource::Swamp])
                     ->orWhere('occurrences', '>=', 3);
             })
             ->orderByRaw('case when source = ? then 0 else 1 end', [ProblemSource::Release->value])
@@ -294,7 +294,7 @@ final readonly class ProblemFiler
                 $group = $this->groups->execute($data);
                 $this->clearEpisode($locked);
                 $locked->task_group_id = $group->id;
-                if (in_array($locked->source, [ProblemSource::Doctor, ProblemSource::Release], true)) {
+                if (in_array($locked->source, [ProblemSource::Doctor, ProblemSource::Release, ProblemSource::Swamp], true)) {
                     $locked->evidence = [...$locked->evidence, 'generated_group_hash' => $this->snapshots->hash($group)];
                 }
                 $locked->filed_at = now();
@@ -341,7 +341,7 @@ final readonly class ProblemFiler
 
         $stamps = $this->stamps($this->strings($evidence['observation_times'] ?? null));
 
-        if ($row->source === ProblemSource::Doctor) {
+        if ($row->source === ProblemSource::Doctor || $row->source === ProblemSource::Swamp) {
             return $this->tenMinutesApart($stamps);
         }
 
@@ -508,6 +508,7 @@ final readonly class ProblemFiler
             ProblemSource::Log => $this->text($row, 'log_excerpt') ?? $this->logSymptom($row),
             ProblemSource::Assist => $this->text($row, 'assistance_reason') ?? $this->reason($row),
             ProblemSource::Release => $this->text($row, 'summary') ?? $this->releaseTitle($row),
+            ProblemSource::Swamp => $this->text($row, 'summary') ?? $row->fingerprint,
         };
         $text = trim($text);
 
@@ -526,6 +527,7 @@ final readonly class ProblemFiler
             ProblemSource::Log => $this->logTitle($row),
             ProblemSource::Assist => $this->reason($row),
             ProblemSource::Release => $this->releaseTitle($row),
+            ProblemSource::Swamp => $this->text($row, 'swamp_title') ?? $row->fingerprint,
         };
 
         if ($title === '') {
@@ -547,6 +549,7 @@ final readonly class ProblemFiler
             ProblemSource::Log => $this->logParts($row)['frame'] ?? $this->text($row, 'source_path') ?? $row->fingerprint,
             ProblemSource::Assist => $this->assistanceEntry($row),
             ProblemSource::Release => $this->releaseEntry($row),
+            ProblemSource::Swamp => $this->text($row, 'swamp_entry') ?? $row->fingerprint,
         };
 
         return $this->cut($entry, 500, true);

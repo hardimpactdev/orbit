@@ -71,17 +71,17 @@ inputs:
   additionalProperties: false
 jobs:
 - name: publication
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: probe
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-probe-" + run.id }}
+      behaviorName: '${{ ("route-ssh-probe-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: &id001
-        name: ${{ "route-ssh-" + run.id }}
+        name: '${{ ("route-ssh-probe-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
@@ -106,11 +106,11 @@ jobs:
           if sudo /usr/bin/test -d "$ORBIT_PHP_HOME/current"; then initial=false; else initial=true; fi
           printf '{"present":%s,"initial":%s}\n' "$present" "$initial"
   - name: input
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/php-monitor-command'
-      behaviorName: ${{ "input-" + run.id }}
+      behaviorName: '${{ "input-php-monitor-command" }}'
       methodName: prepare
       inputs:
         runtime: ${{ inputs.intent.php_runtime }}
@@ -120,11 +120,11 @@ jobs:
       condition:
         type: succeeded
   - name: apply-pool
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-apply-pool-" + run.id }}
+      behaviorName: '${{ ("route-ssh-apply-pool-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -146,11 +146,11 @@ jobs:
         type: succeeded
     guard: ${{ !steps.input.outputs.present }}
   - name: validate
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-validate-" + run.id }}
+      behaviorName: '${{ ("route-ssh-validate-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -169,11 +169,11 @@ jobs:
         type: succeeded
     guard: ${{ !steps.input.outputs.present }}
   - name: reload
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-reload-" + run.id }}
+      behaviorName: '${{ ("route-ssh-reload-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -190,18 +190,18 @@ jobs:
         type: succeeded
     guard: ${{ !steps.input.outputs.present }}
 - name: completion
-  target: orbit-node-209
+  labels: {role: swamp}
   dependsOn:
   - job: publication
     condition:
       type: succeeded
   steps:
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "result-" + run.id }}
+      behaviorName: '${{ "result-shell" }}'
       methodName: execute
       inputs:
         run: printf '{"ready":true,"present":%s}\n' "$ORBIT_PHP_PRESENT"

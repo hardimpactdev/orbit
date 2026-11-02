@@ -18,10 +18,6 @@ final readonly class InstanceSetupProjection implements DirectOperationProjectio
 
     public function input(Operation $operation): array
     {
-        if ($operation->status->terminal()) {
-            return array_intersect_key($operation->input, array_flip(['instance_id', 'project_id', 'environment', 'list', 'execution', 'steps']));
-        }
-
         return $this->intent->input($operation);
     }
 
@@ -44,7 +40,7 @@ final readonly class InstanceSetupProjection implements DirectOperationProjectio
         $valid = match ($status) {
             'succeeded' => $code === null && $result === ['instance_id' => $operation->target_id, 'outcome' => 'succeeded', 'no_op' => ($names === [])],
             'failed' => is_string($code) && preg_match('/\A[a-z0-9_.-]{1,100}\z/D', $code) === 1
-                && array_diff(array_keys($result), ['instance_id', 'outcome', 'error_code', 'failed_step']) === []
+                && array_diff(array_keys($result), ['instance_id', 'outcome', 'error_code', 'failed_step', 'exit_code', 'stderr']) === []
                 && ($result['instance_id'] ?? null) === $operation->target_id && ($result['error_code'] ?? null) === $code
                 && match ($result['outcome'] ?? null) {
                     'failed' => $code === 'instance.'.$phase.'_step_failed',

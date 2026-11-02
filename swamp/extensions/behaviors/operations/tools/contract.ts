@@ -2,6 +2,14 @@ import { z } from "npm:zod@4.4.3";
 import { constraintMatches } from "./constraints.ts";
 
 export const Manager = z.enum(["apt", "composer", "vp", "brew", "brew-cask"]);
+export const Repository = z.object({
+  name: z.string().max(63).regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/).refine((v) => !["caddy", "php"].includes(v)),
+  uris: z.array(z.url().startsWith("https://")).min(1).max(16),
+  suites: z.array(z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/)).min(1).max(16),
+  components: z.array(z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/)).min(1).max(16),
+  architectures: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/)).min(1).max(16).optional(),
+  signing_key: z.object({ url: z.url().startsWith("https://"), fingerprint: z.string().regex(/^(?:[A-F0-9]{40}|[A-F0-9]{64})$/) }).strict(),
+}).strict();
 export const Input = z.object({
   node_id: z.number().int().positive(),
   manager: Manager,
@@ -13,9 +21,24 @@ export const Input = z.object({
   tool_status: z.string().nullable().default(null),
   installed_version: z.string().nullable().default(null),
   intent_only: z.boolean().default(false),
+  repository: Repository.nullable().default(null),
+  remove_repository: z.boolean().default(false),
+  repository_packages: z.array(z.string().regex(/^[a-z0-9][a-z0-9+.-]{0,254}$/)).max(256).default([]),
   materialize: z.record(z.string(), z.unknown()).nullable().default(null),
 });
 export type ToolInput = z.infer<typeof Input>;
+export const Kind = z.enum(["tool.install", "tool.update", "tool.remove", "tool.adopt"]);
+export const Step = z.object({ status: z.string(), outputs: z.record(z.string(), z.unknown()).optional() }).passthrough();
+/** The public JSON a phase step printed, or null when the step did not finish its phase. */
+export function printed(step: z.infer<typeof Step> | null | undefined): Record<string, unknown> | null {
+  if (step?.status !== "succeeded" || typeof step.outputs?.stdout !== "string") return null;
+  try {
+    const value = JSON.parse(step.outputs.stdout);
+    return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
 export type Result = Record<string, unknown>;
 export class ToolRefusal extends Error {
   constructor(readonly code: string, readonly result: Result = {}) {
@@ -81,19 +104,11 @@ export function verifyInstalled(input: ToolInput, version: string): void {
   }
 }
 
-export function refusalCode(step: string, code: string, kind: string): string {
+/** The public code of a failed Node-parent manager setup step. */
+export function refusalCode(step: string, code: string): string {
   if (code === "operation.cancelled") return code;
   if (/^tool\.(?:vp|homebrew|composer)_scope_(?:absent|conflict)$/.test(code)) {
     return "tool.manager_unavailable";
   }
-  if (step === "manager-materialize" || step === "manager-ready") {
-    return kind === "tool.install" || kind === "tool.manager_converge"
-      ? "tool.manager_provision_failed"
-      : "tool.version_probe_failed";
-  }
-  if (step === "package-candidate") {
-    return "tool.candidate_version_probe_failed";
-  }
-  if (step === "package-mutate") return `${kind}_failed`;
-  return "tool.version_probe_failed";
+  return step === "manager-materialize" || step === "manager-ready" ? "tool.manager_provision_failed" : "tool.version_probe_failed";
 }

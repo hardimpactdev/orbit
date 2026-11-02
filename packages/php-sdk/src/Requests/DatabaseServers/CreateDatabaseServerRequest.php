@@ -24,8 +24,6 @@ final class CreateDatabaseServerRequest extends GatewayRequest implements HasBod
         private readonly ?string $tag = null,
         private readonly ?int $port = null,
         private readonly ?string $driver = null,
-        private readonly ?int $processId = null,
-        private readonly ?string $connection = null,
         private readonly ?string $idempotencyKey = null,
     ) {}
 
@@ -61,10 +59,8 @@ final class CreateDatabaseServerRequest extends GatewayRequest implements HasBod
             $body['port'] = $this->port;
         }
 
-        foreach (['driver' => $this->driver, 'process_id' => $this->processId, 'connection' => $this->connection] as $key => $value) {
-            if ($value !== null) {
-                $body[$key] = $value;
-            }
+        if ($this->driver !== null) {
+            $body['driver'] = $this->driver;
         }
 
         return $body;

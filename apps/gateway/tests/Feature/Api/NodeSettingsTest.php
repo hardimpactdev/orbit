@@ -248,7 +248,7 @@ describe('node storage settings', function (): void {
         'shared state' => '/srv/shared/gateway-storage',
     ]);
 
-    it('admits home-dependent checks without probing the Node or storing the requested root', function (string $path): void {
+    it('refuses a hidden folder in the managed home at admission without starting a run', function (string $path): void {
         $node = Node::query()->create([
             'name' => 'app-dev', 'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.10', 'user' => 'orbit',
@@ -265,8 +265,10 @@ describe('node storage settings', function (): void {
         $agents = Mockery::mock(AgentCommandRunner::class);
         $agents->shouldNotReceive('run', 'install');
         app()->instance(AgentCommandRunner::class, $agents);
-        $this->patchJson("/api/v1/nodes/{$node->id}/settings", ['apps' => ['path' => $path]])->assertAccepted();
-        expect($node->refresh()->settings)->toBeNull();
+        $this->patchJson("/api/v1/nodes/{$node->id}/settings", ['apps' => ['path' => $path]])
+            ->assertUnprocessable()->assertJsonPath('error.code', 'node.settings_path_protected');
+        expect($node->refresh()->settings)->toBeNull()
+            ->and($socket->sent)->toBe([]);
     })->with(['/home/orbit/.orbit/worktrees/instances', '/home/orbit/.orbit/worktrees/extra']);
 
     it('rejects list settings at every HTTP boundary without changing stored intent', function (

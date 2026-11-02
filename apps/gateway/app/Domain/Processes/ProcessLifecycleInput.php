@@ -32,7 +32,7 @@ final readonly class ProcessLifecycleInput
     public function forInstanceMember(Operation $parent, array $member): array
     {
         $process = Process::query()->findOrFail($member['id']);
-        if ($parent->kind !== 'process.install_instance_definitions' || $parent->target_type !== 'instance'
+        if (! in_array($parent->kind, ['process.install_instance_definitions', 'instance.create'], true) || $parent->target_type !== 'instance'
             || $parent->target_id !== ($parent->input['instance_id'] ?? null)
             || ! Instance::isMorphType($process->owner_type) || $process->owner_id !== $parent->target_id
             || ! Instance::query()->whereKey($parent->target_id)->where('node_id', $parent->node_id)->exists()) {
@@ -92,10 +92,10 @@ final readonly class ProcessLifecycleInput
             if ($installation['has_environment']) {
                 $copies['environment'] = $this->steps->executionCopy('orbit-control-inputs', $environmentKey, $environment);
             }
-            if (isset($input['vite_plan'])) {
-                $intent['vite_plan'] = $input['vite_plan'];
-                $intent['caddy_publication'] = app(NativeCaddyPublicationInput::class)->forNode($node);
-            }
+        }
+        if (isset($input['vite_plan'])) {
+            $intent['vite_plan'] = $input['vite_plan'];
+            $intent['caddy_publication'] = app(NativeCaddyPublicationInput::class)->forNode($node);
         }
 
         return ['intent' => $intent, 'execution_secrets' => $copies];

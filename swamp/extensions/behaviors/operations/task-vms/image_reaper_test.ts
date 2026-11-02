@@ -430,7 +430,7 @@ Deno.test("native method enforces exact stable host instance and verifies host i
   assertEquals(f.calls, []);
   assertEquals(resources, []);
 });
-Deno.test("schedule has native thirty-minute cadence and exact discovery/host placement", async () => {
+Deno.test("reaper stays unscheduled with exact discovery/host placement", async () => {
   const workflow = parse(
     await Deno.readTextFile(
       new URL(
@@ -440,27 +440,22 @@ Deno.test("schedule has native thirty-minute cadence and exact discovery/host pl
     ),
   ) as {
     concurrency: number;
-    trigger: { schedule: string };
+    trigger?: unknown;
     jobs: {
       steps: {
-        target: string;
-        labels: { node: string; pool?: string };
+        target?: string;
+        labels: { node?: string; role?: string };
         task: { methodName: string };
         writes?: boolean;
       }[];
     }[];
   };
   assertEquals(workflow.concurrency, 1);
-  assertEquals(workflow.trigger.schedule, "0 */30 * * * *");
-  assertEquals(workflow.jobs[0].steps[0].target, "swamp209-migration-a");
-  assertEquals(workflow.jobs[0].steps[0].labels, {
-    node: "209",
-    pool: "migration",
-  });
-  assertEquals(
-    workflow.jobs[1].steps[0].target,
-    "orbit-node-${{ self.host.node_id }}",
-  );
+  // Unscheduled until its host steps reach hosts through @swamp/ssh from 209 (3f66b05494).
+  assertEquals(workflow.trigger, undefined);
+  assertEquals(workflow.jobs[0].steps[0].target, undefined);
+  assertEquals(workflow.jobs[0].steps[0].labels, { role: "swamp" });
+  assertEquals(workflow.jobs[1].steps[0].target, undefined);
   assertEquals(
     workflow.jobs[1].steps[0].labels.node,
     "${{ string(self.host.node_id) }}",

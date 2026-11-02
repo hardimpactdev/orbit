@@ -20,14 +20,14 @@ return ['node.worker_known_hosts' => [
     'projection' => WorkerKnownHostsProjection::class,
 ], 'node.ssh_access_converge' => [
     'workflow' => 'operation-node-ssh-access-converge',
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^bootstrap-identity-node-14$']],
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'ssh_access', 'step' => 'result'],
+    'terminal_result' => ['job' => 'ssh_access', 'step' => 'Log in with Swamp identity', 'native' => true],
     'projection' => NodeSshAccessProjection::class,
 ], 'node.wireguard_hub_converge' => [
     'workflow' => 'operation-node-wireguard-hub-converge',
     'projection' => NodeWireGuardHubProjection::class,
-    'private_material' => ['configuration' => 'node.vpn_configuration'],
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'check', 'step' => 'Confirm the hub', 'native' => true],
 ], 'node.remove' => [
     'workflow' => 'operation-node-remove', 'projection' => NodeRemovalProjection::class,
     'workflow_inputs' => true,
@@ -41,17 +41,18 @@ return ['node.worker_known_hosts' => [
     'workflow' => 'operation-node-agent-rekey',
     'projection' => NodeAgentRekeyProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'result', 'step' => 'result'],
+    'terminal_result' => ['job' => 'rekey', 'step' => 'Check the Node agent'],
 ], 'node.settings' => [
     'workflow' => 'operation-node-settings',
     'projection' => NodeSettingsProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'result', 'step' => 'result'],
+    'terminal_result' => ['job' => 'settings', 'step' => 'Prove the apps folder', 'native' => true],
 ], 'node.converge' => [
     'workflow' => 'operation-node-converge-direct',
     'projection' => NodeConvergeProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'result', 'step' => 'result'],
+    'terminal_result' => ['job' => 'converge', 'step' => 'Prove the footprint', 'native' => true,
+        'captures' => ['role' => ['job' => 'converge', 'step' => 'Re-apply role files']]],
 ], 'node.role_add' => [
     'workflow' => 'operation-node-role-add-direct',
     'projection' => NodeRoleDirectProjection::class,

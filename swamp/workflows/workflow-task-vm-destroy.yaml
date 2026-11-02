@@ -42,19 +42,19 @@ inputs:
   additionalProperties: false
 jobs:
 - name: destroy
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: plan
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-destroy-input'
-      behaviorName: ${{ "vm-destroy-input-"+run.id }}
+      behaviorName: '${{ "vm-destroy-input" }}'
       methodName: plan
       inputs:
         intent: ${{ inputs.intent }}
   - name: inspect
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: task-vm-provider-power
@@ -71,7 +71,7 @@ jobs:
       condition:
         type: succeeded
   - name: stop
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: task-vm-provider-power
@@ -89,7 +89,7 @@ jobs:
         type: succeeded
     guard: ${{ !steps.inspect.outputs.result.running }}
   - name: model
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: task-vm-model-revoke
@@ -112,11 +112,11 @@ jobs:
         - type: skipped
     guard: ${{ !steps.plan.outputs.model_required }}
   - name: revoked
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-destroy-input'
-      behaviorName: ${{ "vm-destroy-input-"+run.id }}
+      behaviorName: '${{ "vm-destroy-input" }}'
       methodName: revocation
       inputs:
         intent: ${{ inputs.intent }}
@@ -138,7 +138,7 @@ jobs:
         - type: succeeded
         - type: skipped
   - name: delete
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: task-vm-provider-power
@@ -155,14 +155,14 @@ jobs:
       condition:
         type: succeeded
   - name: seed-before
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-seed-"+run.id }}
+      behaviorName: '${{ ("vm-seed-" + string(inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution.target.host : "127.0.0.1")).split(".").join("-") }}'
       methodName: exec
       globalArgs: &id001
-        name: ${{ "vm-provider-" + run.id }}
+        name: '${{ ("vm-seed-" + string(inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution.target.host : "127.0.0.1")).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution.target.user
@@ -188,11 +188,11 @@ jobs:
         type: succeeded
     guard: ${{ steps.plan.outputs.provider != "incus" }}
   - name: seed
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-destroy-input'
-      behaviorName: ${{ "vm-destroy-input-"+run.id }}
+      behaviorName: '${{ "vm-destroy-input" }}'
       methodName: seed
       inputs:
         intent: ${{ inputs.intent }}
@@ -203,11 +203,11 @@ jobs:
         type: succeeded
     guard: ${{ steps.plan.outputs.provider != "incus" }}
   - name: seed-delete
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-seed-"+run.id }}
+      behaviorName: '${{ ("vm-seed-" + string(inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution.target.host : "127.0.0.1")).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -220,11 +220,11 @@ jobs:
         type: succeeded
     guard: ${{ steps.plan.outputs.provider != "incus" || !steps.seed.outputs.present }}
   - name: seed-after
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "vm-seed-"+run.id }}
+      behaviorName: '${{ ("vm-seed-" + string(inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution.target.host : "127.0.0.1")).split(".").join("-") }}'
       methodName: exec
       globalArgs: *id001
       inputs:
@@ -243,7 +243,7 @@ jobs:
         - type: skipped
     guard: ${{ steps.plan.outputs.provider != "incus" }}
   - name: cleanup
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: workflow
       workflowIdOrName: operation-node-remove
@@ -265,11 +265,11 @@ jobs:
         - type: skipped
     guard: ${{ !steps.plan.outputs.node_present }}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-destroy-input'
-      behaviorName: ${{ "vm-destroy-input-"+run.id }}
+      behaviorName: '${{ "vm-destroy-input" }}'
       methodName: terminal
       inputs:
         intent: ${{ inputs.intent }}

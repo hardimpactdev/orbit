@@ -14,6 +14,7 @@ use App\Domain\Processes\ProcessTargetType;
 use App\Domain\ProjectDefinitions\DefinitionEnvironment;
 use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Schedules\ScheduleErrorCode;
+use App\Domain\Schedules\ScheduleTrigger;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
@@ -21,6 +22,7 @@ use App\Models\Process;
 use App\Models\ProcessDefinition;
 use App\Models\Schedule;
 use App\Models\ScheduleDefinition;
+use App\Support\ValidatedData;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
@@ -81,6 +83,25 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
         });
     }
 
+    /**
+     * Record a new development Instance's Processes from the Project's development definitions, inside the
+     * create admission transaction. Create installs and starts them after its setup steps.
+     */
+    public function captureForDevelopment(Instance $instance): void
+    {
+        if ($instance->placedOnAppProd() || $instance->runtime_definitions_captured_at !== null) {
+            return;
+        }
+        $target = $this->processTargets->forPreparation($instance);
+        $definitions = ProcessDefinition::query()->where('project_id', $instance->project_id)
+            ->orderBy('name')->orderBy('id')->lockForUpdate()->get()
+            ->filter(static fn (ProcessDefinition $definition): bool => in_array(DefinitionEnvironment::Development->value, $definition->environments, strict: true));
+        foreach ($definitions as $definition) {
+            $this->captureProcess($instance, $definition, $target, DesiredProcessState::Running);
+        }
+        $instance->update(['runtime_definitions_captured_at' => now()]);
+    }
+
     private function assertProductionTarget(Instance $instance): void
     {
         if ($instance->placedOnAppProd()) {
@@ -104,6 +125,7 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
         #[SensitiveParameter]
         ProcessDefinition $definition,
         ProcessTarget $target,
+        DesiredProcessState $desired = DesiredProcessState::Stopped,
     ): void {
         $data = $this->processData($instance, $definition);
         $attributes = $this->processSpecifications->attributes($data, $target);
@@ -127,7 +149,7 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
                 'source_definition_id' => $definition->id,
                 'name' => $definition->name,
                 ...$attributes,
-                'desired_state' => DesiredProcessState::Stopped,
+                'desired_state' => $desired,
                 'status' => LifecycleStatus::Provisioning,
             ]);
         } catch (UniqueConstraintViolationException $exception) {
@@ -170,7 +192,9 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
                 'command' => $specification['command'],
                 'timeout_seconds' => $specification['timeout_seconds'],
                 'desired_timer_state' => DesiredTimerState::Disabled,
-                'status' => LifecycleStatus::Provisioning,
+                // A native copy needs no Node work while disabled; enable writes its workflow and trigger.
+                'trigger' => $trigger = ScheduleTrigger::forCalendar(ValidatedData::string($specification['calendar'])),
+                'status' => $trigger === ScheduleTrigger::Swamp ? LifecycleStatus::Active : LifecycleStatus::Provisioning,
             ]);
         } catch (UniqueConstraintViolationException $exception) {
             throw new ResourceOperationException(

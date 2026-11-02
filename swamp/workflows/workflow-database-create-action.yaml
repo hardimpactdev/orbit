@@ -1,5 +1,6 @@
 id: e494d214-54c7-496f-9294-c70876e95167
 name: database-create-action
+queueTimeout: 30
 description: One database creation action; typed output and native failure gate preserve its result.
 writes: true
 vaults: [orbit-control-inputs]
@@ -8,7 +9,7 @@ inputs:
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [database.create, database.clone]}
+    kind: {type: string, enum: [database.clone]}
     intent: {type: object}
     intent_json: {type: string}
     execution_secrets: {type: object, properties: {database_create: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^database-(create|clone)-intent-[1-9][0-9]*$'}}, required: [vault, key], additionalProperties: false}}, required: [database_create], additionalProperties: false}
@@ -18,15 +19,15 @@ inputs:
   additionalProperties: false
 jobs:
 - name: action
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: item
-    <<: &placed {target: orbit-node-209}
+    <<: &placed {labels: {role: swamp}}
     writes: false
     task:
       type: behavior
       behaviorType: '@nckrtl/database-create-command-assets'
-      behaviorName: ${{ "database-create-item-" + run.id }}
+      behaviorName: '${{ "database-create-item" }}'
       methodName: item
       inputs: {item: '${{ inputs.item }}'}
   - name: execute
@@ -36,11 +37,11 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "dbc-" + run.id }}
+      behaviorName: '${{ ("dbc-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: ${{ "dbc-" + run.id }}
-        transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity}
+        name: '${{ ("dbc-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
+        transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity}
         hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]
       inputs:
         hosts: name:server
@@ -54,7 +55,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-create-command-assets'
-      behaviorName: ${{ "db-create-result-" + run.id }}
+      behaviorName: '${{ "db-create-result" }}'
       methodName: action_result
       inputs:
         stdout: '${{ has(steps.execute.outputs) && has(steps.execute.outputs.stdout) ? steps.execute.outputs.stdout : "" }}'

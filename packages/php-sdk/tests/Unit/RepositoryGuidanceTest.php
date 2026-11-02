@@ -81,6 +81,7 @@ use Orbit\Sdk\Requests\Projects\UpdateProjectRequest;
 use Orbit\Sdk\Requests\Schedules\CompleteScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\CreateScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\DestroyScheduleRequest;
+use Orbit\Sdk\Requests\Schedules\DisableScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\EnableScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\ListSchedulesRequest;
 use Orbit\Sdk\Requests\Schedules\RunScheduleRequest;
@@ -226,7 +227,6 @@ describe('repository guidance bootstrap', function (): void {
     });
 
     it('inventories every concrete transport operation and the Tool response DTOs', function (): void {
-        $firewallInspectionRequests = ['Orbit\\Sdk\\Requests\\Firewall\\InspectFirewallRequest'];
         $preScheduleOperationCount = 108;
         $scheduleRequests = [
             ListSchedulesRequest::class,
@@ -237,6 +237,7 @@ describe('repository guidance bootstrap', function (): void {
             CompleteScheduleRequest::class,
             DestroyScheduleRequest::class,
             EnableScheduleRequest::class,
+            DisableScheduleRequest::class,
         ];
         $databaseRequests = [
             ListDatabaseConnectionsRequest::class,
@@ -332,6 +333,15 @@ describe('repository guidance bootstrap', function (): void {
             ListTaskAgentsRequest::class,
             ShowTaskAgentRequest::class,
         ];
+        // Behaviors that keep acting by themselves get an enable and a disable request, never an update flag.
+        $enableRequests = [
+            'Orbit\\Sdk\\Requests\\Clusters\\ActivateClusterRequest',
+            'Orbit\\Sdk\\Requests\\Clusters\\DeactivateClusterRequest',
+            'Orbit\\Sdk\\Requests\\Instances\\EnableInstanceAutoDeployRequest',
+            'Orbit\\Sdk\\Requests\\Instances\\DisableInstanceAutoDeployRequest',
+            'Orbit\\Sdk\\Requests\\Projects\\EnableProjectReviewAndMergeRequest',
+            'Orbit\\Sdk\\Requests\\Projects\\DisableProjectReviewAndMergeRequest',
+        ];
         $lifecycleRequests = [
             RenameInstanceRequest::class,
             CreateProjectLifecycleStepRequest::class,
@@ -373,7 +383,6 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Deployments\\ResolveAutomaticDeployAdmissionRequest',
         ];
         $fleetRequests = [
-            'Orbit\\Sdk\\Requests\\Fleet\\MigrateDockerRequest',
             'Orbit\\Sdk\\Requests\\Gateway\\ShowDesiredFleetStateRequest',
             'Orbit\\Sdk\\Requests\\Fleet\\ShowFleetRolloutRequest',
             'Orbit\\Sdk\\Requests\\Fleet\\ResumeFleetRolloutRequest',
@@ -381,7 +390,7 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeNetworkRequest',
             'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeWireGuardHubRequest',
         ];
-        $expectedOperationCount = count($firewallInspectionRequests) + count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($webSocketRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 18;
+        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + count($enableRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($webSocketRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 18;
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest',
@@ -487,7 +496,6 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(...$aiRouterSwitchRequests)
             ->toContain(...$fleetRequests)
             ->toContain(...$operationRequests)
-            ->toContain(...$firewallInspectionRequests)
             ->toContain(CloneInstanceRequest::class)
             ->toContain(TransferInstanceRequest::class)
             ->toContain(CreateInstanceRequest::class)
@@ -598,10 +606,10 @@ describe('repository guidance bootstrap', function (): void {
                 '- Node: list, show, add, rename, settings update, WireGuard key set, standalone WireGuard hub converge, platform set, remove, access add, access remove, role list, role add, role relocate, role remove, and metrics.',
             )
             ->toContain(
-                '- Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.',
+                '- Cluster: list, show, create, update, activate, deactivate, remove, Node attach, Node detach, Router set, and Router clear.',
             )
             ->toContain('- Doctor: run the complete typed Gateway report.')
-            ->toContain('- Schedule: list, add, show, run, logs, complete, remove, and activate.')
+            ->toContain('- Schedule: list, add, show, run, logs, complete, remove, activate, and deactivate.')
             ->toContain('- Database connection: list, show, add, update, remove, attach, detach, query, tables, schema, describe, user create, and user list.')
             ->toContain('- GitHub App: install, show, and destroy.')
             ->toContain('- Gateway releases: list, show, deploy, rollback, and automatic release status, enable, disable, and resume.')
@@ -609,7 +617,7 @@ describe('repository guidance bootstrap', function (): void {
                 '- Project runtime definition: process and Schedule list, create, show, update, and destroy.',
             )
             ->toContain(
-                '- Instance: list, show, create, register, rename, clone, transfer, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, deployment-history list and show, environment import, environment update, environment synchronization, Swamp dependency results read, and full-domain and directory instance resolution through the concise Instance routes.',
+                '- Instance: list, show, create, register, rename, clone, transfer, remove, update, auto-deploy enable and disable, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, deployment-history list and show, environment import, environment update, environment synchronization, Swamp dependency results read, and full-domain and directory instance resolution through the concise Instance routes.',
             )
             ->toContain('- Route: list, show, create, update, target set, target clear, and remove.')
             ->not->toContain('- Workspace: list, show, create, remove, and update PHP.')
@@ -635,7 +643,7 @@ describe('repository guidance bootstrap', function (): void {
                 'Keep Instance deployment-layout transport limited to the numeric Instance ID and an optional explicit SQLite source path.',
             )
             ->toContain(
-                'Keep Instance environment transport limited to an ID-or-domain selector, optional import replacement, one key and string value for update, an empty synchronization body, and the bounded value-free operation result.',
+                'Keep Instance environment transport limited to an ID-or-domain selector, optional import replacement, one key and string value for update, and an empty synchronization body. Import and update return the bounded value-free result; synchronization returns the queued operation.',
             )
             ->toContain(
                 'Keep Instance deployment transport limited to named deploy-step create, list, update, and destroy, Instance branch update, explicit deploy and rollback starts, trusted automatic pinned deploy starts, and retained-release inspection.',
@@ -667,7 +675,7 @@ describe('repository guidance bootstrap', function (): void {
                 'The SDK exposes typed status, setup, sync, and teardown requests for publishing database credentials to Vaultwarden.',
                 'The SDK exposes typed list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create requests for Gateway-owned database connection records.',
                 'The SDK exposes typed list, create, show, update, and destroy requests for Project process and Schedule definitions.',
-                'The SDK exposes typed list, add, show, run, logs, complete, remove, and activate requests for Node and Instance Schedules.',
+                'The SDK exposes typed list, add, show, run, logs, complete, remove, activate, and deactivate requests for Node and Instance Schedules.',
                 'Doctor accepts the current Gateway family set, including Schedule and Database connection.',
                 "Create and update requests send the caller's exact JSON document to the Gateway.",
                 'The SDK exposes typed deploy-step, deploy, rollback, and retained-release operations.',

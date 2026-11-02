@@ -15,8 +15,10 @@ class FirewallTest(unittest.TestCase):
                 rule = argv[3:]
                 if rule in rules:
                     rules.remove(rule)
-            elif argv[1:3] == ["insert", "1"]:
-                rules.insert(0, argv[3:])
+            elif argv[1] == "prepend":
+                rules.insert(0, argv[2:])
+            elif argv[1:3] == ["insert", "1"] and not rules:
+                raise RuntimeError("ERROR: Invalid position '1'")
             return SimpleNamespace(returncode=0)
 
         for _ in range(2):
@@ -24,6 +26,19 @@ class FirewallTest(unittest.TestCase):
             self.assertEqual(rules, [ALLOW, DENY, broad])
         self.assertIn("10.44.0.15", rules[0])
         self.assertNotIn("10.44.0.2", rules[0])
+
+    def test_fresh_guest_with_no_rules_still_gets_209_before_deny(self):
+        rules = []
+
+        def run(argv, **_kwargs):
+            if argv[1] == "insert":
+                raise RuntimeError("ERROR: Invalid position '1'")
+            if argv[1] == "prepend":
+                rules.insert(0, argv[2:])
+            return SimpleNamespace(returncode=0)
+
+        self.assertTrue(converge(run)["ssh_firewall_ready"])
+        self.assertEqual(rules, [ALLOW, DENY])
 
     def test_failure_is_not_reported_ready(self):
         def fail(*_args, **_kwargs):

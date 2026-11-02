@@ -12,6 +12,8 @@ const operation = (overrides: Partial<Operation> = {}): Operation => ({
     status: "running",
     sequence: 3,
     current_step: null,
+    current_step_started_at: null,
+    current_step_observed_at: null,
     failed_step: null,
     error_code: null,
     error: null,

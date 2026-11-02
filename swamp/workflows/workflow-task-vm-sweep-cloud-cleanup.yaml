@@ -40,28 +40,28 @@ jobs:
 - name: cleanup
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-sweep-input'
-      behaviorName: ${{ "swp-assets-"+run.id }}
+      behaviorName: '${{ "swp-assets" }}'
       methodName: assets
       inputs:
         scope: ${{ inputs.scope }}
   - name: api
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-lifecycle-input'
-      behaviorName: ${{ "swp-api-"+run.id }}
+      behaviorName: '${{ "swp-api" }}'
       methodName: api_assets
       inputs: {}
   - name: remove
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "swp-remove-"+run.id + "-"+string(self._index) }}
+      behaviorName: '${{ "swp-remove-" + string(self._index) }}'
       methodName: execute
       inputs:
         run: 'exec python3 -B "$SCRIPT"
@@ -83,11 +83,11 @@ jobs:
       item: resource
       in: ${{ inputs.resources }}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "swp-result-"+run.id }}
+      behaviorName: '${{ "swp-result" }}'
       methodName: execute
       inputs:
         run: 'printf ''%s\n'' ''{"cleaned":true}''

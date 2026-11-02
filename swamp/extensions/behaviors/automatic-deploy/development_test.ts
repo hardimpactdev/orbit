@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
+import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert@1.0.19";
 import { tickDevelopment } from "./development.ts";
 import type { Http } from "./gateway.ts";
 import type { Operation, Row } from "./policy.ts";
@@ -26,6 +26,7 @@ function fixture() {
     requests: { method: string; path: string; body: unknown; key?: string }[] =
       [];
   const history: Row[] = [], starts: string[] = [];
+  const writes: { name: string; version: number }[] = [];
   const source = { head: B };
   let holder = false,
     lost = false,
@@ -65,9 +66,8 @@ function fixture() {
       body: { data: structuredClone(data) },
     });
   };
+  const emitted: { instance: number; key: string; body: unknown }[] = [];
   const admissions = {
-    event: () =>
-      Promise.resolve({ ...operation, id: 201, kind: "instance.policy_event" }),
     deploy: (_id: number, commit: string, key: string) => {
       assertEquals(
         (memory.get("development-7")?.pending as { key: string }).key,
@@ -106,10 +106,19 @@ function fixture() {
       value: Record<string, unknown>,
     ) => {
       memory.set(name, structuredClone(value));
-      return Promise.resolve({ name });
+      const handle = { name, version: writes.length + 1 };
+      writes.push(handle);
+      return Promise.resolve(handle);
     },
   };
-  const run = (at = now) => tickDevelopment(http, ctx, admissions, at);
+  const run = (at = now) =>
+    tickDevelopment(
+      http,
+      ctx,
+      admissions,
+      at,
+      (instance, key, body) => emitted.push({ instance, key, body }),
+    );
   return {
     instance,
     listed,
@@ -118,8 +127,10 @@ function fixture() {
     history,
     source,
     starts,
+    writes,
     operation,
     run,
+    emitted,
     busy: () => {
       busy = true;
     },
@@ -154,6 +165,17 @@ Deno.test("development policy admits only after Gateway ownership switches", asy
   await f.run();
   assertEquals(f.starts, []);
   assertEquals(f.memory.size, 0);
+});
+Deno.test("development policy returns only the final checkpoint handle", async () => {
+  const f = fixture();
+  const handles = await f.run();
+  assertEquals(f.writes.length > 1, true);
+  const last = f.writes.at(-1);
+  assertExists(last);
+  assertEquals(handles, [last]);
+  assertEquals(f.starts.length, 1);
+  // The start raised one Activity event for the fire result; no step posts it.
+  assertEquals(f.emitted.map((e) => [e.instance, (e.body as { result: string }).result]), [[7, "started"]]);
 });
 Deno.test("native development policy saves the exact pinned intent before admission", async () => {
   const f = fixture();
@@ -263,7 +285,13 @@ Deno.test("interrupted development deploy without evidence backs off once then a
 });
 
 Deno.test("a definite start failure releases pending intent for the next scheduled admission", async () => {
-  for (const code of ["swamp.start_refused", "swamp.start_unavailable"]) {
+  for (
+    const code of [
+      "swamp.start_refused",
+      "swamp.start_unavailable",
+      "swamp.vault_sync_unavailable",
+    ]
+  ) {
     for (const lost of [false, true]) {
       const f = fixture();
       if (lost) f.lost();
@@ -312,6 +340,18 @@ Deno.test("an uncertain or executed failure without history retains pending inte
       {
         status: "failed",
         error_code: "swamp.start_unavailable",
+        attempts: 0,
+        result: { deployment_id: 999 },
+      },
+      {
+        status: "failed",
+        error_code: "swamp.vault_sync_unavailable",
+        attempts: 1,
+        result: null,
+      },
+      {
+        status: "failed",
+        error_code: "swamp.vault_sync_unavailable",
         attempts: 0,
         result: { deployment_id: 999 },
       },

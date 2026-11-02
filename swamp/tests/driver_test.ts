@@ -1,6 +1,7 @@
 import { recordQuery } from "./fixtures/worker_query.ts";
 // Pure helpers of @nckrtl/orbit-driver: ~/.swamp/deno/deno test tests/
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
+import { planConsentNote } from "../extensions/behaviors/_lib/repository_analysis.ts";
 import { behavior, pendingGateIds, preapprovalName, recordedThisEntry, tickOrder } from "../extensions/behaviors/orbit_driver.ts";
 
 const gate = (type: string, pass: boolean, reasons: string[] = []) => ({ type, pass, reasons });
@@ -25,6 +26,32 @@ Deno.test("pending gate ids come from human gates on otherwise passing transitio
     ],
   };
   assertEquals(pendingGateIds(status), ["baseline-retry", "cycle-override:implement"]);
+});
+
+Deno.test("a consent gate that reads its own approval waits on that human gate, not on itself", () => {
+  const noKey = "CEL gate evaluation failed: No such key: plan_authorized\n\n>    1 | [approvals.plan_authorized.filter(a,";
+  const status = {
+    transitions: [
+      { name: "authorized", to: "analyze", manual: false, satisfied: false, cycleLimitBlocked: false,
+        gates: [gate("artifact-exists", true), gate("human-approval", false, [awaiting("plan-authorized")]), gate("cel", false, [noKey])] },
+      { name: "other", to: "analyze", manual: false, satisfied: false, cycleLimitBlocked: false,
+        gates: [gate("human-approval", false, [awaiting("other-gate")]), gate("cel", false, ["No such key: plan_authorized"])] },
+    ],
+  };
+  assertEquals(pendingGateIds(status), ["plan-authorized"], "a CEL gate on another gate's key still blocks");
+});
+
+Deno.test("a later plan cycle waits on its consent gate once an earlier cycle's approval exists", () => {
+  const later = "awaiting human approval 'plan-authorized' with note=planConsentNote(fresh plan payload): the latest decision of this cycle must authorize this exact plan";
+  const status = {
+    transitions: [
+      { name: "authorized", to: "analyze", manual: false, satisfied: false, cycleLimitBlocked: false,
+        gates: [gate("artifact-exists", true), gate("human-approval", false, [awaiting("plan-authorized")]), gate("cel", false, [later])] },
+      { name: "other", to: "analyze", manual: false, satisfied: false, cycleLimitBlocked: false,
+        gates: [gate("human-approval", false, [awaiting("other-gate")]), gate("cel", false, [later])] },
+    ],
+  };
+  assertEquals(pendingGateIds(status), ["plan-authorized"], "a CEL gate awaiting another gate still blocks");
 });
 
 Deno.test("evidence counts for the current entry only when it was recorded in this run's era", () => {
@@ -94,6 +121,9 @@ Deno.test("parked tick rejects mismatched or pre-reset preapprovals before facto
   await valid.tick();
   assertEquals(valid.calls.map((c) => c.method), ["status", "approve", "assistance"]);
   assertEquals(valid.calls[2].arguments!.parked, false);
+  const exact = parkedDriver({ ...pre, note: "plan-v1:3:abc" });
+  await exact.tick();
+  assertEquals(exact.calls[1].arguments!.note, "plan-v1:3:abc", "a gate that checks the note exactly gets it verbatim");
 });
 
 Deno.test("a group's failed status never aborts the remaining groups and is recorded for retry", async () => {
@@ -139,5 +169,69 @@ Deno.test("a group's failed status never aborts the remaining groups and is reco
     await behavior.methods.tick.execute({ workItems: items, maxSteps: 3 }, context);
     assertEquals(visited, items);
     assertEquals((ticks[1].items as { error?: string }[]).every((r) => !r.error), true);
+  }
+});
+
+Deno.test("start begins exactly one work item in the driver's factory on the worker", async () => {
+  const calls: { definition: string; method: string; arguments?: Record<string, unknown> }[] = [];
+  const context = {
+    globalArgs: behavior.globalArguments.parse({ factory: "orbit-groups" }),
+    definition: { name: "orbit-driver-groups" },
+    queryData: recordQuery(() => Promise.resolve([])),
+    invokeModel: (call: (typeof calls)[number]) => {
+      calls.push(call);
+      return Promise.resolve({ ok: true });
+    },
+    writeResource: (_spec: string, name: string) => Promise.resolve({ name }),
+    logger: { info: () => {}, warning: () => {} },
+  };
+  await behavior.methods.start.execute({ workItem: "tg-2314" }, context);
+  assertEquals(calls, [{ definition: "orbit-groups", method: "start", arguments: { workItem: "tg-2314" } }]);
+  const active = { ...context, queryData: recordQuery(() => Promise.resolve([{ status: "active" }])) };
+  await behavior.methods.start.execute({ workItem: "tg-2314" }, active);
+  assertEquals(calls.length, 1, "an active work item is not started again");
+  const refused = { ...context, invokeModel: () => Promise.resolve({ ok: false, error: { message: "already started" } }) };
+  let failed = false;
+  await behavior.methods.start.execute({ workItem: "tg-2314" }, refused).catch(() => (failed = true));
+  assert(failed, "a refused factory start fails the step");
+});
+
+Deno.test("plan records the operator's plan and its exact consent only at the plan stage", async () => {
+  const plan = {
+    manifest: { id: "tg-2314", revision: 1, source: { brief_id: "tg-2314", revision_sha256: "a".repeat(64) }, asserted_by: "operator",
+      complete: true as const, paths: [{ change: "modify" as const, path: "docs/reference/metrics.md" }] },
+    plan_sha256: "b".repeat(64), base: "c".repeat(40), repository: "github.com/hardimpactdev/orbit", branch: "task-2314", docsSubtask: 2324,
+  };
+  for (const stage of ["plan", "analyze"]) {
+    const calls: { method: string; arguments?: Record<string, unknown> }[] = [];
+    const writes: Record<string, unknown>[] = [];
+    const context = {
+      globalArgs: behavior.globalArguments.parse({ factory: "orbit-groups" }),
+      definition: { name: "orbit-driver-groups" },
+      queryData: recordQuery(() => Promise.resolve([{ started: true, stage: { id: stage, cycle: 2, terminal: false }, unresolvedBindings: [], transitions: [] }])),
+      invokeModel: (call: (typeof calls)[number]) => {
+        calls.push(call);
+        return Promise.resolve({ ok: true });
+      },
+      writeResource: (_spec: string, name: string, data: Record<string, unknown>) => {
+        writes.push(data);
+        return Promise.resolve({ name });
+      },
+      logger: { info: () => {}, warning: () => {} },
+    };
+    const run = behavior.methods.plan.execute({ workItem: "tg-2314", plan, actor: "operator" }, context);
+    if (stage !== "plan") {
+      let refused = false;
+      await run.catch(() => (refused = true));
+      assert(refused, "a plan outside the plan stage is refused");
+      assertEquals(calls.map((c) => c.method), ["status"]);
+      continue;
+    }
+    await run;
+    assertEquals(calls.map((c) => c.method), ["status", "record_artifact"]);
+    assertEquals(calls[1].arguments, { workItem: "tg-2314", name: "plan", payload: plan });
+    assertEquals(writes[0].gateId, "plan-authorized");
+    assertEquals(writes[0].cycle, 2);
+    assertEquals(writes[0].note, planConsentNote(plan));
   }
 });

@@ -7,8 +7,10 @@ namespace App\Infrastructure\Swamp;
 use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationResultFields;
+use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Schedules\ScheduleFires;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
@@ -39,16 +41,36 @@ final readonly class SwampCommandStep
         $direct = app(DirectOperation::class);
         $workflow = $direct->definition($operation->kind)['workflow'] ?? null;
         $start = ['key' => 'operation:'.$operation->id, 'workflow' => $workflow];
-        if ($workflow === null || ! $direct->usesNativeTerminal($operation) || $operation->status !== OperationStatus::Running
-            || $operation->error_code !== 'swamp.start_uncertain' || isset($operation->state['swamp_run_id'])
-            || ($operation->state['swamp_start'] ?? null) !== $start) {
+        $timedOut = ExpireOperationAction::awaitsSettlement($operation);
+        if ($workflow === null || ! $direct->usesNativeTerminal($operation) || isset($operation->state['swamp_run_id'])
+            || (isset($operation->state['swamp_start']) && $operation->state['swamp_start'] !== $start)
+            || (! $timedOut && ($operation->status !== OperationStatus::Running || $operation->error_code !== 'swamp.start_uncertain'
+                || ($operation->state['swamp_start'] ?? null) !== $start))) {
             return;
         }
-        $reply = $this->read('workflow.run.search', ['workflow' => $workflow,
+        $reply = $this->read('workflow.run.search', [...(! $timedOut ? ['workflow' => $workflow] : []),
             'inputs' => ['operation_id' => (string) $operation->id, 'node_id' => (string) $operation->node_id, 'kind' => $operation->kind],
             'tags' => ['orbit_start_key' => $start['key']], 'limit' => 2]);
         $data = $reply['data'] ?? null;
         $rows = is_array($data) ? ($data['results'] ?? null) : null;
+        if ($timedOut && ($reply['total'] ?? null) === 0 && $rows === []) {
+            DB::transaction(function () use ($operation): void {
+                $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+                if (! ExpireOperationAction::awaitsSettlement($current) || isset($current->state['swamp_run_id'])
+                    || $current->kind !== $operation->kind || $current->node_id !== $operation->node_id
+                    || ($current->state['swamp_start'] ?? null) !== ($operation->state['swamp_start'] ?? null)) {
+                    return;
+                }
+                $timeout = $current->state['native_timeout'] ?? [];
+                app(OperationStore::class)->change($current, ['lock_key' => null,
+                    'state' => [...($current->state ?? []), 'native_timeout' => [
+                        ...(is_array($timeout) ? $timeout : []), 'no_run_verified_at' => now()->toISOString(),
+                    ]],
+                ]);
+            });
+
+            return;
+        }
         if (($reply['total'] ?? null) !== 1 || ! is_array($rows) || ! array_is_list($rows) || count($rows) !== 1 || ! is_array($rows[0])) {
             throw $this->unavailable();
         }
@@ -65,21 +87,22 @@ final readonly class SwampCommandStep
         }
         DB::transaction(function () use ($operation, $runId, $start): void {
             $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
-            if ($current->status !== OperationStatus::Running || isset($current->state['swamp_run_id'])
-                || $current->error_code !== 'swamp.start_uncertain' || ($current->state['swamp_start'] ?? null) !== $start
+            if (isset($current->state['swamp_run_id'])
+                || (! ExpireOperationAction::awaitsSettlement($current) && ($current->status !== OperationStatus::Running
+                    || $current->error_code !== 'swamp.start_uncertain' || ($current->state['swamp_start'] ?? null) !== $start))
                 || $current->node_id !== $operation->node_id || $current->kind !== $operation->kind) {
                 return;
             }
-            app(OperationStore::class)->change($current, ['dispatched_at' => now(), 'error_code' => null,
+            app(OperationStore::class)->change($current, ['dispatched_at' => now(), 'error_code' => ExpireOperationAction::awaitsSettlement($current) ? $current->error_code : null,
                 'state' => [...($current->state ?? []), 'swamp_run_id' => $runId]]);
         });
     }
 
     /** Called by the shared native terminal subscriber, never by a family step or a poller.
      * @param  array<string,mixed>  $terminalRun  Native event.run, or its bound id after a late attach miss.
-     * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>}  $selector  The fixed family terminal_result declaration.
+     * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,native?:true}  $selector  The fixed family terminal_result declaration.
      */
-    public function projectTerminal(Operation $operation, array $terminalRun, array $selector): Operation
+    public function projectTerminal(Operation $operation, array $terminalRun, array $selector, bool $atDeadline = false): Operation
     {
         $direct = app(DirectOperation::class);
         $runId = $terminalRun['id'] ?? null;
@@ -93,25 +116,46 @@ final readonly class SwampCommandStep
             return $operation;
         }
         $operation->refresh();
-        if ($operation->status->terminal() && ! ExpireOperationAction::awaitsSettlement($operation)) {
+        if ($operation->status->terminal() && ! ExpireOperationAction::expiredUnsettled($operation)) {
             return $operation;
         }
         $run = $this->history($runId);
         $inputs = $run['inputs'] ?? null;
         $workflow = $direct->definition($operation->kind)['workflow'] ?? throw $this->unavailable();
         if (($run['id'] ?? null) !== $runId || ($run['workflowName'] ?? null) !== $workflow
-            || ! in_array($run['status'] ?? null, $terminalStatuses, true)
+            || ! in_array($run['status'] ?? null, [...$terminalStatuses, 'pending', 'running', 'suspended'], true)
             || ($hasStatus && $run['status'] !== $terminalRun['status']) || ! is_array($inputs)
             || ($inputs['operation_id'] ?? null) !== $operation->id || ($inputs['node_id'] ?? null) !== $operation->node_id
             || ($inputs['kind'] ?? null) !== $operation->kind) {
             throw $this->unavailable();
+        }
+        if (! in_array($run['status'], $terminalStatuses, true)) {
+            $deadline = OperationRunBudgets::deadline($operation);
+            if (! $atDeadline || $deadline === null || $deadline->isFuture()) {
+                throw $this->unavailable();
+            }
+
+            return app(ExpireOperationAction::class)->execute($operation);
+        }
+        $deadline = OperationRunBudgets::deadline($operation);
+        try {
+            $completedAt = is_string($run['completedAt'] ?? null) ? Carbon::parse($run['completedAt']) : null;
+        } catch (Throwable) {
+            throw $this->unavailable();
+        }
+        if ($deadline !== null && ! $deadline->isFuture() && ($completedAt === null || $completedAt->greaterThan($deadline))) {
+            $operation = app(ExpireOperationAction::class)->execute($operation);
+        }
+        // An expiry the run beat, typically at the admission deadline before a slow start reply bound the run.
+        if (ExpireOperationAction::expiredUnsettled($operation) && $completedAt !== null && $deadline !== null && $completedAt->lessThan($deadline)) {
+            $operation = app(ExpireOperationAction::class)->reopen($operation, $runId);
         }
         if (ExpireOperationAction::awaitsSettlement($operation)) {
             return app(ExpireOperationAction::class)->settle($operation, $runId, $run['status']);
         }
         $result = $this->terminalOutput($run, $selector);
         $status = $run['status'];
-        if (in_array($status, ['failed', 'interrupted'], true) && $result === []) {
+        if (in_array($status, ['failed', 'interrupted'], true) && ($result === [] || ($result['outcome'] ?? null) === 'succeeded')) {
             $result = ['error_code' => 'operation.native_failed'];
         }
 
@@ -128,9 +172,52 @@ final readonly class SwampCommandStep
             return $direct->projection($current)->apply($current, [
                 'run_id' => $runId, 'status' => $status, 'started_at' => $run['startedAt'], 'finished_at' => $run['completedAt'],
                 'error_code' => in_array($status, ['failed', 'interrupted'], true) ? ($result['error_code'] ?? 'operation.native_failed') : null,
-                'result' => $result,
+                'result' => $result, 'failure' => app(NativeStepFailure::class)->fromRun($run, $current),
             ]);
         });
+    }
+
+    /** Records a terminal root run of one Schedule's own workflow as its fire; a running fire waits for its end. */
+    public function projectScheduleFire(string $workflowId, string $runId): bool
+    {
+        $run = $this->history($runId);
+        if (($run['id'] ?? null) !== $runId || ($run['workflowId'] ?? null) !== $workflowId || isset($run['parentRun'])
+            || ! is_string($run['workflowName'] ?? null) || preg_match('/\Aschedule-([0-9a-f-]{36})\z/D', $run['workflowName'], $name) !== 1) {
+            throw $this->unavailable();
+        }
+        $running = in_array($run['status'] ?? null, ['pending', 'running', 'suspended'], true);
+        if (! is_string($run['startedAt'] ?? null) || (! $running && (! is_string($run['completedAt'] ?? null)
+            || ! in_array($run['status'] ?? null, ['succeeded', 'failed', 'cancelled', 'interrupted'], true)))) {
+            throw $this->unavailable();
+        }
+        // A fire is a task from its start; the same task gets the result when the run ends.
+        app(ScheduleFires::class)->record($name[1], $run, $running ? null : $this->fireResult($run));
+
+        return ! $running;
+    }
+
+    /** The public result of the fire's nested task-command-run, found by the fire's run id.
+     * @param  array<string,mixed>  $run
+     * @return array<string,mixed>
+     */
+    private function fireResult(array $run): array
+    {
+        $reply = $this->read('workflow.run.search', ['workflow' => 'task-command-run', 'inputs' => ['fire_run_id' => $run['id']], 'limit' => 1]);
+        $data = $reply['data'] ?? null;
+        $rows = is_array($data) && is_array($data['results'] ?? null) ? $data['results'] : [];
+        $child = is_array($rows[0] ?? null) && is_string($rows[0]['runId'] ?? null) ? $this->history($rows[0]['runId']) : [];
+        foreach (is_array($child['jobs'] ?? null) ? $child['jobs'] : [] as $job) {
+            foreach (is_array($job) && is_array($job['steps'] ?? null) ? $job['steps'] : [] as $step) {
+                $stdout = is_array($step) && ($step['name'] ?? null) === 'Report the result' && is_array($step['outputs'] ?? null)
+                    ? ($step['outputs']['stdout'] ?? null) : null;
+                $result = is_string($stdout) ? json_decode($stdout, true) : null;
+                if (is_array($result) && (($result['ready'] ?? null) === true || is_string($result['error_code'] ?? null))) {
+                    return $result;
+                }
+            }
+        }
+
+        return $run['status'] === 'succeeded' ? ['ready' => true] : ['error_code' => 'operation.native_failed'];
     }
 
     /** A terminal scheduled root observes existing pending Operations; it never replaces their admission roots.
@@ -173,7 +260,8 @@ final readonly class SwampCommandStep
             throw $this->unavailable();
         }
         if (isset($declaration['projection'])) {
-            app($declaration['projection'])->applyScheduled($workflowId, $run, $run['status'] === 'succeeded' ? $this->terminalOutput($run, $declaration['terminal_result']) : []);
+            // A failed run passes the result its terminal step printed, if any; an automatic-deploy fire records events before its failure assert.
+            app($declaration['projection'])->applyScheduled($workflowId, $run, $this->terminalOutput($run, $declaration['terminal_result']));
 
             return true;
         }
@@ -231,12 +319,13 @@ final readonly class SwampCommandStep
     }
 
     /** @param array<string,mixed> $run
-     * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>}  $selector
+     * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,native?:true}  $selector
      * @return array<string,mixed>
      */
     private function terminalOutput(array $run, array $selector): array
     {
         $stdout = null;
+        $selected = null;
         $jobs = $run['jobs'] ?? [];
         if (! is_array($jobs)) {
             throw $this->unavailable();
@@ -255,11 +344,18 @@ final readonly class SwampCommandStep
                 if (($step['name'] ?? null) === $selector['step']) {
                     $outputs = $step['outputs'] ?? [];
                     $stdout = is_array($outputs) ? ($outputs['stdout'] ?? null) : null;
+                    $selected = $step['status'] ?? null;
                 }
             }
         }
         $result = [];
-        if (is_string($stdout) && trim($stdout) !== '') {
+        // A kind without a result-reporting step reads Swamp's own run data; its named end check must have succeeded.
+        if (($selector['native'] ?? false) === true) {
+            if ($run['status'] === 'succeeded' && $selected !== 'succeeded') {
+                throw $this->unavailable();
+            }
+            $result = app(NativeRunResult::class)->fromRun($run);
+        } elseif (is_string($stdout) && trim($stdout) !== '') {
             try {
                 if (! is_object(json_decode($stdout, flags: JSON_THROW_ON_ERROR))) {
                     throw $this->unavailable();

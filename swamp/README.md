@@ -44,8 +44,7 @@ owner.
 ## Domain policies
 
 Keep [dependency merge admission](docs/dependency-merge-contract.md),
-[automatic deployment controls](docs/automatic-deploy.md),
-[smoke failure classification](docs/production-smoke-failure-contract.md) and
+[automatic deployment controls](docs/automatic-deploy.md) and
 [package isolation](docs/service-dependency-detection.md) while changing
 execution. The binding guide replaces operational mechanisms, not these domain
 rules.

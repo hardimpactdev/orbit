@@ -24,7 +24,7 @@ final class RenameInstanceCommand extends GatewayCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Record a development branch rename and move its Route.';
+    protected $description = 'Record an already checked-out development branch.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {

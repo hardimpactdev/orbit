@@ -33,13 +33,13 @@ if check:print('active')
         self.ssh={'control_node_id':209,'identity_file':'/fixture/key','public_key':'ssh-ed25519 PUBLIC','target':{'name':'target','host':'192.0.2.13','user':'orbit','port':22,'host_keys':['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG']}}
         workflow = ROOT / 'workflows/workflow-operation-task-vm-image-build.yaml'
         source = yaml.safe_load(workflow.read_text())
-        self.assertEqual(source['jobs'][1]['target'], '${{ "orbit-node-" + string(inputs.node_id) }}')
+        self.assertEqual(source['jobs'][1]['labels'], {'node': '${{ string(inputs.node_id) }}'})
         self.assertEqual([job['name'] for job in source['jobs']], ['admission', 'build', 'cleanup'])
         for job in source['jobs']:
             job.pop('target')
             for step in job['steps']:
                 if step.get('task',{}).get('behaviorType')=='@swamp/ssh':
-                    self.assertEqual(step.pop('target'),'orbit-node-209')
+                    self.assertEqual(step.pop('labels'),{'role': 'swamp'})
                     step['task']['globalArgs']['sshBinary']=str(fake)
         (self.repo / 'workflows' / workflow.name).write_text(yaml.safe_dump(source, sort_keys=False))
         digest = hashlib.sha256(artifact_text.encode()).hexdigest()

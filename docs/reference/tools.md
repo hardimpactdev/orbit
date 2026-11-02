@@ -5,7 +5,7 @@ covers:
   - apps/gateway/app/Providers/ApplicationServiceProvider.php
   - apps/gateway/app/{Actions,Domain}/Tools/**
   - apps/gateway/app/Infrastructure/{Tools/**,Nodes/Roles/RolePrerequisites.php}
-  - apps/gateway/{app/Models/{Tool,ToolManagerRecord}.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
+  - apps/gateway/{app/Models/{Tool,ToolManagerRecord,AptRepository}.php,database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_09_120017_create_apt_repositories_table}.php}
   - apps/gateway/app/Data/Tools/**
   - apps/agent/src/commands/{vp_store,vp_project,vp_scope,vp_materialize,vp_global,tools_apt,composer_scope,composer_global,homebrew_scope,homebrew,tool_output}{.rs,/**}
   - apps/gateway/app/Http/{Controllers/Api/{ToolsController,ToolManagersController,ToolInventoryController}.php,Requests/Tools/**}
@@ -26,11 +26,47 @@ Recording a development [Instance branch rename](/cli/instance#orbit-instanceren
 
 Install, update, remove, and adopt return HTTP 202 with an [Operation](/reference/operations). The Gateway validates the request, records immutable intent and the target Node, and starts one native Swamp workflow. CLI writes follow the Operation. List, show, scan and manager list keep their read paths.
 
-Adoption and removal run on control Node 209 through official `@swamp/ssh`, using the admitted managed account and full stored host keys. Each query, removal plan, package mutation and absence check is a separate native step. Adoption reads one selected package. Removal preserves protected packages, Composer roots and safe official-cask uninstall policy. An admitted intent-only removal deletes the Tool record without SSH. Package output and credentials stay out of public results. The Gateway projects bounded version, outcome and error fields after native completion.
+Every step runs on control Node 209. Each Node phase is one shipped script, `phase.py`, run through official `@swamp/ssh` as the admitted managed account with the full stored host keys; root work, such as apt or the manager installers, goes through `sudo -n` inside it. The public intent reaches each manager script as argv JSON. Typed steps on 209 make every decision between the Node phases.
 
-Install, update and manager convergence use the same native query layer and Node/manager admission hold. Linux first use composes the admitted manager installer before package queries; macOS verifies the existing scope. Candidate selection and constraints remain separate from the package mutation. Tool writes do not invoke agent actions. Scan keeps its read-only agent boundary.
+| Workflow | Steps |
+| --- | --- |
+| Install, update | `assets`, `setup_assets`, `Set up the Tool Manager`, `Add the signed apt source` (install) or `Update the apt source` (update), `Check the candidate`, `decide`, `Install the package` or `Upgrade the package`, `result`, `accepted` |
+| Remove | `assets`, `Plan the removal`, `decide`, `Remove the package`, `Check it is gone`, `Remove the apt source`, `result`, `accepted` |
+| Adopt | `assets`, `query`, `repository`, `result`, `assert`: unchanged until the [observer pass](/swamp/observer-gap) replaces it |
 
-Node and Instance callers still use the shared manager-only prerequisite lower. It remains until those parents replace their materialization calls. It cannot install, update, adopt or remove a Tool and creates no `tool.manager_converge` child Operation. Project runtime environments belong to the Instances family. Input, ownership and platform refusals happen before admission. Scan returns its discovery report directly and creates no Tool intent. A kind without a native declaration returns `operation.kind_unavailable` (HTTP 503).
+### Install and update steps
+
+Node steps carry the labels of the reviewed flow charts ([ADR 0246](/decisions/0246-show-task-progress-through-one-resumable-read)); lowercase steps are typed work on 209.
+
+- `Set up the Tool Manager` installs the manager at its pinned version on a Linux first use. A ready manager skips it.
+- `Add the signed apt source` and `Update the apt source` run only with `--repository`. The key is checked by its fingerprint.
+- `Check the candidate` reads the installed package and the version the manager would install.
+- `decide` applies the refusals and the constraint before any write. A missing candidate fails the install.
+- On an update, the same version is `unchanged` and a version outside the constraint is `blocked_by_constraint`. Neither writes.
+- `Install the package` or `Upgrade the package` writes the candidate and reads the version back.
+
+The Gateway writes the records:
+
+- Install records the Tool as `installing` at admission.
+- A failed manager setup drops that record. A package that was already installed drops it too.
+- A repository definition is stored only when the run succeeds.
+- A failed update keeps the old repository definition.
+
+Package output and credentials stay out of public results. The Gateway projects bounded version, outcome and error fields after native completion. A removal with nothing on the Node starts no run (R1): a role-owned package, or a failed install that never left a version. The Gateway deletes the record and records a succeeded Operation at once.
+
+### Removal steps
+
+Removal runs these steps in order. It stops at the first step that fails, except the best-effort last step.
+
+1. `Plan the removal` reads the package and what removing it would also remove. Apt reads `apt-get --simulate remove`. Brew reads the installed formulae that still use the package. Composer and Vite+ global packages need no plan.
+2. `decide` refuses a plan that removes any other package, a Composer non-root, or an unsafe cask.
+3. `Remove the package` removes exactly that package: dpkg as root, every other manager as the managed account.
+4. `Check it is gone` must find the package absent.
+5. `Remove the apt source` drops the source, key and preference of a signed repository's last Tool. This step is best-effort.
+
+When the apt source cannot be removed, the removal still succeeds and the Tool is deleted. The apt repository record stays, and the next install from that source reuses it.
+
+There is no separate manager kind. `Set up the Tool Manager` is one shared child workflow, `operation-tool-manager-setup`: `tool:install` runs it on a Linux first use, and a development deploy runs it for Vite+. `node:add` needs no apt setup: when `node.bootstrap_host` succeeds, the Gateway records apt as a ready Tool Manager. Role convergence keeps its own local manager prerequisite for Composer and Vite+. Project runtime environments belong to the Instances family. Input, ownership and platform refusals happen before admission. Scan returns its discovery report directly and creates no Tool intent. A kind without a native declaration returns `operation.kind_unavailable` (HTTP 503).
 
 ## Where Tools run
 
@@ -70,7 +106,7 @@ Native Composer package operations use fixed shared-scope arguments through offi
 
 The `tool.inspect-composer-scope` agent command reads the shared Composer manifest as data and verifies directory and file ownership. It treats a valid manifest with no `require` member as an empty root set, including the manifest Composer leaves after removing the final package. It runs no PHP or shell. Native Swamp Composer convergence installs the fixed Linux prerequisites, creates the account-owned scope, and verifies Composer as that account. It refuses conflicting paths before setup and preserves an existing owned manifest.
 
-Native Swamp manager convergence installs a missing Linux Vite+ scope from the verified JavaScript recipe pins. It runs no downloaded installer. It keeps an existing scope's runtime versions, checks every managed launcher before publication, and restores the previous launchers if runtime verification fails. Enrollment composes the same native manager action with the admitted candidate account and recipe pins.
+The shared Tool Manager setup installs a missing Linux Vite+ scope from the verified JavaScript recipe pins. It runs no downloaded installer. It keeps an existing scope's runtime versions, checks every managed launcher before publication, and restores the previous launchers if runtime verification fails. A development deploy runs the same shared setup for the Instance's account.
 
 Managed-account recipe commands run from that account's home directory, including JavaScript installation, inventory, launcher checks, and image verification. They change directory after switching accounts and set `VP_HOME` to the resolved store. A caller's working directory cannot select workspace configuration or prevent the account from running a tool.
 
@@ -103,28 +139,21 @@ Update and removal use the same `tool.manager_unavailable` code when the macOS s
 
 ### The dpkg lock
 
-Native APT removal first reads `apt-get --simulate remove -- <package>`. It refuses a plan containing another package. The mutation uses `dpkg --remove -- <package>` so dependency changes after the plan cannot select additional removals. A separate query must prove absence before success. The command uses dpkg’s own dependency checks and lock, with no custom lock wait, purge or autoremove. A failed removal keeps the Tool and its recorded version for an explicit retry. Native resume can restart at the before-query phase to reconcile an uncertain reply.
+Native APT removal first reads `apt-get --simulate remove -- <package>`. It refuses a plan containing another package. The mutation uses `dpkg --remove -- <package>` so dependency changes after the plan cannot select additional removals. A separate check must prove absence before success. The command uses dpkg's own dependency checks and lock, with no lock wait, purge or autoremove: dpkg has no wait option. A failed removal keeps the Tool and its recorded version for an explicit retry.
 
-Native install and update use fixed package-manager commands and their default locks. The Gateway keeps protected-package policy and Tool records; native checks apply the admitted version constraint.
-
-Tool install and update pass `--no-remove` to `apt-get install` and use apt's default lock behavior. They do not set a custom lock timeout. A busy dpkg lock fails the native action; native resume owns the next attempt.
-
-The retained shared manager prerequisite, Caddy and PHP package installation still pass `-o DPkg::Lock::Timeout=300`. Caddy uses the shared [package step](/reference/node-provisioning#package-sources) for role prerequisites and publication. Prerequisite `apt-get update` passes it and does not use it. Update takes the lists lock, `/var/lib/apt/lists/lock`, and fails at once when that lock is busy.
+Tool installs and updates wait for a busy apt or dpkg lock, for example while unattended-upgrades runs. They pass `-o DPkg::Lock::Timeout=300`, the same as Caddy, PHP and the retained shared manager prerequisite. The wait stays inside the phase budget; after it the install fails with `tool.install_failed` or `tool.update_failed`.
 
 | Caller | Command | Lock wait |
 | --- | --- | --- |
-| `brew` prerequisites | `apt-get update` | None. The lists lock fails at once. |
-| `brew` prerequisites | `apt-get install` of `build-essential`, `procps`, `curl`, `file`, `git`, and `ca-certificates` | Apt default. |
-| `composer` prerequisites | `apt-get update` | None. The lists lock fails at once. |
-| Native `composer` prerequisites | Snapshot-pinned package transaction | Apt default. |
-| `apt` install and update | `apt-get install --no-remove` | Apt default. |
-| `apt` remove | `dpkg --remove` | Native dpkg lock refusal. |
+| First-use prerequisites (`brew`) | `apt-get update` | None. It takes the lists lock, `/var/lib/apt/lists/lock`, which `DPkg::Lock::Timeout` does not cover, and fails at once. |
+| First-use prerequisites (`brew`) | `apt-get install --no-remove` of `build-essential`, `procps`, `curl`, `file`, `git`, and `ca-certificates` | 300 s |
+| First-use prerequisites (`composer`) | Snapshot-pinned package transaction | 300 s for the install; its `apt-get update` fails at once on a busy lists lock |
+| `apt` install and update | `apt-get install --no-remove` | 300 s |
+| `apt` remove | `dpkg --remove` | None. dpkg refuses at once. |
 
-Version probes, `apt-cache policy`, and the removal plan `apt-get --simulate remove` do not pass the option and do not wait.
+Version probes, `apt-cache policy`, and the removal plan `apt-get --simulate remove` do not wait.
 
-The shared prerequisite lower retained for active Node and Instance callers still uses its existing 300-second dpkg timeout. Native Tool writes use the defaults above. A busy lists lock makes a package-index update fail at once.
-
-A first-use setup failure on `tool:install` returns `tool.manager_provision_failed` (HTTP 502). The manager stays `failed` at step `materialize` with error code `node.tool_manager_materialization_failed`, and Orbit creates no Tool. Retry the install.
+A first-use setup failure on `tool:install` returns `tool.manager_provision_failed` (HTTP 502). The manager stays `failed` at step `materialize` with error code `node.tool_manager_materialization_failed`, and Orbit creates no Tool. Only a failed package install marks the Tool `failed`. Retry the install; a manager or apt source set up before the failure stays, and the retry reuses it.
 
 A `composer` prerequisite failure during `app-dev` or `app-prod` convergence leaves the manager `failed` at the same step and error code. The role or `node:add` reports `node.tool_manager_materialization_failed` in `details.error_code`. [Role operations on one Node](/reference/node-provisioning#role-operations-on-one-node) describes how a failed role reports its step.
 
@@ -172,16 +201,16 @@ See [Deploy prerequisites](/reference/deployments#vite-store-prerequisite) for b
 
 `GET /api/v1/tool-inventory?node_id=<id>` is `tool:scan`. The CLI command is `orbit tool:scan --node=<id>`. The only input is `node_id`, a strict integer of an existing Node. Any other query or body field fails with `validation.failed` (HTTP 422). This operation is not a script API.
 
-The scan reads `brew`, `brew-cask`, and `vp` for the enrolled account. It does not inventory `apt` or `composer`. It compares packages with Tool rows by Node, manager, and package. It stores nothing and creates no Tool row. It does not take a manager lock and it does not materialize a manager. A failed, malformed, or truncated read marks that manager `incomplete` and is never an empty `complete` inventory. The other managers still return their own state.
+The scan reads `brew`, `brew-cask`, and `vp` for the enrolled account, plus system apt packages on Linux. It does not inventory `composer`. It compares packages with Tool rows by Node, manager, and package. It stores nothing and creates no Tool row. It does not take a manager lock and it does not materialize a manager. A failed, malformed, or truncated read marks that manager `incomplete` and is never an empty `complete` inventory. The other managers still return their own state.
 
-The Gateway resolves the host itself and uses the pinned SSH identity. The response has no raw output, paths, environment values, checksums, or URLs. Success is HTTP 200.
+The Gateway resolves the host itself and uses the pinned SSH identity. The response has no raw output, paths, environment values, or credentials. Registered apt packages include their declared repository URLs and pinned public signing fingerprint. Success is HTTP 200.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `data.node_id` | integer | The Node. |
 | `data.observed_at` | string | UTC time when the read finished, such as `2026-04-26T12:00:00+00:00`. |
-| `data.managers` | array | Exactly three objects, in the order `brew`, `brew-cask`, `vp`. |
-| `data.managers[].manager` | string | `brew`, `brew-cask`, or `vp`. |
+| `data.managers` | array | Exactly four objects, in the order `brew`, `brew-cask`, `vp`, `apt`. |
+| `data.managers[].manager` | string | `brew`, `brew-cask`, `vp`, or `apt`. |
 | `data.managers[].scan_state` | string | `complete`, `absent`, `unsupported`, `incomplete`, or `conflicting`. |
 | `data.managers[].packages` | array | Package facts when `scan_state` is `complete`. Otherwise empty, and not an inventory. |
 | `meta.request_id` | string | The request id. |
@@ -200,13 +229,14 @@ Packages inside a `complete` manager are ordered by package name, ascending. A f
 | --- | --- | --- |
 | `manager` | string | The enclosing manager. |
 | `package` | string | Unqualified package name. |
-| `package_kind` | string | `formula`, `cask`, or `global`. |
+| `package_kind` | string | `formula`, `cask`, `global`, or `deb`. |
 | `installed_version` | string or null | Normalized version, at most 255 characters, or null. |
 | `dependency` | boolean | True for a Homebrew dependency. False for a root formula, cask, or Vite+ package. |
 | `registered` | boolean | True when a Tool row exists for this Node, manager, and package. |
 | `tool_id` | integer or null | That Tool's id, or null. |
 | `adoption` | string | `supported` or `unsupported`. |
 | `adoption_block` | string or null | Null when adoption is supported. Otherwise a block token. |
+| `repository` | object or null | Shared signed repository intent for a registered apt Tool. Null for other packages. |
 
 The block tokens are `protected`, `dependency`, `unsupported_artifact`, `unsupported_source`, `bottle_unavailable`, `version_unreadable`, and `authorization_required`. A dependency or a [protected package](#protected-packages) is never `supported`. An unsupported cask stays in the list with adoption unavailable and one of those tokens. The Node's Tools page uses this inspector.
 
@@ -328,7 +358,7 @@ On Linux, unconstrained adoption records the apt version string, such as `5.8.3-
 
 ## Install a Tool
 
-A caller sends only the Node, the manager, the package name, and an optional version constraint. Each manager checks the package name against its own grammar and builds a fixed command with the name in one argument position. A caller cannot send commands, options, repositories, or environment values.
+A caller sends the Node, the manager, the package name, an optional version constraint, and an optional [signed apt repository](#signed-apt-repositories). Each manager checks the package name against its own grammar and builds a fixed command with the name in one argument position. A caller cannot send commands, manager options, or environment values.
 
 The Gateway refuses a package that is already on the Node without a Tool record, with `tool.already_installed_unmanaged` (HTTP 409). Use explicit [adoption](#adopt-a-tool) to take ownership.
 
@@ -457,7 +487,7 @@ No other `details` keys are returned.
 
 ## Locks
 
-Tool admission holds the existing Operation `lock_key` for the exact Node and manager until normal terminal projection releases it. A competing Tool install, update, remove, adopt or manager convergence on that pair returns `operation.target_busy` (HTTP 409) without starting a run. Idempotent replay returns the original Operation. A different Node or manager can admit work independently. This approved admission boundary covers all Tool writes. Package managers retain their own locks, including the shared Homebrew prefix and [dpkg lock](#the-dpkg-lock). Scan creates no Operation hold.
+Tool admission holds the existing Operation `lock_key` for the exact Node and manager until normal terminal projection releases it. A competing Tool install, update, remove or adopt on that pair returns `operation.target_busy` (HTTP 409) without starting a run. Idempotent replay returns the original Operation. A different Node or manager can admit work independently. This approved admission boundary covers all Tool writes. Package managers retain their own locks, including the shared Homebrew prefix and [dpkg lock](#the-dpkg-lock). Scan creates no Operation hold.
 
 ## Check removal with Doctor
 
@@ -465,11 +495,11 @@ Use the Tool removal result and native Tool scan to inspect installation state. 
 
 ## Direct Swamp execution
 
-Each Tool write records one Operation and starts its declared native Swamp workflow. The family's `direct-operations.php` is the sole registration. Install, update, adopt, remove and manager convergence run on Node209 through official SSH with the admitted target pins and existing209 identity.
+Each Tool write records one Operation and starts its declared native Swamp workflow. The family's `direct-operations.php` is the sole registration. Install, update, adopt and remove run on Node209 through official SSH with the admitted target pins and existing209 identity.
 
-Official cfgmgmt package models were checked: their current connection schema does not carry the full admitted host-key list, and their package state does not encode the selected Composer root and Homebrew artifact adoption policy. Official SSH owns transport, command cancellation and outputs; one shipped query script reads facts for the selected manager. A typed check applies package ownership, eligibility and version constraints. Adoption reads an asset, queries through official SSH, records the bounded result, then fails on a refusal. Install and update add separate candidate, reconciliation, mutation and verification steps.
+Official cfgmgmt package models were checked: their current connection schema does not carry the full admitted host-key list, and their package state does not encode the selected Composer root and Homebrew artifact adoption policy. Official SSH owns transport, command cancellation and outputs; [one phase script per Node phase](#native-execution) does the reads and writes. A typed check applies package ownership, eligibility and version constraints.
 
-The old standalone Tools runner and its workflows are deleted. Active Node and Instance materialization callers retain only their shared manager prerequisite lower. For an uncertain package reply, resume the same native root at `reconcile_query`; it retains the original before-state and candidate, rereads the installed version and skips a completed allowed change.
+The old standalone Tools runner and its workflows are deleted. Active Node and Instance materialization callers retain only their shared manager prerequisite lower. After an uncertain package reply, run the same command again: the write phase reads the package before and after its write, and an install of a package that is now present records it unchanged.
 
 Swamp owns manager setup, package constraints, execution, retries, cancellation and recovery. The Gateway keeps request validation, managed ownership and bounded result projection. It records native status and Tool/manager state without step receipts or a second runtime/completion proof. Native Tool rows reject intent and result HTTP callbacks. Cancelling an admitted Tool Operation sends one cancellation request to its bound Swamp root; the native terminal subscriber records the outcome. An unconfirmed cancellation remains a request. Read-only scan stays in Orbit.
 
@@ -505,3 +535,54 @@ A readable version that is not SemVer can still be adopted when no constraint is
 ## Recipe convergence
 
 [Recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) installs exact versions of machine prerequisites. It reuses Tools inspection to check every existing managed Tool after package changes, and rejects conflicting apt constraints before mutation. It does not adopt prerequisite packages or create, remove, or rewrite Tool rows. Role filtering comes from the recipe and the existing role prerequisite catalog. Protected manager and bootstrap packages stay outside public Tool intent. The successful recipe identity is recorded in the Node settings.
+
+## Signed apt repositories
+
+An apt Tool can carry a `repository` object on install or adoption. Tools on the same Node share a definition by `name`. A normal `tool:update` can replace the definition under that name; omit it to keep the current definition. Other managers reject repository input.
+
+| Field | Value |
+| --- | --- |
+| `name` | Lowercase slug, up to 63 characters; reserved `caddy` and `php` names are refused |
+| `uris` | Nonempty list of HTTPS repository base URLs |
+| `suites` | Nonempty list of distribution or channel tokens |
+| `components` | Nonempty list of component tokens |
+| `architectures` | Optional nonempty list of apt architecture tokens |
+| `signing_key.url` | HTTPS public signing-key URL |
+| `signing_key.fingerprint` | Full uppercase primary-key fingerprint, 40 or 64 hex digits |
+
+For Rex, use this definition. It comes from the [vendor installer](https://pkgs.superlogical.com/rex/install.sh); Orbit does not execute that installer.
+
+```json
+{
+  "name": "rex",
+  "uris": ["https://pkgs.superlogical.com/rex/apt"],
+  "suites": ["preview"],
+  "components": ["main"],
+  "architectures": ["amd64"],
+  "signing_key": {
+    "url": "https://pkgs.superlogical.com/rex/keys/rex-archive-keyring.gpg",
+    "fingerprint": "E28636AC71905C6DDE40C1EDFAA6B80F641307A7"
+  }
+}
+```
+
+Pass the JSON object with `--repository` on `tool:install`, `tool:adopt`, or `tool:update`. The API and MCP take the same object. Repository data is returned on Tool reads. Change `suites` to `["stable"]` in a normal update when the vendor publishes stable. To rotate the vendor's signing key, send a normal update with the new `signing_key.url` and `fingerprint`; Swamp checks the new key first, then replaces the keyring, so the old key is removed. A missing stable InRelease fails; Orbit does not choose another suite.
+
+Swamp verifies the pinned fingerprint before publishing the keyring and deb822 source. It writes `/etc/apt/keyrings/orbit-<name>.gpg`, the apt preference `/etc/apt/preferences.d/orbit-<name>.pref`, and `/etc/apt/sources.list.d/orbit-<name>.sources` with a scoped `Signed-By` field. Apt refreshes only this source, then Orbit selects its candidate, downloads the exact package from that source and installs the local package with normal dependency resolution. A failed refresh restores the previous managed source, preference, and key. No downgrade is allowed. Install refuses an existing unowned package, including the distribution's unrelated `rex`; explicit adoption is still required.
+
+Removal keeps the repository while another Tool references it. The final removal deletes its source, preference, and key after confirming package absence. Adoption changes no files and requires the declared source, the matching preference, and the matching keyring to exist. Scan reports apt packages, registration, and the repository for registered Tools; it does not guess trust definitions for unregistered sources.
+
+| Error | Meaning |
+| --- | --- |
+| `tool.repository_invalid` | Invalid definition or repository input for another manager |
+| `tool.repository_conflict` | The name already has a different definition, or an update changes its name |
+| `tool.repository_key_mismatch` | The downloaded or adopted key does not match the pinned primary fingerprint |
+| `tool.repository_unavailable` | A suite's InRelease cannot be fetched or apt cannot refresh its signed index |
+| `tool.repository_failed` | The managed source or keyring cannot be written or removed |
+| `tool.repository_adoption_mismatch` | Adoption found a different source or keyring |
+
+### Repository trust and package identity
+
+One Node repository record holds shared intent so package removal cannot retire another Tool's source. Keys authorize only their named repository. Global apt-key trust and vendor installer execution are rejected because they bypass this ownership boundary. Candidate lookup and package download are scoped to the declared source, so a higher version from a distribution cannot select unrelated software with the same package name. Apt still resolves dependencies from the Node's normal sources.
+
+The preference gives the repository's Tool packages priority 990 for each repository host, so unattended upgrades keep the vendor package. Every other package from that host gets priority 1: the vendor cannot replace or upgrade an installed or distribution package. A shared repository keeps a removed Tool's package in the preference until the next write for that repository. Gateway admission and terminal projection store intent and outcomes; Swamp owns downloads, key checks, source writes, refresh, and cleanup.

@@ -13,6 +13,7 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 #[MapOutputName(SnakeCaseMapper::class)]
 final class ToolInventoryPackageData extends Data
 {
+    /** @param array<string, mixed>|null $repository */
     public function __construct(
         public string $manager,
         public string $package,
@@ -23,6 +24,7 @@ final class ToolInventoryPackageData extends Data
         public ?int $toolId,
         public string $adoption,
         public ?string $adoptionBlock,
+        public ?array $repository = null,
     ) {}
 
     public static function fromPackage(ToolInventoryPackage $package): self
@@ -37,6 +39,7 @@ final class ToolInventoryPackageData extends Data
             toolId: $package->toolId,
             adoption: $package->adoption,
             adoptionBlock: $package->adoptionBlock,
+            repository: $package->repository,
         );
     }
 }

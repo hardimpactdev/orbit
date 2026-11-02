@@ -26,6 +26,8 @@ jobs:
   shape:
     name: Swamp shape gate
     runs-on: [self-hosted, hardimpact]
+    # The gate takes a few minutes; a hung step fails here instead of holding main for hours.
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: ${{ inputs.working-directory || '.' }}
@@ -58,6 +60,7 @@ jobs:
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         run: |
           deno test --allow-env --allow-read --allow-run bin/check-swamp-shape_test.ts
+          deno test --allow-read --allow-run bin/lint-behavior-names_test.ts
           python3 tests/swamp_shape_gate_test.py
           python3 tests/swamp_validate_ci_test.py
           python3 tests/swamp_deno_shards_test.py
@@ -71,6 +74,10 @@ jobs:
           if [[ -z "$base" || "$base" =~ ^0+$ ]]; then base=$(git rev-parse HEAD^); fi
           deno run --allow-env --allow-read --allow-write="$RUNNER_TEMP/shape.json" --allow-run bin/check-swamp-shape.ts --base "$base" --report "$RUNNER_TEMP/shape.json"
           python3 bin/check-swamp-base-policy.py --base "$base"
+          deno run --allow-read --allow-run bin/lint-behavior-names.ts --base "$base"
+      - name: Check frozen agent command references
+        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
+        run: '"$GITHUB_WORKSPACE/bin/check-frozen-agent-commands" --root "$GITHUB_WORKSPACE"'
       - name: Validate declared grants with pinned native regex safety
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         run: |
@@ -146,7 +153,7 @@ jobs:
           - name: general 1/4
             path: extensions/behaviors/operations
             shard: 1/4
-            ignore: &separate-tests extensions/behaviors/operations/database/local-sql-effects,extensions/behaviors/operations/database/read-effects,extensions/behaviors/operations/database/server-create-effects,extensions/behaviors/operations/database/create-effects,extensions/behaviors/operations/database/write-effects,extensions/behaviors/operations/process-commands
+            ignore: &separate-tests extensions/behaviors/operations/database/local-sql-effects,extensions/behaviors/operations/database/read-effects,extensions/behaviors/operations/database/write-effects,extensions/behaviors/operations/process-commands
           - name: general 2/4
             path: extensions/behaviors/operations
             shard: 2/4
@@ -164,12 +171,6 @@ jobs:
             shard: 1/1
           - name: database read
             path: extensions/behaviors/operations/database/read-effects
-            shard: 1/1
-          - name: database server create
-            path: extensions/behaviors/operations/database/server-create-effects
-            shard: 1/1
-          - name: database create
-            path: extensions/behaviors/operations/database/create-effects
             shard: 1/1
           - name: database write
             path: extensions/behaviors/operations/database/write-effects

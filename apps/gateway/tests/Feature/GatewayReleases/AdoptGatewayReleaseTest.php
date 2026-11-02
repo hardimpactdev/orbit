@@ -36,6 +36,7 @@ use Tests\Support\GatewayAdoptionFixture;
 use Tests\Support\GatewayReleaseFixture;
 use Tests\Support\GatewayReleasePipeline;
 use Tests\Support\ReleaseTestOwner;
+use Tests\Support\ReleaseTestSwampLoad;
 use Tests\Support\WebArtifactFixture;
 
 beforeEach(function (): void {
@@ -328,6 +329,7 @@ function adoption(
         new GatewayReleaseRetry,
         GatewayReleasePipeline::newestGreen(),
         new ReleaseTestOwner,
+        new ReleaseTestSwampLoad,
     );
 
     return new AdoptGatewayReleaseAction(

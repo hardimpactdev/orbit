@@ -1,7 +1,11 @@
 import { z } from "npm:zod@4.4.3";
 import { runtimeNodeProxy } from "../operations/_lib/node-proxy.ts";
 import { proxyGatewayRequest } from "../operations/_lib/node-proxy-http.ts";
-import { type DevelopmentContext, tickDevelopment } from "./development.ts";
+import {
+  type DevelopmentContext,
+  type Emit,
+  tickDevelopment,
+} from "./development.ts";
 import {
   CallerNodeIdSchema,
   type Decision,
@@ -11,7 +15,6 @@ import {
   type Observation,
   type Operation,
   PolicyError,
-  type PolicyEvent,
   RowSchema,
   sha,
 } from "./policy.ts";
@@ -153,8 +156,13 @@ export class GatewayClient implements Gateway {
     }
     return parsed.data;
   }
-  development(context: DevelopmentContext, now: string, filter: number[]) {
-    return tickDevelopment(this.http, context, this, now, filter);
+  development(
+    context: DevelopmentContext,
+    now: string,
+    filter: number[],
+    emit: Emit,
+  ) {
+    return tickDevelopment(this.http, context, this, now, emit, filter);
   }
   async discover(filter: number[] = []): Promise<number[]> {
     // Both list endpoints return complete arrays, without pagination.
@@ -414,31 +422,6 @@ export class GatewayClient implements Gateway {
       );
     }
     return op;
-  }
-  async event(
-    instance: number,
-    body: PolicyEvent,
-    key: string,
-  ): Promise<Operation> {
-    const parsed = OperationSchema.safeParse(
-      await this.request(
-        "POST",
-        `/api/v1/instances/${instance}/auto-deploy/events`,
-        body,
-        key,
-      ),
-    );
-    if (
-      !parsed.success || parsed.data.kind !== "instance.policy_event" ||
-      parsed.data.target_type !== "instance_policy" ||
-      parsed.data.target_id !== instance
-    ) {
-      throw new PolicyError(
-        "automatic.outcome_unknown",
-        "The policy event returned an unreadable operation.",
-      );
-    }
-    return parsed.data;
   }
   async publish(
     instance: number,

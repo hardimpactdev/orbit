@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import stat
 import subprocess
 from pathlib import Path
 
@@ -13,11 +14,15 @@ def scope():
              if (path / "bin/vp").is_file()]
     need(bool(found), "tool.vp_scope_absent")
     store = found[0]
-    for path in (store, store / "bin", store / "bin/vp"):
-        info = path.lstat()
-        need(info.st_uid == ACCOUNT.pw_uid and info.st_gid == ACCOUNT.pw_gid and not info.st_mode & 0o022
-             and not path.is_symlink(), "tool.vp_scope_conflict")
+    # Legacy agent rule (vp_scope.rs): the scope directory and the binary belong to the account, and the binary runs.
+    directory, binary = store.lstat(), (store / "bin/vp").lstat()
+    need(stat.S_ISDIR(directory.st_mode) and owned(directory) and owned(binary) and os.access(store / "bin/vp", os.X_OK),
+         "tool.vp_scope_conflict")
     return store
+
+
+def owned(info):
+    return info.st_uid == ACCOUNT.pw_uid and info.st_gid == ACCOUNT.pw_gid
 
 
 VERSION = r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?"

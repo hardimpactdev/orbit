@@ -23,6 +23,15 @@ describe(ExporterSelector::class, function (): void {
             ->toBe(ExporterSelectionReason::MetricsNode);
     });
 
+    it('gives no role-default exporter to a role outside Metrics', function (): void {
+        $selector = new ExporterSelector;
+
+        expect($selector->select([RoleName::Swamp], eligible: true)->selected)->toBeFalse()
+            ->and($selector->select([RoleName::Swamp], eligible: true)->reason)->toBe(ExporterSelectionReason::RolelessDefaultExcluded)
+            ->and($selector->select([RoleName::Swamp, RoleName::AppDev], eligible: true)->reason)->toBe(ExporterSelectionReason::RoleDefault)
+            ->and($selector->select([RoleName::Swamp], true, ExporterPreference::Enabled)->selected)->toBeTrue();
+    });
+
     it('requires eligibility for the Gateway role default and Metrics on the Gateway', function (): void {
         $selector = new ExporterSelector;
 

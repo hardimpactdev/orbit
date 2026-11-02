@@ -205,8 +205,17 @@ def gateway_files(core, extension, recursive=True):
     return [f for root in roots for f in (root.rglob('*.php') if recursive else root.glob('*.php'))]
 
 
+def marker_kinds(marker_input, constants):
+    """The kinds a #[StartsOperation] marker starts: its first argument, then any kindWhenTrue values."""
+    first = marker_input.split(',', 1)[0].strip()
+    kinds = [first.strip("'") if first.startswith("'") else constants[first.removeprefix('OperationKinds::')]]
+    return kinds + re.findall(r"=>\s*'([a-z][a-z0-9_]*\.[a-z][a-z0-9_]*)'", marker_input)
+
+
 def load_controllers():
     ctrl = {}
+    constants = dict(re.findall(r"public const string (\w+) = '([a-z][a-z0-9_]*\.[a-z][a-z0-9_]*)';",
+                                (GW / 'app/Domain/Operations/OperationKinds.php').read_text()))
     for f in sorted(gateway_files('app/Http/Controllers/Api', 'Http/Controllers', recursive=False)):
         s = f.read_text()
         for m in re.finditer(r'public function (\w+)\((.*?)\)\s*:\s*([\w|\\]+)', s, re.S):
@@ -225,6 +234,7 @@ def load_controllers():
                 'starts_operation': marker,
                 'requires_key': bool(re.search(r'\brequiresKey:\s*true\b', marker_input)),
                 'binds_caller': bool(re.search(r'\bbindCaller:\s*true\b', marker_input)),
+                'kinds': marker_kinds(marker_input, constants) if marker else [],
             }
     return ctrl
 
@@ -653,7 +663,7 @@ TAGS = [
 ]
 TAG_BY_PREFIX = {p: t for p, t, _ in TAGS}
 INTERNAL = {'project:dependency-read-token', 'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
-INTERNAL.update({'observation:plan', 'observation:health', 'observation:maintain'})
+INTERNAL.update({'observation:plan', 'observation:health'})
 DEFINITION_ROUTES = {
     'ProjectRuntimeDefinitionsController@processIndex': 'List process definitions',
     'ProjectRuntimeDefinitionsController@processStore': 'Create a process definition',
@@ -667,13 +677,12 @@ DEFINITION_ROUTES = {
     'ProjectRuntimeDefinitionsController@scheduleDestroy': 'Remove a Schedule definition',
 }
 SUMMARIES = {
-    'instance:smoke:context': 'Read production smoke context', 'instance:smoke': 'Start production smoke', 'instance:smoke:receipt': 'Read a production smoke receipt',
     'instance:transfer': 'Transfer an Instance',
     'gateway:status': 'Show Gateway status', 'gateway:trust': 'Fetch the root CA certificate', 'gateway:desired-fleet-state': 'Show the desired fleet state',
     'node:list': 'List Nodes', 'node:show': 'Show a Node', 'node:add': 'Add a Node', 'node:remove': 'Remove a Node', 'node:settings': 'Update Node settings',
     'node:role:list': 'List the roles of a Node', 'node:role:add': 'Add a role to a Node', 'node:role:remove': 'Remove a role from a Node',
     'node:access:add': 'Grant Node access', 'node:access:remove': 'Revoke Node access',
-    'cluster:list': 'List Clusters', 'cluster:show': 'Show a Cluster', 'cluster:create': 'Create a Cluster', 'cluster:update': 'Update a Cluster', 'cluster:destroy': 'Remove a Cluster',
+    'cluster:list': 'List Clusters', 'cluster:show': 'Show a Cluster', 'cluster:create': 'Create a Cluster', 'cluster:update': 'Update a Cluster', 'cluster:activate': 'Activate a Cluster', 'cluster:deactivate': 'Deactivate a Cluster', 'cluster:destroy': 'Remove a Cluster',
     'cluster:node:add': 'Attach a Node to a Cluster', 'cluster:node:remove': 'Detach a Node from a Cluster', 'cluster:router:set': 'Set the Cluster Router', 'cluster:router:unset': 'Clear the Cluster Router',
     'firewall:list': 'List firewall rules', 'firewall:fleet:list': 'List firewall rules on every Node', 'firewall:managed:list': "List Orbit's own firewall rules", 'firewall:live:list': 'List live UFW rules', 'firewall:allow': 'Allow a firewall rule', 'firewall:deny': 'Deny a firewall rule', 'firewall:remove': 'Remove a firewall rule',
     'tool:manager:list': 'List Tool Managers', 'tool:scan': 'Scan installed packages', 'tool:list': 'List Tools', 'tool:show': 'Show a Tool', 'tool:install': 'Install a Tool', 'tool:adopt': 'Adopt a Tool', 'tool:update': 'Update a Tool', 'tool:remove': 'Remove a Tool',
@@ -686,14 +695,14 @@ SUMMARIES = {
     'project:dev-deploy-step:update': 'Update a development deploy step',
     'project:dev-deploy-step:destroy': 'Remove a development deploy step',
     'project:dependency-read-token': 'Mint a short-lived, one-repository GitHub App read token for the configured Services peer only. Never persist the reply. Disabled until ORBIT_DEPENDENCY_DETECTION_SERVICES_NODE_ID is configured.',
-    'project:list': 'List Projects', 'project:show': 'Show a Project', 'project:create': 'Create a Project', 'project:update': 'Update a Project', 'project:destroy': 'Remove a Project',
+    'project:list': 'List Projects', 'project:show': 'Show a Project', 'project:create': 'Create a Project', 'project:update': 'Update a Project', 'project:review-and-merge:enable': 'Enable review and merge', 'project:review-and-merge:disable': 'Disable review and merge', 'project:destroy': 'Remove a Project',
     'project:process-definition:list': 'List process definitions', 'project:process-definition:create': 'Create a process definition',
     'project:process-definition:show': 'Show a process definition', 'project:process-definition:update': 'Replace a process definition',
     'project:process-definition:destroy': 'Remove a process definition',
     'project:schedule-definition:list': 'List Schedule definitions', 'project:schedule-definition:create': 'Create a Schedule definition',
     'project:schedule-definition:show': 'Show a Schedule definition', 'project:schedule-definition:update': 'Replace a Schedule definition',
     'project:schedule-definition:destroy': 'Remove a Schedule definition',
-    'instance:list': 'List Instances', 'instance:show': 'Show an Instance', 'instance:create': 'Create an Instance', 'instance:register': 'Register an Instance', 'instance:update': 'Update production deployment settings', 'instance:destroy': 'Remove an Instance',
+    'instance:list': 'List Instances', 'instance:show': 'Show an Instance', 'instance:create': 'Create an Instance', 'instance:register': 'Register an Instance', 'instance:update': 'Update production deployment settings', 'instance:auto-deploy:enable': 'Enable automatic deployment', 'instance:auto-deploy:disable': 'Disable automatic deployment', 'instance:destroy': 'Remove an Instance',
     'instance:clone': 'Clone an Instance', 'instance:deployment-layout:prepare': 'Prepare the deployment layout', 'instance:deploy-step:list': 'List deploy steps', 'instance:deploy-step:create': 'Create a deploy step', 'instance:deploy-step:update': 'Update a deploy step', 'instance:deploy-step:destroy': 'Remove a deploy step',
     'instance:deployment-config:show': 'Show the deployment configuration', 'instance:deployment-config:update': 'Replace the deployment configuration', 'instance:deploy': 'Deploy an Instance', 'instance:deploy:automatic': 'Start an automatic pinned deploy', 'operation:list': 'List operations', 'operation:show': 'Show an operation', 'operation:cancel': 'Cancel an operation', 'instance:release:list': 'List retained releases', 'instance:rollback': 'Roll back an Instance',
     'instance:database:add': 'Attach a Database connection', 'instance:database:remove': 'Detach a Database connection',
@@ -736,14 +745,7 @@ SUMMARIES = {
     'tasks:worker': 'Start a Task group Swamp worker', 'tasks:provision': 'Provision a Task group workspace', 'tasks:complete': 'Complete a Task group', 'tasks:cancel': 'Cancel a Task group',
 }
 DESCRIPTIONS = {
-    'instance:smoke:failure': 'Atomically records a verified executed failing smoke and permanent SHA block under the Instance writer lock. Requires Gateway access and Idempotency-Key. Does not pause or resume. See /reference/deployments#verified-smoke-failure-and-guarded-rollback.',
-    'instance:smoke:failure:receipt': 'Reads the original caller-bound failure block by request_key. Missing evidence is null. Starts no work.',
-    'instance:smoke:rollback': 'Starts the native instance.rollback with caller-bound required Idempotency-Key, recorded permanent failure block, exact expected selection and retained prior smoke-passed target. Rechecks under the writer lock before effects. Never resumes or changes data. See /reference/deployments#verified-smoke-failure-and-guarded-rollback.',
-    'instance:smoke:rollback:receipt': 'Reads the original caller-bound guarded rollback and its retained deployment, whose ID is new. A missing receipt starts no work; failed or cancelled rollback requires assistance with the original key.',
     'tasks:park': 'Starts keyed tasks.park for an idle external group with an open published PR. Requires Gateway access, an empty body, and Idempotency-Key. Refuses preview, assistance, open children, workspace leases or mismatched workspace ownership with tasks.park_refused (409). Moves the group to waiting_for_review and preserves its workspace. Succeeds only after the provider confirms stopped power; missing, transitional or still-running guests fail. Result contains group_id, task_vm_id, instance_id, status and power. Retry a lost reply with the same key. See /reference/tasks#park-an-external-group-for-review.',
-    'instance:smoke:context': 'Reads actual retained release selection, successful deployment history and active Project Route origins. Requires Gateway access; never dispatches.',
-    'instance:smoke': 'Starts instance.smoke with a required caller-bound key, full Request and separate instance_smoke target. Requires an active production Instance and its Route, selected deployment and accepted Actions write permission. Records send intent before GitHub and never repeats an uncertain send. See /reference/deployments#production-smoke.',
-    'instance:smoke:receipt': 'Reads retained evidence for the original caller, Instance and key. Never dispatches. Missing, uncertain or ambiguous execution stays pending or unknown, never failed. Only JUnit failures or errors report failed; clean JUnit with an unsuccessful run is unknown. Swamp owns missing-result policy and baseline deadlines.',
     'instance:update': 'Update a production Instance deployment branch or shared paths. shared_paths replaces the list; null restores the Project-type default and an empty list disables sharing. Applies to the next deployment.',
     'gateway:trust': 'Returns the PEM-encoded Orbit root certificate and its SHA-256 fingerprint so a client can pin it before it trusts the Gateway. This endpoint needs no WireGuard identity.',
     'gateway:status': 'Returns the Gateway name, version, and status, and the release the Gateway runs from. This endpoint needs no WireGuard identity. For an active WireGuard peer it also returns `auto_release`, whether automatic releases are enabled or paused, and `desired_fleet_state`, the object `gateway:desired-fleet-state` returns, as last cached; it is null until the state is resolved and for any other caller. This endpoint never waits for Git or GitHub.',
@@ -755,7 +757,6 @@ DESCRIPTIONS = {
     'instance:deploy:automatic:resolve': 'Fences an absent automatic admission with a retained cancelled receipt (operation.admission_fenced, zero attempts). Requires Gateway access, request_key, Instance, and commit. caller_node_id optionally names the original caller; omission uses the authenticated Node. A delayed admission replays this receipt instead of deploying. Returns an existing receipt unchanged if admission won the race. Activity records the acting Node and original caller. Never starts or cancels a deploy. See /reference/deployments#clear-an-unresolved-admission-hold.',
     'instance:deploy:automatic:receipt': 'Reads the original automatic admission by exact request key, caller, Instance, command, and commit. Returns the operation and retained terminal deployment evidence. A conflicting identity returns operation.idempotency_conflict. A missing receipt does not authorize retry: an admission might still be in flight. This read starts nothing. Requires Gateway Node access.',
     'instance:auto-deploy:policy:update': 'Publishes the shared public automatic deployment projection only under Swamp ownership. Returns instance.auto_deploy_policy_owner under PHP ownership. Requires Gateway Node access. A changed resume cursor, newest deployment ID, or history_version returns instance.auto_deploy_observation_changed. Read history_version from the Instance projection; it changes when an existing deployment finishes. Preserves Gateway rollback blocks. See /reference/deployments#one-policy-writer-during-the-trial.',
-    'instance:auto-deploy:event:create': 'Admits a keyed instance.policy_event operation for a notable Activity entry or a Gateway release alert. Requires Gateway Node access and Idempotency-Key. Returns instance.auto_deploy_policy_owner under PHP ownership. Delivery cannot resume after worker loss. Read its operation receipt rather than admitting a replacement. See /reference/deployments#swamp-policy-contracts.',
     'instance:deploy:automatic': 'Starts the existing instance.deploy operation for exactly the required full commit SHA. Requires Gateway Node access, an enabled production Instance, and Idempotency-Key. Records swamp:auto-deploy from the authorized automatic command and caller_node_id from the authenticated Gateway peer. Deployment and operation reads expose both fields; clients cannot supply them. Replays bind caller, command, Instance and commit. Rechecks pause and rollback blocks under the Instance lock before effects. Branch membership is checked on the first-parent chain during queued source preparation; refusal ends with deployment.commit_not_on_branch. Follow with operation:show. See /reference/deployments#pinned-commits-and-automatic-callers.',
     'instance:deploy': 'Starts an `instance.deploy` operation and answers 202 with it at once; the deploy runs on the Gateway queue. Follow it with `operation:show` and `after_sequence` after `poll_after_seconds`, until `status` is `succeeded`, `failed`, or `cancelled`. A second deploy while one holds the Instance returns `operation.target_busy` (409) with `details.operation_id`. See /reference/operations.',
     'instance:rollback': 'Starts an `instance.rollback` operation that selects one retained release, and answers 202 with it at once; the rollback runs on the Gateway queue. Follow it with `operation:show` and `after_sequence` after `poll_after_seconds`, until `status` is `succeeded`, `failed`, or `cancelled`. A release the Instance does not retain returns `rollback.release_not_retained` (422) and changes nothing. A deploy of the Instance that no worker has started ends `cancelled` with `operation.superseded`; any other operation that holds the Instance, such as a deploy a worker has started, returns `operation.target_busy` (409) with `details.operation_id`. See /reference/deployments#the-rollback-operation.',
@@ -797,7 +798,7 @@ DESCRIPTIONS = {
     'tool:adopt': 'Records Orbit ownership of one supported installed package. Send the Node, manager, package, and optional SemVer constraint. The call installs, updates, removes, and repins nothing. The same intent returns unchanged. A different constraint, a busy scope, a missing or unsupported package, or missing Node access leaves the host unchanged. `error.details.step` is `adopt`. `error.details.id` is present only when a Tool row already exists. `tool.adoption_unsupported` also includes `error.details.adoption_block`.',
     'firewall:fleet:list': 'Returns the operator firewall rules of every Node the caller can reach, in one response, ordered by Node and name. The web app uses it for the fleet list instead of one request per Node. The per-Node list stays for the CLI. The list does not SSH.',
     'firewall:managed:list': 'Returns the `orbit:` rules Orbit intends on the Node: WireGuard member trust, public SSH recovery only while no active role has closed it, then each active role, the task VM image peers on a task VM host, and Metrics. The list does not SSH. No request adds, changes, or removes one of these rules.',
-    'firewall:live:list': 'Reads `ufw status numbered` over WireGuard and classifies each IPv4 rule against the desired managed set and operator firewall records. Live rules that do not match are drift. Desired or operator rules absent from live are missing. An inactive, absent, or unreachable backend returns empty live and missing lists.',
+    'firewall:live:list': 'Live UFW facts come only from orbit-agent observations. Until the agent reports UFW, `backend_status` is `unverifiable` and `live` lists every desired managed and operator rule with `match` `unverifiable`. The GET never contacts the Node.',
     'instance:deployment-config:show': 'Returns the recorded deployment branch and the deploy steps in phase and placement order as one document.',
     'instance:deployment-config:update': 'Atomically replaces the branch and the complete deploy-step set from one document without fetching source or starting a deployment.',
     'instance:deployment-layout:prepare': 'Converts an existing production Instance that serves code from its home into the release layout with `releases/` and `current`.',
@@ -1262,21 +1263,6 @@ def ref(cls):
         components[name] = {'type': 'object', 'properties': props}
         if name in {'DependencyResults', 'DependencyAttempt', 'DependencySource', 'DependencyReport', 'DependencyPackage', 'DependencyFinding', 'DependencyReason', 'DependencyLinks', 'DependencyBatchPr', 'DependencyPullRequest'}:
             components[name].update(required=list(props), additionalProperties=False)
-        if cls.startswith('InstanceSmoke'):
-            components[name]['required'] = list(props)
-            for field in ('deployment_id', 'instance_id', 'run_id', 'run_attempt'):
-                if field in props:
-                    props[field]['minimum'] = 1
-        if cls == 'InstanceSmokeBlockData':
-            props['blocked']['enum'] = [True]
-        if cls == 'InstanceSmokeRollbackDeploymentData':
-            props['status']['enum'] = ['running', 'succeeded', 'failed']
-        if cls == 'InstanceSmokeResultData':
-            props['state']['enum'] = ['pending', 'passed', 'failed', 'unknown']
-            for field in ('tests', 'failures', 'errors', 'skipped'):
-                props[field]['minimum'] = 0
-            props['output']['description'] = 'Redacted UTF-8 output, at most 64 KiB.'
-            props['artifacts']['items'] = {'type': 'object', 'required': ['name', 'url'], 'properties': {'name': {'type': 'string'}, 'url': {'type': 'string'}}}
     return {'$ref': f'#/components/schemas/{name}'}
 
 
@@ -1295,6 +1281,7 @@ def prop_schema(p):
     doc = (p['doc'] or '').replace('\\', '')
     nullable = t.startswith('?') or '|null' in t or 'null|' in t
     t = t.lstrip('?').replace('|null', '').replace('null|', '')
+    t = '|'.join(part for part in t.split('|') if part != 'Optional')
     union = [part.strip() for part in t.split('|') if part.strip()]
     if len(union) > 1 and all(part in SCALARS for part in union):
         kinds = []
@@ -1405,7 +1392,7 @@ EXAMPLE_BY_NAME = {
     'manager': 'vp', 'package': '@openai/codex', 'version_constraint': '^0.150', 'tag': '8.4',
     'php_version': '8.5', 'source_path': '/srv/orbit/apps/acme/main', 'environments': ['production'], 'phase': 'before_activation', 'release': '20260914T101500Z', 'value': 'log', 'status': 'success', 'state': 'active',
     'force': True, 'offline': False, 'replace': True, 'converge': False, 'purge_data': False, 'include_worktrees': False,
-    'source': '10.6.0.0/24', 'protocol': 'tcp', 'instance_id': 4, 'sqlite_source_path': '/home/acme/database/database.sqlite', 'apps': {'path': '/srv/orbit/apps'}, 'settings': {'apps': {'path': '/srv/orbit/apps'}},
+    'sources': ['10.44.0.6', '10.44.0.9'], 'source': '10.6.0.0/24', 'protocol': 'tcp', 'instance_id': 4, 'sqlite_source_path': '/home/acme/database/database.sqlite', 'apps': {'path': '/srv/orbit/apps'}, 'settings': {'apps': {'path': '/srv/orbit/apps'}},
     'orchestrator_url': 'wss://swamp.orbit', 'enrollment_token': 'group-1.' + 'a' * 64,
     'title': 'Build Tasks', 'brief': 'Persist groups. Accept when create and list work.',
 }
@@ -1496,6 +1483,8 @@ def example_from_schema(sch, name, tag, depth=0, update=False):
         return {}
     t = sch.get('type')
     t = t[0] if isinstance(t, list) else t
+    if tag == 'Firewall' and name == 'port':
+        return '7297'
     if tag == 'Tasks' and name in ('role', 'prompt', 'thread'):
         return {'role': 'implementer', 'prompt': 'Implement the subtask brief.', 'thread': 'new'}[name]
     if name == 'name' and tag in NAME_BY_TAG:
@@ -1693,7 +1682,7 @@ RESPONSE_OVERRIDES = {
     'ExtensionsController@disable': {'type': 'object', 'properties': {'name': {'type': 'string', 'enum': extensions}, 'enabled': {'type': 'boolean', 'const': False}}, 'required': ['name', 'enabled'], 'additionalProperties': False},
     'RootCaCertificatesController@show': {'type': 'object', 'properties': {'root_ca': {'type': 'string', 'description': 'PEM-encoded root certificate.'}, 'sha256': {'type': 'string', 'description': 'SHA-256 fingerprint of the certificate.'}}},
     'FirewallRulesController@managed': {'type': 'array', 'description': 'The rules Orbit intends on the Node after role converge. Public SSH recovery is omitted once an active role has closed it. No request adds, changes, or removes one.', 'items': {'type': 'object', 'properties': {'name': {'type': 'string', 'description': 'The `orbit:` comment that identifies the rule in UFW.'}, 'role': {'type': ['string', 'null'], 'description': 'The role that needs the rule, or null for a baseline rule the Node still intends.'}, 'action': {'type': 'string'}, 'source': {'type': 'string'}, 'destination': {'type': 'string'}, 'port': {'type': 'string'}, 'protocol': {'type': 'string'}, 'interface': {'type': ['string', 'null'], 'description': 'The interface the rule is limited to; `orbit` is the WireGuard interface.'}}}},
-    'FirewallRulesController@live': {'type': 'object', 'required': ['backend_status', 'live', 'missing'], 'properties': {'backend_status': {'type': 'string', 'enum': ['active', 'inactive', 'absent', 'unreachable'], 'description': 'Whether UFW answered on the Node. `unreachable` means the Gateway could not read `ufw status numbered`.'}, 'live': {'type': 'array', 'description': 'IPv4 UFW rules currently on the Node, in status order.', 'items': {'type': 'object', 'properties': {'name': {'type': 'string', 'description': 'Operator rule name, `orbit:` comment, or `unmanaged` when UFW has no comment.'}, 'comment': {'type': 'string'}, 'action': {'type': 'string'}, 'source': {'type': 'string'}, 'destination': {'type': 'string'}, 'port': {'type': 'string'}, 'protocol': {'type': 'string'}, 'interface': {'type': ['string', 'null']}, 'family': {'type': ['string', 'null']}, 'match': {'type': 'string', 'enum': ['exact', 'drift', 'unmanaged'], 'description': '`exact` matches a desired managed or operator rule. `drift` has a known comment with a different shape. `unmanaged` is not an Orbit managed or operator rule.'}}}}, 'missing': {'type': 'array', 'description': 'Desired managed or operator rules that are absent from live UFW.', 'items': {'type': 'object', 'properties': {'name': {'type': 'string'}, 'comment': {'type': 'string'}, 'action': {'type': 'string'}, 'source': {'type': 'string'}, 'destination': {'type': 'string'}, 'port': {'type': 'string'}, 'protocol': {'type': 'string'}, 'interface': {'type': ['string', 'null']}, 'family': {'type': ['string', 'null']}, 'match': {'type': 'string', 'enum': ['missing']}}}}}},
+    'FirewallRulesController@live': {'type': 'object', 'required': ['backend_status', 'live', 'missing'], 'properties': {'backend_status': {'type': 'string', 'enum': ['active', 'inactive', 'absent', 'unreachable', 'unverifiable'], 'description': 'Whether UFW answered on the Node. `unverifiable` means no orbit-agent UFW observation exists.'}, 'live': {'type': 'array', 'description': 'IPv4 UFW rules currently on the Node, in status order.', 'items': {'type': 'object', 'properties': {'name': {'type': 'string', 'description': 'Operator rule name, `orbit:` comment, or `unmanaged` when UFW has no comment.'}, 'comment': {'type': 'string'}, 'action': {'type': 'string'}, 'source': {'type': 'string'}, 'destination': {'type': 'string'}, 'port': {'type': 'string'}, 'protocol': {'type': 'string'}, 'interface': {'type': ['string', 'null']}, 'family': {'type': ['string', 'null']}, 'match': {'type': 'string', 'enum': ['exact', 'drift', 'unmanaged', 'unverifiable'], 'description': '`exact` matches a desired managed or operator rule. `drift` has a known comment with a different shape. `unmanaged` is not an Orbit managed or operator rule. `unverifiable` is a desired rule with no observation.'}}}}, 'missing': {'type': 'array', 'description': 'Desired managed or operator rules that are absent from live UFW.', 'items': {'type': 'object', 'properties': {'name': {'type': 'string'}, 'comment': {'type': 'string'}, 'action': {'type': 'string'}, 'source': {'type': 'string'}, 'destination': {'type': 'string'}, 'port': {'type': 'string'}, 'protocol': {'type': 'string'}, 'interface': {'type': ['string', 'null']}, 'family': {'type': ['string', 'null']}, 'match': {'type': 'string', 'enum': ['missing']}}}}}},
     'InstanceAnalyticsController@show': {'type': 'object', 'properties': {'instance_id': {'type': 'integer'}, 'enabled': {'type': 'boolean', 'description': 'True while the Instance publishes at least one tracking host.'}, 'domain': {'type': ['string', 'null']}, 'dashboard_url': {'type': ['string', 'null'], 'description': 'The private Plausible dashboard, or null while no Node has an active analytics role.'}, 'hosts': {'type': 'array', 'items': {'type': 'object', 'properties': {'host': {'type': 'string'}, 'route_id': {'type': 'integer'}, 'status': {'type': 'string'}, 'publication': {'type': 'string', 'enum': ['private', 'public'], 'description': 'Mirrors the Instance Route publication. Public-edge readiness is status, failed_step, and Doctor.'}, 'failed_step': {'type': ['string', 'null']}, 'error_code': {'type': ['string', 'null']}, 'script_url': {'type': 'string'}, 'event_url': {'type': 'string'}, 'dns': {'type': ['object', 'null'], 'description': 'The record to create, or null while the Instance has no domain.', 'properties': {'type': {'type': 'string'}, 'name': {'type': 'string'}, 'value': {'type': 'string'}}}}}}, 'snippet': {'type': ['string', 'null'], 'description': 'The script tag for the Project, using the first host.'}}},
     'InstanceAnalyticsController@enable': {'type': 'object', 'properties': {'instance_id': {'type': 'integer'}, 'enabled': {'type': 'boolean', 'description': 'True while the Instance publishes at least one tracking host.'}, 'domain': {'type': ['string', 'null']}, 'dashboard_url': {'type': ['string', 'null'], 'description': 'The private Plausible dashboard, or null while no Node has an active analytics role.'}, 'hosts': {'type': 'array', 'items': {'type': 'object', 'properties': {'host': {'type': 'string'}, 'route_id': {'type': 'integer'}, 'status': {'type': 'string'}, 'publication': {'type': 'string', 'enum': ['private', 'public'], 'description': 'Mirrors the Instance Route publication. Public-edge readiness is status, failed_step, and Doctor.'}, 'failed_step': {'type': ['string', 'null']}, 'error_code': {'type': ['string', 'null']}, 'script_url': {'type': 'string'}, 'event_url': {'type': 'string'}, 'dns': {'type': ['object', 'null'], 'description': 'The record to create, or null while the Instance has no domain.', 'properties': {'type': {'type': 'string'}, 'name': {'type': 'string'}, 'value': {'type': 'string'}}}}}}, 'snippet': {'type': ['string', 'null'], 'description': 'The script tag for the Project, using the first host.'}}},
     'InstanceAnalyticsController@disable': {'type': 'object', 'properties': {'instance_id': {'type': 'integer'}, 'enabled': {'type': 'boolean', 'description': 'True while the Instance publishes at least one tracking host.'}, 'domain': {'type': ['string', 'null']}, 'dashboard_url': {'type': ['string', 'null'], 'description': 'The private Plausible dashboard, or null while no Node has an active analytics role.'}, 'hosts': {'type': 'array', 'items': {'type': 'object', 'properties': {'host': {'type': 'string'}, 'route_id': {'type': 'integer'}, 'status': {'type': 'string'}, 'publication': {'type': 'string', 'enum': ['private', 'public'], 'description': 'Mirrors the Instance Route publication. Public-edge readiness is status, failed_step, and Doctor.'}, 'failed_step': {'type': ['string', 'null']}, 'error_code': {'type': ['string', 'null']}, 'script_url': {'type': 'string'}, 'event_url': {'type': 'string'}, 'dns': {'type': ['object', 'null'], 'description': 'The record to create, or null while the Instance has no domain.', 'properties': {'type': {'type': 'string'}, 'name': {'type': 'string'}, 'value': {'type': 'string'}}}}}}, 'snippet': {'type': ['string', 'null'], 'description': 'The script tag for the Project, using the first host.'}}},
@@ -1730,18 +1719,8 @@ RESPONSE_OVERRIDES = {
     }}},
 }
 CTRL_DATA_OVERRIDES = {
-    'InstanceSmokeRepairController@store': ('InstanceSmokeRepairData', False),
-    'InstanceSmokeRepairController@receipt': ('InstanceSmokeRepairLookupData', False),
     'InstanceDependenciesController@show': ('DependencyResultsData', False),
     'ProjectDependenciesController@show': ('DependencyResultsData', False),
-    'InstanceSmokeControlController@store': ('InstanceSmokeControlReceiptData', False),
-    'InstanceSmokeControlController@receipt': ('InstanceSmokeControlLookupData', False),
-    'InstanceSmokeControlController@redeployReceipt': ('InstanceSmokeRollbackReceiptData', False),
-    'InstanceSmokeController@receipt': ('InstanceSmokeReceiptData', False),
-    'InstanceSmokeController@context': ('InstanceSmokeContextData', False),
-    'InstanceSmokeController@failure': ('InstanceSmokeBlockData', False),
-    'InstanceSmokeController@failureReceipt': ('InstanceSmokeBlockReceiptData', False),
-    'InstanceSmokeController@rollbackReceipt': ('InstanceSmokeRollbackReceiptData', False),
     'InstanceDeploymentSourceController@head': ('DeploymentSourceHeadData', False),
     'InstanceDeploymentSourceController@commits': ('DeploymentSourceCommitsData', False),
     'InstanceDeploymentSourceController@checks': ('DeploymentSourceChecksData', False),
@@ -1765,7 +1744,7 @@ CTRL_DATA_OVERRIDES = {
     'GatewayReleaseAutomationController@show': ('GatewayReleaseAutomationData', False), 'GatewayReleaseAutomationController@enable': ('GatewayReleaseAutomationData', False),
     'GatewayReleaseAutomationController@disable': ('GatewayReleaseAutomationData', False), 'GatewayReleaseAutomationController@resume': ('GatewayReleaseAutomationData', False),
 }
-SDK_RESPONSE_FALLBACK = {'NodesController@destroy': 'RemovedNodeResponse', 'InstanceEnvironmentImportsController@store': 'EnvironmentOperationResponse', 'InstanceEnvironmentSynchronizationsController@store': 'EnvironmentOperationResponse', 'InstanceEnvironmentValuesController@update': 'EnvironmentOperationResponse'}
+SDK_RESPONSE_FALLBACK = {'NodesController@destroy': 'RemovedNodeResponse', 'InstanceEnvironmentImportsController@store': 'EnvironmentOperationResponse', 'InstanceEnvironmentValuesController@update': 'EnvironmentOperationResponse'}
 
 
 # The create and register responses report a name that Orbit converted to `default` the same way.
@@ -2039,10 +2018,10 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             body_schema['additionalProperties'] = False
         op['requestBody'] = {'required': body_required or bool(body_schema.get('required')), 'content': {'application/json': {'schema': body_schema}}}
     starts_operation = controllers.get(action, {}).get('starts_operation', False)
-    if route['name'] in ('instance:smoke:failure', 'instance:smoke:control', 'instance:smoke:repair'):
-        op['parameters'].append({'name': 'Idempotency-Key', 'in': 'header', 'required': True, 'schema': {'type': 'string', 'maxLength': 128}, 'description': 'Permanent key bound to caller, Instance and full body; identical retry returns the original receipt.'})
     if starts_operation:
         op['x-orbit-operation'] = 'start'
+        # bin/docs-flows attaches each kind's flow chart to this command's docs section.
+        op['x-orbit-kinds'] = controllers[action]['kinds']
         op['parameters'].append({
             'name': 'Idempotency-Key', 'in': 'header', 'required': controllers.get(action, {}).get('requires_key', False),
             'schema': {'type': 'string', 'minLength': 1, 'maxLength': 128, 'pattern': '^[A-Za-z0-9._:-]+$'},

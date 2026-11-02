@@ -68,10 +68,10 @@ class NativeCheck(NativeRepository):
 
         flow = paths(flow)
         for job in flow["jobs"]:
-            job.pop("target", None)
+            job.pop("target", None); job.pop("labels", None)
             job.pop("labels", None)
             for step in job["steps"]:
-                step.pop("target", None)
+                step.pop("target", None); step.pop("labels", None)
                 step.pop("labels", None)
         (self.repo / "workflows/workflow-check.yaml").write_text(
             yaml.safe_dump(flow, sort_keys=False)

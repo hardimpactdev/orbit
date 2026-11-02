@@ -1,22 +1,21 @@
 # Public contract
 
-The SDK models exactly 247 concrete public Gateway API operations:
+The SDK models exactly 252 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
 - Node: list, show, add, rename, settings update, WireGuard key set, standalone WireGuard hub converge, platform set, remove, access add, access remove, role list, role add, role relocate, role remove, and metrics.
-- Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.
+- Cluster: list, show, create, update, activate, deactivate, remove, Node attach, Node detach, Router set, and Router clear.
 - Project Documents: Project-scoped list, search, create, show, update, write, read, download, version list, restore-version, archive, restore, and removal; Gateway-scoped storage show and update. Preserve revisions, hashes, cursor metadata and request IDs. Credentials are write-only. Decode bounded downloads only after verifying size and digest; never retry conflicts automatically.
-- Project: list, show, create, update, remove, and Swamp dependency results read; development deploy step list, create, update, and remove. Development steps carry a name, command, timeout, and required boolean. Omit null optional fields and preserve explicit false.
+- Project: list, show, create, update, review-and-merge enable and disable, remove, and Swamp dependency results read; development deploy step list, create, update, and remove. Development steps carry a name, command, timeout, and required boolean. Omit null optional fields and preserve explicit false.
 - Development node exclusion: add, list, and remove from either the Project or the Node.
 - Project runtime definition: process and Schedule list, create, show, update, and destroy.
-- Operation: list, show, and cancel. Instance deploy, rollback, and task group provision, check, script, analyze, turn, park, and publish return the queued operation.
-- Instance: list, show, create, register, rename, clone, transfer, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, deployment-history list and show, environment import, environment update, environment synchronization, Swamp dependency results read, and full-domain and directory instance resolution through the concise Instance routes.
+- Operation: list, show, and cancel. Instance deploy, rollback, environment synchronization, and task group provision, check, script, analyze, turn, park, and publish return the queued operation.
+- Instance: list, show, create, register, rename, clone, transfer, remove, update, auto-deploy enable and disable, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, deployment-history list and show, environment import, environment update, environment synchronization, Swamp dependency results read, and full-domain and directory instance resolution through the concise Instance routes.
 - Route: list, show, create, update, target set, target clear, and remove.
-- Fleet Docker maintenance: one typed Node admission with plan, migrate or restore-policies intent, explicit confirmation, optional exact recipe and fallback; returns an Operation.
 - Process: list, add, start, stop, restart, logs, and remove.
 - Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.
-- Schedule: list, add, show, run, logs, complete, remove, and activate.
+- Schedule: list, add, show, run, logs, complete, remove, activate, and deactivate.
 - Firewall: list, allow, deny, remove, and native inspection refresh.
 - Tool: manager list, inventory scan, tool list, show, install, adopt, update, and remove.
 - Doctor: run the complete typed Gateway report.
@@ -33,9 +32,9 @@ The SDK models exactly 247 concrete public Gateway API operations:
 The five abstract request bases are implementation details, not extra Gateway
 operations. Keep the public API typed and small.
 
-- Use numeric resource IDs in routes where the Gateway contract does. Keep a
-  firewall rule name as the delete route key. Do not substitute display names
-  for identifiers.
+- Use numeric resource IDs in routes where the Gateway contract does. Send a
+  firewall removal as its port, source, and protocol match; the Gateway
+  resolves the rule. Do not substitute display names for identifiers.
 - Send `host_key_fingerprint` in a node add request. Parse
   `ssh_host_fingerprint` from a node response.
 - Keep Instance lifecycle transport limited to Project, Node, name, optional
@@ -63,9 +62,9 @@ operations. Keep the public API typed and small.
   sensitive transport values. Keep them out of generic debug and serialization
   representations while preserving their intended request or event value.
 - Keep Instance environment transport limited to an ID-or-domain selector,
-  optional import replacement, one key and string value for update, an empty
-  synchronization body, and the bounded value-free operation result. The
-  Gateway owns lookup, validation, references, storage, and synchronization.
+  optional import replacement, one key and string value for update, and an
+  empty synchronization body. Import and update return the bounded value-free
+  result; synchronization returns the queued operation. The Gateway owns lookup, validation, references, storage, and synchronization.
 - Keep dependency reads bodyless and transport only numeric resource identity,
   optional source identity, and pagination. Preserve Swamp provenance, freshness,
   findings and PR certainty. The Gateway owns validation and read policy.

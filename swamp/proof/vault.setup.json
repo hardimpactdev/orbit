@@ -1,0 +1,29 @@
+{
+  "kind": "vault.setup",
+  "workflow": "operation-vault-setup",
+  "topology": "minimal",
+  "budget_seconds": 180,
+  "queue_timeout_seconds": 30,
+  "expect": {"status": "succeeded"},
+  "before_gateway": [["python3", "-I", "swamp/tests/fixtures/vaultwarden_proof_setup.py"]],
+  "prepare": [{"method": "POST", "path": "extensions/vault/enable", "body": {}, "operation": false}],
+  "request": {
+    "method": "PUT",
+    "path": "vault",
+    "body": {
+      "url": "${secret.url}",
+      "client_id": "${secret.client_id}",
+      "client_secret": "${secret.client_secret}",
+      "master_password": "${secret.master_password}",
+      "organization": "${secret.organization}",
+      "collection": "${secret.collection}"
+    }
+  },
+  "phases": [
+    {"name": "Read the scripts", "job": "setup", "step": "Read the scripts", "budget_seconds": 30},
+    {"name": "Verify the account", "job": "setup", "step": "Verify the account", "budget_seconds": 180},
+    {"name": "Clear the session", "job": "setup", "step": "Clear the session", "budget_seconds": 30},
+    {"name": "Confirm the setup", "job": "setup", "step": "Confirm the setup", "budget_seconds": 30}
+  ],
+  "parity": "swamp/proof/vault/parity.py"
+}

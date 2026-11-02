@@ -18,6 +18,7 @@ final class AdoptToolRequest extends GatewayRequest implements HasBody
     #[\Override]
     protected Method $method = Method::POST;
 
+    /** @param array<string, mixed>|null $repository */
     public function __construct(
         private readonly int $nodeId,
         #[\SensitiveParameter]
@@ -27,6 +28,8 @@ final class AdoptToolRequest extends GatewayRequest implements HasBody
         #[\SensitiveParameter]
         private readonly ?string $versionConstraint = null,
         private readonly ?string $idempotencyKey = null,
+        #[\SensitiveParameter]
+        private readonly ?array $repository = null,
     ) {}
 
     /** @return array<string, string> */
@@ -45,7 +48,7 @@ final class AdoptToolRequest extends GatewayRequest implements HasBody
         return OperationResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
     }
 
-    /** @return array{node_id: int, manager: string, package: string, version_constraint?: string} */
+    /** @return array{node_id: int, manager: string, package: string, version_constraint?: string, repository?: array<string, mixed>} */
     protected function defaultBody(): array
     {
         return array_filter(
@@ -54,6 +57,7 @@ final class AdoptToolRequest extends GatewayRequest implements HasBody
                 'manager' => $this->manager,
                 'package' => $this->package,
                 'version_constraint' => $this->versionConstraint,
+                'repository' => $this->repository,
             ],
             static fn (mixed $value): bool => $value !== null,
         );

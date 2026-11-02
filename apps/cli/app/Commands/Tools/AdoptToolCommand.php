@@ -20,6 +20,7 @@ final class AdoptToolCommand extends ToolCommand
         {--node= : Numeric target node ID}
         {--manager= : Tool manager name}
         {--constraint= : Optional SemVer safety constraint}
+        {--repository= : Signed apt repository as a JSON object}
         {--yes : Skip the ownership confirmation prompt}
         {--idempotency-key= : Reuse a stable operation start key}
         {--json : Return machine-readable JSON}';
@@ -31,6 +32,10 @@ final class AdoptToolCommand extends ToolCommand
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
+        $repositoryDefinition = $this->repositoryDefinition($this->option('repository'));
+        if ($repositoryDefinition === false) {
+            return self::FAILURE;
+        }
         $nodeId = $this->nodeId();
         if ($nodeId === null) {
             return self::FAILURE;
@@ -66,7 +71,7 @@ final class AdoptToolCommand extends ToolCommand
         if ($profile === null) {
             return self::FAILURE;
         }
-        $operation = $this->send($connector, new AdoptToolRequest($nodeId, $manager, $package, $constraint, $this->stringOption('idempotency-key')), OperationResponse::class);
+        $operation = $this->send($connector, new AdoptToolRequest($nodeId, $manager, $package, $constraint, $this->stringOption('idempotency-key'), $repositoryDefinition), OperationResponse::class);
 
         return $operation instanceof OperationResponse
             ? $this->followOperation($connector, $profile, $operation, "Adopt Tool [{$package}]", 'Tool')

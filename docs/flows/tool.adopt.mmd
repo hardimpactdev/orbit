@@ -1,0 +1,63 @@
+sequenceDiagram
+  %% Target design: Nick 2026-11-01. Like doctor: only the Node agent reads Nodes; adopt checks its latest report. No task, no Swamp run, no SSH (R1).
+  %% status: reviewed
+  %% command: tool:adopt
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane A icon=server pill=observer tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant A as Node agent<br/>orbit-agent
+  loop continuously, on change
+    Note over A: Observe packages<br/>per Tool Manager, apt sources
+    %%> What it observes:
+    %%> - the installed packages and versions for each Tool Manager on the Node
+    %%> - the apt sources and their signing keys
+    %%> Runs as:
+    %%> - read-only; the Node agent never changes a Node
+    A->>GW: Report observations<br/>with observed_at
+    %%> What it sends:
+    %%> - what changed since the last report, with the time it was observed
+    Note over GW: Store latest facts<br/>per Node, per Tool Manager
+    %%> Result:
+    %%> - the Gateway always has a recent picture of what is installed on each Node
+  end
+  CLI->>GW: tool:adopt ripgrep<br/>--node=12 --manager=apt --yes
+  %%> Command:
+  %%> - `orbit tool:adopt ripgrep --node=12 --manager=apt --yes`
+  %%> - syntax: `<package> --node=ID --manager=MANAGER [--constraint=RANGE] [--repository=JSON] --yes`
+  %%> What adopting means:
+  %%> - Orbit takes over a package that is already installed, so it manages later updates and removal
+  %%> - it installs, updates, removes and repins nothing
+  %%> Confirmation:
+  %%> - without `--yes`, the CLI asks "Take ownership of package ripgrep (apt on Node #12) and manage later updates and removal?"; the default is No
+  Note over GW: Check against the facts<br/>installed · constraint · supported
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12
+  %%> - Node 12's platform supports the Tool Manager
+  %%> - the package isn't already a Tool on Node 12, and isn't protected (such as Caddy or PHP)
+  %%> Checks in the agent's latest report:
+  %%> - the package is installed, and its version fits `--constraint`
+  %%> - Orbit can manage this package later (no adoption block)
+  %%> - with `--repository`: the apt source and signing key on the Node match the definition
+  %%> - the report is fresh enough to trust
+  alt package can be adopted
+    GW-->>CLI: Tool recorded<br/>Tool 31: installed 14.1.0
+    %%> Result:
+    %%> - Tool 31 recorded as installed, with the observed version
+    %%> - the apt repository recorded, when one was given
+    %%> - the answer comes at once; there is no task to follow
+  else not installed or blocked
+    GW--xCLI: Refused<br/>tool.adoption_unsupported
+    %%> When:
+    %%> - the package isn't installed, its version is outside the constraint, or Orbit can't manage it
+    %%> Result:
+    %%> - nothing is recorded
+  else agent silent too long
+    GW--xCLI: Can't verify<br/>Node 12 facts too old
+    %%> When:
+    %%> - the Node agent hasn't reported recently, so the Gateway can't trust what it knows
+    %%> Result:
+    %%> - nothing is recorded; try again when the agent reports
+  end

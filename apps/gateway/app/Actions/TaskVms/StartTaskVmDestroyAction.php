@@ -6,6 +6,7 @@ namespace App\Actions\TaskVms;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmDestroyIntent;
 use App\Domain\TaskVms\TaskVmState;
@@ -32,8 +33,12 @@ final readonly class StartTaskVmDestroyAction
                 return $existing->kind === 'task_vm.destroy' ? $existing
                     : throw new ResourceOperationException('operation.target_busy', 'The earlier VM Operation is still settling.', 409, details: ['operation_id' => $existing->id]);
             }
+            $held = Operation::query()->where('lock_key', OperationStore::lockKey('task_vm', $vm->id))->value('id');
+            if ($held !== null) {
+                throw new ResourceOperationException('operation.target_busy', 'Another Operation owns this target.', 409, details: ['operation_id' => $held]);
+            }
             $input = $this->intent->capture($vm);
-            $operation = $this->start->execute('task_vm.destroy', 'task_vm', $vm->id, ValidatedData::integer($input['node_id']), $input, 'task-vm', null);
+            $operation = $this->start->execute('task_vm.destroy', 'task_vm', $vm->id, ValidatedData::integer($input['node_id']), $input, 'task-vm', null, lockKey: OperationStore::lockKey('task_vm', $vm->id));
             $vm->update(['state' => TaskVmState::Destroying]);
 
             return $operation;

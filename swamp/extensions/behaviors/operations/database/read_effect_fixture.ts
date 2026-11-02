@@ -207,7 +207,9 @@ export function registerReadEffect(driver: "mysql" | "pgsql") {
                     { error_code: "database.query_failed" },
                 );
             } finally {
-                await docker("rm", "--force", name).catch(() => {});
+                await docker("rm", "--force", "--volumes", name).catch(
+                    () => {},
+                );
                 await Deno.remove(dir, { recursive: true });
             }
         },

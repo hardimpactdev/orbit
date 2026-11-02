@@ -363,7 +363,7 @@ Deno.test("P33 one manual pause alert intent with resume advice", async () => {
   assertEquals(f.alerts.length, 1);
   assertStringIncludes(
     f.alerts[0].summary,
-    "orbit instance:update 7 --auto-deploy=true",
+    "orbit instance:auto-deploy:enable 7",
   );
 });
 Deno.test("P34 queued rollback is busy with no stall", async () => {

@@ -253,3 +253,25 @@ it('preserves an interrupted native Operation as terminal and unsuccessful', fun
     expect($response->terminal())->toBeTrue();
     expect($response->succeeded())->toBeFalse();
 });
+
+it('preserves the Gateway native failure detail in operation show transport', function (): void {
+    $error = ['code' => 'operation.native_failed', 'detail' => 'Failed to install runtime.'];
+    $operation = OperationResponse::fromGatewayData(operation_payload([
+        'status' => 'failed', 'failed_step' => 'install-runtime', 'error' => $error,
+    ]), 'fixture-request');
+
+    expect($operation->toArray()['error'])->toBe($error);
+    expect($operation->failedStep)->toBe('install-runtime');
+});
+
+it('preserves live step time precision without inventing a native start time', function (): void {
+    $observed = '2026-11-01T10:00:00.123Z';
+    $operation = OperationResponse::fromGatewayData(operation_payload([
+        'status' => 'running', 'current_step' => 'validate', 'current_step_started_at' => null,
+        'current_step_observed_at' => $observed,
+    ]), 'fixture-request');
+
+    expect($operation->currentStep)->toBe('validate');
+    expect($operation->currentStepStartedAt)->toBeNull();
+    expect($operation->toArray()['current_step_observed_at'])->toBe($observed);
+});

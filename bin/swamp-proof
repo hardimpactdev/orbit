@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Minimal Swamp proof topology: up / run <kind> / receipt / down. See swamp/proof/README.md.
+exec python3 -I "$(dirname "$0")/../tools/swamp_proof.py" "$@"

@@ -1,0 +1,85 @@
+sequenceDiagram
+  %% Target design: swamp-load-git-checkout (Nick 2026-11-01), release-waits-for-swamp, single-swamp-node. docs/reference/gateway-recovery.md#load-swamp.
+  %% status: reviewed
+  %% command: gateway:release:deploy · Load Swamp
+  %% behavior name: gateway-swamp-load (fixed)
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant GW as Gateway<br/>release runner
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Node 209<br/>serve checkout
+  Note over GW: Release reaches Load<br/>after migrate, before switch
+  %%> When:
+  %%> - every Gateway release, automatic or `orbit gateway:release:deploy <sha>`
+  %%> - after prepare and migrate, before the switch
+  %%> - also for releases that change no Swamp file, so Gateway and Swamp always run the same commit
+  %%> Not included:
+  %%> - no CLI command of its own; the release runner is the only caller
+  %%> - `gateway:release:rollback` skips this step, so a rollback works while Swamp is down
+  GW->>SW: Start load run<br/>operation-gateway-swamp-load
+  %%> What it does:
+  %%> - records task #5150 with the release commit
+  %%> - starts one Swamp run on serve, placed on the `swamp` role
+  %%> Inputs:
+  %%> - the release commit, for example `a1b2c3d`
+  %%> Retry:
+  %%> - when serve is restarting, the start waits up to 10 minutes instead of pausing the release
+  SW->>N: Move checkout to commit<br/>git checkout --detach a1b2c3d
+  %%> Requirements:
+  %%> - the new commit descends from the current one (fast-forward only)
+  %%> On the Node:
+  %%> - fetches the commit into the serve checkout
+  %%> - moves the checkout to it
+  %%> Why:
+  %%> - Swamp's default mode reads `swamp/` from a Git checkout; no custom loader
+  N->>N: Render serve's grants<br/>swamp/grants/*.yaml
+  %%> What it does:
+  %%> - writes which workflows the Gateway may start, from `swamp/config/gateway-workflow-grants.json`
+  %%> - writes serve's other grants, from `swamp/config/serve-grants.json`, as `swamp/grants/orbit-serve.yaml`
+  %%> Why a script:
+  %%> - serve's grants format can't hold the manifest's schedule producer marks, and no official behavior renders grants
+  %%> Not included:
+  %%> - the swamp role writes no grants; they follow the checkout
+  alt Shipped script lists same
+    N->>SW: Reload workflows, grants<br/>swamp serve reload
+    %%> What it does:
+    %%> - `swamp serve reload`: serve picks up new and changed workflows and extensions
+    %%> - `swamp access reload`: serve creates, revokes or keeps grants to match the file
+    %%> Why:
+    %%> - a reload, not a restart: running work keeps going
+    SW->>SW: Check served = commit<br/>swamp workflow list
+    %%> What it does:
+    %%> - compares the workflows serve runs with the workflows in the commit
+    %%> - ignores the `schedule-<uuid>` workflows that Schedules publish
+    SW-->>GW: Loaded<br/>sha, previous, workflows
+    %%> Result:
+    %%> - task #5150 succeeded
+    %%> - returns the commit, the previous commit and the workflow count
+  else Shipped script lists changed
+    N-->>SW: Restart needed<br/>changed manifests
+    %%> Why:
+    %%> - serve's reload keeps each extension's file list from its start (Lab #4282)
+    %%> - so new shipped scripts reach workers only after a restart
+    %%> Temporary:
+    %%> - remove this branch when Lab #4282 is fixed
+    Note over SW: Serve drains, restarts<br/>--shutdown-drain-timeout 5m
+    %%> What it does:
+    %%> - serve takes no new work and lets running work finish, up to 5 minutes
+    %%> - then a new serve instance starts from the new commit
+    GW->>SW: Wait for new serve, load<br/>https://swamp.orbit/ready
+    %%> What it does:
+    %%> - waits up to 7 minutes for a new serve instance id
+    %%> - then starts the load once more; that run takes the first branch
+  else Load fails
+    SW--xGW: Load failed<br/>gateway.release_swamp_load_failed
+    %%> Result:
+    %%> - task #5150 failed
+    %%> - the release pauses before the switch; the old Gateway release stays live
+    %%> - the checkout may stay on the new commit; fix forward and resume the release
+  end
+  Note over GW: Release goes on<br/>switch, verify, smoke
+  %%> Result:
+  %%> - Gateway and Swamp now run the same commit
+  %%> - the release switches to the new Gateway code

@@ -14,7 +14,7 @@ beforeEach(function (): void {
     $this->socket->reply = static fn (array $sent): array => [['type' => 'workflow.trigger.set', 'id' => $sent['id'],
         'payload' => ['data' => ['workflowName' => $sent['payload']['workflowName'], 'entry' => ['schedule' => $sent['payload']['schedule'], 'inputs' => json_decode(json_encode($sent['payload']['inputs'], JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR)]]]]];
     app()->instance(WebSocketClient::class, $this->socket);
-    $this->workflow = 'fb550568-ab07-4eb4-b5f4-db92e5780dc0';
+    $this->workflow = 'a37dfa1b-1633-475f-90c7-dfd9c83008ca';
 });
 
 it('publishes nested captured inputs as native data without starting a run or an Operation', function (): void {
@@ -22,7 +22,7 @@ it('publishes nested captured inputs as native data without starting a run or an
     app(SwampSchedulePublisher::class)->publish($this->workflow, '*/5 * * * *', $input);
     expect($this->socket->sent)->toHaveCount(1)
         ->and($this->socket->sent[0]['type'])->toBe('workflow.trigger.set')
-        ->and($this->socket->sent[0]['payload'])->toBe(['workflowName' => 'observation-collection', 'schedule' => '*/5 * * * *', 'inputs' => $input])
+        ->and($this->socket->sent[0]['payload'])->toBe(['workflowName' => 'maintenance-projects', 'schedule' => '*/5 * * * *', 'inputs' => $input])
         ->and($this->socket->closed)->toBeTrue();
     expect(Operation::query()->count())->toBe(0);
 });

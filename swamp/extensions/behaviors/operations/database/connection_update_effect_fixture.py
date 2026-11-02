@@ -5,13 +5,13 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 from pathlib import Path
 
 SCRIPTS=Path(__file__).resolve().parents[1]/'database-server-commands/scripts'
 sys.path.insert(0,str(SCRIPTS))
 from server_common import credentials
-from wait_ready import wait
 
 
 def effect():
@@ -23,7 +23,8 @@ def effect():
     material={'password':password}
     def docker(*args,check=True):
         value=subprocess.run(['/usr/bin/docker',*args],capture_output=True,text=True,check=False,timeout=120)
-        if check:assert value.returncode==0,'Disposable Valkey fixture command failed'
+        # docker's stderr names the cause (image pull, name clash) and holds no credential: they travel by mounted file or --env-file.
+        if check:assert value.returncode==0,'Disposable Valkey fixture command failed: '+args[0]+': '+value.stderr.strip()[-500:]
         return value.stdout
     def read():
         with credentials({'driver':'redis'},material) as envfile:
@@ -43,7 +44,10 @@ def effect():
                    '--mount',f'type=bind,source={config},target=/tmp/valkey.conf,readonly',
                    '--health-cmd',f'valkey-cli -p {port} ping','--health-interval','1s','--health-timeout','3s','--health-retries','30',
                    'valkey/valkey:8.1','valkey-server','/tmp/valkey.conf')
-            assert wait({'container':container},{})=={'ready':True}
+            for _ in range(60):
+                if docker('inspect','--format','{{.State.Health.Status}}',container).strip()=='healthy':break
+                time.sleep(1)
+            else:raise AssertionError('Disposable Valkey never became healthy')
             before=read()
             assert action()=={'backend':'active'}
             assert action()=={'backend':'active'}
@@ -53,7 +57,7 @@ def effect():
             intent['index']='3';material['password']='incorrect-fixture-password'
             assert action(False)=={'error_code':'database.server_command_failed'}
             print(json.dumps({'valid':True,'out_of_range':True,'wrong_password_refused':True,'configuration_unchanged':True}))
-        finally:docker('rm','--force',container,check=False)
+        finally:docker('rm','--force','--volumes',container,check=False)
 
 
 if __name__=='__main__':effect()

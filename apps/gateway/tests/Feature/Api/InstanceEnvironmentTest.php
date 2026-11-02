@@ -408,9 +408,12 @@ it('returns 409 when a retained terminal step carries failed activation evidence
 });
 
 it('returns one native Operation without reading or writing the workload during admission', function (): void {
-    $this->instance->node->update(['architecture' => 'x86_64']);
+    $this->instance->node->update(['architecture' => 'x86_64', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-host-key']);
     $this->instance->environmentValues()->create(['env_key' => 'KEY', 'env_value' => 'synthetic-private-value']);
     $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => $request['type'] === 'vault.put'
+        ? [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]]
+        : [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'synthetic-shared-run-token']);
     $response = $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
@@ -418,8 +421,9 @@ it('returns one native Operation without reading or writing the workload during 
         ->assertStatus(202)->assertJsonPath('data.kind', 'instance.sync_environment');
     expect($response->getContent())->not->toContain('synthetic-private-value')
         ->and($this->access->writePreflights)->toBe(0)->and($this->access->writes)->toBe([])
-        ->and($socket->sent)->toHaveCount(1)
-        ->and($socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-instance-environment');
+        ->and(array_column($socket->sent, 'type'))->toBe(['vault.put', 'workflow.run'])
+        ->and($socket->sent[1]['payload']['workflowIdOrName'])->toBe('operation-instance-environment')
+        ->and(json_encode($socket->sent[1]))->not->toContain('synthetic-private-value');
 });
 
 it('requires exactly an empty JSON object before synchronization work', function (string $body): void {

@@ -1,6 +1,7 @@
+import { behaviorName } from "../_lib/behavior_name.ts";
 type Fields = Record<string, unknown>;
 const expr = (source: string) => "${{ " + source + " }}";
-const placement = { target: "orbit-node-209" };
+const placement = { labels: { role: "swamp" } };
 
 /** Native per-rule actions use canonical arguments and UFW idempotence. */
 export function roleFirewallSteps(
@@ -14,9 +15,7 @@ export function roleFirewallSteps(
     const rules = (field: string) =>
         expr(selected + " ? " + intent + ".firewall." + field + " : []");
     const command = (step: string, field: string, prior: string): Fields => {
-        const identity = expr(
-            JSON.stringify(step + "-") + '+run.id+"-"+string(self._index)',
-        );
+        const identity = behaviorName(step, fullGlobals, true);
         return {
             name: step,
             ...placement,

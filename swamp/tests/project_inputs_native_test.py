@@ -33,16 +33,16 @@ class ProjectInputsNativeTest(NativeTestCase):
         if mode in ("detect", "observe"):
             child = yaml.safe_load((ROOT / "workflows/workflow-project-dependency-evidence.yaml").read_text())
             for job in child["jobs"]:
-                job.pop("target")
+                job.pop("labels")
                 for step in job["steps"]:
-                    step.pop("target")
+                    step.pop("labels")
             (self.repo / "workflows/workflow-project-dependency-evidence.yaml").write_text(yaml.safe_dump(child))
         flow = yaml.safe_load((ROOT / f"workflows/workflow-project-{mode}.yaml").read_text())
         for job in flow["jobs"]:
-            self.assertEqual(job.pop("target"), "orbit-node-209")
+            self.assertEqual(job.pop("labels"), {"role": "swamp"})
             self.assertNotIn("labels", job)
             for step in job["steps"]:
-                self.assertEqual(step.pop("target"), "orbit-node-209")
+                self.assertEqual(step.pop("labels"), {"role": "swamp"})
                 self.assertNotIn("labels", step)
                 encoded = json.dumps(step).replace("/home/orbit/.cache/orbit-dependency-scans/", str(self.repo / "scans") + "/")
                 step.clear()
@@ -63,7 +63,7 @@ class ProjectInputsNativeTest(NativeTestCase):
         self.workflow("routine")
         history, steps = self.run_workflow("routine")
         self.assertEqual(history["status"], "succeeded")
-        result = json.loads(steps["result"]["outputs"]["stdout"])
+        result = json.loads(steps["Report the result"]["outputs"]["stdout"])
         self.assertEqual(result["project_id"], 32)
         self.assertEqual(len(result["requests"]), 1)
         self.assertEqual(result["requests"][0]["action"], "create_group")
@@ -76,9 +76,9 @@ class ProjectInputsNativeTest(NativeTestCase):
         self.inputs["intent"]["project"]["check"] = "a different check"
         history, steps = self.run_workflow("routine", success=False)
         self.assertEqual(history["status"], "failed")
-        self.assertEqual(steps["input"]["status"], "failed")
-        self.assertEqual(steps["select"]["status"], "skipped")
-        self.assertEqual(steps["result"]["status"], "skipped")
+        self.assertEqual(steps["Read the admitted input"]["status"], "failed")
+        self.assertEqual(steps["Select this week's routine"]["status"], "skipped")
+        self.assertEqual(steps["Report the result"]["status"], "skipped")
 
     def test_observe_returns_public_evidence_without_gateway_calls(self):
         self.workflow("observe")
@@ -88,7 +88,7 @@ class ProjectInputsNativeTest(NativeTestCase):
         }
         history, steps = self.run_workflow("observe")
         self.assertEqual(history["status"], "succeeded")
-        result = json.loads(steps["result"]["outputs"]["stdout"])
+        result = json.loads(steps["Report the result"]["outputs"]["stdout"])
         self.assertEqual(result, {"project_id": 32, "observations": [], "resume_group_ids": [], "requests": []})
 
     def test_observe_correlates_one_bounded_read_with_the_captured_group(self):
@@ -107,7 +107,7 @@ class ProjectInputsNativeTest(NativeTestCase):
         }
         history, steps = self.run_workflow("observe")
         self.assertEqual(history["status"], "succeeded")
-        result = json.loads(steps["result"]["outputs"]["stdout"])
+        result = json.loads(steps["Report the result"]["outputs"]["stdout"])
         self.assertEqual(result["observations"], [{"group_id": 55, "url": url, "state": "merged", "head": "a" * 40}])
         self.assertEqual(result["requests"], [])
 
@@ -125,11 +125,10 @@ class ProjectInputsNativeTest(NativeTestCase):
         self.inputs["execution_secrets"] = {"github_token": {"vault": "orbit-control-inputs", "key": "project-dependency-read-901"}, "git_authorization": {"vault": "orbit-control-inputs", "key": "project-dependency-auth-901"}}
         history, steps = self.run_workflow("detect", success=False)
         self.assertEqual(history["status"], "failed")
-        self.assertEqual(steps["checkout"]["status"], "failed", json.dumps(history, indent=2))
-        self.assertEqual(steps["head"]["status"], "skipped")
-        self.assertEqual(steps["scan"]["status"], "skipped")
-        self.assertEqual(steps["result"]["status"], "succeeded")
-        result = json.loads(steps["result"]["outputs"]["stdout"])
+        self.assertEqual(steps["Clone the default branch"]["status"], "failed", json.dumps(history, indent=2))
+        self.assertEqual(steps["Scan the lockfiles"]["status"], "skipped")
+        self.assertEqual(steps["Report the result"]["status"], "succeeded")
+        result = json.loads(steps["Report the result"]["outputs"]["stdout"])
         self.assertEqual(result["status"], "failed")
         self.assertEqual(result["requests"], [])
         self.assertEqual(result["error_code"], "source_acquisition_failed")
@@ -137,5 +136,5 @@ class ProjectInputsNativeTest(NativeTestCase):
         self.assertEqual(len(observed), 1)
         self.assertEqual(observed[0]["last_attempt"]["status"], "failed")
         self.assertEqual(observed[0]["source_commit"], None)
-        self.assertEqual(steps["cleanup"]["status"], "succeeded")
+        self.assertEqual(steps["Remove the clone"]["status"], "succeeded")
         self.assertNotIn(token, json.dumps(history))

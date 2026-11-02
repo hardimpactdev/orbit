@@ -1,9 +1,10 @@
 manifestVersion: 1
 name: "@nckrtl/firewall-inspection"
-version: 2026.11.01.2
+version: 2026.11.02.1
 visibility: private
 license: MIT
-description: Typed UFW inspection and official-model mutation results; transport is official SSH.
+description: Shipped firewall rule script; transport is official SSH.
 behaviors:
-  - operations/firewall/inspection-result.ts
-  - operations/firewall/mutation-result.ts
+  - operations/firewall/assets.ts
+additionalFiles:
+  - scripts/firewall.py

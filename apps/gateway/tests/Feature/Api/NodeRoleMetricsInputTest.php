@@ -46,6 +46,11 @@ it('captures a role transition against the whole desired fleet without effects o
         ->and(Operation::query()->count())->toBe(0);
 });
 
+it('captures no fleet for a role outside Metrics, so its root skips the Metrics phases', function (): void {
+    $changed = $this->fleet[18]->roles()->create(['role' => 'swamp', 'status' => 'provisioning']);
+    expect(app(NodeRoleMetricsInput::class)->capture($changed))->toBeNull();
+});
+
 it('disables the complete fleet when removing the Metrics owner', function (): void {
     $changed = $this->fleet[9]->roles()->where('role', 'metrics')->firstOrFail();
     $changed->update(['status' => 'removing']);

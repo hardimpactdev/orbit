@@ -30,7 +30,6 @@ use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\FakesEnvironmentSyncInspection;
 
 beforeEach(function (): void {
-    fake_websocket_registry_start();
     Http::preventStrayRequests();
     Http::fake();
     app()->instance(NodeConverger::class, new FakeNodeConverger);

@@ -100,7 +100,7 @@ export function registerWriteEffect(driver: "mysql" | "pgsql") {
         assertEquals(refused, { error_code: "database.query_failed" });
         assertEquals(JSON.stringify(refused).includes(password), false);
       } finally {
-        await docker("rm", "--force", name).catch(() => {});
+        await docker("rm", "--force", "--volumes", name).catch(() => {});
         await Deno.remove(dir, { recursive: true });
       }
     },

@@ -1,7 +1,8 @@
 """Extension metadata follows route middleware, including a new slug and unrelated route names."""
 import ast
-from pathlib import Path
+import re
 import unittest
+from pathlib import Path
 from unittest.mock import Mock
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -36,3 +37,13 @@ class OpenApiExtensionsTest(unittest.TestCase):
         exec(compile(ast.Module(body=[assignment], type_ignores=[]), '<extension_slugs>', 'exec'), namespace)
 
         self.assertEqual(namespace['extensions'], ['reports', 'widgets'])
+
+
+class OpenApiOptionalPropertyTest(unittest.TestCase):
+    def test_optional_source_lists_keep_their_array_item_type(self):
+        namespace = {'SCALARS': {'string': 'string', 'int': 'integer', 'bool': 'boolean'},
+                     'gdata': {}, 'enums': {}, 'DOC_LIST': re.compile(r'^(?:list|array)<([\w]+)>$'), 're': re}
+        function = next(node for node in SOURCE.body if isinstance(node, ast.FunctionDef) and node.name == 'prop_schema')
+        exec(compile(ast.Module(body=[function], type_ignores=[]), '<prop_schema>', 'exec'), namespace)
+        schema = namespace['prop_schema']({'type': 'array|Optional', 'doc': 'list<string>'})
+        self.assertEqual(schema, {'type': 'array', 'items': {'type': 'string'}})

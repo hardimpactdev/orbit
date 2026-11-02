@@ -2,14 +2,13 @@
 
 declare(strict_types=1);
 
-use App\Actions\Tools\ConvergeToolManagerAction;
 use App\Actions\Tools\StartToolOperationAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolIntentProjection;
-use App\Domain\Tools\ToolManagerName;
+use App\Domain\Tools\ToolStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -44,14 +43,6 @@ it('starts a full-input write only after admission commits', function (): void {
     expect($captured['intent']['user'])->toBe('orbit')->and($captured['ssh']['target']['host'])->toBe('10.44.0.9');
 });
 
-it('captures each manager prerequisite as public immutable pins', function (string $manager): void {
-    $operation = app(ConvergeToolManagerAction::class)->execute($this->node, ToolManagerName::from($manager));
-    expect($operation->lock_key)->toBe('node_tools:209:'.$manager)->and($this->socket->sent)->toHaveCount(1);
-    expect($this->socket->sent[0]['payload']['inputs']['intent']['kind'])->toBe('tool.manager_converge');
-    expect($this->socket->sent[0]['payload']['inputs']['intent'])->not->toHaveKey('package');
-    expect($operation->input)->not->toHaveKeys(['materialize_command', 'materialize_fields', 'completion_variant']);
-})->with(['apt', 'composer', 'vp', 'brew']);
-
 it('projects bounded native package data once and rejects another root', function (): void {
     $operation = app(StartToolOperationAction::class)->execute('install', $this->node->id, 'apt', 'jq', null);
     $data = ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-11-01T04:00:00Z', 'finished_at' => '2026-11-01T04:00:01Z', 'result' => ['manager_version' => 'apt 3.0.0', 'installed_version' => '1.7.1', 'password' => 'discard-sentinel']];
@@ -67,7 +58,8 @@ it('projects bounded native package data once and rejects another root', functio
 it('rejects malformed typed native results without writing Tool state', function (array $result): void {
     $operation = app(StartToolOperationAction::class)->execute('install', $this->node->id, 'apt', 'jq', null);
     expect(fn () => app(ToolIntentProjection::class)->apply($operation, ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-11-01T04:00:00Z', 'finished_at' => '2026-11-01T04:00:01Z', 'result' => $result]))->toThrow(ResourceOperationException::class);
-    expect($operation->refresh()->status)->toBe(OperationStatus::Running)->and(Tool::query()->count())->toBe(0)->and(ToolManagerRecord::query()->count())->toBe(0);
+    expect($operation->refresh()->status)->toBe(OperationStatus::Running)
+        ->and(Tool::query()->sole()->status)->toBe(ToolStatus::Installing)->and(ToolManagerRecord::query()->sole()->status)->toBe(LifecycleStatus::Provisioning);
 })->with([
     [['manager_version' => "3.0.0\nraw"]], [['installed_version' => str_repeat('a', 256)]], [['installed_version' => []]], [['outcome' => 'raw']],
 ]);

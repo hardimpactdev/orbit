@@ -7,6 +7,7 @@ use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Ssh\SshExecutor;
+use App\Models\AptRepository;
 use App\Models\Node;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
@@ -121,7 +122,7 @@ describe('tool inventory scans', function (): void {
 
         $response = $this->get('/api/v1/tool-inventory?node_id='.$node->id, ['Accept' => 'application/json'])->assertOk();
 
-        expect($response->json('data.managers'))->toHaveCount(3)
+        expect($response->json('data.managers'))->toHaveCount(4)
             ->and($response->json('data.observed_at'))->toBe('2026-04-26T12:00:00+00:00')
             ->and($response->json('data.managers.0.scan_state'))->toBe('complete')
             ->and($response->json('data.managers.0.packages'))->toBe([])
@@ -162,7 +163,7 @@ describe('tool inventory scans', function (): void {
         $body = $response->getContent();
         expect($response->json('data.node_id'))->toBe($node->id)
             ->and($response->json('data.observed_at'))->toBe('2026-04-26T12:00:00+00:00')
-            ->and(array_column($response->json('data.managers'), 'manager'))->toBe(['brew', 'brew-cask', 'vp'])
+            ->and(array_column($response->json('data.managers'), 'manager'))->toBe(['brew', 'brew-cask', 'vp', 'apt'])
             ->and($response->json('data.managers.0.packages.1.package'))->toBe('ripgrep')
             ->and($response->json('data.managers.0.packages.1.registered'))->toBeTrue()
             ->and($response->json('data.managers.0.packages.1.tool_id'))->toBe($ripgrep->id)
@@ -230,7 +231,7 @@ describe('tool inventory scans', function (): void {
         $response = $this->get('/api/v1/tool-inventory?node_id='.$node->id, ['Accept' => 'application/json'])->assertOk();
 
         expect(array_column($response->json('data.managers'), 'scan_state'))
-            ->toBe(['complete', 'unsupported', 'absent'])
+            ->toBe(['complete', 'unsupported', 'absent', 'complete'])
             ->and($response->json('data.managers.1.packages'))->toBe([])
             ->and($response->json('data.managers.2.packages'))->toBe([])
             ->and($response->getContent())->not->toContain('/home/linuxbrew')
@@ -238,7 +239,7 @@ describe('tool inventory scans', function (): void {
             ->and(Tool::query()->count())->toBe(0);
         scan_assert_read_only($ssh);
         expect($ssh->commands)->toBe([]);
-        expect(app(AgentCommandRunner::class)->commands())->toBe(['tool.homebrew-scan', 'tool.vp-inventory']);
+        expect(app(AgentCommandRunner::class)->commands())->toBe(['tool.homebrew-scan', 'tool.vp-inventory', 'tool.apt-inventory']);
         record_fixture($response, 'tools/tool-scan/linux', 'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest', 'GET /api/v1/tool-inventory');
     });
 
@@ -298,7 +299,7 @@ function scan_tool(Node $node, ToolManagerName $manager, string $package): Tool
 function scan_bind(array $observations, ?FakeAgentCommandRunner $agents = null): ToolManagerFakeSshExecutor
 {
     $agents ??= new FakeAgentCommandRunner()->answer('tool.vp-inventory', ['packages' => [], 'scan_complete' => true]);
-    $agents->answer('tool.homebrew-scan', $observations);
+    $agents->answer('tool.homebrew-scan', $observations)->answer('tool.apt-inventory', ['packages' => []]);
     app()->instance(AgentCommandRunner::class, $agents);
     $ssh = new ToolManagerFakeSshExecutor([]);
     app()->instance(SshExecutor::class, $ssh);
@@ -342,3 +343,25 @@ function scan_assert_read_only(ToolManagerFakeSshExecutor $ssh): void
             ->not->toContain('checkout');
     }
 }
+
+it('reports apt repository packages and protected prerequisites without creating intent', function (): void {
+    $node = scan_node('apt-target', '10.44.0.4');
+    $agents = new FakeAgentCommandRunner()->answer('tool.apt-inventory', ['packages' => [
+        ['name' => 'rex', 'version' => '0.0.123-gabc'], ['name' => 'openssh-server', 'version' => '10.0'],
+    ]]);
+    scan_bind(scan_observations(), $agents);
+    $agents->answer('tool.vp-inventory', ['packages' => [], 'scan_complete' => true])->answer('tool.apt-inventory', ['packages' => [['name' => 'rex', 'version' => '0.0.123-gabc'], ['name' => 'openssh-server', 'version' => '10.0']]]);
+    $repository = AptRepository::query()->create(['node_id' => $node->id, 'name' => 'rex', 'definition' => ['name' => 'rex', 'suites' => ['preview']]]);
+    $manager = $node->toolManagers()->create(['name' => 'apt', 'status' => LifecycleStatus::Active]);
+    $tool = $node->tools()->create(['tool_manager_id' => $manager->id, 'apt_repository_id' => $repository->id, 'package' => 'rex', 'status' => ToolStatus::Installed]);
+
+    $this->get('/api/v1/tool-inventory?node_id='.$node->id, ['Accept' => 'application/json'])->assertOk()
+        ->assertJsonPath('data.managers.3.manager', 'apt')
+        ->assertJsonPath('data.managers.3.scan_state', 'complete')
+        ->assertJsonPath('data.managers.3.packages.0.adoption_block', 'protected')
+        ->assertJsonPath('data.managers.3.packages.1.package', 'rex')
+        ->assertJsonPath('data.managers.3.packages.1.package_kind', 'deb')
+        ->assertJsonPath('data.managers.3.packages.1.repository.suites', ['preview'])
+        ->assertJsonPath('data.managers.3.packages.1.tool_id', $tool->id);
+    expect($node->tools()->count())->toBe(1);
+});

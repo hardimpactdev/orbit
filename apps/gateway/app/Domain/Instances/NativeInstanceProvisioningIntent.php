@@ -23,8 +23,7 @@ final readonly class NativeInstanceProvisioningIntent
 {
     public function assertCreateSupported(Project $project, Node $node, bool $database): void
     {
-        if ($database || $project->type->isWebServing() || TaskVm::forNode($node) !== null
-            || $project->processDefinitions()->exists() || $project->scheduleDefinitions()->exists()) {
+        if ($database || $project->type->isWebServing() || TaskVm::forNode($node) !== null) {
             $this->unavailable();
         }
     }
@@ -57,15 +56,15 @@ final readonly class NativeInstanceProvisioningIntent
             'repository' => $input['repository'], 'checkout' => $instance->checkout_path,
             'root' => $input['source_root'], 'user' => $input['user'],
             'prepare_id' => $input['prepare_id'], 'seed_repository' => $input['seed_repository'],
-        ], 'resolve' => ['instance_name' => $instance->name, 'default_branch' => $input['default_branch'],
-            'branch_override' => $input['branch_override'], 'seed_commit' => $input['seed_commit'],
+        ], 'resolve' => ['default_branch' => $input['default_branch'],
+            'branch' => $input['branch_override'] ?? ($instance->name === 'default' ? $input['default_branch'] : $instance->name),
+            'seed_commit' => $input['seed_commit'],
             'network' => true, 'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https']))],
             'setup' => ['instance_id' => $instance->id, 'list' => 'setup',
                 ...app(StartInstanceStepListAction::class)->appStepAdmission($instance, LifecyclePhase::Setup)],
             'already_active' => $instance->status === InstanceState::Active && ! $instance->first_setup_pending,
-            'retained_source' => in_array($instance->status, [InstanceState::Active, InstanceState::SourceResolved], true) && is_bool($instance->source_is_laravel) ? ['branch' => $instance->branch,
-                'commit' => $instance->starting_commit, 'php_version' => $instance->selected_php_version,
-                'laravel' => $instance->source_is_laravel] : null];
+            'retained_source' => in_array($instance->status, [InstanceState::Active, InstanceState::SourceResolved], true) && is_string($instance->starting_commit)
+                ? ['commit' => $instance->starting_commit] : null];
     }
 
     /** @param array<string,mixed> $input
@@ -102,7 +101,6 @@ final readonly class NativeInstanceProvisioningIntent
             'node_id' => $instance->node_id, 'node_user' => $instance->node->user,
             'platform' => $instance->node->platform,
             'architecture' => MachineArchitecture::normalize($instance->node->architecture) ?? $this->unavailable(),
-            'vp_materialize' => app(ToolManagerIntent::class)->input($instance->node, ToolManagerName::Vp)['materialize'] ?? [],
             'environment' => $environment, 'user' => $user, 'checkout' => $instance->checkout_path,
             'application' => ApplicationDirectory::resolve($instance->checkout_path, $instance->root ?? $instance->project->root),
             'project_type' => $instance->project->type->value,

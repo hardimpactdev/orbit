@@ -22,6 +22,7 @@ use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Metrics\ServiceMetricsProjection;
 use App\Infrastructure\Processes\DockerProcessRenderer;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Process;
@@ -29,12 +30,15 @@ use App\Models\Process;
 /** Role-owned runtime intent. Capture never discovers accounts or executes a host command. */
 final readonly class NodeRoleRuntimeInput
 {
+    /** The swamp role's worker instances: two, so one drains and restarts while the other runs (ADR 0243). */
+    public const array SwampWorkers = ['a', 'b'];
+
     public function __construct(private AgentDelivery $agents, private ProcessTargetResolver $targets,
         private DockerProcessRenderer $docker, private RecordProcessIntentAction $processes, private ProcessSpecification $specifications,
         private AnalyticsRoleSettingsRepository $analytics, private AnalyticsStorageProcessGuard $storage,
         private AnalyticsSecretManager $analyticsSecrets, private MetricsCredentialManager $metricsSecrets,
         private WebSocketCredentialManager $websocketSecrets, private MetricsExporterProjection $exporters,
-        private ServiceMetricsProjection $services) {}
+        private ServiceMetricsProjection $services, private SwampSshExecutionInput $ssh) {}
 
     /** Record-only preparation runs in the parent admission transaction, before immutable capture. */
     public function prepare(Node $node, NodeRole $assignment): void
@@ -71,6 +75,11 @@ final readonly class NodeRoleRuntimeInput
     public function capture(Node $node, NodeRole $assignment): ?array
     {
         $this->assignment($node, $assignment);
+        if ($assignment->role === RoleName::Swamp) {
+            return ['role' => $assignment->role->value, 'node_id' => $node->id, 'assignment_id' => $assignment->id,
+                'agent_sha256' => $this->agents->pin($node), 'user' => $node->user, 'workers' => self::SwampWorkers,
+                'units' => SwampRoleUnits::for($node->user, $node->id), 'ssh_execution' => $this->ssh->forNode($node)];
+        }
         if (! in_array($assignment->role, [RoleName::Metrics, RoleName::Analytics, RoleName::WebSocket], true)) {
             return null;
         }
@@ -120,6 +129,7 @@ final readonly class NodeRoleRuntimeInput
         return match ($role) {
             RoleName::Metrics => [...$input, 'address' => $node->wireguard_ip],
             RoleName::WebSocket => [...$input, 'install_path' => config('orbit.websocket.install_path')],
+            RoleName::Swamp => [...$input, 'workers' => self::SwampWorkers],
             RoleName::Analytics => [...$input, 'process_id' => $this->plausible($node)->id,
                 'name' => $this->docker->containerName($this->plausible($node))],
             default => null,

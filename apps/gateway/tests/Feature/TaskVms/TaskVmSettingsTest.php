@@ -40,19 +40,34 @@ function task_vms_off(array $values = []): void
     task_vm_node_hosts(config('task_vms.incus.hosts', []));
 }
 
-/** The config file's `park_after_minutes` while its environment value is `$value`, or unset for null. */
-function task_vm_park_after_minutes_from_env(?string $value): mixed
+/** The config file while one environment value is `$value`, or unset for null.
+ *
+ * @return array<string, mixed>
+ */
+function task_vm_config_from_env(string $key, ?string $value): array
 {
-    $key = 'ORBIT_TASK_VMS_PARK_AFTER_MINUTES';
+    $saved = [$_ENV[$key] ?? null, $_SERVER[$key] ?? null, getenv($key)];
+    unset($_ENV[$key], $_SERVER[$key]);
+    putenv($key);
     if ($value !== null) {
         putenv("{$key}={$value}");
         $_ENV[$key] = $_SERVER[$key] = $value;
     }
     try {
-        return (require config_path('task_vms.php'))['park_after_minutes'];
+        return require config_path('task_vms.php');
     } finally {
         putenv($key);
         unset($_ENV[$key], $_SERVER[$key]);
+        [$env, $server, $process] = $saved;
+        if ($env !== null) {
+            $_ENV[$key] = $env;
+        }
+        if ($server !== null) {
+            $_SERVER[$key] = $server;
+        }
+        if ($process !== false) {
+            putenv("{$key}={$process}");
+        }
     }
 }
 
@@ -72,7 +87,7 @@ describe('defaults', function (): void {
         $config = config_without_env('task_vms.php', [
             'ORBIT_TASK_VMS_ENABLED', 'ORBIT_TASK_VMS_DEV_CLUSTER_ID', 'ORBIT_TASK_VMS_WIREGUARD_RANGE', 'ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN',
             'ORBIT_TASK_VMS_PI_ARTIFACT_PATH', 'ORBIT_TASK_VMS_PI_ARTIFACT_SHA256', 'ORBIT_TASK_VMS_PI_MODELS', 'ORBIT_TASK_VMS_INCUS_HOSTS',
-            'ORBIT_TASK_VMS_PARK_AFTER_MINUTES', 'ORBIT_TASK_VMS_SWAMP_HOST',
+            'ORBIT_TASK_VMS_PARK_AFTER_MINUTES', 'ORBIT_TASK_VMS_SWAMP_HOST', 'ORBIT_TASK_VMS_MEDIUM_PROJECTS', 'ORBIT_TASK_VMS_LARGE_PROJECTS',
         ]);
         config(['task_vms' => $config]);
 
@@ -84,7 +99,7 @@ describe('defaults', function (): void {
     });
 
     it('reads park_after_minutes as a whole number of minutes, 30 by default', function (?string $value, int $minutes): void {
-        task_vms_off(['park_after_minutes' => task_vm_park_after_minutes_from_env($value)]);
+        task_vms_off(['park_after_minutes' => task_vm_config_from_env('ORBIT_TASK_VMS_PARK_AFTER_MINUTES', $value)['park_after_minutes']]);
 
         expect(TaskVmSettings::fromConfig()->parkAfterMinutes)->toBe($minutes);
     })->with([
@@ -94,8 +109,21 @@ describe('defaults', function (): void {
         'the maximum' => ['10080', 10080],
     ]);
 
+    it('reads size grants from the environment with the same JSON list parser', function (string $key, string $property, ?string $value, array $ids): void {
+        $config = task_vm_config_from_env('ORBIT_TASK_VMS_'.strtoupper($key), $value);
+        task_vms_off([$key => $config[$key]]);
+
+        expect(TaskVmSettings::fromConfig()->{$property})->toBe($ids);
+    })->with([
+        'medium unset' => ['medium_projects', 'mediumProjectIds', null, []],
+        'large unset' => ['large_projects', 'largeProjectIds', null, []],
+        'large empty' => ['large_projects', 'largeProjectIds', '', []],
+        'medium ids' => ['medium_projects', 'mediumProjectIds', '[46,46,3]', [46, 3]],
+        'large ids' => ['large_projects', 'largeProjectIds', '[46,46,3]', [46, 3]],
+    ]);
+
     it('passes 0 from the environment through to validation instead of the default', function (): void {
-        task_vms_off(['park_after_minutes' => task_vm_park_after_minutes_from_env('0')]);
+        task_vms_off(['park_after_minutes' => task_vm_config_from_env('ORBIT_TASK_VMS_PARK_AFTER_MINUTES', '0')['park_after_minutes']]);
 
         expect_invalid_task_vm_config('park_after_minutes must be a whole number of minutes from 1 to 10080.');
     });
@@ -190,15 +218,22 @@ describe('off but configured', function (): void {
         'range outside the VPN subnet' => [['wireguard_range' => '10.45.0.128/25', 'dev_cluster_id' => 4], 'inside the VPN subnet [10.44.0.0/24]'],
         'range as large as the VPN subnet' => [['wireguard_range' => '10.44.0.0/24', 'model_proxy_origin' => 'http://10.44.0.3:8317'], 'inside the VPN subnet'],
         'bridge overlapping the VPN subnet' => [task_vm_hosts(['cidr' => '10.44.0.0/16']), 'must not overlap the VPN subnet [10.44.0.0/24]'],
+        'malformed large projects JSON' => [['large_projects' => null], 'large_projects must be a JSON list of Project ids'],
+        'large project not an id' => [['large_projects' => ['46']], 'large_projects must be a JSON list of Project ids'],
+        'large project not positive' => [['large_projects' => [0]], 'large_projects must be a JSON list of Project ids'],
+        'large projects not a list' => [['large_projects' => ['project' => 46]], 'large_projects must be a JSON list of Project ids'],
         'malformed medium projects JSON' => [['medium_projects' => null], 'medium_projects must be a JSON list of Project ids'],
         'medium project not an id' => [['medium_projects' => ['46']], 'medium_projects must be a JSON list of Project ids'],
     ]);
 
-    it('reads the medium Projects once, without duplicates', function (): void {
-        task_vms_off(['medium_projects' => [46, 46, 3]]);
+    it('reads the size grant Projects once, without duplicates', function (string $key, string $property): void {
+        task_vms_off([$key => [46, 46, 3]]);
 
-        expect(TaskVmSettings::fromConfig()->mediumProjectIds)->toBe([46, 3]);
-    });
+        expect(TaskVmSettings::fromConfig()->{$property})->toBe([46, 3]);
+    })->with([
+        'medium' => ['medium_projects', 'mediumProjectIds'],
+        'large' => ['large_projects', 'largeProjectIds'],
+    ]);
 });
 
 describe('enabled', function (): void {

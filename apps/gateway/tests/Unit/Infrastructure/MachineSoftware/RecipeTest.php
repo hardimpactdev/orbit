@@ -307,7 +307,8 @@ describe('machine recipe structure and identity', function (): void {
         expect(array_values(array_intersect($document['base'], $topology)))->toBe($topology)
             ->and($recipe->tools['incus']->version)->toBe($document['tools']['incus']['version']);
         $imagePackages = ['openssh-server', ...TaskVmCloudInit::WorkspaceTools, ...$topology, ...TaskVmCloudInit::ChromiumLibraries];
-        $base = [...array_diff($development, ['php8.4-opentelemetry', 'php8.5-opentelemetry']), ...$imagePackages, 'rust', 'rust-std', 'cargo', 'clippy', 'rustfmt', 'pi', 'swamp'];
+        // Topology Nodes copy the base image. Its gateway VM holds the vpn role (dnsmasq) and serves topology Git over HTTP (fcgiwrap).
+        $base = [...array_diff($development, ['php8.4-opentelemetry', 'php8.5-opentelemetry']), ...$imagePackages, 'dnsmasq', 'fcgiwrap', 'rust', 'rust-std', 'cargo', 'clippy', 'rustfmt', 'pi', 'swamp'];
         $profiles = [
             'operator' => $common,
             'gateway' => [...$common, 'caddy', 'logrotate', ...$php85],
@@ -316,6 +317,7 @@ describe('machine recipe structure and identity', function (): void {
             'app-dev' => $development,
             'base' => $base,
             'ci-runner' => [...$common, ...RecipeLoader::IncusPackages, 'acl', 'attr', 'git', 'unzip', ...$php85],
+            'swamp' => [...$common, 'caddy'],
         ];
         expect($php)->toBe([...array_values(array_unique([...$recipe->php('8.5')->packages, ...$recipe->php('8.4')->packages])), 'dpkg-repack']);
         foreach ($profiles as $role => $expected) {
@@ -879,4 +881,17 @@ it('selects a pinned root-owned headless browser only for app-prod and rejects u
         };
         expect(fn () => $loader->decode(json_encode($changed, JSON_THROW_ON_ERROR)))->toThrow(InvalidArgumentException::class);
     }
+});
+
+it('pins the Swamp release that the node worker and swamp/.swamp.yaml pin', function (): void {
+    preg_match('/^swampVersion: (\S+)$/m', (string) file_get_contents(base_path('../../swamp/.swamp.yaml')), $serve);
+    preg_match('/version: "([^"]+)",\s*sha256: "([0-9a-f]{64})"/', (string) file_get_contents(base_path('../../swamp/extensions/behaviors/node-worker/config.ts')), $worker);
+    $swamp = machine_recipe_document()['tools']['swamp'];
+
+    expect($serve)->toHaveCount(2)
+        ->and($worker)->toHaveCount(3)
+        ->and($swamp['version'])->toBe($serve[1])
+        ->and($swamp['version'])->toBe($worker[1])
+        ->and($swamp['artifacts']['amd64']['sha256'])->toBe($worker[2])
+        ->and($swamp['artifacts']['amd64']['url'])->toBe("https://github.com/swamp-club/swamp/releases/download/v{$serve[1]}/swamp-linux-x86_64");
 });

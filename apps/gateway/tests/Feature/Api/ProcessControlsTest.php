@@ -9,7 +9,6 @@ use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessRuntimeLease;
-use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Caddy\Build\CaddyListenerRule;
 use App\Infrastructure\Caddy\Build\CaddySite;
@@ -119,7 +118,7 @@ it('starts a native stop on an executor Node without a Gateway runtime lease or 
     $this->process->update(['desired_state' => 'running']);
     $response = $this->postJson('/api/v1/processes/'.$this->process->id.'/stop')->assertAccepted()->assertJsonPath('data.kind', 'process.stop');
     $operation = Operation::query()->findOrFail($response->json('data.id'));
-    expect($operation->input['agent_sha256'])->toBe(app(AgentDelivery::class)->pin($this->node));
+    expect($operation->input)->not->toHaveKey('agent_sha256');
     expect($operation->state)->not->toHaveKey('process_control_writer');
     expect($operation->fresh()->state['swamp_run_id'])->toBe($this->runId);
     expect($operation->lock_key)->toBeNull();
@@ -172,10 +171,10 @@ it('refreshes same-root public Caddy input on every Vite read without saving the
     $before = $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertDontSee('private-command')->json('data.input');
     $this->node->update(['name' => 'fresh-vite-port-owner']);
     $after = $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertDontSee('private-command')->json('data.input');
-    expect($after['caddy_publication']['node_id'])->toBe($this->operation->node_id)
-        ->and($after['caddy_publication']['caddy']['content'])->toContain('fresh-vite-port-owner')
-        ->and($after['caddy_publication']['caddy']['version'])->not->toBe($before['caddy_publication']['caddy']['version'])
-        ->and($after['vite_plan'])->toBe(['admitted' => 'public-plan'])
+    expect($after['intent']['caddy_publication']['node_id'])->toBe($this->operation->node_id)
+        ->and($after['intent']['caddy_publication']['caddy']['content'])->toContain('fresh-vite-port-owner')
+        ->and($after['intent']['caddy_publication']['caddy']['version'])->not->toBe($before['intent']['caddy_publication']['caddy']['version'])
+        ->and($after['intent']['vite_plan'])->toBe(['admitted' => 'public-plan'])
         ->and($this->operation->fresh()->input)->toBe($original);
     $this->postJson($this->path.'/primitive', ['run_id' => $this->runId])->assertUnprocessable();
 });

@@ -541,7 +541,7 @@ function FirewallPage({ rule }: { rule: FirewallRule }) {
             <Properties
                 testId="record-properties"
                 properties={[
-                    { name: "Name", value: rule.name },
+                    { name: "Label", value: rule.label },
                     { name: "Port", value: rule.port },
                     { name: "Protocol", value: rule.protocol },
                     { name: "Action", value: rule.action },

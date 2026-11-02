@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Http\Requests\Clusters;
 
 use App\Data\Clusters\UpdateClusterData;
-use App\Domain\Clusters\ClusterState;
 use App\Domain\Clusters\ClusterTld;
 use App\Models\Cluster;
 use App\Rules\ValidClusterTld;
@@ -41,7 +40,7 @@ final class UpdateClusterRequest extends FormRequest
                 new ValidClusterTld,
                 Rule::unique('clusters', 'tld')->ignore($clusterId),
             ],
-            'state' => ['sometimes', Rule::enum(ClusterState::class)],
+            'state' => ['prohibited'],
         ];
     }
 
@@ -54,8 +53,8 @@ final class UpdateClusterRequest extends FormRequest
             name: is_string($validated['name'] ?? null) ? $validated['name'] : null,
             tldProvided: array_key_exists('tld', $validated),
             tld: is_string($validated['tld'] ?? null) ? $validated['tld'] : null,
-            stateProvided: array_key_exists('state', $validated),
-            state: is_string($validated['state'] ?? null) ? ClusterState::from($validated['state']) : null,
+            stateProvided: false,
+            state: null,
         );
     }
 }

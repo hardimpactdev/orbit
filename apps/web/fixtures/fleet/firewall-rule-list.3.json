@@ -8,7 +8,7 @@
                 "id": 3,
                 "node_id": 3,
                 "node": "app-prod",
-                "name": "ssh-wireguard",
+                "label": "ssh-wireguard",
                 "action": "allow",
                 "source": "10.44.0.0/16",
                 "protocol": "tcp",

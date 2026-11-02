@@ -62,7 +62,6 @@ export function roleMetricsJobs(
     },
   });
   const placed = (nodeId: string) => ({
-    target: expr('"orbit-node-" + string(' + nodeId + ")"),
     labels: { node: expr("string(" + nodeId + ")") },
   });
   const stepGuard = (condition?: string) =>

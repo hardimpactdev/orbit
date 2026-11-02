@@ -592,3 +592,17 @@ it('shows the caller Node name and retains a removed caller ID in human output',
 
     expect(Artisan::output())->toContain('Caller Node')->toContain($label);
 })->with(['named' => ['services', 'services'], 'removed' => [null, 'Removed Node (8)']]);
+
+it('shows the failed native step and its safe detail in human and JSON operation output', function (): void {
+    MockClient::global([ShowOperationRequest::class => cli_operation_response(cli_operation([
+        'status' => 'failed', 'failed_step' => 'create-mint', 'error_code' => 'operation.native_failed',
+        'error' => ['code' => 'operation.native_failed', 'detail' => 'instance.git_mint_unavailable'],
+    ]))]);
+
+    Artisan::call('operation:show', ['operation' => '42', '--json' => true]);
+    $json = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+    expect($json['error']['detail'])->toBe('instance.git_mint_unavailable');
+
+    Artisan::call('operation:show', ['operation' => '42', '--no-interaction' => true]);
+    expect(Artisan::output())->toContain('create-mint', 'instance.git_mint_unavailable');
+});

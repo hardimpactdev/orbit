@@ -55,9 +55,9 @@ elif source.resolve() != destination.resolve():shutil.copyfile(source,destinatio
         self.native_env['FIXTURE_REPOSITORY'] = str(self.candidate)
         self.workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-instance-clone.yaml').read_text())
         for job in self.workflow['jobs']:
-            self.assertEqual(job.pop('target'), 'orbit-node-209')
+            self.assertEqual(job.pop('labels'), {'role': 'swamp'})
             for step in job['steps']:
-                self.assertEqual(step.pop('target'), 'orbit-node-209')
+                self.assertEqual(step.pop('labels'), {'role': 'swamp'})
                 task = step['task']
                 if task.get('behaviorType') == '@swamp/ssh':
                     task['globalArgs'].update(sshBinary=str(ssh), scpBinary=str(scp))

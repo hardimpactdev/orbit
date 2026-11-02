@@ -19,12 +19,12 @@ use App\Models\Project;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
-    $this->gateway = $this->markAsGateway(Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1']));
-    $this->node = Node::query()->create(['name' => 'database-dev', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'amd64', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => '10.44.0.9']);
+    $this->gateway = $this->markAsGateway(Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND', 'name' => 'gateway', 'status' => 'active', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1']));
+    $this->node = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND', 'name' => 'database-dev', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'amd64', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => '10.44.0.9']);
     $this->node->accessibleNodes()->attach($this->gateway);
     config(['swamp.run_token' => 'fake.token']);
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
-    $process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $this->node->id, 'name' => 'proof', 'runtime' => 'docker', 'runtime_config' => [], 'restart_policy' => 'unless-stopped', 'desired_state' => 'running', 'status' => 'active']);
+    $process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $this->node->id, 'name' => 'proof', 'runtime' => 'docker', 'runtime_config' => ['image' => 'postgres:18'], 'restart_policy' => 'unless-stopped', 'desired_state' => 'running', 'status' => 'active']);
     $this->server = DatabaseServer::query()->create(['slug' => 'proof', 'driver' => 'pgsql', 'node_id' => $this->node->id, 'process_id' => $process->id, 'tag' => '18', 'port' => 5434, 'root_password' => 'private-root-sentinel', 'status' => 'active']);
     $this->runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
     $socket = $this->socket = new FakeRoutePublicationSocket;
@@ -39,7 +39,7 @@ it('starts removal without a relay or target hold and deletes only after native 
     expect($this->operation->state)->toMatchArray(['swamp_run_id' => $this->runId]);
     expect($this->operation->lock_key)->toBeNull();
     $this->assertDatabaseCount('database_execution_intents', 0);
-    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.intent.process_id', $this->server->process_id)->assertJsonMissingPath('data.input.agent_sha256');
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.intent.container', 'orbit-process-'.$this->server->process_id.'-proof')->assertJsonMissingPath('data.input.agent_sha256');
     $this->postJson($this->path.'/primitive', ['run_id' => $this->runId])->assertUnprocessable();
     $this->assertModelExists($this->server);
     $processId = $this->server->process_id;
@@ -53,7 +53,7 @@ it('starts removal without a relay or target hold and deletes only after native 
 it('projects admitted Process deletion without rechecking mutable server state', function (): void {
     $processId = $this->server->process_id;
     $this->server->update(['process_id' => null]);
-    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.intent.process_id', $processId);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.intent.container', 'orbit-process-'.$processId.'-proof');
     $this->postJson($this->path.'/result', $this->finished)->assertOk();
     $this->assertModelMissing($this->server);
     $this->assertDatabaseMissing('processes', ['id' => $processId]);
@@ -70,19 +70,19 @@ it('keeps records on a bounded native failure', function (): void {
     expect($this->server->fresh()->status->value)->toBe('active');
 });
 
-it('uses a native no-op for a failed server without a Process', function (): void {
+it('removes a server without a Process at once with no run (R1)', function (): void {
     $server = DatabaseServer::query()->create(['slug' => 'empty', 'driver' => 'mysql', 'node_id' => $this->node->id, 'tag' => '8.4', 'port' => 3333, 'root_password' => 'private-empty', 'status' => 'failed']);
+    $sent = count($this->socket->sent);
     $operation = app(DestroyDatabaseServerAction::class)->execute($server);
-    $path = '/api/v1/direct-operations/'.$operation->id;
-    $this->getJson($path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.intent.process_id', null)->assertJsonPath('data.input.intent.container', null);
-    $this->postJson($path.'/result', $this->finished)->assertOk();
+    expect([$operation->status->value, $operation->result, $operation->lock_key])->toBe(['succeeded', ['backend' => 'absent'], null]);
+    expect(count($this->socket->sent))->toBe($sent);
     $this->assertModelMissing($server);
 });
 
 it('marks cancelled removal failed without deleting the Server or Process', function (): void {
     $this->postJson($this->path.'/result', [...$this->finished, 'status' => 'cancelled', 'result' => []])->assertOk();
     expect($this->server->fresh()->status->value)->toBe('failed');
-    expect($this->server->fresh()->failed_step)->toBe('database-apply');
+    expect($this->server->fresh()->failed_step)->toBeNull();
     $this->assertDatabaseHas('processes', ['id' => $this->server->process_id]);
 });
 
@@ -120,21 +120,18 @@ it('refuses a stale active server model before an Instance reservation after rem
     $this->assertDatabaseCount('database_connections', 0);
 });
 
-it('preserves the operator Process during admitted record-only cleanup', function (): void {
-    $processId = $this->server->process_id;
-    $this->operation->update(['input' => [...$this->operation->input, 'record_only' => true]]);
-    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()
-        ->assertJsonPath('data.input.intent.process_id', null)->assertJsonPath('data.input.intent.container', null);
-    $this->postJson($this->path.'/result', $this->finished)->assertOk();
-    $this->assertModelMissing($this->server);
-    $this->assertDatabaseHas('processes', ['id' => $processId]);
+it('records the failed step and error code of a failed removal on the server', function (): void {
+    $this->postJson($this->path.'/result', [...$this->finished, 'status' => 'failed', 'error_code' => 'database.server_remove_failed',
+        'result' => ['failed_step' => 'Stop and remove them', 'error_code' => 'database.server_remove_failed']])->assertOk();
+    expect([$this->server->fresh()->status->value, $this->server->fresh()->failed_step])->toBe(['failed', 'Stop and remove them']);
+    $this->assertDatabaseHas('processes', ['id' => $this->server->process_id]);
 });
 
 it('passes full public removal inputs and projects only bounded fields', function (): void {
     $sent = array_last($this->socket->sent);
     $input = $sent['payload']['inputs'];
-    expect($input['intent']['process_id'])->toBe($this->server->process_id);
-    expect($input['intent']['ssh'])->toMatchArray(['host' => '10.44.0.9', 'user' => 'orbit']);
+    expect($input['intent']['container'])->toBe('orbit-process-'.$this->server->process_id.'-proof');
+    expect($input['intent']['ssh_execution']['target'])->toMatchArray(['host' => '10.44.0.9', 'user' => 'orbit']);
     expect((array) $input['execution_secrets'])->toBe([]);
     expect(json_encode($input))->not->toContain('private-root-sentinel');
     $response = $this->postJson($this->path.'/result', [...$this->finished, 'result' => ['backend' => 'absent', 'private' => 'private-sentinel']])->assertOk();

@@ -23,6 +23,10 @@ export function firewallLineTone(line: {
     return "ok";
 }
 
+/** A rule's identity on its Node, as the Gateway names it. */
+export const firewallIdentity = (rule: FirewallRule): string =>
+    `${rule.port}/${rule.protocol} from ${rule.source}`;
+
 export function firewallPort(port: string, protocol: string): string {
     return port === "any" ? "any" : `${port}/${protocol}`;
 }

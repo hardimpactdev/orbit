@@ -87,7 +87,9 @@ final readonly class NodeRoleRuntimeSource implements OperationSecretSource
             $this->refuse();
         }
         if (! in_array($snapshot['role'] ?? null, ['metrics', 'analytics', 'websocket'], true)) {
-            if (($snapshot['runtime'] ?? null) !== null) {
+            // The swamp role's workers use Node-placed tokens, so its runtime names no private material.
+            $runtime = $snapshot['runtime'] ?? null;
+            if ($runtime !== null && (($snapshot['role'] ?? null) !== RoleName::Swamp->value || array_key_exists('material', ValidatedData::object($runtime)))) {
                 $this->refuse();
             }
 

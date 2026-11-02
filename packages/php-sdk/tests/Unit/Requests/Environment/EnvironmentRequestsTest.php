@@ -8,6 +8,7 @@ use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\Environment\ImportInstanceEnvironmentRequest;
 use Orbit\Sdk\Requests\Environment\SynchronizeInstanceEnvironmentRequest;
 use Orbit\Sdk\Requests\Environment\UpdateInstanceEnvironmentRequest;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Enums\Method;
 use Saloon\Exceptions\Request\FatalRequestException;
 use Saloon\Http\Faking\MockClient;
@@ -15,7 +16,7 @@ use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\PendingRequest;
 
 describe('Instance environment requests', function (): void {
-    it('sends the three exact methods routes and JSON object payloads', function (): void {
+    it('sends the exact import and update methods routes and JSON object payloads', function (): void {
         $cases = [
             [
                 new ImportInstanceEnvironmentRequest(17),
@@ -38,13 +39,6 @@ describe('Instance environment requests', function (): void {
                 ['value' => 'false'],
                 '{"value":"false"}',
             ],
-            [
-                new SynchronizeInstanceEnvironmentRequest('app.example.test'),
-                Method::POST,
-                '/api/v1/instances/app.example.test/environment/sync',
-                [],
-                '{}',
-            ],
         ];
 
         foreach ($cases as [$request, $method, $endpoint, $body, $serializedBody]) {
@@ -66,6 +60,43 @@ describe('Instance environment requests', function (): void {
                 ->and($pending?->headers()->get('Content-Type'))
                 ->toBe('application/json');
         }
+    });
+
+    it('starts synchronization with an empty JSON object and returns the started operation', function (): void {
+        $request = new SynchronizeInstanceEnvironmentRequest('app.example.test');
+        $mock = new MockClient([
+            SynchronizeInstanceEnvironmentRequest::class => MockResponse::make([
+                'data' => [
+                    'id' => 901,
+                    'kind' => 'instance.sync_environment',
+                    'target_type' => 'instance',
+                    'target_id' => 17,
+                    'input' => ['instance_id' => 17],
+                    'status' => 'running',
+                    'sequence' => 1,
+                    'current_step' => null,
+                    'failed_step' => null,
+                    'error_code' => null,
+                    'result' => null,
+                    'cancel_requested' => false,
+                    'attempts' => 0,
+                    'poll_after_seconds' => 2,
+                ],
+                'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111'],
+            ], 202),
+        ]);
+        $operation = environment_connector($mock)->send($request)->dto();
+        $pending = $mock->getLastPendingRequest();
+
+        expect($request->getMethod())->toBe(Method::POST)
+            ->and($request->resolveEndpoint())->toBe('/api/v1/instances/app.example.test/environment/sync')
+            ->and((string) $pending?->createPsrRequest()->getBody())->toBe('{}')
+            ->and($pending?->headers()->get('Idempotency-Key'))->toBeNull()
+            ->and($operation)->toBeInstanceOf(OperationResponse::class)
+            ->and($operation->id)->toBe(901)
+            ->and($operation->kind)->toBe('instance.sync_environment')
+            ->and($operation->status)->toBe('running')
+            ->and($operation->requestId)->toBe('11111111-1111-4111-8111-111111111111');
     });
 
     it('encodes selector and key segments exactly once without resolving either input', function (): void {
@@ -310,7 +341,6 @@ function environment_operation(GatewayRequest $request): string
     return match ($request::class) {
         ImportInstanceEnvironmentRequest::class => 'import',
         UpdateInstanceEnvironmentRequest::class => 'update',
-        SynchronizeInstanceEnvironmentRequest::class => 'sync',
         default => throw new InvalidArgumentException('Unknown environment request.'),
     };
 }

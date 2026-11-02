@@ -32,7 +32,7 @@ export function roleRemovalJobs(afterJob: string) {
       dependsOn: [dep(previous)],
       steps: [{ name, writes: true, ...placement, task: {
         ...task(method, extra),
-        ...(placement.forEach ? { behaviorName: expr('"cert-remove-" + run.id + "-" + string(self._index)') } : {}),
+        ...(placement.forEach ? { behaviorName: expr('"cert-remove-" + string(self.participant)') } : {}),
       } }],
     });
     return name + "_job";
@@ -61,7 +61,6 @@ export function roleRemovalJobs(afterJob: string) {
       stage,
       target_node_id: expr(node),
     }, {
-      target: expr('"orbit-node-" + string(' + node + ")"),
       labels: { node: expr("string(" + node + ")") },
       ...(certificates
         ? {
@@ -130,7 +129,6 @@ export function roleRemovalWorkflow() {
       required: ["operation_id", "node_id", "kind"],
       additionalProperties: false,
     },
-    target: expr('"orbit-node-" + string(inputs.node_id)'),
     labels: { node: expr("string(inputs.node_id)") },
     jobs,
   };

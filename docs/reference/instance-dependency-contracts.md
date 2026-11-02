@@ -18,7 +18,7 @@ The producer is `orbit-gateway`. It publishes deterministic Project/ref indexes 
 
 ### Scheduled Project intent
 
-The Gateway publishes the complete public Project, group and active-operation snapshot through native `workflow.trigger.set` inputs for `maintenance-projects`. The native schedule selects daily detection, weekly routine work and bounded PR observations. Its steps read no Gateway state and post no admissions. The shared commit-feed subscriber delivers its terminal `maintenance/result` to the Projects family, which records replay identity and uses normal guarded admission for the selected Project operation.
+The Gateway publishes the complete public Project, group and active-operation snapshot through native `workflow.trigger.set` inputs for `maintenance-projects`. The native schedule runs hourly and selects daily detection, weekly routine work and bounded PR observations. Its steps read no Gateway state and post no admissions. The shared commit-feed subscriber delivers its terminal `maintenance/result` to the Projects family, which records replay identity and uses normal guarded admission for the selected Project operation.
 
 A schedule input producer declares `publishes_inputs: true` in its family `scheduled-results.php`. Only that exact workflow receives the native workflow-write scope needed by `workflow.trigger.set`, in addition to run/read. Context workflows and other Operations retain run/read. The source grant validator rejects missing producer write authority, write on other workflows, duplicates and admin authority.
 

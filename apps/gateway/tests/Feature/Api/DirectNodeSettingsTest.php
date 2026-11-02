@@ -21,7 +21,7 @@ beforeEach(function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
     $this->gateway = $gateway;
     $this->node = Node::query()->forceCreate(['id' => 209, 'name' => 'canary', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.9', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64', 'ssh_host_fingerprint' => 'SHA256:test', 'settings' => ['apps' => ['path' => '/srv/old']]]);
-    $this->input = ['agent_pin' => str_repeat('a', 64), 'root' => '/srv/new', 'user' => 'orbit', 'create_missing' => true,
+    $this->input = ['ssh' => ['identity_file' => '/run/swamp/id', 'target' => ['host' => '192.0.2.9']], 'root' => '/srv/new', 'user' => 'orbit', 'group' => 'orbit',
         'protected_roots' => ['/etc'], 'managed_checkouts' => [],
         'settings' => ['apps' => ['path' => '/srv/new']], 'settings_patch' => ['apps' => true, 'task_vms' => false]];
     $this->run = 'a075eb23-7ac4-4487-80d1-57a038a92676';
@@ -29,7 +29,7 @@ beforeEach(function (): void {
         'node_id' => $this->node->id, 'status' => OperationStatus::Queued, 'sequence' => 1, 'input' => $this->input,
         'state' => ['node_settings_writer' => 'direct', 'swamp_run_id' => $this->run]]);
     $this->body = ['run_id' => $this->run, 'status' => 'succeeded', 'started_at' => '2026-10-30T12:00:00.000Z',
-        'finished_at' => '2026-10-30T12:00:01.000Z', 'error_code' => null, 'result' => ['prepared' => true]];
+        'finished_at' => '2026-10-30T12:00:01.000Z', 'error_code' => null, 'result' => ['steps' => ['Prove the apps folder' => ['status' => 'succeeded']]]];
     $this->socket = new FakeRoutePublicationSocket;
     $this->socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => [
         'kind' => 'started', 'workflowName' => 'operation-node-settings', 'runId' => $this->run,
@@ -48,9 +48,22 @@ it('projects settings idempotently and preserves other members', function (): vo
 });
 
 it('preserves settings on failed and cancelled results', function (string $status): void {
-    app(NodeSettingsProjection::class)->apply($this->operation, [...$this->body, 'status' => $status, 'result' => $status === 'failed' ? ['error_code' => 'node.settings_root_failed'] : [], 'error_code' => $status === 'failed' ? 'node.settings_root_failed' : null]);
+    app(NodeSettingsProjection::class)->apply($this->operation, [...$this->body, 'status' => $status, 'result' => [], 'error_code' => $status === 'failed' ? 'operation.native_failed' : null]);
     expect($this->node->fresh()->settings)->toBe(['apps' => ['path' => '/srv/old']]);
 })->with(['failed', 'cancelled']);
+
+it('reports a failed Node step as the settings code and any other failure as native', function (string $step, string $code): void {
+    app(NodeSettingsProjection::class)->apply($this->operation, [...$this->body, 'status' => 'failed', 'result' => ['error_code' => 'operation.native_failed'],
+        'error_code' => 'operation.native_failed', 'failure' => ['failed_step' => $step, 'detail' => 'node.settings_root_failed: the root exists', 'stderr_recorded' => true]]);
+    expect($this->operation->fresh())->status->toBe(OperationStatus::Failed)->error_code->toBe($code)
+        ->and($this->node->fresh()->settings)->toBe(['apps' => ['path' => '/srv/old']]);
+})->with([['Create the apps folder', 'node.settings_root_failed'], ['Prove the apps folder', 'node.settings_root_failed'], ['An unrelated step', 'operation.native_failed']]);
+
+it('sends only the SSH target and the apps folder intent to Swamp', function (): void {
+    expect(app(NodeSettingsProjection::class)->input($this->operation))->toBe(['intent' => [
+        'ssh' => $this->input['ssh'], 'storage' => ['root' => '/srv/new', 'user' => 'orbit', 'group' => 'orbit'],
+    ]]);
+});
 
 it('preserves a task VM patch made after the apps intent was admitted', function (): void {
     $host = ['cidr' => '10.251.77.0/24', 'max_vms' => 4];

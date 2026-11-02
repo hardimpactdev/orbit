@@ -1,5 +1,7 @@
 import {
+  assert,
   assertEquals,
+  assertExists,
   assertRejects,
   assertStringIncludes,
 } from "jsr:@std/assert@1.0.19";
@@ -105,23 +107,6 @@ function fixture() {
         assertEquals(state.intent?.commit, (body as { commit: string }).commit);
         holder = operation;
         response = operation;
-      } else if (method === "POST" && path.endsWith("/events")) {
-        const pending = StateSchema.parse(data.get("state-7")).events.find((
-          e,
-        ) => e.key === key);
-        assertEquals(pending?.body, body);
-        const event = {
-          ...operation,
-          id: 200 + operations.size,
-          kind: "instance.policy_event",
-          target_type: "instance_policy",
-          input: { ...(body as Record<string, unknown>), caller_node_id: 2 },
-          status: "queued",
-          error_code: null,
-          result: null,
-        };
-        operations.set(event.id, event);
-        response = event;
       } else if (method === "PUT" && path.endsWith("/policy")) {
         const publication = body as Record<string, unknown>;
         if (
@@ -195,6 +180,7 @@ function fixture() {
   const behavior = automaticDeploy(client, () => fake.now);
   const { context } = createModelTestContext({ globalArgs: {} });
   const write = context.writeResource.bind(context);
+  const writes: Awaited<ReturnType<typeof write>>[] = [];
   const ctx = Object.assign(context, {
     readResource: (name: string) =>
       Promise.resolve(structuredClone(data.get(name) ?? null)),
@@ -205,7 +191,9 @@ function fixture() {
     ) => {
       behavior.resources[spec].schema.parse(value);
       data.set(name, structuredClone(value));
-      return await write(spec, name, value);
+      const handle = await write(spec, name, value);
+      writes.push(handle);
+      return handle;
     },
   });
   return {
@@ -217,6 +205,7 @@ function fixture() {
     operation,
     operations,
     requests,
+    writes,
     data,
     ctx,
     http,
@@ -230,8 +219,27 @@ function fixture() {
     state: () => StateSchema.parse(data.get("state-7") ?? {}),
     run: (filter: number[] = []) =>
       behavior.methods.tick.execute({ instances: filter }, ctx as never),
+    fire: () => fireOf(data),
+    /** A tick that records failures in its fire result; the workflow's assert step then fails the run. */
+    runFailed: async (filter: number[] = []) => {
+      await behavior.methods.tick.execute({ instances: filter }, ctx as never);
+      const { failures } = fireOf(data);
+      assert(failures.length > 0, "expected a recorded failure");
+      return failures;
+    },
   };
 }
+type Fire = {
+  events: { instance: number; key: string; body: Record<string, unknown> }[];
+  failures: { instance: number; error_code: string; message: string }[];
+};
+const fireOf = (data: Map<string, Record<string, unknown>>): Fire =>
+  JSON.parse(
+    String(data.get("fire")?.fire_json ?? '{"events":[],"failures":[]}'),
+  );
+/** Policy state written by a tick; every completed tick also writes its fire result. */
+const stateWrites = (f: { data: Map<string, unknown> }) =>
+  [...f.data.keys()].filter((name) => name !== "fire");
 const refusal = (code: string): Response => ({
   status: 409,
   body: { error: { code, message: "Refused", details: {} } },
@@ -240,6 +248,16 @@ const deployPosts = (f: ReturnType<typeof fixture>) =>
   f.requests.filter((r) =>
     r.method === "POST" && r.path.endsWith("/deploy/automatic")
   );
+Deno.test("native policy returns only the final production checkpoint handle", async () => {
+  const f = fixture();
+  const result = await f.run();
+  assertEquals(f.writes.length > 1, true);
+  // The state checkpoint, then this fire's result for the Gateway.
+  const [state, fire] = f.writes.slice(-2);
+  assertExists(fire);
+  assertEquals(result.dataHandles, [state, fire]);
+  assertEquals(deployPosts(f).length, 1);
+});
 function lostIntent(f: ReturnType<typeof fixture>) {
   f.data.set(
     "state-7",
@@ -266,7 +284,6 @@ Deno.test("live default discovers production, guards ownership, saves intent, ad
   const writes = f.requests.filter((r) => r.method !== "GET");
   assertEquals(writes.map((r) => [r.method, r.path]), [
     ["POST", "/api/v1/instances/7/deploy/automatic"],
-    ["POST", "/api/v1/instances/7/auto-deploy/events"],
     ["PUT", "/api/v1/instances/7/auto-deploy/policy"],
   ]);
   assertEquals(deployPosts(f)[0], {
@@ -288,18 +305,16 @@ Deno.test("live default discovers production, guards ownership, saves intent, ad
     pause: null,
   });
   assertEquals(f.state().intent?.operation_id, 100);
-  const event = f.operations.get(f.state().events[0].operation_id!)!;
-  Object.assign(event, {
-    status: "succeeded",
-    result: { webhook: { outcome: "sent" }, activity_id: 13 },
-  });
+  assertEquals(f.fire().events, [{
+    instance: 7,
+    key: "policy.7.activity.1",
+    body: f.state().events[0].body,
+  }]);
   await f.run();
   assertEquals(deployPosts(f).length, 1);
   assertEquals(f.state().result, "deploying");
-  assertEquals(f.state().events[0].receipt?.result, {
-    webhook: { outcome: "sent" },
-    activity_id: 13,
-  });
+  // The next fire carries only events it raised itself.
+  assertEquals(f.fire().events, []);
 });
 
 Deno.test("first live tick imports the public projection and preserves a stable since", async () => {
@@ -367,7 +382,7 @@ Deno.test("final publication conflict does not hide a failed policy decision", a
     if (path.endsWith("/head")) return { status: 500, body: {} };
     return undefined;
   });
-  await assertRejects(() => f.run(), AggregateError);
+  await f.runFailed();
   assertEquals(f.state().result, "failed");
   assertEquals(deployPosts(f), []);
 });
@@ -377,7 +392,7 @@ Deno.test("other final publication errors remain failed runs with the admission 
   f.intercept((method) =>
     method === "PUT" ? { status: 500, body: {} } : undefined
   );
-  await assertRejects(() => f.run(), AggregateError);
+  await f.runFailed();
   assertEquals(f.state().intent?.operation_id, 100);
   assertEquals(deployPosts(f).length, 1);
 });
@@ -472,7 +487,7 @@ Deno.test("discovery uses the Gateway eligibility filter and skips excluded Inst
     "/api/v1/instances?auto_deploy=true",
     "/api/v1/instances",
   ]);
-  assertEquals(f.data.size, 0);
+  assertEquals(stateWrites(f), []);
 });
 
 Deno.test("role refusal after the guard clears an unadmitted intent without a hold", async () => {
@@ -486,7 +501,7 @@ Deno.test("role refusal after the guard clears an unadmitted intent without a ho
   assertEquals(deployPosts(f).length, 1);
   assertEquals(f.state().intent, null);
   assertEquals(f.state().effect_hold, null);
-  assertEquals(f.requests.some((r) => r.path.endsWith("/events")), false);
+  assertEquals(f.fire().events, []);
   f.intercept((_method, path) =>
     path === "/api/v1/instances?auto_deploy=true"
       ? { status: 200, body: { data: [] } }
@@ -504,7 +519,7 @@ Deno.test("PHP owner from Instance is a successful no-op without a write or stat
   f.instance.auto_deploy.policy_owner = "gateway";
   await f.run();
   assertEquals(f.requests.every((r) => r.method === "GET"), true);
-  assertEquals(f.data.size, 0);
+  assertEquals(stateWrites(f), []);
 });
 Deno.test("PHP ownership also prevents automatic resolution of an expired missing request", async () => {
   const f = fixture();
@@ -530,30 +545,7 @@ Deno.test("pre-cutover publication owner refusal is a no-op before any POST or l
   );
   await f.run();
   assertEquals(f.requests.some((r) => r.method === "POST"), false);
-  assertEquals(f.data.size, 0);
-});
-Deno.test("pending event owner refusal stops before a deploy POST and preserves the event key", async () => {
-  const f = fixture();
-  f.data.set(
-    "state-7",
-    StateSchema.parse({
-      events: [{
-        key: "policy.7.activity.1",
-        body: { event: "activity", result: "busy", commit: B },
-        operation_id: null,
-        receipt: null,
-      }],
-    }),
-  );
-  const before = structuredClone(f.data.get("state-7"));
-  f.intercept((_method, path) =>
-    path.endsWith("/events")
-      ? refusal("instance.auto_deploy_policy_owner")
-      : undefined
-  );
-  await f.run();
-  assertEquals(deployPosts(f), []);
-  assertEquals(f.data.get("state-7"), before);
+  assertEquals(stateWrites(f), []);
 });
 Deno.test("Gateway deploy admission owner refusal cannot leave an unresolved intent", async () => {
   const f = fixture();
@@ -564,7 +556,7 @@ Deno.test("Gateway deploy admission owner refusal cannot leave an unresolved int
   );
   await f.run();
   assertEquals(f.state().intent, null);
-  assertEquals(f.requests.some((r) => r.path.endsWith("/events")), false);
+  assertEquals(f.fire().events, []);
 });
 Deno.test("changed publication version and unreadable ownership probe stop before admission", async () => {
   for (
@@ -576,9 +568,9 @@ Deno.test("changed publication version and unreadable ownership probe stop befor
     const f = fixture();
     Object.assign(f.instance.auto_deploy, { result: null, since: null });
     f.intercept((method) => method === "PUT" ? response : undefined);
-    await assertRejects(() => f.run(), AggregateError);
+    await f.runFailed();
     assertEquals(deployPosts(f), []);
-    assertEquals(f.data.size, 0);
+    assertEquals(stateWrites(f), []);
   }
 });
 Deno.test("fresh Instances with no public decision use a valid ownership probe", async () => {
@@ -598,7 +590,7 @@ Deno.test("truncated walks fail closed even when the first candidate is green", 
   const f = fixture();
   f.walk.truncated = true;
   f.walk.reached_base = false;
-  await assertRejects(() => f.run(), AggregateError);
+  await f.runFailed();
   assertEquals(f.state().error_code, "instance.auto_deploy_gate_unavailable");
   assertEquals(deployPosts(f), []);
   assertEquals(f.requests.some((r) => r.path.includes("/checks?")), false);
@@ -639,7 +631,7 @@ Deno.test("mixed history, resume and ownership observations fail closed", async 
       }
       return undefined;
     });
-    await assertRejects(() => f.run(), AggregateError);
+    await f.runFailed();
     assertEquals(f.requests.every((r) => r.method === "GET"), true);
   }
 });
@@ -650,7 +642,7 @@ Deno.test("disabled and development targets do not read source or write", async 
     if (development) f.nodes[0].roles = ["app-dev"];
     await f.run();
     assertEquals(f.requests.length, 3);
-    assertEquals(f.data.size, 0);
+    assertEquals(stateWrites(f), []);
   }
 });
 Deno.test("a failed Instance does not prevent the next discovered Instance from running", async () => {
@@ -659,8 +651,8 @@ Deno.test("a failed Instance does not prevent the next discovered Instance from 
   f.intercept((_method, path) =>
     path === "/api/v1/instances/6" ? { status: 503, body: {} } : undefined
   );
-  const error = await assertRejects(() => f.run(), AggregateError);
-  assertStringIncludes(error.message, "Instance 6");
+  const failures = await f.runFailed();
+  assertEquals(failures.map((failure) => failure.instance), [6]);
   assertEquals(deployPosts(f).length, 1);
   assertEquals(f.state().result, "started");
 });
@@ -672,7 +664,7 @@ Deno.test("unreadable discovery fails closed instead of treating the fleet as em
       : undefined
   );
   await assertRejects(() => f.run(), PolicyError);
-  assertEquals(f.data.size, 0);
+  assertEquals(stateWrites(f), []);
   assertEquals(deployPosts(f), []);
 });
 
@@ -695,7 +687,7 @@ Deno.test("G06 validates keyed receipt caller and target; missing holds through 
     id: 2,
   }]);
   f.instance.auto_deploy.resumed_after = 2;
-  await assertRejects(() => f.run(), AggregateError);
+  await f.runFailed();
   assertEquals(f.state().intent?.key, key);
   assertEquals(f.state().error_code, "automatic.outcome_unknown");
   assertEquals(deployPosts(f), []);
@@ -724,10 +716,10 @@ function fence(f: ReturnType<typeof fixture>) {
 Deno.test("missing receipt stays held until ten minutes, then resolve fences it without a deploy or effect hold", async () => {
   const f = fixture();
   lostIntent(f);
-  await assertRejects(() => f.run(), AggregateError);
+  await f.runFailed();
   assertEquals(f.state().intent?.resolve_after, "2026-10-27T20:10:00.000Z");
   f.fake.now = "2026-10-27T20:09:59.000Z";
-  await assertRejects(() => f.run(), AggregateError);
+  await f.runFailed();
   assertEquals(f.requests.some((r) => r.path.endsWith("/resolve")), false);
   f.fake.now = "2026-10-27T20:10:00.000Z";
   fence(f);
@@ -829,7 +821,7 @@ Deno.test("resolve terminal receipt without effect history retains the reviewed 
     error_code: "operation.worker_lost",
     attempts: 1,
   });
-  await assertRejects(() => f.run(), AggregateError);
+  await f.runFailed();
   assertEquals(f.state().intent, null);
   assertEquals(f.state().effect_hold?.operation_id, 100);
   assertEquals(deployPosts(f), []);
@@ -862,7 +854,7 @@ Deno.test("lost or malformed resolve response preserves the original admission i
         },
       };
     });
-    await assertRejects(() => f.run(), AggregateError);
+    await f.runFailed();
     assertEquals(f.state().intent?.key, `auto.7.${B}.1`);
     assertEquals(deployPosts(f), []);
   }
@@ -875,13 +867,13 @@ Deno.test("a fence code without zero-attempt terminal proof cannot clear the eff
     if (variant === "attempts") f.operation.attempts = 1;
     else f.operation.result = null;
     f.setFound(true);
-    await assertRejects(() => f.run(), AggregateError);
+    await f.runFailed();
     assertEquals(f.state().effect_hold?.operation_id, 100);
     assertEquals(deployPosts(f), []);
   }
 });
 
-Deno.test("failure, pause and stall alerts reach instance.policy_event with durable exact payloads", async () => {
+Deno.test("failure, pause and stall alerts reach the fire result once with exact payloads", async () => {
   for (const variant of ["failed", "paused", "stalled"] as const) {
     const f = fixture();
     if (variant === "failed") {
@@ -897,10 +889,8 @@ Deno.test("failure, pause and stall alerts reach instance.policy_event with dura
       f.fake.now = "2026-10-27T20:31:00.000Z";
     }
     await f.run();
-    const event = f.requests.find((r) =>
-      r.path.endsWith("/events") &&
-      (r.body as { event: string }).event === variant
-    )!;
+    const event = f.fire().events.find((e) => e.body.event === variant)!;
+    assertEquals(event.instance, 7);
     assertEquals(typeof event.key, "string");
     const expected = variant === "stalled"
       ? { event: variant, commit: B, since: start, result: "gate_pending" }
@@ -912,50 +902,9 @@ Deno.test("failure, pause and stall alerts reach instance.policy_event with dura
     assertEquals(event.body, expected);
     const key = event.key;
     await f.run();
-    assertEquals(
-      f.requests.filter((r) => r.path.endsWith("/events") && r.key === key)
-        .length,
-      1,
-    );
+    assertEquals(f.fire().events.some((e) => e.key === key), false);
   }
 });
-Deno.test("lost event admission response retains its exact key and payload for recovery", async () => {
-  const f = fixture();
-  let lost = true;
-  f.intercept((_method, path) => {
-    if (path.endsWith("/events") && lost) throw new Error("lost response");
-    return undefined;
-  });
-  await assertRejects(() => f.run(), AggregateError);
-  const pending = structuredClone(f.state().events[0]);
-  assertEquals(pending.operation_id, null);
-  lost = false;
-  await f.run();
-  const posts = f.requests.filter((r) => r.path.endsWith("/events"));
-  assertEquals(posts[0].key, posts[1].key);
-  assertEquals(posts[0].body, posts[1].body);
-  assertEquals(deployPosts(f).length, 1);
-});
-Deno.test("terminal failed event receipt preserves partial delivery and never admits a replacement", async () => {
-  const f = fixture();
-  await f.run();
-  const id = f.state().events[0].operation_id!;
-  const event = f.operations.get(id)!;
-  Object.assign(event, {
-    status: "failed",
-    error_code: "operation.worker_lost",
-    result: { webhook: { outcome: "unknown" } },
-  });
-  await f.run();
-  await f.run();
-  assertEquals(f.state().events[0].receipt?.result, event.result);
-  assertEquals(
-    f.state().events[0].receipt?.error_code,
-    "operation.worker_lost",
-  );
-  assertEquals(f.requests.filter((r) => r.path.endsWith("/events")).length, 1);
-});
-
 // The DTOs on either side of orbit#1561: older operations already bind the
 // caller in input; only the new DTOs expose it on operations and history rows.
 const gatewayOrigins = [

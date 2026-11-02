@@ -31,7 +31,7 @@ Laravel Horizon runs six queues on the connection with four supervisors. The `ta
 | Queue | Processes | Jobs |
 | --- | --- | --- |
 | `tasks` | 3 | The scheduled commands below and the publish of an approved commit. The Git mirror's lock keeps one push per Project at a time |
-| `problems` | shares the 3 `tasks` workers | Doctor collection and signal collection, after waiting `tasks` jobs |
+| `problems` | shares the 3 `tasks` workers | Observation context publication, the Swamp reader check, and batch metadata pruning, after waiting `tasks` jobs |
 | `task-vms` | 1 | Retained task VM lifecycle jobs and host sweep admission |
 | `builds` | 2 | Admission for [base image Operations and refreshes](/reference/compute-drivers#build-the-base-image), trusted [package cache fills](/reference/compute-drivers#shared-package-cache), and [recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) |
 | `builds-optional` | Shares the 2 build workers | The [UpCloud template refresh](/reference/compute-drivers#refresh-the-upcloud-template-on-recipe-changes) |
@@ -52,8 +52,14 @@ The scheduler dispatches each of these as a unique job. While the job waits or r
 | `gateway:swamp-reader:check` | hour | `problems` | 300 seconds |
 | `orbit:auto-deploy` | minute | `tasks` | 600 seconds |
 | `orbit:vault-sync` | minute | `tasks` | 900 seconds |
+| `orbit:activity-finalize-interrupted` | 5 minutes | `tasks` | 600 seconds |
+| `horizon:snapshot` | 5 minutes | `tasks` | 300 seconds |
+| `queue:prune-failed` | day | `tasks` | 3600 seconds |
+| `queue:prune-batches` | day | `problems` | 3600 seconds |
 
 The job runs the command in its own PHP process, as the scheduler did, so a command keeps no state from an earlier run. A command that exits nonzero is logged as an error. The "unique for" time only matters when a worker is lost: the lock then frees itself after that time.
+
+The last four commands are Gateway self-maintenance. They keep the Gateway's own tables and Horizon metrics, touch no Node, and start no Swamp work. PLAN decision 9 (2026-11-01) keeps them in the Gateway: housekeeping of the Gateway's own tables is not orchestration. [Interrupted Activity finalization](/cli/activity#interrupted-requests) ends at most 500 records per run. `horizon:snapshot` records Horizon's dashboard metrics and runs only while the Gateway queue is set. `queue:prune-failed` and `queue:prune-batches` delete records older than the [disk retention](/reference/gateway-recovery#disk-retention) cutoffs. Failed-job pruning also runs while Tasks is disabled; batch pruning runs only while Tasks is enabled.
 
 The [task VM jobs](/reference/compute-drivers#jobs) that the scheduler queues, the host sweep, image reconciliation, and [recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance), go to the same connection.
 
@@ -65,19 +71,19 @@ These commands stay in the scheduler and never go to the queue, also while it is
 | `project-documents:probes:reconcile` | minute | 10 minutes |
 | `project-documents:cleanup:work` | 5 minutes | 60 minutes |
 
-Observation is explicitly admitted through the configured control-plane peer. Fleet collection and the Horizon health admission use the native Doctor workflow. Maintenance and retention admission use `operation-observation-maintain`, with the full public intent captured before submission. All reads run on Node 209 through official `@swamp/ssh` and the stored target host key. Each read has a 10-second connect timeout and a 60-second limit. A stopped or stalled Node fails only its own reads, which become unverifiable Doctor issues, and the pass still completes. The existing shared terminal subscriber records one typed result.
+Observation is explicitly admitted through the configured control-plane peer. Fleet collection and the Horizon health admission use the native Doctor workflow. All reads run on Node 209 through official `@swamp/ssh` and the stored target host key. Each read has a 10-second connect timeout and a 60-second limit. A stopped or stalled Node fails only its own reads, which become unverifiable Doctor issues, and the pass still completes. The existing shared terminal subscriber records one typed result.
 
-Maintenance reads Gateway host uptime/load and the registered Horizon unit's memory, CPU and task counters. It reports how many admitted running Activities meet the interrupted cutoff, capped at 500. Retention reports eligible batch and failed-job counts using the configured 24-hour and 168-hour defaults. Tasks being disabled suppresses the batch count. Eligibility uses the admitted timestamp and strict cutoffs; it does not change Activity status or delete records. Failed reads are reported as unavailable rather than replaced with zero observations.
+The observation family is read-only. It does not reset Redis counters, publish Horizon snapshots or prune records; the Gateway self-maintenance commands above do that. The Node agent observer reports host and Horizon state, so no separate maintenance or retention observation exists.
 
-The observation family is read-only. It does not reset Redis counters, publish Horizon snapshots or prune records. The former private Redis material source and callback-based collection, health, maintenance and retention schedule wrappers are removed. Fleet collection runs every ten minutes at second 15. Horizon health runs every ten minutes at second 45. Native `trigger.schedule` owns both cadences. Each tick selects one public expectation revision and runs one bounded Doctor read pass on 209. Terminal results enter through the existing shared commits feed; no step calls the Gateway. Maintenance and retention remain explicitly admitted reads.
+Fleet collection and Horizon health have no schedule: they run `operation-doctor-inspect`, which is being removed because Doctor reads agent observations.
 
 No Gateway observation scheduler or family poller is added. `problems:file` retains its separate hourly schedule and lock.
 
-Doctor collects Activity and assistance signals from admitted redacted metadata, then returns fingerprints and cursors for normal state projection. The first collection begins at the current Activity cursor. Assistance retains its 200-task sample and removes closed references. Native liveness comparisons belong to Doctor and the owning operational families; observation maintenance does not repeat them.
+Doctor collects Activity and assistance signals from admitted redacted metadata, then returns fingerprints and cursors for normal state projection. The first collection begins at the current Activity cursor. Assistance retains its 200-task sample and removes closed references. Native liveness comparisons belong to Doctor and the owning operational families.
 
 ### Without a queue
 
-While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the other scheduled commands run inline with their overlap locks, and the Gateway creates no `horizon` Process. Task VMs need the queue. While task VMs are enabled, or the UpCloud token file is set, each due run of the host sweep, image reconciliation, or recipe maintenance fails with an error that names the key, instead of being skipped. A task VM claim fails the same way.
+While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the other scheduled commands run inline with their overlap locks. `horizon:snapshot` does not run, and the Gateway creates no `horizon` Process. Task VMs need the queue. While task VMs are enabled, or the UpCloud token file is set, each due run of the host sweep, image reconciliation, or recipe maintenance fails with an error that names the key, instead of being skipped. A task VM claim fails the same way.
 
 Operations need the queue too. An Instance deploy or rollback request answers `503` with `operation.queue_unavailable` and records nothing ([Operations](/reference/operations#start-an-operation)).
 

@@ -1,0 +1,57 @@
+sequenceDiagram
+  %% Target design: DECISIONS R1 (no Node, no run), root-of-trust-gateway-only (App JWT stays in the Gateway). docs/reference/github-app.md.
+  %% status: draft
+  %% command: github:app:sync
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane GH icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant GH as GitHub<br/>App installations
+  CLI->>GW: github:app:sync<br/>--json
+  %%> Command:
+  %%> - `orbit github:app:sync`
+  %%> - syntax: `[--json]`
+  %%> Input:
+  %%> - nothing; it refreshes the Gateway's one App
+  %%> When:
+  %%> - after you install the App on an account or change its repositories
+  %%> Not included:
+  %%> - `--idempotency-key`: the refresh answers at once and is safe to repeat
+  Note over GW: Check the App<br/>sign App JWT · 9 min
+  %%> Requirements:
+  %%> - your Node has an access grant to the Gateway
+  %%> - the Gateway has a registered App, else `github.app_missing`
+  %%> What it does:
+  %%> - signs a short App JWT with the App key; the key and the JWT never leave the Gateway
+  %%> Why no Swamp run:
+  %%> - it touches no Node (R1), and App-level authority stays in the Gateway
+  GW->>GH: List installations<br/>GET /app/installations
+  %%> What it does:
+  %%> - asks GitHub for every installation of the App, with the JWT
+  %%> - answers within the request; no queue job, no task to follow
+  alt GitHub answers
+    GH-->>GW: 2 installations
+    %%> Returns:
+    %%> - per installation: the account, `user` or `organization`, `all` or `selected` repositories, and whether it is suspended
+    Note over GW: Store the observation<br/>current · observed_at
+    %%> Result:
+    %%> - the installation list is stored with `installations_status: current` and the time
+    %%> - an Activity entry records the refresh
+    GW-->>CLI: App and installations<br/>same as github:app:show
+    %%> What you get:
+    %%> - the App and one row per installation, at once
+  else GitHub fails
+    GH--xGW: refused or no reply
+    %%> When:
+    %%> - GitHub cannot be reached, or refuses the JWT
+    Note over GW: Keep the last list<br/>github.unavailable
+    %%> Result:
+    %%> - the last stored list stays, with its `observed_at`; it becomes `stale` after five minutes
+    %%> Retry:
+    %%> - run the same command again
+    GW-->>CLI: github.unavailable<br/>last list · stale
+    %%> What you get:
+    %%> - the error and the last known list, at once
+  end

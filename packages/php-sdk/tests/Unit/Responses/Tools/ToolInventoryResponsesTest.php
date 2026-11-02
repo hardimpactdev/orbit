@@ -16,7 +16,7 @@ describe('tool inventory responses', function (): void {
             ->and($inventory->observedAt)
             ->toBe('2026-04-26T12:00:00+00:00')
             ->and(array_map(static fn (ToolInventoryManagerResponse $manager): string => $manager->manager, $inventory->managers))
-            ->toBe(['brew', 'brew-cask', 'vp'])
+            ->toBe(['brew', 'brew-cask', 'vp', 'apt'])
             ->and($packages['brew']['openssl@3']->packageKind)
             ->toBe('formula')
             ->and($packages['brew']['openssl@3']->dependency)
@@ -71,16 +71,19 @@ describe('tool inventory responses', function (): void {
             ['complete', []],
             ['complete', []],
             ['complete', []],
+            ['unsupported', []],
         ]],
         'linux' => ['linux', [
             ['complete', ['ripgrep']],
             ['unsupported', []],
             ['absent', []],
+            ['complete', []],
         ]],
         'partial' => ['partial', [
             ['complete', ['ripgrep']],
             ['incomplete', []],
             ['conflicting', []],
+            ['unsupported', []],
         ]],
     ]);
 

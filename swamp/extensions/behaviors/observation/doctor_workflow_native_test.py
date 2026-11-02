@@ -21,7 +21,7 @@ class DoctorWorkflowNative(NativeTestCase):
 
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('observation')
+        self.copy_behaviors('observation', 'operations/firewall')
         dest = self.repo / '.swamp/pulled-extensions/@swamp/ssh'
         dest.parent.mkdir(parents=True)
         shutil.copytree(ROOT / '.swamp/pulled-extensions/@swamp/ssh', dest)
@@ -55,7 +55,7 @@ else:raise RuntimeError('Unexpected native command '+repr(args))
         key.chmod(0o600)
         workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-doctor-inspect.yaml').read_text())
         for job in workflow['jobs']:
-            self.assertEqual(job.pop('target'), 'orbit-node-209')
+            self.assertEqual(job.pop('labels'), {'role': 'swamp'})
             for step in job['steps']:
                 if step['task']['behaviorType'] == '@swamp/ssh':
                     args = step['task']['globalArgs']

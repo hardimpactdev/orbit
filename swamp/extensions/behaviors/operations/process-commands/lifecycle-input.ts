@@ -38,13 +38,13 @@ export const LifecycleAssets = z.object({
     intent_json: z.string(),
     marker_directory: z.string(),
 
-    scripts_directory: z.string(),
+    container_script: z.string(),
 });
 
 /** Validate public rendered intent; account observation is public input, never an effect. */
 export async function lifecycleAssets(
     args: z.infer<typeof LifecycleArgs>,
-    directory: string,
+    _directory?: string,
 ) {
     const control = args.control;
     const expected = new RegExp(
@@ -155,6 +155,6 @@ export async function lifecycleAssets(
         intent_json: JSON.stringify({ installation: install }),
         marker_directory: args.marker.slice(0, args.marker.lastIndexOf("/")),
 
-        scripts_directory: directory,
+        container_script: "",
     };
 }

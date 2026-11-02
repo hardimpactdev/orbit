@@ -132,7 +132,7 @@ it('captures removal URL material in named execution copies before starting the 
         ->and(json_encode(end($requests), JSON_THROW_ON_ERROR))->not->toContain('APP_KEY=');
 });
 
-it('rolls back withdrawal and starts no native root when the execution copy is not acknowledged', function (): void {
+it('fails withdrawal and starts no native root when the execution copy is not acknowledged', function (): void {
     $this->route->update(['web_root' => 'docs/public']);
     $this->node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-pin']);
     $this->instance->update(['selected_php_version' => '8.5']);
@@ -145,8 +145,7 @@ it('rolls back withdrawal and starts no native root when the execution copy is n
     $this->deleteJson('/api/v1/routes/'.$this->route->id)->assertServiceUnavailable()
         ->assertJsonPath('error.code', 'swamp.vault_sync_unavailable');
 
-    expect($this->route->fresh()->status)->toBe(RouteStatus::Pending)
-        ->and(Operation::query()->count())->toBe(0)
+    expect(Operation::query()->sole())->status->toBe(OperationStatus::Failed)->error_code->toBe('swamp.vault_sync_unavailable')
         ->and(array_column($this->socket->sent, 'type'))->toBe(['vault.put']);
 });
 

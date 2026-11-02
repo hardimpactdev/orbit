@@ -22,17 +22,17 @@ Process create, update, start, stop, restart, and destroy record an Operation an
 
 Create and destroy run on Node 209 workers with the canonical public SSH target and stored host pins. The Gateway supplies the complete public unit or container definition as run inputs. Only actual environment content enters a named execution copy. Steps resolve that copy through `vault.get` and use official SSH stdin; there is no private-material callback for these Operations.
 
-For systemd, official cfgmgmt file and directory models publish the public unit and manage its owned paths. The systemd model converges boot and running policy after an explicit reload. Environment generations remain root-owned `0600` files. A failed run records its native failure and retains applied changes; rerun create to converge. The admitted activation flag stays pending until native acceptance records the rendered unit hash, so a failed reload cannot hide the need to restart on the next create. There is no backup or rollback chain. Destroy stops and disables the unit before deleting its owned files and reloading systemd.
+For systemd, official cfgmgmt file and systemd behaviors publish the unit and converge boot and running policy. SSH runs individual commands as argv, including daemon-reload and EnvironmentFile delivery from vault stdin. Environment files remain root-owned `0600`. A failed run retains applied changes; rerun the command to converge. There are no runtime ownership checks, backups or rollback chains. Destroy disables and stops the unit, removes its files and reloads systemd.
 
-The official Docker container model puts environment values in command arguments and cannot represent the complete command argv, working directory and ownership labels. Docker creation therefore uses official SSH with a shipped one-action script and protected stdin for its fixed Docker socket request. Native steps separately inspect, pull, create, start or stop, verify and remove the owned container. They use no retry or polling loop. Vite preparation composes the existing native Caddy publication and preserves its public environment and awake-marker ordering.
+The official Docker container behavior accepts one command string and puts environment values in command arguments. Creation retains one named-gap script to preserve exact argv, working directory, labels and private environment delivery through the Docker socket. SSH executes its body in memory; no script is copied to a Node. Official cfgmgmt behaviors pull images and remove containers. Individual SSH argv commands control existing containers. A changed spec replaces the container and preserves volumes.
 
-Explicit stop passes its complete public control descriptor and pinned SSH target to `operation-process-stop`. Every step runs on Node 209. Official `@swamp/ssh` disables systemd boot start, stops the exact unit or container, and verifies the stopped state on the target Node as separate actions. Docker skips the systemd boot step. The shared terminal subscriber projects the result without a Gateway callback. Hibernation keeps its separate stop-only behavior and preserves boot policy.
+Create and update share one convergence workflow. Start, stop and restart have separate workflows whose step names match their own charts. cfgmgmt checks and native assertions accept the end state. The Gateway projects that accepted state without a result-printing step or callback. Vite preparation keeps the native Caddy publication and awake-marker ordering. Hibernation retains its separate stop-only behavior and preserves boot policy.
 
 Gateway release Horizon handoff also runs entirely on Node 209. The Gateway captures its public rendered unit and the shared pinned SSH target before admission. Official `@swamp/ssh` copies the shipped one-action scripts, inspects and installs the unit, and either starts inactive Horizon or asks active Horizon to terminate gracefully. A successful termination does not wait for systemd to restart it. Native resume retains the copied scripts after failure. This handoff requires no Swamp worker or binary on the Gateway Node.
 
 Only the HTTP and CLI mutation paths admit these Operations. Retained Gateway callers keep the synchronous Process actions and native runtime managers, including their leases and failure handling. Deploy, rollback, environment refresh, clone, transfer, Gateway release, role changes and development wake or sleep keep this path until their owning lane cuts over. They do not admit or await a Process Operation.
 
-When a Process runs on the configured Swamp Services Node or an executor worker Node, its unconverted mutations execute synchronously through the PHP actions and native runtime managers. This includes Instance Processes and deployment helper Processes there. Update, start and restart return HTTP 200 with Process data. Create, stop and destroy return HTTP 202 and start Swamp directly on every Node.
+When a Process runs on the configured Swamp Services Node or on a Node that runs an executor worker, its unconverted mutations execute synchronously through the PHP actions and native runtime managers. This includes Instance Processes and deployment helper Processes there. Update, start and restart return HTTP 200 with Process data. Create, stop and destroy return HTTP 202 and start Swamp directly on every Node.
 
 Placement uses the configured Node identities; renaming a Process cannot bypass it. Unconverted Swamp admission and final dispatch still refuse with `process.executor_dependency` (HTTP 409), protecting against a queued effect or an internal caller that skips the synchronous path. Processes on other Nodes keep HTTP 202 Operations.
 
@@ -265,13 +265,12 @@ Direct create and update converge through official cfgmgmt and SSH. A failure le
 
 ## On the Node
 
-Direct Process create, update and destroy use the fixed Node209 workflows with official cfgmgmt and SSH. They do not enter the per-Node control callback or invoke agent actions. The Gateway supplies public definitions and environment-only execution copies, then projects the native terminal result.
+Direct Process create, update, destroy, start, stop and restart use the fixed Node209 workflows with official cfgmgmt and SSH. They do not enter the per-Node control callback or invoke agent actions. The Gateway supplies public definitions and environment-only execution copies, then projects the native terminal result.
 
 Some shared paths still have other callers:
 
 | Path | Remaining caller |
 | --- | --- |
-| Per-Node `operation-process-control` | Start/restart. Create/update/destroy use the Node209 convergence and removal workflows. |
 | Native `processAction` and local Process installer | Retained control, restart and retirement phases, TaskVM enrollment, Node role and Analytics callers. Deploy and transfer installation use Process-create children on 209. |
 | Gateway `bootstrapCollector` and agent unit stage/activate | AI-router collector convergence. |
 | Gateway synchronous removal and agent `process.remove` | AI-router teardown/rename and Node-role dependent cleanup. |
@@ -286,7 +285,7 @@ A Project holds Process definitions and Schedule definitions. A definition has a
 | Field | Contract |
 | --- | --- |
 | `name` | 1 through 63 lowercase letters, digits, or hyphens. It starts and ends with a letter or digit. A Schedule definition name also allows no two hyphens in a row. |
-| `environments` | Must include `production` for the definition to have an effect. Production preparation copies only definitions that include it. |
+| `environments` | `production`, `development` or both; Schedule definitions accept only `production`. Production preparation copies definitions that include `production`. A development `instance:create` creates and starts definitions that include `development`, after its setup steps. |
 | `spec` | For a Process: the runtime fields above, without owner, start, user, or environment file. For a Schedule: `command`, `calendar`, and `timeout_seconds`, with the limits of a Schedule. |
 
 A Schedule definition has no host Node, so the Gateway does not run `systemd-analyze calendar` when it stores one. The host Node checks the calendar when production preparation installs the copy.
@@ -334,13 +333,11 @@ A copied worker or Schedule can run before the new Instance's data is ready, for
 
 Node Process units reference immutable root-owned `0600` EnvironmentFiles. Managed environment values travel only through the admitted private-material callback and protected stdin. The public unit contains the environment file path.
 
-The `vp-dev` preset applies only to development Instance Processes. Runtime definitions are copied only to production Instances.
+The `vp-dev` preset applies only to development Instance Processes. Process definitions with `development` are copied to each new development Instance; Schedule definitions are copied only to production Instances.
 
 ### A Node Process can name its account
 
 The systemd `User=` of a Node Process can be an account other than the managed user. Use it for a service that must not run as the managed user. The owner stays the Node. An Instance Process keeps the account derived from the Instance, because a chosen account would leave the production home and the development checkout. Docker rejects `user` because the image has its own user. The Gateway does not create the account. The Gateway checks the account with `getent passwd` over SSH before create and fails with `process.user_unavailable` when the account or its home is unavailable.
-
-Instance Process restart executes as member steps in one native parent. `process.restart_instance` captures only active, desired-running Processes with `restart_on_deploy` enabled. The captured list stays fixed when later inventory changes. The run creates no member Operation. Owning native parents can reuse the record capture and local action exports without admitting another root. Native member outcomes drive bounded record projections.
 
 `process.install_instance_definitions` captures owned definition copies and reuses the canonical private Process installer in the same root. Copies remain stopped. The Gateway capture action records definitions without converging a runtime.
 
@@ -354,26 +351,35 @@ Protected Process values resolve only for their recorded Process target. Schedul
 
 Task VM runtime preparation composes the canonical Process installer within its native root. The Process belongs to the admitted VM Node and uses its fixed systemd `pi-server` definition. The private installation callback retains Process ownership and configuration checks.
 
-A successful `process.restart_instance` result contains `process_ids`, a bounded list of integers in Process ID order. The IDs come from the captured restart plan after every native member step succeeds. An empty selection returns an empty list. A failed member prevents successful completion. Callers map this list to the existing `restarted_process_ids` field.
-
 
 Leaf Process kinds use the direct native workflow only. Their completion projects bounded runtime status without keyed receipts or a Gateway readiness command. Instance composition uses native member steps in the owning run.
 
 ## Direct Process controls
 
-`process.stop` uses `operation-process-stop` for every systemd and Docker Process, including Vite Processes. The Gateway submits the complete public control descriptor and binds the native run ID. The workflow resolves the shared shipped Process scripts on a 209 worker and copies them to a run directory through official `@swamp/ssh`. Separate official SSH actions disable systemd boot start, stop the runtime, and verify its stopped state on the admitted target. The approved existing 209 identity and captured host-key pins select that connection.
+`process.start`, `process.stop` and `process.restart` use `operation-process-control` for every systemd and Docker Process, including Vite Processes. The Gateway submits the complete public control descriptor and binds the native run ID. The workflow resolves the shared shipped Process scripts on a 209 worker and copies them to a run directory through official `@swamp/ssh`. Separate official SSH actions then run in the legacy order:
 
-Successful execution removes its run directory; Python runs with `-B` so it creates no root-owned bytecode files. Stop installs no target worker or Swamp binary and mints no worker token.
+1. Start and restart of a production Process check the admitted release directory.
+2. A Vite Process runs the shared `operation-process-vite` child, which create also uses: it suspends traffic, writes the Vite environment file and publishes Caddy.
+3. Boot policy. Stop disables the systemd unit. Start and restart enable it, except for an on-demand Process. Docker skips this step.
+4. One start, stop or restart of the exact unit or container.
+5. Verification of the running or stopped state. Its output is the projected result.
+6. For Vite, one listener ownership check. An explicit start then sets the awake marker.
 
-Docker skips the boot-policy step. Stop needs no Vite traffic preparation, private material, Gateway callback or agent digest. The shared terminal subscriber projects the verified state. Admission takes no Gateway runtime lease or target hold. Hibernation keeps its separate stop-only behavior because it preserves boot policy and desired-running state.
+The approved existing 209 identity and captured host-key pins select the connection. A successful run removes its run directory. A failed run keeps it, so a resumed run finds the scripts. Python runs with `-B`, so it creates no root-owned bytecode files. The kinds install no target worker or Swamp binary and mint no worker token. They need no private material, Gateway callback or agent digest. Admission takes no Gateway runtime lease or target hold. Hibernation keeps its separate stop-only behavior because it preserves boot policy and desired-running state.
+
+Three Vite steps differ from legacy.
+
+A Vite restart writes the environment and publishes Caddy, then restarts the unit once. Legacy stopped the unit first and started it after the environment write. The unit reads its environment file on restart, so the result is the same.
+
+The listener check runs once, right after the start. Legacy polled the listener for up to 15 seconds. The Swamp shape allows a bounded poll only for external HTTPS state. A Vite start can therefore fail with `vite.listener_unavailable` before Vite binds its port.
+
+A failed listener check leaves the Process running with its traffic suspended. Legacy stopped it and refused with `vite.not_ready`. Run `process:stop`, or start the Process again once Vite is ready.
 
 Schedule enable, manual run and destroy use their [direct Schedule workflow](/reference/schedules#direct-swamp-control). The landed direct kinds have no polled discovery or executor registration.
 
 When you destroy a Process, the kind uses the direct default for every Node and existing owning admission. It has no Gateway runtime lease, target hold, polled removal descriptor or public PHP execution branch. Native removal receives the admitted unit or container identity and, for Vite, the exact Instance environment path. The Gateway deletes the record only after native success. A refused removal keeps the record with its error. Retained synchronous Instance and Analytics helpers stay until their owning callers convert.
 
-The remaining create, start, restart and destroy paths use `operation-process-control`. Their retained steps read safe admitted input through the shared direct Operation endpoint. They check a selected production release when required, run Node-local system commands with passwordless sudo, and read runtime state. Process ownership checks protect the selected unit or container. The Gateway projects lifecycle and desired state from the bounded result. These retained input and result callbacks do not participate in `process.stop`.
-
-The converted stop workflow targets `orbit-node-209` with Node label `209`; its admitted Node ID remains the SSH target and Operation owner. Retained Process workflows still use their existing per-Node workers until their own SSH conversion. Lane 21 retires those workers after no workflow targets them. Each remaining kind changes in one PR: native path, writer switch and old executor/test deletion together. Update and Instance composition keep their existing path until their own conversion.
+The control workflow runs on the swamp role's workers (`labels: {role: swamp}`); its admitted Node ID remains the SSH target and Operation owner.
 
 ### Native Process create
 
@@ -383,17 +389,9 @@ A newly admitted Process starts with `systemd_activation_pending=false` in memor
 
 Swamp installs the captured definition with direct Node-local system commands. If startup needs Vite publication, the same root uses the canonical Caddy behavior before activation. The final bounded result changes Process lifecycle state. Create has no polled executor, admission lease or receipt contract. Retained synchronous callers and executor recovery keep their current path until their owning conversion.
 
-### Native Process start
+### Native Process start and restart
 
-`process.start` records intent and starts one native Swamp run. Admission takes no Gateway runtime lease or execution lock. The exact Node worker checks the selected release and prepares Vite traffic when needed. Vite startup publishes current Caddy configuration through the canonical Node publication behavior in the same root run, then starts the Process, proves its owned listener ready, and marks traffic awake.
-
-The Caddy method reads the bound Process intent after acquiring its native publication lock; the Gateway supplies a fresh public render on each read. No child Operation, child run, Gateway primitive or Process relay participates. A Process without Vite needs no Caddy publication. The Gateway projects only the final bounded runtime result. The kind defaults to its direct writer; rollback is a revert PR. The Gateway keeps the existing synchronous recovery path for Processes on a Swamp executor Node, so it can recover Swamp when Swamp is down.
-
-### Native Process restart
-
-Ordinary process restart records one direct intent and runs the native Process DAG on its admitted Node. A Vite restart suspends traffic, stops its owned runtime, writes the admitted environment and publishes Caddy in the same root run. It then starts that runtime and proves its owned listener ready. Restart preserves the existing hibernation wake policy; only an explicit start marks traffic awake. A Process without Vite uses its local restart primitive and returns bounded runtime status.
-
-The kind requires its direct writer. Its old polled discovery, claim/run contract, Gateway readiness proof and admission lease are removed together. The Gateway retains the existing synchronous executor-Node recovery exception. Rollback is a revert PR.
+`process.start` and `process.restart` record intent and start one `operation-process-control` run, as [Direct Process controls](#direct-process-controls) describes. Admission takes no Gateway runtime lease or execution lock. Restart preserves the existing hibernation wake policy; only an explicit start marks traffic awake. The Gateway projects only the final bounded runtime result. It keeps the existing synchronous recovery path for Processes on a Swamp executor Node, so it can recover Swamp when Swamp is down.
 
 ### Native installation input
 

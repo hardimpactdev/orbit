@@ -2,10 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Actions\Activities\FinalizeInterruptedActivitiesAction;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Models\Activity;
+use Illuminate\Console\Scheduling\Event;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
@@ -40,6 +44,70 @@ function interrupted_activity_state(int $id): array
 }
 
 describe('the interrupted Activity sweep', function (): void {
+    it('ends every running row older than the bound as failed with activity.interrupted', function (): void {
+        $this->freezeTime();
+        $stale = interrupted_activity_row('running', 11 * 86_400);
+        $justStale = interrupted_activity_row('running', 901, 'node:role:relocate');
+
+        Artisan::call('orbit:activity-finalize-interrupted');
+
+        expect(Artisan::output())->toContain('Finalized 2 interrupted Activity records.')
+            ->and(interrupted_activity_state($stale))->toMatchArray(['status' => 'failed', 'error_code' => 'activity.interrupted'])
+            ->and(interrupted_activity_state($justStale))->toMatchArray(['status' => 'failed', 'error_code' => 'activity.interrupted']);
+    });
+
+    it('leaves a request that may still be in flight and every finished row untouched', function (): void {
+        $this->freezeTime();
+        // A streamed deployment or relocation can run until the 600-second PHP-FPM limit.
+        $atRequestLimit = interrupted_activity_row('running', 600, 'instance:deploy');
+        $withinMargin = interrupted_activity_row('running', 899, 'node:role:relocate');
+        $succeeded = interrupted_activity_row('succeeded', 86_400);
+        $failed = interrupted_activity_row('failed', 86_400);
+        $before = array_map(interrupted_activity_state(...), [$atRequestLimit, $withinMargin, $succeeded, $failed]);
+
+        expect(app(FinalizeInterruptedActivitiesAction::class)->execute())->toBe(0)
+            ->and(array_map(interrupted_activity_state(...), [$atRequestLimit, $withinMargin, $succeeded, $failed]))->toBe($before);
+    });
+
+    it('is idempotent', function (): void {
+        $stale = interrupted_activity_row('running', 3_600);
+        $action = app(FinalizeInterruptedActivitiesAction::class);
+
+        expect($action->execute())->toBe(1);
+        $finalized = interrupted_activity_state($stale);
+        Carbon::setTestNow(Carbon::now()->addMinutes(5));
+
+        expect($action->execute())->toBe(0)
+            ->and(interrupted_activity_state($stale))->toBe($finalized);
+    });
+
+    it('ends at most one batch of rows per run, oldest first', function (): void {
+        $ids = [];
+
+        foreach (range(1, FinalizeInterruptedActivitiesAction::BATCH + 3) as $index) {
+            $ids[] = interrupted_activity_row('running', 3_600);
+        }
+
+        $action = app(FinalizeInterruptedActivitiesAction::class);
+
+        expect($action->execute())->toBe(FinalizeInterruptedActivitiesAction::BATCH)
+            ->and(interrupted_activity_state(end($ids))['status'])->toBe('running')
+            ->and($action->execute())->toBe(3)
+            ->and(DB::table('activity_log')->where('status', 'running')->count())->toBe(0);
+    });
+
+    it('runs on the Gateway scheduler every five minutes with a lock that expires after ten minutes', function (): void {
+        config(['orbit.gateway_queue.connection' => '']);
+        Artisan::call('schedule:list');
+        $event = collect(app(Schedule::class)->events())
+            ->first(fn (Event $event): bool => str_contains((string) $event->command, 'orbit:activity-finalize-interrupted'));
+
+        expect($event)->not->toBeNull()
+            ->and($event->expression)->toBe('*/5 * * * *')
+            ->and($event->withoutOverlapping)->toBeTrue()
+            ->and($event->expiresAt)->toBe(10);
+    });
+
     it('waits longer than PHP-FPM lets any Gateway request run', function (): void {
         preg_match('/request_terminate_timeout = (\d+)s/', new GatewayFpmConfigRenderer()->renderPool('/checkout', '/home/orbit/.orbit'), $fpm);
 
@@ -47,7 +115,6 @@ describe('the interrupted Activity sweep', function (): void {
         expect($fpm[1] ?? null)->not->toBeNull()
             ->and(config('orbit.activity_interrupted_after'))->toBeGreaterThan((int) ceil((int) $fpm[1] * 4 / 3) + 60);
     });
-
 });
 
 describe('the shutdown finalizer', function (): void {

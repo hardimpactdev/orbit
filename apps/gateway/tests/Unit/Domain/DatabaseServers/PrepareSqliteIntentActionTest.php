@@ -5,9 +5,7 @@ declare(strict_types=1);
 use App\Actions\DatabaseConnections\PrepareSqliteIntentAction;
 use App\Domain\Instances\Sqlite\SqliteSeedPlacement;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Operation;
 
 beforeEach(function (): void {
     $this->prepare = new PrepareSqliteIntentAction;
@@ -35,13 +33,3 @@ it('refuses an escaped source path or missing development transfer attempt', fun
 
     expect(fn () => $this->prepare->seed($source, $target, $path))->toThrow(ResourceOperationException::class);
 })->with(['path', 'attempt']);
-
-it('derives abandon from the owning recorded transfer seed and refuses another Instance', function (): void {
-    $source = new SqliteSeedPlacement(2, 'development', '/home/orbit/source', 'orbit', $this->sourceNode, 'transfer-1');
-    $target = new SqliteSeedPlacement(2, 'development', '/home/orbit/target', 'orbit', $this->targetNode, 'transfer-1');
-    $input = $this->prepare->seed($source, $target, '/home/orbit/source/db.sqlite');
-    $seed = (new Operation)->forceFill(['kind' => 'database.sqlite_seed', 'target_type' => 'instance', 'target_id' => 2, 'node_id' => 17, 'input' => $input]);
-
-    expect($this->prepare->abandon((new Instance)->forceFill(['id' => 2]), $seed))->toBe($input);
-    expect(fn () => $this->prepare->abandon((new Instance)->forceFill(['id' => 3]), $seed))->toThrow(ResourceOperationException::class);
-});

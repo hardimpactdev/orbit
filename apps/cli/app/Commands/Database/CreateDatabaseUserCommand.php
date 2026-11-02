@@ -7,10 +7,12 @@ namespace App\Commands\Database;
 use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\StandardInputReader;
+use Laravel\Prompts\PasswordPrompt;
 use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseUserRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 
-final class CreateDatabaseUserCommand extends DatabaseCommand
+class CreateDatabaseUserCommand extends DatabaseCommand
 {
     use FollowsOperations;
 
@@ -20,7 +22,6 @@ final class CreateDatabaseUserCommand extends DatabaseCommand
     protected $signature = 'database:user:create
         {slug : Connection slug of a database on a Database server}
         {--username= : Username, a 1-32 character identifier}
-        {--password= : Password for the new user}
         {--read-only : Grant only SELECT on the database}
         {--replication : PostgreSQL LOGIN REPLICATION with read-only grants; requires wal_level=logical}
         {--idempotency-key= : Reuse a key to retry this operation start}
@@ -29,7 +30,7 @@ final class CreateDatabaseUserCommand extends DatabaseCommand
     #[\Override]
     protected $description = 'Add a user to a database on a Database server.';
 
-    public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
+    public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors, StandardInputReader $input): int
     {
         $slug = $this->slug();
 
@@ -38,7 +39,6 @@ final class CreateDatabaseUserCommand extends DatabaseCommand
         }
 
         $username = $this->stringOption('username');
-        $password = $this->input->getOption('password');
 
         if ($username === null) {
             return $this->renderGatewayFailure('database.username_required', 'A database user requires --username.');
@@ -46,10 +46,6 @@ final class CreateDatabaseUserCommand extends DatabaseCommand
 
         if (preg_match(self::USERNAME_PATTERN, $username) !== 1) {
             return $this->renderGatewayFailure('database.username_invalid', 'Username must be a 1-32 character identifier of letters, digits, and underscores.');
-        }
-
-        if (! is_string($password) || $password === '') {
-            return $this->renderGatewayFailure('database.password_required', 'A database user requires --password.');
         }
 
         $connector = $this->gatewayConnector($repository, $connectors);
@@ -61,6 +57,12 @@ final class CreateDatabaseUserCommand extends DatabaseCommand
         $profile = $this->activeGatewayProfile($repository);
         if ($profile === null) {
             return self::FAILURE;
+        }
+
+        $password = $this->password($input);
+
+        if ($password === null) {
+            return $this->renderGatewayFailure('database.password_required', 'Pipe the password on standard input, or run this command in a terminal to type it.');
         }
         $operation = $this->send($connector, new CreateDatabaseUserRequest(
             slug: $slug,
@@ -74,5 +76,19 @@ final class CreateDatabaseUserCommand extends DatabaseCommand
         return $operation instanceof OperationResponse
             ? $this->followOperation($connector, $profile, $operation, "Create Database user [{$slug}]", 'Database user')
             : self::FAILURE;
+    }
+
+    /** The password never travels in argv: piped standard input, or a hidden prompt on a terminal. */
+    private function password(StandardInputReader $input): ?string
+    {
+        if (! $input->isTerminal()) {
+            $password = rtrim($input->read(), "\r\n");
+        } elseif ($this->consoleMode()->mayPrompt) {
+            $password = $this->commandPrompts()->run(fn (): PasswordPrompt => new PasswordPrompt('Password', required: true));
+        } else {
+            return null;
+        }
+
+        return is_string($password) && $password !== '' ? $password : null;
     }
 }

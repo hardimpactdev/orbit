@@ -54,7 +54,7 @@ it('sends only the inventory read and renders formula, cask, dependency, and uns
         ->toContain('pnpm')
         ->toContain('version_unreadable')
         ->toContain('Node #2 observed at 2026-04-26T12:00:00+00:00.')
-        ->not->toContain('not an inventory');
+        ->toContain('apt is unsupported, so its package list is not an inventory.');
 
     expect($mock->getLastRequest()?->getMethod())
         ->toBe(Method::GET)

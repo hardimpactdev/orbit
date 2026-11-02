@@ -19,6 +19,7 @@ use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Instance;
@@ -36,6 +37,21 @@ final readonly class Orb220DeploymentApiFixture
         public Orb220ProductionDeployment $deployment,
     ) {}
 
+    /** Native admission only: the external socket confirms writes/start, never executes or projects. */
+    public function nativeStart(): void
+    {
+        config(['swamp.run_token' => 'fixture.deployment-native']);
+        $socket = new FakeRoutePublicationSocket;
+        $socket->reply = static fn (array $request): array => $request['type'] === 'vault.put'
+            ? [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => [
+                'vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption',
+            ]]]]
+            : [['type' => 'event', 'id' => $request['id'], 'event' => [
+                'kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
+            ]]];
+        app()->instance(WebSocketClient::class, $socket);
+    }
+
     /** @param list<array{name: string, phase: string, command: string, timeout_seconds: int}>|null $steps */
     public static function create(?array $steps = null): self
     {
@@ -43,6 +59,9 @@ final readonly class Orb220DeploymentApiFixture
             'name' => 'deployment-stream-caller',
             'status' => LifecycleStatus::Active,
             'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'ssh_host_key_type' => 'ssh-ed25519',
+            'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG',
             'public_ssh_host' => '192.0.2.220',
             'wireguard_ip' => '10.44.0.220',
             'user' => 'orbit',
@@ -52,6 +71,9 @@ final readonly class Orb220DeploymentApiFixture
             'name' => 'deployment-stream-owner',
             'status' => LifecycleStatus::Active,
             'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'ssh_host_key_type' => 'ssh-ed25519',
+            'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG',
             'public_ssh_host' => '192.0.2.221',
             'wireguard_ip' => '10.44.0.221',
             'user' => 'orbit',
@@ -71,9 +93,9 @@ final readonly class Orb220DeploymentApiFixture
             'name' => 'production',
             'environment' => 'production',
             'source_layout' => 'release',
-            'checkout_path' => '/home/deployment-stream/releases/initial',
-            'production_user' => 'deployment-stream',
-            'production_home' => '/home/deployment-stream',
+            'checkout_path' => '/home/orbit-app-'.$project->id.'/releases/initial',
+            'production_user' => 'orbit-app-'.$project->id,
+            'production_home' => '/home/orbit-app-'.$project->id,
             'root' => 'public',
             'branch' => 'main',
             'branch_override' => 'main',

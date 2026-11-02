@@ -3,6 +3,7 @@ import base64
 import json
 import subprocess
 import sys
+import time
 import uuid
 from pathlib import Path
 
@@ -10,7 +11,6 @@ ROOT=Path(__file__).resolve().parents[4]
 SCRIPTS=ROOT/'extensions/behaviors/operations/database-server-commands/scripts'
 sys.path.insert(0,str(SCRIPTS))
 from server_common import credentials
-from wait_ready import wait
 
 
 def effect(driver):
@@ -57,7 +57,10 @@ def effect(driver):
         if postgres:
             material['password']='fixture-root'
             client[:]=['psql','--no-psqlrc','--username=postgres','--no-align','--tuples-only','--quiet','--set=ON_ERROR_STOP=1']
-        assert wait(intent,{})=={'ready':True}
+        for _ in range(180):
+            if docker(['inspect','--format','{{.State.Health.Status}}',container]).strip()=='healthy':break
+            time.sleep(1)
+        else:raise AssertionError('Disposable SQL server never became healthy')
         if postgres:
             sql('CREATE ROLE catalog_owner LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE; CREATE DATABASE catalog_proof OWNER catalog_owner; REVOKE ALL ON DATABASE catalog_proof FROM PUBLIC;')
             sql('\\connect catalog_proof\nSET ROLE catalog_owner; CREATE TABLE current_table (id bigint GENERATED ALWAYS AS IDENTITY, value text); INSERT INTO current_table(value) VALUES (\'proof\'); RESET ROLE;')
@@ -96,7 +99,7 @@ def effect(driver):
             assert sql("SELECT rolreplication::text FROM pg_roles WHERE rolname='reader';")=='false'
         print(json.dumps({'driver':driver,'user_created':True,'login':True,'recorded_repair':True}))
     finally:
-        docker(['rm','--force',container],check=False)
+        docker(['rm','--force','--volumes',container],check=False)
 
 
 if __name__=='__main__':effect(sys.argv[1])

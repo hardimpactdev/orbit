@@ -3,6 +3,7 @@ name: operation-instance-transfer
 description: >-
   Move one captured development checkout through native209 SSH, Process and
   Route children.
+queueTimeout: 30
 vaults:
   - orbit-control-inputs
 inputs:
@@ -45,16 +46,16 @@ inputs:
   additionalProperties: false
 jobs:
   - name: transfer
-    target: orbit-node-209
+    labels: {role: swamp}
     steps:
       - name: destination-ready-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn: []
         guard: '${{ steps.exists(n, steps[n].status == "failed") }}'
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "itr-" + run.id + "-0" }}'
+          behaviorName: '${{ "itr-0" }}'
           methodName: read
           inputs:
             action: transfer_probe
@@ -63,7 +64,7 @@ jobs:
               root: '${{ inputs.intent.destination.root }}'
               destination: true
       - name: destination-ready
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destination-ready-assets
             condition:
@@ -72,10 +73,10 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "itr-" + run.id + "-1" }}'
+          behaviorName: '${{ ("itr-1-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: script
           globalArgs: &ref_1
-            name: '${{ "itr-destination-" + run.id }}'
+            name: '${{ ("itr-1-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}'
             transport:
               kind: ssh
               user: '${{ inputs.intent.destination.ssh_execution.target.user }}'
@@ -93,7 +94,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["destination-ready-assets"].outputs.script_body }}'
       - name: source-filesystem-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destination-ready
             condition:
@@ -102,7 +103,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "itr-" + run.id + "-2" }}'
+          behaviorName: '${{ "itr-2" }}'
           methodName: read
           inputs:
             action: transfer_probe
@@ -110,7 +111,7 @@ jobs:
               path: '${{ inputs.intent.source.source }}'
               destination: false
       - name: source-filesystem
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-filesystem-assets
             condition:
@@ -119,10 +120,10 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "itr-" + run.id + "-3" }}'
+          behaviorName: '${{ ("itr-3-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: script
           globalArgs: &ref_0
-            name: '${{ "itr-source-" + run.id }}'
+            name: '${{ ("itr-3-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}'
             transport:
               kind: ssh
               user: '${{ inputs.intent.source.ssh_execution.target.user }}'
@@ -138,7 +139,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["source-filesystem-assets"].outputs.script_body }}'
       - name: top
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-filesystem
             condition:
@@ -147,7 +148,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "itr-" + run.id + "-4" }}'
+          behaviorName: '${{ ("itr-4-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -163,7 +164,7 @@ jobs:
               - rev-parse
               - '--show-toplevel'
       - name: git-directory
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: top
             condition:
@@ -172,7 +173,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "itr-" + run.id + "-5" }}'
+          behaviorName: '${{ ("itr-5-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -188,7 +189,7 @@ jobs:
               - rev-parse
               - '--absolute-git-dir'
       - name: common
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: git-directory
             condition:
@@ -197,7 +198,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "itr-" + run.id + "-6" }}'
+          behaviorName: '${{ ("itr-6-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -214,7 +215,7 @@ jobs:
               - '--path-format=absolute'
               - '--git-common-dir'
       - name: origin-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: common
             condition:
@@ -223,14 +224,14 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "itr-" + run.id + "-7" }}'
+          behaviorName: '${{ "itr-7" }}'
           methodName: read
           inputs:
             action: origin
             input:
               checkout: '${{ inputs.intent.source.source }}'
       - name: origin
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: origin-assets
             condition:
@@ -239,7 +240,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "itr-" + run.id + "-8" }}'
+          behaviorName: '${{ ("itr-8-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: script
           globalArgs: *ref_0
           inputs:
@@ -247,7 +248,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["origin-assets"].outputs.script_body }}'
       - name: source-proof
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: origin
             condition:
@@ -256,7 +257,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "itr-" + run.id + "-9" }}'
+          behaviorName: '${{ "itr-9" }}'
           methodName: transferSource
           inputs:
             identity: '${{ inputs.intent.source.repository_identity }}'
@@ -267,7 +268,7 @@ jobs:
             common: '${{ steps["common"].outputs }}'
             filesystem: '${{ steps["source-filesystem"].outputs }}'
       - name: pause
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-proof
             condition:
@@ -278,7 +279,7 @@ jobs:
           in: '${{ inputs.intent.processes.source }}'
         task:
           type: workflow
-          workflowIdOrName: operation-process-stop
+          workflowIdOrName: operation-process-control
           inputs:
             operation_id: '${{ inputs.operation_id }}'
             node_id: '${{ inputs.node_id }}'
@@ -286,7 +287,7 @@ jobs:
             intent: '${{ self.member.stop_intent }}'
             execution_secrets: {}
       - name: archive-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: source-proof
             condition:
@@ -298,7 +299,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "itr-" + run.id + "-11" }}'
+          behaviorName: '${{ "itr-11" }}'
           methodName: read
           inputs:
             action: transfer_archive
@@ -308,7 +309,7 @@ jobs:
               git_directory: '${{ steps["source-proof"].outputs.git_directory }}'
               archive: '${{ "/tmp/orbit-transfer-" + run.id + ".tar" }}'
       - name: archive
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: archive-assets
             condition:
@@ -317,7 +318,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "itr-" + run.id + "-12" }}'
+          behaviorName: '${{ ("itr-12-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: script
           globalArgs: *ref_0
           inputs:
@@ -325,7 +326,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["archive-assets"].outputs.script_body }}'
       - name: download
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: archive
             condition:
@@ -334,7 +335,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "itr-" + run.id + "-13" }}'
+          behaviorName: '${{ ("itr-13-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: copy
           globalArgs: *ref_0
           inputs:
@@ -343,7 +344,7 @@ jobs:
             dst: '${{ "/tmp/orbit-transfer-" + run.id + ".download.tar" }}'
             direction: from
       - name: upload
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: download
             condition:
@@ -352,7 +353,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "itr-" + run.id + "-14" }}'
+          behaviorName: '${{ ("itr-14-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: copy
           globalArgs: *ref_1
           inputs:
@@ -363,7 +364,7 @@ jobs:
             mode: '0600'
             atomic: true
       - name: install-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: upload
             condition:
@@ -372,7 +373,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "itr-" + run.id + "-15" }}'
+          behaviorName: '${{ "itr-15" }}'
           methodName: read
           inputs:
             action: transfer_install
@@ -380,7 +381,7 @@ jobs:
               path: '${{ inputs.intent.destination.destination }}'
               archive: '${{ "/tmp/orbit-transfer-" + run.id + ".install.tar" }}'
       - name: install
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: install-assets
             condition:
@@ -389,7 +390,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "itr-" + run.id + "-16" }}'
+          behaviorName: '${{ ("itr-16-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: script
           globalArgs: *ref_1
           inputs:
@@ -397,7 +398,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["install-assets"].outputs.script_body }}'
       - name: destination-proof
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: install
             condition:
@@ -406,12 +407,12 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "itr-" + run.id + "-17" }}'
+          behaviorName: '${{ "itr-17" }}'
           methodName: decode
           inputs:
             observation: '${{ steps["install"].outputs }}'
       - name: standalone
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: destination-proof
             condition:
@@ -420,7 +421,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "itr-" + run.id + "-18" }}'
+          behaviorName: '${{ ("itr-18-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_1
           inputs:
@@ -433,7 +434,7 @@ jobs:
               - core.bare
               - 'false'
       - name: worktree-config
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: standalone
             condition:
@@ -442,7 +443,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "itr-" + run.id + "-19" }}'
+          behaviorName: '${{ ("itr-19-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_1
           inputs:
@@ -458,7 +459,7 @@ jobs:
               - 0
               - 5
       - name: environment-permissions-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: worktree-config
             condition:
@@ -467,14 +468,14 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "itr-" + run.id + "-20" }}'
+          behaviorName: '${{ "itr-20" }}'
           methodName: read
           inputs:
             action: protect_environment
             input:
               application: '${{ inputs.intent.destination.application }}'
       - name: environment-permissions
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: environment-permissions-assets
             condition:
@@ -483,7 +484,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "itr-" + run.id + "-21" }}'
+          behaviorName: '${{ ("itr-21-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: script
           globalArgs: *ref_1
           inputs:
@@ -491,7 +492,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["environment-permissions-assets"].outputs.script_body }}'
       - name: workloads
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: environment-permissions
             condition:
@@ -510,7 +511,7 @@ jobs:
             intent: '${{ self.workload }}'
             execution_secrets: {}
       - name: activate
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: environment-permissions
             condition:
@@ -535,7 +536,7 @@ jobs:
               {"environment":inputs.execution_secrets[self.member.secret_field]}
               : {} }}
       - name: forward
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: environment-permissions
             condition:
@@ -559,7 +560,7 @@ jobs:
             execution_secrets: '${{ inputs.execution_secrets }}'
             parent_run_id: '${{ run.id }}'
       - name: restore
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: forward
             condition:
@@ -580,7 +581,7 @@ jobs:
             execution_secrets: '${{ inputs.execution_secrets }}'
             parent_run_id: '${{ run.id }}'
       - name: restore-source-runtime
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: restore
             condition:
@@ -604,7 +605,7 @@ jobs:
               {"environment":inputs.execution_secrets[self.member.secret_field]}
               : {} }}
       - name: discard-destination-runtime
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: restore
             condition:
@@ -633,7 +634,7 @@ jobs:
             intent: '${{ self.member.control_intent }}'
             execution_secrets: {}
       - name: discard-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: restore
             condition:
@@ -656,14 +657,14 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "itr-" + run.id + "-28" }}'
+          behaviorName: '${{ "itr-28" }}'
           methodName: read
           inputs:
             action: transfer_remove
             input:
               proof: '${{ steps["destination-proof"].outputs }}'
       - name: discard
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: discard-assets
             condition:
@@ -680,7 +681,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "itr-" + run.id + "-29" }}'
+          behaviorName: '${{ ("itr-29-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: script
           globalArgs: *ref_1
           inputs:
@@ -688,7 +689,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["discard-assets"].outputs.script_body }}'
       - name: result
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: discard
             condition:
@@ -696,7 +697,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "itr-" + run.id + "-30" }}'
+          behaviorName: '${{ "itr-30" }}'
           methodName: transferResult
           inputs:
             cutover: >-
@@ -708,7 +709,7 @@ jobs:
             transfer_id: '${{ inputs.intent.transfer_id }}'
             outcomes: '${{ steps }}'
       - name: retire-runtime
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: result
             condition:
@@ -730,7 +731,7 @@ jobs:
             intent: '${{ self.member.control_intent }}'
             execution_secrets: {}
       - name: retire-source-assets
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: result
             condition:
@@ -747,14 +748,14 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "itr-" + run.id + "-32" }}'
+          behaviorName: '${{ "itr-32" }}'
           methodName: read
           inputs:
             action: transfer_remove
             input:
               proof: '${{ steps["source-proof"].outputs }}'
       - name: retire-source
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: retire-source-assets
             condition:
@@ -768,7 +769,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "itr-" + run.id + "-33" }}'
+          behaviorName: '${{ ("itr-33-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: script
           globalArgs: *ref_0
           inputs:
@@ -776,7 +777,7 @@ jobs:
             interpreter: python3
             script: '${{ steps["retire-source-assets"].outputs.script_body }}'
       - name: prune-worktree
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: retire-source
             condition:
@@ -790,7 +791,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "itr-" + run.id + "-34" }}'
+          behaviorName: '${{ ("itr-34-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -802,7 +803,7 @@ jobs:
               - worktree
               - prune
       - name: remove-source-archive
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: prune-worktree
             condition:
@@ -813,7 +814,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "itr-" + run.id + "-35" }}'
+          behaviorName: '${{ ("itr-35-" + string(inputs.intent.source.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -824,7 +825,7 @@ jobs:
               - '--'
               - '${{ "/tmp/orbit-transfer-" + run.id + ".tar" }}'
       - name: remove-destination-archive
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: remove-source-archive
             condition:
@@ -833,7 +834,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "itr-" + run.id + "-36" }}'
+          behaviorName: '${{ ("itr-36-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: exec
           globalArgs: *ref_1
           inputs:
@@ -844,7 +845,7 @@ jobs:
               - '--'
               - '${{ "/tmp/orbit-transfer-" + run.id + ".install.tar" }}'
       - name: remove-local-archive
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: remove-destination-archive
             condition:
@@ -855,14 +856,14 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: '${{ "itr-" + run.id + "-37" }}'
+          behaviorName: '${{ "itr-37" }}'
           methodName: execute
           inputs:
             run: rm -f -- "$ARCHIVE"
             env:
               ARCHIVE: '${{ "/tmp/orbit-transfer-" + run.id + ".download.tar" }}'
       - name: complete
-        target: orbit-node-209
+        labels: {role: swamp}
         dependsOn:
           - step: remove-local-archive
             condition:
@@ -870,7 +871,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "itr-" + run.id + "-38" }}'
+          behaviorName: '${{ "itr-38" }}'
           methodName: complete
           inputs:
             cutover: >-

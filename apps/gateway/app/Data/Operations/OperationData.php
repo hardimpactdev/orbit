@@ -39,9 +39,20 @@ final class OperationData extends Data
         public ?int $pollAfterSeconds,
         /** @var array{error_code:string}|null */
         public ?array $assistance = null,
-        /** @var array{code:?string,detail:string}|null */
+        /** @var array{code:?string,detail:string,stderr_recorded?:bool}|null */
         public ?array $error = null,
+        public ?string $currentStepStartedAt = null,
+        public ?string $currentStepObservedAt = null,
     ) {}
+
+    private static function progressTime(Operation $operation, string $field): ?string
+    {
+        $progress = $operation->state['native_progress'] ?? null;
+        $active = is_array($progress) && is_array($progress['active'] ?? null) ? $progress['active'] : [];
+        $current = $active === [] ? null : end($active);
+
+        return $operation->current_step !== null && is_array($current) && is_string($current[$field] ?? null) ? $current[$field] : null;
+    }
 
     public static function fromModel(Operation $operation, ?string $callerNodeName = null): self
     {
@@ -69,8 +80,11 @@ final class OperationData extends Data
             finishedAt: $operation->finished_at?->format(DateTimeInterface::ATOM),
             pollAfterSeconds: null,
             assistance: null,
+            currentStepStartedAt: self::progressTime($operation, 'started_at'),
+            currentStepObservedAt: self::progressTime($operation, 'observed_at'),
             error: is_array($failure) && is_string($failure['detail'] ?? null)
-                ? ['code' => $operation->error_code, 'detail' => $failure['detail']] : null,
+                ? ['code' => $operation->error_code, 'detail' => $failure['detail'],
+                    ...($operation->error_code !== 'operation.timed_out' ? ['stderr_recorded' => ($failure['stderr_recorded'] ?? false) === true] : [])] : null,
         );
     }
 }

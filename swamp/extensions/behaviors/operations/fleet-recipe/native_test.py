@@ -155,7 +155,7 @@ class RecipeNative(NativeTestCase):
         for node in (4,8,9,14,45,202,206,207,208,209,210,212):
             for job in source['jobs']:
                 for step in job['steps']:
-                    self.assertEqual(step['target'],'orbit-node-209')
+                    self.assertEqual(step['labels'],{'role': 'swamp'})
                     globals_=step.get('task',{}).get('globalArgs',{})
                     if globals_.get('hosts'):
                         self.assertIn('inputs.intent.ssh.target.host_keys',globals_['hosts'][0]['transport']['hostKeys'])

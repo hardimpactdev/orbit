@@ -51,15 +51,15 @@ else:shutil.copyfile(source,destination)
         self.destination = self.repo / "destination"
         self.child = yaml.safe_load((ROOT / "workflows/workflow-operation-instance-transfer.yaml").read_text())
         for job in self.child["jobs"]:
-            self.assertEqual(job.pop("target"), "orbit-node-209")
+            self.assertEqual(job.pop("labels"), {"role": "swamp"})
             for step in job["steps"]:
-                self.assertEqual(step.pop("target"), "orbit-node-209")
+                self.assertEqual(step.pop("labels"), {"role": "swamp"})
                 task = step["task"]
                 if task.get("behaviorType") == "@swamp/ssh":
                     task["globalArgs"].update(sshBinary=str(fake), scpBinary=str(scp))
         for mode in ("forward", "restore"):
             child = yaml.safe_load((ROOT / f"workflows/workflow-route-mutation-{mode}.yaml").read_text())
-            self.assertEqual(child.pop("target"), "orbit-node-209")
+            self.assertEqual(child.pop("labels"), {"role": "swamp"})
             (self.repo / f"workflows/workflow-route-mutation-{mode}.yaml").write_text(yaml.safe_dump(child, sort_keys=False))
         self.workflow_path = self.repo / "workflows/workflow-operation-instance-transfer.yaml"
         self.workflow_path.write_text(yaml.safe_dump(self.child, sort_keys=False))
@@ -149,7 +149,7 @@ else:shutil.copyfile(source,destination)
             "stop_intent": {"control": {k: control[k] for k in ("process_id", "runtime", "name", "on_demand")} | {"vite": None}, "ssh_execution": connection}}]
         for action in ("stop", "create", "destroy"):
             child = yaml.safe_load((ROOT / f"workflows/workflow-operation-process-{action}.yaml").read_text())
-            child.pop("target", None)
+            child.pop("target", None); child.pop("labels", None)
             child["jobs"] = [{"name": "fixture", "steps": [{"name": "accepted", "task": {"type": "behavior", "behaviorType": "command/shell",
                 "behaviorName": '${{ "fixture-' + action + '-"+run.id }}', "methodName": "execute", "inputs": {"run": "true"}}}]}]
             (self.repo / f"workflows/workflow-operation-process-{action}.yaml").write_text(yaml.safe_dump(child, sort_keys=False))

@@ -69,7 +69,7 @@ class MetricsRoleNative(NativeTestCase):
             (ROOT / "workflows/workflow-operation-metrics-role.yaml").read_text()
         )
         for step in [step for job in workflow["jobs"] for step in job["steps"]]:
-            self.assertEqual(step.pop("target"), "orbit-node-209")
+            self.assertEqual(step.pop("labels"), {"role": "swamp"})
             step["task"] = copy.deepcopy(step["task"])
             task = step["task"]
             if task.get("type") == "workflow":

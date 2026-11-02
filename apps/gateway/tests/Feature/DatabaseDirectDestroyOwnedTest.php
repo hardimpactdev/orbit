@@ -62,7 +62,7 @@ it('serves disjoint server passwords through the real shared controller for each
     $field = $lifecycle ? 'database_material' : 'payload';
     $readers = [];
     foreach ([31, 32] as $suffix) {
-        $node = Node::query()->create(['name' => 'database-'.$suffix, 'status' => 'active', 'platform' => 'linux',
+        $node = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND', 'name' => 'database-'.$suffix, 'status' => 'active', 'platform' => 'linux',
             'architecture' => 'amd64', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.'.$suffix, 'public_ssh_host' => '192.0.2.'.$suffix]);
         $node->accessibleNodes()->attach($this->gateway);
         $readers[] = $node;

@@ -6,6 +6,7 @@ use App\Actions\Routes\AdmitRouteOperationAction;
 use App\Actions\Routes\RouteTargetState;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Routes\NativeRoutePublicationArtifacts;
 use App\Domain\Routes\NativeRouteTargetInput;
 use App\Domain\Routes\NativeRouteTargetIntent;
 use App\Domain\Routes\NativeRouteTargetProjection;
@@ -63,7 +64,7 @@ afterEach(function (): void {
 
 it('freezes prospective target sites and original restoration without changing associations or markers', function (): void {
     $capture = app(NativeRouteTargetInput::class)->capture($this->routes['pool']->fresh(), $this->proposal);
-    $publication = collect($capture['intent']['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->nodes['new']->id);
+    $publication = collect($capture['intent']['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['intent']['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->nodes['new']->id);
 
     expect($publication['before']['caddy']['content'])->toContain('source.target.test')->not->toContain('pool.target.test')
         ->and($publication['prepared']['caddy']['content'])->toContain('source.target.test', 'pool.target.test', '-hostname-change')
@@ -161,11 +162,16 @@ it('keeps co-located Router pools unchanged until workload TLS preparation finis
     $this->nodes['new']->roles()->create(['role' => 'router', 'status' => 'active', 'cluster_id' => $this->nodes['new']->cluster_id]);
 
     $capture = app(NativeRouteTargetInput::class)->capture($this->routes['pool']->fresh(), $this->proposal);
-    $publication = collect($capture['intent']['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->nodes['new']->id);
+    $publication = collect($capture['intent']['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['intent']['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->nodes['new']->id);
     $preparation = collect($capture['intent']['preparation']['publications'])->firstWhere('node_id', $this->nodes['new']->id);
-    $pool = static fn (array $caddy): string => collect($caddy['blocks'])->first(static fn (array $block): bool => str_contains($block['block'], 'pool.target.test'))['block'];
+    $pool = static function (array $caddy): ?string {
+        preg_match('/^# orbit: [^\n]+\n(?:(?!^# orbit: ).)*pool\.target\.test(?:(?!^# orbit: ).)*/ms', $caddy['content'], $match);
 
-    expect($pool($preparation['after']))->toBe($pool($publication['before']['caddy']))
+        return $match[0] ?? null;
+    };
+
+    expect($pool($capture['intent']['route_mutations']['artifacts']['caddy'][$preparation['after']]))->toBeNull()
+        ->and($pool($publication['before']['caddy']))->not->toBeNull()
         ->and($pool($publication['prepared']['caddy']))->not->toBe($pool($publication['before']['caddy']))
         ->and($capture['intent']['preparation']['probes'])->toHaveCount(1)
         ->and($capture['intent']['preparation']['probes'][0]['probe']['domain'])->toBe('destination.target.test')
@@ -212,7 +218,7 @@ it('publishes a pending pool only after terminal success', function (string $sta
     $route->update(['status' => 'pending', 'sites_published' => false]);
     $capture = app(NativeRouteTargetInput::class)->capture($route->fresh(), $this->proposal);
     $operation = target_input_operation($capture, $this->nodes['old']->id);
-    $router = collect($capture['intent']['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->nodes['router']->id);
+    $router = collect($capture['intent']['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['intent']['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->nodes['router']->id);
     expect($router['before']['caddy']['content'])->not->toContain('pool.target.test')
         ->and($router['after']['caddy']['content'])->toContain('pool.target.test')
         ->and($route->fresh()->status->value)->toBe('pending')->and($route->fresh()->sites_published)->toBeFalse();

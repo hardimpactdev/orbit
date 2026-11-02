@@ -1,7 +1,8 @@
+import { firewallIdentity } from "../fleet/firewall";
 import { processRuntimeIsActive } from "../fleet/fleet";
 import { applyRow } from "../realtime/apply";
 import { api } from "./client";
-import { instanceOperationsQuery, startDeploy, type Operation } from "./operations";
+import { awaitOperation, instanceOperationsQuery, startDeploy, type Operation } from "./operations";
 import { queryClient } from "./queryClient";
 import type {
     AnyRecord,
@@ -127,9 +128,18 @@ export function actionsFor(kind: Kind, row: AnyRecord): Action[] {
                     label: "doctor",
                     description: `Check node [${node.name}] for drift.`,
                     run: async () => {
-                        const report = await api<DoctorReport>("POST", "/api/v1/doctor", {
-                            node_id: node.id,
-                        });
+                        // Doctor starts an Operation; its report arrives as the result of the finished run.
+                        const operation = await awaitOperation(
+                            await api<Operation>("POST", "/api/v1/doctor", { node_id: node.id }),
+                        );
+                        const report = operation.result?.report as DoctorReport | undefined;
+
+                        if (operation.status !== "succeeded" || report === undefined) {
+                            throw new Error(
+                                `Doctor for node [${node.name}] ended ${operation.status}${operation.error_code === null ? "" : ` (${operation.error_code})`} without a report.`,
+                            );
+                        }
+
                         const drift = Number(report.summary?.drift ?? 0);
 
                         return drift === 0
@@ -279,15 +289,16 @@ export function actionsFor(kind: Kind, row: AnyRecord): Action[] {
                 {
                     label: "remove",
                     destructive: true,
-                    description: `Remove firewall rule [${rule.name}] on node [${rule.node}]?`,
+                    description: `Remove firewall rule [${firewallIdentity(rule)}] on node [${rule.node}]?`,
                     run: async () => {
-                        await api(
-                            "DELETE",
-                            `/api/v1/nodes/${rule.node_id}/firewall-rules/${encodeURIComponent(rule.name)}`,
-                        );
+                        await api("POST", `/api/v1/nodes/${rule.node_id}/firewall-rules/remove`, {
+                            port: rule.port,
+                            protocol: rule.protocol,
+                            source: rule.source,
+                        });
                         applyRow(queryClient, "firewall", "deleted", { id: rule.id });
 
-                        return `Firewall rule [${rule.name}] removed.`;
+                        return `Firewall rule [${firewallIdentity(rule)}] removed.`;
                     },
                 },
             ];

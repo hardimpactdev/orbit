@@ -6,8 +6,8 @@ covers:
   - apps/gateway/config/{app,logging,retention}.php
   - apps/gateway/app/Infrastructure/Logging/**
   - apps/gateway/{app/Domain/Gateway/GatewayCacheStore.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,resources/sigstore/trusted_root.json}
-  - apps/gateway/app/Infrastructure/Gateway/GatewayCheckoutAccessConverger.php
-  - '{platform/swamp-load/**,apps/gateway/app/**/GatewayReleases/**}'
+  - "{apps/gateway/app/Infrastructure/Gateway/GatewayCheckoutAccessConverger.php,swamp/extensions/behaviors/operations/fleet-recipe/scripts/swamp_workers.py}"
+  - apps/gateway/app/**/GatewayReleases/**
   - apps/gateway/app/**/*GatewayRelease*.php
   - apps/gateway/{app/Domain/Nodes/NodeUpdat*.php,app/Data/Nodes/NodeUpdatingData.php,app/Domain/Fleet/**,app/Infrastructure/Fleet/**,app/Actions/Fleet/**,app/Data/Fleet/**,app/Models/FleetRollout*.php,app/Console/Commands/FleetConvergeCommand.php,app/Http/Controllers/Api/FleetRolloutsController.php,config/fleet.php}
 ---
@@ -32,7 +32,7 @@ Gateway release unit convergence also installs a journald drop-in and a logrotat
 
 `config/retention.php` sets these limits. `ORBIT_JOURNAL_MAX_MB` defaults to 256 MiB, `ORBIT_JOURNAL_KEEP_FREE_MB` to 1024 MiB, `ORBIT_JOURNAL_DAYS` to seven days, and `ORBIT_JOURNAL_RUNTIME_MAX_MB` to 64 MiB. Journald reads the drop-in at its next start; convergence does not restart it or vacuum existing journals. `ORBIT_LOG_ROTATE_MB` and `ORBIT_LOG_ROTATE_KEEP` set the plain log's threshold and archive count. These are rotation limits, not a hard disk quota: an active journal and log output between hourly checks can exceed them.
 
-Explicit observation retention reports eligible failed jobs and batches without deleting records. `ORBIT_FAILED_JOBS_HOURS` defaults to 168 hours; `ORBIT_JOB_BATCH_HOURS` defaults to 24 hours. The former daily observation pruning path is removed. Storage reclamation requires a separate explicit maintenance action.
+The Gateway scheduler runs Laravel's `queue:prune-failed` daily. `ORBIT_FAILED_JOBS_HOURS` defaults to 168 hours. The daily `queue:prune-batches` uses `ORBIT_JOB_BATCH_HOURS`, which defaults to 24 hours, for finished, unfinished, and cancelled batches. Neither command vacuums SQLite or changes application data. [Scheduled work](/reference/gateway-queue#scheduled-work) lists both.
 
 Local recovery archives need an operator retirement step. Copy a complete state set off the Gateway, verify it there, and remove superseded local copies after the maintenance operation succeeds. Do not accumulate whole-state archives inside `ORBIT_HOME`: the next archive would include them again. Normal release retention owns only `backups/pre-*.sqlite`; it does not own manually named backups, `shared/env-backups`, experiment checkouts, or protected staged recovery copies. The staged copy remains protected until an operator explicitly retires it, as [finalization](#finalization) describes.
 
@@ -105,23 +105,24 @@ The paths come from `ORBIT_GATEWAY_CHECKOUT`, which names `apps/gateway` below t
 
 The Gateway reports its version in `gateway:status`. When `APP_VERSION` is unset or empty, the version is the full commit in the release's `REVISION` file, so `bin/deploy-verify --sha` works without an env edit. Without either, the version is `dev`. Leave `APP_VERSION` out of the shared env file in the release layout; a set value always wins.
 
-### Install the pinned Swamp loader
+### Load Swamp
 
-The pinned loader ships before the Gateway release runner requires it. This transition leaves release checks unchanged. The load owner installs it from one reviewed commit on Node 209 with `python3 platform/swamp-load/install_release_load.py --sha <full-commit>`, using the existing privileged publication path. The installer checks script bytes against that commit and publishes an immutable package at `/usr/local/libexec/orbit-swamp-release-load.py`. Installation does not load Swamp, patch the merge publisher, or restart a service. It requires the existing `behavior_versions.py` audit and Python's YAML parser (`python3-yaml`).
+Swamp serve on Node 209 reads `swamp/` from a Git checkout of the Orbit repository at `/home/orbit/apps/orbit-monorepo-staging/checkout`, and runs with `--hot-reload`. A release loads Swamp in one step, after the migration and before the switch. The release runner records one `gateway.swamp_load` intent with the release commit and waits up to 600 seconds for its native terminal. The `operation-gateway-swamp-load` workflow runs one `command/shell` step on 209:
 
-A second release enables the entry and retires the separate merge publisher. The release runner becomes the only normal loader. It owns the real Gateway release lock and uses existing pinned SSH to 209. The entry accepts one `orbit.swamp.release-load.v1` JSON request on stdin, with `release_sha`, the 12-character `release_id`, `gateway_release_record`, `target_node_id: 209`, a unique `attempt_id`, and `action: prepare|accept`. These identify an attempt; they do not attest locks or grant authority. Credentials stay in existing protected files.
+1. it fetches the commit and checks it out in the serve checkout, fast-forward only;
+2. it renders serve's grants from `swamp/config/gateway-workflow-grants.json` and `swamp/config/serve-grants.json` into `swamp/grants/`;
+3. if an extension manifest's `additionalFiles` differ from those of the commit serve started from, it schedules a serve restart, as described below, and ends;
+4. otherwise it asks serve to reload, as hot reload would, and waits for the acknowledgement;
+5. it runs `swamp access reload`, so serve creates, revokes or keeps grants to match the file;
+6. it compares the workflows serve lists with the workflows on disk, leaving out the `schedule-<uuid>` workflows that [Schedules](/reference/schedules) write into serve at any time.
 
-The entry opens the existing host publication lock without creating or following a link. Before taking custody it checks Serve and the clean checkout, fetches the exact admitted SHA, and resolves that commit. The clean checkout must match the accepted native source and runtime. A busy lock or failed preflight changes no native state, leaves no pending marker, and reports `retry_safe: true`.
+The step prints the commit, the previous commit, and the workflow count. Any failure, or no terminal within the wait, pauses the release with `gateway.release_swamp_load_failed`, and the old release stays live. The record names the Operation. A failed load can leave the checkout on the new commit; fix forward and resume.
 
-Immediately before checkout it writes the pending marker. Any failure after that point retains the marker and requires inspection. A failed verification can leave Swamp on the new source while the old Gateway stays live. The release pauses and an operator fixes forward; it does not silently reload an old source.
+Serve's extension reload keeps each manifest's `additionalFiles` list from serve's start ([Lab #4282](https://swamp-club.com/lab/4282)), so a new shipped script reaches workers only after a restart. Only the release load moves the checkout, so its HEAD reflog at serve's start time names the commit serve started from. The step compares the lists of that commit with the release commit's. When they differ, it schedules a serve restart 5 seconds later and reports the commit serve started from and the changed manifests.
 
-The loader uses official CLI commands on the installed runtime. One local and one remote workflow list compare every id/name pair. Full `workflow get` checks cover only workflow YAML files changed since the accepted live Swamp SHA, with four concurrent checks at most. For `K` changed workflows and `B` audited extension types, definition and metadata reads cost `2 + 2K + B + 1` CLI calls: two lists, two gets per changed workflow, the existing source-version audit, and active run history. Reload and exact manifest reconciliation add their own calls. The receipt records counts and scope. The load has a 600-second bound.
+Serve runs with `--shutdown-drain-timeout 5m`. On stop it takes no new work and waits up to 5 minutes for runs in flight; a run still in flight then is interrupted. The release reads serve's instance id from `https://swamp.orbit/ready` before the load. After a restart report it waits up to 420 seconds for a new instance, then records a second load, which reloads, applies the grants and compares the workflows. The release record keeps the restart report, the first Operation, the new instance and the wait beside the second Operation. This restart goes when Swamp fixes #4282. The step never restarts a worker.
 
-A successful `prepare` returns `awaiting_gateway_verification` and retains `/var/lib/orbit-swamp-main-load/releases/pending.json`. The Gateway callback checks its configured run token and CA, then sends `accept` with the same identity and `receipt_hash`. The entry rechecks source, runtime and health before recording `verified` and clearing the marker. It accepts no self-reported token proof.
-
-If the caller dies, an operator inspects the exact checkpoint, receipt, source and runtime under both release and publication locks. The operator repairs any split state and records a verified native source matching the checkout. Only then does the operator archive the attempt and remove its pending marker before an explicitly approved new attempt. Do not clear an uncertain attempt merely to retry automatically.
-
-The accepted hot reload on pinned e459 is recorded in `evidence/batch-9c2a850f-load-20261101/accepted-load-receipt.json` in the operator workspace. It matched the exposed definitions checked in that receipt without restarting. B1, Lab 4223, remains a known failure mode: every load still checks its changed definitions and pauses on a mismatch. Official `workflow.get` omits some placement and `forEach` fields. Unchanged workflows receive identity checks, not a new full definition proof. Extension version equality does not prove bundle bytes or helper freshness. No full extension registry equality is claimed.
+A new workflow needs no grant. The Gateway principal `user:orbit-gateway` has one `run` and `read` grant on every workflow (`workflow:*`), so serve accepts its start as soon as the load step has loaded the workflow.
 
 ### Prepare a release
 
@@ -295,7 +296,7 @@ The Gateway selects and downloads the GitHub artifact. It calls `gateway.inspect
 
 A complete build is reused. Nothing serves it until the release verified: deploy then switches `web/current` to it in one rename. Open pages read the new build's `version.json` and move to it on their next navigation or resume ([Updates to open pages](/reference/web-app#updates-to-open-pages)). A failure leaves no partial build behind. After a verified release, the Gateway removes every web build that belongs to no retained release, such as the build of a commit whose prepare failed later, or an older `bin/web-deploy` build. It never removes the build `current` serves. When the releases directory cannot be read, it skips this cleanup and logs a warning.
 
-CI's `Required checks` job needs the Web job, and the Web job uploads the artifact before it succeeds. A commit also needs a passing `Gateway release inputs` check for automatic release. Swamp-only commits skip that check and the Gateway build; they never enter the release queue. So a release candidate with passing checks has its artifact, and a missing or expired one fails the commit at once instead of waiting for it. A newer commit is released instead. The artifact expires after 14 days, so deploying or adopting an older commit fails at this step.
+CI's `Required checks` job needs the Web job, and the Web job uploads the artifact before it succeeds. A commit also needs a passing `Gateway release inputs` check for automatic release. Every main commit runs both, Swamp-only ones too, because the release also [loads Swamp](#load-swamp). So a release candidate with passing checks has its artifact, and a missing or expired one fails the commit at once instead of waiting for it. A newer commit is released instead. The artifact expires after 14 days, so deploying or adopting an older commit fails at this step.
 
 ##### Accepted CI runs
 
@@ -313,7 +314,7 @@ Deploy is the manual release. Before it changes anything, it:
 
 Before deploying a schema squash, finish the existing migration chain on the current release. The [contributor guide](/contributor-guide#3-implement-and-verify) describes the baseline loader and its requirements.
 
-Deploy then takes the pre-release database snapshot, runs `php artisan migrate --force`, [drains Horizon](/reference/gateway-queue#releases), and calls `gateway.switch-release` through `AgentCommandRunner`. A drain failure reports `gateway.release_horizon_not_drained` and leaves the serving link unchanged. This barrier protects recipe publication; an incompatible schema or queued payload change still needs the full operator hold described below.
+Deploy then takes the pre-release database snapshot, runs `php artisan migrate --force`, [loads Swamp](#load-swamp), [drains Horizon](/reference/gateway-queue#releases), and calls `gateway.switch-release` through `AgentCommandRunner`. A drain failure reports `gateway.release_horizon_not_drained` and leaves the serving link unchanged. This barrier protects recipe publication; an incompatible schema or queued payload change still needs the full operator hold described below.
 
 The native command validates the prepared release and replaces `/home/orbit/orbit` with one atomic rename under the release target lock. Readers keep either the old or new release. Repeating the switch leaves the link unchanged. An in-place checkout or a link to something else is refused until `gateway:release:adopt`. A staging path that is not the requested release link is refused without replacing it.
 
@@ -559,7 +560,7 @@ The new scheduler pauses document cleanup when it starts. The handoff waits for 
 
 The handoff also installs the [fleet rollout units](#units). A failure there only logs a warning. It queues [host-local recipe image builds](/reference/compute-drivers#build-the-base-image) when the deployed recipe changes. This only records and dispatches work; it never builds on the release process. A dispatch failure logs an error and the minute recipe check retries it without rolling back a healthy Gateway.
 
-Recipe fleet maintenance skips Docker CE Nodes with reason `docker-provider:docker-ce` and continues with other Nodes. A release never changes their Docker provider. Use the guarded [Docker provider migration](/reference/docker-provider-migration) in a separate maintenance window; fallback requires explicit approval with `--fallback`.
+Recipe fleet maintenance skips Docker CE Nodes with reason `docker-provider:docker-ce` and continues with other Nodes. A release never changes their Docker provider.
 
 When publication is needed, the Caddy handoff submits the normal
 `route.caddy_converge` native root on the Gateway Node worker. Its report records
@@ -665,14 +666,13 @@ Each unit runs as `orbit` from `/home/orbit/orbit/apps/gateway`, so a run starts
 
 Each tick of `gateway:release:auto` takes these steps and stops at the first that ends it:
 
-1. It decides the pending [tick confirmations](#post-release-tick-confirmation).
-2. It stops when automatic releases are disabled or paused. A stall ends then.
-3. A requested release that waits for its unit goes first. The tick stops.
-4. It takes the release lock and ends the records of dead releases. A busy lock stops the tick.
-5. It stops without a deployed commit: the Gateway runs from no release, or `REVISION` is unreadable.
-6. It asks GitHub for the newest commit with passing `Gateway release inputs` and [green checks](/reference/github-app#find-the-newest-green-commit) of the branch that descends from the deployed commit. Commits with a release that failed for the commit itself are left out.
-7. A manual deploy that pinned an older commit after the last resume is never undone. The tick pauses with the reason `manual_deploy`.
-8. It deploys that commit with the trigger `auto`, under the release lock.
+1. It stops when automatic releases are disabled or paused. A stall ends then.
+2. A requested release that waits for its unit goes first. The tick stops.
+3. It takes the release lock and ends the records of dead releases. A busy lock stops the tick.
+4. It stops without a deployed commit: the Gateway runs from no release, or `REVISION` is unreadable.
+5. It asks GitHub for the newest commit with passing `Gateway release inputs` and [green checks](/reference/github-app#find-the-newest-green-commit) of the branch that descends from the deployed commit. Commits with a release that failed for the commit itself are left out.
+6. A manual deploy that pinned an older commit after the last resume is never undone. The tick pauses with the reason `manual_deploy`.
+7. It deploys that commit with the trigger `auto`, under the release lock.
 
 The repository is the `origin` of the shared release repository. `ORBIT_GATEWAY_RELEASE_BRANCH` and `ORBIT_GATEWAY_RELEASE_CHECK` name the branch and the check, by default `main` and `Required checks`. A commit whose release failed or switched back with a retry left is tried again after 10 minutes, up to three attempts. Waiting for published agent delivery is not a failed attempt and spends no retry budget.
 
@@ -1190,10 +1190,11 @@ An unreachable Node changed nothing, so it does not halt the fleet; the catch-up
 
 Release rollout updates Orbit itself, with a timer to catch up missed Nodes. [Nightly recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) waits for every configured host to promote the deployed recipe, then calls Node recipe convergence in fleet order. That page owns the schedule, night window, alerts, and recovery policy, including the guarded rebuild of a failed App-owned nightly PR on newer main. Closed PRs and PRs modified by a person are never refreshed. A mention from another issue or PR does not count as a modification.
 
-A failed image build blocks readiness, not convergence progress. Run `task-vms:build-recipe --retry` after fixing the build; convergence starts when every host promotes the current identity and generation. A Node visit failure or interrupted visit stays halted for manual recovery, even after an image retry.
+When convergence stops:
 
-A Docker CE provider refuses recipe convergence with `docker-provider:docker-ce`. Release rollout and nightly maintenance do not migrate it. Schedule a window for the explicit [Docker provider migration](/reference/docker-provider-migration). It shares the role, apt and self-update locks but stops every container on that Node.
-
-If migration returns `node.docker_migration_failed`, preserve the root-only journal and original data directories. Resolve the named stage and resume the same command with the same recipe. Do not delete the journal to force a new inventory.
+- If an image build fails, readiness blocks but convergence progress does not. Fix the build, then run `task-vms:build-recipe --retry`.
+- Convergence starts when every host promotes the current identity and generation.
+- If a Node visit fails or is interrupted, it stays halted for manual recovery, even after an image retry.
+- If a Node runs the Docker CE provider, recipe convergence refuses it with `docker-provider:docker-ce`. Release rollout and nightly maintenance do not change it.
 
 Converging the Gateway Node also brings its PHP to the recipe's [PHP build](/reference/compute-drivers#php-build). When that changes a PHP package, [`php.install-build`](/reference/compute-drivers#install-the-php-build) validates PHP-FPM and restarts `php8.5-fpm`, which serves the API, then checks each pool socket, `orbit-gateway` included. A failed check reinstalls the previous PHP build and restarts the service again. Converge the Gateway last and while no long request runs.

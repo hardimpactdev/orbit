@@ -8,6 +8,7 @@ use App\Domain\Instances\InstanceTransferProcesses;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\NativeRoutePublicationArtifacts;
 use App\Domain\Routes\NativeRouteTransferPlan;
 use App\Domain\Routes\NativeRouteTransferPublication;
 use App\Domain\Routes\RoutePublication;
@@ -142,7 +143,7 @@ it('cleans candidate leaves only on nodes whose restored publications do not use
     expect(array_filter($cleanup, fn (array $leaf): bool => $leaf['node_id'] === $this->node->id && $leaf['scope'] === 'app-instance-'.$this->instance->id))->toBe([]);
 });
 
-it('captures prospective complete publications without changing stored placement', function (): void {
+it('captures prospective publication deltas without changing stored placement', function (): void {
     $this->node->update(['wireguard_ip' => '10.44.0.11']);
     $this->instance->update(['selected_php_version' => '8.4']);
     $this->destination->update(['wireguard_ip' => '10.44.0.12']);
@@ -157,15 +158,15 @@ it('captures prospective complete publications without changing stored placement
     $routesBefore = Route::query()->orderBy('id')->get()->map->getAttributes()->all();
     $publications = app(NativeRouteTransferPublication::class)->capture($plan, ['instance_id' => $this->instance->id, 'node_id' => $this->destination->id,
         'target' => ['instance' => ['checkout_path' => $this->transfer->destination_path, 'root' => null, 'source_is_laravel' => false, 'vite_port' => null, 'ssr_port' => null]]]);
-    $rows = collect($publications['route_mutations']['forward']['publications'])->keyBy('node_id');
+    $rows = collect($publications['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($publications['route_mutations']['artifacts'], $row))->keyBy('node_id');
     $source = $rows[$this->node->id];
     $destination = $rows[$this->destination->id];
     expect($source['control_node_id'])->toBe(209)
         ->and($source['connection'])->toMatchArray(['nodeHost' => '10.44.0.11', 'nodeUser' => 'orbit', 'become' => true])
         ->and($destination['connection'])->toMatchArray(['nodeHost' => '10.44.0.12', 'nodeUser' => 'orbit', 'become' => true])
         ->and($destination['connection']['nodeIdentityFile'])->toBe(app(SwampSshExecutionInput::class)->identity()['identity_file'])
-        ->and($source['before']['caddy']['content'])->toContain('native.test')->toContain('survivor.source.test')
-        ->and($source['after']['caddy']['content'])->toContain('survivor.source.test')->not->toContain('https://native.test')
+        ->and($source['before']['caddy']['content'])->toContain('native.test')->not->toContain('survivor.source.test')
+        ->and($source['after']['caddy']['content'])->not->toContain('survivor.source.test', 'https://native.test')
         ->and($destination['after']['caddy']['content'])->toContain('native.destination.test')->toContain('/srv/new-native')->toContain('extra.test')
         ->and($destination['before']['caddy']['content'])->not->toContain('native.destination.test')
         ->and((array) $destination['after']['php']['configurations'])->toHaveKey('8.4')
@@ -192,7 +193,7 @@ it('renders the canonical collision-adjusted destination Vite identity instead o
         'target' => ['instance' => ['checkout_path' => $this->transfer->destination_path, 'root' => null,
             'source_is_laravel' => false, 'vite_port' => 5180, 'ssr_port' => 5181]]];
     $publications = app(NativeRouteTransferPublication::class)->capture($plan, $batch);
-    $destination = collect($publications['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->destination->id);
+    $destination = collect($publications['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($publications['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->destination->id);
     expect($destination['after']['caddy']['content'])->toContain('5180')->not->toContain('5173')
         ->and($this->instance->fresh()->vite_port)->toBe(5173);
     $batch['node_id'] = $this->node->id;

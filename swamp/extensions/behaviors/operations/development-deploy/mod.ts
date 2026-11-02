@@ -108,7 +108,7 @@ export function summary(raw: unknown, instanceId: number) {
 }
 export const behavior = {
     type: "@nckrtl/development-deploy",
-    version: "2026.11.01.1",
+    version: "2026.11.01.2",
     resources: {
         assets: {
             schema: z.object({

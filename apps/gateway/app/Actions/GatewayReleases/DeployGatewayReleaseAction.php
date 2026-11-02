@@ -11,6 +11,7 @@ use App\Domain\GatewayReleases\GatewayReleaseDrain;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseExecutionOwner;
 use App\Domain\GatewayReleases\GatewayReleaseHold;
+use App\Domain\GatewayReleases\GatewayReleaseSwampLoad;
 use App\Infrastructure\GatewayReleases\GatewayReleaseBuilder;
 use App\Infrastructure\GatewayReleases\GatewayReleaseGuard;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
@@ -23,9 +24,10 @@ use Throwable;
 
 /**
  * Prepares a commit, checks that it moves forward and knows the applied schema, caches its
- * configuration, migrates when it has pending migrations, then promotes it. Every attempt that
- * names a commit is recorded; {@see GatewayReleaseRetry} decides whether it may be tried again.
- * A refusal by the guard ends the record without marking the commit failed. A failed migration pauses.
+ * configuration, migrates when it has pending migrations, loads the commit into Swamp serve, then
+ * promotes it. Every attempt that names a commit is recorded; {@see GatewayReleaseRetry} decides whether it may be tried again.
+ * A refusal by the guard ends the record without marking the commit failed. A failed migration or Swamp load pauses
+ * with the old release live.
  *
  * The record exists from the start of the attempt and stores each step as it ends, so a caller
  * can follow it ([Release records](/reference/gateway-recovery#release-records)). A verified manual
@@ -44,6 +46,7 @@ final readonly class DeployGatewayReleaseAction
         private GatewayReleaseRetry $retry,
         private GatewayReleaseSupersession $supersession,
         private GatewayReleaseExecutionOwner $owner,
+        private GatewayReleaseSwampLoad $swamp,
         private ?GatewayReleaseDrain $drain = null,
     ) {}
 
@@ -177,6 +180,9 @@ final readonly class DeployGatewayReleaseAction
                 $step = 'drain';
                 $this->assertDrained($prepared->sha);
             }
+            $step = 'swamp';
+            $phases['swamp'] = $this->swamp->load($prepared->sha);
+            $this->recorder->progress($record, $phases);
         } catch (Throwable $thrown) {
             $exception = GatewayReleaseException::fromThrowable($thrown, $step, $prepared?->sha);
             if ($this->waitingForPublication($record, $exception)) {

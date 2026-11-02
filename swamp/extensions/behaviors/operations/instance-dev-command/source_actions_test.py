@@ -13,7 +13,7 @@ HERE = Path(__file__).parent
 
 
 def module(name):
-    spec = importlib.util.spec_from_file_location(name, HERE / 'scripts' / (name + '.py'))
+    spec = importlib.util.spec_from_file_location(name, HERE / 'destroy' / (name + '.py'))
     result = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(result)
     return result
@@ -26,10 +26,13 @@ class SourceActions(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.path = self.root / 'project' / 'proof'
         self.path.mkdir(parents=True)
-        self.member = {'instance_id': 17, 'checkout_path': str(self.path), 'source_root': str(self.root), 'source_layout': 'checkout', 'user': pwd.getpwuid(os.geteuid()).pw_name, 'failed_creation': False, 'starting_commit': 'admitted', 'branch': 'main', 'source_prepare_id': 'admitted-prepare'}
-        self.observe = module('inspect_source').observe
-        self.verify = module('verify_source').verify
-        self.finalize = module('finalize_source').finalize
+        self.member = {'instance_id': 17, 'checkout_path': str(self.path), 'source_root': str(self.root), 'source_layout': 'checkout', 'user': pwd.getpwuid(os.geteuid()).pw_name, 'failed_creation': False, 'starting_commit': 'admitted', 'branch': 'main', 'source_prepare_id': 'admitted-prepare',
+                       'repository_identity': 'github.com/example/project', 'registration_request_id': None, 'stored_status': 'active'}
+        inspect, remove = module('verify'), module('remove')
+        self.Refused = (inspect.Refused, remove.Refused, ValueError)
+        self.observe = lambda value: inspect.capture({'node_user': self.member['user'], 'protected_source_roots': [], **value}, value['member'], {str(self.path)})
+        self.verify = lambda value: (remove.verify(value, value['member'], value['capture'], set(value['admitted_paths'])), {'ready': True})[1]
+        self.finalize = lambda value: (remove.finalize(value, value['member'], value['capture']), {'ready': True})[1]
         self.git('init', '--initial-branch=main')
         self.git('config', 'user.email', 'fixture@example.test')
         self.git('config', 'user.name', 'Fixture')
@@ -59,14 +62,14 @@ class SourceActions(unittest.TestCase):
 
     def test_dirty_content_is_refused_before_finalization(self):
         (self.path / 'tracked').write_text('changed')
-        with self.assertRaises(ValueError): self.verify(self.value())
+        with self.assertRaises(self.Refused): self.verify(self.value())
         self.assertTrue(self.path.exists())
 
     def test_unpublished_commit_is_refused(self):
         (self.path / 'tracked').write_text('changed')
         self.git('commit', '-qam', 'unpublished')
         self.commit = self.git('rev-parse', 'HEAD').strip()
-        with self.assertRaises(ValueError): self.verify(self.value())
+        with self.assertRaises(self.Refused): self.verify(self.value())
 
     def test_git_fetch_refuses_configured_transport_command_with_private_token(self):
         marker = self.root/'credential-observed'
@@ -95,7 +98,7 @@ class SourceActions(unittest.TestCase):
         value = self.value()
         survivor = self.path.with_name('unadmitted')
         self.git('worktree', 'add', '--detach', str(survivor), self.commit)
-        with self.assertRaises(ValueError):
+        with self.assertRaises(self.Refused):
             self.verify(value)
         self.assertTrue((survivor/'tracked').is_file())
         self.assertTrue((self.path/'.git').is_dir())
@@ -105,19 +108,19 @@ class SourceActions(unittest.TestCase):
         self.path.rename(self.path.with_name('original'))
         self.path.mkdir()
         value['force'] = True
-        with self.assertRaises(ValueError): self.verify(value)
-        with self.assertRaises(ValueError): self.finalize(value)
+        with self.assertRaises(self.Refused): self.verify(value)
+        with self.assertRaises(self.Refused): self.finalize(value)
 
     def test_symlink_checkout_is_refused(self):
         value = self.value()
         self.path.rename(self.path.with_name('original'))
         self.path.symlink_to(self.path.with_name('original'), target_is_directory=True)
-        with self.assertRaises(ValueError): self.finalize(value)
-        with self.assertRaises(ValueError): self.observe({'member': self.member, 'force': True, 'repository': 'https://github.com/example/project.git'})
+        with self.assertRaises(self.Refused): self.finalize(value)
+        with self.assertRaises(self.Refused): self.observe({'member': self.member, 'force': True, 'repository': 'https://github.com/example/project.git'})
 
     def test_failed_create_requires_its_own_prepare_marker(self):
         self.member.update(failed_creation=True, starting_commit=None)
-        with self.assertRaises(ValueError): self.observe({'member': self.member, 'force': True, 'repository': 'https://github.com/example/project.git'})
+        with self.assertRaises(self.Refused): self.observe({'member': self.member, 'force': True, 'repository': 'https://github.com/example/project.git'})
         identity = self.capture()['source_identity']
         (self.path / '.git/orbit-source-prepare').write_text('admitted-prepare:'+identity)
         self.assertEqual(self.observe({'member': self.member, 'force': True, 'repository': 'https://github.com/example/project.git'})['instance_id'], 17)
@@ -129,8 +132,7 @@ class SourceActions(unittest.TestCase):
         self.member.update(failed_creation=True, starting_commit=None, branch=None)
         (self.path / '.git/orbit-source-prepare').write_text('admitted-prepare:'+self.capture()['source_identity'])
         observed = self.observe({'member': self.member, 'force': False, 'repository': 'https://github.com/example/project.git'})
-        import base64
-        self.assertEqual(base64.b64decode(observed['source']['commit']), b'')
+        self.assertEqual(observed['source_commit'], '')
         value = self.value()
         value['capture']['source_commit'] = ''
         self.assertTrue(self.verify(value)['ready'])
@@ -158,8 +160,28 @@ class SourceActions(unittest.TestCase):
         value = self.value()
         quarantine = self.path.with_name(self.path.name+'.orbit-removing-'+value['removal_id'])
         quarantine.mkdir()
-        with self.assertRaises(ValueError): self.finalize(value)
+        with self.assertRaises(self.Refused): self.finalize(value)
         self.assertTrue(quarantine.exists())
+
+    def pushed(self, fetched=True):
+        from unittest.mock import patch
+        script = module('pushed')
+        intent = {'members': [self.member], 'repository': 'https://github.com/example/project.git'}
+        with patch.object(script, 'fetch', return_value=fetched) as fetch:
+            result = script.pushed(intent, {'members': [{**self.capture(), 'instance_id': 17}]}, {'github_token': 'synthetic-token'})
+        return result, fetch
+
+    def test_pushed_work_passes_after_a_fetch_with_the_token(self):
+        result, fetch = self.pushed()
+        self.assertEqual(result, {'ready': True})
+        fetch.assert_called_once_with(str(self.path), 'https://github.com/example/project.git', 'synthetic-token')
+
+    def test_unpushed_or_dirty_work_and_a_failed_fetch_refuse(self):
+        self.assertEqual(self.pushed(fetched=False)[0], {'error_code': 'instance.remove_refused'})
+        (self.path / 'tracked').write_text('changed')
+        self.assertEqual(self.pushed()[0], {'error_code': 'instance.unpublished_content'})
+        self.git('commit', '-qam', 'unpushed')
+        self.assertEqual(self.pushed()[0], {'error_code': 'instance.unpublished_content'})
 
 
 if __name__ == '__main__': unittest.main()

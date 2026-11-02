@@ -156,7 +156,7 @@ try {
         $result = ['initialized' => true];
     } elseif ($phase === 'backend-start') {
         $private = privateValues();
-        dockerInput(['run', '-d', '--name', getenv('ANALYTICS_TEST_BACKEND'), '--network', getenv('ANALYTICS_TEST_NETWORK'),
+        dockerInput(['run', '-d', '--rm', '--name', getenv('ANALYTICS_TEST_BACKEND'), '--network', getenv('ANALYTICS_TEST_NETWORK'),
             '-p', '127.0.0.1:'.getenv('ANALYTICS_TEST_BACKEND_PORT').':8000', '--entrypoint', 'sh',
             '-e', 'DATABASE_URL=postgres://postgres@postgres:5432/plausible_db',
             '-e', 'CLICKHOUSE_DATABASE_URL=http://clickhouse:8123/plausible_events_db',

@@ -1,8 +1,9 @@
+import { dotless } from "../../_lib/behavior_name.ts";
 import { nodeCertificateGroups } from "../../certificates/batch_steps.ts";
 import { routeMutationSteps } from "../mutation-command/steps.ts";
 type Fields = Record<string, unknown>;
 const expr = (value: string) => "${{ " + value + " }}";
-const placed = { target: "orbit-node-209" };
+const placed = { labels: { role: "swamp" } };
 const after = (...names: string[]) =>
     names.map((step) => ({ step, condition: { type: "always" } }));
 const envelope = {
@@ -99,12 +100,12 @@ export function removalWorkflow(): Fields {
             type: "behavior",
             behaviorType: "@swamp/ssh",
             behaviorName: expr(
-                '"route-readiness-" + run.id + "-" + string(self._index)',
+                dotless('"route-readiness-" + string(self.part.connection.nodeHost)'),
             ),
             methodName: "exec",
             globalArgs: {
                 name: expr(
-                    '"route-readiness-" + run.id + "-" + string(self._index)',
+                    dotless('"route-readiness-" + string(self.part.connection.nodeHost)'),
                 ),
                 transport: {
                     kind: "ssh",
@@ -262,7 +263,23 @@ function workloadMutationWorkflow(
             "prepare-caddy",
             "publications",
             "operation-route-caddy-delta",
-            expr("self.part"),
+            {
+                node_id: expr("self.part.node_id"),
+                user: expr("self.part.user"),
+                control_node_id: expr("self.part.control_node_id"),
+                connection: expr("self.part.connection"),
+                host_keys: expr("self.part.host_keys"),
+                direction: expr("self.part.direction"),
+                before: expr(
+                    "inputs.intent.route_mutations.artifacts.caddy[self.part.before]",
+                ),
+                after: expr(
+                    "inputs.intent.route_mutations.artifacts.caddy[self.part.after]",
+                ),
+                alternatives: expr(
+                    "self.part.alternatives.map(ref,inputs.intent.route_mutations.artifacts.caddy[ref])",
+                ),
+            },
         );
         preparation(
             "prepare-probe",
@@ -400,7 +417,7 @@ export function mutationWorkflow(
     );
     for (const step of steps) {
         step.allowFailure = true;
-        delete step.target;
+        delete step.labels;
     }
     steps.push({
         name: "result",
@@ -420,7 +437,8 @@ export function mutationWorkflow(
             ? "b2ec4a6d-fc95-4a2c-b6b8-e26c7bf871c7"
             : "f11fa84e-418c-44cf-86d9-a84f46ef0146",
         name: `route-mutation-${mode}`,
-        target: "orbit-node-209",
+        queueTimeout: 30,
+        labels: { role: "swamp" },
         description:
             "Canonical Route publications and complete native contribution proof.",
         vaults: ["orbit-control-inputs"],
@@ -441,6 +459,7 @@ export function ingressWorkflow(): Fields {
     return {
         id: "4977fbb9-658c-4d9c-a984-d003f4dbe225",
         name: "route-ingress-apply",
+        queueTimeout: 30,
         description:
             "Converge public ingress through the canonical pinned tuple child.",
         vaults: [],

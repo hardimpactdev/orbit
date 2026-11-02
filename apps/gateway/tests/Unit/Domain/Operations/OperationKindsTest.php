@@ -18,9 +18,9 @@ describe(OperationKinds::class, function (): void {
         expect(OperationKinds::InstanceTarget)->toMatch(OperationKinds::TargetTypePattern);
     });
 
-    it('discovers native workflows and the two Gateway custody jobs across domains', function (): void {
+    it('discovers native workflows and the Gateway-run kinds across domains', function (): void {
         $definitions = OperationKinds::definitions();
-        $gatewayKinds = ['github.app_register', 'github.app_sync'];
+        $gatewayKinds = ['github.app_register', 'github.app_sync', 'websocket.sync', 'websocket.app_create', 'websocket.app_destroy', 'websocket.app_rotate'];
 
         expect($definitions)->toHaveKeys(['route.caddy_converge', 'database_server.create', ...$gatewayKinds]);
         foreach ($definitions as $kind => $definition) {

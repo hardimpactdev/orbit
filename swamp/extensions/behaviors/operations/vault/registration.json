@@ -1,7 +1,0 @@
-{
-  "kinds": [
-    "vault.setup",
-    "vault.teardown"
-  ],
-  "workflow": "operation-vault-direct"
-}

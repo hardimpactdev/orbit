@@ -42,3 +42,14 @@ Deno.test("constraint validation refuses malformed ranges and preserves manager 
   assertEquals(normalizeVersion("v1.2", "vp"), "1.2.0");
   assertEquals(allows(input(null), "unparseable"), true);
 });
+
+Deno.test("repository packages refuse apt preference injection", () => {
+  const repository = {
+    name: "rex",
+    uris: ["https://pkgs.superlogical.com/rex/apt"],
+    suites: ["preview"],
+    components: ["main"],
+    signing_key: { url: "https://pkgs.superlogical.com/rex/keys/rex-archive-keyring.gpg", fingerprint: "E28636AC71905C6DDE40C1EDFAA6B80F641307A7" },
+  };
+  assertThrows(() => Input.parse({ node_id: 209, manager: "apt", package: "rex", user: "orbit", platform: "linux", architecture: "x86_64", repository, repository_packages: ["Rex\nPin-Priority: 1001"] }));
+});

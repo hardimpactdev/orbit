@@ -1,0 +1,85 @@
+sequenceDiagram
+  %% Target design: DECISIONS 3 (automatic deploy = Gateway-published native schedule, no POST back), R1-R2, ADR 0244, behavior names by target. Replaces instance.policy_event. docs/reference/deployments.md#automatic-deployments.
+  %% status: reviewed
+  %% command: instance:auto-deploy:enable · Automatic deploys
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as app-prod Node<br/>Node 12 over ssh
+  CLI->>GW: auto-deploy:enable 42<br/>orbit instance:auto-deploy:enable
+  %%> Command:
+  %%> - `orbit instance:auto-deploy:enable 42`
+  %%> - syntax: `<instance>`; `instance:auto-deploy:disable <instance>` turns it off
+  %%> What it does:
+  %%> - turns automatic deployment on for production Instance 42
+  %%> - also resumes an Instance that a manual deploy or rollback paused
+  %%> Not included:
+  %%> - deploys nothing now and changes nothing on the Node
+  %%> Typical use:
+  %%> - a production Instance follows `main`: merge a PR, CI turns green, the next fire deploys it
+  Note over GW: Check, record auto-deploy<br/>Instance 42 · on, unpaused
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12
+  %%> - Instance 42 is an active production Instance and has one succeeded deployment
+  %%> - when the Project has a `merge_check`, the GitHub App can read its check runs
+  %%> Result:
+  %%> - auto-deploy recorded as on and unpaused
+  GW->>SW: Publish the schedule<br/>auto-deploy-42 · every minute
+  %%> What it does:
+  %%> - publishes one native Swamp schedule for Instance 42
+  %%> Inputs:
+  %%> - branch, `merge_check`, blocked commits, retry times
+  %%> - vault key names for the read token; the Gateway keeps the token fresh in the vault
+  %%> Why:
+  %%> - the run has everything it needs; it never calls the Gateway
+  GW-->>CLI: Enabled<br/>auto_deploy: on
+  %%> What you get:
+  %%> - the Instance with auto-deploy on, at once
+  %%> - no task: publishing the schedule is part of the command
+  loop every minute, second 30
+    SW->>SW: Find newest green commit<br/>ls-remote · merge_check passed
+    %%> What it does:
+    %%> - reads the branch head with `git ls-remote`
+    %%> - walks first-parent history to the newest commit whose `merge_check` passed
+    %%> - skips blocked commits and commits whose retry isn't due
+    %%> Not included:
+    %%> - never deploys a red or pending commit
+    SW->>N: Read the live commit<br/>current → release REVISION
+    %%> What it does:
+    %%> - reads which commit Instance 42 runs now, from the Node itself
+    alt a newer green commit
+      SW->>N: Deploy the pinned commit<br/>deploy-42 · prepare … check
+      %%> What it does:
+      %%> - the same steps as `instance:deploy`, pinned to the commit
+      %%> - behavior `deploy-42`: one lock per Instance, so a manual deploy and a fire never overlap
+      SW-->>GW: Fire ended<br/>result, commit, deployment
+      %%> Returns:
+      %%> - the result (`started`, `failed`, `gate_failed`, …), the commit and the deployment outputs
+      Note over GW: Record the result<br/>history row · Activity · alert
+      %%> Result:
+      %%> - a deployment history row with origin `automatic`
+      %%> - one Activity entry `auto_deploy.<result>` when the result changes
+      %%> - a release alert for a failed deploy, a stalled commit or a pause
+      %%> On failure:
+      %%> - the commit is blocked, or gets a retry time (10, then 20 minutes)
+      %%> - the Gateway republishes the schedule with the new inputs
+    else nothing to deploy
+      SW-->>GW: Fire ended<br/>up_to_date or gate_pending
+      %%> Result:
+      %%> - the Gateway updates the last result shown by `instance:show`
+      %%> - no history row, no Activity entry
+    end
+  end
+  Note over GW,SW: Pause<br/>manual deploy or rollback
+  %%> What it does:
+  %%> - a manual `instance:deploy` or `instance:rollback` pauses auto-deploy
+  %%> - the Gateway removes the schedule's trigger; no fire runs
+  %%> Resume:
+  %%> - `orbit instance:auto-deploy:enable 42` publishes it again
+  %%> Disable:
+  %%> - `orbit instance:auto-deploy:disable 42` removes the schedule

@@ -107,8 +107,8 @@ Deno.test("publication fanout preserves exact participant placement including lo
   for (const job of effects) {
     const step = job.steps[0];
     assertEquals(
-      step.target,
-      '${{ "orbit-node-" + string(self.participant) }}',
+      step.labels,
+      { node: "${{ string(self.participant) }}" },
     );
     assertEquals(step.labels, { node: "${{ string(self.participant) }}" });
     assertEquals(step.task.behaviorType, "@nckrtl/route-publication");

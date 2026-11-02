@@ -27,7 +27,15 @@ from pathlib import Path
 args=sys.argv[1:]
 assert OWN in args and 'IdentitiesOnly=yes' in args
 assert 'sudo' not in args[-1]
-body=sys.stdin.read();tree=ast.parse(body)
+body=sys.stdin.read()
+if not body and 'managed apt repository phase' in args[-1]:
+ import shlex
+ command=shlex.split(args[-1]);assert command[-2]=='adopt'
+ with Path(AUDIT).open('a') as out:out.write(json.dumps({'action':'repository_adopt','manager':'apt','user':'orbit'})+'\\n')
+ marker=Path(AUDIT).with_name('repository-error')
+ print(json.dumps({'ready':False,'error_code':marker.read_text()} if marker.exists() else {'ready':True}))
+ raise SystemExit(0)
+tree=ast.parse(body)
 node=next(n for n in tree.body if isinstance(n,ast.Assign) and isinstance(n.targets[0],ast.Name) and n.targets[0].id=='QUERY_INPUT')
 input=json.loads(ast.literal_eval(node.value))
 with Path(AUDIT).open('a') as out:out.write(json.dumps({'action':'query','manager':input['manager'],'user':input['user']})+'\\n')
@@ -40,10 +48,10 @@ print(json.dumps(facts))
         fixture.chmod(0o700)
         workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-tool-adopt-209.yaml').read_text())
         for job in workflow['jobs']:
-            self.assertEqual(job.pop('target'), 'orbit-node-209')
+            self.assertEqual(job.pop('labels'), {'role': 'swamp'})
             self.assertNotIn('labels', job)
             for step in job['steps']:
-                self.assertEqual(step.pop('target'), 'orbit-node-209')
+                self.assertEqual(step.pop('labels'), {'role': 'swamp'})
                 self.assertNotIn('labels', step)
                 if step['task'].get('behaviorType') == '@swamp/ssh':
                     transport=step['task']['globalArgs']['transport']
@@ -89,6 +97,15 @@ print(json.dumps(facts))
         result=next(step for step in history['jobs'][0]['steps'] if step['name']=='result')['outputs']
         self.assertEqual(json.loads(result['stdout'])['error_code'],'tool.installed_version_constraint_violated')
         self.assertFalse(result['ok'])
+
+    def test_repository_adoption_is_read_only_and_requires_matching_public_trust(self):
+        self.input['intent']['repository'] = {'name':'vendor','uris':['https://packages.example.test/apt'],'suites':['preview'],'components':['main'],'signing_key':{'url':'https://packages.example.test/key.gpg','fingerprint':'A'*40}}
+        self.assertEqual(self.run_adopt()['status'], 'succeeded')
+        (self.repo/'repository-error').write_text('tool.repository_key_mismatch')
+        history = self.run_adopt(False)
+        result = next(step for step in history['jobs'][0]['steps'] if step['name']=='result')['outputs']
+        self.assertEqual(json.loads(result['stdout'])['error_code'], 'tool.repository_key_mismatch')
+        self.assertEqual(sum(json.loads(line)['action']=='repository_adopt' for line in self.audit.read_text().splitlines()), 2)
 
 
 if __name__=='__main__':unittest.main()

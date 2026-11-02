@@ -17,8 +17,8 @@ $credentials = ['metrics.credentials_reset' => [
     'workflow' => 'operation-metrics-credentials-reset',
     'projection' => MetricsCredentialResetProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'credentials', 'step' => 'result'],
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^metrics-credentials-operation-[1-9][0-9]*$']],
+    'terminal_result' => ['job' => 'credentials', 'step' => 'Assert the new login', 'native' => true],
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^metrics-credentials-operation-[1-9][0-9]*-(probe|apply|confirm)$']],
 ]];
 
 return $credentials + $exporters + array_fill_keys(['metrics.enable', 'metrics.disable'], [

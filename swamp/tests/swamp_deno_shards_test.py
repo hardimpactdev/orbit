@@ -35,8 +35,7 @@ class DenoShards(unittest.TestCase):
             files.mkdir(parents=True)
             groups = ((".", 9), ("database", 9), ("process-commands", 9),
                       ("database/local-sql-effects", 2), ("database/read-effects", 2),
-                      ("database/create-effects", 3), ("database/write-effects", 3),
-                      ("database/server-create-effects", 3))
+                      ("database/write-effects", 3))
             identifier = 0
             for path, count in groups:
                 directory = files / path
@@ -53,8 +52,9 @@ class DenoShards(unittest.TestCase):
                 env = dict(os.environ, PATH=str(binary) + os.pathsep + os.environ["PATH"],
                            DENO_SHARD=shard["shard"], DENO_TEST_PATH=shard["path"],
                            DENO_IGNORE=shard.get("ignore", ""), DENO_JOBS=str(command["env"]["DENO_JOBS"]))
-                return subprocess.run(["bash", "-e", "-o", "pipefail", "-c", command["run"]],
-                                      cwd=root, env=env, capture_output=True, text=True)
+                # deno test --parallel can deadlock on its own worker socket; fail in minutes, not at the job limit.
+                return subprocess.run(["bash", "-e", "-o", "pipefail", "-c", command["run"]], stdin=subprocess.DEVNULL,
+                                      cwd=root, env=env, capture_output=True, text=True, timeout=120)
 
             covered = []
             shards = job["strategy"]["matrix"]["include"]

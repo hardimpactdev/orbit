@@ -30,10 +30,10 @@ inputs:
   additionalProperties: false
 jobs:
   - name: known_hosts
-    target: orbit-node-209
+    labels: {role: swamp}
     steps:
       - name: assets
-        target: orbit-node-209
+        labels: {role: swamp}
         task:
           type: behavior
           behaviorType: '@nckrtl/node-worker-assets'
@@ -41,7 +41,7 @@ jobs:
           methodName: known_hosts
           inputs: {node_id: 209}
       - name: write
-        target: orbit-node-209
+        labels: {role: swamp}
         writes: true
         dependsOn:
           - step: assets

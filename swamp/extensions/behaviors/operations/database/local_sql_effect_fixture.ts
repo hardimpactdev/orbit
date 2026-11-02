@@ -14,30 +14,12 @@ const docker = async (...args: string[]) => {
   }
   return new TextDecoder().decode(result.stdout).trim();
 };
-// Docker owns startup probing; the production lower now performs one observation.
 async function waitHealthy(container: string): Promise<void> {
-  const process = new Deno.Command("/usr/bin/sudo", {
-    args: [
-      "-n",
-      "--",
-      "/usr/bin/python3",
-      "-B",
-      new URL(
-        "../database-server-commands/scripts/wait_ready.py",
-        import.meta.url,
-      ).pathname,
-      JSON.stringify({ container }),
-    ],
-    stdin: "piped",
-    stdout: "piped",
-    stderr: "piped",
-    signal: AbortSignal.timeout(120000),
-  }).spawn();
-  const writer = process.stdin.getWriter();
-  await writer.write(new TextEncoder().encode("{}"));
-  await writer.close();
-  const result = await process.output();
-  assertEquals(result.success, true, new TextDecoder().decode(result.stdout));
+  for (let attempt = 0; attempt < 120; attempt++) {
+    if (await docker("inspect", "--format", "{{.State.Health.Status}}", container) === "healthy") return;
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  throw new Error("Disposable SQL container never became healthy");
 }
 export function registerMysqlLocalSqlEffect() {
   Deno.test({
@@ -237,7 +219,7 @@ export function registerMysqlLocalSqlEffect() {
         );
         assertEquals("output" in large && large.output.length, 262145);
       } finally {
-        await docker("rm", "--force", container).catch(() => {});
+        await docker("rm", "--force", "--volumes", container).catch(() => {});
       }
     },
   });
@@ -367,7 +349,7 @@ export function registerPgsqlLocalSqlEffect() {
           { error_code: "database.server_admin_failed" },
         );
       } finally {
-        await docker("rm", "--force", container).catch(() => {});
+        await docker("rm", "--force", "--volumes", container).catch(() => {});
       }
     },
   });

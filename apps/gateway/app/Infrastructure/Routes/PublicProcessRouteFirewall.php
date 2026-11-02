@@ -49,8 +49,10 @@ final readonly class PublicProcessRouteFirewall
         $upstream = new CustomProxyProcessListener()->resolvePublic($process, $ingress);
         $shapes = array_map(static fn (DesiredFirewallRule $rule): UfwRuleShape => $rule->shape, app(NodeFirewallDesiredRules::class)->forNode($owner));
         foreach ($owner->firewallRules()->where('status', 'active')->get() as $rule) {
-            $shape = FirewallInspectionTarget::fromRule($rule)->shape;
-            $shapes[] = new UfwRuleShape($shape->comment, $shape->action, $shape->direction, $shape->source, $shape->destination, $shape->port, $shape->protocol, $shape->inInterface, $shape->outInterface, $shape->family);
+            foreach (FirewallInspectionTarget::forRule($rule) as $target) {
+                $shape = $target->shape;
+                $shapes[] = new UfwRuleShape($shape->comment, $shape->action, $shape->direction, $shape->source, $shape->destination, $shape->port, $shape->protocol, $shape->inInterface, $shape->outInterface, $shape->family);
+            }
         }
         $expected = [];
         foreach ($shapes as $shape) {

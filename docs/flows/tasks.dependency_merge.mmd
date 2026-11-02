@@ -1,0 +1,101 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, DECISIONS 1 (tokens minted at admission, vault; no private-material callback) and R2-R3. docs/reference/tasks.md#dependency-batch-squash-admission.
+  %% status: draft
+  %% command: none · Services API (tasks-dependency-merge)
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane GH icon=server pill=target tone=purple
+  participant CLI as Services Node<br/>dependency batches
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant GH as GitHub<br/>repository · PRs
+  CLI->>GW: Merge batch of group 42<br/>publish #5165 · head 9f3c…
+  %%> Command:
+  %%> - `POST /api/v1/task-groups/42/dependency-merge` with `publish_operation_id` 5165, `head_sha` and an `Idempotency-Key`
+  %%> - syntax: the MCP tool `tasks-dependency-merge` with `group`, `publish_operation_id`, `head_sha`
+  %%> Who can call it:
+  %%> - only the configured Services Node; there is no `orbit` command
+  Note over GW: Check the batch<br/>task #5166 · mint 2 tokens
+  %%> Requirements:
+  %%> - the Project has dependency merge enabled; today every Project is off
+  %%> - the Project is an app with a hosted production Instance; packages and unclassified monorepos are refused
+  %%> - group 42 is an external dependency batch the Services Node created, with a passed handoff check and the exact successful publish task #5165 for this head
+  %%> - no other task runs on group 42; the Gateway holds one lock per group
+  %%> What it does:
+  %%> - mints a write token with only `contents: write` and `pull_requests: write`, never `workflows: write`
+  %%> - mints a read token with `contents`, `checks` and `actions` read
+  %%> - pushes both to the vault as `dependency-merge-5166-write` and `-read` after commit (R3); no step fetches them from the Gateway
+  %%> Result:
+  %%> - task #5166 recorded with the full intent
+  GW->>SW: Start run, full intent<br/>operation-dependency-merge
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209); no Node is a target
+  %%> Inputs:
+  %%> - the repository, default branch, PR branch `task-42`, expected head, and the smoke workflow path
+  %%> - the vault key names of the tokens, never the tokens
+  GW-->>CLI: 202 Accepted<br/>task #5166
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the caller follows the task with `operation:show`
+  SW->>GH: Read the PR and checks<br/>Required checks · smoke
+  %%> What it does:
+  %%> - reads the PR fresh, with the read token from `vault.get`
+  %%> Refuses:
+  %%> - a PR that is not open, is a draft, comes from another repository, or targets another branch
+  %%> - `Required checks` or `Production smoke / smoke` missing, pending, skipped or failed on the exact head
+  SW->>GH: Read the changed files<br/>paged PR files · manifests
+  %%> What it does:
+  %%> - reads every changed file; only root `composer.json`, `composer.lock`, `package.json` and the npm, pnpm and Bun text lock files may change; Yarn and `bun.lockb` go the ordinary PR path
+  %%> Refuses:
+  %%> - incomplete or capped file evidence, or any other file
+  Note over SW: Check the dependency diff<br/>versions only · lock sources
+  %%> What it does:
+  %%> - compares base and head manifests: only versions of existing dependencies may differ
+  %%> - checks every locked package against Packagist or the npm registry, and that it is reachable from the root manifest
+  %%> Refuses:
+  %%> - a breaking semver bump: `dependency_merge.major_bump`; the PR stays open for hand-testing
+  SW->>GH: Squash on expected head<br/>PUT pulls/57/merge · sha
+  %%> What it does:
+  %%> - squash-merges PR #57 only if its head still equals the expected head, with the write token
+  %%> Lost reply:
+  %%> - the next attempt reads PR #57 first; a merged exact head returns its merge SHA without another write
+  SW->>GH: Revoke the tokens<br/>DELETE /installation/token
+  %%> What it does:
+  %%> - revokes both tokens, on success and on failure
+  %%> If it fails:
+  %%> - the run still reports its result; the tokens expire within one hour
+  alt merged
+    GH-->>SW: PR #57 merged · sha
+    %%> Returns:
+    %%> - the merge commit
+    SW-->>GW: Run succeeded<br/>terminal event · merge sha
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record the merge<br/>task succeeded
+    %%> Result:
+    %%> - task #5166 succeeds with the merge SHA
+    %%> - the task system sees the merge and completes group 42 as usual; nothing is deployed here
+  else refused or failed
+    GH--xSW: check or diff refused
+    %%> When:
+    %%> - a check, file or diff rule refuses, the head moved, or GitHub refuses the merge
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Mark the task failed<br/>PR open · normal PR path
+    %%> Result:
+    %%> - task #5166 fails; PR #57 stays open and goes through ordinary PR handling
+    %%> Retry:
+    %%> - a new request for the same head is a new task with new tokens; it reads everything again
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5166
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end

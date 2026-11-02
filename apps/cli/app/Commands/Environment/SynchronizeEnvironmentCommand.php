@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace App\Commands\Environment;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Environment\SynchronizeInstanceEnvironmentRequest;
-use Orbit\Sdk\Responses\Environment\EnvironmentOperationResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class SynchronizeEnvironmentCommand extends EnvironmentCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'env:sync
         {--instance= : Positive Instance ID or exact Route domain}
@@ -33,15 +36,16 @@ final class SynchronizeEnvironmentCommand extends EnvironmentCommand
             return self::FAILURE;
         }
 
-        $response = $this->sendWithProgress(
-            $connector,
-            new SynchronizeInstanceEnvironmentRequest($selector),
-            EnvironmentOperationResponse::class,
-            ['Synchronize environment', 'Synchronizing environment', 'Synchronized environment'],
-        );
+        $profile = $this->activeGatewayProfile($repository);
 
-        return $response instanceof EnvironmentOperationResponse
-            ? $this->renderEnvironmentOperation($response)
+        if ($profile === null) {
+            return self::FAILURE;
+        }
+
+        $operation = $this->send($connector, new SynchronizeInstanceEnvironmentRequest($selector), OperationResponse::class);
+
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, 'Synchronize environment', 'Environment synchronization')
             : self::FAILURE;
     }
 }

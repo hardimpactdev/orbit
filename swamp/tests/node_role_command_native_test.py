@@ -52,7 +52,7 @@ print(json.dumps(result))
         deno = os.environ.get('DENO_BIN', shutil.which('deno') or '/tmp/lane4-deno-2.9.8/deno')
         steps = json.loads(subprocess.run([deno, 'eval', program], check=True, capture_output=True, text=True).stdout)
         for step in steps:
-            self.assertEqual(step.pop('target'), 'orbit-node-209')
+            self.assertEqual(step.pop('labels'), {'role': 'swamp'})
             self.assertEqual(step.pop('labels'), {'node': '209'})
         workflow = {'id': '9444280d-02bc-4cfa-b3b1-9538b840b3de', 'name': 'role-prerequisite-fixture',
                     'inputs': {'type': 'object'}, 'jobs': [{'name': 'role', 'steps': steps}]}
@@ -92,7 +92,7 @@ print(json.dumps(result))
         deno = os.environ.get('DENO_BIN', shutil.which('deno') or '/tmp/lane4-deno-2.9.8/deno')
         steps = json.loads(subprocess.run([deno, 'eval', program], capture_output=True, text=True, check=True).stdout)
         for step in steps:
-            self.assertEqual(step.pop('target'), 'orbit-node-209')
+            self.assertEqual(step.pop('labels'), {'role': 'swamp'})
             self.assertEqual(step.pop('labels'), {'node': '209'})
         workflow = {'id': 'af4cba59-b8aa-4fe9-b0c2-d08a28536de5', 'name': 'tracked-key-fixture',
                     'inputs': {'type': 'object'}, 'jobs': [{'name': 'key', 'steps': steps}]}

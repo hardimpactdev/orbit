@@ -1,4 +1,12 @@
 {
-  "group": "Reference",
-  "pages": ["reference/native-route-targets"]
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Applications",
+      "order": 3,
+      "pages": [
+        "reference/native-route-targets"
+      ]
+    }
+  ]
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Jobs\Operations;
 
+use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Operations\OperationBroadcaster;
 use App\Infrastructure\Swamp\SwampCommandStep;
@@ -26,7 +27,7 @@ final class RecoverUnboundSwampRun implements ShouldQueue
     public function handle(SwampCommandStep $step): void
     {
         $operation = Operation::query()->find($this->operationId);
-        if ($operation === null || $operation->status->terminal()) {
+        if ($operation === null || ($operation->status->terminal() && ! ExpireOperationAction::awaitsSettlement($operation))) {
             return;
         }
         $step->recoverUnbound($operation);

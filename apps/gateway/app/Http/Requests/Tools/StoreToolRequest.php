@@ -6,6 +6,7 @@ namespace App\Http\Requests\Tools;
 
 use App\Data\Tools\InstallToolData;
 use App\Http\Requests\TopLevelJsonObjectInspector;
+use App\Support\ValidatedData;
 use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\ValidationException;
@@ -21,6 +22,7 @@ final class StoreToolRequest extends FormRequest
             'manager' => ['required', 'string', 'max:32'],
             'package' => ['required', 'string', 'max:255'],
             'version_constraint' => ['nullable', 'string', 'max:255'],
+            ...new AptRepositoryRules()->rules(),
         ];
     }
 
@@ -30,7 +32,7 @@ final class StoreToolRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['node_id', 'manager', 'package', 'version_constraint'],
+                ['node_id', 'manager', 'package', 'version_constraint', 'repository'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -48,6 +50,7 @@ final class StoreToolRequest extends FormRequest
             versionConstraint: is_string($validated['version_constraint'] ?? null)
                 ? $validated['version_constraint']
                 : null,
+            repository: isset($validated['repository']) ? ValidatedData::object($validated['repository']) : null,
         );
     }
 

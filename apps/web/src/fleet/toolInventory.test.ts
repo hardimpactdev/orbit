@@ -22,6 +22,7 @@ const tool = (overrides: Partial<Tool> = {}): Tool => ({
     manager: "brew",
     package: "jq",
     version_constraint: null,
+    repository: null,
     status: "installed",
     installed_version: "1.7.1",
     failed_operation: null,
@@ -47,6 +48,7 @@ const inventory = (): ToolInventory => ({
                     registered: false,
                     tool_id: null,
                     adoption: "supported",
+                    repository: null,
                     adoption_block: null,
                 },
                 {
@@ -58,6 +60,7 @@ const inventory = (): ToolInventory => ({
                     registered: true,
                     tool_id: 6,
                     adoption: "supported",
+                    repository: null,
                     adoption_block: null,
                 },
                 {
@@ -69,6 +72,7 @@ const inventory = (): ToolInventory => ({
                     registered: false,
                     tool_id: null,
                     adoption: "unsupported",
+                    repository: null,
                     adoption_block: "dependency",
                 },
                 {
@@ -80,6 +84,7 @@ const inventory = (): ToolInventory => ({
                     registered: false,
                     tool_id: null,
                     adoption: "supported",
+                    repository: null,
                     adoption_block: null,
                 },
             ],
@@ -97,6 +102,7 @@ const inventory = (): ToolInventory => ({
                     registered: false,
                     tool_id: null,
                     adoption: "unsupported",
+                    repository: null,
                     adoption_block: "authorization_required",
                 },
                 {
@@ -108,6 +114,7 @@ const inventory = (): ToolInventory => ({
                     registered: true,
                     tool_id: 14,
                     adoption: "supported",
+                    repository: null,
                     adoption_block: null,
                 },
             ],

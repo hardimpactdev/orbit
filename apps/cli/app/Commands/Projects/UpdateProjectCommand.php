@@ -28,7 +28,6 @@ final class UpdateProjectCommand extends GatewayCommand
         {--task-check= : New task check command for task baselines and handoffs}
         {--clear-task-check : Remove the task check command so tasks run no check command}
         {--task-workspace-routed= : Change routing for future task workspaces (true or false)}
-        {--review-and-merge= : Review every push, review incoming pull requests, and merge reviewed green heads (true or false)}
         {--merge-check= : The check that must pass on a head before Orbit merges it, such as "Required checks"}
         {--clear-merge-check : Remove the merge check}
         {--json : Return machine-readable JSON}';
@@ -93,14 +92,8 @@ final class UpdateProjectCommand extends GatewayCommand
         }
 
         $taskWorkspaceRouted = $this->taskWorkspaceRouted();
-        $reviewAndMerge = $this->option('review-and-merge');
-        $reviewAndMergeProvided = $this->input->hasParameterOption('--review-and-merge');
         $mergeCheck = $this->stringOption('merge-check');
         $clearMergeCheck = $this->option('clear-merge-check') === true;
-
-        if ($reviewAndMergeProvided && $reviewAndMerge !== 'true' && $reviewAndMerge !== 'false') {
-            return $this->renderGatewayFailure('project.review_and_merge_invalid', 'Review and merge must be true or false.');
-        }
 
         if ($mergeCheck !== null && $clearMergeCheck) {
             return $this->renderGatewayFailure('project.merge_check_conflict', 'Choose either --merge-check or --clear-merge-check.');
@@ -118,7 +111,7 @@ final class UpdateProjectCommand extends GatewayCommand
         }
 
         if ($name === null && $type === null && $slug === null && $repositoryUrl === null && $sourceAccess === null && $defaultBranch === null && $root === null && $taskCheck === null && ! $clearTaskCheck && $taskWorkspaceRouted['value'] === null
-            && ! $reviewAndMergeProvided && $mergeCheck === null && ! $clearMergeCheck) {
+            && $mergeCheck === null && ! $clearMergeCheck) {
             return $this->renderGatewayFailure(
                 'project.update_required',
                 'Provide at least one Project update.',
@@ -145,7 +138,6 @@ final class UpdateProjectCommand extends GatewayCommand
                 taskCheckProvided: $clearTaskCheck || $taskCheck !== null,
                 sourceAccess: $sourceAccess,
                 taskWorkspaceRouted: $taskWorkspaceRouted['value'],
-                reviewAndMerge: $reviewAndMergeProvided ? $reviewAndMerge === 'true' : null,
                 mergeCheck: $clearMergeCheck ? null : $mergeCheck,
                 mergeCheckProvided: $clearMergeCheck || $mergeCheck !== null,
             ),

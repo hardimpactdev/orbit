@@ -1,0 +1,126 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, DECISIONS 1 (cert signing is the one step→Gateway call), 2 (DNS hold), R2-R4. docs/reference/native-cluster-router.md, docs/cli/cluster.mdx.
+  %% status: draft
+  %% command: cluster:router:set
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane M icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Node 7<br/>new Router
+  participant M as Member Nodes<br/>incl. old Router 5
+  CLI->>GW: cluster:router:set 3 7<br/>--idempotency-key=KEY
+  %%> Command:
+  %%> - `orbit cluster:router:set 3 7`
+  %%> - syntax: `<cluster> <node> [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the Cluster ID and the Node ID of an active member
+  %%> What it does:
+  %%> - makes Node 7 the Cluster Router: members on the LAN reach Cluster Routes through it, over HTTPS, and ask it for DNS
+  %%> - replaces the current Router, Node 5, without a gap
+  Note over GW: Validate, record candidate<br/>task #5160 · Cluster lock
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 7
+  %%> - Node 7 is an active member of Cluster 3 with a LAN address (`cluster.router_node_invalid`)
+  %%> - no other Router change runs for Cluster 3; the Gateway waits up to 30 seconds, then refuses with `cluster.router_busy`
+  %%> - no unfinished replacement from another Router change (`cluster.router_transition_conflict`)
+  %%> Builds:
+  %%> - the Router's Caddy sites for every Cluster Route, its certificate requests, and the LAN firewall rules
+  %%> - the before and after state, so a failure can restore the before state
+  %%> Result:
+  %%> - Node 7's `router` assignment recorded as pending; Node 5 stays the active Router
+  %%> - task #5160 recorded with the full intent
+  GW->>SW: Start run, full intent<br/>operation-cluster-router
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - the sites, certificate requests, LAN rules, and old Router assignments
+  %%> - the addresses and SSH host keys of Node 7 and every member; the SSH identity comes from the `swamp` role
+  GW-->>CLI: 202 Accepted<br/>task #5160
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>N: Prepare the Router<br/>account · packages · Caddy
+  %%> How:
+  %%> - over SSH from 209 with `@swamp/ssh` and `@swamp/cfgmgmt` behaviors
+  %%> What it does:
+  %%> - the `router` role setup: the managed account, the required packages and the pinned Caddy package
+  %%> - an existing, matching install is left as it is
+  SW->>N: Request the certificates<br/>CSR per Router scope
+  %%> What it does:
+  %%> - makes a key and a CSR on Node 7 for each Cluster Route domain that changed
+  %%> - the private keys never leave Node 7
+  SW->>GW: Sign the CSRs<br/>certificate-sign primitive
+  %%> Why a call to the Gateway:
+  %%> - certificate signing is the one allowed step→Gateway call; the Orbit CA stays in the Gateway
+  GW-->>SW: Signed certificates<br/>one batch for Node 7
+  %%> Returns:
+  %%> - the signed certificates; Swamp installs them on Node 7
+  SW->>M: Open LAN paths<br/>@swamp/cfgmgmt/firewall apply
+  %%> What it does:
+  %%> - on Node 7: allows 443/tcp and 53/tcp+udp from each eligible member's LAN address
+  %%> - on each workload member: allows Node 7's LAN address to its Route ports
+  %%> - identical lines are left as they are
+  SW->>N: Publish Caddy, reload<br/>validate · caddy reload
+  %%> What it does:
+  %%> - validates the full Router site list, then reloads the running Caddy; no restart
+  SW->>M: Probe the workloads<br/>TLS from Node 7 over the LAN
+  %%> What it does:
+  %%> - checks from Node 7 that every Cluster Route's workload answers with a valid certificate
+  %%> Why:
+  %%> - Node 7 only becomes the Router when it can serve every Route
+  Note over SW: Select Node 7 in DNS<br/>open: Nick decides (DNS hold)
+  %%> What it does:
+  %%> - private DNS answers members' Cluster names with Node 7's LAN address, then waits the 31-second DNS grace
+  %%> Open:
+  %%> - the DNS hold (`native-dns-takeover-held`) is in force; Nick decides how Route DNS is published
+  opt Node 5 was the Router
+    SW->>M: Retire the old Router<br/>withdraw sites · LAN rules
+    %%> When:
+    %%> - only when the run replaces a Router, after the DNS grace
+    %%> What it does:
+    %%> - removes the Router sites and certificates from Node 5 and reloads its Caddy
+    %%> - removes the LAN rules that only Node 5 needed; it never removes WireGuard baseline rules
+    %%> If it fails:
+    %%> - Node 7 stays the Router; the old assignment stays recorded as unfinished, and a rerun finishes it
+  end
+  alt every step passes
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record the Router<br/>Node 7 active · task succeeded
+    %%> Result:
+    %%> - Node 7's `router` assignment becomes active; Node 5's is deleted
+    %%> - task #5160 succeeds
+  else preparing or publishing fails
+    M--xSW: exit ≠ 0 or probe fails
+    %%> When:
+    %%> - a setup, certificate, firewall or Caddy step fails, or a workload probe fails
+    SW->>M: Restore the before state<br/>Caddy · LAN rules · DNS
+    %%> What it does:
+    %%> - puts back the captured Caddy, firewall and DNS state, so Node 5 keeps serving
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed, its error code, and whether the restore passed
+    Note over GW: Keep Node 5 the Router<br/>candidate failed · rerun
+    %%> Result:
+    %%> - Node 7's assignment is marked failed; Node 5 stays the active Router
+    %%> - task #5160 fails
+    %%> On the Node:
+    %%> - packages and Caddy on Node 7 stay; that is harmless
+    %%> Retry:
+    %%> - run the same command again after fixing the cause
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5160
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end

@@ -21,6 +21,7 @@ import { callWorkerModel, type WorkerModelContext } from "./_lib/worker_model.ts
 // method under the dispatch already recorded, so the dispatch guard is not used up.
 import { z } from "npm:zod@4";
 import { reconcileStageLaunch, type StageLaunch as Launch } from "./_lib/stage_launch.ts";
+import { planConsentNote, PlanSchema } from "./_lib/repository_analysis.ts";
 
 const GlobalArgsSchema = z.object({
   factory: z.string().default("orbit-subtask-factory"),
@@ -80,12 +81,28 @@ export function preapprovalName(workItem: string, gateId: string, stage: string,
 }
 
 /** The gate ids a parked status waits on: its pending human-approval gates and cycle overrides. */
+/**
+ * A gate that only a human decision can open: the human gate itself, or a CEL gate that reads that gate's
+ * approvals (plan-authorized checks its exact consent note) and fails because no decision exists yet.
+ */
+function awaitsHuman(t: Transition, g: Gate): boolean {
+  if (g.type === "human-approval") return true;
+  if (g.type !== "cel") return false;
+  const humans = t.gates.flatMap((h) => h.type === "human-approval" ? h.reasons : [])
+    .flatMap((r) => [.../awaiting human approval '([^']+)'/.exec(r)?.slice(1) ?? []]);
+  // A consent gate reads its gate's approvals: before the first decision the key is missing; in a later
+  // cycle its message says which pending approval it awaits.
+  return g.reasons.length > 0 && g.reasons.every((r) =>
+    humans.some((id) => r.includes(`No such key: ${id.replaceAll("-", "_")}`) || r.startsWith(`awaiting human approval '${id}'`))
+  );
+}
+
 export function pendingGateIds(status: Pick<Status, "transitions">): string[] {
   const ids = new Set<string>();
   for (const t of status.transitions) {
     if (t.name === "abort") continue;
     if (t.cycleLimitBlocked && t.gates.every((g) => g.pass)) ids.add(`cycle-override:${t.to}`);
-    if (!t.gates.every((g) => g.pass || g.type === "human-approval")) continue;
+    if (!t.gates.every((g) => g.pass || awaitsHuman(t, g))) continue;
     for (const g of t.gates) {
       if (g.type !== "human-approval" || g.pass) continue;
       for (const r of g.reasons) {
@@ -426,7 +443,8 @@ async function step(ctx: Ctx, workItem: string, killAt?: string): Promise<{ stat
     if (pre === null || pre.appliedAt !== null || pre.workItem !== workItem || pre.gateId !== gateId || pre.stage !== stage || pre.cycle !== cycle ||
       (startedAt === null || !Number.isFinite(Date.parse(startedAt)) || !Number.isFinite(Date.parse(pre.createdAt)) || Date.parse(pre.createdAt) < Date.parse(startedAt))) continue;
     await call(ctx, f, "approve", {
-      workItem, gateId, actor: pre.actor, note: `pre-approved ${pre.createdAt}${pre.note ? `: ${pre.note}` : ""}`,
+      // A gate may check the note exactly (plan-authorized), so a given note passes verbatim.
+      workItem, gateId, actor: pre.actor, note: pre.note ?? `pre-approved ${pre.createdAt}`,
     });
     await ctx.writeResource("preapproval", name, { ...pre, appliedAt: new Date().toISOString() });
     return { status, action: `applied pre-approval ${gateId} by ${pre.actor}`, waiting: null };
@@ -436,11 +454,11 @@ async function step(ctx: Ctx, workItem: string, killAt?: string): Promise<{ stat
     return { status, action: null, waiting: `assistance: cycle limit; approve gateId=cycle-override:${limited[0].to}` };
   }
   const human = status.transitions.filter((t) =>
-    t.name !== "abort" && t.gates.every((g) => g.pass || g.type === "human-approval") &&
+    t.name !== "abort" && t.gates.every((g) => g.pass || awaitsHuman(t, g)) &&
     t.gates.some((g) => !g.pass)
   );
   if (human.length > 0) {
-    const ids = human.flatMap((t) => t.gates.filter((g) => !g.pass).map((g) => g.reasons.join("; ")));
+    const ids = human.flatMap((t) => t.gates.filter((g) => !g.pass && g.type === "human-approval").map((g) => g.reasons.join("; ")));
     return { status, action: null, waiting: `assistance: ${ids.join(" | ")}` };
   }
   const reasons = status.transitions.filter((t) => t.name !== "abort")
@@ -450,7 +468,7 @@ async function step(ctx: Ctx, workItem: string, killAt?: string): Promise<{ stat
 
 export const behavior = {
   type: "@nckrtl/orbit-driver",
-  version: "2026.10.28.2",
+  version: "2026.11.02.6",
   globalArguments: GlobalArgsSchema,
   resources: {
     launch: {
@@ -468,6 +486,42 @@ export const behavior = {
     },
   },
   methods: {
+    start: {
+      description: "Start one work item in the factory; serve cannot place the factory's own templated start",
+      arguments: z.object({ workItem: z.string().regex(/^tg-[1-9][0-9]*$/) }),
+      execute: async (
+        args: { workItem: string },
+        rawCtx: Omit<Ctx, "definitionName"> & { definition: { name: string } },
+      ) => {
+        const ctx = Object.assign(rawCtx, { definitionName: rawCtx.definition.name }) as unknown as Ctx;
+        // A repeated start of an active work item is a no-op, so group-start still supervises it.
+        const state = await latest<{ status?: string }>(ctx, ctx.globalArgs.factory, `state-${args.workItem}`);
+        if (state?.status !== "active") await call(ctx, ctx.globalArgs.factory, "start", { workItem: args.workItem });
+        return { dataHandles: [] };
+      },
+    },
+    plan: {
+      outputLifetime: "7d",
+      description: "Record the operator's typed plan for a group parked at the plan stage, with exact consent for that plan",
+      arguments: z.object({ workItem: z.string().regex(/^tg-[1-9][0-9]*$/), plan: PlanSchema, actor: z.string().min(1) }),
+      execute: async (
+        args: { workItem: string; plan: z.infer<typeof PlanSchema>; actor: string },
+        rawCtx: Omit<Ctx, "definitionName"> & { definition: { name: string } },
+      ) => {
+        const ctx = Object.assign(rawCtx, { definitionName: rawCtx.definition.name }) as unknown as Ctx;
+        const f = ctx.globalArgs.factory;
+        await call(ctx, f, "status", { workItem: args.workItem });
+        const status = await latest<Status>(ctx, f, `status-${args.workItem}`);
+        if (status?.stage.id !== "plan") throw new Error(`${args.workItem} is not at the plan stage`);
+        await call(ctx, f, "record_artifact", { workItem: args.workItem, name: "plan", payload: args.plan });
+        const { cycle } = status.stage;
+        const handle = await ctx.writeResource("preapproval", preapprovalName(args.workItem, "plan-authorized", "plan", cycle), {
+          workItem: args.workItem, gateId: "plan-authorized", stage: "plan", cycle, actor: args.actor,
+          note: planConsentNote(args.plan), createdAt: new Date().toISOString(), appliedAt: null,
+        });
+        return { dataHandles: [handle] };
+      },
+    },
     preapprove: {
       outputLifetime: "7d",
       description: "Store a human approval for a gate the run has not reached yet; the next tick that parks at exactly that gate, stage and cycle applies it",
@@ -488,7 +542,7 @@ export const behavior = {
         if (state?.status !== "active") throw new Error(`${args.workItem} has no active run in ${ctx.globalArgs.factory}`);
         const handle = await ctx.writeResource("preapproval", preapprovalName(args.workItem, args.gateId, args.stage, args.cycle), {
           workItem: args.workItem, gateId: args.gateId, stage: args.stage, cycle: args.cycle, actor: args.actor,
-          note: args.note ?? null, createdAt: new Date().toISOString(), appliedAt: null,
+          note: args.note || null, createdAt: new Date().toISOString(), appliedAt: null,
         });
         return { dataHandles: [handle] };
       },

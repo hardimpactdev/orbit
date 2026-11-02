@@ -15,11 +15,11 @@ use Illuminate\Support\Facades\DB;
 /** Records the native outcome; no Gateway probe, effect or completion contract. */
 final readonly class NativeInstanceEnvironmentProjection implements DirectOperationProjection
 {
-    public function __construct(private DirectOperation $direct) {}
+    public function __construct(private DirectOperation $direct, private NativeInstanceEnvironmentSync $sync) {}
 
     public function input(Operation $operation): array
     {
-        return ['instance_id' => $operation->target_id, 'direct_environment' => $operation->input['direct_environment']];
+        return $this->sync->inputs($operation);
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -30,7 +30,7 @@ final readonly class NativeInstanceEnvironmentProjection implements DirectOperat
             $projected = $this->direct->project($operation, $data, $result);
             if (! $wasTerminal && ($data['status'] ?? null) === OperationStatus::Succeeded->value) {
                 $instance = Instance::query()->findOrFail($operation->target_id);
-                $keys = ValidatedData::stringList($result['keys'] ?? []);
+                $keys = ValidatedData::stringList(ValidatedData::object($operation->input['direct_environment'])['keys']);
                 sort($keys, SORT_STRING);
                 $instance->forceFill(['environment_owned_keys' => array_values(array_unique($keys)),
                     'environment_runtime_pending_at' => null])->saveOrFail();

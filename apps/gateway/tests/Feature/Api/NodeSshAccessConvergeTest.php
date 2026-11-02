@@ -17,6 +17,7 @@ beforeEach(function (): void {
     $this->target = FleetFixtures::node('ssh-policy-target');
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
     $this->socket = new FakeRoutePublicationSocket;
+    $this->socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'd2a3f9c1-6f0e-4b8a-9d3c-0f1e2a3b4c5d']]];
     app()->instance(WebSocketClient::class, $this->socket);
     config(['swamp.run_token' => 'fake.run.token']);
     $agents = Mockery::mock(AgentCommandRunner::class);
@@ -25,26 +26,27 @@ beforeEach(function (): void {
     $this->path = "/api/v1/nodes/{$this->target->id}/ssh-access/converge";
 });
 
-function sshAccessCompletion(Operation $operation, string $status = 'succeeded', array $result = ['ssh_access_ready' => true]): array
+function sshAccessCompletion(Operation $operation, string $status = 'succeeded', array $result = ['steps' => ['Log in with Swamp identity' => ['status' => 'succeeded']]]): array
 {
     return ['run_id' => $operation->state['swamp_run_id'], 'status' => $status,
         'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(),
         'error_code' => $status === 'failed' ? 'swamp.run_failed' : null, 'result' => $result];
 }
 
-it('admits the fixed tracked public key and existing execution copy without a host call', function (): void {
+it('admits the swamp role key with no secret and no host call', function (): void {
     $this->withHeader('Idempotency-Key', 'ssh-access-once')->post($this->path, [], ['Accept' => 'application/json'])
         ->assertAccepted()->assertJsonPath('data.kind', 'node.ssh_access_converge');
     $operation = Operation::query()->sole();
     $this->post($this->path, [], ['Accept' => 'application/json'])->assertAccepted()->assertJsonPath('data.id', $operation->id);
-    expect($this->socket->sent)->toHaveCount(1);
+    expect(array_column($this->socket->sent, 'type'))->toBe(['workflow.run']);
     $payload = $this->socket->sent[0]['payload'];
     expect($payload['workflowIdOrName'])->toBe('operation-node-ssh-access-converge');
-    expect($payload['inputs'])->toMatchArray(['node_id' => $this->target->id, 'kind' => 'node.ssh_access_converge',
-        'execution_secrets' => ['bootstrap_identity' => ['vault' => 'orbit-control-inputs', 'key' => 'bootstrap-identity-node-14']]]);
+    expect($payload['inputs'])->toMatchArray(['node_id' => $this->target->id, 'kind' => 'node.ssh_access_converge'])
+        ->and($payload['inputs']['execution_secrets'])->toEqual(new stdClass);
     expect($payload['inputs']['intent'])->toMatchArray(['control_node_id' => 209,
-        'identity_file' => '/run/credentials/orbit-node-worker.service/proxy-ssh-identity',
+        'identity_file' => '/etc/orbit/swamp-role-worker/ssh-identity',
         'public_key' => 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND',
+        'keys' => ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND'],
         'target' => ['name' => 'target', 'host' => $this->target->wireguard_ip, 'user' => 'orbit', 'port' => 22,
             'host_keys' => [$this->target->ssh_host_key_type.' '.$this->target->ssh_host_key]]]);
     expect($operation->input['participant_node_ids'])->toBe([209, $this->target->id]);
@@ -78,7 +80,7 @@ it('records only its footprint contribution after native own-key verification an
     NodeFootprint::query()->create(['node_id' => $this->target->id, 'artifacts' => ['agent' => 'prior-agent'], 'digest' => 'prior', 'cli_state' => 'managed']);
     $this->post($this->path, [], ['Accept' => 'application/json'])->assertAccepted();
     $operation = Operation::query()->sole();
-    $data = sshAccessCompletion($operation, result: ['ssh_access_ready' => true, 'private_key' => 'not-a-public-result']);
+    $data = sshAccessCompletion($operation, result: ['steps' => ['Log in with Swamp identity' => ['status' => 'succeeded']], 'private_key' => 'not-a-public-result']);
     $projection = app(NodeSshAccessProjection::class);
     $projection->apply($operation, $data);
     $first = NodeFootprint::query()->sole()->getAttributes();
@@ -118,5 +120,5 @@ it('captures a changed pinned target as a new publication rather than reusing an
     $this->target->update(['wireguard_ip' => '10.44.0.199', 'ssh_host_key' => 'new-host-key']);
     $this->post($this->path, [], ['Accept' => 'application/json'])->assertAccepted();
     expect(Operation::query()->count())->toBe(2);
-    expect($this->socket->sent)->toHaveCount(2);
+    expect(array_column($this->socket->sent, 'type'))->toBe(['workflow.run', 'workflow.run']);
 });

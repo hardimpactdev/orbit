@@ -132,7 +132,7 @@ try:
   for path in reversed([Path(store),*Path(store).parents]):
    st=path.lstat()
    if not stat.S_ISDIR(st.st_mode) or st.st_uid not in (0,owner.pw_uid) or st.st_mode&0o022:refuse('tool.vp_scope_conflict')
-  for path in [Path(store),Path(store)/'bin',Path(store)/'bin/vp']:
+  for path in [Path(store),Path(store)/'bin/vp']:
    st=path.lstat()
    if st.st_uid!=owner.pw_uid or st.st_mode&0o022 or stat.S_ISLNK(st.st_mode):refuse('tool.vp_scope_conflict')
   for version in ['vp_version','node_version','package_manager_version']:

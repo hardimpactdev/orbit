@@ -1,5 +1,6 @@
 id: 40402584-b11e-468f-b58e-0d7328a8e62c
 name: operation-database-read
+queueTimeout: 30
 description: Read bounded queries and metadata using vault-backed scripts over official SSH from209.
 writes: true
 vaults:
@@ -95,32 +96,32 @@ inputs:
   additionalProperties: false
 jobs:
 - name: read
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: assets
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: false
     task:
       type: behavior
       behaviorType: '@nckrtl/database-read-command-assets'
-      behaviorName: ${{ "database-read-assets-" + run.id }}
+      behaviorName: '${{ "database-read-assets" }}'
       methodName: read
       inputs:
         intent: ${{ inputs.intent }}
   - name: directory
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: false
     allowFailure: true
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "database-read-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
       globalArgs: &id002
-        name: ${{ "database-read-" + string(inputs.operation_id) }}
+        name: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh.user }}
-          identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
+          identityFile: /etc/orbit/swamp-role-worker/ssh-identity
         hosts:
         - name: server
           address: ${{ inputs.intent.ssh.host }}
@@ -137,7 +138,7 @@ jobs:
         - 0
         - 1
   - name: copy
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: false
     allowFailure: true
     dependsOn:
@@ -150,7 +151,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "database-read-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
       globalArgs: *id002
       methodName: copy
       inputs:
@@ -160,7 +161,7 @@ jobs:
         direction: to
         recursive: true
   - name: prepared
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: false
     dependsOn:
     - step: copy
@@ -172,7 +173,7 @@ jobs:
       severity: high
       message: Database read command files unavailable.
   - name: sql
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: false
     allowFailure: true
     dependsOn:
@@ -182,13 +183,13 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "database-read-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
       globalArgs:
-        name: ${{ "database-read-" + string(inputs.operation_id) }}
+        name: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh.user }}
-          identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
+          identityFile: /etc/orbit/swamp-role-worker/ssh-identity
         hosts:
         - name: server
           address: ${{ inputs.intent.ssh.host }}
@@ -213,7 +214,7 @@ jobs:
           }}
     guard: ${{ inputs.intent.driver == "sqlite" }}
   - name: sqlite
-    target: orbit-node-209
+    labels: {role: swamp}
     writes: false
     allowFailure: true
     dependsOn:
@@ -223,13 +224,13 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "database-read-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
       globalArgs:
-        name: ${{ "database-read-" + string(inputs.operation_id) }}
+        name: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh.user }}
-          identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
+          identityFile: /etc/orbit/swamp-role-worker/ssh-identity
         hosts:
         - name: server
           address: ${{ inputs.intent.ssh.host }}
@@ -255,7 +256,7 @@ jobs:
           }}
     guard: ${{ inputs.intent.driver != "sqlite" }}
   - name: result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: assets
       condition:
@@ -278,7 +279,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-read-command-assets'
-      behaviorName: ${{ "database-read-assets-" + run.id }}
+      behaviorName: '${{ "database-read-assets" }}'
       methodName: result
       inputs:
         stdout: '${{ inputs.intent.driver == "sqlite" ? (has(steps.sqlite.outputs) && has(steps.sqlite.outputs.stdout)
@@ -288,7 +289,7 @@ jobs:
           ? steps.sqlite.outputs.exitCode : -1) : (has(steps.sql.outputs) && has(steps.sql.outputs.exitCode) ? steps.sql.outputs.exitCode
           : -1) }}'
   - name: cleanup
-    target: orbit-node-209
+    labels: {role: swamp}
     guard: ${{ steps.result.outputs.exitCode != 0 }}
     allowFailure: true
     writes: true
@@ -299,13 +300,13 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "database-read-" + string(inputs.operation_id) }}
+      behaviorName: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
       globalArgs:
-        name: ${{ "database-read-" + string(inputs.operation_id) }}
+        name: '${{ ("database-read-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh.user }}
-          identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
+          identityFile: /etc/orbit/swamp-role-worker/ssh-identity
         hosts:
         - name: server
           address: ${{ inputs.intent.ssh.host }}
@@ -323,7 +324,7 @@ jobs:
         - 0
         - 1
   - name: accept_result
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - step: result
       condition:

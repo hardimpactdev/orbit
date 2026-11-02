@@ -38,6 +38,33 @@ final readonly class ScheduleTargetResolver
         }
     }
 
+    /** The Placement alone: the host Node, the user and the working directory, with no read of the Node. */
+    public function placement(ScheduleTargetType $type, int $id): ScheduleTarget
+    {
+        if ($id < 1) {
+            $this->invalid();
+        }
+
+        try {
+            return match ($type) {
+                ScheduleTargetType::Node => $this->node(Node::query()->findOrFail($id), lookup: false),
+                ScheduleTargetType::Instance => $this->instance(Instance::query()->with('node')->findOrFail($id), lookup: false),
+            };
+        } catch (ModelNotFoundException) {
+            $this->invalid();
+        }
+    }
+
+    public function placementOf(#[SensitiveParameter] Schedule $schedule): ScheduleTarget
+    {
+        $target = $this->placement($this->typeForModel($schedule->target_type), $schedule->target_id);
+        if ($target->node->id !== $schedule->host_node_id) {
+            $this->unavailable();
+        }
+
+        return $target;
+    }
+
     public function forSchedule(#[SensitiveParameter] Schedule $schedule): ScheduleTarget
     {
         $type = $this->typeForModel($schedule->target_type);
@@ -122,9 +149,13 @@ final readonly class ScheduleTargetResolver
         };
     }
 
-    private function node(Node $node, bool $requireActive = true): ScheduleTarget
+    private function node(Node $node, bool $requireActive = true, bool $lookup = true): ScheduleTarget
     {
         $this->assertNode($node, $requireActive);
+        if (! $lookup) {
+            return new ScheduleTarget(node: $node, user: $node->user, group: null, home: null, workingDirectory: null,
+                shell: null, loginShell: true, instance: null);
+        }
         $account = $this->account($node, $node->user);
         $this->assertAccount($account, $node);
 
@@ -140,7 +171,7 @@ final readonly class ScheduleTargetResolver
         );
     }
 
-    private function instance(Instance $instance, bool $requireActive = true): ScheduleTarget
+    private function instance(Instance $instance, bool $requireActive = true, bool $lookup = true): ScheduleTarget
     {
         $instance->loadMissing('node');
         $this->assertNode($instance->node, $requireActive);
@@ -153,6 +184,21 @@ final readonly class ScheduleTargetResolver
             $this->unavailable();
         }
 
+        if (! $lookup) {
+            [$user, $workingDirectory, $loginShell] = match (true) {
+                $instance->placedOnAppDev() => [$instance->node->user,
+                    $instance->source_is_laravel === true ? $instance->applicationDirectory() : $instance->checkout_path, true],
+                $instance->placedOnAppProd() && is_string($instance->production_user) && is_string($instance->production_home) => [$instance->production_user,
+                    $instance->source_is_laravel === true ? $instance->applicationDirectory() : $instance->production_home.'/current', false],
+                default => $this->unavailable(),
+            };
+            if (! $this->safePath($workingDirectory) || preg_match('/\A[a-z_][a-z0-9_-]{0,31}\z/D', $user) !== 1) {
+                $this->unavailable();
+            }
+
+            return new ScheduleTarget(node: $instance->node, user: $user, group: null, home: null, workingDirectory: $workingDirectory,
+                shell: $loginShell ? null : '/bin/bash', loginShell: $loginShell, instance: $instance);
+        }
         if ($instance->placedOnAppDev()) {
             $account = $this->account($instance->node, $instance->node->user);
             $this->assertAccount($account, $instance->node);
