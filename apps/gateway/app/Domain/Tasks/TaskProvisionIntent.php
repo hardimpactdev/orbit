@@ -97,24 +97,21 @@ final readonly class TaskProvisionIntent
 
                 return [...$command, 'input_json' => json_encode($command, JSON_THROW_ON_ERROR)];
             }, $this->steps->ordered($project, LifecyclePhase::Setup));
-            $copies = ValidatedData::object($input['execution_secrets']);
-            if ($proof) {
-                $copies['proof_club'] = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
-                    'swamp-proof-club-api-key', $proofClub);
-            }
+            // The VM child takes `execution_secrets` whole; the workspace's own vault references travel in the intent.
+            $proofKey = $proof ? app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
+                'swamp-proof-club-api-key', $proofClub) : null;
             $git = app(RepositoryReadAccess::class)->for($project->repository_url, $project->source_access);
-            if (! $git->isEmpty()) {
-                $copies['git_authorization'] = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
-                    'task-provision-git-'.$vm->id, $git->variables['GIT_CONFIG_VALUE_0']);
-            }
+            $gitAuthorization = $git->isEmpty() ? null : app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
+                'task-provision-git-'.$vm->id, $git->variables['GIT_CONFIG_VALUE_0']);
             $input = [...$input, 'group_id' => $group->id, 'instance_id' => $instance->id,
                 'project_id' => $project->id, 'eligible' => true, ...($proof ? ['proof_club_required' => true] : []),
+                'proof_club' => $proofKey, 'git_authorization' => $gitAuthorization,
                 'workspace' => ['checkout_path' => $checkout->value, 'user' => $node->user,
                     'repository' => $project->repository_url, 'repository_identity' => $project->repository_identity,
                     'branch' => $instance->branch_override, 'default_branch' => $project->default_branch, 'start_commit' => $startCommit,
                     'project_type' => $project->type->value, 'entry_point' => $project->type->frameworkEntryPoint(),
                     'skip_profile' => $project->type === ProjectType::Monorepo, 'php_versions' => $this->php->versions(),
-                    'setup' => $setup], 'execution_secrets' => $copies,
+                    'setup' => $setup],
                 'ssh_identity' => app(SwampSshExecutionInput::class)->identity()];
             $group->taskable()->associate($instance);
             $group->fill(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now(), 'capacity_wait_reason' => null])->save();

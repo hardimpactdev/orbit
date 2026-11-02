@@ -7,6 +7,7 @@ use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Data\Tasks\StartTaskAnalysisData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
@@ -114,6 +115,8 @@ it('admits one Tasks root with canonical placement, enrollment and checkout inte
         ->and($input['ssh_identity']['control_node_id'])->toBe(209)
         ->and($input)->not->toHaveKeys(['private_bindings', 'git_read', 'installation', 'model_key', 'execution_secrets'])
         ->and($envelope['execution_secrets']['pi_token'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'task-vm-pi-token-'.$this->vm->id])
+        ->and($envelope['execution_secrets'])->not->toHaveKeys(['proof_club', 'git_authorization'])
+        ->and(app(DirectOperation::class)->definition('tasks.provision')['terminal_result']['step'])->toBe('Check the workspace')
         ->and(json_encode($envelope, JSON_THROW_ON_ERROR))->not->toContain(str_repeat('d', 64))->not->toContain('fixture-management')
         ->and($this->group->fresh()->status->value)->toBe('reserved')
         ->and($this->vm->fresh()->state)->toBe(TaskVmState::Provisioning)
@@ -240,6 +243,18 @@ it('retains confirmed VM readiness when terminal source preparation fails', func
         ->and($this->group->fresh()->taskable->first_setup_pending)->toBeTrue();
 });
 
+it('reads the workspace receipt when the failed end check kept no stdout', function (): void {
+    $operation = app(StartTaskProvisionAction::class)->execute($this->group, 'fixture', null);
+    $receipt = [...taskProvisionVmReceipt($operation), 'error_code' => 'tasks.provision_failed', 'failed_step' => 'setup-0'];
+    app(TaskProvisionProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => 'failed',
+        'started_at' => '2026-10-31T00:00:00.000Z', 'finished_at' => '2026-10-31T00:01:00.000Z',
+        'error_code' => 'tasks.provision_failed', 'result' => ['receipt' => ['result_json' => json_encode($receipt, JSON_THROW_ON_ERROR)]]]);
+    expect($this->vm->fresh()->state)->toBe(TaskVmState::Ready)
+        ->and($this->group->fresh()->taskable->failed_step)->toBe('setup-0')
+        ->and($operation->fresh()->result['failed_step'])->toBe('setup-0')
+        ->and($operation->fresh()->result)->not->toHaveKey('receipt');
+});
+
 it('refuses a readiness receipt for another VM or admitted image', function (string $field): void {
     $operation = app(StartTaskProvisionAction::class)->execute($this->group, 'fixture', null);
     $result = taskProvisionVmReceipt($operation);
@@ -318,12 +333,13 @@ it('copies the club credential only for the exact canonical proof Project and ex
     $copies = collect($this->socket->sent)->filter(static fn (array $message): bool => ($message['type'] ?? null) === 'vault.put'
         && ($message['payload']['key'] ?? null) === 'swamp-proof-club-api-key');
 
-    expect(isset($envelope['execution_secrets']['proof_club']))->toBe($expected)
+    expect(isset($envelope['intent']['proof_club']))->toBe($expected)
+        ->and($envelope['execution_secrets'])->not->toHaveKey('proof_club')
         ->and($copies)->toHaveCount($expected ? 1 : 0)
         ->and(isset($operation->input['proof_club_required']))->toBe($expected)
         ->and(json_encode($operation->fresh()->toArray(), JSON_THROW_ON_ERROR))->not->toContain($credential)
         ->and(json_encode($envelope, JSON_THROW_ON_ERROR))->not->toContain($credential);
     if ($expected) {
-        expect($envelope['execution_secrets']['proof_club'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'swamp-proof-club-api-key']);
+        expect($envelope['intent']['proof_club'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'swamp-proof-club-api-key']);
     }
 })->with([[62, 'swamp-proof', true], [62, 'another-project', false], [63, 'swamp-proof', false]]);

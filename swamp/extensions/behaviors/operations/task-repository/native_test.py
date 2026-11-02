@@ -41,6 +41,10 @@ class NativeRepository(harness.NativeTestCase):
         runtime = self.repo / "extensions/behaviors/operations/instance-deploy"
         runtime.mkdir(parents=True, exist_ok=True)
         shutil.copy(ROOT / "extensions/behaviors/operations/instance-deploy/app_step_runtime.ts", runtime)
+        # The runtime embeds the Project environment program as text.
+        scripts = self.repo / "extensions/behaviors/operations/development-deploy/scripts"
+        scripts.mkdir(parents=True, exist_ok=True)
+        shutil.copy(ROOT / "extensions/behaviors/operations/development-deploy/scripts/project_environment.py", scripts)
 
         official = self.repo / ".swamp/pulled-extensions/@swamp/ssh"
         official.parent.mkdir(parents=True)

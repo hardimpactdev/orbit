@@ -65,27 +65,23 @@ Deno.test("provision source uses the trusted child pin with captured WG/account 
   });
   assertThrows(() => connection(intent, { ...vm, guest_node_id: 99 }));
 });
-Deno.test("a failed source child retains VM readiness but never supplies successful source or analysis evidence", () => {
-  const receipt = result(intent, {
-    vm: { status: "succeeded", outputs: { result: vm } },
+Deno.test("a failed source step retains VM readiness but never supplies successful source or analysis evidence", () => {
+  const receipt = result(intent, vm, {
     guest: { status: "succeeded" },
-    source: { status: "failed" },
+    prepare: { status: "failed" },
   });
   assertEquals(receipt.ready, true);
   assertEquals(receipt.error_code, "tasks.provision_failed");
-  assertEquals(receipt.failed_step, "source");
+  assertEquals(receipt.failed_step, "prepare");
   assertEquals("source" in receipt, false);
   assertEquals("analysis_base" in receipt, false);
 });
 Deno.test("wrong child identity is never retained as confirmed VM readiness", () => {
-  const receipt = result(intent, {
-    vm: {
-      status: "succeeded",
-      outputs: { result: { ...vm, task_vm_id: 99 } },
-    },
+  const receipt = result(intent, { ...vm, task_vm_id: 99 }, {
     guest: { status: "failed" },
   });
   assertEquals("ready" in receipt, false);
+  assertEquals(receipt.failed_step, "guest");
 });
 Deno.test("source result requires every ordered setup step before exposing the initial analysis pin", () => {
   const input = {
@@ -142,13 +138,9 @@ Deno.test("source result requires every ordered setup step before exposing the i
     source,
     analysis_base: "b".repeat(40),
   });
-  const receipt = result(input, {
-    vm: { status: "succeeded", outputs: { result: vm } },
+  const receipt = result(input, vm, {
     guest: { status: "succeeded" },
-    source: {
-      status: "succeeded",
-      outputs: { result: sourceResult(input, steps) },
-    },
+    ...steps,
   });
   assertEquals(receipt.analysis_base, {
     base: "b".repeat(40),
@@ -159,62 +151,48 @@ Deno.test("source result requires every ordered setup step before exposing the i
   assertEquals("result_json" in receipt, false);
 });
 
-Deno.test("proof club descriptors never enter the canonical VM child input", async () => {
-  const { behavior } = await import("./provision.ts");
-  const resource: Record<string, unknown>[] = [];
-  await behavior.methods.vm_inputs.execute({
-    execution_secrets: {
-      proof_club: {
-        vault: "orbit-control-inputs",
-        key: "swamp-proof-club-api-key",
-      },
-      git_authorization: {
-        vault: "orbit-control-inputs",
-        key: "task-provision-git-10",
-      },
-      pi: { vault: "orbit-control-inputs", key: "task-vm-pi-token-10" },
-    },
-  }, {
-    extensionFile: () => "unused",
-    writeResource: (_spec, _name, value) => {
-      resource.push(value as Record<string, unknown>);
-      return Promise.resolve({});
-    },
-  });
-  assertEquals(resource, [{
-    execution_secrets: {
-      pi: { vault: "orbit-control-inputs", key: "task-vm-pi-token-10" },
-    },
-  }]);
-});
-
 Deno.test("proof provision requires private delivery before group readiness but preserves observed VM facts on refusal", () => {
   const input = { ...intent, project_id: 62, proof_club_required: true };
-  const steps = {
-    vm: { status: "succeeded", outputs: { result: vm } },
+  const steps: Record<string, { status: string; outputs?: unknown }> = {
     guest: { status: "succeeded" },
-    source: {
+    ...Object.fromEntries(
+      [
+        "prepare",
+        "directory",
+        "control",
+        "clone_public",
+        "bundle",
+        "prepare_remote",
+        "copy_bundle",
+        "import",
+        "origin",
+        "branch",
+        "identity",
+        "analysis_base",
+        "inspect",
+        "composer",
+      ].map((name) => [name, { status: "succeeded", outputs: {} }]),
+    ),
+    profile: {
       status: "succeeded",
       outputs: {
-        result: {
-          source: {
-            branch: "task-30",
-            commit: "a".repeat(40),
-            php_version: null,
-            laravel: false,
-          },
-          analysis_base: null,
+        source: {
+          branch: "task-30",
+          commit: "a".repeat(40),
+          php_version: null,
+          laravel: false,
         },
+        analysis_base: null,
       },
     },
     proof_club: { status: "failed" },
   };
-  const refused = result(input, steps);
+  const refused = result(input, vm, steps);
   assertEquals(refused.failed_step, "proof_club");
   assertEquals(refused.ready, true); // VM facts only; error prevents successful group/source projection.
   assertEquals("source" in refused, false);
   steps.proof_club.status = "succeeded";
-  assertEquals(result(input, steps).error_code, undefined);
+  assertEquals(result(input, vm, steps).error_code, undefined);
 });
 
 Deno.test("profile refuses a checkout that is not on the admitted start commit", async () => {

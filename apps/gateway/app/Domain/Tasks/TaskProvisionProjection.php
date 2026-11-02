@@ -36,7 +36,7 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
     {
         return DB::transaction(function () use ($operation, $data): Operation {
             $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
-            $result = ValidatedData::object($data['result'] ?? []);
+            $result = $data['result'] = self::receipt(ValidatedData::object($data['result'] ?? []));
             if ($operation->status->terminal()) {
                 return app(DirectOperation::class)->project($operation, $data, $result);
             }
@@ -81,5 +81,23 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
 
             return $projected;
         });
+    }
+
+    /**
+     * The end check prints the receipt and fails on its error code; a failed step keeps no stdout,
+     * so the receipt then comes from the workspace step, which always ends with it.
+     *
+     * @param  array<string,mixed>  $result
+     * @return array<string,mixed>
+     */
+    private static function receipt(array $result): array
+    {
+        $captured = $result['receipt'] ?? null;
+        unset($result['receipt']);
+        if ($result === [] && is_array($captured) && is_string($captured['result_json'] ?? null)) {
+            return ValidatedData::object(json_decode($captured['result_json'], true, flags: JSON_THROW_ON_ERROR));
+        }
+
+        return $result;
     }
 }

@@ -1,9 +1,7 @@
 """Execute the Tasks source/setup DAG against a frozen VM-child receipt fixture."""
 
-import hashlib
 import json
 import os
-import shlex
 import shutil
 import sys
 import tempfile
@@ -56,6 +54,8 @@ class NativeProvision(fixture.NativeRepository):
                 "instance_id": 50,
                 "wireguard_ip": "10.44.0.20",
                 "eligible": True,
+                "proof_club": None,
+                "git_authorization": None,
                 "ssh_identity": {
                     "control_node_id": 209,
                     "identity_file": "/dev/null",
@@ -203,13 +203,20 @@ export const model = {
         steps = {row["name"]: row for row in history["jobs"][0]["steps"]}
         return history, steps
 
+    def receipt(self, steps):
+        """The receipt as the Gateway reads it: the end check's stdout, else the workspace step's."""
+        check = steps["Check the workspace"]
+        if check["status"] == "succeeded":
+            return json.loads(check["outputs"]["stdout"])
+        return json.loads(steps["Set up the workspace"]["outputs"]["result"]["result_json"])
+
     def proof_delivery(self, fail=False):
         secret = os.urandom(32).hex()
         self.secrets = (secret,)
         self.cli("vault", "create", "local_encryption", "orbit-control-inputs")
         self.cli("vault", "put", "orbit-control-inputs", "swamp-proof-club-api-key", input=secret)
         self.inputs["intent"].update(project_id=62, proof_club_required=True)
-        self.inputs["execution_secrets"]["proof_club"] = {
+        self.inputs["intent"]["proof_club"] = {
             "vault": "orbit-control-inputs", "key": "swamp-proof-club-api-key"
         }
         # The private home lives outside the scanned scratch repository.
@@ -247,7 +254,7 @@ raise SystemExit(r.returncode)
         ssh.write_text(script)
         ssh.chmod(0o755)
         history, steps = self.execute_provision(success=not fail)
-        self.assertEqual(steps["vm"]["outputs"]["result"]["vm_copy_keys"], [])
+        self.assertEqual(steps["Create and prepare the VM"]["outputs"]["result"]["vm_copy_keys"], [])
         rows = json.loads(calls.read_text())
         # Only the final write receives the token, on stdin; no argv names it.
         self.assertEqual([row["stdin"] for row in rows], [False, False, True])
@@ -263,20 +270,18 @@ raise SystemExit(r.returncode)
     def test_proof_club_token_reaches_a_private_file_on_ssh_stdin_and_never_native_history(self):
         history, steps = self.proof_delivery()
         self.assertEqual(history["status"], "succeeded")
-        self.assertEqual(steps["proof_club"]["status"], "succeeded")
-        # History records only that the exec had stdin, never the token.
-        recorded = steps["proof_club"]["dataArtifacts"][0]["attributes"]["args"]
-        self.assertEqual(recorded["hasStdin"], True)
-        self.assertEqual(sorted(recorded), ["argv", "hasStdin", "sudo"])
+        self.assertIn("proof_club", steps["Set up the workspace"]["outputs"])
+        # History never holds the token; only the exec's stdin carried it.
+        self.assertNotIn(self.secrets[0], json.dumps(history))
         destination = self.private_home / ".config/swamp/club-api-key"
         self.assertFalse(destination.is_symlink())
         self.assertEqual(destination.read_text(), self.secrets[0])
         self.assertEqual(destination.stat().st_mode & 0o777, 0o600)
-        self.assertNotIn("error_code", json.loads(steps["result"]["outputs"]["stdout"]))
+        self.assertNotIn("error_code", self.receipt(steps))
 
     def test_private_delivery_refusal_keeps_vm_facts_but_never_claims_group_source_success(self):
         history, steps = self.proof_delivery(fail=True)
-        receipt = json.loads(steps["result"]["outputs"]["stdout"])
+        receipt = self.receipt(steps)
         self.assertEqual(history["status"], "failed")
         self.assertEqual(receipt["failed_step"], "proof_club")
         self.assertTrue(receipt["ready"])
@@ -294,9 +299,9 @@ raise SystemExit(r.returncode)
             ]
         )
         history, steps = self.execute_provision()
-        result = json.loads(steps["result"]["outputs"]["stdout"])
+        result = self.receipt(steps)
         self.assertEqual(history["status"], "succeeded")
-        self.assertEqual(steps["proof_club"]["status"], "skipped")
+        self.assertNotIn("proof_club", steps["Set up the workspace"]["outputs"])
         self.assertEqual(self.checkout.joinpath("order").read_text(), "firstsecond")
         self.assertEqual(result["starting_commit"], self.start)
         self.assertEqual(result["analysis_base"]["base"], self.start)
@@ -305,9 +310,9 @@ raise SystemExit(r.returncode)
         self.assertEqual(result["source"]["branch"], "task-30")
         self.assertTrue(result["ready"])
         self.assertNotIn("result_json", result)
-        self.assertEqual(steps["vm"]["outputs"]["result"]["operation_id"], 7)
+        self.assertEqual(steps["Create and prepare the VM"]["outputs"]["result"]["operation_id"], 7)
         self.assertEqual(
-            steps["vm"]["outputs"]["result"]["root_kind"], "tasks.provision"
+            steps["Create and prepare the VM"]["outputs"]["result"]["root_kind"], "tasks.provision"
         )
 
     def test_task_branch_starts_at_the_admitted_commit_not_the_newer_default_branch_head(
@@ -317,7 +322,7 @@ raise SystemExit(r.returncode)
         self.git("add", ".")
         self.git("commit", "-qm", "Red head")
         history, steps = self.execute_provision()
-        result = json.loads(steps["result"]["outputs"]["stdout"])
+        result = self.receipt(steps)
         self.assertEqual(history["status"], "succeeded")
         self.assertEqual(result["starting_commit"], self.start)
         self.assertEqual(result["analysis_base"]["base"], self.start)
@@ -336,14 +341,12 @@ raise SystemExit(r.returncode)
             "task-provision-git-10",
             input=secret,
         )
-        self.inputs["execution_secrets"] = {
-            "git_authorization": {
-                "vault": "orbit-control-inputs",
-                "key": "task-provision-git-10",
-            }
+        self.inputs["intent"]["git_authorization"] = {
+            "vault": "orbit-control-inputs",
+            "key": "task-provision-git-10",
         }
         history, steps = self.execute_provision()
-        self.assertEqual(steps["vm"]["outputs"]["result"]["vm_copy_keys"], [])
+        self.assertEqual(steps["Create and prepare the VM"]["outputs"]["result"]["vm_copy_keys"], [])
         self.assertEqual(history["status"], "succeeded")
         self.assertNotIn(secret, json.dumps(history))
         self.assertNotIn(secret, self.checkout.joinpath(".git/config").read_text())
@@ -356,7 +359,7 @@ raise SystemExit(r.returncode)
         }
         history, steps = self.execute_provision()
         self.assertEqual(history["status"], "succeeded")
-        self.assertEqual(sorted(steps["vm"]["outputs"]["result"]["vm_copy_keys"]), ["bootstrap", "upcloud"])
+        self.assertEqual(sorted(steps["Create and prepare the VM"]["outputs"]["result"]["vm_copy_keys"]), ["bootstrap", "upcloud"])
 
     def test_monorepo_skips_irrelevant_composer_profile_and_preserves_empty_setup_seed(
         self,
@@ -370,7 +373,7 @@ raise SystemExit(r.returncode)
             ]
         )
         history, steps = self.execute_provision()
-        result = json.loads(steps["result"]["outputs"]["stdout"])
+        result = self.receipt(steps)
         self.assertEqual(history["status"], "succeeded")
         self.assertIsNone(result["source"]["php_version"])
         self.assertEqual(self.checkout.joinpath("setup-proof").read_text(), "seeded")
@@ -387,7 +390,7 @@ raise SystemExit(r.returncode)
             start_commit=self.git("rev-parse", "HEAD"),
         )
         history, steps = self.execute_provision(success=False)
-        result = json.loads(steps["result"]["outputs"]["stdout"])
+        result = self.receipt(steps)
         self.assertEqual(history["status"], "failed")
         self.assertEqual(result["error_code"], "app-dev.php_version_unsupported")
         self.assertEqual(result["failed_step"], "profile")
@@ -406,7 +409,7 @@ raise SystemExit(r.returncode)
         )
         history, steps = self.execute_provision(success=False)
         self.assertEqual(history["status"], "failed")
-        source = steps["source"]["outputs"]
+        source = steps["Set up the workspace"]["outputs"]
         self.assertEqual(source["setup-0"]["stdout"], "")
         self.assertEqual(
             source["setup_output"]["setup"]["setup-0"],
@@ -418,7 +421,7 @@ raise SystemExit(r.returncode)
     def test_setup_failure_keeps_vm_receipt_without_source_success_or_later_setup(self):
         self.setup_commands(["exit 23", "touch never"])
         history, steps = self.execute_provision(success=False)
-        result = json.loads(steps["result"]["outputs"]["stdout"])
+        result = self.receipt(steps)
         self.assertEqual(history["status"], "failed")
         self.assertTrue(result["ready"])
         self.assertEqual(result["error_code"], "tasks.provision_failed")
@@ -429,7 +432,7 @@ raise SystemExit(r.returncode)
     def test_unavailable_vm_child_cannot_prepare_workspace_or_claim_success(self):
         self.inputs["intent"]["fixture_vm"]["task_vm_id"] = 99
         history, steps = self.execute_provision(success=False)
-        result = json.loads(steps["result"]["outputs"]["stdout"])
+        result = self.receipt(steps)
         self.assertEqual(history["status"], "failed")
         self.assertEqual(result["failed_step"], "guest")
         self.assertFalse(self.checkout.exists())
@@ -444,7 +447,7 @@ raise SystemExit(r.returncode)
         history, steps = self.execute_provision()
         self.assertEqual(history["status"], "succeeded")
         self.assertEqual(self.checkout.joinpath("setup-proof").read_text(), "clean")
-        self.assertTrue(json.loads(steps["result"]["outputs"]["stdout"])["ready"])
+        self.assertTrue(self.receipt(steps)["ready"])
 
     def test_laravel_profile_reads_composer_metadata_and_entry_point_over_ssh(self):
         (self.workspace / "composer.json").write_text(
@@ -459,7 +462,7 @@ raise SystemExit(r.returncode)
             start_commit=self.git("rev-parse", "HEAD"),
         )
         history, steps = self.execute_provision()
-        result = json.loads(steps["result"]["outputs"]["stdout"])
+        result = self.receipt(steps)
         self.assertEqual(history["status"], "succeeded")
         self.assertEqual(result["source"]["php_version"], "8.5")
         self.assertTrue(result["source"]["laravel"])
@@ -487,7 +490,7 @@ raise SystemExit(r.returncode)
         )
         history, steps = self.execute_provision()
         self.assertEqual(history["status"], "succeeded")
-        source = steps["source"]["outputs"]
+        source = steps["Set up the workspace"]["outputs"]
         self.assertEqual(
             source["profile"]["source"],
             {
@@ -513,7 +516,7 @@ raise SystemExit(r.returncode)
             self.repo / "missing-repository"
         )
         history, steps = self.execute_provision(success=False)
-        result = json.loads(steps["result"]["outputs"]["stdout"])
+        result = self.receipt(steps)
         self.assertEqual(history["status"], "failed")
         self.assertTrue(result["ready"])
         self.assertEqual(result["error_code"], "tasks.provision_failed")

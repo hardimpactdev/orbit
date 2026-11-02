@@ -1,25 +1,9 @@
-description: Prepare one captured Tasks source checkout and ordered setup as official
-  SSH exec argv from 209; no script reaches the VM.
+description: Set up one captured Tasks workspace on the provisioned VM as official
+  SSH exec argv from 209, and fold the provision receipt; no script reaches the VM.
 id: 46a068b0-6512-4c23-8729-e5bdc43c136c
 inputs:
   additionalProperties: false
   properties:
-    execution_secrets:
-      type: object
-      additionalProperties:
-        type: object
-        properties:
-          vault:
-            type: string
-            enum:
-            - orbit-control-inputs
-          key:
-            type: string
-            pattern: ^(task-vm-(model-key|pi-token)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token|task-provision-git-[1-9][0-9]*)$
-        required:
-        - vault
-        - key
-        additionalProperties: false
     intent:
       type: object
     kind:
@@ -32,19 +16,31 @@ inputs:
     operation_id:
       minimum: 1
       type: integer
-    workspace:
+    vm:
       type: object
   required:
   - operation_id
   - node_id
   - kind
   - intent
-  - execution_secrets
-  - workspace
+  - vm
   type: object
 jobs:
 - name: source
   steps:
+  # The workspace connection pins the host key the VM child observed at enrollment.
+  - name: guest
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-provision-data'
+      behaviorName: '${{ "tp-data-guest" }}'
+      methodName: guest
+      inputs:
+        intent: ${{ inputs.intent }}
+        vm: ${{ inputs.vm }}
+    # Every failure lands in the receipt; this workspace run itself always ends with it.
+    allowFailure: true
   - name: prepare
     labels: {role: swamp}
     task:
@@ -55,7 +51,10 @@ jobs:
       inputs:
         intent: ${{ inputs.intent }}
         root: ${{ "/tmp/orbit-task-provision-"+run.id }}
-    dependsOn: []
+    dependsOn:
+    - step: guest
+      condition:
+        type: succeeded
   - name: directory
     labels: {role: swamp}
     task:
@@ -65,7 +64,7 @@ jobs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
-        intent: ${{ inputs.workspace }}
+        intent: ${{ steps.guest.outputs.workspace }}
     dependsOn:
     - step: prepare
       condition:
@@ -110,8 +109,8 @@ jobs:
           GIT_TERMINAL_PROMPT: '0'
           GIT_CONFIG_COUNT: '3'
           GIT_CONFIG_KEY_0: http.https://github.com/.extraheader
-          GIT_CONFIG_VALUE_0: ${{ vault.get(inputs.execution_secrets.git_authorization.vault,
-            inputs.execution_secrets.git_authorization.key) }}
+          GIT_CONFIG_VALUE_0: ${{ vault.get(inputs.intent.git_authorization.vault,
+            inputs.intent.git_authorization.key) }}
           GIT_CONFIG_KEY_1: url.https://github.com/.insteadOf
           GIT_CONFIG_VALUE_1: 'git@github.com:'
           GIT_CONFIG_KEY_2: url.https://github.com/.insteadOf
@@ -120,7 +119,7 @@ jobs:
     - step: control
       condition:
         type: succeeded
-    guard: ${{ !has(inputs.execution_secrets.git_authorization) }}
+    guard: ${{ inputs.intent.git_authorization == null }}
     allowFailure: true
   - name: clone_public
     labels: {role: swamp}
@@ -143,7 +142,7 @@ jobs:
     - step: control
       condition:
         type: succeeded
-    guard: ${{ has(inputs.execution_secrets.git_authorization) }}
+    guard: ${{ inputs.intent.git_authorization != null }}
     allowFailure: true
   - name: bundle
     labels: {role: swamp}
@@ -180,20 +179,20 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
-        - address: ${{ inputs.workspace.ssh_execution.target.host }}
+        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
           name: target
           transport:
-            hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
+        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
-          identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
+          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
           kind: ssh
-          port: ${{ inputs.workspace.ssh_execution.target.port }}
-          user: ${{ inputs.workspace.ssh_execution.target.user }}
+          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
+          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
       inputs:
         hosts: name:target
         argv:
@@ -213,20 +212,20 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: copy
       globalArgs:
         hosts:
-        - address: ${{ inputs.workspace.ssh_execution.target.host }}
+        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
           name: target
           transport:
-            hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
+        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
-          identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
+          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
           kind: ssh
-          port: ${{ inputs.workspace.ssh_execution.target.port }}
-          user: ${{ inputs.workspace.ssh_execution.target.user }}
+          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
+          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
       inputs:
         hosts: name:target
         src: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id+"/source.bundle"
@@ -246,20 +245,20 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
-        - address: ${{ inputs.workspace.ssh_execution.target.host }}
+        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
           name: target
           transport:
-            hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
+        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
-          identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
+          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
           kind: ssh
-          port: ${{ inputs.workspace.ssh_execution.target.port }}
-          user: ${{ inputs.workspace.ssh_execution.target.user }}
+          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
+          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
       inputs:
         hosts: name:target
         argv:
@@ -281,20 +280,20 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
-        - address: ${{ inputs.workspace.ssh_execution.target.host }}
+        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
           name: target
           transport:
-            hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
+        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
-          identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
+          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
           kind: ssh
-          port: ${{ inputs.workspace.ssh_execution.target.port }}
-          user: ${{ inputs.workspace.ssh_execution.target.user }}
+          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
+          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
       inputs:
         hosts: name:target
         argv:
@@ -315,20 +314,20 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
-        - address: ${{ inputs.workspace.ssh_execution.target.host }}
+        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
           name: target
           transport:
-            hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
+        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
-          identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
+          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
           kind: ssh
-          port: ${{ inputs.workspace.ssh_execution.target.port }}
-          user: ${{ inputs.workspace.ssh_execution.target.user }}
+          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
+          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
       inputs:
         hosts: name:target
         argv:
@@ -349,20 +348,20 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
-        - address: ${{ inputs.workspace.ssh_execution.target.host }}
+        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
           name: target
           transport:
-            hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
+        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
-          identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
+          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
           kind: ssh
-          port: ${{ inputs.workspace.ssh_execution.target.port }}
-          user: ${{ inputs.workspace.ssh_execution.target.user }}
+          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
+          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
       inputs:
         hosts: name:target
         argv:
@@ -383,20 +382,20 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
-        - address: ${{ inputs.workspace.ssh_execution.target.host }}
+        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
           name: target
           transport:
-            hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
+        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
-          identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
+          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
           kind: ssh
-          port: ${{ inputs.workspace.ssh_execution.target.port }}
-          user: ${{ inputs.workspace.ssh_execution.target.user }}
+          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
+          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
       inputs:
         hosts: name:target
         okExitCodes: any
@@ -417,20 +416,20 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
-        - address: ${{ inputs.workspace.ssh_execution.target.host }}
+        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
           name: target
           transport:
-            hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
+        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
-          identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
+          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
           kind: ssh
-          port: ${{ inputs.workspace.ssh_execution.target.port }}
-          user: ${{ inputs.workspace.ssh_execution.target.user }}
+          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
+          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
       inputs:
         hosts: name:target
         okExitCodes: any
@@ -454,20 +453,20 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: copy
       globalArgs:
         hosts:
-        - address: ${{ inputs.workspace.ssh_execution.target.host }}
+        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
           name: target
           transport:
-            hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
+        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
-          identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
+          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
           kind: ssh
-          port: ${{ inputs.workspace.ssh_execution.target.port }}
-          user: ${{ inputs.workspace.ssh_execution.target.user }}
+          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
+          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
       inputs:
         hosts: name:target
         direction: from
@@ -516,20 +515,20 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-setup-" + string(inputs.workspace.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
+      behaviorName: '${{ ("tp-setup-" + string(steps.guest.outputs.workspace.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
-        - address: ${{ inputs.workspace.ssh_execution.target.host }}
+        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
           name: target
           transport:
-            hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-setup-" + string(inputs.workspace.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
+            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
+        name: '${{ ("tp-setup-" + string(steps.guest.outputs.workspace.ssh_execution.target.host) + "-" + string(self._index)).split(".").join("-") }}'
         transport:
-          identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
+          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
           kind: ssh
-          port: ${{ inputs.workspace.ssh_execution.target.port }}
-          user: ${{ inputs.workspace.ssh_execution.target.user }}
+          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
+          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
       inputs:
         hosts: name:target
         argv: ${{ steps.prepare.outputs.setup[self._index] }}
@@ -550,20 +549,20 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: copy
       globalArgs:
         hosts:
-        - address: ${{ inputs.workspace.ssh_execution.target.host }}
+        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
           name: target
           transport:
-            hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
+        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
-          identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
+          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
           kind: ssh
-          port: ${{ inputs.workspace.ssh_execution.target.port }}
-          user: ${{ inputs.workspace.ssh_execution.target.user }}
+          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
+          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
       inputs:
         hosts: name:target
         direction: from
@@ -597,17 +596,147 @@ jobs:
       condition:
         type: succeeded
     allowFailure: true
+  # The proof club token's private directory, owned by orbit.
+  - name: proof_club_directory
+    labels: {role: swamp}
+    queueTimeout: 10
+    allowFailure: true
+    guard: ${{ !has(inputs.intent.proof_club_required) || !inputs.intent.proof_club_required || inputs.intent.project_id != 62 || inputs.intent.proof_club == null }}
+    dependsOn:
+    - step: profile
+      condition:
+        type: succeeded
+    - step: setup-${{ self._index }}
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("tp-proof-club-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        hosts:
+        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
+        name: '${{ ("tp-proof-club-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+        transport:
+          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
+          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv:
+        - timeout
+        - '30'
+        - install
+        - -d
+        - -m
+        - '0700'
+        - -o
+        - orbit
+        - -g
+        - orbit
+        - --
+        - /home/orbit/.config/swamp
+  # install cannot replace an existing file from stdin; drop any previous token or link first.
+  - name: proof_club_previous
+    labels: {role: swamp}
+    queueTimeout: 10
+    allowFailure: true
+    guard: ${{ !has(inputs.intent.proof_club_required) || !inputs.intent.proof_club_required || inputs.intent.project_id != 62 || inputs.intent.proof_club == null }}
+    dependsOn:
+    - step: proof_club_directory
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("tp-proof-club-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        hosts:
+        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
+        name: '${{ ("tp-proof-club-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+        transport:
+          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
+          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv:
+        - timeout
+        - '30'
+        - rm
+        - -f
+        - --
+        - /home/orbit/.config/swamp/club-api-key
+  # The token from the vault on SSH stdin, written 0600 for orbit; it never enters argv or history.
+  - name: proof_club
+    labels: {role: swamp}
+    queueTimeout: 10
+    allowFailure: true
+    guard: ${{ !has(inputs.intent.proof_club_required) || !inputs.intent.proof_club_required || inputs.intent.project_id != 62 || inputs.intent.proof_club == null }}
+    dependsOn:
+    - step: proof_club_previous
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("tp-proof-club-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        hosts:
+        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
+        name: '${{ ("tp-proof-club-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+        transport:
+          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
+          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv:
+        - timeout
+        - '30'
+        - install
+        - -m
+        - '0600'
+        - -o
+        - orbit
+        - -g
+        - orbit
+        - /dev/stdin
+        - /home/orbit/.config/swamp/club-api-key
+        stdin: ${{ vault.get(inputs.intent.proof_club.vault, inputs.intent.proof_club.key) }}
   - name: result
     labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/task-provision-data'
       behaviorName: '${{ "tp-data-result" }}'
-      methodName: source_result
+      methodName: result
       inputs:
         intent: ${{ inputs.intent }}
+        vm: ${{ inputs.vm }}
         steps: ${{ steps }}
     dependsOn:
+    - step: guest
+      condition:
+        type: always
     - step: prepare
       condition:
         type: always
@@ -662,6 +791,15 @@ jobs:
     - step: setup_output
       condition:
         type: always
+    - step: proof_club_directory
+      condition:
+        type: always
+    - step: proof_club_previous
+      condition:
+        type: always
+    - step: proof_club
+      condition:
+        type: always
   - name: cleanup
     labels: {role: swamp}
     task:
@@ -685,20 +823,20 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         hosts:
-        - address: ${{ inputs.workspace.ssh_execution.target.host }}
+        - address: ${{ steps.guest.outputs.workspace.ssh_execution.target.host }}
           name: target
           transport:
-            hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
-        name: '${{ ("tp-ssh-" + string(inputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
+            hostKeys: ${{ steps.guest.outputs.workspace.ssh_execution.target.host_keys }}
+        name: '${{ ("tp-ssh-" + string(steps.guest.outputs.workspace.ssh_execution.target.host)).split(".").join("-") }}'
         transport:
-          identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
+          identityFile: ${{ steps.guest.outputs.workspace.ssh_execution.identity_file }}
           kind: ssh
-          port: ${{ inputs.workspace.ssh_execution.target.port }}
-          user: ${{ inputs.workspace.ssh_execution.target.user }}
+          port: ${{ steps.guest.outputs.workspace.ssh_execution.target.port }}
+          user: ${{ steps.guest.outputs.workspace.ssh_execution.target.user }}
       inputs:
         hosts: name:target
         argv:

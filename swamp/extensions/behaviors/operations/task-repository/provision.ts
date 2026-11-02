@@ -266,65 +266,53 @@ export function sourceResult(raw: unknown, steps: Record<string, unknown>) {
   }
   return Observation.parse(nativeOutputs(steps, "profile").outputs);
 }
+/** The provision receipt: the VM child's receipt, then the first failure, else the source. */
 export function result(
   raw: unknown,
+  receipt: unknown,
   steps: Record<string, unknown>,
 ): Record<string, unknown> {
   const intent = Intent.parse(raw);
-  const vm = Vm.safeParse(nativeOutputs(steps, "vm").outputs.result);
-  const receipt = vm.success && vm.data.task_vm_id === intent.task_vm_id &&
+  const vm = Vm.safeParse(receipt);
+  const ready = vm.success && vm.data.task_vm_id === intent.task_vm_id &&
       vm.data.guest_node_id === intent.guest_node_id
     ? vm.data
     : {};
-  for (const name of ["vm", "guest", "source"]) {
-    if (
-      (name === "clone"
-        ? !["clone_private", "clone_public"].some((key) =>
-          nativeOutputs(steps, key).step.status === "succeeded"
-        )
-        : nativeOutputs(steps, name).step.status !== "succeeded")
-    ) {
-      return {
-        ...receipt,
-        error_code: "tasks.provision_failed",
-        failed_step: name,
-      };
-    }
+  if (nativeOutputs(steps, "guest").step.status !== "succeeded") {
+    return { ...ready, error_code: "tasks.provision_failed", failed_step: "guest" };
+  }
+  const source = sourceResult(intent, steps);
+  if (typeof (source as { error_code?: unknown }).error_code === "string") {
+    return { ...ready, ...source };
   }
   if (
     intent.proof_club_required &&
     nativeOutputs(steps, "proof_club").step.status !== "succeeded"
   ) {
     return {
-      ...receipt,
+      ...ready,
       error_code: "tasks.provision_failed",
       failed_step: "proof_club",
     };
   }
-  const sourceReceipt = z.record(z.string(), z.unknown()).parse(
-    nativeOutputs(steps, "source").outputs.result,
-  );
-  if (typeof sourceReceipt.error_code === "string") {
-    return { ...receipt, ...sourceReceipt };
-  }
-  const { source, analysis_base: base } = Observation.parse(sourceReceipt);
+  const { source: observed, analysis_base: base } = Observation.parse(source);
   return {
-    ...receipt,
-    source,
+    ...ready,
+    source: observed,
     instance_id: intent.instance_id,
     node_id: intent.guest_node_id,
-    starting_commit: source.commit,
+    starting_commit: observed.commit,
     analysis_base: base === null ? null : {
       base,
       instance_id: intent.instance_id,
       repository: intent.workspace.repository,
-      branch: source.branch,
+      branch: observed.branch,
     },
   };
 }
 export const behavior = {
   type: "@nckrtl/task-provision-data",
-  version: "2026.11.02.5",
+  version: "2026.11.02.6",
   resources: {
     public: {
       schema: z.record(z.string(), z.unknown()),
@@ -333,32 +321,6 @@ export const behavior = {
     },
   },
   methods: {
-    vm_inputs: {
-      description:
-        "Separate Tasks Git and proof descriptors from the canonical VM child input",
-      arguments: z.object({
-        execution_secrets: z.record(
-          z.string(),
-          z.object({ vault: z.string(), key: z.string() }),
-        ),
-      }),
-      execute: (
-        args: {
-          execution_secrets: Record<
-            string,
-            { vault: string; key: string }
-          >;
-        },
-        ctx: Context,
-      ) => {
-        const {
-          git_authorization: _git,
-          proof_club: _proof,
-          ...copies
-        } = args.execution_secrets;
-        return data(ctx, { execution_secrets: copies });
-      },
-    },
     prepare: {
       description:
         "Validate public workspace intent and build each setup command's SSH exec argv",
@@ -451,36 +413,20 @@ export const behavior = {
         });
       },
     },
-    source_result: {
-      description: "Return the source and setup child receipt",
-      arguments: z.object({
-        intent: Intent,
-        steps: z.record(z.string(), z.unknown()),
-      }),
-      execute: (
-        args: { intent: unknown; steps: Record<string, unknown> },
-        ctx: Context,
-      ) => {
-        const value = sourceResult(args.intent, args.steps);
-        return data(ctx, {
-          ...value,
-          result_json: JSON.stringify(value),
-        });
-      },
-    },
     result: {
       description:
-        "Fold native source and setup outputs into the Tasks terminal receipt",
+        "Fold the VM receipt and the native source and setup outputs into the Tasks terminal receipt",
       arguments: z.object({
         intent: Intent,
+        vm: z.unknown(),
         steps: z.record(z.string(), z.unknown()),
       }),
       execute: (
-        args: { intent: unknown; steps: Record<string, unknown> },
+        args: { intent: unknown; vm: unknown; steps: Record<string, unknown> },
         ctx: Context,
       ) =>
         data(ctx, {
-          result_json: JSON.stringify(result(args.intent, args.steps)),
+          result_json: JSON.stringify(result(args.intent, args.vm, args.steps)),
         }),
     },
   },
