@@ -132,7 +132,7 @@ A new workflow needs no grant. The Gateway principal `user:orbit-gateway` has on
 
 ### Prepare a release
 
-The observer is frozen at the published delivery in `apps/gateway/resources/agent/frozen-manifest.json`. Prepare resolves the Gateway commit independently and verifies that fixed delivery's manifest, checksums and provenance. It never waits for the Gateway commit's CLI release or for new agent builds. The desired fleet state keeps the same agent commit and binary digests. Changing agent source does not change the delivered agent.
+Each commit pins its observer in `apps/gateway/resources/agent/frozen-manifest.json`, a byte copy of one published agent release's manifest. Prepare reads the pin of the commit it prepares, not of the Gateway that prepares it, so a commit that moves the pin ships the new agent in its own release. It verifies that delivery's manifest, checksums and provenance, and never waits for the Gateway commit's CLI release or for new agent builds. Changing agent source does not change the delivered agent until a commit moves the pin.
 
 As `orbit`, build a release for one commit:
 
@@ -142,13 +142,14 @@ php /home/orbit/orbit/apps/gateway/artisan gateway:release:prepare <SHA>
 
 Name the commit by its hex SHA, 7 to 40 characters. Branch names, tags, and other revision syntax are refused.
 
-Prepare first verifies the frozen agent, in PHP and before any agent command:
+Prepare first verifies the pinned agent, in PHP and before any agent command:
 
-1. It accepts the full Gateway commit SHA directly. For a short SHA, `git ls-remote` resolves it from published tags or branches. An unresolved prefix requires the full SHA. The frozen manifest names the fixed agent release.
-2. It downloads `manifest.json`, `SHA256SUMS`, and `provenance.sigstore.json` without authentication, and [verifies the provenance](#release-provenance) of the first two.
-3. It checks that the manifest equals the frozen manifest and matches `SHA256SUMS`, then downloads the agent binary for the Gateway's platform and checks its digest. The binary waits in `ORBIT_HOME/agent-artifacts`.
+1. It accepts the full Gateway commit SHA directly. For a short SHA, `git ls-remote` resolves it from published tags or branches. An unresolved prefix requires the full SHA.
+2. It downloads that commit's pin from `<repository>/raw/<SHA>/apps/gateway/resources/agent/frozen-manifest.json`. The pin names the agent release. A pin it cannot download waits, as an unpublished release does.
+3. It downloads `manifest.json`, `SHA256SUMS`, and `provenance.sigstore.json` without authentication, and [verifies the provenance](#release-provenance) of the first two.
+4. It checks that the manifest equals the commit's pin and matches `SHA256SUMS`, then downloads the agent binary for the Gateway's platform and checks its digest. The binary waits in `ORBIT_HOME/agent-artifacts`.
 
-An unreachable frozen delivery refuses with `gateway.release_agent_delivery_unavailable`, before anything changes. The automatic runner keeps one queued record and rechecks availability every 20 seconds, without starting the failure cooldown. It raises one `release_stalled` alert after 15 minutes and keeps the request queued for later checks. A release without a valid provenance bundle refuses with `gateway.release_provenance_invalid`, also before anything changes. A published release never changes, so that failure is final for the commit.
+An unreachable pin or delivery refuses with `gateway.release_agent_delivery_unavailable`, before anything changes. The automatic runner keeps one queued record and rechecks availability every 20 seconds, without starting the failure cooldown. It raises one `release_stalled` alert after 15 minutes and keeps the request queued for later checks. A release without a valid provenance bundle refuses with `gateway.release_provenance_invalid`, also before anything changes. A published release never changes, so that failure is final for the commit.
 
 Prepare then fetches the repository's branches through the [GitHub App](/reference/github-app) when the commit is not present yet, and fetches a full SHA directly when no branch holds it any more. Then it:
 
@@ -207,7 +208,7 @@ The command prints one JSON object. Success exits 0 with `release`, `sha`, `path
 | `gateway.release_web_build_invalid` | The artifact is larger than the limits, has no digest or does not match it, has an unsafe entry, or has no `index.html`. The commit is marked failed. |
 | `gateway.release_web_build_unavailable` | GitHub Actions cannot be read: no GitHub App, no `Actions: read` permission, or no answer. The commit is tried again later. |
 | `gateway.release_web_directory_missing`, `gateway.release_web_install_failed` | The web directory is missing, or the build cannot be written or given to the `caddy` group. The commit is tried again later. |
-| `gateway.release_agent_delivery_unavailable` | The frozen agent delivery cannot be downloaded or does not match its digest. Nothing changed. The commit is tried again later. |
+| `gateway.release_agent_delivery_unavailable` | The pinned agent delivery or the commit's pin cannot be downloaded or does not match its digest. Nothing changed. The commit is tried again later. |
 | `gateway.release_agent_delivery_invalid` | The release's manifest does not match its files or `SHA256SUMS`, or the release directory already holds another manifest. |
 | `gateway.release_provenance_invalid` | The release has no `provenance.sigstore.json`, or the bundle does not [verify](#release-provenance). Nothing changed. The commit is marked failed and is not tried again automatically. |
 | `gateway.release_provenance_unconfigured` | The trust root cannot be read or is malformed, or `ORBIT_CLI_RELEASE_REPOSITORY` is not on github.com. Nothing changed. The commit is tried again later without spending its attempts. |

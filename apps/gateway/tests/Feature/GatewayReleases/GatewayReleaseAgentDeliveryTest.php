@@ -41,7 +41,7 @@ beforeEach(function (): void {
     $this->installs = new FakeAgentCommandRunner;
     $this->installed = [];
     $this->delivery = fn (): GatewayReleaseAgentDelivery => new GatewayReleaseAgentDelivery(
-        processes: new class($this) implements ProcessRunner
+        processes: new readonly class($this) implements ProcessRunner
         {
             public function __construct(private object $test) {}
 
@@ -60,13 +60,17 @@ beforeEach(function (): void {
 
             return $this->installs;
         },
-        frozenManifest: json_encode($this->manifest),
     );
     // The release CI publishes: its provenance signs exactly the manifest and SHA256SUMS it serves, unless a test
     // passes another bundle response.
+    // Each commit's pin is its frozen-manifest.json; by default every commit pins this release's manifest.
+    $this->pins = [];
     $this->publish = function (?string $manifest = null, mixed $provenance = null): void {
         $manifest ??= json_encode($this->manifest);
         Http::fake([
+            'https://github.com/hardimpactdev/orbit/raw/*' => fn ($request) => Http::response(
+                $this->pins[explode('/', (string) parse_url($request->url(), PHP_URL_PATH))[4]] ?? json_encode($this->manifest),
+            ),
             $this->download.'/manifest.json' => Http::response($manifest),
             $this->download.'/SHA256SUMS' => Http::response($this->checksums),
             $this->download.'/provenance.sigstore.json' => $provenance ?? Http::response(SigstoreTestSigner::instance()->bundle(['manifest.json' => $manifest, 'SHA256SUMS' => $this->checksums])),
@@ -150,7 +154,7 @@ it('prepares an unpublished Gateway commit with the frozen published agent witho
     Http::assertNotSent(fn ($request): bool => str_contains($request->url(), 'cli-v0.6899.0'));
 });
 
-it('keeps exactly the same frozen agent when another Gateway commit ships', function (): void {
+it('keeps exactly the same agent when another Gateway commit ships with the same pin', function (): void {
     ($this->publish)();
     $first = ($this->delivery)()->fetch($this->sha, $this->gateway);
     $next = ($this->delivery)()->fetch(str_repeat('d', 40), $this->gateway);
@@ -158,6 +162,31 @@ it('keeps exactly the same frozen agent when another Gateway commit ships', func
     expect($next['sha'])->toBe(str_repeat('d', 40))
         ->and($next['manifest'])->toBe($first['manifest'])
         ->and($this->listings)->toBe([]);
+    Http::assertSent(static fn ($request): bool => $request->url() === 'https://github.com/hardimpactdev/orbit/raw/'.str_repeat('d', 40).'/apps/gateway/resources/agent/frozen-manifest.json');
+});
+
+it('takes the pin from the commit it prepares, not from the Gateway that prepares it', function (): void {
+    Http::fake(['https://github.com/hardimpactdev/orbit/releases/download/cli-v0.7000.0/*' => Http::response('Not Found', 404)]);
+    ($this->publish)();
+    $moved = $this->manifest;
+    $moved['artifacts']['linux-x86_64']['url'] = 'https://github.com/hardimpactdev/orbit/releases/download/cli-v0.7000.0/orbit-agent-linux-x86_64';
+    $this->pins[str_repeat('d', 40)] = json_encode($moved);
+
+    $error = release_failure(fn () => ($this->delivery)()->fetch(str_repeat('d', 40), $this->gateway));
+
+    // The commit pins another release, so its manifest is fetched from that release, not this one.
+    expect($error->errorCode)->toBe('gateway.release_agent_delivery_unavailable')
+        ->and(($this->delivery)()->fetch($this->sha, $this->gateway)['manifest'])->toBe(json_encode($this->manifest));
+    Http::assertSent(static fn ($request): bool => $request->url() === 'https://github.com/hardimpactdev/orbit/releases/download/cli-v0.7000.0/manifest.json');
+});
+
+it('waits when the commit\'s pin cannot be read', function (): void {
+    // The first matching fake answers, so this one wins over the published pin.
+    Http::fake(['https://github.com/hardimpactdev/orbit/raw/*' => Http::response('Not Found', 404)]);
+    ($this->publish)();
+
+    expect(release_failure(fn () => ($this->delivery)()->fetch($this->sha, $this->gateway))->errorCode)->toBe('gateway.release_agent_delivery_unavailable')
+        ->and(file_exists($this->base.'/home/agent-artifacts'))->toBeFalse();
 });
 
 it('refuses a manifest that does not match the release or its SHA256SUMS', function (string $fault): void {

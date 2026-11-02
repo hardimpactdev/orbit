@@ -23,10 +23,13 @@ use Illuminate\Support\Facades\Http;
 use JsonException;
 use Throwable;
 
-/** Frozen, provenance-verified observer delivery, independent of Gateway release publication. */
+/** The release commit's pinned, provenance-verified observer delivery, independent of Gateway release publication. */
 final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
 {
     public const string Manifest = 'apps/agent/delivery/manifest.json';
+
+    /** The pin in each commit: a byte copy of the published release manifest the commit's code was tested with. */
+    public const string Pin = 'apps/gateway/resources/agent/frozen-manifest.json';
 
     /** @var list<string> */
     public const array Platforms = ['linux-x86_64', 'macos-aarch64', 'macos-x86_64'];
@@ -44,23 +47,20 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
         private string $repository,
         private string $cacheDirectory,
         private Closure $runner,
-        private ?string $frozenManifest = null,
     ) {}
 
     /**
-     * Verifies the frozen delivery before anything changes. Gateway commits need no published agent release.
+     * Verifies the release commit's own pinned delivery before anything changes, so a commit that moves the pin
+     * ships its agent in its own release. Gateway commits need no published agent release.
      */
     public function fetch(string $revision, Node $gateway): array
     {
         $sha = $this->commit($revision);
-        $frozen = $this->frozenManifest ?? @file_get_contents(resource_path('agent/frozen-manifest.json'));
-        if (! is_string($frozen)) {
-            throw $this->invalid($sha, 'The frozen agent manifest is unavailable.');
-        }
+        $frozen = $this->download(rtrim($this->repository, '/').'/raw/'.$sha.'/'.self::Pin, $sha);
         $pin = json_decode($frozen, true);
         $url = data_get($pin, 'artifacts.linux-x86_64.url');
         if (! is_string($url) || preg_match('#\A'.preg_quote(rtrim($this->repository, '/'), '#').'/releases/download/(cli-v0\.[1-9][0-9]*\.0)/orbit-agent-linux-x86_64\z#D', $url, $match) !== 1) {
-            throw $this->invalid($sha, 'The frozen agent manifest has no fixed published release.');
+            throw $this->invalid($sha, 'The pinned agent manifest has no fixed published release.');
         }
         $tag = $match[1];
         $base = rtrim($this->repository, '/').'/releases/download/'.rawurlencode($tag);
@@ -76,7 +76,7 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
                 : $this->unavailable($sha, $unavailable->getMessage());
         }
         if (! hash_equals(hash('sha256', $frozen), hash('sha256', $manifest))) {
-            throw $this->invalid($sha, 'The published manifest differs from the frozen agent pin.');
+            throw $this->invalid($sha, 'The published manifest differs from the commit\'s agent pin.');
         }
         $this->validate($manifest, $this->checksums($sums, $sha), $base, $sha);
 
