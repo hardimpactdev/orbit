@@ -1,77 +1,387 @@
-# deno-fmt-ignore-file
-# Generated from node-role-converge-command/workflows.ts
+# Node role convergence for a sole database or ingress role, from 209 with official cfgmgmt and SSH argv.
+# Every effect may fail; the result step assembles the role, footprint and CLI outcome from the step statuses.
 id: 21b08662-58e5-4485-b42c-540dd9bd6004
 name: node-role-converge
-vaults:
-  - orbit-control-inputs
+description: Converge a sole database or ingress role from 209 with official cfgmgmt behaviors and SSH argv; no shipped script.
+vaults: []
+labels: {role: swamp}
 inputs:
   type: object
   properties:
-    intent:
-      type: object
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
-    execution_secrets:
-      type: object
-      additionalProperties: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^node-role-[0-9]+-observer$'}}, required: [vault, key], additionalProperties: false}
-  required:
-    - intent
-    - execution_secrets
-    - operation_id
-    - node_id
+    intent: {type: object}
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [intent, execution_secrets, operation_id, node_id]
   additionalProperties: false
-labels: &ref_2
-  role: swamp
 jobs:
-  - name: effects
-    steps:
-      - {name: account_command, labels: &ref_0 {role: swamp}, task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("role-converge-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: exec, globalArgs: &ref_5 {name: '${{ ("role-converge-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', transport: &ref_6 {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: &ref_7 [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', sudo: false, argv: '${{ ["getent", "passwd", inputs.intent.user] }}', timeoutSec: 30}}, allowFailure: true}
-      - {name: account_group, labels: *ref_0, dependsOn: [{step: account_command, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("role-converge-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: exec, globalArgs: *ref_5, inputs: {hosts: 'name:target', sudo: false, argv: '${{ ["id", "-gn", inputs.intent.user] }}', timeoutSec: 30}}, allowFailure: true}
-      - {name: account, labels: *ref_0, dependsOn: [{step: account_group, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@nckrtl/node-role-command', behaviorName: account-result, methodName: account, inputs: {passwd: '${{ steps["account_command"].outputs.stdout }}', group: '${{ steps["account_group"].outputs.stdout }}'}}, allowFailure: true}
-      - {name: observer_install_assets, labels: &ref_1 {role: swamp}, dependsOn: [{step: account, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@nckrtl/node-bootstrap-command', behaviorName: observer_install_assets, methodName: observer, inputs: {url: '${{ ({"url":inputs.intent.footprint.payloads.agent.url,"sha256":inputs.intent.agent_sha256}).url }}', sha256: '${{ ({"url":inputs.intent.footprint.payloads.agent.url,"sha256":inputs.intent.agent_sha256}).sha256 }}'}}, allowFailure: true}
-      - {name: observer_install_command, labels: *ref_1, writes: true, dependsOn: [{step: observer_install_assets, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("role-converge-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: script, globalArgs: *ref_5, inputs: {hosts: 'name:target', sudo: true, interpreter: python3, script: '${{ steps["observer_install_assets"].outputs.script_body }}'}}, allowFailure: true}
-      - {name: observer_install, labels: *ref_1, dependsOn: [{step: observer_install_command, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@nckrtl/node-role-converge-command', behaviorName: observer_install, methodName: observer_delivery, inputs: {sha256: '${{ ({"url":inputs.intent.footprint.payloads.agent.url,"sha256":inputs.intent.agent_sha256}).sha256 }}', stdout: '${{ steps["observer_install_command"].outputs.stdout }}'}}, allowFailure: true}
-      - {name: caddy_package, labels: *ref_0, writes: true, dependsOn: [{step: observer_install, condition: {type: succeeded}}], task: {type: workflow, workflowIdOrName: node-caddy-package, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ {"package": self.caddy, "ssh": inputs.intent.ssh} }}'}}, forEach: {item: caddy, in: '${{ inputs.intent.role == "ingress" ? [inputs.intent.caddy_package] : [] }}'}, allowFailure: true}
-      - {name: packages_assets, labels: *ref_0, dependsOn: [{step: observer_install, condition: {type: succeeded}}, {step: caddy_package, condition: {type: always}}], task: {type: behavior, behaviorType: '@nckrtl/node-bootstrap-command', behaviorName: packages-assets, methodName: packages, inputs: {releases: '${{ inputs.intent.prerequisites.releases }}', packages: '${{ inputs.intent.prerequisites.packages }}'}}, guard: '${{ steps.exists(k,k.startsWith("caddy_package") && steps[k].status != "succeeded") }}', allowFailure: true}
-      - {name: packages, labels: *ref_0, writes: true, dependsOn: [{step: packages_assets, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("role-converge-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: script, globalArgs: *ref_5, inputs: {hosts: 'name:target', interpreter: python3, sudo: true, script: '${{ steps["packages_assets"].outputs.script_body }}'}}, allowFailure: true}
-      - {name: caddy_service, labels: *ref_2, writes: true, dependsOn: [{step: packages, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@swamp/ssh', methodName: exec, globalArgs: {name: '${{ ("caddy_service-" + string(inputs.intent.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/systemctl, enable, '--now', caddy.service]}, behaviorName: '${{ ("caddy_service-" + string(inputs.intent.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}'}, forEach: {item: role, in: '${{ inputs.intent.role == "ingress" ? [inputs.intent] : [] }}'}, allowFailure: true}
-      - {name: caddy, labels: *ref_2, dependsOn: [{step: caddy_service, condition: {type: succeeded}}], task: {type: workflow, workflowIdOrName: operation-route-caddy, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: node.role_converge, execution_secrets: {}, intent: {caddy_publication: '${{ self.role.caddy }}'}}, behaviorName: '${{ "caddy-" + string(self._index) }}'}, forEach: {item: role, in: '${{ inputs.intent.role == "ingress" ? [inputs.intent] : [] }}'}, allowFailure: true}
-      - {name: firewall_expand, labels: &ref_3 {role: swamp}, writes: true, forEach: {item: rule, in: '${{ inputs.intent.role == "ingress" ? inputs.intent.firewall.desired : [] }}'}, dependsOn: [{step: caddy, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("firewall_expand-" + string(inputs.intent.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("firewall_expand-" + string(inputs.intent.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', transport: *ref_6, hosts: *ref_7}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ self.rule }}'}}, allowFailure: true}
-      - {name: firewall_prune, labels: *ref_3, writes: true, forEach: {item: rule, in: '${{ inputs.intent.role == "ingress" ? inputs.intent.firewall.remove : [] }}'}, dependsOn: [{step: firewall_expand, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("firewall_prune-" + string(inputs.intent.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("firewall_prune-" + string(inputs.intent.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', transport: *ref_6, hosts: *ref_7}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ self.rule }}'}}, allowFailure: true}
-      - {name: firewall, labels: *ref_3, forEach: {item: firewall, in: '${{ inputs.intent.role == "ingress" ? [inputs.intent.firewall] : [] }}'}, dependsOn: [{step: firewall_expand, condition: {type: always}}, {step: firewall_prune, condition: {type: always}}], task: {type: assert, expr: 'steps.filter(k,k.startsWith("firewall_expand-")).size() == self.firewall.desired.size() && steps.all(k,!k.startsWith("firewall_expand-") || steps[k].status == "succeeded") && steps.filter(k,k.startsWith("firewall_prune-")).size() == self.firewall.remove.size() && steps.all(k,!k.startsWith("firewall_prune-") || steps[k].status == "succeeded")', severity: high, message: Every admitted firewall action must succeed}, allowFailure: true}
-      - {name: peer_dns_assets, labels: *ref_2, dependsOn: [{step: packages, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@nckrtl/node-role-converge-command', behaviorName: '${{ "peer_dns_assets-" + string(self._index) }}', methodName: dns, inputs: {dns_server: '${{ self.dns.dns_server }}', public_key: '${{ self.dns.public_key }}', domains: '${{ self.dns.domains }}'}}, forEach: {item: dns, in: '${{ inputs.intent.footprint.network == null ? [] : [inputs.intent.footprint.network.peer_dns] }}'}, allowFailure: true}
-      - {name: peer_dns_command, labels: *ref_2, writes: true, dependsOn: [{step: peer_dns_assets, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("peer_dns_command-" + string(inputs.intent.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: script, globalArgs: {name: '${{ ("peer_dns_command-" + string(inputs.intent.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', sudo: true, interpreter: python3, script: '${{ steps["peer_dns_assets-0"].outputs.script_body }}'}}, forEach: {item: dns, in: '${{ inputs.intent.footprint.network == null ? [] : [inputs.intent.footprint.network.peer_dns] }}'}, allowFailure: true}
-      - {name: peer_dns, labels: *ref_2, dependsOn: [{step: peer_dns_command, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@nckrtl/node-role-converge-command', behaviorName: '${{ "peer_dns-" + string(self._index) }}', methodName: dns_result, inputs: {stdout: '${{ steps["peer_dns_command-0"].outputs.stdout }}'}}, forEach: {item: dns, in: '${{ inputs.intent.footprint.network == null ? [] : [inputs.intent.footprint.network.peer_dns] }}'}, allowFailure: true}
-      - {name: observer_identity_assets, labels: &ref_4 {role: swamp}, task: {type: behavior, behaviorType: '@nckrtl/node-role-converge-command', behaviorName: observer_identity_assets, methodName: read, inputs: {action: observer_identity, input: {}}}, dependsOn: [{step: packages, condition: {type: always}}], guard: '${{ steps.exists(key, ["packages"].exists(prior, key == prior || key.startsWith(prior + "-")) && steps[key].status in ["failed", "cancelled"]) }}', allowFailure: true}
-      - {name: observer_identity_command, labels: *ref_4, writes: true, dependsOn: [{step: observer_identity_assets, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("role-converge-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: exec, globalArgs: *ref_5, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/python3, '-c', '${{ steps["observer_identity_assets"].outputs.script_body }}'], stdin: '${{ vault.get(inputs.execution_secrets.observer.vault,inputs.execution_secrets.observer.key) }}'}}, guard: '${{ steps.exists(key, ["packages","observer_identity_assets"].exists(prior, key == prior || key.startsWith(prior + "-")) && steps[key].status in ["failed", "cancelled"]) }}', allowFailure: true}
-      - {name: observer_identity, labels: *ref_4, dependsOn: [{step: observer_identity_command, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@nckrtl/node-role-converge-command', behaviorName: observer_identity, methodName: decode, inputs: {stdout: '${{ steps["observer_identity_command"].outputs.stdout }}'}}, guard: '${{ steps.exists(key, ["packages","observer_identity_assets","observer_identity_command"].exists(prior, key == prior || key.startsWith(prior + "-")) && steps[key].status in ["failed", "cancelled"]) }}', allowFailure: true}
-      - {name: observer_files, labels: *ref_1, task: {type: behavior, behaviorType: '@nckrtl/node-role-converge-command', behaviorName: observer_files, methodName: observer_files, inputs: {configuration: '${{ inputs.intent.footprint.payloads.agent.configuration }}', certificate: '${{ inputs.intent.footprint.payloads.agent.certificate }}', unit: '${{ inputs.intent.footprint.payloads.agent.unit }}', apps_root: '${{ inputs.intent.footprint.payloads.agent.apps_root }}', home: '${{ steps["account"].outputs.home }}'}}, dependsOn: [{step: packages, condition: {type: always}}, {step: observer_identity_assets, condition: {type: always}}, {step: observer_identity_command, condition: {type: always}}, {step: observer_identity, condition: {type: always}}], guard: '${{ steps.exists(key, ["packages","observer_identity_assets","observer_identity_command","observer_identity"].exists(prior, key == prior || key.startsWith(prior + "-")) && steps[key].status in ["failed", "cancelled"]) }}', allowFailure: true}
-      - {name: observer_configuration_assets, labels: *ref_4, task: {type: behavior, behaviorType: '@nckrtl/node-role-converge-command', behaviorName: observer_configuration_assets, methodName: read, inputs: {action: file, input: {path: /etc/orbit/agent/config.toml, mode: '0644', owner: 'root:root', marker: null, content: '${{ steps["observer_files"].outputs.configuration }}'}}}, dependsOn: [{step: packages, condition: {type: always}}, {step: observer_identity_assets, condition: {type: always}}, {step: observer_identity_command, condition: {type: always}}, {step: observer_identity, condition: {type: always}}, {step: observer_files, condition: {type: always}}], guard: '${{ steps.exists(key, ["packages","observer_identity_assets","observer_identity_command","observer_identity","observer_files"].exists(prior, key == prior || key.startsWith(prior + "-")) && steps[key].status in ["failed", "cancelled"]) }}', allowFailure: true}
-      - {name: observer_configuration_command, labels: *ref_4, writes: true, dependsOn: [{step: observer_configuration_assets, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("role-converge-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: script, globalArgs: *ref_5, inputs: {hosts: 'name:target', sudo: true, interpreter: python3, script: '${{ steps["observer_configuration_assets"].outputs.script_body }}'}}, guard: '${{ steps.exists(key, ["packages","observer_identity_assets","observer_identity_command","observer_identity","observer_files","observer_configuration_assets"].exists(prior, key == prior || key.startsWith(prior + "-")) && steps[key].status in ["failed", "cancelled"]) }}', allowFailure: true}
-      - {name: observer_configuration, labels: *ref_4, dependsOn: [{step: observer_configuration_command, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@nckrtl/node-role-converge-command', behaviorName: observer_configuration, methodName: decode, inputs: {stdout: '${{ steps["observer_configuration_command"].outputs.stdout }}'}}, guard: '${{ steps.exists(key, ["packages","observer_identity_assets","observer_identity_command","observer_identity","observer_files","observer_configuration_assets","observer_configuration_command"].exists(prior, key == prior || key.startsWith(prior + "-")) && steps[key].status in ["failed", "cancelled"]) }}', allowFailure: true}
-      - {name: observer_certificate_assets, labels: *ref_4, task: {type: behavior, behaviorType: '@nckrtl/node-role-converge-command', behaviorName: observer_certificate_assets, methodName: read, inputs: {action: file, input: {path: /etc/orbit/agent/ca.pem, mode: '0644', owner: 'root:root', marker: null, content: '${{ steps["observer_files"].outputs.certificate }}'}}}, dependsOn: [{step: packages, condition: {type: always}}, {step: observer_identity_assets, condition: {type: always}}, {step: observer_identity_command, condition: {type: always}}, {step: observer_identity, condition: {type: always}}, {step: observer_files, condition: {type: always}}, {step: observer_configuration_assets, condition: {type: always}}, {step: observer_configuration_command, condition: {type: always}}, {step: observer_configuration, condition: {type: always}}], guard: '${{ steps.exists(key, ["packages","observer_identity_assets","observer_identity_command","observer_identity","observer_files","observer_configuration_assets","observer_configuration_command","observer_configuration"].exists(prior, key == prior || key.startsWith(prior + "-")) && steps[key].status in ["failed", "cancelled"]) }}', allowFailure: true}
-      - {name: observer_certificate_command, labels: *ref_4, writes: true, dependsOn: [{step: observer_certificate_assets, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("role-converge-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: script, globalArgs: *ref_5, inputs: {hosts: 'name:target', sudo: true, interpreter: python3, script: '${{ steps["observer_certificate_assets"].outputs.script_body }}'}}, guard: '${{ steps.exists(key, ["packages","observer_identity_assets","observer_identity_command","observer_identity","observer_files","observer_configuration_assets","observer_configuration_command","observer_configuration","observer_certificate_assets"].exists(prior, key == prior || key.startsWith(prior + "-")) && steps[key].status in ["failed", "cancelled"]) }}', allowFailure: true}
-      - {name: observer_certificate, labels: *ref_4, dependsOn: [{step: observer_certificate_command, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@nckrtl/node-role-converge-command', behaviorName: observer_certificate, methodName: decode, inputs: {stdout: '${{ steps["observer_certificate_command"].outputs.stdout }}'}}, guard: '${{ steps.exists(key, ["packages","observer_identity_assets","observer_identity_command","observer_identity","observer_files","observer_configuration_assets","observer_configuration_command","observer_configuration","observer_certificate_assets","observer_certificate_command"].exists(prior, key == prior || key.startsWith(prior + "-")) && steps[key].status in ["failed", "cancelled"]) }}', allowFailure: true}
-      - {name: observer_unit_assets, labels: *ref_4, task: {type: behavior, behaviorType: '@nckrtl/node-role-converge-command', behaviorName: observer_unit_assets, methodName: read, inputs: {action: file, input: {path: /etc/systemd/system/orbit-agent.service, mode: '0644', owner: 'root:root', marker: '# Managed by Orbit: agent', content: '${{ steps["observer_files"].outputs.unit }}'}}}, dependsOn: [{step: packages, condition: {type: always}}, {step: observer_identity_assets, condition: {type: always}}, {step: observer_identity_command, condition: {type: always}}, {step: observer_identity, condition: {type: always}}, {step: observer_files, condition: {type: always}}, {step: observer_configuration_assets, condition: {type: always}}, {step: observer_configuration_command, condition: {type: always}}, {step: observer_configuration, condition: {type: always}}, {step: observer_certificate_assets, condition: {type: always}}, {step: observer_certificate_command, condition: {type: always}}, {step: observer_certificate, condition: {type: always}}], guard: '${{ steps.exists(key, ["packages","observer_identity_assets","observer_identity_command","observer_identity","observer_files","observer_configuration_assets","observer_configuration_command","observer_configuration","observer_certificate_assets","observer_certificate_command","observer_certificate"].exists(prior, key == prior || key.startsWith(prior + "-")) && steps[key].status in ["failed", "cancelled"]) }}', allowFailure: true}
-      - {name: observer_unit_command, labels: *ref_4, writes: true, dependsOn: [{step: observer_unit_assets, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("role-converge-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: script, globalArgs: *ref_5, inputs: {hosts: 'name:target', sudo: true, interpreter: python3, script: '${{ steps["observer_unit_assets"].outputs.script_body }}'}}, guard: '${{ steps.exists(key, ["packages","observer_identity_assets","observer_identity_command","observer_identity","observer_files","observer_configuration_assets","observer_configuration_command","observer_configuration","observer_certificate_assets","observer_certificate_command","observer_certificate","observer_unit_assets"].exists(prior, key == prior || key.startsWith(prior + "-")) && steps[key].status in ["failed", "cancelled"]) }}', allowFailure: true}
-      - {name: observer_unit, labels: *ref_4, dependsOn: [{step: observer_unit_command, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@nckrtl/node-role-converge-command', behaviorName: observer_unit, methodName: decode, inputs: {stdout: '${{ steps["observer_unit_command"].outputs.stdout }}'}}, guard: '${{ steps.exists(key, ["packages","observer_identity_assets","observer_identity_command","observer_identity","observer_files","observer_configuration_assets","observer_configuration_command","observer_configuration","observer_certificate_assets","observer_certificate_command","observer_certificate","observer_unit_assets","observer_unit_command"].exists(prior, key == prior || key.startsWith(prior + "-")) && steps[key].status in ["failed", "cancelled"]) }}', allowFailure: true}
-      - {name: observer_checkout_assets, labels: *ref_4, task: {type: behavior, behaviorType: '@nckrtl/node-role-converge-command', behaviorName: '${{ "observer_checkout_assets-" + string(self._index) }}', methodName: read, inputs: {action: observer_checkout, input: {checkout: '${{ self.checkout }}'}}}, forEach: {item: checkout, in: '${{ inputs.intent.footprint.payloads.agent.checkouts }}'}, dependsOn: [{step: packages, condition: {type: always}}, {step: observer_identity_assets, condition: {type: always}}, {step: observer_identity_command, condition: {type: always}}, {step: observer_identity, condition: {type: always}}, {step: observer_files, condition: {type: always}}, {step: observer_configuration_assets, condition: {type: always}}, {step: observer_configuration_command, condition: {type: always}}, {step: observer_configuration, condition: {type: always}}, {step: observer_certificate_assets, condition: {type: always}}, {step: observer_certificate_command, condition: {type: always}}, {step: observer_certificate, condition: {type: always}}, {step: observer_unit_assets, condition: {type: always}}, {step: observer_unit_command, condition: {type: always}}, {step: observer_unit, condition: {type: always}}], guard: '${{ steps.exists(key, ["packages","observer_identity_assets","observer_identity_command","observer_identity","observer_files","observer_configuration_assets","observer_configuration_command","observer_configuration","observer_certificate_assets","observer_certificate_command","observer_certificate","observer_unit_assets","observer_unit_command","observer_unit"].exists(prior, key == prior || key.startsWith(prior + "-")) && steps[key].status in ["failed", "cancelled"]) }}', allowFailure: true}
-      - {name: observer_checkout_command, labels: *ref_4, writes: true, dependsOn: [{step: observer_checkout_assets, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("observer_checkout_command-" + string(inputs.intent.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', methodName: script, globalArgs: {name: '${{ ("observer_checkout_command-" + string(inputs.intent.ssh.target.host) + "-" + string(self._index)).split(".").join("-") }}', transport: *ref_6, hosts: *ref_7}, inputs: {hosts: 'name:target', sudo: true, interpreter: python3, script: '${{ steps["observer_checkout_assets-" + self.checkout].outputs.script_body }}'}}, forEach: {item: checkout, in: '${{ inputs.intent.footprint.payloads.agent.checkouts }}'}, guard: '${{ steps.exists(key, ["packages","observer_identity_assets","observer_identity_command","observer_identity","observer_files","observer_configuration_assets","observer_configuration_command","observer_configuration","observer_certificate_assets","observer_certificate_command","observer_certificate","observer_unit_assets","observer_unit_command","observer_unit","observer_checkout_assets"].exists(prior, key == prior || key.startsWith(prior + "-")) && steps[key].status in ["failed", "cancelled"]) }}', allowFailure: true}
-      - {name: observer_checkout, labels: *ref_4, dependsOn: [{step: observer_checkout_command, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@nckrtl/node-role-converge-command', behaviorName: '${{ "observer_checkout-" + string(self._index) }}', methodName: decode, inputs: {stdout: '${{ steps["observer_checkout_command-" + self.checkout].outputs.stdout }}'}}, forEach: {item: checkout, in: '${{ inputs.intent.footprint.payloads.agent.checkouts }}'}, guard: '${{ steps.exists(key, ["packages","observer_identity_assets","observer_identity_command","observer_identity","observer_files","observer_configuration_assets","observer_configuration_command","observer_configuration","observer_certificate_assets","observer_certificate_command","observer_certificate","observer_unit_assets","observer_unit_command","observer_unit","observer_checkout_assets","observer_checkout_command"].exists(prior, key == prior || key.startsWith(prior + "-")) && steps[key].status in ["failed", "cancelled"]) }}', allowFailure: true}
-      - {name: observer_reload, labels: *ref_1, writes: true, task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("role-converge-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: exec, globalArgs: *ref_5, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/systemctl, daemon-reload]}}, dependsOn: [{step: packages, condition: {type: always}}, {step: observer_identity_assets, condition: {type: always}}, {step: observer_identity_command, condition: {type: always}}, {step: observer_identity, condition: {type: always}}, {step: observer_files, condition: {type: always}}, {step: observer_configuration_assets, condition: {type: always}}, {step: observer_configuration_command, condition: {type: always}}, {step: observer_configuration, condition: {type: always}}, {step: observer_certificate_assets, condition: {type: always}}, {step: observer_certificate_command, condition: {type: always}}, {step: observer_certificate, condition: {type: always}}, {step: observer_unit_assets, condition: {type: always}}, {step: observer_unit_command, condition: {type: always}}, {step: observer_unit, condition: {type: always}}, {step: observer_checkout_assets, condition: {type: always}}, {step: observer_checkout_command, condition: {type: always}}, {step: observer_checkout, condition: {type: always}}], guard: '${{ steps.exists(key, ["packages","observer_identity_assets","observer_identity_command","observer_identity","observer_files","observer_configuration_assets","observer_configuration_command","observer_configuration","observer_certificate_assets","observer_certificate_command","observer_certificate","observer_unit_assets","observer_unit_command","observer_unit","observer_checkout_assets","observer_checkout_command","observer_checkout"].exists(prior, key == prior || key.startsWith(prior + "-")) && steps[key].status in ["failed", "cancelled"]) }}', allowFailure: true}
-      - {name: observer_enable, labels: *ref_1, writes: true, task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("role-converge-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: exec, globalArgs: *ref_5, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/systemctl, enable, '--now', orbit-agent.service]}}, dependsOn: [{step: packages, condition: {type: always}}, {step: observer_identity_assets, condition: {type: always}}, {step: observer_identity_command, condition: {type: always}}, {step: observer_identity, condition: {type: always}}, {step: observer_files, condition: {type: always}}, {step: observer_configuration_assets, condition: {type: always}}, {step: observer_configuration_command, condition: {type: always}}, {step: observer_configuration, condition: {type: always}}, {step: observer_certificate_assets, condition: {type: always}}, {step: observer_certificate_command, condition: {type: always}}, {step: observer_certificate, condition: {type: always}}, {step: observer_unit_assets, condition: {type: always}}, {step: observer_unit_command, condition: {type: always}}, {step: observer_unit, condition: {type: always}}, {step: observer_checkout_assets, condition: {type: always}}, {step: observer_checkout_command, condition: {type: always}}, {step: observer_checkout, condition: {type: always}}, {step: observer_reload, condition: {type: always}}], guard: '${{ steps.exists(key, ["packages","observer_identity_assets","observer_identity_command","observer_identity","observer_files","observer_configuration_assets","observer_configuration_command","observer_configuration","observer_certificate_assets","observer_certificate_command","observer_certificate","observer_unit_assets","observer_unit_command","observer_unit","observer_checkout_assets","observer_checkout_command","observer_checkout","observer_reload"].exists(prior, key == prior || key.startsWith(prior + "-")) && steps[key].status in ["failed", "cancelled"]) }}', allowFailure: true}
-      - {name: observer_restart, labels: *ref_1, writes: true, task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("role-converge-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: exec, globalArgs: *ref_5, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/systemctl, restart, orbit-agent.service]}}, dependsOn: [{step: packages, condition: {type: always}}, {step: observer_identity_assets, condition: {type: always}}, {step: observer_identity_command, condition: {type: always}}, {step: observer_identity, condition: {type: always}}, {step: observer_files, condition: {type: always}}, {step: observer_configuration_assets, condition: {type: always}}, {step: observer_configuration_command, condition: {type: always}}, {step: observer_configuration, condition: {type: always}}, {step: observer_certificate_assets, condition: {type: always}}, {step: observer_certificate_command, condition: {type: always}}, {step: observer_certificate, condition: {type: always}}, {step: observer_unit_assets, condition: {type: always}}, {step: observer_unit_command, condition: {type: always}}, {step: observer_unit, condition: {type: always}}, {step: observer_checkout_assets, condition: {type: always}}, {step: observer_checkout_command, condition: {type: always}}, {step: observer_checkout, condition: {type: always}}, {step: observer_reload, condition: {type: always}}, {step: observer_enable, condition: {type: always}}], guard: '${{ (steps.exists(key, ["packages","observer_identity_assets","observer_identity_command","observer_identity","observer_files","observer_configuration_assets","observer_configuration_command","observer_configuration","observer_certificate_assets","observer_certificate_command","observer_certificate","observer_unit_assets","observer_unit_command","observer_unit","observer_checkout_assets","observer_checkout_command","observer_checkout","observer_reload","observer_enable"].exists(prior, key == prior || key.startsWith(prior + "-")) && steps[key].status in ["failed", "cancelled"])) || !(steps.observer_install.outputs.changed || steps["observer_configuration"].outputs.changed || steps["observer_certificate"].outputs.changed || steps["observer_unit"].outputs.changed) }}', allowFailure: true}
-      - {name: observer_verify, labels: *ref_1, writes: false, task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("role-converge-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: exec, globalArgs: *ref_5, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/systemctl, is-active, '--quiet', orbit-agent.service]}}, dependsOn: [{step: packages, condition: {type: always}}, {step: observer_identity_assets, condition: {type: always}}, {step: observer_identity_command, condition: {type: always}}, {step: observer_identity, condition: {type: always}}, {step: observer_files, condition: {type: always}}, {step: observer_configuration_assets, condition: {type: always}}, {step: observer_configuration_command, condition: {type: always}}, {step: observer_configuration, condition: {type: always}}, {step: observer_certificate_assets, condition: {type: always}}, {step: observer_certificate_command, condition: {type: always}}, {step: observer_certificate, condition: {type: always}}, {step: observer_unit_assets, condition: {type: always}}, {step: observer_unit_command, condition: {type: always}}, {step: observer_unit, condition: {type: always}}, {step: observer_checkout_assets, condition: {type: always}}, {step: observer_checkout_command, condition: {type: always}}, {step: observer_checkout, condition: {type: always}}, {step: observer_reload, condition: {type: always}}, {step: observer_enable, condition: {type: always}}, {step: observer_restart, condition: {type: always}}], guard: '${{ steps.exists(key, ["packages","observer_identity_assets","observer_identity_command","observer_identity","observer_files","observer_configuration_assets","observer_configuration_command","observer_configuration","observer_certificate_assets","observer_certificate_command","observer_certificate","observer_unit_assets","observer_unit_command","observer_unit","observer_checkout_assets","observer_checkout_command","observer_checkout","observer_reload","observer_enable","observer_restart"].exists(prior, key == prior || key.startsWith(prior + "-")) && steps[key].status in ["failed", "cancelled"]) }}', allowFailure: true}
-      - {name: observer, labels: *ref_1, dependsOn: [{step: observer_verify, condition: {type: always}}], task: {type: assert, expr: '!(steps.exists(key, ["packages","observer_identity_assets","observer_identity_command","observer_identity","observer_files","observer_configuration_assets","observer_configuration_command","observer_configuration","observer_certificate_assets","observer_certificate_command","observer_certificate","observer_unit_assets","observer_unit_command","observer_unit","observer_checkout_assets","observer_checkout_command","observer_checkout","observer_reload","observer_enable","observer_restart","observer_verify"].exists(prior, key == prior || key.startsWith(prior + "-")) && steps[key].status in ["failed", "cancelled"])) && steps["observer_verify"].status == "succeeded"', severity: high, message: 'The existing observer identity, files and service must be proven'}, allowFailure: true}
-      - {name: cli_assets, labels: *ref_2, dependsOn: [{step: packages, condition: {type: succeeded}}], guard: '${{ inputs.intent.cli.skip_reason != null || inputs.intent.cli.plan_error != null }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-converge-command', behaviorName: cli-assets, methodName: cli, inputs: {user: '${{ inputs.intent.cli.user }}', release: '${{ inputs.intent.cli.release }}', profile: '${{ inputs.intent.cli.profile }}'}}, allowFailure: true}
-      - {name: cli_command, labels: *ref_2, writes: true, dependsOn: [{step: cli_assets, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("role-converge-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}', methodName: script, globalArgs: *ref_5, inputs: {hosts: 'name:target', sudo: true, interpreter: python3, script: '${{ steps["cli_assets"].outputs.script_body }}'}}, allowFailure: true}
-      - {name: cli, labels: *ref_2, dependsOn: [{step: cli_command, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@nckrtl/node-role-converge-command', behaviorName: cli-result, methodName: cli_result, inputs: {stdout: '${{ steps["cli_command"].outputs.stdout }}'}}, allowFailure: true}
+- name: effects
+  steps:
+    # The pinned release; a binary with the pinned SHA-256 is left alone.
+  - name: 'Install the Node agent'
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/fetch'
+      behaviorName: ${{ "role-agent-binary-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs: {url: '${{ inputs.intent.footprint.payloads.agent.url }}', path: /usr/local/bin/orbit-agent, checksum: '${{ "sha256:" + inputs.intent.agent_sha256 }}', owner: root, group: root, mode: '0755', nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
+      inputs: {}
+  - name: 'Install Caddy'
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    dependsOn: [{step: 'Install the Node agent', condition: {type: succeeded}}]
+    guard: '${{ inputs.intent.role != "ingress" }}'
+    task:
+      type: workflow
+      workflowIdOrName: node-caddy-package
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.node_id }}'
+        kind: node.role_converge
+        intent: '${{ {"ssh": inputs.intent.ssh, "package": inputs.intent.role != "ingress" ? {} : inputs.intent.caddy_package} }}'
+  - name: 'Refresh package lists'
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    dependsOn: [{step: 'Install the Node agent', condition: {type: succeeded}}, {step: 'Install Caddy', condition: {type: always}}]
+    guard: '${{ "Install Caddy" in steps && steps["Install Caddy"].status == "failed" }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/apt'
+      behaviorName: ${{ "role-apt-" + string(inputs.node_id) }}
+      methodName: refresh
+      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
+      inputs: {}
+  - name: 'Install prerequisites'
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    dependsOn: [{step: 'Refresh package lists', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/apt'
+      behaviorName: ${{ "role-apt-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs: {packages: '${{ inputs.intent.prerequisites.packages }}', ensure: present, nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
+      inputs: {}
+  - name: 'Start Caddy'
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    dependsOn: [{step: 'Install prerequisites', condition: {type: succeeded}}]
+    guard: '${{ inputs.intent.role != "ingress" }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/systemd'
+      behaviorName: ${{ "role-caddy-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs: {service: caddy.service, enabled: true, ensure: running, nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
+      inputs: {}
+  - name: 'Publish Caddy sites'
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    dependsOn: [{step: 'Start Caddy', condition: {type: succeeded}}]
+    task:
+      type: workflow
+      workflowIdOrName: operation-route-caddy
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.node_id }}'
+        kind: node.role_converge
+        execution_secrets: {}
+        intent: {caddy_publication: '${{ "caddy" in inputs.intent ? inputs.intent.caddy : {} }}'}
+  - name: 'Open ingress ports'
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    dependsOn: [{step: 'Publish Caddy sites', condition: {type: succeeded}}]
+    forEach: {item: rule, in: '${{ inputs.intent.role != "ingress" ? [] : inputs.intent.firewall.desired }}'}
+    concurrency: 1
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "role-open-" + string(inputs.node_id) + "-" + string(self._index) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "role-open-" + string(inputs.node_id) + "-" + string(self._index) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh.target.user }}
+          port: ${{ inputs.intent.ssh.target.port }}
+          identityFile: ${{ inputs.intent.ssh.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: '${{ self.rule }}'
+        timeoutSec: 40
+  - name: 'Close ingress ports'
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    dependsOn: [{step: 'Publish Caddy sites', condition: {type: succeeded}}, {step: 'Open ingress ports', condition: {type: always}}]
+    guard: '${{ steps.exists(k, k.startsWith("Open ingress ports-") && steps[k].status == "failed") }}'
+    forEach: {item: rule, in: '${{ inputs.intent.role != "ingress" ? [] : inputs.intent.firewall.remove }}'}
+    concurrency: 1
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "role-close-" + string(inputs.node_id) + "-" + string(self._index) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "role-close-" + string(inputs.node_id) + "-" + string(self._index) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh.target.user }}
+          port: ${{ inputs.intent.ssh.target.port }}
+          identityFile: ${{ inputs.intent.ssh.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: '${{ self.rule }}'
+        timeoutSec: 40
+  - name: 'Prove the ports'
+    labels: {role: swamp}
+    allowFailure: true
+    dependsOn: [{step: 'Publish Caddy sites', condition: {type: succeeded}}, {step: 'Open ingress ports', condition: {type: always}}, {step: 'Close ingress ports', condition: {type: always}}]
+    guard: '${{ inputs.intent.role != "ingress" }}'
+    task: {type: assert, severity: high, message: Every admitted firewall action must succeed.,
+      expr: 'steps.filter(k, k.startsWith("Open ingress ports-") && steps[k].status == "succeeded").size() == inputs.intent.firewall.desired.size() && steps.filter(k, k.startsWith("Close ingress ports-") && steps[k].status == "succeeded").size() == inputs.intent.firewall.remove.size()'}
+  - name: 'Apply private DNS policy'
+    labels: {role: swamp}
+    allowFailure: true
+    dependsOn: [{step: 'Install prerequisites', condition: {type: succeeded}}]
+    guard: ${{ inputs.intent.footprint.network == null }}
+    task:
+      type: workflow
+      workflowIdOrName: operation-fleet-peer-dns
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.node_id }}'
+        kind: fleet.peer_dns
+        intent: '${{ inputs.intent.footprint.network == null ? {} : {"ssh": inputs.intent.ssh, "server": inputs.intent.footprint.network.peer_dns.dns_server,
+          "dns_server": inputs.intent.footprint.network.peer_dns.dns_server, "public_key": inputs.intent.footprint.network.peer_dns.public_key,
+          "domains": inputs.intent.footprint.network.peer_dns.domains} }}'
+        execution_secrets: {}
+    # The Node agent keeps its key; the role only proceeds when the key matches the recorded verifier.
+  - name: 'Check the agent key'
+    labels: {role: swamp}
+    allowFailure: true
+    dependsOn: [{step: 'Install prerequisites', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "role-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "role-ssh-" + string(inputs.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh.target.user }}
+          port: ${{ inputs.intent.ssh.target.port }}
+          identityFile: ${{ inputs.intent.ssh.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '30', /usr/bin/sha256sum, /etc/orbit/agent/secret]
+        timeoutSec: 40
+  - name: 'Prove the agent key'
+    labels: {role: swamp}
+    allowFailure: true
+    dependsOn: [{step: 'Check the agent key', condition: {type: succeeded}}]
+    task: {type: assert, severity: high, message: The Node agent key does not match the recorded verifier.,
+      expr: 'steps["Check the agent key"].outputs.stdout in [inputs.intent.verifier_hash + "  /etc/orbit/agent/secret", inputs.intent.verifier_hash + "  /etc/orbit/agent/secret\n"]'}
+    # The unit opens the apps root of the Node's account, as NodeAgentSshExecutor renders it.
+  - name: 'Render the agent unit'
+    labels: {role: swamp}
+    allowFailure: true
+    dependsOn: [{step: 'Prove the agent key', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-role-converge-command'
+      behaviorName: ${{ "role-agent-unit-" + string(inputs.node_id) }}
+      methodName: observer_files
+      inputs:
+        configuration: '${{ inputs.intent.footprint.payloads.agent.configuration }}'
+        certificate: '${{ inputs.intent.footprint.payloads.agent.certificate }}'
+        unit: '${{ inputs.intent.footprint.payloads.agent.unit }}'
+        apps_root: '${{ inputs.intent.footprint.payloads.agent.apps_root }}'
+        home: '${{ inputs.intent.user == "root" ? "/root" : "/home/" + inputs.intent.user }}'
+  - name: 'Configure the Node agent'
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    dependsOn: [{step: 'Render the agent unit', condition: {type: succeeded}}]
+    forEach: {item: file, in: '${{ [{"path": "/etc/orbit/agent/config.toml", "content": inputs.intent.footprint.payloads.agent.configuration}, {"path": "/etc/orbit/agent/ca.pem", "content": inputs.intent.footprint.payloads.agent.certificate}] }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "role-agent-file-" + string(inputs.node_id) + "-" + string(self._index) }}
+      methodName: apply
+      globalArgs: {path: '${{ self.file.path }}', ensure: present, content: '${{ self.file.content }}', owner: root, group: root, mode: '0644', nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
+      inputs: {}
+  - name: 'Start the Node agent'
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    dependsOn: [{step: 'Configure the Node agent', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/systemd'
+      behaviorName: ${{ "role-agent-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs: {service: orbit-agent.service, unitFile: '${{ steps["Render the agent unit"].outputs.unit }}', enabled: true, ensure: running, nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
+      inputs: {}
+  - name: 'Restart the Node agent'
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    dependsOn: [{step: 'Start the Node agent', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/systemd'
+      behaviorName: ${{ "role-agent-" + string(inputs.node_id) }}
+      methodName: restart
+      globalArgs: {service: orbit-agent.service, nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
+      inputs: {}
+  - name: 'Close Instance .env files'
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    dependsOn: [{step: 'Restart the Node agent', condition: {type: succeeded}}]
+    guard: '${{ size(inputs.intent.footprint.payloads.agent.checkouts) == 0 }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "role-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "role-ssh-" + string(inputs.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh.target.user }}
+          port: ${{ inputs.intent.ssh.target.port }}
+          identityFile: ${{ inputs.intent.ssh.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: '${{ ["timeout", "60", "/usr/bin/find"] + inputs.intent.footprint.payloads.agent.checkouts + ["-maxdepth", "1", "-name", ".env", "-type", "f", "-perm", "/o=rwx", "-exec", "chmod", "o-rwx", "{}", "+"] }}'
+        timeoutSec: 70
+  - name: 'Check the Node agent'
+    labels: {role: swamp}
+    allowFailure: true
+    dependsOn: [{step: 'Restart the Node agent', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "role-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "role-ssh-" + string(inputs.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh.target.user }}
+          port: ${{ inputs.intent.ssh.target.port }}
+          identityFile: ${{ inputs.intent.ssh.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '30', /usr/bin/systemctl, is-active, orbit-agent.service]
+        timeoutSec: 40
+    # The pinned CLI release beside its version link; the profile is written even when no release is admitted.
+  - name: 'Install the Orbit CLI'
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    dependsOn: [{step: 'Install prerequisites', condition: {type: succeeded}}]
+    guard: '${{ inputs.intent.cli.skip_reason != null || inputs.intent.cli.plan_error != null || inputs.intent.cli.release == null }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/fetch'
+      behaviorName: ${{ "role-cli-binary-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs: {url: '${{ inputs.intent.cli.release == null ? "https://invalid" : inputs.intent.cli.release.url }}', path: '${{ inputs.intent.cli.release == null ? "/usr/local/bin/orbit-none" : "/usr/local/bin/orbit-" + inputs.intent.cli.release.version }}', checksum: '${{ inputs.intent.cli.release == null ? "" : "sha256:" + inputs.intent.cli.release.sha256 }}', owner: root, group: root, mode: '0755', nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
+      inputs: {}
+  - name: 'Link the Orbit CLI'
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    dependsOn: [{step: 'Install the Orbit CLI', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/link'
+      behaviorName: ${{ "role-cli-link-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs: {path: /usr/local/bin/orbit, ensure: present, target: '${{ inputs.intent.cli.release == null ? "orbit-none" : "orbit-" + inputs.intent.cli.release.version }}', owner: root, group: root, nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
+      inputs: {}
+  - name: 'Create the CLI profile folder'
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    dependsOn: [{step: 'Install prerequisites', condition: {type: succeeded}}]
+    guard: '${{ inputs.intent.cli.skip_reason != null || inputs.intent.cli.plan_error != null }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/directory'
+      behaviorName: ${{ "role-cli-folder-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs: {path: /root/.orbit, ensure: present, owner: root, group: root, mode: '0700', nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
+      inputs: {}
+  - name: 'Write the CLI profile'
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    dependsOn: [{step: 'Create the CLI profile folder', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "role-cli-profile-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs: {path: /root/.orbit/config.json, ensure: present, content: '${{ inputs.intent.cli.profile }}', owner: root, group: root, mode: '0600', nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
+      inputs: {}
+- name: result
+  dependsOn: [{job: effects, condition: {type: always}}]
+  steps:
   - name: result
-    dependsOn:
-      - {job: effects, condition: {type: always}}
-    steps:
-      - {name: result, labels: *ref_2, task: {type: behavior, behaviorType: '@nckrtl/node-role-converge-result', behaviorName: database-result, methodName: assemble, inputs: {intent: '${{ inputs.intent }}', steps: '${{ steps }}'}}}
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-role-converge-result'
+      behaviorName: role-converge-result
+      methodName: assemble
+      inputs: {intent: '${{ inputs.intent }}', steps: '${{ steps }}'}

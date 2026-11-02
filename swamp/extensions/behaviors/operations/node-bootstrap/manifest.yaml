@@ -11,7 +11,6 @@ behaviors:
   - operations/node-bootstrap/tool_setup_assets.ts
 additionalFiles:
   - scripts/bootstrap_authorized_key.py
-  - scripts/bootstrap_packages.py
   - scripts/bootstrap_account.py
   - scripts/bootstrap_sudo.py
   - scripts/bootstrap_observer.py

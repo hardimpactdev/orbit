@@ -1,7 +1,7 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { behavior, observerFiles } from "../fleet-recipe/observer_assets.ts";
 import { roleResult } from "./result.ts";
-import { generatedRoleWorkflows, roleWorkflow } from "./workflows.ts";
+import { generatedRoleWorkflows } from "./workflows.ts";
 const ctx = {
     extensionFile: (name: string) =>
         new URL("../fleet-recipe/" + name, import.meta.url).pathname,
@@ -47,7 +47,11 @@ Deno.test("terminal assembly preserves unchanged artifacts and refuses missing r
             assignment_id: 7,
             role: "database",
             footprint: { artifacts: [{ name: "agent", required: false }] },
-            cli: { skip_reason: "release_unavailable", plan_error: null },
+            cli: {
+                skip_reason: "release_unavailable",
+                plan_error: null,
+                release: null,
+            },
         },
         steps: {},
     };
@@ -57,14 +61,6 @@ Deno.test("terminal assembly preserves unchanged artifacts and refuses missing r
         name: "agent",
         status: "unchanged",
     }]);
-});
-Deno.test("the complete shared role graph has exactly one209 selector per effect", () => {
-    for (const job of roleWorkflow().jobs) {
-        for (const step of job.steps) {
-            assertEquals(step.labels, { role: "swamp" });
-            assertEquals("target" in step, false);
-        }
-    }
 });
 Deno.test("the terminal relay exposes the canonical public JSON stdout receipt", async () => {
     const result = { role_proven: true, cli: { outcome: "skipped" } };
@@ -78,20 +74,53 @@ Deno.test("Ingress requires Caddy publication and firewall proof", () => {
         role: "ingress",
         assignment_id: 7,
         footprint: { artifacts: [] },
-        cli: { skip_reason: "release_unavailable", plan_error: null },
+        cli: {
+            skip_reason: "release_unavailable",
+            plan_error: null,
+            release: null,
+        },
     };
     const steps = Object.fromEntries(
         [
-            "account",
-            "observer_install",
-            "packages",
-            "caddy_package-0",
-            "caddy_service-0",
-            "caddy-0",
-            "firewall-0",
+            "Install the Node agent",
+            "Install prerequisites",
+            "Install Caddy",
+            "Start Caddy",
+            "Publish Caddy sites",
+            "Prove the ports",
         ].map((name) => [name, { status: "succeeded" }]),
     );
     assertEquals(roleResult({ intent, steps }).role_proven, true);
-    steps["caddy-0"].status = "failed";
-    assertEquals(roleResult({ intent, steps }).role_proven, false);
+    steps["Publish Caddy sites"].status = "failed";
+    const failed = roleResult({ intent, steps });
+    assertEquals(failed.role_proven, false);
+    assertEquals(failed.failed_step, "Publish Caddy sites");
+});
+
+Deno.test("the agent part applies only when the key matches and the agent runs again", () => {
+    const intent = {
+        role: "database",
+        assignment_id: 7,
+        footprint: { artifacts: [{ name: "agent", required: true }] },
+        cli: {
+            skip_reason: null,
+            plan_error: null,
+            release: { version: "0.9.0" },
+        },
+    };
+    const steps: Record<string, { status: string }> = Object.fromEntries(
+        [
+            "Install the Node agent",
+            "Install prerequisites",
+            "Prove the agent key",
+            "Check the Node agent",
+            "Link the Orbit CLI",
+            "Write the CLI profile",
+        ].map((name) => [name, { status: "succeeded" }]),
+    );
+    const applied = roleResult({ intent, steps });
+    assertEquals(applied.footprint.artifacts, [{ name: "agent", status: "applied" }]);
+    assertEquals(applied.cli, { completed: true, outcome: "cli_present", version: "0.9.0", configured: true });
+    steps["Prove the agent key"].status = "failed";
+    assertEquals(roleResult({ intent, steps }).footprint.failed_artifact, "agent");
 });

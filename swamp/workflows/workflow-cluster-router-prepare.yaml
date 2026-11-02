@@ -84,38 +84,57 @@ jobs:
           inputs:
             passwd: '${{ steps["account_command"].outputs.stdout }}'
             group: '${{ steps["account_group"].outputs.stdout }}'
-      - name: packages_assets
+      - name: packages_release
         labels: *ref_0
+        writes: false
         dependsOn:
           - step: account
             condition:
               type: succeeded
         task:
           type: behavior
-          behaviorType: '@nckrtl/node-bootstrap-command'
-          behaviorName: packages-assets
-          methodName: packages
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ ("cluster-router-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
+          methodName: exec
+          globalArgs: *ref_1
           inputs:
-            releases: '${{ inputs.intent.prerequisites.releases }}'
-            packages: '${{ inputs.intent.prerequisites.packages }}'
-      - name: packages
+            hosts: 'name:target'
+            sudo: true
+            argv: '${{ ["/usr/bin/grep", "-qxE", "VERSION_CODENAME=(" + inputs.intent.prerequisites.releases.join("|") + ")", "/etc/os-release"] }}'
+      - name: packages_lists
         labels: *ref_0
         writes: true
         dependsOn:
-          - step: packages_assets
+          - step: packages_release
             condition:
               type: succeeded
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ ("cluster-router-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
-          methodName: script
+          methodName: exec
           globalArgs: *ref_1
           inputs:
             hosts: 'name:target'
-            interpreter: python3
             sudo: true
-            script: '${{ steps["packages_assets"].outputs.script_body }}'
+            argv: '${{ ["/usr/bin/env", "LC_ALL=C", "DEBIAN_FRONTEND=noninteractive", "NEEDRESTART_MODE=l", "/usr/bin/apt-get", "-o", "APT::Update::Error-Mode=any", "update"] }}'
+      - name: packages
+        labels: *ref_0
+        writes: true
+        dependsOn:
+          - step: packages_lists
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ ("cluster-router-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
+          methodName: exec
+          globalArgs: *ref_1
+          inputs:
+            hosts: 'name:target'
+            sudo: true
+            argv: '${{ ["/usr/bin/env", "LC_ALL=C", "DEBIAN_FRONTEND=noninteractive", "NEEDRESTART_MODE=l", "/usr/bin/apt-get", "--no-remove", "install", "--yes", "--no-install-recommends", "--"] + inputs.intent.prerequisites.packages }}'
       - name: caddy
         labels: *ref_0
         writes: true
@@ -151,3 +170,4 @@ jobs:
               control_node_id: 209
               connection: '${{ inputs.intent.connection }}'
               host_keys: '${{ inputs.intent.host_keys }}'
+

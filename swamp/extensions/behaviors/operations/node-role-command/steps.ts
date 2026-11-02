@@ -70,46 +70,42 @@ export function roleCaddyPackageStep(
     };
 }
 
+/** The admitted base packages, one official SSH command per step: release check, index refresh, install. */
 export function rolePackageSteps(
     name: string,
     prerequisites: string,
     globalArgs: Fields,
     dependency: string,
 ): Fields[] {
-    const asset = name + "_assets";
-    return [{
-        name: asset,
+    const ssh = (step: string, argv: string, after_: string): Fields => ({
+        name: step,
         ...placement,
-        dependsOn: after(dependency),
-        task: {
-            type: "behavior",
-            behaviorType: "@nckrtl/node-bootstrap-command",
-            behaviorName: name + "-assets",
-            methodName: "packages",
-            inputs: {
-                releases: expr(prerequisites + ".releases"),
-                packages: expr(prerequisites + ".packages"),
-            },
-        },
-    }, {
-        name,
-        ...placement,
-        writes: true,
-        dependsOn: after(asset),
+        writes: step !== name + "_release",
+        dependsOn: after(after_),
         task: {
             type: "behavior",
             behaviorType: "@swamp/ssh",
             behaviorName: globalArgs.name,
-            methodName: "script",
+            methodName: "exec",
             globalArgs,
-            inputs: {
-                hosts: "name:target",
-                interpreter: "python3",
-                sudo: true,
-                script: expr('steps["' + asset + '"].outputs.script_body'),
-            },
+            inputs: { hosts: "name:target", sudo: true, argv: expr(argv) },
         },
-    }];
+    });
+    const apt = '["/usr/bin/env", "LC_ALL=C", "DEBIAN_FRONTEND=noninteractive", "NEEDRESTART_MODE=l", "/usr/bin/apt-get"';
+    return [
+        ssh(
+            name + "_release",
+            '["/usr/bin/grep", "-qxE", "VERSION_CODENAME=(" + ' + prerequisites +
+                '.releases.join("|") + ")", "/etc/os-release"]',
+            dependency,
+        ),
+        ssh(name + "_lists", apt + ', "-o", "APT::Update::Error-Mode=any", "update"]', name + "_release"),
+        ssh(
+            name,
+            apt + ', "--no-remove", "install", "--yes", "--no-install-recommends", "--"] + ' + prerequisites + ".packages",
+            name + "_lists",
+        ),
+    ];
 }
 
 export { authorizedKeySteps } from "../node-bootstrap/authorized_key_steps.ts";

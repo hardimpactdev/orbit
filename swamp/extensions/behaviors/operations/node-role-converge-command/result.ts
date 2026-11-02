@@ -16,6 +16,7 @@ const Args = z.object({
         cli: z.object({
             skip_reason: z.string().nullable(),
             plan_error: z.string().nullable(),
+            release: z.object({ version: z.string() }).passthrough().nullable(),
         }).passthrough(),
     }).passthrough(),
     steps: z.record(z.string(), Step),
@@ -23,11 +24,15 @@ const Args = z.object({
 export function roleResult(raw: unknown) {
     const { intent, steps } = Args.parse(raw);
     const ok = (name: string) => steps[name]?.status === "succeeded";
-    const role_proven = ok("account") && ok("observer_install") &&
-        ok("packages") &&
-        (intent.role !== "ingress" ||
-            ["caddy_package-0", "caddy_service-0", "caddy-0", "firewall-0"]
-                .every(ok));
+    const ingress = intent.role === "ingress";
+    const ingressSteps = [
+        "Install Caddy",
+        "Start Caddy",
+        "Publish Caddy sites",
+        "Prove the ports",
+    ];
+    const role_proven = ok("Install the Node agent") &&
+        ok("Install prerequisites") && (!ingress || ingressSteps.every(ok));
     const artifacts: { name: string; status: "applied" | "unchanged" }[] = [];
     let failed_artifact: string | null = null;
     for (const artifact of intent.footprint.artifacts) {
@@ -36,13 +41,13 @@ export function roleResult(raw: unknown) {
             continue;
         }
         const proven = artifact.name === "agent"
-            ? ok("observer")
+            ? ok("Prove the agent key") && ok("Check the Node agent")
             : artifact.name === "peer-dns"
-            ? ok("peer_dns-0")
+            ? ok("Apply private DNS policy")
             : artifact.name === "caddy"
-            ? ok("caddy-0")
+            ? ok("Publish Caddy sites")
             : artifact.name === "caddy-package"
-            ? ok("caddy_package-0")
+            ? ok("Install Caddy")
             : false;
         if (proven) artifacts.push({ name: artifact.name, status: "applied" });
         else failed_artifact ??= artifact.name;
@@ -59,31 +64,29 @@ export function roleResult(raw: unknown) {
         cli = { outcome: "skipped", reason: intent.cli.skip_reason };
     } else if (intent.cli.plan_error !== null) {
         cli = { error_code: intent.cli.plan_error };
-    } else if (!ok("cli")) cli = { error_code: "cli.install_failed" };
+    } else if (
+        !ok("Write the CLI profile") ||
+        (intent.cli.release !== null && !ok("Link the Orbit CLI"))
+    ) cli = { error_code: "cli.install_failed" };
     else {
-        const output = steps.cli.outputs ?? {};
-        cli = "error_code" in output ? output : {
+        cli = {
             completed: true,
             outcome: "cli_present",
-            version: output.installed,
-            configured: output.configured,
+            version: intent.cli.release?.version ?? null,
+            configured: true,
         };
     }
     const follow_up = [
         ...(failed_artifact ? ["role-footprint:node.footprint_failed"] : []),
         ...(cli.error_code ? ["role-cli:" + cli.error_code] : []),
     ].join(", ") || null;
-    const failed_step = !ok("account")
-        ? "account"
-        : !ok("observer_install")
+    const failed_step = !ok("Install the Node agent")
         ? "agent-install"
-        : intent.role === "ingress" && !ok("caddy_package-0")
+        : ingress && !ok("Install Caddy")
         ? "caddy-package"
-        : !ok("packages")
+        : !ok("Install prerequisites")
         ? "prerequisites"
-        : ["caddy_service-0", "caddy-0", "firewall-0"].find((name) =>
-            !ok(name)
-        ) ?? "prerequisites";
+        : ingressSteps.find((name) => !ok(name)) ?? "prerequisites";
     return {
         assignment_id: intent.assignment_id,
         created: false,
@@ -100,7 +103,7 @@ export function roleResult(raw: unknown) {
 const Result = z.record(z.string(), z.unknown());
 export const behavior = {
     type: "@nckrtl/node-role-converge-result",
-    version: "2026.11.01.1",
+    version: "2026.11.02.1",
     resources: {
         result: { schema: Result, lifetime: "1d", garbageCollection: 10 },
     },

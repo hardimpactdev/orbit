@@ -65,10 +65,7 @@ Deno.test("enrollment accepts only the admitted first-contact fingerprint and re
 });
 Deno.test("bootstrap actions expose only the public input for that action", () => {
     assertEquals(bootstrapActionInput(args), { user: "orbit" });
-    assertEquals(bootstrapActionInput({ ...args, action: "packages" }), {
-        packages: ["sudo", "curl"],
-        releases: ["resolute"],
-    });
+    assertThrows(() => bootstrapActionInput({ ...args, action: "packages" }));
     assertEquals(
         bootstrapActionInput({ ...args, action: "observer" }),
         artifact,

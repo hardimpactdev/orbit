@@ -1,0 +1,38 @@
+{
+  "kind": "node.role_converge",
+  "workflow": "operation-node-role-converge-209",
+  "topology": "minimal",
+  "budget_seconds": 900,
+  "queue_timeout_seconds": 30,
+  "before_gateway": [
+    [
+      "sh",
+      "-c",
+      "printf '%s' \"$1\" | runuser -u orbit -- env -C apps/gateway php ../../tools/swamp-proof-guest/gateway.php fixture",
+      "sh",
+      "{\"roles\": {\"${node.metrics}\": [\"database\"]}}"
+    ]
+  ],
+  "request": {
+    "method": "POST",
+    "path": "nodes/${node.metrics}/roles",
+    "body": {
+      "role": "database",
+      "converge_existing": true
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Converge the role",
+      "job": "dispatch",
+      "step": "native-0",
+      "budget_seconds": 900
+    }
+  ],
+  "parity": [
+    "swamp/proof/node.role_converge/parity.py"
+  ]
+}

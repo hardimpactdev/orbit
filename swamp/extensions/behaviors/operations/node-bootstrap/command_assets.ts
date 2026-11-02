@@ -22,7 +22,6 @@ const Command = z.object({
     dns_policy: z.enum(["managed", "preserve"]),
 }).strict();
 const Action = z.enum([
-    "packages",
     "account",
     "authorized_key",
     "sudo",
@@ -42,7 +41,6 @@ export function bootstrapActionInput(raw: unknown) {
         throw new Error("node.bootstrap_invalid");
     }
     return {
-        packages: { packages: command.packages, releases: command.releases },
         account: { user },
         authorized_key: { user, public_key: command.public_key },
         sudo: { user },
@@ -181,13 +179,6 @@ export const behavior = {
                 }).strict().parse(args);
                 return script("authorized_key", input, ctx);
             },
-        },
-        packages: {
-            description:
-                "Read the canonical package action for a role's admitted prerequisites",
-            arguments: Packages,
-            execute: (args: z.infer<typeof Packages>, ctx: Context) =>
-                script("packages", Packages.parse(args), ctx),
         },
         observe: {
             description:

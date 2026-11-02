@@ -2,8 +2,7 @@
 # Generated from node-role-converge-command/workflows.ts
 id: 463c1e47-f612-4296-a3f8-5e4b1c4bcbfa
 name: operation-node-role-converge-209
-vaults:
-  - orbit-control-inputs
+vaults: []
 labels: &ref_0
   role: swamp
 inputs:
@@ -22,7 +21,7 @@ inputs:
       type: object
     execution_secrets:
       type: object
-      additionalProperties: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^node-role-[0-9]+-observer$'}}, required: [vault, key], additionalProperties: false}
+      additionalProperties: false
   required:
     - operation_id
     - node_id

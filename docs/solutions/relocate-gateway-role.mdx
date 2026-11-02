@@ -59,7 +59,7 @@ Relocate moves no files. It does not stop Caddy or PHP-FPM on the source, so the
 4. From a peer that trusts the Orbit CA, run `curl https://<new-wireguard-ip>/up`, then `curl https://gateway.orbit/up`.
 5. Point CLI profiles that name the old WireGuard address at the new one.
 6. The `gateway.serving_node_id` setting still names the old Node, so that Node keeps Gateway authority. Only a Gateway bootstrap records a new serving Node.
-7. Run `orbit node:add <node>` or a role converge on each Node, so its [Node agent](/reference/node-agent#how-it-connects) learns the new Gateway address.
+7. Run `orbit node:add <node>` or a role converge on each Node, so its [Node agent](/reference/node-agent#how-it-connects) learns the new Gateway address. A role converge rewrites the agent configuration and keeps the agent key; it fails when the key does not match the recorded verifier.
 8. Stop Caddy and PHP-FPM on the old Node once the new `/up` answers.
 
 After the split, private DNS publication runs over SSH on the `vpn` Node. Inspect the catalog and the listener there, not on the Gateway. The publication installs the listener release from the Gateway's own code, so the `vpn` Node needs no Orbit checkout. The WireGuard hub keys stay on the `vpn` Node in `/etc/wireguard/orbit.conf`. A Metrics converge that fails while it publishes DNS keeps Grafana, Prometheus, and `/etc/orbit/metrics` in place.
