@@ -1,6 +1,5 @@
 conn.gateway_sessions_revoke
 database.clone
-database.destroy_owned
 database.sqlite_cleanup
 database.sqlite_seed
 database_server.close

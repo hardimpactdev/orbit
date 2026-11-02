@@ -61,7 +61,7 @@ final readonly class DropServerDatabaseAction
     /** Protected snapshots also compose into an Instance's single native DAG.
      * @param  list<DatabaseConnection>  $connections
      * @param  list<int>  $ownerInstanceIds
-     * @return list<array{server_id:int,node_id:int,connection_ids:list<int>,input:array<string,mixed>,password:string}>
+     * @return list<array{server_id:int,node_id:int,connection_ids:list<int>,input:array<string,mixed>}>
      */
     public function snapshots(array $connections, ?int $ownerInstanceId = null, array $ownerInstanceIds = []): array
     {
@@ -112,7 +112,7 @@ final readonly class DropServerDatabaseAction
         return array_values(array_map(static function (array $group): array {
             $server = $group['server'];
 
-            return ['server_id' => $server->id, 'node_id' => $server->node_id, 'connection_ids' => $group['connection_ids'], 'password' => $server->root_password,
+            return ['server_id' => $server->id, 'node_id' => $server->node_id, 'connection_ids' => $group['connection_ids'],
                 'input' => ['driver' => $server->driver->value,
                     'container' => $server->process === null ? null : app(DockerProcessRenderer::class)->containerName($server->process),
                     'host' => $server->node->wireguard_ip, 'port' => $server->port, 'default_open' => $server->default_open,

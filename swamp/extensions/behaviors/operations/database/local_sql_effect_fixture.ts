@@ -1,7 +1,6 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.19";
 import { invokeSql } from "./local_sql.ts";
 import { copyMysqlClone, createDatabase } from "./native_create_fixture.ts";
-import { destroyDatabase } from "../../../../tests/_support/database_destroy_command.ts";
 
 const docker = async (...args: string[]) => {
   const result = await new Deno.Command("/usr/bin/sudo", {
@@ -24,7 +23,7 @@ async function waitHealthy(container: string): Promise<void> {
 export function registerMysqlLocalSqlEffect() {
   Deno.test({
     name:
-      "native Docker MySQL creates escaped underscore grants, copies rows and destroys only admitted databases",
+      "native Docker MySQL creates escaped underscore grants and copies rows",
     fn: async () => {
       const container = "orbit-process-2200000000-local-sql-" +
         crypto.randomUUID();
@@ -156,20 +155,6 @@ export function registerMysqlLocalSqlEffect() {
         assertEquals(await execute("SELECT id FROM clone_app.items;"), {
           output: "7\n",
         });
-        const destroy = {
-          driver: "mysql",
-          container,
-          host: "127.0.0.1",
-          port: 3306,
-          default_open: false,
-          databases: ["proof_app"],
-          users: ["proof_owner"],
-          test_prefixes: ["proof_app_testing"],
-          owners: {
-            proof_app: "proof_owner",
-            proof_app_testing: "proof_owner",
-          },
-        };
         // A qualified grant with underscores is escaped in mysql.db.Db by CREATE.
         const grants = await execute(
           "SELECT HEX(Db) FROM mysql.db WHERE User='proof_owner' ORDER BY Db;",
@@ -177,41 +162,6 @@ export function registerMysqlLocalSqlEffect() {
         assertStringIncludes(
           "output" in grants ? grants.output : "",
           "70726F6F665C5F617070",
-        );
-        let failed = false;
-        const failAfterFirstDrop = (action: string) => {
-          if (!failed && action === "drop_database") {
-            failed = true;
-            throw { error_code: "database.server_admin_failed" };
-          }
-        };
-        assertEquals(
-          await destroyDatabase(
-            destroy,
-            password,
-            failAfterFirstDrop,
-          ),
-          { error_code: "database.server_admin_failed" },
-        );
-        assertEquals(failed, true);
-        assertEquals(
-          await destroyDatabase(destroy, password),
-          { backend: "absent" },
-        );
-        assertEquals(
-          await execute(
-            "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME IN ('proof_app','proof_app_testing_test_1');",
-          ),
-          { output: "" },
-        );
-        assertEquals(await execute("SELECT id FROM clone_app.items;"), {
-          output: "7\n",
-        });
-        assertEquals(
-          await execute(
-            "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME='unrelated';",
-          ),
-          { output: "unrelated\n" },
         );
         const large = await execute(
           "SELECT REPEAT('x',262144);\n/*" + "z".repeat(524288) +
@@ -228,7 +178,7 @@ export function registerMysqlLocalSqlEffect() {
 export function registerPgsqlLocalSqlEffect() {
   Deno.test({
     name:
-      "native Docker PostgreSQL readiness, private SQL and fenced destruction work without the agent",
+      "native Docker PostgreSQL readiness and private SQL work without the agent",
     fn: async () => {
       const container = "orbit-process-2200000001-local-sql-" +
         crypto.randomUUID();
@@ -305,41 +255,6 @@ export function registerPgsqlLocalSqlEffect() {
         assertEquals(await execute("SELECT pg_reload_conf();"), {
           output: "t\n",
         });
-        const destroy = {
-          driver: "pgsql",
-          container,
-          host: "127.0.0.1",
-          port: 5432,
-          default_open: false,
-          databases: ["proof_app"],
-          users: ["proof_owner"],
-          test_prefixes: [],
-          owners: { proof_app: "proof_owner" },
-        };
-        assertEquals(await destroyDatabase(destroy, password), {
-          error_code: "database.in_use",
-        });
-        assertEquals(
-          await execute(
-            "SELECT datallowconn FROM pg_database WHERE datname='proof_app';",
-          ),
-          { output: "t\n" },
-        );
-        assertEquals(
-          await execute(
-            "ALTER DATABASE unrelated OWNER TO postgres;",
-          ),
-          { output: "" },
-        );
-        assertEquals(await destroyDatabase(destroy, password), {
-          backend: "absent",
-        });
-        assertEquals(
-          await execute(
-            "SELECT datname FROM pg_database WHERE datname='proof_app';",
-          ),
-          { output: "" },
-        );
         assertEquals(
           await invoke({
             operation: "execute",
