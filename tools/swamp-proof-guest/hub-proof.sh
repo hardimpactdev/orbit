@@ -22,7 +22,8 @@ printf '{"roles":{"%s":["vpn"]},"wireguard_keys":{"%s":"%s","%s":"AgICAgICAgICAg
   | runuser -u orbit -- env -C apps/gateway php ../../tools/swamp-proof-guest/gateway.php fixture
 
 {
-  printf '[Interface]\nAddress = 10.99.0.1/24\nListenPort = 51820\nPrivateKey = %s\n' "$hub_key"
+  # Table = off: the proof peer's AllowedIPs is this VM's own address; a route for it would cut the target's SSH.
+  printf '[Interface]\nAddress = 10.99.0.1/24\nListenPort = 51820\nTable = off\nPrivateKey = %s\n' "$hub_key"
   printf '\n[Peer]\nPublicKey = %s\nAllowedIPs = 10.231.0.1/32\n' "$peer_public"
   printf '\n[Peer]\nPublicKey = AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=\nAllowedIPs = 10.231.0.99/32\n'
 } | incus exec target -- sh -c 'umask 077; cat > /etc/wireguard/orbit.conf; ufw allow 51820/udp comment proof-hub >/dev/null; systemctl enable wg-quick@orbit >/dev/null 2>&1; systemctl restart wg-quick@orbit'
