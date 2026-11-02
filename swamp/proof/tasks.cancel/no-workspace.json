@@ -1,0 +1,94 @@
+{
+  "kind": "tasks.cancel",
+  "workflow": "operation-task-cancel",
+  "topology": "app-dev",
+  "budget_seconds": 60,
+  "queue_timeout_seconds": 60,
+  "prepare": [
+    {
+      "argv": [
+        "orbit",
+        "project:create",
+        "proof-cancel-${proof.run}",
+        "laravel-app",
+        "${proof.repo.url}",
+        "--default-branch=main",
+        "--json"
+      ],
+      "capture": {
+        "project_id": "$.id"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "tasks:create",
+        "Proof cancel ${proof.run}",
+        "--project=${capture.project_id}",
+        "--brief=Verify empty-workspace native cancellation",
+        "--status=backlog",
+        "--orchestration=external",
+        "--json"
+      ],
+      "capture": {
+        "group_id": "$.id"
+      }
+    }
+  ],
+  "request": {
+    "argv": [
+      "orbit",
+      "tasks:cancel",
+      "${capture.group_id}",
+      "--yes",
+      "--idempotency-key=proof-cancel-${proof.run}",
+      "--json"
+    ],
+    "operation": "$.id"
+  },
+  "envelope": {
+    "project_id": "${capture.project_id}",
+    "group_id": "${capture.group_id}",
+    "instance_id": null,
+    "task_vm_id": null,
+    "workspace_routes": [],
+    "checkout_path": null,
+    "ssh_execution": null,
+    "teardown": []
+  },
+  "expect": {
+    "status": "succeeded",
+    "outputs": {
+      "job": "cancel",
+      "step": "result",
+      "match": {
+        "exitCode": 0
+      }
+    }
+  },
+  "phases": [
+    {
+      "name": "withdrawal-guard",
+      "job": "cancel",
+      "step": "withdrawn",
+      "budget_seconds": 10
+    },
+    {
+      "name": "terminal-result",
+      "job": "cancel",
+      "step": "result",
+      "budget_seconds": 10
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "-I",
+      "swamp/proof/tasks.cancel/parity.py"
+    ],
+    "cases": [
+      "empty-workspace-native-assert",
+      "normal-gateway-cancellation-projection"
+    ]
+  }
+}
