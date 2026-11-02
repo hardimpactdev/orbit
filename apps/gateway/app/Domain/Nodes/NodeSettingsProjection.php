@@ -26,7 +26,8 @@ final readonly class NodeSettingsProjection implements DirectOperationProjection
         $status = OperationStatus::from(ValidatedData::string($data['status']));
         $code = ValidatedData::nullableString($data['error_code'] ?? null);
         // A refusal or failure on Node 12 is the documented settings code; its stderr carries the reason.
-        if ($status === OperationStatus::Failed && in_array($data['failure']['failed_step'] ?? null, ['Create the apps folder', 'Check owner and mode'], true)) {
+        $failure = is_array($data['failure'] ?? null) ? $data['failure'] : [];
+        if ($status === OperationStatus::Failed && in_array($failure['failed_step'] ?? null, ['Create the apps folder', 'Check owner and mode'], true)) {
             $code = $data['error_code'] = 'node.settings_root_failed';
         }
         $result = ValidatedData::object($data['result'] ?? []);

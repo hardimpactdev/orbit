@@ -18,7 +18,17 @@ A Node has typed settings for its development apps root (`apps.path`) and its ta
 
 A settings change that touches the apps root records a `node.settings` Operation and returns HTTP 202. A change to `task_vms` alone, or clearing `apps.path` on a Node without an active `app-dev` role, is stored at once and starts no run. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/node.settings.mmd) shows both paths.
 
-The Gateway starts `operation-node-settings` on the `swamp` role's workers with the SSH target and the apps intent: the root (or none for the managed home's `apps`), the managed user, and whether missing folders may be created. Every step runs on Node 209 and reaches the Node with official `@swamp/ssh` and sudo. `Read the scripts` loads the shipped `apps_folder.py`. `Create the apps folder` resolves the managed home and group, refuses the home, an ancestor of it, a hidden folder inside it, or a symlink on the way, and creates each missing folder as the managed user and group with mode `0755`; it never changes an existing folder. `Check owner and mode` reads the folder back and is the terminal result. The Gateway stores the settings only from that successful result; a failed or cancelled run keeps the previous settings, and folders made before a failure stay. A failure in either Node step reports `node.settings_root_failed` with the reason in the failure detail.
+The Gateway starts `operation-node-settings` on the `swamp` role's workers. Its inputs are the SSH target and the apps intent: the root (none means the managed home's `apps`), the managed user, and whether missing folders may be created. Every step runs on Node 209 and reaches the Node with official `@swamp/ssh` and sudo.
+
+The steps are:
+
+- `Read the scripts` loads the shipped `apps_folder.py`.
+- `Create the apps folder` resolves the managed home and group. It refuses a path that is the home or an ancestor of it.
+- It also refuses a hidden folder in the home and a symlink on the way.
+- The same step creates each missing folder as the managed user and group with mode `0755`. It never changes an existing folder.
+- `Check owner and mode` reads the folder back. Its output is the terminal result.
+
+The Gateway stores the settings only from that successful result. A failed or cancelled run keeps the previous settings, and folders made before a failure stay. A failure in either Node step reports `node.settings_root_failed`; the failure detail holds the reason.
 
 Gateway admission checks path grammar, recorded protected paths and managed checkouts. It performs no account lookup or filesystem action.
 
