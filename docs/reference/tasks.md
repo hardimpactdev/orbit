@@ -855,7 +855,7 @@ Each group run is one bounded generation. Its drive starts the next generation, 
 
 The `proof-reaper` schedule also runs every 10 minutes, at minute 7, 17 and so on. It touches only Project 62 proof groups. `ProofReaper` publishes the open groups as the schedule's inputs: id, title, start time, and each running VM's pinned SSH target. It publishes again after a group or its task VM changes, and after each run.
 
-Swamp reads each VM's heartbeat and chooses the groups. A group is chosen when its heartbeat is more than an hour old, or when a newer open group of the same lane exists. The Gateway's scheduled-result projection cancels each chosen group with the normal cancel intent, once per group and run. The [Swamp proof topology](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/README.md) page describes the heartbeat and the lane titles.
+Swamp reads each VM's heartbeat and chooses the groups. A group is chosen when its heartbeat is more than an hour old, or when a newer open group of the same lane exists. A group older than 90 minutes is chosen unless a heartbeat from the last hour renewed it, so a group without a readable heartbeat cannot hold a host. The Gateway's scheduled-result projection cancels each chosen group with the normal cancel intent, once per group and run. The [Swamp proof topology](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/README.md) page describes the heartbeat and the lane titles.
 
 ## Workspace lease
 

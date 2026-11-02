@@ -1,5 +1,6 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import {
+    AGE_CAP_SECONDS,
     decide,
     heartbeat,
     IDLE_SECONDS,
@@ -64,15 +65,29 @@ Deno.test("a missing heartbeat counts from the recorded start; an unreadable one
     ]);
 });
 
-Deno.test("a group without a running VM is cancelled only when superseded", () => {
-    assertEquals(
-        decide(
-            [group(5, null, { running: false, started_at: 0 })],
-            new Map(),
-            NOW,
-        ),
-        [],
-    );
+Deno.test("a group older than the age cap is cancelled unless a fresh heartbeat renewed it", () => {
+    const old = NOW - AGE_CAP_SECONDS - 1;
+    const groups = [
+        // Group 2551's shape: an old title, no pinned key, so no running VM and no heartbeat.
+        group(1, null, { running: false, started_at: old }),
+        group(2, "a:minimal", { started_at: old }),
+        group(3, "b:minimal", { started_at: old }),
+        group(4, null, { running: false, started_at: NOW - 60 }),
+    ];
+    const beats = new Map<number, number | "missing" | "unknown">([
+        [2, "unknown"],
+        [3, NOW - 60],
+    ]);
+    assertEquals(decide(groups, beats, NOW), [
+        {
+            group_id: 1,
+            reason: `older than ${AGE_CAP_SECONDS} s without a renewal`,
+        },
+        {
+            group_id: 2,
+            reason: `older than ${AGE_CAP_SECONDS} s without a renewal`,
+        },
+    ]);
 });
 
 Deno.test("heartbeat reads the stat exit code and mtime of each forEach step", () => {

@@ -10,6 +10,8 @@ import { z } from "npm:zod@4.4.3";
  */
 
 export const IDLE_SECONDS = 3600;
+/** A group this old is cancelled unless its lane renewed it with a fresh heartbeat. */
+export const AGE_CAP_SECONDS = 5400;
 // `bin/swamp-proof` titles a group `swamp-proof <host>:<session> <topology>@<version>`.
 const LANE = /^swamp-proof (\S+)/;
 
@@ -31,7 +33,7 @@ export function lane(title: string): string | null {
 export type Heartbeat = number | "missing" | "unknown";
 export type Cancellation = { group_id: number; reason: string };
 
-/** Cancel a group superseded by a newer open group of its lane, or idle past IDLE_SECONDS. */
+/** Cancel a group superseded by a newer open group of its lane, older than AGE_CAP_SECONDS without a fresh heartbeat, or idle past IDLE_SECONDS. */
 export function decide(
     groups: ProofGroup[],
     heartbeats: Map<number, Heartbeat>,
@@ -55,9 +57,18 @@ export function decide(
             });
             continue;
         }
-        if (!g.running) continue;
         const beat = heartbeats.get(g.id) ?? "unknown";
         const age = g.started_at === null ? null : now - g.started_at;
+        const renewed = typeof beat === "number" && now - beat <= IDLE_SECONDS;
+        // Without a fresh heartbeat (no pinned key, unreadable, or never provisioned) only the age is known.
+        if (!renewed && age !== null && age > AGE_CAP_SECONDS) {
+            out.push({
+                group_id: g.id,
+                reason: `older than ${AGE_CAP_SECONDS} s without a renewal`,
+            });
+            continue;
+        }
+        if (!g.running) continue;
         if (typeof beat === "number" && now - beat > IDLE_SECONDS) {
             out.push({ group_id: g.id, reason: `idle for ${now - beat} s` });
         } else if (beat === "missing" && age !== null && age > IDLE_SECONDS) {
@@ -106,7 +117,7 @@ export function proofReaper(
 ) {
     return {
         type: "@nckrtl/proof-reaper",
-        version: "2026.11.02.1",
+        version: "2026.11.02.2",
         resources: {
             decision: {
                 description: "Proof groups the Gateway should cancel",
