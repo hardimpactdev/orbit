@@ -154,7 +154,7 @@ def provision(gateway, state):
     return Guest(state['guest_host'], vm['name'])
 
 
-def up(gateway, name='minimal'):
+def up(gateway, name='minimal', agent_delivery=None):
     if subprocess.run(['git', '-C', str(ROOT), 'status', '--porcelain'], capture_output=True, text=True, check=True).stdout.strip():
         raise ProofError('Commit the worktree first; the topology serves one exact commit.')
     commit = subprocess.run(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()
@@ -174,6 +174,13 @@ def up(gateway, name='minimal'):
     guest = provision(gateway, state)
     heartbeat(guest)
     staged = stage(guest, commit)
+    if agent_delivery is not None:
+        # A CI-built delivery (apps/agent/scripts/build-delivery); up installs its orbit-agent on every agent Node (version 11).
+        binary = Path(agent_delivery) / 'orbit-agent-linux-x86_64'
+        if not binary.is_file():
+            raise ProofError(f'{binary} is missing; pass a build-delivery directory.')
+        guest.call(['sh', '-c', 'install -d -o orbit -g orbit /home/orbit/swamp-proof/agent-delivery && cat > /home/orbit/swamp-proof/agent-delivery/orbit-agent'],
+                   input=binary.read_bytes(), timeout=300)
     bring_up(guest, state, commit, [{'step': 'stage', 'seconds': round(staged, 1)}])
     return state
 
@@ -184,8 +191,8 @@ def stage(guest, commit):
     with tempfile.TemporaryDirectory() as folder:
         bundle = Path(folder) / 'source.bundle'
         subprocess.run(['git', '-C', str(ROOT), 'bundle', 'create', str(bundle), 'HEAD'], check=True, capture_output=True)
-        # A held VM's serve writes into the staged tree; stop it before the tree is replaced.
-        script = ('systemctl stop orbit-node-worker orbit-swamp-serve 2>/dev/null; rm -rf /home/orbit/swamp-proof'
+        # A held VM's serve and agent-view subscriber write into the staged tree; stop them before it is replaced.
+        script = ('systemctl stop orbit-node-worker orbit-swamp-serve orbit-proof-agent-view 2>/dev/null; rm -rf /home/orbit/swamp-proof'
                   ' && install -d -o orbit -g orbit /home/orbit/swamp-proof && cat > /home/orbit/swamp-proof/source.bundle')
         guest.call(['sh', '-c', script], input=bundle.read_bytes(), timeout=300)
     guest.call(['runuser', '-u', 'orbit', '--', 'git', 'clone', '-q', '--no-checkout', '/home/orbit/swamp-proof/source.bundle', SOURCE])
@@ -339,7 +346,9 @@ def reap(gateway, now=None):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest='action', required=True)
-    sub.add_parser('up').add_argument('--topology', default='minimal', help='Topology under swamp/proof/topologies (default minimal).')
+    upper = sub.add_parser('up')
+    upper.add_argument('--topology', default='minimal', help='Topology under swamp/proof/topologies (default minimal).')
+    upper.add_argument('--agent-delivery', help='A build-delivery directory; its orbit-agent replaces the pinned agent on agent Nodes.')
     runner = sub.add_parser('run')
     runner.add_argument('kind', nargs='+')
     sub.add_parser('receipt')
@@ -363,7 +372,7 @@ def main(argv=None):
                 for name in reap(Gateway()):
                     print(f'swamp-proof: took down expired session {name}', file=sys.stderr)
             if args.action == 'up':
-                state = up(Gateway(), args.topology)
+                state = up(Gateway(), args.topology, args.agent_delivery)
                 print(json.dumps({key: state[key] for key in ('topology', 'topology_version', 'commit', 'vm', 'timings')}))
                 return 0
             state = json.loads(SESSION.read_text())

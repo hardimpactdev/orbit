@@ -1,7 +1,8 @@
 {
   "name": "minimal",
-  "version": 10,
+  "version": 11,
   "gateway": "task-vm",
+  "websocket": true,
   "network": {
     "name": "oeproof",
     "gateway": "10.231.0.1",
@@ -22,7 +23,8 @@
         "apps": {
           "path": "/home/orbit/apps"
         }
-      }
+      },
+      "agent": true
     },
     {
       "key": "metrics",

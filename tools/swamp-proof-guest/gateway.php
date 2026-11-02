@@ -15,7 +15,7 @@ declare(strict_types=1);
  *            extensions: [name], task_groups: [attributes + subtasks: [attributes] + taskable?: {instance: id}],
  *            instances: [attributes], task_vms: [attributes], operations: [attributes],
  *            clusters: [{name, tld?, node_ids, router_node_id}], routes: [{id, attributes}],
- *            instance_updates: [{id, attributes}], node_updates: [{id, attributes}]}: the records a kind fixture
+ *            instance_updates: [{id, attributes}], node_updates: [{id, attributes}], websocket?: node_id}: the records a kind fixture
  *            needs beyond the seed, such as the VPN hub, peers with keys and the VPN subnet, a Project under the fixed
  *            id its Swamp configuration names, an extension, or a task group's owned workspace (the group and its
  *            subtasks, its Instance, its task VM and its provision Operation) for kinds that run in it.
@@ -27,6 +27,10 @@ use App\Domain\Nodes\WorkerKnownHostsPublisher;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Swamp\SwampRunSubscriber;
+use App\Infrastructure\WebSocket\NativeWebSocketCredentialManager;
+use App\Infrastructure\WebSocket\WebSocketDnsTarget;
+use App\Infrastructure\WebSocket\WebSocketEnvironmentRenderer;
+use App\Infrastructure\WebSocket\WebSocketServiceUnitRenderer;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
@@ -170,6 +174,17 @@ if ($argv[1] === 'fixture') {
         }
         Node::query()->findOrFail((int) $spec['router_node_id'])->roles()
             ->updateOrCreate(['role' => 'router'], ['status' => 'active', 'cluster_id' => $cluster->id]);
+    }
+    // The websocket role on one Node, as its convergence leaves it: the role, the server credentials and the
+    // site marked serving. The Reverb .env goes to up.py, which runs the pinned server (version 11).
+    if (isset($input['websocket'])) {
+        $node = Node::query()->findOrFail((int) $input['websocket']);
+        $node->roles()->firstOrCreate(['role' => 'websocket'], ['status' => 'active']);
+        $credentials = app(NativeWebSocketCredentialManager::class)->ensure($node);
+        app(WebSocketDnsTarget::class)->markServing($node->id);
+        echo json_encode(['websocket' => ['environment' => app(WebSocketEnvironmentRenderer::class)->render($credentials, (int) config('orbit.websocket.port')),
+            'unit' => app(WebSocketServiceUnitRenderer::class)->render('/opt/orbit/websocket', 'orbit', 'orbit', (int) config('orbit.websocket.port')),
+            'repository' => config('orbit.websocket.repository'), 'ref' => config('orbit.websocket.ref'), 'port' => (int) config('orbit.websocket.port')]]), PHP_EOL;
     }
     exit(0);
 }

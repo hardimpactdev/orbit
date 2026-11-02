@@ -32,6 +32,7 @@ URL = f'wss://swamp.orbit:{PORT}'
 IDENTITY = HOME / '.orbit/ssh/proof_worker_ed25519'
 BOOTSTRAP = HOME / '.orbit/ssh/id_ed25519'
 timings = []
+WEBSOCKET_PORT = 8790
 
 
 def run(argv, *, input=None, timeout=300, user=None, cwd=None, env=None):
@@ -295,7 +296,9 @@ def gateway(nodes):
     }
     environment = GATEWAY / '.env'
     private(environment, '\n'.join(f'{key}={value}' for key, value in settings.items()) + '\n')
-    # The Gateway's PHP user keeps its operation locks under ORBIT_HOME, as on a real Gateway, such as the Cluster Router lock.
+    # The Gateway's PHP user owns ORBIT_HOME, as on a real Gateway: it creates its locks and caches there,
+    # such as the Cluster Router lock and the agent-view cache (version 11).
+    run(['chown', f'{ACCOUNT}:{ACCOUNT}', str(HOME / '.orbit')])
     run(['install', '-d', '-m', '0700', '-o', ACCOUNT, '-g', ACCOUNT, str(HOME / '.orbit/locks')])
     run(['php', 'artisan', 'key:generate', '--force'], user=ACCOUNT, cwd=GATEWAY)
     run(['chown', 'orbit:orbit', str(database)])
@@ -317,7 +320,7 @@ def serve_gateway():
     tls = Path('/etc/caddy/proof-gateway-tls')
     tls.mkdir(exist_ok=True, mode=0o750)
     run(['openssl', 'req', '-new', '-newkey', 'rsa:2048', '-nodes', '-subj', '/CN=gateway.orbit', '-keyout', str(tls / 'key.pem'), '-out', str(tls / 'leaf.csr')])
-    (tls / 'leaf.ext').write_text('basicConstraints=critical,CA:FALSE\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:gateway.orbit\n')
+    (tls / 'leaf.ext').write_text('basicConstraints=critical,CA:FALSE\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:gateway.orbit,DNS:reverb.orbit\n')
     run(['openssl', 'x509', '-req', '-in', str(tls / 'leaf.csr'), '-CA', str(ca / 'root.pem'), '-CAkey', str(ca / 'root.key'),
          '-CAcreateserial', '-days', '2', '-extfile', str(tls / 'leaf.ext'), '-out', str(tls / 'cert.pem')])
     run(['chown', '-R', 'root:caddy', str(tls)])
@@ -338,9 +341,69 @@ def serve_gateway():
         f'{{\n    auto_https off\n    admin off\n}}\nhttps://gateway.orbit {{\n    bind {address}\n'
         f'    tls {tls}/cert.pem {tls}/key.pem\n    rewrite * /index.php?{{query}}\n'
         f'    reverse_proxy unix//run/php/proof-gateway.sock {{\n        transport fastcgi {{\n            root {GATEWAY}/public\n'
-        f'            split .php\n        }}\n    }}\n}}\n')
+        f'            split .php\n        }}\n    }}\n}}\n'
+        # Reverb of the websocket role on this Node, as its Caddy site serves it (version 11).
+        f'https://reverb.orbit {{\n    bind {address}\n    tls {tls}/cert.pem {tls}/key.pem\n'
+        f'    reverse_proxy 127.0.0.1:{WEBSOCKET_PORT}\n}}\n')
+    # The fleet's member trust: Nodes reach gateway.orbit and reverb.orbit over the private network (version 11).
+    run(['ufw', 'allow', 'in', 'on', TOPOLOGY['network']['name'], 'to', address, 'port', '443', 'proto', 'tcp', 'comment', 'orbit-proof gateway'])
     run(['systemctl', 'enable', 'php8.5-fpm', 'caddy'])
     run(['systemctl', 'restart', 'php8.5-fpm', 'caddy'])
+
+
+def request(path, body, seconds=600):
+    """One real API call as the operator through the Gateway HTTP kernel; an Operation is followed to its end."""
+    reply = json.loads(run(['php', str(SOURCE / 'tools/swamp-proof-guest/gateway.php'), 'request'], user=ACCOUNT, cwd=GATEWAY, timeout=seconds + 120,
+                           input=json.dumps({'caller': TOPOLOGY['operator']['address'], 'method': 'POST', 'path': path, 'body': body,
+                                             'key': 'up-' + path.replace('/', '-'), 'seconds': seconds})).strip().splitlines()[-1])
+    if (reply.get('operation') or {}).get('status') != 'succeeded':
+        raise RuntimeError(f'{path} did not succeed: ' + json.dumps({k: reply.get(k) for k in ('http_status', 'operation', 'job_errors')})[:1500])
+
+
+@step('realtime')
+def realtime(ids):
+    """Reverb, the agent-view subscriber and a running Node agent (version 11).
+
+    The websocket role runs on this VM (Node 209) as its convergence leaves it: the Gateway issues the server
+    credentials and renders the .env and unit, and the pinned orbit-reverb release serves behind reverb.orbit.
+    The role's own convergence needs a per-Node worker the topology has not. A Node with `agent` converges through
+    the real node:converge, which installs and starts orbit-agent; a staged agent delivery then replaces the binary.
+    """
+    if TOPOLOGY.get('websocket'):
+        lines = run(['php', str(SOURCE / 'tools/swamp-proof-guest/gateway.php'), 'fixture'], user=ACCOUNT, cwd=GATEWAY,
+                    input=json.dumps({'websocket': ids['gateway']})).strip().splitlines()
+        plan = json.loads(lines[-1])['websocket']
+        install = Path('/opt/orbit/websocket')
+        if not (install / 'artisan').exists():
+            run(['install', '-d', '-o', ACCOUNT, '-g', ACCOUNT, str(install)])
+            run(['git', 'clone', '-q', plan['repository'], str(install)], user=ACCOUNT, timeout=600)
+        run(['git', '-C', str(install), 'checkout', '-q', '--detach', plan['ref']], user=ACCOUNT)
+        run(['composer', 'install', '--no-interaction', '--no-progress', '--prefer-dist', '--no-dev', '--optimize-autoloader'],
+            user=ACCOUNT, cwd=install, timeout=900)
+        # The pinned server also refuses to start without a notification token, which no Gateway path renders yet;
+        # a fresh one lets it boot (reported to the orchestrator 2026-11-02).
+        private(install / '.env', plan['environment'] + 'REVERB_NOTIFICATION_TOKEN=' + secrets.token_hex(32) + '\n')
+        run(['chown', f'{ACCOUNT}:{ACCOUNT}', str(install / '.env')])
+        Path('/etc/systemd/system/orbit-websocket.service').write_text(plan['unit'])
+        run(['systemctl', 'daemon-reload'])
+        run(['systemctl', 'enable', 'orbit-websocket'])
+        run(['systemctl', 'restart', 'orbit-websocket'])
+    unit = Path('/etc/systemd/system/orbit-proof-agent-view.service')
+    unit.write_text('[Unit]\nDescription=Orbit proof agent-view subscriber\nAfter=network.target\n\n[Service]\nType=simple\n'
+                    f'User={ACCOUNT}\nGroup={ACCOUNT}\nWorkingDirectory={GATEWAY}\nExecStart=/usr/bin/php {GATEWAY}/artisan orbit:agent-view\n'
+                    'Restart=always\nRestartSec=2\n\n[Install]\nWantedBy=multi-user.target\n')
+    run(['systemctl', 'daemon-reload'])
+    run(['systemctl', 'enable', 'orbit-proof-agent-view'])
+    run(['systemctl', 'restart', 'orbit-proof-agent-view'])
+    delivery = SOURCE.parent / 'agent-delivery/orbit-agent-linux-x86_64'
+    for node in TOPOLOGY['nodes']:
+        if not node.get('agent'):
+            continue
+        request(f'nodes/{ids[node["key"]]}/converge', {})
+        if delivery.is_file():
+            run(['incus', 'file', 'push', '--mode', '0755', str(delivery), f'{node["key"]}/usr/local/bin/orbit-agent'])
+            run(['incus', 'exec', node['key'], '--', 'systemctl', 'restart', 'orbit-agent'])
+        run(['incus', 'exec', node['key'], '--', 'systemctl', 'is-active', '--quiet', 'orbit-agent'])
 
 
 def main():
@@ -349,6 +412,7 @@ def main():
     nodes = target()
     swamp()
     seeded = gateway(nodes)
+    realtime(seeded['nodes'])
     facts = {'ready': True, 'commit': run(['git', '-C', str(SOURCE), 'rev-parse', 'HEAD'], user=ACCOUNT).strip(),
              'topology': TOPOLOGY['name'], 'topology_version': TOPOLOGY['version'], 'nodes': seeded['nodes'],
              'operator_address': TOPOLOGY['operator']['address'], 'target': nodes[0], 'targets': nodes, 'timings': timings}
