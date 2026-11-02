@@ -1,0 +1,94 @@
+sequenceDiagram
+  %% Target design: swamp/workflows/workflow-operation-task-vm-upcloud-image-build.yaml, docs/reference/compute-drivers.md#build-the-upcloud-template and #sweep-upcloud, swamp/docs/task-vm-lifecycle.md (inline UpCloud curl on 209), docs/cli/README.md design rules R2-R4.
+  %% Tightened: flow-tighten 2026-11-02, rules 4 (no Gateway reads or progress writes from steps), 15 (no `admit` step), 3 (no in-run leftover sweep: the host sweep owns it), 1 and 19 (`delete-builder`, `delete-smoke` fold into the cleanup), 6 (stop and templatize merge), 18 (cleanup as one forEach), 22 (curl on 209, guest actions as `@swamp/ssh exec` argv, Pi by `@swamp/ssh copy`).
+  %% status: draft
+  %% command: none · UpCloud template build for a recipe
+  %% kind: task_vm.upcloud_image_build
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane UC icon=server pill=target tone=purple
+  %% lane G icon=server pill=target tone=amber
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant UC as UpCloud API<br/>HTTPS from 209
+  participant G as Build servers<br/>reached over ssh
+  Note over GW: Admit attempt 9<br/>UpCloud · task #5182
+  %%> Started by:
+  %%> - `php artisan task-vms:build-upcloud-image`, `task-vms:build-recipe --retry` or `--rebuild`, or `RefreshUpCloudTaskVmBaseImage` when no verified template matches the deployed recipe
+  %%> Requirements:
+  %%> - UpCloud is configured and no other UpCloud build runs; the ledger records attempt 9 before any remote work
+  %%> Result:
+  %%> - the Gateway generates the builder and smoke host key pairs and copies them, the UpCloud token and the Pi build reference into the vault (R3)
+  %%> - the intent holds the recipe, identity, build name, both public host keys, the SSH identity, the agent pin and the templates pinned by live VMs
+  GW->>SW: Start run, full intent<br/>task-vm-upcloud-image-build
+  %%> Inputs:
+  %%> - `operation_id`, `node_id`, `kind`, the full public `intent`, and vault key names only: `task-vm-upcloud-token`, `task-vm-image-bootstrap-9`
+  %%> Runs as:
+  %%> - every step on 209 (`labels: {role: swamp}`), not on the Gateway Node's worker (R4)
+  %%> Not included:
+  %%> - no `admit` step and no in-run key generation (rules 15, 4)
+  SW->>UC: Launch the builder<br/>launch-builder · POST /server
+  %%> How:
+  %%> - one inline `curl` on 209; the token reaches the request through `--variable`, never argv
+  %%> - stock Ubuntu 26.04 template, builder user-data with the admitted host key, labels `orbit-task-image`
+  %%> Returns:
+  %%> - the server UUID and address, kept as step output for later steps and the cleanup
+  SW->>G: Boot the builder<br/>boot-builder · image.owner
+  %%> How:
+  %%> - official `@swamp/ssh exec` with the admitted host key pinned before the first connection
+  %%> - `cloud-init status --wait`, the pinned agent copied and checked by `agent.install`, `image.owner` for UID and GID 1000, `image.inspect-phase` for the boot id
+  opt recipe pins a Pi build
+    SW->>G: Copy the Pi build<br/>@swamp/ssh copy · sha256
+    %%> How:
+    %%> - one official `@swamp/ssh copy` of the pinned binary to `/var/cache/orbit/pi/<sha256>.bin`; the `pi` phase checks it against its pin
+    %%> Replaces:
+    %%> - the chunked `pi.receive-artifact` transfer through the Gateway artifact callback
+  end
+  loop each recipe phase
+    SW->>G: Run the phase<br/><phase>-start · wait · inspect
+    %%> Phases:
+    %%> - `apt-source`, `packages`, `javascript`, `rust`, `agent`, `pi`, as in the Incus build
+    %%> How:
+    %%> - `image.start-phase` returns the main PID, `timeout 1500 tail --pid=PID -f /dev/null` waits, `image.inspect-phase` must report `complete` for the same boot id
+    %%> - each is one `@swamp/ssh exec` argv: `sudo -n -- orbit-agent command <name>` with the agent envelope on stdin
+  end
+  SW->>G: Prepare and clean<br/>prepare-image · clean
+  %%> What it does:
+  %%> - `image.recipe-marker`, `image.verify`, `image.boot`, `image.firewall` (ufw on, only `orbit:public-ssh-recovery` open), then `image.clean`
+  SW->>UC: Make the template<br/>stop-builder · templatize
+  %%> How:
+  %%> - stop the builder, turn its disk into `orbit-task-base-<time>-unverified`, and wait until the storage is online, all in one step (rule 6)
+  %%> Returns:
+  %%> - the template UUID, which the Gateway reads from this step's output (rule 4)
+  SW->>UC: Launch the smoke server<br/>launch-smoke · from template
+  %%> How:
+  %%> - the task VM user-data with the smoke host key; the builder stays until the cleanup removes it
+  SW->>G: Smoke the template<br/>boot-smoke · smoke · image.check
+  %%> How:
+  %%> - boots as in step 3, then `image.verify` and `image.check` with the firewall check
+  %%> Result:
+  %%> - a failed smoke check stops the build before promotion
+  SW->>UC: Promote and prune<br/>promote · prune · complete
+  %%> What it does:
+  %%> - sets the `orbit.recipe` label, renames the template to `orbit-task-base-<time>`, then deletes older verified templates except the two newest and those pinned by live VMs
+  %%> End check:
+  %%> - the native `assert` step `complete` checks the promoted template UUID; this is the one end check (rule 9)
+  SW->>UC: Delete the build servers<br/>cleanup · completed · forEach
+  %%> What it does:
+  %%> - one `forEach` deletes the builder and smoke servers with their storage; after a failure it also deletes the unverified template
+  %%> When:
+  %%> - always, with the condition `completed` (rule 19); it replaces the separate `delete-builder` and `delete-smoke` steps
+  %%> On failure:
+  %%> - `task_vm.image_cleanup_failed`; the next host sweep removes what stays
+  alt template promoted
+    SW-->>GW: Run succeeded<br/>template_uuid
+    Note over GW: Record attempt 9<br/>succeeded · template verified
+    %%> Result:
+    %%> - new UpCloud claims for this recipe use the template; the Gateway clears the vault copies
+  else a step fails
+    SW--xGW: Run failed<br/>error_code, failed step
+    Note over GW: Mark attempt 9 failed<br/>previous template stays
+    %%> Result:
+    %%> - reconcile alerts for the identity; `task-vms:build-recipe --retry` records a new attempt
+  end

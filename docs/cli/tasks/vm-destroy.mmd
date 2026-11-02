@@ -1,0 +1,86 @@
+sequenceDiagram
+  %% Target design: swamp/workflows/workflow-operation-task-vm-destroy.yaml (+ task-vm-destroy, provider-power, model-revoke, operation-node-remove children), docs/reference/compute-drivers.md, docs/reference/task-vm-native-provision.md, docs/reference/tasks.md, DECISIONS R1-R4.
+  %% Tightened: flow-tighten 2026-11-02, rules 6, 9, 14, 15, 16, 17, 18, 20, 22 (no decode or report steps; revoke beside delete prep; one forced delete with the seed volume; one end check).
+  %% status: draft
+  %% command: none · group end or the host sweep
+  %% kind: task_vm.destroy
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane H icon=server pill=target tone=amber
+  %% lane HUB icon=server pill=target tone=purple
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant H as Task VM host<br/>Node 13 over ssh
+  participant HUB as VPN hub<br/>reached over ssh
+  Note over GW: Validate, record the task<br/>task VM 333 · task #5181 · Node 13
+  %%> Started by:
+  %%> - the `DestroyTaskVm` job, when group 77 completes or is cancelled, or its workspace is removed
+  %%> - the task VM host sweep, for a retired or `destroying` VM; there is no CLI command
+  %%> Requirements:
+  %%> - no other task holds `task_vm:333`; a repeated admission returns the same open task
+  %%> - no workspace, Route, protected Node resource or unpublished approved work remains on guest Node 340
+  %%> Result:
+  %%> - task VM 333 is `destroying`; guest Node 340 is `removing`
+  %%> - task #5181 records the provider input, whether a model key exists, the seed volume and the Node removal intent
+  %%> - vault copies for the model key, the router keys and, for UpCloud, the API token
+  GW->>SW: Start run, full intent<br/>operation-task-vm-destroy
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - the intent and `execution_secrets` as vault key names
+  %%> - the Gateway computes `model_required` and the seed argv; no `plan` decode step reads them (rule 15)
+  SW->>SW: Revoke the model key<br/>model · task-vm-model-revoke
+  %%> What it does:
+  %%> - removes VM 333's model key from the model router from 209 and confirms the anchor key stays
+  %%> When:
+  %%> - a `guard` skips it when VM 333 has no model key
+  %%> Why first:
+  %%> - the provider delete waits for it, so a deleted VM never leaves a live key
+  %%> Held open:
+  %%> - one 209 script until an official HTTP behavior covers the router API
+  SW->>H: Delete the VM<br/>delete · incus delete --force
+  %%> What it does:
+  %%> - one argv on Node 13 deletes `tvm-333`, running or stopped, and its seed volume; an absent VM or volume counts as done
+  %%> Per provider:
+  %%> - UpCloud overflow: the API stops the server, then deletes it with its storage, from 209
+  %%> Replaces:
+  %%> - `plan`, `inspect`, `stop`, `revoked`, `seed-before`, `seed` and `seed-delete` (rules 6, 15, 16)
+  %%> Cancel:
+  %%> - after this step succeeds, the task can no longer be cancelled
+  SW->>SW: Forget the guest host key<br/>vm-known-hosts · 209 known_hosts
+  %%> What it does:
+  %%> - removes the guest address from the 209 worker's `known_hosts`, so the next VM there brings its own key
+  %%> Why:
+  %%> - mirrors `Pin the guest host key` in provision (rule 17)
+  %%> When:
+  %%> - in parallel with the Node removal; a `guard` skips it when the VM had no WireGuard address
+  SW->>HUB: Remove the guest Node<br/>cleanup · operation-node-remove
+  %%> What it does:
+  %%> - canonical Node removal of Node 340 under this run: removes its hub peer file and reloads the peer set
+  %%> - no guest probe or SSH to the deleted VM
+  %%> When:
+  %%> - a `guard` skips it when Node 340 is already gone
+  SW->>H: Check the VM is gone<br/>check · incus list · volume list
+  %%> What it does:
+  %%> - one argv reads the VM and its seed volume on Node 13; Swamp's `assert` checks both are absent
+  %%> Replaces:
+  %%> - `seed-after`, `result` and the root `result` print (rules 9, 14)
+  alt every step passes
+    SW-->>GW: Run succeeded<br/>tvm-333 destroyed
+    %%> How the Gateway learns it:
+    %%> - its run reader sees the terminal event and reads the `check` step's outputs
+    %%> Result:
+    %%> - removes Node 340 and its Process records, marks task VM 333 `destroyed` and clears its Pi token
+    %%> - task #5181 succeeds; the host slot is free for the next claim
+  else a step fails
+    H--xSW: exit ≠ 0 or timeout
+    %%> When:
+    %%> - the revoke, the delete, the Node removal or the check fails
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> Result:
+    %%> - task #5181 fails; task VM 333 stays `destroying` with the error and keeps its credentials and cleanup intent
+    %%> - Node 340 becomes `failed` with `failed_step` `remove:operation`
+    %%> Retry:
+    %%> - the host sweep admits the VM again; the guards skip finished work
+  end

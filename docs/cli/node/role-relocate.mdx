@@ -31,3 +31,7 @@ For `websocket`, the Gateway copies the Reverb server's Laravel `APP_KEY` only w
 When a step on the target or the source fails, the role already runs on the target. The command fails with its usual code, `details.step` set to `converge:STEP` or `remove:STEP`, and `details.error_code` set to the step's own code. The message names the `--from` command that finishes the move. The Gateway reconciles Metrics once, after the source is done. A failed reconcile does not fail the move: `follow_up` names the Metrics Node and the `orbit node:role:add <metrics-node> metrics --converge` command.
 
 Use `--idempotency-key=KEY` to retry the same native role admission.
+
+## How it works
+
+<div className="flow-at" data-chart="node/role-relocate"></div>

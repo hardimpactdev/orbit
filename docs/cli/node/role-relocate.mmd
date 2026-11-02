@@ -1,0 +1,163 @@
+sequenceDiagram
+  %% Target design: ADR 0243/0244 task, DECISIONS R1-R4 + 5 (shared SSH identity), node.role_add and node.role_remove charts. swamp/workflows/workflow-operation-node-role-relocate-direct.yaml, docs/cli/node/role-relocate.mdx, docs/solutions/relocate-gateway-role.mdx.
+  %% Tightened: flow-tighten 2026-11-02, rules 4, 6, 8, 9, 14, 15, 17, 18, 22 (no admit read-back, no per-stage asserts or projection step; target steps mirror role:add, source steps mirror role:remove).
+  %% status: draft
+  %% command: node:role:relocate
+  %% kind: node.role_relocate
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane S icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Node 12<br/>gets the role
+  participant S as Node 7<br/>gives up the role
+  CLI->>GW: node:role:relocate 12<br/>websocket --from=7 --force
+  %%> Command:
+  %%> - `orbit node:role:relocate 12 websocket --from=7 --force`
+  %%> - syntax: `<node> <role> [--from=NODE] [--force] [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the target Node, by id or exact name, and the role: `gateway`, `websocket` or `metrics`
+  %%> - `--from`: the source Node; omit it to use the current holder
+  %%> - `--force` confirms the move; it is required without a terminal and with `--json`
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  opt role is swamp
+    Note over GW: open: Nick decides<br/>live relocation of swamp
+    %%> Today:
+    %%> - refused with `validation.failed`: serve on the `swamp` Node runs every Swamp run, so a run cannot move it
+    %%> Open:
+    %%> - how a live move of the `swamp` role works; Nick decides
+  end
+  Note over GW: Validate, move the role<br/>role: provisioning · task #5180
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12
+  %%> - the role is relocatable, and `--force` is given
+  %%> - Node 7 holds the role; on a retry Node 12 holds it and `--from=7` names the same admitted move
+  %%> - Node 12 and Node 7 are active, managed Linux Nodes; Node 12 holds no role that conflicts
+  %%> - one role operation per Node: the Gateway holds the role lock for Node 12 and waits up to 2 minutes for a busy one
+  %%> What it does:
+  %%> - moves the `websocket` assignment to Node 12 with status provisioning; one assignment stays active the whole time
+  %%> - copies role settings that Node 12 lacks, such as Reverb's `APP_KEY`; it never overwrites one
+  %%> - for `gateway`: gives Node 12 an access grant to the `vpn` and `metrics` Nodes
+  %%> Builds:
+  %%> - the role plan for Node 12, the removal plan for Node 7, the publication, certificate and Metrics changes
+  %%> Secrets:
+  %%> - role credentials go to the Swamp vault as execution copies; the inputs hold only their key names
+  %%> Result:
+  %%> - task #5180 recorded with the full intent; nothing has happened on a Node yet
+  GW->>SW: Start run, full intent<br/>operation-node-role-relocate
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - both plans with their files and digests, and the vault key names
+  %%> - the addresses and SSH host keys of Node 12, Node 7 and the fleet Nodes that publish; the SSH identity comes from the `swamp` role
+  %%> Not included:
+  %%> - no step reads the intent back from the Gateway; the inputs are the intent
+  GW-->>CLI: 202 Accepted<br/>task #5180
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>N: Apply the role runtime<br/>cfgmgmt apt · file · systemd
+  %%> What it does:
+  %%> - the same steps as `node:role:add`: prerequisites, then the files, units and services of the role
+  %%> - `websocket`: the Reverb service; `metrics`: Prometheus and Grafana; `gateway`: the Gateway Caddy site
+  %%> How:
+  %%> - official `@swamp/cfgmgmt` behaviors over SSH from 209, in parallel where steps don't depend on each other
+  %%> - each behavior's `check` replaces the per-stage read-backs
+  %%> Rerun:
+  %%> - a guard skips a part whose digest Node 12 already has
+  opt role needs a certificate
+    SW->>GW: Sign the role certificate<br/>operation:direct:certificate-sign
+    %%> When:
+    %%> - the role serves TLS with an Orbit certificate, such as `websocket`
+    %%> How:
+    %%> - a step creates the key on Node 12 and reads only the CSR; the Gateway signs it with the Orbit CA
+    %%> Why:
+    %%> - the one call a step may make to the Gateway
+    GW-->>SW: Signed certificate<br/>leaf + chain
+    %%> What happens next:
+    %%> - Swamp writes the certificate beside its key on Node 12
+  end
+  SW->>N: Publish on Node 12<br/>@swamp/cfgmgmt file · firewall
+  %%> What it does:
+  %%> - publishes the role's Caddy sites and PHP pools, validates them and reloads gracefully
+  %%> - opens the role's managed firewall rules, such as `orbit:gateway-https`
+  %%> - points the role's private DNS names, such as the Reverb host, at Node 12 through the shared DNS step on the `vpn` Node
+  %%> - `gateway`: adds the private DNS route on Node 12
+  %%> How:
+  %%> - one `forEach` across the publishing Nodes
+  %%> Order:
+  %%> - Node 12 serves before anything leaves Node 7
+  SW->>S: Withdraw from Node 7<br/>Caddy sites · firewall · grace
+  %%> What it does:
+  %%> - withdraws the role's Caddy sites, PHP pools and firewall rules from Node 7
+  %%> - `websocket`: waits for old private DNS answers to expire, so clients reach Node 12 first
+  %%> Order:
+  %%> - runs only after Node 12 serves the role
+  %%> Mirrors:
+  %%> - the withdraw step of `node:role:remove`
+  SW->>S: Remove the role runtime<br/>@swamp/cfgmgmt systemd · file
+  %%> What it does:
+  %%> - disables the role's services and removes its units, managed files and certificates
+  %%> - `gateway`: removes the private DNS route; Caddy and PHP-FPM keep running, so old clients still work
+  %%> Keeps:
+  %%> - role data, the Gateway checkout, its database, the Orbit CA and the SSH keys
+  %%> How:
+  %%> - official `@swamp/cfgmgmt` behaviors with `ensure: absent`, the same steps as `node:role:remove`
+  opt a Metrics role exists
+    Note over SW: Reconcile Metrics<br/>best effort · follow_up
+    %%> When:
+    %%> - a Metrics Node scrapes the role's exporters
+    %%> What it does:
+    %%> - validates and publishes the Prometheus config with the new target, then reloads Prometheus
+    %%> If it fails:
+    %%> - the move still succeeds; `follow_up` names `orbit node:role:add <metrics-node> metrics --converge`
+  end
+  SW->>N: Check both Nodes<br/>@swamp/cfgmgmt check
+  %%> What it does:
+  %%> - checks the role's services are active and answer on Node 12
+  %%> - checks the role's units, files and sites are gone from Node 7
+  %%> Why:
+  %%> - one end check; the move only counts when both Nodes show it
+  alt every step passes
+    N-->>SW: role on 12, gone from 7
+    %%> Returns:
+    %%> - the check passed on both Nodes
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; no step reports back
+    Note over GW: Record result<br/>role: active · task succeeded
+    %%> Result:
+    %%> - the `websocket` role on Node 12 becomes active, with the digest of each applied part
+    %%> - Node 7 no longer holds it
+    %%> - task #5180 succeeds
+  else a step fails
+    N--xSW: exit ≠ 0 or no match
+    %%> When:
+    %%> - a package, file, unit, certificate, publication, withdrawal or check step fails
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Mark the role failed<br/>converge:STEP or remove:STEP
+    %%> Result:
+    %%> - the role stays assigned to Node 12, marked failed with the step's own error code
+    %%> - task #5180 fails
+    %%> On the Nodes:
+    %%> - finished steps stay; there is no rollback
+    %%> - a failure on Node 7 leaves the role serving from Node 12
+    %%> Retry:
+    %%> - run `orbit node:role:relocate 12 websocket --from=7 --force` after fixing the cause; guards skip finished steps
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5180
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end

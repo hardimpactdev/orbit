@@ -1,0 +1,81 @@
+sequenceDiagram
+  %% Target design: swamp/workflows/workflow-operation-task-vm-cache-fill.yaml, docs/reference/compute-drivers.md#shared-package-cache, docs/cli/README.md design rules R2-R4 (GitHub token minted at admission, vault key names only).
+  %% Tightened: flow-tighten 2026-11-02, rules 4 (no Gateway read, private-material callback or per-batch projection from a step), 5 and 16 (admission sends only artifacts missing from the recorded inventory; no `.inventory.json` read), 15 (validation and batching move to admission), 18 (one forEach per artifact, in parallel), 9 (one inventory read as the end check), 19 (staging cleanup on completed), 22 (cfgmgmt `file` for the directory, `@swamp/ssh exec` argv for curl, sha check and install; no host-local TypeScript worker).
+  %% status: draft
+  %% command: none · package cache fill after a lockfile change
+  %% kind: task_vm.fill_package_cache
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane H icon=server pill=target tone=amber
+  %% lane A icon=server pill=target tone=purple
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant H as Incus host<br/>Node 13 over ssh
+  participant A as Archive hosts<br/>GitHub · npm
+  Note over GW: Admit the cache fill<br/>host Node 13 · task #5182
+  %%> Started by:
+  %%> - the `builds` queue, after a default-branch lockfile change in a Project's Git mirror; pending fills coalesce per host
+  %%> Requirements:
+  %%> - Node 13 is an active task VM host; no other fill of its cache is open, else the open one is returned
+  %%> What it does:
+  %%> - validates each archive URL, cache key and integrity, drops integrity conflicts, and keeps only artifacts the recorded inventory of Node 13 lacks or holds with a bad digest
+  %%> - mints a GitHub App installation token with only `metadata: read` and copies it to the vault as `task-vm-package-cache-github-13`
+  GW->>SW: Start run, full intent<br/>operation-task-vm-cache-fill
+  %%> Inputs:
+  %%> - `operation_id`, `node_id` 13, `kind`, the artifact list (manager, URL, integrity, cache key, artifact id), the byte budget, and the SSH target with host keys
+  %%> - the vault key name `task-vm-package-cache-github-13`, never the token
+  %%> Runs as:
+  %%> - every step on 209 over official `@swamp/ssh`; Node 13 needs no Swamp worker (R4)
+  SW->>H: Claim the cache directory<br/>@swamp/cfgmgmt file · .orbit-owned
+  %%> What it does:
+  %%> - `@swamp/cfgmgmt file` ensures `/var/lib/orbit/package-cache` (root, `0755`) and its `.orbit-owned` marker; its check refuses a symlink or a foreign owner
+  %%> Refuses:
+  %%> - a non-empty directory without the marker: `task_vm.package_cache_failed`
+  opt a cached file failed its digest
+    SW->>H: Quarantine bad files<br/>quarantine · mv -T · forEach
+    %%> What it does:
+    %%> - moves each file whose bytes no longer match the recorded digest into `quarantine/`; quarantine bytes count toward the budget
+  end
+  loop forEach missing artifact
+    SW->>H: Download the archive<br/>fetch · curl -K - · staging
+    %%> How:
+    %%> - one `@swamp/ssh exec` argv: `curl --fail --proto =https --max-filesize 512M -K -` into a private staging file
+    %%> - for GitHub URLs the `Authorization` header arrives on stdin from `vault.get`; it never enters argv, environment, files or results; npm gets no token
+    %%> Runs as:
+    %%> - one behavior per artifact, `package-cache-13-<artifact id>`, so downloads run in parallel without one lock (rule 18)
+    H->>A: GET the locked archive<br/>HTTPS · redirects checked
+    %%> Allowed:
+    %%> - public npm registry tarballs and GitHub commit archives through the API or codeload; a GitHub redirect must keep the locked commit
+    A-->>H: Archive bytes<br/>at most 512 MiB
+    %%> Result:
+    %%> - the bytes land in the staging file only
+    SW->>H: Verify and place<br/>verify · sha*sum -c · install
+    %%> How:
+    %%> - `sha512sum --check` (or `sha1sum`, `sha256sum`) with the lockfile digest on stdin exits non-zero on a mismatch
+    %%> - `install -D -m 0644` moves the archive to its cache key; Composer archives without a checksum record their SHA-256 on first fill
+    %%> On failure:
+    %%> - this artifact fails; the other artifacts continue
+  end
+  SW->>H: Read the cache inventory<br/>inventory · sha256sum
+  %%> End check:
+  %%> - one `sha256sum` of every admitted cache key, run with the condition `completed` so it also follows failed artifacts
+  %%> - the native `assert` passes only when every admitted key is present (rule 9)
+  %%> Returns:
+  %%> - the verified hashes the Gateway records
+  SW->>H: Remove the staging files<br/>cleanup · completed
+  %%> When:
+  %%> - always, with the condition `completed` (rule 19); best effort
+  alt every archive cached
+    SW-->>GW: Run succeeded<br/>hashes per cache key
+    Note over GW: Record the host inventory<br/>Projects no longer pending
+    %%> Result:
+    %%> - the inventory rows for Node 13 hold each archive's SHA-256; new workspaces seed from them
+  else an artifact failed
+    SW--xGW: Run failed<br/>task_vm.package_cache_failed
+    %%> Result:
+    %%> - the Gateway records the archives that the inventory read verified; each failed key is logged with Node 13
+    Note over GW: Keep the Projects pending<br/>next mirror fetch retries
+    %%> Result:
+    %%> - a full cache also lands here; workspaces download misses privately
+  end

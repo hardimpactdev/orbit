@@ -1,11 +1,9 @@
-conn.gateway_sessions_revoke
 node.bootstrap_host
 node.bootstrap_install
 node.bootstrap_probe
 node.bootstrap_verify
 node.macos_inspect
 node.prepare_php_packages
-node.role_relocate
 node.worker_known_hosts
 process.install_instance_definitions
 route.caddy_converge
@@ -15,13 +13,6 @@ route.public_verify
 route.withdraw
 route.workload_verify
 schedule.install_instance_definitions
-task_vm.destroy
-task_vm.fill_package_cache
-task_vm.image_build
-task_vm.provision
-task_vm.resume
-task_vm.sweep_host
-task_vm.upcloud_image_build
 tasks.analyze
 tasks.maintenance
 tasks.maintenance_finish

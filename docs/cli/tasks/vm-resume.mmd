@@ -1,0 +1,77 @@
+sequenceDiagram
+  %% Target design: swamp/workflows/workflow-operation-task-vm-resume.yaml (+ task-vm-provider-power, task-vm-ssh-prepare children), docs/reference/compute-drivers.md, docs/reference/task-vm-native-resume.md, docs/reference/tasks.md, DECISIONS R1-R4.
+  %% Tightened: flow-tighten 2026-11-02, rules 1, 2, 6, 7, 9, 10, 14, 15, 16, 20, 22 (one guarded start with its bounded wait; SSH preparation only when converging; one end check, no digest re-check or result print).
+  %% status: draft
+  %% command: none · a workspace operation wakes the VM
+  %% kind: task_vm.resume
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane H icon=server pill=target tone=amber
+  %% lane VM icon=server pill=target tone=purple
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant H as Task VM host<br/>Node 13 over ssh
+  participant VM as Task VM<br/>tvm-333 over ssh
+  Note over GW: Validate, record the task<br/>task VM 333 · task #5181 · Node 13
+  %%> Started by:
+  %%> - `WakeTaskVmAction`, when a workspace operation needs parked VM 333 or finds a `ready` VM stopped
+  %%> - the operator command `task-vms:resume 333` on the Gateway; there is no orbit CLI command
+  %%> Requirements:
+  %%> - task VM 333 is `parked`, or `ready` for a convergence
+  %%> - no other task holds `task_vm:333`; a repeated admission returns the same open task
+  %%> Result:
+  %%> - task #5181 records the host, the VM, guest Node 340, its recorded host key pin and mode `resume` or `converge`
+  %%> - clears the stop proof; for UpCloud, a vault copy of the API token
+  GW->>SW: Start run, full intent<br/>operation-task-vm-resume
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - the intent and `execution_secrets` as vault key names
+  %%> - the input schema validates the intent; no `eligible` assert re-checks it (rule 15)
+  SW->>H: Start the VM<br/>provider · incus start · wait
+  %%> What it does:
+  %%> - one argv on Node 13: `incus start tvm-333`, then `incus wait tvm-333 agent --timeout 120`
+  %%> - a `guard` skips the start when the VM already runs (rule 20)
+  %%> Per provider:
+  %%> - UpCloud overflow: the API start from 209, with the token from the vault, then one bounded observation
+  %%> Replaces:
+  %%> - `input`, `incus-before`, `before`, `incus-action`, `incus-after` and `result` of `task-vm-provider-power`
+  opt VM was ready (converge)
+    SW->>VM: Converge 209 SSH access<br/>ssh · authorized key · TCP 22
+    %%> When:
+    %%> - mode `converge`; a parked VM kept its SSH access on its disk, so a resume skips this (rule 1)
+    %%> What it does:
+    %%> - one pinned exec each for 209's authorized key, the TCP 22 rule for 209 and `sshd`
+    %%> Replaces:
+    %%> - the `task-vm-ssh-prepare` child; `package` and `host-keys` belong to provision (rule 2)
+    Note over SW: open: Nick decides<br/>converge as its own kind?
+    %%> Why:
+    %%> - convergence of a running VM shares this kind today; it is not a resume
+  end
+  SW->>VM: Check the guest is ready<br/>check · agent, Pi capabilities
+  %%> What it does:
+  %%> - one pinned exec over WireGuard reads `orbit-agent` status and the Pi capabilities with the Pi token file; Swamp's `assert` checks them
+  %%> Not included:
+  %%> - the Pi build digest check: the parked disk holds the build that provision proved (rule 1)
+  %%> Replaces:
+  %%> - `artifact`, `pi`, `runtime-confirmed` and the `result` print (rules 9, 14)
+  alt every step passes
+    SW-->>GW: Run succeeded<br/>tvm-333 ready
+    %%> How the Gateway learns it:
+    %%> - its run reader sees the terminal event and reads the `check` step's outputs
+    %%> Result:
+    %%> - task VM 333 is `ready`; the waiting workspace operation goes on
+    %%> - task #5181 succeeds
+  else a step fails
+    VM--xSW: exit ≠ 0 or timeout
+    %%> When:
+    %%> - the VM does not start within 120 seconds, or the agent or Pi does not answer
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> Result:
+    %%> - task #5181 fails; a parked VM 333 becomes `failed` with the error
+    %%> On the Node:
+    %%> - the VM may stay running; there is no rollback
+    %%> Retry:
+    %%> - a failed VM stays final; the group asks for assistance, and `tasks:cancel` destroys the VM
+  end

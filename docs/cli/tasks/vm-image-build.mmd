@@ -1,0 +1,116 @@
+sequenceDiagram
+  %% Target design: swamp/workflows/workflow-operation-task-vm-image-build.yaml, docs/reference/compute-drivers.md#build-the-base-image and #the-topology-seed, docs/cli/README.md design rules R2-R4.
+  %% Tightened: flow-tighten 2026-11-02, rules 14 (no `*-reply` check steps), 15 (no `plan` step), 16 (pid read folds into phase start), 6 (boot, prepare, smoke merges), 8 (owner check before the phases), 18 (reset and cleanup as one forEach; Pi staging beside boot), 19 (cleanup on completed), 22 (each Node action one `@swamp/ssh exec` argv).
+  %% status: draft
+  %% command: none · recipe image build for an Incus host
+  %% kind: task_vm.image_build
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane H icon=server pill=target tone=amber
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant H as Incus host<br/>Node 13 over ssh
+  Note over GW: Admit build 61<br/>host Node 13 · task #5182
+  %%> Started by:
+  %%> - `php artisan task-vms:build-recipe` (also `--retry`, `--rebuild`), `task-vms:build-image 13`, the release handoff, or the per-minute recipe reconcile
+  %%> Requirements:
+  %%> - Node 13 is an active task VM host in `settings.task_vms`, and its recipe is the desired one
+  %%> - the agent pin matches the Gateway delivery, else the build refuses before any step
+  %%> Result:
+  %%> - build 61 recorded as running; the full intent holds the recipe document, identity, project, pool, builder and smoke names, SSH target with host keys, and every agent envelope
+  GW->>SW: Start run, full intent<br/>operation-task-vm-image-build
+  %%> Inputs:
+  %%> - `operation_id`, `node_id` 13, `kind`, and the full public `intent`; there is no secret, so `execution_secrets` is empty
+  %%> Why:
+  %%> - the Gateway computes each agent envelope `{agent_sha256, deadline_ms, input}` at admission, so no `plan` step re-reads the intent (rule 15)
+  %%> Budget:
+  %%> - 2,400 seconds; `queueTimeout` 30 seconds
+  SW->>H: Remove earlier attempts<br/>reset · forEach builder, smoke
+  %%> What it does:
+  %%> - one `forEach` over `tvm-image-61` and `tvm-image-61-smoke`; each item runs `sudo -n -- orbit-agent command incus.vm` with `remove_instance`
+  %%> - an absent VM counts as removed, so a fresh build passes at once
+  %%> Why:
+  %%> - a resumed or retried attempt may find its own VMs from before
+  SW->>H: Launch the builder<br/>launch · incus.vm create_image
+  %%> What it does:
+  %%> - `incus.vm` `create_image` from the stock source image, with the account key, resource limits and builder account mode
+  %%> - the agent renders cloud-init, attaches the configuration disk and removes the NoCloud seed templates before the first start
+  SW->>H: Boot the builder<br/>boot · incus wait · agent.install
+  %%> How:
+  %%> - `incus wait tvm-image-61 agent --timeout 600`, then `cloud-init status --wait` in the guest
+  %%> - `incus file push --mode 0700` of the host's pinned agent; the guest's `agent.install` checks it against the pin
+  %%> - `guest.cloud-init` reports readiness, `image.inspect-phase` records the boot id, `image.owner` checks UID and GID 1000
+  %%> Why:
+  %%> - the owner check moves here from after the phases, so a taken UID fails before any package installs (rule 8)
+  %%> On failure:
+  %%> - a failed agent wait is `task_vm.bootstrap_timeout`, another boot step `task_vm.bootstrap_failed`
+  opt recipe pins a Pi build
+    SW->>H: Stage the Pi build<br/>pi-fetch · pi-check · pi-push
+    %%> How:
+    %%> - `@swamp/ssh copy` of the pinned binary from the Gateway Node to 209, `sha256sum -c` against its pin, copy to Node 13, then `incus file push --mode 0600` to `/var/cache/orbit/pi/<sha256>.bin`
+    %%> - fetch and check run beside the builder boot; only the push waits for it (rule 18)
+    %%> When:
+    %%> - skipped by `guard` when the recipe has no Pi build
+  end
+  loop each recipe phase
+    SW->>H: Run the phase<br/><phase>-start · wait · inspect
+    %%> Phases:
+    %%> - `apt-source`, `packages`, `javascript`, `rust`, `agent`, `pi`, in this order
+    %%> How:
+    %%> - `image.start-phase` starts or observes the guest's bounded systemd service and returns its main PID (rule 16: no separate `-pid` step)
+    %%> - `timeout 1500 tail --pid=PID -f /dev/null` waits; a `guard` skips it when the phase already ended
+    %%> - `image.inspect-phase` must report `complete` for the same boot id
+    %%> Not included:
+    %%> - no `*-reply` step: a refused agent reply fails the step with its own exit code and error code (rule 14)
+  end
+  SW->>H: Prepare and clean<br/>prepare · ssh-enable · clean
+  %%> What it does:
+  %%> - `image.recipe-marker`, `image.boot`, `systemctl enable ssh.service`, the Orbit root CA in the trust store, then `image.clean`
+  %%> - `image.clean` removes machine, SSH, Incus and service identities and refuses an enrolled guest
+  %%> Why:
+  %%> - one action that readies the guest for publication; the separate metadata and marker steps merge (rule 6)
+  SW->>H: Publish the candidate<br/>publish · incus.image publish
+  %%> What it does:
+  %%> - `incus.image` stops and publishes the builder, then promotes the immutable candidate alias
+  %%> Returns:
+  %%> - the published fingerprint; 209 decodes it in TypeScript into the seed and promote envelopes
+  SW->>H: Smoke the candidate<br/>smoke · image.check · ssh-smoke
+  %%> How:
+  %%> - removes the builder, launches `tvm-image-61-smoke` from the candidate, boots it as in step 4
+  %%> - `image.verify` checks the recipe software, `image.check` the account, key and lean boot, and `systemctl is-active ssh.service`
+  %%> Result:
+  %%> - a failed smoke check stops the build before promotion
+  SW->>H: Build the topology seed<br/>seed · finish-seed
+  %%> How:
+  %%> - `incus.build-topology-seed` builds `orbit-topology-seed-<12 hex>-new` inside the smoke VM
+  %%> - deletes the smoke VM, then `incus.volume` renames the seed to its final name
+  %%> When:
+  %%> - a finished seed already present builds nothing
+  SW->>H: Promote and prune<br/>promote · prune · complete
+  %%> What it does:
+  %%> - `incus.image` moves the host's base alias to the candidate, then prunes old recipe images and their seeds
+  %%> End check:
+  %%> - the native `assert` step `complete` checks the 64-hex fingerprint and the prune reply; this is the one end check (rule 9)
+  SW->>H: Remove builder and smoke<br/>cleanup · completed · forEach
+  %%> What it does:
+  %%> - one `forEach` runs `incus.vm` `remove_instance` for the builder and the smoke VM, then removes the staged Pi copies on 209 and Node 13
+  %%> When:
+  %%> - always, with the condition `completed`: after success, failure or a cancel request (rule 19)
+  %%> On failure:
+  %%> - `task_vm.image_cleanup_failed`
+  alt image promoted
+    SW-->>GW: Run succeeded<br/>fingerprint · phase times
+    %%> Returns:
+    %%> - step statuses, the published fingerprint, and each phase's start and end
+    Note over GW: Record build 61<br/>succeeded · base alias moved
+    %%> Result:
+    %%> - the build row stores the image location; new task VMs on Node 13 claim it
+  else a step fails
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> Result:
+    %%> - a refused agent reply keeps its own code; other steps map to `task_vm.image_build_failed`
+    Note over GW: Mark build 61 failed<br/>previous image stays
+    %%> Result:
+    %%> - the promoted image stays in service; `task-vms:build-recipe --retry` starts a fresh stock attempt
+  end

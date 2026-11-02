@@ -1,0 +1,85 @@
+sequenceDiagram
+  %% Target design: swamp/workflows/workflow-operation-task-vm-sweep.yaml with its children workflow-task-vm-sweep-incus.yaml and workflow-task-vm-sweep-cloud.yaml, docs/reference/compute-drivers.md#sweep-task-vm-hosts, #report-strays and #sweep-upcloud, docs/cli/README.md design rules R2-R4.
+  %% Tightened: flow-tighten 2026-11-02, rules 14 (no `result` printf steps and no root `format`; each child ends with its read-back and a native `assert`), 9 (one end check per provider), 11 (removal behaviors named by the removed resource, not by `_index`), 18 (inventory reads and removals as parallel forEach), 21 (only the admitted provider's branch runs).
+  %% status: draft
+  %% command: none · scheduled host sweep every 30 minutes
+  %% kind: task_vm.sweep_host
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane H icon=server pill=target tone=amber
+  %% lane UC icon=server pill=target tone=purple
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant H as Incus host<br/>Node 13 over ssh
+  participant UC as UpCloud API<br/>HTTPS from 209
+  Note over GW: Admit the sweep<br/>host Node 13 · task #5182
+  %%> Started by:
+  %%> - `SweepTaskVmHosts`, queued every 30 minutes while task VMs are on or the UpCloud token is set
+  %%> Requirements:
+  %%> - no open sweep of Node 13; the generic Operation lock holds the host until the terminal result
+  %%> What it does:
+  %%> - captures the ownership scope: live VM names, maximum VM and build ids, project, pool, operator-owned names, recorded, retired and protected builds
+  %%> - retires expired builds before dispatch; logs stray records and stray Nodes from its own state
+  GW->>SW: Start run, full intent<br/>operation-task-vm-sweep
+  %%> Inputs:
+  %%> - `operation_id`, `node_id` 13, `kind`, the full public `intent` with provider and scope
+  %%> - for UpCloud, the vault key name `task-vm-upcloud-token` only (R3)
+  %%> Runs as:
+  %%> - `concurrency: 1` on 209, so background sweeps never crowd out user work; a waiting sweep queues up to 600 seconds
+  %%> How:
+  %%> - a `guard` skips the other provider's child; each child is a typed boundary for its SSH or vault inputs
+  alt Incus host
+    SW->>H: Read the inventory<br/>instances · volumes · images
+    %%> How:
+    %%> - three parallel `@swamp/ssh exec` argv: `sudo timeout 60 incus query` for instances of all projects, custom volumes of the pool, and images of the project
+    %%> Refuses:
+    %%> - a missing project fails the image read, so the host changes nothing
+    Note over SW: Plan the removals<br/>plan · task-vm-sweep-input
+    %%> What it does:
+    %%> - TypeScript on 209 selects orphaned `tvm-<n>` VMs, eligible image builders and smoke VMs, and orphaned seed clones, within the captured id limits
+    %%> - logs one warning per stray instance and stray volume; strays are never removed
+    SW->>H: Remove orphaned VMs<br/>remove-instance · forEach
+    %%> How:
+    %%> - `sudo timeout 180 incus delete --force --project orbit-tasks -- <name>`, one item per VM, in parallel
+    %%> Runs as:
+    %%> - behavior `task-vm-sweep-remove-13-<name>`, named by the VM it removes (rule 11)
+    SW->>H: Remove orphaned volumes<br/>remove-volume · forEach
+    %%> How:
+    %%> - `incus storage volume delete` for each `tvm-<n>-topology-seed` clone whose VM is gone, after the VMs
+    SW->>H: Read the project again<br/>after · end check
+    %%> End check:
+    %%> - `incus query /1.0/instances?project=orbit-tasks`; `format` decodes it and a native `assert` confirms no planned name remains
+    %%> Returns:
+    %%> - the removed names and the instances seen, from which the Gateway counts missing VMs
+  else UpCloud
+    SW->>UC: List servers, templates<br/>inventory · curl on 209
+    %%> How:
+    %%> - one inline `curl` per list, the token through `--variable`, never argv: servers labelled `orbit-task-vm` and `orbit-task-image`, and storage templates
+    Note over SW: Plan the removals<br/>plan · task-vm-sweep-input
+    %%> What it does:
+    %%> - selects servers without a live row, build servers and unverified templates older than two hours, except a build still marked running
+    SW->>UC: Stop started servers<br/>stop-server · forEach
+    %%> How:
+    %%> - a hard stop per started server, in parallel
+    SW->>UC: Delete servers, templates<br/>remove-server · remove-template
+    %%> How:
+    %%> - two parallel `forEach` steps: each server with its storage, each unverified template
+    %%> Retry:
+    %%> - UpCloud refuses a server that is still stopping; the next sweep deletes it
+    SW->>UC: List again<br/>after · end check
+    %%> End check:
+    %%> - the same lists; `format` decodes them and a native `assert` confirms no planned UUID remains
+  end
+  alt sweep complete
+    SW-->>GW: Run succeeded<br/>removed · observed names
+    Note over GW: Project the sweep<br/>missing VMs · build claims
+    %%> Result:
+    %%> - a `ready` or `parked` VM missing on two sweeps in a row becomes `failed` with `task_vm.vm_missing`, and its group asks for assistance
+    %%> - a failed build's cleanup claim is released when none of its names remain
+  else a step fails
+    SW--xGW: Run failed<br/>error_code, failed step
+    Note over GW: Mark the sweep failed<br/>no missing-VM count
+    %%> Result:
+    %%> - a provider or SSH failure never counts as a missing VM; build claims stay; the next sweep runs again in 30 minutes
+  end
