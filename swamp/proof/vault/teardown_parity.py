@@ -7,7 +7,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-operation = json.loads(os.environ['PROOF_OPERATION'])
+operation = json.loads(Path(os.environ['PROOF_OPERATION_FILE']).read_text())
 keep = len(sys.argv) > 1 and sys.argv[1] == 'keep'
 assert operation['kind'] == 'vault.teardown' and operation['status'] == 'succeeded'
 assert operation['result'] == {'outcome': 'succeeded', 'data': {'backend': 'absent'}}
