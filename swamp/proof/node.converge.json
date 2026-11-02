@@ -20,13 +20,13 @@
       "name": "Install the Node agent",
       "job": "converge",
       "step": "Install the Node agent",
-      "budget_seconds": 250
+      "budget_seconds": 120
     },
     {
-      "name": "Configure the Node agent",
+      "name": "Restart the Node agent",
       "job": "converge",
-      "step": "Configure the Node agent",
-      "budget_seconds": 130
+      "step": "Restart the Node agent",
+      "budget_seconds": 60
     },
     {
       "name": "Check the footprint",

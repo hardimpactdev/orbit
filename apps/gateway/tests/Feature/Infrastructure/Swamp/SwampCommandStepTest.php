@@ -159,20 +159,6 @@ it('refuses a nonterminal or foreign native event without a history request', fu
     [['id' => '2a9c5e84-746a-487b-8621-4f6e1bb7d356', 'status' => 'running']],
 ]);
 
-it('projects a run that ends on a silent check when the selector declares outputs false', function (string $status): void {
-    $this->history['jobs'][0]['steps'][1]['outputs'] = [];
-    $this->history['jobs'][0]['steps'][1]['status'] = $status;
-    $selector = [...$this->selector, 'outputs' => false];
-    if ($status === 'succeeded') {
-        expect($this->step->projectTerminal($this->operation, ['id' => $this->runId, 'status' => 'succeeded'], $selector)->status)->toBe(OperationStatus::Succeeded);
-    } else {
-        // A succeeded run whose selected check did not succeed stays unprojected.
-        expect(fn () => $this->step->projectTerminal($this->operation, ['id' => $this->runId, 'status' => 'succeeded'], $selector))
-            ->toThrow(ResourceOperationException::class);
-        expect($this->operation->fresh()->status)->toBe(OperationStatus::Running);
-    }
-})->with(['succeeded', 'skipped']);
-
 it('refuses mismatched history or unavailable public JSON without projecting', function (string $change): void {
     match ($change) {
         'run' => $this->history['id'] = 'foreign-run',

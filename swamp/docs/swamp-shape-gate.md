@@ -114,6 +114,8 @@ generic extension or field-name exemption: raw input values, concatenation,
 `identityFile`, other method inputs, argv and other extension types remain outside this
 recognition. Existing command-env checks remain in place.
 
+Official `@swamp/cfgmgmt/file` `apply` also accepts one whole `vault.get(...)` expression as `task.globalArgs.content` when the same step sets `mode: '0600'` and selects a 209 worker (script audit Q-SECRET, Nick, 2026-11-02). Its data keeps only the content hash. Any other field, mode or concatenation stays a `vault-placement` finding.
+
 Official `@swamp/ssh` `exec` also accepts one whole `vault.get(...)` expression at
 `task.inputs.stdin`. This applies only to workflow `behavior` tasks with
 `behaviorType: '@swamp/ssh'` or `model_method` tasks with
@@ -253,9 +255,9 @@ retained Gateway client and therefore keeps that dependency in the shape audit.
 
 The required jobs are `Swamp shape gate`, `Swamp workflow validate` and
 `Swamp Deno tests`. The reusable workflow splits every Operations test file
-across nine parallel jobs with Deno's native `--shard` and directory flags.
+across eight parallel jobs with Deno's native `--shard` and directory flags.
 Four general shards exclude the database effect directories (`local-sql-effects/`,
-`read-effects/`, `create-effects/`, `write-effects/`)
+`read-effects/`, `write-effects/`)
 and `process-commands/`. Each excluded directory has its own job. The database
 engine cases use separate native test modules, so `--parallel` runs their
 unchanged effects concurrently. New files enter the general shards automatically,

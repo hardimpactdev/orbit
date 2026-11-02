@@ -32,7 +32,7 @@ sequenceDiagram
   %%> - the role is `active` or `failed`; `provisioning` or `removing` is refused until its claim is stale
   %%> - `app-dev`: Node 12 owns no Instances
   %%> - no Route depends on the role
-  %%> - `swamp`: its workers don't run this removal; a Node's own Swamp role can't remove itself
+  %%> - the role is not `swamp`: serve on that Node runs every Swamp run, this one too, so the Gateway refuses with `validation.failed`
   %%> - one role operation per Node: the Gateway waits up to 2 minutes for Node 12's role lock, then refuses with `node_role.node_busy`
   %%> Decides:
   %%> - whether Swamp must reach Node 12, or only the record changes

@@ -100,7 +100,7 @@ final readonly class SwampCommandStep
 
     /** Called by the shared native terminal subscriber, never by a family step or a poller.
      * @param  array<string,mixed>  $terminalRun  Native event.run, or its bound id after a late attach miss.
-     * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,outputs?:false,native?:true}  $selector  The fixed family terminal_result declaration.
+     * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,native?:true}  $selector  The fixed family terminal_result declaration.
      */
     public function projectTerminal(Operation $operation, array $terminalRun, array $selector, bool $atDeadline = false): Operation
     {
@@ -155,7 +155,7 @@ final readonly class SwampCommandStep
         }
         $result = $this->terminalOutput($run, $selector);
         $status = $run['status'];
-        if (in_array($status, ['failed', 'interrupted'], true) && $result === []) {
+        if (in_array($status, ['failed', 'interrupted'], true) && ($result === [] || ($result['outcome'] ?? null) === 'succeeded')) {
             $result = ['error_code' => 'operation.native_failed'];
         }
 
@@ -319,7 +319,7 @@ final readonly class SwampCommandStep
     }
 
     /** @param array<string,mixed> $run
-     * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,outputs?:false,native?:true}  $selector
+     * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>,native?:true}  $selector
      * @return array<string,mixed>
      */
     private function terminalOutput(array $run, array $selector): array
@@ -347,14 +347,6 @@ final readonly class SwampCommandStep
                     $selected = $step['status'] ?? null;
                 }
             }
-        }
-        if (($selector['outputs'] ?? true) === false) {
-            // The selected end check prints nothing; a succeeded run must still show it succeeded.
-            if ($run['status'] === 'succeeded' && $selected !== 'succeeded') {
-                throw $this->unavailable();
-            }
-
-            return [];
         }
         $result = [];
         // A kind without a result-reporting step reads Swamp's own run data; its named end check must have succeeded.

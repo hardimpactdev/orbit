@@ -153,7 +153,7 @@ jobs:
           - name: general 1/4
             path: extensions/behaviors/operations
             shard: 1/4
-            ignore: &separate-tests extensions/behaviors/operations/database/local-sql-effects,extensions/behaviors/operations/database/read-effects,extensions/behaviors/operations/database/create-effects,extensions/behaviors/operations/database/write-effects,extensions/behaviors/operations/process-commands
+            ignore: &separate-tests extensions/behaviors/operations/database/local-sql-effects,extensions/behaviors/operations/database/read-effects,extensions/behaviors/operations/database/write-effects,extensions/behaviors/operations/process-commands
           - name: general 2/4
             path: extensions/behaviors/operations
             shard: 2/4
@@ -171,9 +171,6 @@ jobs:
             shard: 1/1
           - name: database read
             path: extensions/behaviors/operations/database/read-effects
-            shard: 1/1
-          - name: database create
-            path: extensions/behaviors/operations/database/create-effects
             shard: 1/1
           - name: database write
             path: extensions/behaviors/operations/database/write-effects

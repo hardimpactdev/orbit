@@ -20,15 +20,14 @@ return ['node.worker_known_hosts' => [
     'projection' => WorkerKnownHostsProjection::class,
 ], 'node.ssh_access_converge' => [
     'workflow' => 'operation-node-ssh-access-converge',
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^bootstrap-identity-node-14$']],
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'ssh_access', 'step' => 'Log in with Swamp identity'],
+    'terminal_result' => ['job' => 'ssh_access', 'step' => 'Log in with Swamp identity', 'native' => true],
     'projection' => NodeSshAccessProjection::class,
 ], 'node.wireguard_hub_converge' => [
     'workflow' => 'operation-node-wireguard-hub-converge',
     'projection' => NodeWireGuardHubProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'check', 'step' => 'Confirm the hub', 'outputs' => false],
+    'terminal_result' => ['job' => 'check', 'step' => 'Confirm the hub', 'native' => true],
 ], 'node.remove' => [
     'workflow' => 'operation-node-remove', 'projection' => NodeRemovalProjection::class,
     'workflow_inputs' => true,
@@ -47,12 +46,13 @@ return ['node.worker_known_hosts' => [
     'workflow' => 'operation-node-settings',
     'projection' => NodeSettingsProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'settings', 'step' => 'Check owner and mode'],
+    'terminal_result' => ['job' => 'settings', 'step' => 'Prove the apps folder', 'native' => true],
 ], 'node.converge' => [
     'workflow' => 'operation-node-converge-direct',
     'projection' => NodeConvergeProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'result', 'step' => 'Report the result'],
+    'terminal_result' => ['job' => 'converge', 'step' => 'Prove the footprint', 'native' => true,
+        'captures' => ['role' => ['job' => 'converge', 'step' => 'Re-apply role files']]],
 ], 'node.role_add' => [
     'workflow' => 'operation-node-role-add-direct',
     'projection' => NodeRoleDirectProjection::class,

@@ -56,20 +56,21 @@ it('admits a hub that has no Node worker, since Swamp reaches it over SSH from 2
     expect(Operation::query()->sole()->input['intent']['hub_id'])->toBe($this->hub->id);
 });
 
-it('lists every other active peer by public key and address, and nothing private', function (): void {
+it('renders the hub file and peer file with every other active peer, and no private key', function (): void {
     $fresh = FleetFixtures::node('hub-fresh-peer');
     $fresh->update(['wireguard_public_key' => base64_encode(str_repeat('f', 32))]);
     $leaving = FleetFixtures::node('hub-leaving-peer');
     $leaving->update(['wireguard_public_key' => base64_encode(str_repeat('l', 32)), 'status' => LifecycleStatus::Removing]);
     $this->post("/api/v1/nodes/{$this->hub->id}/wireguard-hub/converge", [], ['Accept' => 'application/json'])->assertAccepted();
     $intent = Operation::query()->sole()->input['intent'];
+    $peer = "\n[Peer]\n# hub-fresh-peer\nPublicKey = {$fresh->wireguard_public_key}\nAllowedIPs = {$fresh->wireguard_ip}/32\n";
     expect($intent['peer_keys'])->toContain($fresh->wireguard_public_key)->not->toContain($leaving->wireguard_public_key)
-        ->and($intent['peer_args'])->toContain('peer', $fresh->wireguard_public_key, 'allowed-ips', $fresh->wireguard_ip.'/32')
-        ->and(count($intent['peer_args']))->toBe(4 * count($intent['peer_keys']))
+        ->and($intent['config'])->toStartWith("[Interface]\nAddress = {$this->hub->wireguard_ip}/24\nListenPort = 51820\nPostUp = wg set %i private-key /etc/wireguard/orbit.key\n")
+        ->and($intent['config'])->toContain($peer)->not->toContain('PrivateKey', $leaving->wireguard_public_key)
+        // The peers file holds only peer sections; the Node composes its own key and the port in at apply time.
+        ->and($intent['peers'])->toStartWith("\n[Peer]\n# ")->toContain($peer)->not->toContain('[Interface]', 'PrivateKey')
+        ->and($intent['port'])->toBe(51820)
         ->and(json_encode(Operation::query()->sole()->input))->not->toContain(base64_encode(str_repeat('p', 32)));
-    // One `wg set orbit` argv: peer, key, allowed-ips, address per peer, in Node order.
-    $index = array_search($fresh->wireguard_public_key, $intent['peer_args'], true);
-    expect(array_slice($intent['peer_args'], $index - 1, 4))->toBe(['peer', $fresh->wireguard_public_key, 'allowed-ips', $fresh->wireguard_ip.'/32']);
 });
 
 it('rejects foreign callers and nonhub targets before intent', function (bool $foreignCaller): void {

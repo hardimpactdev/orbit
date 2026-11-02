@@ -16,6 +16,17 @@ final readonly class NativeRunResult
 
     public const int MaximumStdoutBytes = 4096;
 
+    /** The status of one named step in a native result, or null when the step is absent.
+     * @param  array<string,mixed>  $result
+     */
+    public static function stepStatus(array $result, string $step): ?string
+    {
+        $steps = is_array($result['steps'] ?? null) ? $result['steps'] : [];
+        $entry = is_array($steps[$step] ?? null) ? $steps[$step] : [];
+
+        return is_string($entry['status'] ?? null) ? $entry['status'] : null;
+    }
+
     /**
      * @param  array<string,mixed>  $run
      * @return array{steps:array<string,array{status:string,stdout?:string,exit_code?:int}>,summary:array{status:string,succeeded:int,failed:int,skipped:int,failed_steps:list<string>}}

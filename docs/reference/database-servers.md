@@ -9,7 +9,7 @@ covers:
   - apps/gateway/{app/Models/DatabaseServer.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,database/migrations/2026_12_30_000000_add_test_processes_to_database_connections.php}
   - apps/cli/app/Commands/Database/{CreateDatabaseServerCommand,ListDatabaseServersCommand,ShowDatabaseServerCommand,DestroyDatabaseServerCommand,CreateDatabaseUserCommand}.php
   - packages/php-sdk/src/{Requests,Responses}/DatabaseServers/**
-  - swamp/{extensions/behaviors/operations/{database-node-command/**,database-server-commands/{scripts/{database_create,database_destroy,shipped}.py,database_{create,destroy}_test.py}},workflows/workflow-operation-database-{server-create,server-destroy,create,destroy}.yaml}
+  - swamp/{extensions/behaviors/operations/database-server-commands/create_assets.ts,workflows/workflow-operation-database-{server-create,server-destroy,create,destroy}.yaml}
 ---
 
 # Database servers
@@ -20,11 +20,11 @@ A server's `driver` names its kind. A `mysql` server runs MySQL, a `pgsql` serve
 
 ## Execution
 
-Managed database creation runs `operation-database-create` on Node 209 in the [chart's](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/database.create.mmd) four Node steps over official SSH: stage the owner password, create the owner and databases, check the owner login, and remove the staged password.
+Managed database creation runs `operation-database-create` on Node 209 over official SSH, one `docker exec -i` per action ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/database.create.mmd)): check names are free, create the owner and databases, then log in as the owner over TCP.
 
-The create step reads the server's admin password from its own vault key, `database-server-<id>-admin`, on standard input. A step takes one secret on standard input, so the owner password goes first into a root-only file under `/run`, and an always-run step removes it whether the run passed or failed. The owner key holds only the owner's password and salt, never the admin password.
+The create statement carries the owner's password, so the Gateway renders it and puts it in the vault, and the step reads it on standard input. MySQL and Valkey clients read the admin login from a root-only 0600 env file that `@swamp/cfgmgmt/file` writes from the server's key `database-server-<id>-client-env`; the owner's login uses a second such file. Always-run steps remove both. PostgreSQL uses local trust for the admin work.
 
-Each step sends the shipped phase module and its library in argv, so no script is copied to the Node. Ownership checks precede changes; existing data and passwords survive a rerun. The Gateway projects the recorded connection after native success.
+A database that exists for another owner is refused with `database.name_conflict` before any change. The Gateway projects the recorded connection after native success.
 
 Database actions return one [Operation](/reference/operations) with HTTP 202. The Gateway validates the request and records intent. Swamp runs one native DAG on the admitted Nodes and returns a bounded result. The CLI follows the Operation; use `--idempotency-key` after a lost start response. List and show read Gateway records. Tables, schema, describe and read-only queries run in the native Database read workflow.
 
@@ -38,11 +38,19 @@ The SQL user parent resolves private data inside its existing read boundary. The
 
 ## Create a server
 
-`database_server.create` records the server and its Process, then starts `operation-database-server-create` with the full public intent. Every step runs on Node 209. The official `@swamp/cfgmgmt/docker_image` behavior pulls the image; the other steps reach the server Node over official SSH with its recorded host key. The steps follow the [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/database_server.create.mmd): pull the image, write the Valkey ACL file, start the container, wait until healthy, check the admin login, and remove the first-start environment. Each step sends one shipped script phase in argv, so nothing is copied to the Node.
+`database_server.create` records the server and its Process, then starts `operation-database-server-create` with the full public intent. The intent holds each docker command the run needs, rendered by the Gateway. Every step runs on Node 209 and reaches the server Node with its recorded host key. Each step is one official `@swamp/cfgmgmt` behavior or one docker command over official SSH; nothing is copied to the Node. The steps follow the [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/database_server.create.mmd).
 
-The admin password goes to the vault under the server's own key, `database-server-<id>-admin`. Every database kind that logs in as the admin reads that key by name. A Valkey ACL file goes to the vault under `database-server-create-intent-<operation>`. Neither value enters the workflow inputs, a step output, or a command argument; scripts pass them to Docker in a 0600 env file or on standard input.
+| Step | What it does |
+| --- | --- |
+| Pull the image | `@swamp/cfgmgmt/docker_image` keeps the image present. |
+| Create the volume, Write the ACL file | Valkey only. The ACL file holds password hashes and goes into the data volume with `@swamp/cfgmgmt/file` (0600). |
+| Write the first login | MySQL and PostgreSQL on an empty volume. The password variable goes into a 0600 env file. |
+| Remove the old container, Start the container | `docker rm --force`, then `docker run` with the env file. A rerun starts over from the data volume. |
+| Wait until ready | One bounded probe loop (`timeout 60`). The server accepts TCP only after its first-start initialization. |
+| Stop, remove and start the final container | MySQL and PostgreSQL. The final container runs without the password variable, on the same volume. |
+| Check the admin login | The admin logs in over TCP with the password from a 0600 env file. |
 
-Docker owns the health probe. The wait step reads Docker's health events for the container: healthy succeeds; unhealthy or an exit fails. The step timeout bounds the wait. The result names the failed step and its error code, for example `database.server_unhealthy`, and the server record keeps both.
+The password reaches the vault under two server keys: `database-server-<id>-client-env` holds the admin login for clients, and `database-server-<id>-first-env` holds the first-start variable. A Valkey ACL file goes under `database-server-create-intent-<operation>`. No value enters the workflow inputs, a step output, or a command argument. Always-run steps remove both env files from the Node. The result names the failed step and its error code, for example `database.server_unhealthy`, and the server record keeps both.
 
 `database:server:create` creates the server and its Process in one command. It refuses a server with an unfinished removal intent, and a Node without a stored SSH host key (`swamp.ssh_target_unavailable`).
 
@@ -260,7 +268,7 @@ For Valkey writes, Swamp invokes the fixed `database.valkey` program on the serv
 
 `database:destroy` of a connection on a MySQL server drops the database, every database whose name starts with its test database name, and each user Orbit created for it that no other connection on the server uses. On PostgreSQL it drops only the primary, test database, and recorded worker pool. It deletes the record only after every database and unshared user is gone. A failed drop keeps the record; a repeat tolerates missing objects and finishes the remaining drops.
 
-Standalone removal runs `operation-database-destroy` on Node 209 in the [chart's](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/database.destroy.mmd) two Node steps over official SSH: drop the databases and users, then check they are gone. The drop step reads the admin password from the server's own vault key on standard input, finds MySQL test databases under the recorded prefix, checks blockers for the whole set, and then drops. On Valkey it runs `ACL DELUSER` for each user and `ACL SAVE`. The Gateway removes records through the shared terminal projector.
+Standalone removal runs `operation-database-destroy` on Node 209 over official SSH, one `docker exec -i` per action with the statement the Gateway rendered at admission on standard input ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/database.destroy.mmd)). It finds MySQL test databases under the recorded prefix, checks blockers for the whole set, drops, and checks the names are gone. On Valkey it runs `ACL DELUSER` for each user and `ACL SAVE`. MySQL and Valkey clients read the admin login from a root-only 0600 env file that `@swamp/cfgmgmt/file` writes from the server's vault key `database-server-<id>-client-env` and an always-run step removes; PostgreSQL uses local trust inside the container. The Gateway removes records through the shared terminal projector.
 
 The Gateway admits the recorded resource identities and starts one native Swamp workflow. It performs no live probe, builds no SQL, and refuses a server Node without a stored SSH host key. System database names and prefixes are refused before SQL. Standalone removal runs no ownership probe and no connection fence (flow-tighten rule 22): a client that connects between the blocker check and the drop is cut off.
 

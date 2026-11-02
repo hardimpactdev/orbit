@@ -22,6 +22,7 @@ use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Metrics\ServiceMetricsProjection;
 use App\Infrastructure\Processes\DockerProcessRenderer;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Process;
@@ -32,18 +33,12 @@ final readonly class NodeRoleRuntimeInput
     /** The swamp role's worker instances: two, so one drains and restarts while the other runs (ADR 0243). */
     public const array SwampWorkers = ['a', 'b'];
 
-    /** Dispatch slots per swamp worker, about twice the swamp Node's cores. */
-    public const int SwampWorkerConcurrency = 8;
-
-    /** Scheduled runs serve keeps in flight; one starves overlapping Schedules. */
-    public const int SwampScheduledRuns = 4;
-
     public function __construct(private AgentDelivery $agents, private ProcessTargetResolver $targets,
         private DockerProcessRenderer $docker, private RecordProcessIntentAction $processes, private ProcessSpecification $specifications,
         private AnalyticsRoleSettingsRepository $analytics, private AnalyticsStorageProcessGuard $storage,
         private AnalyticsSecretManager $analyticsSecrets, private MetricsCredentialManager $metricsSecrets,
         private WebSocketCredentialManager $websocketSecrets, private MetricsExporterProjection $exporters,
-        private ServiceMetricsProjection $services) {}
+        private ServiceMetricsProjection $services, private SwampSshExecutionInput $ssh) {}
 
     /** Record-only preparation runs in the parent admission transaction, before immutable capture. */
     public function prepare(Node $node, NodeRole $assignment): void
@@ -82,9 +77,8 @@ final readonly class NodeRoleRuntimeInput
         $this->assignment($node, $assignment);
         if ($assignment->role === RoleName::Swamp) {
             return ['role' => $assignment->role->value, 'node_id' => $node->id, 'assignment_id' => $assignment->id,
-                'agent_sha256' => $this->agents->pin($node), 'user' => $node->user,
-                'workers' => self::SwampWorkers, 'concurrency' => self::SwampWorkerConcurrency,
-                'scheduled_runs' => self::SwampScheduledRuns];
+                'agent_sha256' => $this->agents->pin($node), 'user' => $node->user, 'workers' => self::SwampWorkers,
+                'units' => SwampRoleUnits::for($node->user, $node->id), 'ssh_execution' => $this->ssh->forNode($node)];
         }
         if (! in_array($assignment->role, [RoleName::Metrics, RoleName::Analytics, RoleName::WebSocket], true)) {
             return null;

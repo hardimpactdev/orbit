@@ -110,11 +110,15 @@ def main():
     # Earlier attempts may have left target state behind; the fixture names what a clean start is.
     for argv in fixture.get('clean_target', []):
         on_target(up['target']['key'], argv)
+    # Setup a kind needs on another Node of the topology, by its key, such as wireguard-tools on a peer.
+    for key, commands in fixture.get('before_node', {}).items():
+        for argv in commands:
+            run(['incus', 'exec', key, '--', *bind(argv, context)], timeout=600)
     # A kind that needs a service the topology lacks, such as Plausible, sets it up on this VM first.
     # Its last stdout line may be {"secrets": {name: value}}: test credentials it made, bound as ${secret.<name>} into
     # requests only. Receipts keep request paths, never bodies, so the values reach only the Gateway's admission.
     for argv in fixture.get('before_gateway', []):
-        lines = run(bind(argv, context), cwd=SOURCE, timeout=900).stdout.strip().splitlines()
+        lines = run([str(arg) for arg in bind(argv, context)], cwd=SOURCE, timeout=900).stdout.strip().splitlines()
         try:
             made = json.loads(lines[-1]) if lines else {}
         except ValueError:
@@ -150,7 +154,7 @@ def main():
     reply = gateway({**bind(fixture['request'], context), 'caller': operator, 'key': f'proof-{run_id}-request'}, fixture['budget_seconds'])
     operation = reply.get('operation') or {}
     receipt.update(http_status=reply.get('http_status'), operation=operation, admit_seconds=reply.get('admit_seconds'),
-                   total_seconds=reply.get('terminal_seconds'))
+                   total_seconds=reply.get('terminal_seconds'), job_errors=reply.get('job_errors') or {})
     refusal = fixture['expect'].get('error_code')
     if refusal is not None:
         # An admission refusal starts no run: prove the code, that no Operation exists, and the target is unchanged.

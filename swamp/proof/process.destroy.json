@@ -31,15 +31,9 @@
   },
   "phases": [
     {
-      "name": "Disable it",
+      "name": "Disable and stop the unit",
       "job": "process",
-      "step": "Disable it",
-      "budget_seconds": 20
-    },
-    {
-      "name": "Stop it",
-      "job": "process",
-      "step": "Stop it",
+      "step": "Disable and stop the unit",
       "budget_seconds": 20
     },
     {

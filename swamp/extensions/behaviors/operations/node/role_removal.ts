@@ -199,12 +199,6 @@ export function roleRemoval(
             args.stage,
             ctx.signal,
             args.target_node_id,
-            args.stage === "runtime" && removal.runtime?.role === "swamp"
-              ? await Deno.readTextFile(
-                ctx.extensionFile?.("fleet-recipe/scripts/swamp_workers.py") ??
-                  "",
-              )
-              : undefined,
           );
           await ctx.writeResource("output", args.stage, result);
           if (!result.ok) {

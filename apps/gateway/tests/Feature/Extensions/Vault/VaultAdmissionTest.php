@@ -47,9 +47,10 @@ it('admits setup with an encrypted immutable snapshot and no remote or queued PH
     $operation = Operation::query()->sole();
     expect($operation->kind)->toBe('vault.setup')->and($operation->status)->toBe(OperationStatus::Running)
         ->and($operation->node_id)->toBe($this->caller->id)
-        ->and($operation->input['configuration'])->toBe(['$secret' => 'vault.credentials', 'id' => $this->caller->id])
+        ->and($operation->input['intent'])->toMatchArray(['url' => $this->payload['url'], 'organization' => 'Orbit', 'collection' => 'Database'])
+        ->and($operation->input)->toHaveKey('execution_secrets.configuration')
         ->and(app(VaultSettings::class)->configuration())->toBeNull();
-    $snapshot = app(VaultOperationSecrets::class)->snapshot($operation, $operation->input['configuration']);
+    $snapshot = app(VaultOperationSecrets::class)->snapshot($operation, ['$secret' => 'vault.credentials', 'id' => $this->caller->id]);
     expect($snapshot['client_secret'])->toBe($this->payload['client_secret']);
     foreach (['client_secret', 'master_password'] as $key) {
         expect($response->getContent())->not->toContain($this->payload[$key]);

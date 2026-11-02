@@ -44,17 +44,22 @@ it('starts one direct managed create with safe typed intent and no Gateway probe
     $puts = collect($this->socket->sent)->where('type', 'vault.put')->pluck('payload.value', 'payload.key');
     $start = collect($this->socket->sent)->firstWhere('type', '!==', 'vault.put');
     $inputs = $start['payload']['inputs'];
-    $owner = 'database-create-intent-'.$operation->input['intent_id'];
-    $admin = 'database-server-'.$this->server->id.'-admin';
-    expect($inputs['execution_secrets'])->toBe(['admin' => ['vault' => 'orbit-control-inputs', 'key' => $admin], 'owner' => ['vault' => 'orbit-control-inputs', 'key' => $owner]]);
-    expect($inputs['intent']['stage'])->toBe('/run/orbit-database-create-'.$operation->id);
+    $id = $operation->input['intent_id'];
+    $statement = "database-create-intent-{$id}";
+    $owner = "database-create-owner-{$id}";
+    $expected = ['statement' => ['vault' => 'orbit-control-inputs', 'key' => $statement], 'owner_env' => ['vault' => 'orbit-control-inputs', 'key' => $owner]];
+    if ($driver !== 'pgsql') {
+        $expected['client_env'] = ['vault' => 'orbit-control-inputs', 'key' => 'database-server-'.$this->server->id.'-client-env'];
+    }
+    expect($inputs['execution_secrets'])->toBe($expected);
+    expect($inputs['intent']['login'])->toBe('/run/orbit-database-create-'.$operation->id.'.env');
+    expect($inputs['intent']['statements'])->toHaveKeys(['probe', 'login']);
     $connection = DatabaseConnection::query()->sole();
-    // The server's own key holds the admin password; the owner key never does (R3).
-    expect($puts[$admin])->toBe(SERVER_DATABASE_ROOT_SECRET);
-    $material = json_decode($puts[$owner], true, flags: JSON_THROW_ON_ERROR);
-    expect(array_keys($material))->toBe(['password', 'salt']);
-    expect($material['password'])->toBe($connection->password);
-    expect($puts[$owner])->not->toContain(SERVER_DATABASE_ROOT_SECRET);
+    // The create statement carries the owner's password and goes Gateway → vault → stdin; the admin login is an env file key.
+    expect($puts[$statement])->toContain($driver === 'pgsql' ? 'SCRAM-SHA-256' : ($driver === 'redis' ? 'ACL SETUSER proof' : $connection->password));
+    expect($puts[$owner])->toBe(['mysql' => 'MYSQL_PWD=', 'pgsql' => 'PGPASSWORD=', 'redis' => 'REDISCLI_AUTH='][$driver].$connection->password."\n");
+    expect($puts[$statement])->not->toContain(SERVER_DATABASE_ROOT_SECRET);
+    expect(json_encode($inputs))->not->toContain($connection->password)->not->toContain(SERVER_DATABASE_ROOT_SECRET);
     expect(json_encode($operation->fresh()->toArray()).$response->getContent())->not->toContain(SERVER_DATABASE_ROOT_SECRET, $connection->password);
     expect(DB::table('database_execution_intents')->sole()->payload)->not->toContain($connection->password);
     $this->postJson($path.'/primitive', ['run_id' => $this->runId])->assertUnprocessable();
@@ -145,5 +150,5 @@ it('keeps recorded create intent immutable and projects terminal history exactly
     app(SwampCommandStep::class)->projectTerminal($projected, ['id' => $this->runId, 'status' => 'succeeded'], $selector);
     expect($projected->status->value)->toBe('succeeded');
     expect($projected->result)->toBe(['backend' => 'active']);
-    expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'vault.put', 'workflow.run', 'vault.put', 'workflow.history.get']);
+    expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'vault.put', 'vault.put', 'workflow.run', 'vault.put', 'workflow.history.get']);
 });
