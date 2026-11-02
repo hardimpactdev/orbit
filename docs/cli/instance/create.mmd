@@ -1,6 +1,5 @@
 sequenceDiagram
   %% Target design: ADR 0244 task + full intent as inputs, single Swamp Node, DECISIONS 1 (token minted at admission, vault.get), Gateway renders .env from the Project env template (orbit-gateway-renders-create-env; Nick 2026-11-01), budget rule swamp-operation-time-budgets (<10 s, 60 s).
-  %% Tightened: flow-tighten 2026-11-02, rules 1-22 (rule 22: cfgmgmt file/systemd, 0600 credential file for the private fetch).
   %% status: reviewed
   %% command: instance:create
   %% kind: instance.create
@@ -13,10 +12,7 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as app-dev Node<br/>reached over ssh
-  CLI->>GW: instance:create 7 12 blog<br/>--branch=… --domain=…
-  %%> Command:
-  %%> - `orbit instance:create 7 12 blog --branch=feature/blog`
-  %%> - syntax: `<project> <node> <name> [--branch=BRANCH] [--domain=HOST] [--root=PATH] [--database-server=SLUG]`
+  CLI->>GW: instance:create<br/>{project: 7, node: 12, name}
   %%> Input:
   %%> - Project, app-dev Node and Instance name
   %%> - optional: branch, domain, Database server for the Instance's database
@@ -58,68 +54,53 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the work continues in Swamp; the CLI follows it with `operation:show`
-  SW->>N: Clone, check out branch<br/>file 0600 cred · git clone
+  SW->>N: Clone, check out branch<br/>vault.get token · git as Node user
   %%> How:
   %%> - Swamp reaches the Node over `@swamp/ssh` from 209
-  %%> - `@swamp/cfgmgmt/file` writes the vault token as a 0600 credential file; git reads it, so the token never enters argv
   %%> What it does:
-  %%> - clones the repository into the Instance path and checks out the branch
-  %%> - removes the credential file at the end of the step
-  %%> Returns:
-  %%> - the checked-out commit, as this step's output
-  %%> Retry:
-  %%> - a guard skips the clone when the checkout already exists
+  %%> - clones the repository into the Instance path with the vault token
+  %%> - checks out the branch
   %%> Runs as:
   %%> - the Node's own user, not root
-  SW->>N: Prepare the web root<br/>setfacl · @swamp/cfgmgmt/file
+  SW->>N: Prepare the web root<br/>setfacl as the Node user
   %%> What it does:
   %%> - grants Caddy read access to the web root, and passage through the directories above it
   %%> - denies Caddy the rest of the checkout and its Git directory
   %%> - converges the shared PHP-FPM pool for Instance 42
-  %%> How:
-  %%> - one `setfacl` per directory as `@swamp/ssh exec` argv (no official ACL behavior)
-  %%> - the pool file with `@swamp/cfgmgmt/file`, then a PHP-FPM reload with `@swamp/cfgmgmt/systemd`
-  %%> - runs beside the next step; both need only the checkout
   %%> Why here:
   %%> - a one-time Instance setup; every Route of Instance 42 then serves without touching the checkout
   %%> Runs as:
   %%> - the Node's managed user; root only above every checkout
-  SW->>N: Write .env<br/>@swamp/cfgmgmt/file · 0600
+  SW->>N: Write .env<br/>vault.get env-5121 · Vite+ store
   %%> What it does:
-  %%> - writes the rendered `.env` from `vault.get env-5121` into the checkout, owned by the Node user, mode 0600
+  %%> - writes the rendered `.env` from the vault into the checkout
   %%> - selects the Node's Vite+ store for this Project (`VP_HOME`), so `vp` works in the setup steps
   %%> Not included:
   %%> - renders nothing; the Gateway already rendered `.env`
   %%> - installs no dependencies; `composer install` and `vp install` are setup steps
   %%> - starts no Process; that happens after the setup steps
-  SW->>N: Run Project setup steps<br/>@swamp/ssh exec · in order
+  SW->>N: Run Project setup steps<br/>@swamp/ssh · own timeout each
   %%> What it does:
   %%> - runs the Project's setup steps in order, as the Node's managed user, from the repository root
   %%> Typical steps:
   %%> - `composer install`
   %%> - `vp install`
   %%> - `php artisan migrate`
-  %%> How:
-  %%> - one `@swamp/ssh exec` per step; the first failure stops the run with that step's exit code
   %%> Limits:
   %%> - each step has its own timeout
   %%> - the whole run stays inside the 60 s budget
-  SW->>N: Create, start Processes<br/>@swamp/cfgmgmt/systemd · forEach
+  SW->>N: Create, start Processes<br/>Project definitions · e.g. vp-dev
   %%> What it does:
   %%> - creates the Instance's Processes from the Project's Process definitions for `development`
   %%> - starts them, for example the Vite dev server (`vp-dev`) or a queue worker
-  %%> How:
-  %%> - one `forEach` item per Process, all at once: the unit file and `ensure: running` in `@swamp/cfgmgmt/systemd`
-  %%> - the behavior's `check` is the end check: each Process is running
   %%> Why here:
   %%> - after the setup steps, because Processes need the installed dependencies
   %%> Today:
   %%> - Project definitions only accept `production`; `development` must be added
   alt all steps pass in budget
-    N-->>SW: Processes running<br/>systemd check passed
+    N-->>SW: checked-out commit
     %%> Returns:
-    %%> - the systemd check passed for every Process
-    %%> - the checked-out commit is already an output of the clone step
+    %%> - the commit that was checked out
     %%> Not returned:
     %%> - nothing about `.env`; the Gateway rendered and stored it before the run
     SW-->>GW: Run succeeded<br/>terminal event · finish-result

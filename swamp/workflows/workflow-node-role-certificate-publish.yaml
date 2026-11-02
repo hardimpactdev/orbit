@@ -1,302 +1,173 @@
 id: 4ae59518-f877-4ab7-9a51-069cd462a7ec
 name: node-role-certificate-publish
-description: Fixed role CSR, parent-bound signature, local publication, and native activation.
+description: 'A fixed role: a Node-made key and CSR, signed from 209, installed by official steps, then a Caddy reload.'
 vaults: []
 inputs:
   type: object
   properties:
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
-    kind:
-      type: string
-    parent_run_id:
-      type: string
-      minLength: 1
-    leaf:
-      type: object
-    ssh:
-      type: object
-  required:
-  - operation_id
-  - node_id
-  - kind
-  - parent_run_id
-  - leaf
-  - ssh
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string}
+    parent_run_id: {type: string, minLength: 1}
+    leaf: {type: object}
+    ssh: {type: object}
+  required: [operation_id, node_id, kind, parent_run_id, leaf, ssh]
   additionalProperties: false
 jobs:
 - name: certificate
   steps:
-  - name: assets
+    # The 209 signer's path; the certificate signer is the only shipped script.
+  - name: 'Read the scripts'
     labels: {role: swamp}
+    dependsOn: []
     task:
       type: behavior
-      behaviorType: '@nckrtl/node-role-certificate-assets'
-      behaviorName: '${{ "role-assets" }}'
+      behaviorType: '@nckrtl/certificate-script-assets'
+      behaviorName: certificate-script-assets
       methodName: read
-      inputs:
-        leaf: ${{ inputs.leaf }}
-  - name: prepare-assets
+      inputs: {}
+    # A root-only folder for the pending key.
+  - name: 'Make the key folder'
     labels: {role: swamp}
+    dependsOn: [{step: 'Read the scripts', condition: {type: succeeded}}]
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/directory'
+      behaviorName: '${{ ("role-cert-work-" + inputs.ssh.name).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {path: '${{ "/var/lib/orbit/role-certificates/" + inputs.leaf.scope + "/" + inputs.leaf.version }}', owner: root, group: root, mode: '0700', ensure: present,
+        nodeHost: '${{ inputs.ssh.hosts[0].address }}', nodeUser: '${{ inputs.ssh.transport.user }}', nodePort: '${{ inputs.ssh.transport.port }}',
+        nodeIdentityFile: '${{ inputs.ssh.transport.identityFile }}', become: true}
+      inputs: {}
+    # One openssl req: a Node-local key and the public CSR on stdout; the key never leaves the Node.
+  - name: 'Make a CSR on the Node'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Make the key folder', condition: {type: succeeded}}]
     writes: true
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ inputs.ssh.name }}
+      behaviorName: '${{ inputs.ssh.name }}'
       methodName: exec
-      globalArgs: &id001
-        name: ${{ inputs.ssh.name }}
-        transport: ${{ inputs.ssh.transport }}
-        hosts: ${{ inputs.ssh.hosts }}
+      globalArgs:
+        name: '${{ inputs.ssh.name }}'
+        transport: '${{ inputs.ssh.transport }}'
+        hosts: '${{ inputs.ssh.hosts }}'
       inputs:
         hosts: name:target
-        argv:
-        - mkdir
-        - -p
-        - ${{ "/tmp/orbit-role-certificate-" + run.id }}
-    dependsOn:
-    - step: assets
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-  - name: copy-assets
-    labels: {role: swamp}
-    writes: true
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ inputs.ssh.name }}
-      methodName: copy
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        src: ${{ steps.assets.outputs.scripts_directory }}
-        dst: ${{ "/tmp/orbit-role-certificate-" + run.id + "/" }}
-        direction: to
-        recursive: true
-    dependsOn:
-    - step: prepare-assets
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-  - name: request
-    labels: {role: swamp}
-    writes: true
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ inputs.ssh.name }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv:
-        - env
-        - ${{ "ORBIT_CERTIFICATE_INPUT=" + steps.assets.outputs.input_json }}
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-role-certificate-" + run.id + "/scripts/role_request.py" }}
         sudo: true
-    dependsOn:
-    - step: copy-assets
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-  - name: request-info
+        argv: '${{ ["timeout", "30", "openssl", "req", "-new", "-newkey", "rsa:2048", "-nodes", "-keyout", "/var/lib/orbit/role-certificates/" + inputs.leaf.scope + "/" + inputs.leaf.version + "/key.pem", "-subj", "/CN=" + inputs.leaf.domain] }}'
+        timeoutSec: 40
+    # The one step that calls the Gateway, from 209.
+  - name: 'Sign the CSR'
     labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/node-role-certificate-assets'
-      behaviorName: '${{ "role-request-info" }}'
-      methodName: decodeRequest
-      inputs:
-        leaf: ${{ inputs.leaf }}
-        stdout: ${{ steps.request.outputs.stdout }}
-    dependsOn:
-    - step: request
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-  - name: sign
-    labels: {role: swamp}
+    dependsOn: [{step: 'Make a CSR on the Node', condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "certificate-sign" }}'
+      behaviorName: '${{ ("role-cert-sign-" + inputs.ssh.name).split(".").join("-") }}'
       methodName: execute
       inputs:
-        run: /usr/bin/python3 -B "$ORBIT_CERTIFICATE_SIGN_SCRIPT"
+        run: "timeout 90 python3 -I \"$ORBIT_SIGN_SCRIPT\""
         env:
-          ORBIT_CERTIFICATE_SIGN_SCRIPT: ${{ steps.assets.outputs.scripts_directory + "/sign.py" }}
-          ORBIT_CERTIFICATE_OPERATION_ID: ${{ string(inputs.operation_id) }}
-          ORBIT_CERTIFICATE_RUN_ID: ${{ inputs.parent_run_id }}
-          ORBIT_CERTIFICATE_MODE: single
-          ORBIT_CERTIFICATE_REQUESTS: ${{ steps["request-info"].outputs.request_json }}
-          ORBIT_CERTIFICATE_LEAF: ${{ steps["request-info"].outputs.leaf_json }}
-    dependsOn:
-    - step: request-info
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-  - name: signed-info
+          ORBIT_SIGN_SCRIPT: '${{ steps["Read the scripts"].outputs.sign }}'
+          ORBIT_CERTIFICATE_OPERATION_ID: '${{ string(inputs.operation_id) }}'
+          ORBIT_CERTIFICATE_RUN_ID: '${{ inputs.parent_run_id }}'
+          ORBIT_CERTIFICATE_NODE_ID: '${{ string(inputs.leaf.node_id) }}'
+          ORBIT_CERTIFICATE_SCOPE: '${{ inputs.leaf.scope }}'
+          ORBIT_CERTIFICATE_REQUEST: '${{ steps["Make a CSR on the Node"].outputs.stdout }}'
+    # The fixed folder Caddy reads, root:caddy 0750.
+  - name: 'Make the certificate folder'
     labels: {role: swamp}
+    dependsOn: [{step: 'Sign the CSR', condition: {type: succeeded}}]
+    writes: true
     task:
       type: behavior
-      behaviorType: '@nckrtl/node-role-certificate-assets'
-      behaviorName: '${{ "role-signed-info" }}'
-      methodName: decodeSigned
-      inputs:
-        leaf: ${{ inputs.leaf }}
-        request: ${{ steps["request-info"].outputs.request }}
-        stdout: ${{ steps.sign.outputs.stdout }}
-    dependsOn:
-    - step: sign
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-  - name: verify-pair
+      behaviorType: '@swamp/cfgmgmt/directory'
+      behaviorName: '${{ ("role-cert-current-" + inputs.ssh.name).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {path: '${{ (inputs.leaf.scope.split("role-")[1] == "gateway" ? "/etc/caddy/orbit-cert-current" : "/etc/caddy/orbit-" + inputs.leaf.scope.split("role-")[1] + "-cert-current") }}', owner: root, group: caddy, mode: '0750', ensure: present,
+        nodeHost: '${{ inputs.ssh.hosts[0].address }}', nodeUser: '${{ inputs.ssh.transport.user }}', nodePort: '${{ inputs.ssh.transport.port }}',
+        nodeIdentityFile: '${{ inputs.ssh.transport.identityFile }}', become: true}
+      inputs: {}
+    # One install of the pending key where Caddy reads it, root:caddy 0640.
+  - name: 'Install the key'
     labels: {role: swamp}
+    dependsOn: [{step: 'Make the certificate folder', condition: {type: succeeded}}]
     writes: true
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ inputs.ssh.name }}
+      behaviorName: '${{ inputs.ssh.name }}'
       methodName: exec
       globalArgs:
-        name: ${{ inputs.ssh.name }}
-        transport: ${{ inputs.ssh.transport }}
-        hosts: ${{ inputs.ssh.hosts }}
+        name: '${{ inputs.ssh.name }}'
+        transport: '${{ inputs.ssh.transport }}'
+        hosts: '${{ inputs.ssh.hosts }}'
       inputs:
         hosts: name:target
-        argv:
-        - env
-        - ${{ "ORBIT_CERTIFICATE_INPUT=" + steps.assets.outputs.input_json }}
-        - ${{ "ORBIT_CERTIFICATE_SIGNED=" + steps["signed-info"].outputs.signed_json }}
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-role-certificate-" + run.id + "/scripts/role_verify.py" }}
         sudo: true
-    dependsOn:
-    - step: signed-info
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-  - name: publish
+        argv: '${{ ["timeout", "30", "install", "-o", "root", "-g", "caddy", "-m", "0640", "/var/lib/orbit/role-certificates/" + inputs.leaf.scope + "/" + inputs.leaf.version + "/key.pem", (inputs.leaf.scope.split("role-")[1] == "gateway" ? "/etc/caddy/orbit-cert-current" : "/etc/caddy/orbit-" + inputs.leaf.scope.split("role-")[1] + "-cert-current") + "/" + (inputs.leaf.scope.split("role-")[1] == "websocket" ? "reverb" : inputs.leaf.scope.split("role-")[1]) + ".key"] }}'
+        timeoutSec: 40
+    # The signed leaf, root:caddy 0640.
+  - name: 'Install the certificate'
     labels: {role: swamp}
+    dependsOn: [{step: 'Install the key', condition: {type: succeeded}}]
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ ("role-cert-pem-" + inputs.ssh.name).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {path: '${{ (inputs.leaf.scope.split("role-")[1] == "gateway" ? "/etc/caddy/orbit-cert-current" : "/etc/caddy/orbit-" + inputs.leaf.scope.split("role-")[1] + "-cert-current") + "/" + (inputs.leaf.scope.split("role-")[1] == "websocket" ? "reverb" : inputs.leaf.scope.split("role-")[1]) + ".pem" }}', content: '${{ "-----BEGIN CERTIFICATE-----" + steps["Sign the CSR"].outputs.stdout.split("-----BEGIN CERTIFICATE-----")[1] }}', owner: root, group: caddy, mode: '0640', ensure: present,
+        nodeHost: '${{ inputs.ssh.hosts[0].address }}', nodeUser: '${{ inputs.ssh.transport.user }}', nodePort: '${{ inputs.ssh.transport.port }}',
+        nodeIdentityFile: '${{ inputs.ssh.transport.identityFile }}', become: true}
+      inputs: {}
+    # The Orbit root the Gateway returned, root:caddy 0640.
+  - name: 'Install the Orbit root'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Install the certificate', condition: {type: succeeded}}]
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ ("role-cert-root-" + inputs.ssh.name).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {path: '${{ (inputs.leaf.scope.split("role-")[1] == "gateway" ? "/etc/caddy/orbit-cert-current" : "/etc/caddy/orbit-" + inputs.leaf.scope.split("role-")[1] + "-cert-current") + "/root-ca.pem" }}', content: '${{ "-----BEGIN CERTIFICATE-----" + steps["Sign the CSR"].outputs.stdout.split("-----BEGIN CERTIFICATE-----")[2] }}', owner: root, group: caddy, mode: '0640', ensure: present,
+        nodeHost: '${{ inputs.ssh.hosts[0].address }}', nodeUser: '${{ inputs.ssh.transport.user }}', nodePort: '${{ inputs.ssh.transport.port }}',
+        nodeIdentityFile: '${{ inputs.ssh.transport.identityFile }}', become: true}
+      inputs: {}
+    # A reload keeps open connections.
+  - name: 'Reload Caddy'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Install the Orbit root', condition: {type: succeeded}}]
     writes: true
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ inputs.ssh.name }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv:
-        - env
-        - ${{ "ORBIT_CERTIFICATE_INPUT=" + steps.assets.outputs.input_json }}
-        - ${{ "ORBIT_CERTIFICATE_SIGNED=" + steps["signed-info"].outputs.signed_json }}
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-role-certificate-" + run.id + "/scripts/role_publish.py" }}
-        sudo: true
-    dependsOn:
-    - step: verify-pair
-      condition:
-        type: succeeded
-  - name: activate
-    labels: {role: swamp}
-    writes: true
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ inputs.ssh.name }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv:
-        - /usr/bin/systemctl
-        - try-reload-or-restart
-        - caddy
-        sudo: true
-    dependsOn:
-    - step: publish
-      condition:
-        type: succeeded
-  - name: cleanup-key
-    labels: {role: swamp}
-    writes: true
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ inputs.ssh.name }}
+      behaviorName: '${{ inputs.ssh.name }}'
       methodName: exec
       globalArgs:
-        name: ${{ inputs.ssh.name }}
-        transport: ${{ inputs.ssh.transport }}
-        hosts: ${{ inputs.ssh.hosts }}
+        name: '${{ inputs.ssh.name }}'
+        transport: '${{ inputs.ssh.transport }}'
+        hosts: '${{ inputs.ssh.hosts }}'
       inputs:
         hosts: name:target
-        argv:
-        - env
-        - ${{ "ORBIT_CERTIFICATE_INPUT=" + steps.assets.outputs.input_json }}
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-role-certificate-" + run.id + "/scripts/role_cleanup.py" }}
         sudo: true
-    dependsOn:
-    - step: activate
-      condition:
-        type: succeeded
-  - name: cleanup-assets
+        argv: [timeout, '60', systemctl, try-reload-or-restart, caddy]
+        timeoutSec: 70
+    # The pending key folder, gone after the reload.
+  - name: 'Remove the pending key'
     labels: {role: swamp}
+    dependsOn: [{step: 'Reload Caddy', condition: {type: succeeded}}]
     writes: true
     task:
       type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ inputs.ssh.name }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv:
-        - rm
-        - -rf
-        - ${{ "/tmp/orbit-role-certificate-" + run.id }}
-    dependsOn:
-    - step: cleanup-key
-      condition:
-        type: succeeded
-  - name: result
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/node-role-certificate-assets'
-      behaviorName: '${{ "role-result" }}'
-      methodName: result
-      inputs:
-        leaf: ${{ inputs.leaf }}
-        stdout: ${{ steps.publish.outputs.stdout }}
-    dependsOn:
-    - step: cleanup-assets
-      condition:
-        type: succeeded
+      behaviorType: '@swamp/cfgmgmt/directory'
+      behaviorName: '${{ ("role-cert-work-gone-" + inputs.ssh.name).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {path: '${{ "/var/lib/orbit/role-certificates/" + inputs.leaf.scope + "/" + inputs.leaf.version }}', ensure: absent,
+        nodeHost: '${{ inputs.ssh.hosts[0].address }}', nodeUser: '${{ inputs.ssh.transport.user }}', nodePort: '${{ inputs.ssh.transport.port }}',
+        nodeIdentityFile: '${{ inputs.ssh.transport.identityFile }}', become: true}
+      inputs: {}

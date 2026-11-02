@@ -12,11 +12,8 @@ declare(strict_types=1);
  *   fires    stdin {schedule, seconds}: the same subscriber, with its shared run reader, until a calendar
  *            fire of that Schedule is recorded as a task.
  *   fixture  stdin {roles: {node_id: [role]}, wireguard_keys: {node_id: public key}, vpn_subnet?, projects: [attributes],
- *            extensions: [name], task_groups: [attributes + subtasks: [attributes] + taskable?: {instance: id}],
- *            instances: [attributes], task_vms: [attributes], operations: [attributes]}: the records a kind fixture
- *            needs beyond the seed, such as the VPN hub, peers with keys and the VPN subnet, a Project under the fixed
- *            id its Swamp configuration names, an extension, or a task group's owned workspace (the group and its
- *            subtasks, its Instance, its task VM and its provision Operation) for kinds that run in it.
+ *            extensions: [name]}: the records a kind fixture needs beyond the seed, such as the VPN hub, peers with
+ *            keys and the VPN subnet, a Project under the fixed id its Swamp configuration names, or an extension.
  */
 
 use App\Domain\Gateway\GatewayQueue;
@@ -25,12 +22,9 @@ use App\Domain\Nodes\WorkerKnownHostsPublisher;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Swamp\SwampRunSubscriber;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
-use App\Models\Task;
-use App\Models\TaskVm;
 use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Http\Request;
@@ -102,35 +96,6 @@ if ($argv[1] === 'fixture') {
     // A Project under a fixed id, for kinds whose Swamp side keys source-owned configuration by Project id.
     foreach ($input['projects'] ?? [] as $project) {
         (new Project)->forceFill($project)->save();
-    }
-    // A task group's owned workspace, in the order its references need: the group and its subtasks, the Instance the
-    // group owns, the group holding that Instance (a task holds only a workspace it owns), its task VM, and a
-    // recorded Operation such as the provision that pinned the analysis base.
-    $holds = [];
-    foreach ($input['task_groups'] ?? [] as $group) {
-        $subtasks = $group['subtasks'] ?? [];
-        $taskable = $group['taskable'] ?? [];
-        unset($group['subtasks'], $group['taskable']);
-        $parent = (new Task)->forceFill($group);
-        $parent->save();
-        foreach ($subtasks as $subtask) {
-            (new Task)->forceFill([...$subtask, 'parent_id' => $parent->id])->save();
-        }
-        if (isset($taskable['instance'])) {
-            $holds[] = [$parent, $taskable['instance']];
-        }
-    }
-    foreach ($input['instances'] ?? [] as $instance) {
-        (new Instance)->forceFill($instance)->save();
-    }
-    foreach ($holds as [$group, $instance]) {
-        $group->forceFill(['taskable_type' => 'instance', 'taskable_id' => $instance])->save();
-    }
-    foreach ($input['task_vms'] ?? [] as $vm) {
-        (new TaskVm)->forceFill($vm)->save();
-    }
-    foreach ($input['operations'] ?? [] as $operation) {
-        (new Operation)->forceFill($operation)->save();
     }
     foreach ($input['wireguard_keys'] ?? [] as $id => $key) {
         Node::query()->findOrFail((int) $id)->update(['wireguard_public_key' => $key]);

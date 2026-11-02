@@ -21,14 +21,18 @@ export function workloadWorkflow(): Fields {
     };
     const previous = () =>
         steps.map((s) => ({ step: s.name, condition: { type: "always" } }));
-    const served =
-        "inputs.intent.plan.served_roots != null ? [inputs.intent.plan.served_roots] : []";
-    const dev =
-        "inputs.intent.plan.source_access != null ? [inputs.intent.plan.source_access] : []";
-    const prod = "inputs.intent.plan.served_roots != null ? [{}] : []";
+    const links = "inputs.intent.plan.links";
+    const acl = "inputs.intent.plan.acl";
     const runtime =
         "inputs.intent.plan.runtime != null ? [inputs.intent.plan.runtime] : []";
-    function add(name: string, list: string, task: Fields) {
+    const cfgmgmt = {
+        nodeHost: expr("inputs.intent.connection.nodeHost"),
+        nodeUser: expr("inputs.intent.connection.nodeUser"),
+        nodeIdentityFile: expr("inputs.intent.connection.nodeIdentityFile"),
+        nodePort: expr("inputs.intent.connection.nodePort"),
+        become: true,
+    };
+    function add(name: string, list: string, task: Fields, extra: Fields = {}) {
         if (task.behaviorType === "@swamp/ssh") task.globalArgs = globals;
         const identity = behaviorName("irw-" + name, task.globalArgs, true);
         task.behaviorName = identity;
@@ -39,46 +43,38 @@ export function workloadWorkflow(): Fields {
             name,
             ...placement,
             forEach: { item: "part", in: expr(list) },
+            ...extra,
             dependsOn: previous(),
             guard: expr(failed),
             task,
         });
     }
-    function action(name: string, action: string, list: string, input: string) {
-        add(name + "-assets", list, {
-            type: "behavior",
-            behaviorType: "@nckrtl/instance-route-workload",
-            methodName: "read",
-            inputs: { action, input: expr(input) },
-        });
-        add(name + "-command", list, {
-            type: "behavior",
-            behaviorType: "@swamp/ssh",
-            methodName: "script",
-            inputs: {
-                hosts: "name:target",
-                interpreter: "python3",
-                sudo: true,
-                script: expr(`steps["${name}-assets-0"].outputs.script_body`),
-            },
-        });
-        add(name, list, {
-            type: "behavior",
-            behaviorType: "@nckrtl/instance-route-workload",
-            methodName: "decode",
-            inputs: {
-                stdout: expr(`steps["${name}-command-0"].outputs.stdout`),
-            },
-        });
-    }
-    action("served", "served_roots", served, "self.part");
-    action("dev-source", "source_access", dev, "self.part");
-    action(
-        "prod-source",
-        "source_access",
-        prod,
-        '{"user":steps["served-0"].outputs.user,"sites":steps["served-0"].outputs.sites}',
-    );
+    // Each served directory's .env links into the shared env tree of the selected release.
+    add("links", links, {
+        type: "behavior",
+        behaviorType: "@swamp/cfgmgmt/link",
+        methodName: "apply",
+        globalArgs: {
+            ...cfgmgmt,
+            path: expr("self.part.path"),
+            target: expr("self.part.target"),
+            owner: expr("self.part.owner"),
+            ensure: "present",
+        },
+        inputs: {},
+    });
+    // Caddy access by ACL, in order: deny the checkout, open the path, grant the served roots (one setfacl each).
+    add("web-root", acl, {
+        type: "behavior",
+        behaviorType: "@swamp/ssh",
+        methodName: "exec",
+        inputs: {
+            hosts: "name:target",
+            sudo: true,
+            argv: expr('["timeout", "120"] + self.part.argv'),
+            timeoutSec: 130,
+        },
+    }, { concurrency: 1, writes: true });
     add("runtime-identity", runtime, {
         type: "behavior",
         behaviorType: "@swamp/ssh",
@@ -101,11 +97,7 @@ export function workloadWorkflow(): Fields {
         behaviorType: "@swamp/cfgmgmt/file",
         methodName: "apply",
         globalArgs: {
-            nodeHost: expr("inputs.intent.connection.nodeHost"),
-            nodeUser: expr("inputs.intent.connection.nodeUser"),
-            nodeIdentityFile: expr("inputs.intent.connection.nodeIdentityFile"),
-            nodePort: expr("inputs.intent.connection.nodePort"),
-            become: true,
+            ...cfgmgmt,
             path: expr(
                 '"/etc/orbit/php-fpm/" + self.part.user + "/generated/pool.conf"',
             ),
@@ -175,8 +167,8 @@ export function workloadWorkflow(): Fields {
             inputs: {
                 outcomes: expr("steps"),
                 required: {
-                    "dev-source": expr(`size(${dev})`),
-                    "prod-source": expr(`size(${prod})`),
+                    "links": expr(`size(${links})`),
+                    "web-root": expr(`size(${acl})`),
                     "runtime-reload": expr(`size(${runtime})`),
                 },
             },

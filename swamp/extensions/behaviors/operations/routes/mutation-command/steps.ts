@@ -186,11 +186,10 @@ export function routeMutationSteps(
             "route-environment-write",
             `${side}.url_writes`,
             targetIntent("write"),
-            {
-                material: expr(
-                    "inputs.execution_secrets[self.part.secret_field]",
-                ),
-            },
+            // Only a whole .env has vault material; an APP_URL line has none.
+            expr(
+                'has(self.part.secret_field) ? {"material": inputs.execution_secrets[self.part.secret_field]} : {}',
+            ),
         );
     }
     if (!withdrawal) urls();

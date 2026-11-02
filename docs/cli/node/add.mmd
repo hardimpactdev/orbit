@@ -1,6 +1,5 @@
 sequenceDiagram
   %% Target design: ADR 0243/0244 task, DECISIONS R1-R4, single-swamp-node, agent-observer-swamp-acts, root-of-trust-gateway-only, tool.manager_converge removed (shared Tool Manager setup step). docs/reference/node-provisioning.md#add-a-node.
-  %% Tightened: flow-tighten 2026-11-02, rules 3, 17, 22 (cfgmgmt apt/user/fetch/file/systemd/authorized_key; Q-WGHUB hub config as file + wg syncconf; DNS record kept: a Node name is not covered by a TLD answer).
   %% status: draft
   %% command: node:add
   %% kind: node.add
@@ -78,7 +77,7 @@ sequenceDiagram
   %%> Returns:
   %%> - the host key, platform and architecture as step outputs
   alt Linux Node
-    SW->>N: Bootstrap the host<br/>@swamp/cfgmgmt apt · user
+    SW->>N: Bootstrap the host<br/>packages · user · apt Tool Manager
     %%> Runs as:
     %%> - the bootstrap user: `root` directly for a new Node, the managed user through passwordless sudo for an existing one
     %%> What it does:
@@ -90,7 +89,7 @@ sequenceDiagram
     %%> - official `@swamp/cfgmgmt` behaviors (apt, file) and one tracked script over `@swamp/ssh`
     %%> Replaces:
     %%> - the `tool.manager_converge` child; the setup is a step here
-    SW->>N: Install the Node agent<br/>@swamp/cfgmgmt/fetch · sha256
+    SW->>N: Install the Node agent<br/>pinned orbit-agent · sha256
     %%> What it does:
     %%> - downloads the pinned `orbit-agent` release and checks its SHA-256
     %%> - a matching installed binary skips the download
@@ -99,32 +98,32 @@ sequenceDiagram
     %%> - official `@swamp/cfgmgmt` behaviors (fetch, file) over SSH from 209
     %%> Not included:
     %%> - starts nothing; the agent starts after enrollment
-    SW->>N: Set up WireGuard<br/>@swamp/cfgmgmt file · systemd
+    SW->>N: Set up WireGuard<br/>key · orbit.conf · wg-quick@orbit
     %%> What it does:
     %%> - creates the WireGuard key on Node 12; an existing key stays
     %%> - writes `/etc/wireguard/orbit.conf` for `10.6.0.42` with its DNS policy, and starts `wg-quick@orbit`
     %%> - adds the UFW rule `orbit:wireguard-members`; public SSH stays open
     %%> Returns:
     %%> - the public key as a step output; the private key never leaves the Node
-    SW->>HUB: Add the peer<br/>file 0600 · wg syncconf
+    SW->>HUB: Add the peer<br/>wg syncconf · no restart
     %%> How:
     %%> - Swamp reaches the `vpn` Node over `@swamp/ssh` from 209; there is no worker on Node 1
     %%> What it does:
     %%> - adds Node 12's peer with the public key from the step before
-    %%> - writes the whole hub config the Gateway rendered with `@swamp/cfgmgmt/file`, 0600, then loads it with `wg syncconf`; no restart, no backup copy
+    %%> - validates the new hub configuration with `wg-quick strip`, keeps the live file as a backup and swaps it in
     %%> - live-syncs the running hub with `wg syncconf`; other peers keep their tunnels
-    SW->>N: Enroll the Node agent<br/>@swamp/cfgmgmt file · systemd
+    SW->>N: Enroll the Node agent<br/>vault.get agent-secret-node-12
     %%> What it does:
-    %%> - writes `config.toml`, `ca.pem` and the secret from `vault.get agent-secret-node-12` (0600) with `@swamp/cfgmgmt/file`, and the `orbit-agent.service` unit with `@swamp/cfgmgmt/systemd`
+    %%> - writes `config.toml`, `ca.pem`, the secret and the `orbit-agent.service` unit in `/etc/orbit/agent`
     %%> - starts the Node agent; it reports to the Gateway over WireGuard
     %%> Observer only:
     %%> - the Node agent observes and reports; it runs no actions
     %%> How:
     %%> - official `@swamp/cfgmgmt/file` and `@swamp/cfgmgmt/systemd` behaviors over SSH from 209
-    SW->>N: Write the Orbit keys<br/>@swamp/cfgmgmt/authorized_key
+    SW->>N: Write the Orbit SSH block<br/>authorized_keys · marked block
     %%> What it does:
-    %%> - writes the `swamp` role's public key and the recorded operator keys for the managed user, one `authorized_key` per key
-    %%> - the same step as `node:ssh-access:converge`; keys Orbit never recorded stay as they are
+    %%> - writes the `swamp` role's public key and the recorded operator keys for the managed user, between the Orbit markers
+    %%> - the same step as `node:ssh-access:converge`; keys outside the block stay as they are
     %%> Why:
     %%> - every later command reaches Node 12 as the managed user with the `swamp` role identity, not the bootstrap identity
     opt roles requested
@@ -138,8 +137,6 @@ sequenceDiagram
     SW->>HUB: Publish private DNS<br/>beast records · reload dnsmasq
     %%> What it does:
     %%> - adds Node 12's private names to the DNS catalog on the `vpn` Node
-    %%> Why a record:
-    %%> - `beast.orbit` names one Node's WireGuard address; no TLD answer covers it
     %%> - reloads the DNS listener only when the records changed; the last good copy comes back when the new one fails its check
     %%> Cluster:
     %%> - a Node in a Cluster also gets the Router's LAN rules, through the shared firewall step

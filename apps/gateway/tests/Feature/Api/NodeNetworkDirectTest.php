@@ -43,31 +43,13 @@ function nativeNetworkFixture(): array
 it('captures pinned peer and hub SSH inputs without private material or worker selection', function (): void {
     [$operation, $peer, $hub] = nativeNetworkFixture();
     expect($operation->input['intent']['ssh']['target']['host'])->toBe($peer->wireguard_ip);
-    expect($operation->input['intent']['hub']['ssh']['target']['host'])->toBe($hub->wireguard_ip);
+    expect($operation->input['intent']['hub_ssh']['target']['host'])->toBe($hub->wireguard_ip);
     expect(app(DirectOperation::class)->definition('node.network_converge'))->toMatchArray([
-        'workflow_inputs' => true, 'terminal_result' => ['job' => 'network', 'step' => 'Check the network'],
+        'workflow_inputs' => true, 'terminal_result' => ['job' => 'network', 'step' => 'result'],
     ])->not->toHaveKey('private_material');
     expect(NodeWireGuardInput::bound($operation))->toBeNull();
     expect(json_encode(app(NodeNetworkProjection::class)->input($operation)))
         ->not->toContain(base64_encode(str_repeat('p', 32)));
-});
-
-it('renders the peer and hub WireGuard files with no private key and leaves the peer section for its prepared key', function (): void {
-    [, $peer, $hub, $intent] = nativeNetworkFixture();
-    $intent = app(NodeNetworkConvergeInput::class)->capture($peer->refresh(), false);
-    $hook = 'PostUp = resolvectl dns %i '.$intent['peer']['dns_server'].'; resolvectl domain %i '
-        .implode(' ', array_map(static fn (string $domain): string => '\\~'.$domain, $intent['peer']['domains']));
-
-    expect($intent['dns_hook'])->toBe($hook)
-        ->and($intent['config'])->toStartWith("[Interface]\nAddress = {$intent['peer']['address']}\nPostUp = wg set %i private-key /etc/wireguard/orbit.key\n{$hook}\n\n")
-        ->and($intent['config'])->toEndWith($intent['peers'])
-        ->and($intent['peers'])->toBe("[Peer]\nPublicKey = {$intent['peer']['server_public_key']}\nEndpoint = {$intent['peer']['endpoint']}\nAllowedIPs = {$intent['peer']['subnet']}\nPersistentKeepalive = 25\n")
-        ->and($intent['hub']['hub_id'])->toBe($hub->id)
-        // Only this Node's peer file on the hub; the run puts its prepared key where the mark stands.
-        ->and($intent['hub']['file'])->toBe("/etc/wireguard/orbit-peers.d/{$peer->id}.conf")
-        ->and($intent['hub']['section'])->toBe("[Peer]\n# {$peer->name}\nPublicKey = @KEY@\nAllowedIPs = {$peer->wireguard_ip}/32\n")
-        ->and($intent['hub']['ssh']['target']['host'])->toBe($hub->wireguard_ip);
-    expect(json_encode($intent))->not->toContain('PrivateKey')->not->toContain(base64_encode(str_repeat('p', 32)));
 });
 
 it('captures removal router and DNS policy without children or peer installation', function (): void {

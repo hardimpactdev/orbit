@@ -1,325 +1,251 @@
 id: ae3bff71-8b73-4cad-8ef4-e8f206492c43
 name: route-certificate-publish
 queueTimeout: 30
-description: 'One affected Node: staged assets, public CSR batch, root-bound signing and per-leaf proof through
-  one official SSH connection.'
+description: 'One Node: a Node-made key and CSR per leaf, signed from 209, installed by official steps.'
 vaults: []
 inputs:
   type: object
   properties:
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
-    kind:
-      type: string
-    parent_run_id:
-      type: string
-    restoring:
-      type: boolean
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string}
+    parent_run_id: {type: string}
+    restoring: {type: boolean}
     intent:
       type: object
       properties:
-        control_node_id:
-          type: integer
-          const: 209
-        connection:
-          type: object
-        host_keys:
-          type: array
-          items:
-            type: string
-          minItems: 1
-        node_id:
-          type: integer
-          minimum: 1
-        leaves:
-          type: array
-          items:
-            type: object
-          minItems: 1
-          maxItems: 256
-      required:
-      - node_id
-      - leaves
-      - control_node_id
-      - connection
-      - host_keys
+        control_node_id: {type: integer, const: 209}
+        connection: {type: object}
+        host_keys: {type: array, items: {type: string}, minItems: 1}
+        node_id: {type: integer, minimum: 1}
+        leaves: {type: array, items: {type: object}, minItems: 1, maxItems: 256}
+      required: [node_id, leaves, control_node_id, connection, host_keys]
       additionalProperties: false
-    execution_secrets:
-      type: object
-      additionalProperties: false
-  required:
-  - operation_id
-  - node_id
-  - kind
-  - parent_run_id
-  - restoring
-  - intent
-  - execution_secrets
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [operation_id, node_id, kind, parent_run_id, restoring, intent, execution_secrets]
   additionalProperties: false
 jobs:
 - name: certificate
   steps:
-  - name: assets
+  - name: 'Read the scripts'
     labels: {role: swamp}
+    dependsOn: []
     task:
       type: behavior
-      behaviorType: '@nckrtl/node-certificate-assets'
-      behaviorName: '${{ "route-cert-assets-node-certificate-assets" }}'
+      behaviorType: '@nckrtl/certificate-script-assets'
+      behaviorName: certificate-script-assets
       methodName: read
-      inputs:
-        node_id: ${{ inputs.intent.node_id }}
-        leaves: ${{ inputs.intent.leaves }}
-  - name: prepare-assets
+      inputs: {}
+    # The account's passwd line: its gid and home place the account copy.
+  - name: 'Read the account'
     labels: {role: swamp}
+    dependsOn: [{step: 'Read the scripts', condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-node-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
+      behaviorName: '${{ ("route-cert-account-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
-      globalArgs: &id001
-        name: '${{ ("route-ssh-" + inputs.parent_run_id + "-" + string(inputs.intent.node_id)).split(".").join("-") }}'
+      globalArgs:
+        name: '${{ ("route-cert-account-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
         transport:
           kind: ssh
-          user: ${{ inputs.intent.connection.nodeUser }}
-          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
-          port: ${{ inputs.intent.connection.nodePort }}
+          user: '${{ inputs.intent.connection.nodeUser }}'
+          port: '${{ inputs.intent.connection.nodePort }}'
+          identityFile: '${{ inputs.intent.connection.nodeIdentityFile }}'
         hosts:
         - name: target
-          address: ${{ inputs.intent.connection.nodeHost }}
-          transport:
-            hostKeys: ${{ inputs.intent.host_keys }}
+          address: '${{ inputs.intent.connection.nodeHost }}'
+          transport: {hostKeys: '${{ inputs.intent.host_keys }}'}
       inputs:
         hosts: name:target
-        argv:
-        - /usr/bin/mkdir
-        - -p
-        - -m
-        - '0700'
-        - ${{ "/tmp/orbit-route-" + run.id }}
-    dependsOn:
-    - step: assets
-      condition:
-        type: succeeded
-  - name: copy-assets
+        argv: '${{ ["timeout", "10", "getent", "passwd", inputs.intent.leaves[0].user] }}'
+        timeoutSec: 20
+    # The new version folder Caddy reads, root:caddy 0750.
+  - name: 'Make the leaf folder'
     labels: {role: swamp}
+    dependsOn: [{step: 'Read the account', condition: {type: succeeded}}]
+    writes: true
+    forEach: {item: leaf, in: '${{ inputs.intent.leaves }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/directory'
+      behaviorName: '${{ ("route-cert-dir-" + string(inputs.intent.connection.nodeHost) + "-" + self.leaf.scope).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {path: '${{ "/etc/caddy/orbit-certificates/" + self.leaf.scope + "/" + "versions/" + self.leaf.version }}', owner: root, group: caddy, mode: '0750', ensure: present,
+        nodeHost: '${{ inputs.intent.connection.nodeHost }}', nodeUser: '${{ inputs.intent.connection.nodeUser }}', nodePort: '${{ inputs.intent.connection.nodePort }}',
+        nodeIdentityFile: '${{ inputs.intent.connection.nodeIdentityFile }}', become: true}
+      inputs: {}
+    # One openssl req: a Node-local key and the public CSR on stdout; the key never leaves the Node.
+  - name: 'Make a CSR on the Node'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Make the leaf folder', condition: {type: succeeded}}]
+    writes: true
+    forEach: {item: leaf, in: '${{ inputs.intent.leaves }}'}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-node-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
-      methodName: copy
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        src: ${{ steps.assets.outputs.scripts_directory }}
-        dst: ${{ "/tmp/orbit-route-" + run.id + "/" }}
-        direction: to
-        recursive: true
-    dependsOn:
-    - step: prepare-assets
-      condition:
-        type: succeeded
-  - name: request
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-node-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
+      behaviorName: '${{ ("route-cert-csr-" + string(inputs.intent.connection.nodeHost) + "-" + self.leaf.scope).split(".").join("-") }}'
       methodName: exec
-      globalArgs: *id001
+      globalArgs:
+        name: '${{ ("route-cert-csr-" + string(inputs.intent.connection.nodeHost) + "-" + self.leaf.scope).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: '${{ inputs.intent.connection.nodeUser }}'
+          port: '${{ inputs.intent.connection.nodePort }}'
+          identityFile: '${{ inputs.intent.connection.nodeIdentityFile }}'
+        hosts:
+        - name: target
+          address: '${{ inputs.intent.connection.nodeHost }}'
+          transport: {hostKeys: '${{ inputs.intent.host_keys }}'}
       inputs:
         hosts: name:target
-        argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-route-" + run.id + "/scripts/node_batch.py" }}
-        - request
-        - ${{ "/tmp/orbit-route-" + run.id + "/requests.json" }}
-        stdin: ${{ steps.assets.outputs.input_json }}
         sudo: true
-    dependsOn:
-    - step: copy-assets
-      condition:
-        type: succeeded
-  - name: request-info
+        argv: '${{ ["timeout", "30", "openssl", "req", "-new", "-newkey", "rsa:2048", "-nodes", "-keyout", "/etc/caddy/orbit-certificates/" + self.leaf.scope + "/" + "versions/" + self.leaf.version + "/key.pem", "-subj", "/CN=" + self.leaf.domain] }}'
+        timeoutSec: 40
+    # The leaf key, root:caddy 0640, without its content.
+  - name: 'Protect the key'
     labels: {role: swamp}
+    dependsOn: [{step: 'Make a CSR on the Node', condition: {type: succeeded}}]
+    writes: true
+    forEach: {item: leaf, in: '${{ inputs.intent.leaves }}'}
     task:
       type: behavior
-      behaviorType: '@nckrtl/node-certificate-assets'
-      behaviorName: '${{ "route-cert-request-info" }}'
-      methodName: requests
-      inputs:
-        leaves: ${{ inputs.intent.leaves }}
-        stdout: ${{ steps.request.outputs.stdout }}
-    dependsOn:
-    - step: request
-      condition:
-        type: succeeded
-  - name: copy-requests
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ ("route-cert-key-" + string(inputs.intent.connection.nodeHost) + "-" + self.leaf.scope).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {path: '${{ "/etc/caddy/orbit-certificates/" + self.leaf.scope + "/" + "versions/" + self.leaf.version + "/key.pem" }}', owner: root, group: caddy, mode: '0640', ensure: present,
+        nodeHost: '${{ inputs.intent.connection.nodeHost }}', nodeUser: '${{ inputs.intent.connection.nodeUser }}', nodePort: '${{ inputs.intent.connection.nodePort }}',
+        nodeIdentityFile: '${{ inputs.intent.connection.nodeIdentityFile }}', become: true}
+      inputs: {}
+    # The one step that calls the Gateway, from 209.
+  - name: 'Sign the CSR'
     labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-node-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
-      methodName: copy
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        src: ${{ "/tmp/orbit-route-" + run.id + "/requests.json" }}
-        dst: ${{ "/tmp/orbit-route-" + run.id + "-requests.json" }}
-        direction: from
-    dependsOn:
-    - step: request-info
-      condition:
-        type: succeeded
-  - name: sign
-    labels: {role: swamp}
+    dependsOn: [{step: 'Protect the key', condition: {type: succeeded}}]
+    forEach: {item: leaf, in: '${{ inputs.intent.leaves }}'}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "certificate-sign" }}'
+      behaviorName: '${{ ("route-cert-sign-" + string(inputs.intent.connection.nodeHost) + "-" + self.leaf.scope).split(".").join("-") }}'
       methodName: execute
       inputs:
-        run: /usr/bin/python3 -B "$ORBIT_CERTIFICATE_SIGN_SCRIPT"
+        run: "timeout 90 python3 -I \"$ORBIT_SIGN_SCRIPT\""
         env:
-          ORBIT_CERTIFICATE_SIGN_SCRIPT: ${{ steps.assets.outputs.scripts_directory + "/sign.py" }}
-          ORBIT_CERTIFICATE_OPERATION_ID: ${{ string(inputs.operation_id) }}
-          ORBIT_CERTIFICATE_RUN_ID: ${{ inputs.parent_run_id }}
-          ORBIT_CERTIFICATE_MODE: node
-          ORBIT_CERTIFICATE_REQUESTS_FILE: ${{ "/tmp/orbit-route-" + run.id + "-requests.json" }}
-          ORBIT_CERTIFICATE_RESTORING: ${{ string(inputs.restoring) }}
-    dependsOn:
-    - step: copy-requests
-      condition:
-        type: succeeded
-  - name: signature
+          ORBIT_SIGN_SCRIPT: '${{ steps["Read the scripts"].outputs.sign }}'
+          ORBIT_CERTIFICATE_OPERATION_ID: '${{ string(inputs.operation_id) }}'
+          ORBIT_CERTIFICATE_RUN_ID: '${{ inputs.parent_run_id }}'
+          ORBIT_CERTIFICATE_NODE_ID: '${{ string(self.leaf.node_id) }}'
+          ORBIT_CERTIFICATE_SCOPE: '${{ self.leaf.scope }}'
+          ORBIT_CERTIFICATE_RESTORING: '${{ string(inputs.restoring) }}'
+          ORBIT_CERTIFICATE_REQUEST: '${{ steps["Make a CSR on the Node-" + string(self._index)].outputs.stdout }}'
+    # The signed leaf beside its key, root:caddy 0644.
+  - name: 'Install the certificate'
     labels: {role: swamp}
+    dependsOn: [{step: 'Sign the CSR', condition: {type: succeeded}}]
+    writes: true
+    forEach: {item: leaf, in: '${{ inputs.intent.leaves }}'}
     task:
       type: behavior
-      behaviorType: '@nckrtl/node-certificate-assets'
-      behaviorName: '${{ "route-cert-signature" }}'
-      methodName: signed
-      inputs:
-        leaves: ${{ inputs.intent.leaves }}
-        requests: ${{ steps["request-info"].outputs.requests }}
-        stdout: ${{ steps.sign.outputs.stdout }}
-    dependsOn:
-    - step: sign
-      condition:
-        type: succeeded
-  - name: publish
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ ("route-cert-cert-" + string(inputs.intent.connection.nodeHost) + "-" + self.leaf.scope).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {path: '${{ "/etc/caddy/orbit-certificates/" + self.leaf.scope + "/" + "versions/" + self.leaf.version + "/cert.pem" }}', content: '${{ "-----BEGIN CERTIFICATE-----" + steps["Sign the CSR-" + string(self._index)].outputs.stdout.split("-----BEGIN CERTIFICATE-----")[1] }}', owner: root, group: caddy, mode: '0644', ensure: present,
+        nodeHost: '${{ inputs.intent.connection.nodeHost }}', nodeUser: '${{ inputs.intent.connection.nodeUser }}', nodePort: '${{ inputs.intent.connection.nodePort }}',
+        nodeIdentityFile: '${{ inputs.intent.connection.nodeIdentityFile }}', become: true}
+      inputs: {}
+    # current points at the new version, which the Caddy site names.
+  - name: 'Select the certificate'
     labels: {role: swamp}
+    dependsOn: [{step: 'Install the certificate', condition: {type: succeeded}}]
+    writes: true
+    forEach: {item: leaf, in: '${{ inputs.intent.leaves }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/link'
+      behaviorName: '${{ ("route-cert-current-" + string(inputs.intent.connection.nodeHost) + "-" + self.leaf.scope).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {path: '${{ "/etc/caddy/orbit-certificates/" + self.leaf.scope + "/current" }}', target: '${{ "versions/" + self.leaf.version }}', owner: root, ensure: present,
+        nodeHost: '${{ inputs.intent.connection.nodeHost }}', nodeUser: '${{ inputs.intent.connection.nodeUser }}', nodePort: '${{ inputs.intent.connection.nodePort }}',
+        nodeIdentityFile: '${{ inputs.intent.connection.nodeIdentityFile }}', become: true}
+      inputs: {}
+    # The account copy the development servers read: one install of key and certificate.
+  - name: 'Copy the account pair'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Select the certificate', condition: {type: succeeded}}]
+    writes: true
+    forEach: {item: leaf, in: '${{ inputs.intent.leaves }}'}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-node-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
+      behaviorName: '${{ ("route-cert-copy-" + string(inputs.intent.connection.nodeHost) + "-" + self.leaf.scope).split(".").join("-") }}'
       methodName: exec
-      globalArgs: *id001
+      globalArgs:
+        name: '${{ ("route-cert-copy-" + string(inputs.intent.connection.nodeHost) + "-" + self.leaf.scope).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: '${{ inputs.intent.connection.nodeUser }}'
+          port: '${{ inputs.intent.connection.nodePort }}'
+          identityFile: '${{ inputs.intent.connection.nodeIdentityFile }}'
+        hosts:
+        - name: target
+          address: '${{ inputs.intent.connection.nodeHost }}'
+          transport: {hostKeys: '${{ inputs.intent.host_keys }}'}
       inputs:
         hosts: name:target
-        argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-route-" + run.id + "/scripts/node_batch.py" }}
-        - publish
-        stdin: ${{ steps.signature.outputs.publish_json }}
         sudo: true
-    dependsOn:
-    - step: signature
-      condition:
-        type: succeeded
-  - name: trust
+        argv: '${{ ["timeout", "30", "install", "-D", "-o", self.leaf.user, "-g", steps["Read the account"].outputs.stdout.split(":")[3], "-m", "0600", "-t", steps["Read the account"].outputs.stdout.split(":")[5] + "/.orbit/certificates/" + self.leaf.scope + "/" + "versions/" + self.leaf.version, "/etc/caddy/orbit-certificates/" + self.leaf.scope + "/" + "versions/" + self.leaf.version + "/key.pem", "/etc/caddy/orbit-certificates/" + self.leaf.scope + "/" + "versions/" + self.leaf.version + "/cert.pem"] }}'
+        timeoutSec: 40
+    # The account current points at the new version.
+  - name: 'Select the account pair'
     labels: {role: swamp}
+    dependsOn: [{step: 'Copy the account pair', condition: {type: succeeded}}]
+    writes: true
+    forEach: {item: leaf, in: '${{ inputs.intent.leaves }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/link'
+      behaviorName: '${{ ("route-cert-copy-current-" + string(inputs.intent.connection.nodeHost) + "-" + self.leaf.scope).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {path: '${{ steps["Read the account"].outputs.stdout.split(":")[5] + "/.orbit/certificates/" + self.leaf.scope + "/current" }}', target: '${{ "versions/" + self.leaf.version }}', owner: '${{ self.leaf.user }}', ensure: present,
+        nodeHost: '${{ inputs.intent.connection.nodeHost }}', nodeUser: '${{ inputs.intent.connection.nodeUser }}', nodePort: '${{ inputs.intent.connection.nodePort }}',
+        nodeIdentityFile: '${{ inputs.intent.connection.nodeIdentityFile }}', become: true}
+      inputs: {}
+    # The public Orbit root the Gateway returned, in the system trust folder.
+  - name: 'Trust the Orbit root'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Select the account pair', condition: {type: succeeded}}]
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ ("route-cert-trust-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {path: /usr/local/share/ca-certificates/orbit-managed-root-ca.crt, content: '${{ "-----BEGIN CERTIFICATE-----" + steps["Sign the CSR-0"].outputs.stdout.split("-----BEGIN CERTIFICATE-----")[2] }}', owner: root, group: root, mode: '0644', ensure: present,
+        nodeHost: '${{ inputs.intent.connection.nodeHost }}', nodeUser: '${{ inputs.intent.connection.nodeUser }}', nodePort: '${{ inputs.intent.connection.nodePort }}',
+        nodeIdentityFile: '${{ inputs.intent.connection.nodeIdentityFile }}', become: true}
+      inputs: {}
+    # update-ca-certificates after the root file.
+  - name: 'Refresh the trust store'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Trust the Orbit root', condition: {type: succeeded}}]
+    writes: true
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-node-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
+      behaviorName: '${{ ("route-cert-trust-store-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
-      globalArgs: *id001
+      globalArgs:
+        name: '${{ ("route-cert-trust-store-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: '${{ inputs.intent.connection.nodeUser }}'
+          port: '${{ inputs.intent.connection.nodePort }}'
+          identityFile: '${{ inputs.intent.connection.nodeIdentityFile }}'
+        hosts:
+        - name: target
+          address: '${{ inputs.intent.connection.nodeHost }}'
+          transport: {hostKeys: '${{ inputs.intent.host_keys }}'}
       inputs:
         hosts: name:target
-        argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-route-" + run.id + "/scripts/node_batch.py" }}
-        - trust
-        stdin: ${{ steps.assets.outputs.input_json }}
         sudo: true
-    dependsOn:
-    - step: publish
-      condition:
-        type: succeeded
-  - name: inspect
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-node-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv:
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-route-" + run.id + "/scripts/node_batch.py" }}
-        - inspect
-        stdin: ${{ steps.assets.outputs.input_json }}
-        sudo: true
-    dependsOn:
-    - step: trust
-      condition:
-        type: succeeded
-  - name: cleanup-assets
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-node-ssh-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv:
-        - /usr/bin/rm
-        - -rf
-        - ${{ "/tmp/orbit-route-" + run.id }}
-    dependsOn:
-    - step: inspect
-      condition:
-        type: succeeded
-  - name: cleanup-requests
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "route-cert-cleanup-requests" }}'
-      methodName: execute
-      inputs:
-        run: /usr/bin/rm -f -- "$ORBIT_CERTIFICATE_REQUESTS_FILE"
-        env:
-          ORBIT_CERTIFICATE_REQUESTS_FILE: ${{ "/tmp/orbit-route-" + run.id + "-requests.json" }}
-    dependsOn:
-    - step: inspect
-      condition:
-        type: succeeded
-  - name: result
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/node-certificate-assets'
-      behaviorName: '${{ "route-cert-result-node-certificate-assets" }}'
-      methodName: result
-      inputs:
-        leaves: ${{ inputs.intent.leaves }}
-        stdout: ${{ steps.inspect.outputs.stdout }}
-    dependsOn:
-    - step: cleanup-assets
-      condition:
-        type: succeeded
-    - step: cleanup-requests
-      condition:
-        type: succeeded
+        argv: [timeout, '60', update-ca-certificates]
+        timeoutSec: 70

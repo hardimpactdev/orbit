@@ -46,16 +46,8 @@ body=sys.stdin.buffer.read()
 remote=args[-1]
 def audit(action):
     with Path(os.environ['FIXTURE_WORKLOAD_AUDIT']).open('a') as stream:stream.write(action+'\\n')
-if b'WORKLOAD_INPUT = json.loads(' in body:
-    tree=ast.parse(body.decode())
-    data=next(json.loads(ast.literal_eval(node.value.args[0])) for node in tree.body if isinstance(node,ast.Assign) and isinstance(node.targets[0],ast.Name) and node.targets[0].id=='WORKLOAD_INPUT')
-    if 'home' in data:
-        audit('served')
-        print(json.dumps({'ready':True,'user':data['user'],'sites':[]}))
-    else:
-        audit('source')
-        print('{"ready":true}')
-    raise SystemExit(0)
+if 'setfacl' in remote:
+    audit('acl '+shlex.split(remote)[-1]);raise SystemExit(int(os.environ.get('FIXTURE_ACL_EXIT','0')))
 if '/usr/bin/cmp' in remote:raise SystemExit(0)
 if 'php-fpm8.5' in remote:
     audit('validate');raise SystemExit(int(os.environ.get('FIXTURE_INVALID_POOL','0')))
@@ -94,7 +86,7 @@ raise SystemExit(result.returncode)
                 "instance_id": 5,
                 "connection": connection,
                 "host_keys": [PIN],
-                "plan": {"source_access": None, "served_roots": None, "runtime": None},
+                "plan": {"acl": [], "links": [], "runtime": None},
             },
         }
 
@@ -102,13 +94,6 @@ raise SystemExit(result.returncode)
         import hashlib
 
         self.input["intent"]["plan"].update(
-            served_roots={
-                "user": "orbit-app-5",
-                "home": "/home/orbit-app-5",
-                "default_web_root": "public",
-                "default_directory": "",
-                "served": [{"web_root": "docs/public", "directory": "docs"}],
-            },
             runtime={
                 "user": "orbit-app-5",
                 "version": "8.5",
@@ -132,11 +117,29 @@ raise SystemExit(result.returncode)
         )
         return json.loads(self.cli("workflow", "history", "get", reply["id"]).stdout)
 
-    def test_dev_branch_does_not_read_empty_production_outputs(self):
-        self.input["intent"]["plan"]["source_access"] = {"user": "orbit", "sites": []}
+    def grant(self, path):
+        return {
+            "node_id": 9,
+            "argv": ["/usr/bin/setfacl", "-m", "u:caddy:--x", "--", path],
+        }
+
+    def test_grants_run_one_at_a_time_in_list_order(self):
+        self.input["intent"]["plan"]["acl"] = [
+            self.grant("/a"),
+            self.grant("/b"),
+            self.grant("/c"),
+        ]
         self.run_workload()
-        self.assertEqual(self.audit.read_text().splitlines(), ["source"])
+        self.assertEqual(
+            self.audit.read_text().splitlines(), ["acl /a", "acl /b", "acl /c"]
+        )
         self.assertEqual(self.pool.read_text(), "old-pool")
+
+    def test_a_refused_grant_fails_the_phase(self):
+        self.input["intent"]["plan"]["acl"] = [self.grant("/a")]
+        self.native_env["FIXTURE_ACL_EXIT"] = "1"
+        history = self.run_workload(success=False)
+        self.assertEqual(history["status"], "failed")
 
     def test_empty_plan_skips_every_effect_and_completes(self):
         self.run_workload()
@@ -145,19 +148,9 @@ raise SystemExit(result.returncode)
 
     def test_production_uses_the_official_file_before_validate_reload(self):
         self.production()
-        history = self.run_workload()
-        names = []
-        for phase in ("served-command", "runtime-validate", "runtime-reload"):
-            name = f"irw-{history['id']}-{phase}-0"
-            model = json.loads(self.cli("model", "get", name).stdout)
-            self.assertEqual(model["globalArguments"]["name"], name)
-            names.append(model["name"])
-        self.assertEqual(len(set(names)), 3)
+        self.run_workload()
         self.assertEqual(self.pool.read_text(), "candidate-pool")
-        self.assertEqual(
-            self.audit.read_text().splitlines(),
-            ["served", "source", "validate", "reload"],
-        )
+        self.assertEqual(self.audit.read_text().splitlines(), ["validate", "reload"])
 
     def test_invalid_pool_blocks_reload_and_completion(self):
         self.production()

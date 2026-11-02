@@ -1,182 +1,65 @@
 id: ba623d94-9335-4d39-a9a3-f77a004cfae6
 name: route-environment-write
 queueTimeout: 30
-description: Apply one captured Route environment or URL write from a vault execution copy.
+description: 'One captured Route environment write: a whole .env from the vault, or the APP_URL line.'
 vaults:
 - orbit-control-inputs
 inputs:
   type: object
   properties:
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
-    kind:
-      type: string
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string}
     intent:
       type: object
       properties:
-        write:
-          type: object
-        control_node_id:
-          type: integer
-          const: 209
-        connection:
-          type: object
-        host_keys:
-          type: array
-          items:
-            type: string
-          minItems: 1
-      required:
-      - write
-      - control_node_id
-      - connection
-      - host_keys
+        write: {type: object}
+        control_node_id: {type: integer, const: 209}
+        connection: {type: object}
+        host_keys: {type: array, items: {type: string}, minItems: 1}
+      required: [write, control_node_id, connection, host_keys]
       additionalProperties: false
     execution_secrets:
       type: object
-      additionalProperties: false
-      properties:
-        material:
-          type: object
-          additionalProperties: false
-          properties:
-            vault:
-              type: string
-              enum:
-              - orbit-control-inputs
-            key:
-              type: string
-              pattern: ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$
-          required:
-          - vault
-          - key
-      required:
-      - material
-  required:
-  - operation_id
-  - node_id
-  - kind
-  - intent
-  - execution_secrets
+      additionalProperties:
+        type: object
+        additionalProperties: false
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$'}
+        required: [vault, key]
+  required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
 - name: environment
   steps:
-  - name: assets
+    # The whole production or development .env from the vault, 0600 for its account; only a whole write has material.
+  - name: 'Write the environment'
     labels: {role: swamp}
+    writes: true
+    forEach: {item: material, in: '${{ has(inputs.execution_secrets.material) ? [inputs.execution_secrets.material] : [] }}'}
     task:
       type: behavior
-      behaviorType: '@nckrtl/route-mutation-command'
-      behaviorName: '${{ "route-assets" }}'
-      methodName: environment
-      inputs:
-        intent: ${{ inputs.intent.write }}
-  - name: prepare-assets
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ ("route-env-" + inputs.intent.connection.nodeHost + "-" + string(self._index)).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {path: '${{ inputs.intent.write.input.base + "/" + inputs.intent.write.input.file }}', owner: '${{ inputs.intent.write.input.user }}', mode: '0600', ensure: present,
+        content: '${{ vault.get(inputs.execution_secrets.material.vault, inputs.execution_secrets.material.key) }}',
+        nodeHost: '${{ inputs.intent.connection.nodeHost }}', nodeUser: '${{ inputs.intent.connection.nodeUser }}', nodePort: '${{ inputs.intent.connection.nodePort }}',
+        nodeIdentityFile: '${{ inputs.intent.connection.nodeIdentityFile }}', become: true}
+      inputs: {}
+    # APP_URL in the existing .env; the file keeps its owner and mode, and a missing file fails the step.
+  - name: 'Write the new APP_URL'
     labels: {role: swamp}
-    dependsOn:
-    - step: assets
-      condition:
-        type: succeeded
+    writes: true
+    guard: '${{ inputs.intent.write.name == "instance.write-environment" }}'
     task:
       type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-ssh-prepare-assets-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: &id001
-        name: '${{ ("route-ssh-prepare-assets-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.connection.nodeUser }}
-          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
-          port: ${{ inputs.intent.connection.nodePort }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.connection.nodeHost }}
-          transport:
-            hostKeys: ${{ inputs.intent.host_keys }}
-      inputs:
-        hosts: name:target
-        argv:
-        - /usr/bin/mkdir
-        - -p
-        - -m
-        - '0700'
-        - ${{ "/tmp/orbit-route-" + run.id }}
-  - name: copy-assets
-    labels: {role: swamp}
-    dependsOn:
-    - step: prepare-assets
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-ssh-copy-assets-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
-      methodName: copy
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        src: ${{ steps.assets.outputs.scripts_directory }}
-        dst: ${{ "/tmp/orbit-route-" + run.id + "/" }}
-        direction: to
-        recursive: true
-  - name: write
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-ssh-write-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv:
-        - env
-        - ${{ 'ORBIT_ROUTE_INPUT=' + string(steps.assets.outputs.input_json) }}
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-route-" + run.id + "/scripts/write_environment.py" }}
-        stdin: ${{ vault.get(inputs.execution_secrets.material.vault, inputs.execution_secrets.material.key) }}
-        sudo: true
-    dependsOn:
-    - step: copy-assets
-      condition:
-        type: succeeded
-  - name: cleanup-assets
-    labels: {role: swamp}
-    dependsOn:
-    - step: write
-      condition:
-        type: always
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-ssh-cleanup-assets-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv:
-        - /usr/bin/rm
-        - -rf
-        - ${{ "/tmp/orbit-route-" + run.id }}
-  - name: result
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-mutation-command'
-      behaviorName: '${{ "route-result-route-mutation-command" }}'
-      methodName: environmentResult
-      inputs:
-        stdout: ${{ steps.write.outputs.stdout }}
-    dependsOn:
-    - step: write
-      condition:
-        type: succeeded
-    - step: cleanup-assets
-      condition:
-        type: succeeded
+      behaviorType: '@swamp/cfgmgmt/line'
+      behaviorName: '${{ ("route-app-url-" + inputs.intent.connection.nodeHost).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {path: '${{ (inputs.intent.write.name == "instance.write-directory-url" ? inputs.intent.write.input.home + "/env" + (inputs.intent.write.input.directory == "" ? "" : "/" + inputs.intent.write.input.directory) : inputs.intent.write.input.directory) + "/.env" }}', regexp: '^APP_URL=', line: '${{ "APP_URL=" + inputs.intent.write.input.url }}',
+        ensure: present, createFile: false,
+        nodeHost: '${{ inputs.intent.connection.nodeHost }}', nodeUser: '${{ inputs.intent.connection.nodeUser }}', nodePort: '${{ inputs.intent.connection.nodePort }}',
+        nodeIdentityFile: '${{ inputs.intent.connection.nodeIdentityFile }}', become: true}
+      inputs: {}

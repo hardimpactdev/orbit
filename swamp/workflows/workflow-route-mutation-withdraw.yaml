@@ -326,8 +326,7 @@ jobs:
             == self.part.node_id)[0].connection }}
           host_keys: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.node_id
             == self.part.node_id)[0].host_keys }}
-        execution_secrets:
-          material: ${{ inputs.execution_secrets[self.part.secret_field] }}
+        execution_secrets: '${{ has(self.part.secret_field) ? {"material": inputs.execution_secrets[self.part.secret_field]} : {} }}'
     allowFailure: true
   - name: withdraw_cleanup
     forEach:

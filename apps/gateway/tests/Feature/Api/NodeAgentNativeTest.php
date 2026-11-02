@@ -12,6 +12,7 @@ use App\Domain\Nodes\NodeSettingsProjection;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsPatch;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Fleet\Footprint\AgentFootprintArtifact;
@@ -20,7 +21,6 @@ use App\Models\Operation;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\Fleet\FleetFixtures;
-use Tests\Support\Schedules\NativeScheduleReplies;
 
 beforeEach(function (): void {
     app()->instance(LeafCertificateSigner::class, new class implements LeafCertificateSigner
@@ -89,36 +89,29 @@ it('prepares settings from a public SSH intent and stores them only at terminal 
     expect($this->node->fresh()->settings['apps']['path'])->toBe('/srv/new');
 });
 
-function agentRekeyOperation(string $run, int $nodeId): Operation
-{
-    return Operation::query()->create(['kind' => 'node.agent_rekey', 'target_type' => 'node', 'target_id' => $nodeId, 'node_id' => $nodeId,
-        'status' => 'running', 'state' => ['swamp_run_id' => $run], 'input' => ['_agent_rekey' => ['node_id' => $nodeId, 'verifier_hash' => str_repeat('b', 64),
-            'agent_key' => ['vault' => 'orbit-control-inputs', 'key' => 'node-agent-rekey-'.$nodeId.'-1']]]]);
-}
-
-it('records the admitted verifier on terminal success, deletes the vault copy and ignores duplicate delivery', function (): void {
-    $this->socket->reply = fn (array $m): ?array => NativeScheduleReplies::for($m);
-    $op = agentRekeyOperation($this->run, $this->node->id);
-    expect(app(NodeAgentRekeyProjection::class)->input($op))->toBe(['intent' => ['node_id' => $this->node->id, 'verifier_hash' => str_repeat('b', 64)],
-        'execution_secrets' => ['agent_key' => ['vault' => 'orbit-control-inputs', 'key' => 'node-agent-rekey-'.$this->node->id.'-1']]]);
-    $data = ['run_id' => $this->run, 'status' => 'succeeded', 'result' => ['steps' => ['Prove the new key' => ['status' => 'succeeded']]],
+it('records only the public verifier on bound terminal success and ignores duplicate delivery', function (): void {
+    $op = Operation::query()->create(['kind' => 'node.agent_rekey', 'target_type' => 'node', 'target_id' => $this->node->id,
+        'node_id' => $this->node->id, 'status' => 'running', 'input' => [], 'state' => ['swamp_run_id' => $this->run]]);
+    $data = ['run_id' => $this->run, 'status' => 'succeeded', 'result' => ['rekeyed' => true, 'verifier_hash' => str_repeat('b', 64)],
         'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null];
     app(NodeAgentRekeyProjection::class)->apply($op, $data);
     expect($this->node->fresh()->agent_secret_hash)->toBe(str_repeat('b', 64))
-        ->and($op->fresh()->result)->toBe(['rekeyed' => true, 'restarted' => true])
-        ->and($this->socket->sent[0]['type'])->toBe('vault.delete')
-        ->and($this->socket->sent[0]['payload']['key'])->toBe('node-agent-rekey-'.$this->node->id.'-1');
+        ->and($op->fresh()->result)->toBe(['rekeyed' => true, 'restarted' => true]);
     $this->node->forceFill(['agent_secret_hash' => str_repeat('c', 64)])->save();
     app(NodeAgentRekeyProjection::class)->apply($op, $data);
     expect($this->node->fresh()->agent_secret_hash)->toBe(str_repeat('c', 64));
 });
 
-it('keeps the old verifier when the run failed and still deletes the vault copy', function (): void {
-    $this->socket->reply = fn (array $m): ?array => NativeScheduleReplies::for($m);
-    $op = agentRekeyOperation($this->run, $this->node->id);
-    app(NodeAgentRekeyProjection::class)->apply($op, ['run_id' => $this->run, 'status' => 'failed', 'result' => ['steps' => ['Restart the Node agent' => ['status' => 'failed']]],
-        'error_code' => 'operation.native_failed', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String()]);
-    expect($this->node->fresh()->agent_secret_hash)->toBe(str_repeat('a', 64))
-        ->and($op->fresh()->result)->toBe(['rekeyed' => false, 'error_code' => 'operation.native_failed'])
-        ->and(array_column($this->socket->sent, 'type'))->toBe(['vault.delete']);
-});
+it('never records a verifier from a failed or malformed terminal result', function (bool $failed): void {
+    $op = Operation::query()->create(['kind' => 'node.agent_rekey', 'target_type' => 'node', 'target_id' => $this->node->id,
+        'node_id' => $this->node->id, 'status' => 'running', 'input' => [], 'state' => ['swamp_run_id' => $this->run]]);
+    $data = ['run_id' => $this->run, 'status' => $failed ? 'failed' : 'succeeded',
+        'result' => $failed ? ['error_code' => 'operation.native_failed', 'verifier_hash' => str_repeat('b', 64)] : ['rekeyed' => true],
+        'error_code' => $failed ? 'operation.native_failed' : null, 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String()];
+    if ($failed) {
+        app(NodeAgentRekeyProjection::class)->apply($op, $data);
+    } else {
+        expect(fn () => app(NodeAgentRekeyProjection::class)->apply($op, $data))->toThrow(ResourceOperationException::class);
+    }
+    expect($this->node->fresh()->agent_secret_hash)->toBe(str_repeat('a', 64));
+})->with([true, false]);

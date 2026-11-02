@@ -482,6 +482,81 @@ jobs:
     - step: observer-ca
       condition:
         type: succeeded
+  - name: peer-snapshot-assets
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-peer-command'
+      behaviorName: '${{ "vm-node-peer-command" }}'
+      methodName: read
+      inputs:
+        action: snapshot
+        input: ${{ {} }}
+    dependsOn:
+    - step: observer-unit
+      condition:
+        type: succeeded
+  - name: peer-snapshot-command
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
+            }}'
+          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port
+            }}'
+          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file
+            }}'
+        hosts:
+        - name: target
+          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host
+            }}'
+          transport:
+            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys
+              }}'
+      inputs:
+        hosts: name:target
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/python3","-B","-c",steps["peer-snapshot-assets"].outputs.script_body] : ["/usr/bin/python3","-B","-c",steps["peer-snapshot-assets"].outputs.script_body]
+          }}'
+        sudo: ${{ inputs.intent.provider != "incus" }}
+    dependsOn:
+    - step: peer-snapshot-assets
+      condition:
+        type: succeeded
+  - name: peer-snapshot
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-peer-command'
+      behaviorName: '${{ "vm-node-peer-command" }}'
+      methodName: decode
+      inputs:
+        stdout: ${{ steps["peer-snapshot-command"].outputs.stdout }}
+    dependsOn:
+    - step: peer-snapshot-command
+      condition:
+        type: succeeded
+  - name: peer-key-assets
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-peer-command'
+      behaviorName: '${{ "vm-node-peer-command" }}'
+      methodName: read
+      inputs:
+        action: prepare_key
+        input: ${{ {"existing_key":inputs.intent.network_input.existing_key} }}
+    dependsOn:
+    - step: peer-snapshot
+      condition:
+        type: succeeded
   - name: peer-key-command
     labels: {role: swamp}
     task:
@@ -509,11 +584,11 @@ jobs:
       inputs:
         hosts: name:target
         argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
-          + ["/bin/sh","-c","umask 077 && mkdir -p /etc/wireguard && { test -s /etc/wireguard/orbit.key || wg genkey > /etc/wireguard/orbit.key; } && wg pubkey < /etc/wireguard/orbit.key"] : ["/bin/sh","-c","umask 077 && mkdir -p /etc/wireguard && { test -s /etc/wireguard/orbit.key || wg genkey > /etc/wireguard/orbit.key; } && wg pubkey < /etc/wireguard/orbit.key"]
+          + ["/usr/bin/python3","-B","-c",steps["peer-key-assets"].outputs.script_body] : ["/usr/bin/python3","-B","-c",steps["peer-key-assets"].outputs.script_body]
           }}'
         sudo: ${{ inputs.intent.provider != "incus" }}
     dependsOn:
-    - step: observer-unit
+    - step: peer-key-assets
       condition:
         type: succeeded
   - name: peer-key
@@ -529,40 +604,31 @@ jobs:
     - step: peer-key-command
       condition:
         type: succeeded
-  - name: hub-peer
+  - name: hub-assets
     labels: {role: swamp}
     task:
       type: behavior
-      behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: '${{ ("wireguard-hub-peer-" + string(inputs.intent.hub.hub_id) + "-" + string(inputs.intent.guest_node_id)).split(".").join("-") }}'
-      methodName: apply
-      globalArgs:
-        nodeHost: ${{ inputs.intent.hub_ssh_execution.target.host }}
-        nodeUser: ${{ inputs.intent.hub_ssh_execution.target.user }}
-        nodePort: ${{ inputs.intent.hub_ssh_execution.target.port }}
-        nodeIdentityFile: ${{ inputs.intent.hub_ssh_execution.identity_file }}
-        become: true
-        path: ${{ inputs.intent.hub.file }}
-        ensure: present
-        content: '${{ inputs.intent.hub.section.split("@KEY@").join(steps["peer-key"].outputs.public_key) }}'
-        owner: root
-        group: root
-        mode: '0600'
-      inputs: {}
+      behaviorType: '@nckrtl/node-hub-command'
+      behaviorName: '${{ "vm-node-hub-command" }}'
+      methodName: read
+      inputs:
+        intent: ${{ inputs.intent.hub_input }}
+        mode: publish
+        prepared_peer: ${{ {"node_id":inputs.intent.guest_node_id,"public_key":steps["peer-key"].outputs.public_key}
+          }}
     dependsOn:
     - step: peer-key
       condition:
         type: succeeded
-    writes: true
   - name: hub
     labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("wireguard-hub-"+string(inputs.intent.hub.hub_id)).split(".").join("-") }}'
-      methodName: exec
+      behaviorName: '${{ ("wireguard-hub-"+string(inputs.intent.hub_input.hub_id)).split(".").join("-") }}'
+      methodName: script
       globalArgs:
-        name: '${{ ("wireguard-hub-"+string(inputs.intent.hub.hub_id)).split(".").join("-") }}'
+        name: '${{ ("wireguard-hub-"+string(inputs.intent.hub_input.hub_id)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.hub_ssh_execution.target.user }}
@@ -573,16 +639,30 @@ jobs:
           address: ${{ inputs.intent.hub_ssh_execution.target.host }}
           transport:
             hostKeys: ${{ inputs.intent.hub_ssh_execution.target.host_keys }}
-      # Only this guest's peer file changes on the hub, so enrollments that overlap never drop each other's peers.
       inputs:
         hosts: name:hub
+        interpreter: python3
         sudo: true
-        argv: ${{ ["wg", "addconf", "orbit", inputs.intent.hub.file] }}
+        script: ${{ steps["hub-assets"].outputs.script_body }}
     dependsOn:
-    - step: hub-peer
+    - step: hub-assets
       condition:
         type: succeeded
     writes: true
+  - name: peer-publish-assets
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-peer-command'
+      behaviorName: '${{ "vm-node-peer-command" }}'
+      methodName: read
+      inputs:
+        action: publish
+        input: ${{ {"peer":inputs.intent.network_input.peer} }}
+    dependsOn:
+    - step: hub
+      condition:
+        type: succeeded
   - name: peer-publish-command
     labels: {role: swamp}
     task:
@@ -610,11 +690,24 @@ jobs:
       inputs:
         hosts: name:target
         argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
-          + ["/bin/sh","-c","umask 077 && printf %s \"$1\" > /etc/wireguard/orbit.conf","sh",inputs.intent.peer_files.config] : ["/bin/sh","-c","umask 077 && printf %s \"$1\" > /etc/wireguard/orbit.conf","sh",inputs.intent.peer_files.config]
+          + ["/usr/bin/python3","-B","-c",steps["peer-publish-assets"].outputs.script_body] : ["/usr/bin/python3","-B","-c",steps["peer-publish-assets"].outputs.script_body]
           }}'
         sudo: ${{ inputs.intent.provider != "incus" }}
     dependsOn:
-    - step: hub
+    - step: peer-publish-assets
+      condition:
+        type: succeeded
+  - name: peer-publish
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-peer-command'
+      behaviorName: '${{ "vm-node-peer-command" }}'
+      methodName: decode
+      inputs:
+        stdout: ${{ steps["peer-publish-command"].outputs.stdout }}
+    dependsOn:
+    - step: peer-publish-command
       condition:
         type: succeeded
   - name: peer-enable
@@ -648,7 +741,7 @@ jobs:
           }}'
         sudo: ${{ inputs.intent.provider != "incus" }}
     dependsOn:
-    - step: peer-publish-command
+    - step: peer-publish
       condition:
         type: succeeded
   - name: peer-start
@@ -685,6 +778,21 @@ jobs:
     - step: peer-enable
       condition:
         type: succeeded
+  - name: peer-dns-assets
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-peer-command'
+      behaviorName: '${{ "vm-node-peer-command" }}'
+      methodName: read
+      inputs:
+        action: record_dns
+        input: ${{ {"peer":inputs.intent.network_input.peer,"snapshot":steps["peer-snapshot"].outputs}
+          }}
+    dependsOn:
+    - step: peer-start
+      condition:
+        type: succeeded
   - name: peer-dns-command
     labels: {role: swamp}
     task:
@@ -712,11 +820,24 @@ jobs:
       inputs:
         hosts: name:target
         argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
-          + ["/bin/sh","-c","umask 077 && printf %s \"$1\" > /etc/wireguard/orbit.dns-link","sh",inputs.intent.peer_files.dns_marker] : ["/bin/sh","-c","umask 077 && printf %s \"$1\" > /etc/wireguard/orbit.dns-link","sh",inputs.intent.peer_files.dns_marker]
+          + ["/usr/bin/python3","-B","-c",steps["peer-dns-assets"].outputs.script_body] : ["/usr/bin/python3","-B","-c",steps["peer-dns-assets"].outputs.script_body]
           }}'
         sudo: ${{ inputs.intent.provider != "incus" }}
     dependsOn:
-    - step: peer-start
+    - step: peer-dns-assets
+      condition:
+        type: succeeded
+  - name: peer-dns
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-peer-command'
+      behaviorName: '${{ "vm-node-peer-command" }}'
+      methodName: decode
+      inputs:
+        stdout: ${{ steps["peer-dns-command"].outputs.stdout }}
+    dependsOn:
+    - step: peer-dns-command
       condition:
         type: succeeded
   - name: private-ssh
@@ -740,7 +861,7 @@ jobs:
             vm: ${{ inputs.intent.vm }}
             host_ssh_execution: ${{ inputs.intent.host_ssh_execution }}
     dependsOn:
-    - step: peer-dns-command
+    - step: peer-dns
       condition:
         type: succeeded
   - name: observer-reload
@@ -845,6 +966,49 @@ jobs:
     - step: model
       condition:
         type: succeeded
+  - name: cloud-snapshot-assets
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-peer-command'
+      behaviorName: '${{ "vm-node-peer-command" }}'
+      methodName: read
+      inputs:
+        action: cleanup
+        input: ${{ {"snapshot":steps["peer-snapshot"].outputs} }}
+    dependsOn:
+    - step: runtime
+      condition:
+        type: succeeded
+    guard: ${{ steps["provider-plan"].outputs.provider != "upcloud" }}
+  - name: cloud-snapshot-cleanup
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("vm-private-" + string(inputs.guest.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ ("vm-private-" + string(inputs.guest.ssh_execution.target.host)).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: ${{ inputs.guest.ssh_execution.target.user }}
+          port: ${{ inputs.guest.ssh_execution.target.port }}
+          identityFile: ${{ inputs.guest.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.guest.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.guest.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv: ${{ ["/usr/bin/python3","-B","-c",steps["cloud-snapshot-assets"].outputs.script_body] }}
+        sudo: true
+    dependsOn:
+    - step: cloud-snapshot-assets
+      condition:
+        type: succeeded
+    guard: ${{ steps["provider-plan"].outputs.provider != "upcloud" }}
   - name: receipt
     labels: {role: swamp}
     task:
@@ -864,6 +1028,12 @@ jobs:
     - step: runtime
       condition:
         type: succeeded
+    - step: cloud-snapshot-cleanup
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
   - name: model-revoke
     labels: {role: swamp}
     task:
@@ -889,12 +1059,190 @@ jobs:
     # A model step that never started has no entry in steps; it still needs the revoke.
     guard: ${{ "provider-plan" in steps && steps["provider-plan"].outputs.provider == "incus" && !("model" in steps && steps.model.status in ["succeeded","failed","cancelled"])
       }}
+  - name: hub-restore-assets
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-hub-command'
+      behaviorName: '${{ "vm-node-hub-command" }}'
+      methodName: read
+      inputs:
+        intent: ${{ inputs.intent.hub_input }}
+        mode: restore-publish
+        prepared_peer: ${{ {"node_id":inputs.intent.guest_node_id,"public_key":steps["peer-key"].outputs.public_key}
+          }}
+    dependsOn:
+    - step: receipt
+      condition:
+        type: or
+        conditions:
+        - type: failed
+        - type: skipped
+    - step: hub
+      condition:
+        type: completed
+    - step: peer-key
+      condition:
+        type: succeeded
+    - step: model-revoke
+      condition:
+        type: always
+  - name: hub-restore
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("wireguard-hub-"+string(inputs.intent.hub_input.hub_id)).split(".").join("-") }}'
+      methodName: script
+      globalArgs:
+        name: '${{ ("wireguard-hub-"+string(inputs.intent.hub_input.hub_id)).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.hub_ssh_execution.target.user }}
+          port: ${{ inputs.intent.hub_ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.hub_ssh_execution.identity_file }}
+        hosts:
+        - name: hub
+          address: ${{ inputs.intent.hub_ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.hub_ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:hub
+        interpreter: python3
+        sudo: true
+        script: ${{ steps["hub-restore-assets"].outputs.script_body }}
+    dependsOn:
+    - step: hub-restore-assets
+      condition:
+        type: succeeded
+    writes: true
+  - name: peer-restore-assets
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-peer-command'
+      behaviorName: '${{ "vm-node-peer-command" }}'
+      methodName: read
+      inputs:
+        action: restore
+        input: ${{ {"snapshot":steps["peer-snapshot"].outputs} }}
+    dependsOn:
+    - step: receipt
+      condition:
+        type: or
+        conditions:
+        - type: failed
+        - type: skipped
+    - step: peer-snapshot
+      condition:
+        type: succeeded
+    - step: hub-restore
+      condition:
+        type: always
+    guard: ${{ steps["provider-plan"].outputs.provider != "incus" }}
+  - name: peer-restore
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host)).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.user
+            }}'
+          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.port
+            }}'
+          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).identity_file
+            }}'
+        hosts:
+        - name: target
+          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host
+            }}'
+          transport:
+            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.public_ssh_execution).target.host_keys
+              }}'
+      inputs:
+        hosts: name:target
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/python3","-B","-c",steps["peer-restore-assets"].outputs.script_body] : ["/usr/bin/python3","-B","-c",steps["peer-restore-assets"].outputs.script_body]
+          }}'
+        sudo: ${{ inputs.intent.provider != "incus" }}
+    dependsOn:
+    - step: peer-restore-assets
+      condition:
+        type: succeeded
+    guard: ${{ steps["provider-plan"].outputs.provider != "incus" }}
+  - name: peer-cleanup-assets
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-peer-command'
+      behaviorName: '${{ "vm-node-peer-command" }}'
+      methodName: read
+      inputs:
+        action: cleanup
+        input: ${{ {"snapshot":steps["peer-snapshot"].outputs} }}
+    dependsOn:
+    - step: peer-snapshot
+      condition:
+        type: succeeded
+    - step: receipt
+      condition:
+        type: succeeded
+    - step: peer-restore
+      condition:
+        type: always
+    guard: ${{ steps["provider-plan"].outputs.provider != "incus" }}
+  - name: peer-cleanup
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.ssh_execution).target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ ("vm-first-" + string((inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.ssh_execution).target.host)).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.ssh_execution).target.user
+            }}'
+          port: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.ssh_execution).target.port
+            }}'
+          identityFile: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.ssh_execution).identity_file
+            }}'
+        hosts:
+        - name: target
+          address: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.ssh_execution).target.host
+            }}'
+          transport:
+            hostKeys: '${{ (inputs.intent.provider == "incus" ? inputs.intent.host_ssh_execution : inputs.guest.ssh_execution).target.host_keys
+              }}'
+      inputs:
+        hosts: name:target
+        argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
+          + ["/usr/bin/python3","-B","-c",steps["peer-cleanup-assets"].outputs.script_body] : ["/usr/bin/python3","-B","-c",steps["peer-cleanup-assets"].outputs.script_body]
+          }}'
+        sudo: ${{ inputs.intent.provider != "incus" }}
+    dependsOn:
+    - step: peer-cleanup-assets
+      condition:
+        type: succeeded
+    guard: ${{ steps["provider-plan"].outputs.provider != "incus" }}
   - name: result
     labels: {role: swamp}
     dependsOn:
     - step: receipt
       condition:
         type: succeeded
+    - step: peer-cleanup
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-enrollment-input'
@@ -909,6 +1257,12 @@ jobs:
     - step: model-revoke
       condition:
         type: succeeded
+    - step: hub-restore
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-destroy-input'

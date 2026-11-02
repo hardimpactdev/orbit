@@ -1,3 +1,12 @@
+"""Ask the Gateway to sign one Node-made CSR from 209: the one step that calls the Gateway.
+
+Public env: ORBIT_CERTIFICATE_OPERATION_ID, ORBIT_CERTIFICATE_RUN_ID, ORBIT_CERTIFICATE_NODE_ID, ORBIT_CERTIFICATE_SCOPE,
+ORBIT_CERTIFICATE_REQUEST (the PEM CSR the Node printed) and, for a restore, ORBIT_CERTIFICATE_RESTORING=true.
+Prints the signed leaf, then the Orbit root, as PEM; official file steps install them. A refused or failed call fails
+the step, with the reason on stderr.
+"""
+
+import base64
 import json
 import os
 import re
@@ -13,29 +22,21 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 try:
     operation = os.environ["ORBIT_CERTIFICATE_OPERATION_ID"]
-    run_id = os.environ["ORBIT_CERTIFICATE_RUN_ID"]
     if not re.fullmatch(r"[1-9][0-9]*", operation):
         raise ValueError("Invalid operation")
-    if os.environ["ORBIT_CERTIFICATE_MODE"] == "node":
-        with open(os.environ["ORBIT_CERTIFICATE_REQUESTS_FILE"]) as source:
-            raw = [json.load(source)["requests"]]
-    else:
-        raw = json.loads(os.environ["ORBIT_CERTIFICATE_REQUESTS"])
-    if os.environ["ORBIT_CERTIFICATE_MODE"] == "single":
-        leaf = json.loads(os.environ["ORBIT_CERTIFICATE_LEAF"])
-        raw = [dict(node_id=leaf["node_id"], scope=leaf["scope"], **raw)]
-    else:
-        raw = [record for batch in raw for record in batch]
-    if len(raw) > 256:
-        raise ValueError("Too many requests")
-    requests = [record for record in raw if record.get("state") == "request"]
-    if not requests:
-        print(json.dumps({"certificates": []}))
-        sys.exit(0)
-    body = {"run_id": run_id, "requests": requests}
+    node_id = int(os.environ["ORBIT_CERTIFICATE_NODE_ID"])
+    scope = os.environ["ORBIT_CERTIFICATE_SCOPE"]
+    record = {
+        "node_id": node_id,
+        "scope": scope,
+        "state": "request",
+        "request_base64": base64.b64encode(
+            os.environ["ORBIT_CERTIFICATE_REQUEST"].strip().encode() + b"\n"
+        ).decode(),
+    }
+    body = {"run_id": os.environ["ORBIT_CERTIFICATE_RUN_ID"], "requests": [record]}
     if os.environ.get("ORBIT_CERTIFICATE_RESTORING") == "true":
         body["restoring"] = True
-    payload = json.dumps(body).encode()
     url = (
         "https://gateway.orbit/api/v1/direct-operations/"
         + operation
@@ -43,12 +44,9 @@ try:
     )
     request = urllib.request.Request(
         url,
-        data=payload,
+        data=json.dumps(body).encode(),
         method="POST",
-        headers={
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
     )
     context = ssl.create_default_context(
         cafile="/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"
@@ -57,11 +55,14 @@ try:
         NoRedirect(), urllib.request.HTTPSHandler(context=context)
     )
     with opener.open(request, timeout=60) as response:
-        raw_response = response.read(16_777_217)
-        if len(raw_response) > 16_777_216 or response.status != 200:
-            raise ValueError("Invalid signing response")
-    result = json.loads(raw_response)["data"]
-    print(json.dumps(result))
-except (OSError, ValueError, KeyError, TypeError, AttributeError, OverflowError):
-    print(json.dumps({"error_code": "app-dev.certificate_sign_failed"}))
-    sys.exit(1)
+        signed = json.loads(response.read(16_777_216))["data"]["certificates"]
+    leaf = next(
+        item for item in signed if item["node_id"] == node_id and item["scope"] == scope
+    )
+    for field in ("certificate_base64", "root_certificate_base64"):
+        sys.stdout.write(base64.b64decode(leaf[field], validate=True).decode())
+except (OSError, ValueError, KeyError, TypeError, StopIteration) as error:
+    sys.exit(
+        "app-dev.certificate_sign_failed: "
+        + str(getattr(error, "code", type(error).__name__))
+    )

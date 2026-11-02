@@ -1,9 +1,21 @@
-import pathlib
+import json
+import subprocess
 import sys
 
 from public_output import emit, redact_text
 
-counts = pathlib.Path(sys.argv[1]).read_text()
+value = json.load(sys.stdin)
+before = json.loads(sys.argv[1])
+base = before["head"] if value["role"] == "reviewer" else before["tree"]
+
+
+def git(*args):
+    return subprocess.check_output(
+        ["git", *args], cwd=value["checkout_path"], stderr=subprocess.DEVNULL, text=True
+    )
+
+
+counts = git("diff", "--numstat", "--no-renames", "-z", base, "--")
 files = []
 for row in counts.split("\0"):
     if row:
@@ -15,7 +27,7 @@ for row in counts.split("\0"):
                 "deletions": 0 if removed == "-" else int(removed),
             }
         )
-diff = redact_text(pathlib.Path(sys.argv[2]).read_text())
+diff = redact_text(git("diff", "--no-renames", base, "--"))
 emit(
     {
         "files": files[:500],

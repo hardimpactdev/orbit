@@ -1,0 +1,59 @@
+{
+  "kind": "route.create",
+  "workflow": "operation-route-create",
+  "topology": "minimal",
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "projects",
+      "operation": false,
+      "bind": "project",
+      "body": {
+        "slug": "proof-route",
+        "name": "Proof route",
+        "type": "monorepo",
+        "root": "public",
+        "repository_url": "https://github.com/laravel/laravel.git",
+        "default_branch": "13.x"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "instances",
+      "bind": "instance",
+      "body": {
+        "project_id": "${project.id}",
+        "node_id": "${node.target}",
+        "name": "r-${proof.run}"
+      }
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "routes",
+    "body": {
+      "instance_id": "${instance.id}",
+      "domain": "r-${proof.run}.proof.test"
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "certificates",
+      "job": "update",
+      "step": "prepare-certificates-0",
+      "budget_seconds": 120
+    },
+    {
+      "name": "result",
+      "job": "update",
+      "step": "complete",
+      "budget_seconds": 30
+    }
+  ],
+  "parity": "swamp/proof/route.create/parity.py"
+}

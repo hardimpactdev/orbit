@@ -1,24 +1,10 @@
 manifestVersion: 1
 name: '@nckrtl/certificate-scripts'
-version: 2026.11.01.2
+version: 2026.11.02.1
 visibility: private
 license: MIT
-description: Native script assets for standalone Node-local leaf certificates.
+description: The 209 certificate signer; official Node steps own every certificate effect.
 behaviors:
 - operations/certificates/script_assets.ts
-- operations/certificates/role_assets.ts
-- operations/certificates/node_batch.ts
 additionalFiles:
-- scripts/node_batch.py
-- scripts/local.py
-- scripts/request.py
-- scripts/publish.py
-- scripts/remove.py
-- scripts/inspect.py
-- scripts/trust.py
-- scripts/role_paths.py
-- scripts/role_request.py
-- scripts/role_publish.py
-- scripts/role_verify.py
-- scripts/role_cleanup.py
 - scripts/sign.py

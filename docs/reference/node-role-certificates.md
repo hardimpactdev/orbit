@@ -1,24 +1,28 @@
 ---
 title: "Native Node role certificates"
-description: "Compose fixed Node role certificate actions in a native parent run."
+description: "How the node-role-certificate-publish child issues a fixed Node role certificate."
 ---
 
 # Native Node role certificates
 
-`roleCertificateSteps(name, leafExpr, fullGlobals, dependency?, guard?)` in `swamp/extensions/behaviors/operations/certificates/role_steps.ts` composes one `node-role-certificate-publish` child. The parent supplies the admitted role leaf and complete official SSH `name`, `transport` and `hosts` globals with the target named `target`, approved identity, and stored host keys. Every action runs on209 through official `@swamp/ssh`; targets need no Swamp worker.
+The `node-role-certificate-publish` child issues the certificate of one fixed Node role: Gateway, Metrics, WebSocket or Analytics. Role add, role relocate and the Metrics role call it once per admitted leaf. The parent passes the leaf `{node_id,scope,domain,version,root_hash}` and the official SSH `name`, `transport` and `hosts` of the target, with stored host keys.
 
-WebSocket uses `/etc/caddy/orbit-websocket-cert-current/reverb.pem` and `reverb.key`, matching its Caddy site and the legacy publication contract. Request, verification, publication and pending-key cleanup use this same pair. The other role filenames keep their role names.
+Every step runs on 209. Node work uses official `@swamp/cfgmgmt` behaviors or one `@swamp/ssh exec` command:
 
-The leaf is the canonical `NodeRoleCertificateInput` value `{node_id,scope,domain,version,root_hash}`. Gateway, Metrics, WebSocket and Analytics retain their fixed paths and public root checks. The child prepares a Node-local key and public CSR, calls the existing parent-bound Gateway signer, and publishes the public certificate beside that same local key. The root run ID reaches the signer unchanged. An already current pair skips signing and publication. The native `systemctl try-reload-or-restart caddy` step reloads an active service before readiness and leaves an inactive service stopped, so a fresh admission also recovers a prior failed activation. A refused request, signature or publication fails the child before readiness.
+| Step | What it does |
+| --- | --- |
+| Read the scripts | Resolves the 209 signer, the only shipped certificate script |
+| Make the key folder | `/var/lib/orbit/role-certificates/<scope>/<version>`, root 0700 |
+| Make a CSR on the Node | One `openssl req`: the key stays on the Node, the CSR goes to stdout |
+| Sign the CSR | The signer posts the CSR to the Gateway signing primitive and prints the leaf and the Orbit root |
+| Make the certificate folder | The fixed folder Caddy reads, such as `/etc/caddy/orbit-cert-current`, root:caddy 0750 |
+| Install the key | One `install` of the pending key as `<role>.key`, root:caddy 0640 |
+| Install the certificate, Install the Orbit root | `<role>.pem` and `root-ca.pem` by `cfgmgmt/file`, root:caddy 0640 |
+| Reload Caddy | `systemctl try-reload-or-restart caddy` |
+| Remove the pending key | The key folder, gone |
 
-Read the child completion at `steps["<name>"].outputs.result`: `{ready:true,node_id,scope,version}`. Inside the child, the terminal method outputs are flat at `steps.result.outputs`. The optional guard uses Swamp skip semantics: a true guard skips the child. The parent counts that contribution before its own terminal result. The child admits no Operation, projects no database state, and makes no Gateway call except the canonical certificate signing primitive. This lower does not own role removal or restore the whole parent.
+WebSocket names its pair `reverb.pem` and `reverb.key`, matching its Caddy site; the other roles use their role name.
 
-The native child exposes CSR creation, signed-pair staging and verification, pair publication, activation, and pending-key cleanup as separate actions. `role_verify.py` verifies the returned public signature before `role_publish.py` changes the serving pair. `role_cleanup.py` removes the pending key only after native activation succeeds; a failed activation retains the workspace for native resume.
+Each run issues a new pair; it does not reuse a current one. A failed step fails the child, and the parent fails with it. Run the parent again after the fix. The child keeps no pair snapshot and has no rollback.
 
-The actions reuse the shared certificate `local.py` helpers for key generation, CSR creation and public signature checks. `role_paths.py` owns the fixed role paths. Official SSH copies the shipped scripts and executes each action with `python3 -B`; public intent and signed certificates use the existing certificate environment inputs. Private keys remain on the target. The child has no custom pair snapshot, restoration or finalization engine.
-
-The retained role add and relocate parents also call this child for each admitted role leaf. Admission captures each effect Node's stored SSH address and host pins alongside the public leaf plan. Every child has a run-specific SSH identity; the existing parent identity reaches the signer unchanged. Parent publication markers follow successful children. The former local request/publish dispatcher and its combined verification, swap, reload, rollback, and key cleanup have been removed. Source certificate withdrawal remains a separate retained caller and does not publish or activate pairs.
-
-Official `@swamp/cfgmgmt/certificate` was checked at the pinned extension version. It requires private key content and cannot request a CSR or publish with an existing local key path. Official file/directory models provide owner and mode handling, but their pinned schemas lack the admitted full host-key list; file content also cannot refer to a private key kept only on the target. Official SSH provides the transport; the role assets retain only that unsupported certificate action. The existing Gateway signing model owns CA policy and keeps its private key on the Gateway.
-
-After failed activation, resume the failed child with `swamp workflow resume node-role-certificate-publish --run <child-run-id> --from activate`. Native retry uses the already published local pair. The complete parent owns restoration of its admitted publication snapshots. Reissuing a certificate for the same admitted role/domain does not require restoring a previous private pair.
+The Orbit CA private key stays in the Gateway. Only the CSR and the public certificates pass through Swamp.

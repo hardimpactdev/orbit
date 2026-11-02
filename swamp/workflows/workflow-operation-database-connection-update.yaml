@@ -1,56 +1,121 @@
 id: 22d37697-fc3f-4df0-9e26-ad6d0f78c431
 name: operation-database-connection-update
 queueTimeout: 30
-description: A new index on a managed Valkey server, checked from 209 with one valkey-cli call; AUTH comes from the vault on stdin.
+description: Read an admitted Valkey index limit over official SSH, or project a record-only update.
+writes: true
 vaults: [orbit-control-inputs]
 inputs:
   type: object
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, const: database.update}
-    intent: {type: object}
-    # Name only: auth holds the AUTH line and the CONFIG GET command, one whole value.
+    kind: {type: string, enum: [database.update]}
+    intent:
+      oneOf:
+      - type: object
+        properties: {validate_index: {const: false}, ssh: {type: object}}
+        required: [validate_index, ssh]
+        additionalProperties: false
+      - type: object
+        properties:
+          validate_index: {const: true}
+          host: {type: string}
+          port: {type: integer, minimum: 1, maximum: 65535}
+          index: {type: string, pattern: '^[0-9]{1,255}$'}
+          ssh: {type: object}
+        required: [validate_index, host, port, index, ssh]
+        additionalProperties: false
     execution_secrets:
       type: object
-      properties:
-        auth:
-          type: object
-          properties:
-            vault: {type: string, enum: [orbit-control-inputs]}
-            key: {type: string, pattern: '^database-update-intent-[1-9][0-9]*$'}
-          required: [vault, key]
-          additionalProperties: false
-      required: [auth]
-      additionalProperties: false
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^database-update-intent-[1-9][0-9]*$'}
+        required: [vault, key]
+        additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
 - name: update
   labels: {role: swamp}
   steps:
-    # Read only: the Gateway compares the index with the live count from this step's output.
-  - name: 'Check the index fits'
-    labels: {role: swamp}
+  - name: assets
+    <<: &placed {labels: {role: swamp}}
+    writes: false
     task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "database-update-ssh-" + string(inputs.node_id) }}
+      <<: &metadata {type: behavior, behaviorType: '@nckrtl/database-server-command-assets', behaviorName: '${{ "database-update-assets" }}'}
+      methodName: read
+      inputs: {intent: '${{ inputs.intent }}'}
+  - name: directory
+    <<: *placed
+    guard: '${{ !inputs.intent.validate_index || steps.assets.status != "succeeded" }}'
+    dependsOn: [{step: assets, condition: {type: succeeded}}]
+    allowFailure: true
+    task:
+      <<: &ssh
+        type: behavior
+        behaviorType: '@swamp/ssh'
+        behaviorName: '${{ ("database-update-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
+        globalArgs:
+          name: '${{ ("database-update-" + string(inputs.intent.ssh.host)).split(".").join("-") }}'
+          transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /etc/orbit/swamp-role-worker/ssh-identity}
+          hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]
       methodName: exec
-      globalArgs:
-        name: ${{ "database-update-ssh-" + string(inputs.node_id) }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}
       inputs:
-        hosts: name:target
-        sudo: true
-        argv: ['timeout', '30', 'docker', 'exec', '-i', '${{ inputs.intent.container }}', 'valkey-cli', '--no-auth-warning']
-        stdin: ${{ vault.get(inputs.execution_secrets.auth.vault, inputs.execution_secrets.auth.key) }}
-        timeoutSec: 40
+        hosts: name:server
+        argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-database-update-" + string(inputs.operation_id) }}']
+        okExitCodes: [0, 1]
+  - name: copy
+    <<: *placed
+    guard: '${{ !inputs.intent.validate_index || steps.directory.status != "succeeded" }}'
+    allowFailure: true
+    dependsOn: [{step: assets, condition: {type: succeeded}}, {step: directory, condition: {type: succeeded}}]
+    task:
+      <<: *ssh
+      methodName: copy
+      inputs: {hosts: 'name:server', src: '${{ steps.assets.outputs.directory + "/." }}', dst: '${{ "/tmp/orbit-database-update-" + string(inputs.operation_id) }}', direction: to, recursive: true}
+  - name: prepared
+    <<: *placed
+    writes: false
+    dependsOn: [{step: copy, condition: {type: always}}]
+    task: {type: assert, expr: '!inputs.intent.validate_index || (has(steps.directory.outputs) && steps.directory.outputs.exitCode == 0 && steps.copy.status == "succeeded")', severity: high, message: Database update scripts unavailable.}
+  - name: check
+    <<: *placed
+    writes: false
+    guard: '${{ !inputs.intent.validate_index || steps.prepared.status != "succeeded" }}'
+    allowFailure: true
+    dependsOn: [{step: prepared, condition: {type: succeeded}}]
+    task:
+      <<: *ssh
+      methodName: exec
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-update-" + string(inputs.operation_id) + "/connection_update.py" }}', '${{ steps.assets.outputs.intent_json }}']
+        stdin: ${{ vault.get(inputs.execution_secrets.connection_update.vault, inputs.execution_secrets.connection_update.key) }}
+        okExitCodes: [0, 1]
+  - name: result
+    <<: *placed
+    writes: false
+    dependsOn: [{step: assets, condition: {type: always}}, {step: directory, condition: {type: always}}, {step: copy, condition: {type: always}}, {step: prepared, condition: {type: always}}, {step: check, condition: {type: always}}]
+    task:
+      <<: *metadata
+      methodName: update_result
+      inputs:
+        record_only: '${{ !inputs.intent.validate_index }}'
+        stdout: '${{ has(steps.check) && has(steps.check.outputs) && has(steps.check.outputs.stdout) ? steps.check.outputs.stdout : "" }}'
+        exit_code: '${{ has(steps.check) && has(steps.check.outputs) && has(steps.check.outputs.exitCode) ? steps.check.outputs.exitCode : -1 }}'
+  - name: cleanup
+    <<: *placed
+    guard: '${{ !inputs.intent.validate_index || steps.result.outputs.exitCode != 0 }}'
+    allowFailure: true
+    dependsOn: [{step: result, condition: {type: succeeded}}]
+    task:
+      <<: *ssh
+      methodName: exec
+      inputs: {hosts: 'name:server', argv: [/usr/bin/rm, -rf, --, '${{ "/tmp/orbit-database-update-" + string(inputs.operation_id) }}'], okExitCodes: [0, 1]}
+  - name: accept_result
+    <<: *placed
+    writes: false
+    dependsOn: [{step: result, condition: {type: succeeded}}, {step: cleanup, condition: {type: always}}]
+    task: {type: assert, expr: steps.result.outputs.exitCode == 0, severity: high, message: Database update validation did not complete.}

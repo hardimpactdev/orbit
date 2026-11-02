@@ -44,26 +44,13 @@ The selected value must pass the same check before the Gateway renders the peer 
 
 ## Native peer convergence
 
-The Gateway records the full public `node.network_converge` intent, including pinned SSH connections for the peer and the VPN owner. It renders every WireGuard file, and none holds a private key:
+The Gateway records the full public `node.network_converge` intent, including pinned SSH connections for the peer and VPN owner. All native steps run on Node 209. Official `@swamp/ssh` prepares the peer key, updates that peer on the hub, writes the peer configuration, applies it, and sets the resolver and firewall policy. The typed terminal result records the public key only after the native steps succeed. There are no effect-time Gateway reads, callbacks, or child Operations.
 
-- the peer's `orbit.conf`, the wg-quick file. Its `PostUp` lines load the key file and set split DNS;
-- the peer's `orbit-peers.conf`: only that `[Peer]`;
-- this Node's peer file on the hub, `orbit-peers.d/<node id>.conf`. The run puts the prepared public key in it.
+Private WireGuard keys stay on their hosts. The hub update preserves every other peer and the existing Interface section. It serializes with the host's existing WireGuard tool lock and uses `wg syncconf`; VPN1 receives no Swamp binary or worker, and an active tunnel is not restarted. An uncertain SSH outcome remains a failed native step. Resume through native workflow recovery; no hidden rollback or retry loop claims completion.
 
-One Swamp run on 209 reaches both Nodes over official SSH, with no script on either:
+`fleet.peer_dns` also runs on 209 with the stored WireGuard host pin. Separate native steps inspect the current resolver, publish its persistent policy, set DNS, domains and default-route, restore any old uplink, and inspect the result. The typed result checks the admitted policy and usable uplink. It never calls an agent action or restarts the tunnel. The Gateway records the native result without repeating the comparison.
 
-1. `@swamp/cfgmgmt/exec` creates `/etc/wireguard/orbit.key` (0600) on the peer once. One `wg pubkey` command reads its public key, and a typed step refuses a key that differs from the stored one or collides with another Node's key.
-2. `@swamp/cfgmgmt/file` writes this Node's peer file on the hub, and `wg addconf` loads it. No other peer file changes.
-3. When the stored key changed, `wg set ... remove` drops the old key from the hub.
-4. `@swamp/cfgmgmt/file` writes the peer's two files, and `@swamp/cfgmgmt/systemd` keeps `wg-quick@orbit` running and enabled.
-5. One `wg syncconf` command loads the peer list. It composes the key from the key file on the Node, and a running tunnel is not restarted.
-6. The firewall trust rule and the [resolver policy](/reference/private-dns) follow.
-
-The typed terminal result records the public key only after these steps succeed. When a step fails, the run stops; there is no rollback, and a rerun writes the same files again. There are no effect-time Gateway reads, callbacks, or child Operations.
-
-`fleet.peer_dns` also runs on 209 with the stored WireGuard host pin. One read command prints the public key, the resolver servers, the `orbit` domains and default route, the DNS marker and the `PostUp` hook; a typed step decides drift from it. On drift, `@swamp/cfgmgmt/line` keeps the Gateway-rendered hook line in `orbit.conf` and leaves the rest of the file as it is, and `@swamp/cfgmgmt/file` writes the marker `/etc/wireguard/orbit.dns-link`. Then native steps set DNS, domains and default-route, restore any old uplink, and read the result again. The typed result checks the admitted policy and usable uplink. It never calls an agent action or restarts the tunnel.
-
-Task VM enrollment uses the same hub steps and the same peer file renderer for its guest. See [Task VM native provision](/reference/task-vm-native-provision).
+The retained enrollment and TaskVM parents still use their own admitted hub contract. Their publication and recovery authority is not changed by these two direct-operation ports.
 
 ## Recover an invalid stored endpoint
 
@@ -73,31 +60,27 @@ The Gateway does not guess where the host ends and the port starts in a stored b
 
 A removal parent admits `_wireguard` and `_wireguard_restore` through `NodeWireGuardInput::restorationSnapshot()`. The restore snapshot preserves the same hub, executor, context and pin and clears only the excluded Node. In its running result transaction, the parent restores the original Node status and calls `NodeWireGuardInput::beginRestoration($operation)` before restoration steps. The canonical bound public snapshot and existing private `configuration` field then select the admitted restore view and fresh peer data. Keep the same `wireguard-hub-ID` native model lock. No private endpoint selector or configuration renderer belongs in the parent.
 
+Enrollment may admit the same nonexcluded hub view for restoration. Its parent restores the recorded peer key and original Node status before the same `beginRestoration()` checkpoint. Fresh private rendering then includes the original key, or omits a new peer whose prior key was null. Enrollment's Gateway executor must match its immutable target/root binding. The shared hub helper does not restore peer rows or infer a completed network rollback.
+
 Before that restoration checkpoint, an exact `node.add` parent renders its context peer with the immutable enrollment candidate's WireGuard address. The peer key and all other peers come from current rows. This does not commit the candidate account or address to the Node. After the checkpoint, fresh rendering uses the restored database address and key and ignores the candidate override.
 
 ## Converge the hub
 
-`node:wireguard-hub:converge <node>` admits one `node.wireguard_hub_converge` Operation for the active VPN owner. The Gateway records the full intent: one peer file per Node that has a key and is not being removed, the files to keep, and the hub's SSH target. The hub's private key never leaves the hub; the run carries no secret.
+`node:wireguard-hub:converge <node>` admits one `node.wireguard_hub_converge` Operation for the active VPN owner. The Gateway records the full intent: the public peer list (name, public key and WireGuard address of every other Node that is not being removed) and the hub's SSH target. The hub's private key never leaves the hub; the run carries no secret.
 
-The hub's private key never leaves the Node (Nick, 2026-11-02). The Gateway renders public files only:
-
-- `orbit.conf` is the wg-quick file: `Address`, `ListenPort`, `PostUp = wg set %i private-key /etc/wireguard/orbit.key`, and a `PostUp` that loads every file in `/etc/wireguard/orbit-peers.d`. It holds no peer.
-- `orbit-peers.d/<node id>.conf` holds one `[Peer]` section.
-
-One file per peer lets a run that adds one Node, such as task VM enrollment, write only its own file. Runs that overlap then never drop each other's peers.
+The hub's private key never leaves the Node (Nick, 2026-11-02). The Gateway renders two public files. `orbit.conf` is the wg-quick file: `Address`, `ListenPort`, `PostUp = wg set %i private-key /etc/wireguard/orbit.key` and one `[Peer]` per Node. `orbit-peers.conf` holds only the `[Peer]` sections.
 
 One Swamp run on 209 reaches the hub over SSH as root, with no script on the hub:
 
 1. `@swamp/cfgmgmt/exec` moves the running key into `/etc/wireguard/orbit.key` (0600) once; it skips this when the file exists.
-2. `@swamp/cfgmgmt/file` writes `orbit.conf` and each peer file (0600, root).
-3. One `find` command deletes the peer files of Nodes that are gone. A Node still provisioning keeps its file, because its own run may be adding it.
-4. One `bash -c` command runs `wg syncconf` on input it composes on the Node: `PrivateKey` read from `orbit.key`, the port, then every peer file.
+2. `@swamp/cfgmgmt/file` writes both files (0600, root) side by side.
+3. One `bash -c` command runs `wg syncconf` on input it composes on the Node: `PrivateKey` read from `orbit.key`, the port, then `orbit-peers.conf`.
 
 The load adds new peers and removes stale ones. Unchanged peers keep their sessions, and the interface keeps its key.
 
 `wg syncconf` removes the interface key when its input has none, which the topology proof showed. Composing the key in on the Node keeps it out of the Gateway, the vault and the run history.
 
-The run ends with the official `@swamp/cfgmgmt/systemd` check that `wg-quick@orbit` runs and is enabled, and a native assert that every admitted peer is live.
+The run ends with the official `@swamp/cfgmgmt/systemd` check that `wg-quick@orbit` runs and is enabled, and a native assert that the live peers are exactly the admitted ones.
 
 When a step fails, the run stops and the hub stays as it is; there is no rollback, and a rerun writes and loads the same files again. The command changes no peer key, address, role or credential. The hub must already run its own `wg-quick@orbit`; the role's bootstrap creates it.
 

@@ -262,3 +262,7 @@ Deno.test("empty enrollment PHP snapshots need no account migration or pool effe
         }), { versions: [], versions_json: "[]" });
     }
 });
+Deno.test("a Node without PHP pools may arrive as an empty JSON list", () => {
+    const empty = { account_user: "orbit", configurations: [] };
+    assertEquals(planPhp({ ...placement, before: empty, after: empty }).versions, []);
+});
