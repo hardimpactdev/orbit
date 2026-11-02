@@ -7,6 +7,3 @@ export const ProjectTypeSchema = z.enum([
   "laravel-package",
   "node-package",
 ]);
-export type ProjectType = z.infer<typeof ProjectTypeSchema>;
-export const isPackage = (type: ProjectType) =>
-  type === "laravel-package" || type === "node-package";
