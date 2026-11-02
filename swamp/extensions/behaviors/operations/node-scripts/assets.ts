@@ -3,7 +3,7 @@ import { assembleFootprint } from "../fleet-recipe/assets.ts";
 
 const ObjectInput = z.record(z.string(), z.unknown());
 const Args = z.object({
-    script: z.enum(["apps_folder", "agent", "agent_key", "authorized_keys"]),
+    script: z.enum(["agent", "agent_key", "authorized_keys"]),
     input: ObjectInput,
 }).strict();
 const Assets = z.object({ body: z.string(), input: z.string() }).strict();

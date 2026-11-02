@@ -7,7 +7,6 @@ description: Shipped Node scripts for settings, SSH access and agent rekey; tran
 behaviors:
   - operations/node-scripts/assets.ts
 additionalFiles:
-  - scripts/apps_folder.py
   - scripts/agent.py
   - scripts/agent_key.py
   - scripts/authorized_keys.py

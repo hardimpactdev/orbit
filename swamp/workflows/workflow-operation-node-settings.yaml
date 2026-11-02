@@ -1,6 +1,6 @@
 id: "b100f60c-b164-4036-8881-17e603ba3901"
 name: "operation-node-settings"
-description: "Create and check a Node's apps folder from 209 with one shipped script over official SSH."
+description: "Create a Node's apps folder with official cfgmgmt from 209 and prove its owner and mode."
 vaults: []
 queueTimeout: 30
 inputs:
@@ -17,24 +17,29 @@ jobs:
 - name: settings
   labels: {role: swamp}
   steps:
-  - name: 'Read the scripts'
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/node-scripts'
-      behaviorName: node-settings-scripts
-      methodName: read
-      inputs: {script: apps_folder, input: '${{ inputs.intent.storage }}'}
-    # Missing parts are made as the managed user and group, mode 0755; existing folders stay as they are.
+    # Missing parts are created; the folder gets the managed user and group, mode 0755.
   - name: 'Create the apps folder'
     labels: {role: swamp}
-    dependsOn: [{step: 'Read the scripts', condition: {type: succeeded}}]
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/directory'
+      behaviorName: ${{ "node-settings-folder-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs: {path: '${{ inputs.intent.storage.root }}', ensure: present, owner: '${{ inputs.intent.storage.user }}', group: '${{ inputs.intent.storage.group }}',
+        mode: '0755', nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
+      inputs: {}
+    # The folder's type, owner, group and mode in one stat.
+  - name: 'Check owner and mode'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Create the apps folder', condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "node-settings-ssh-" + string(inputs.node_id) }}
       methodName: exec
-      globalArgs: &ssh
+      globalArgs:
         name: ${{ "node-settings-ssh-" + string(inputs.node_id) }}
         transport:
           kind: ssh
@@ -48,20 +53,10 @@ jobs:
       inputs:
         hosts: name:target
         sudo: true
-        argv: [timeout, '30', python3, -I, -c, '${{ steps["Read the scripts"].outputs.body }}', create, '${{ steps["Read the scripts"].outputs.input }}']
-        timeoutSec: 40
-    # The terminal result: a real folder, owned by the managed user and group, that only the owner may write.
-  - name: 'Check owner and mode'
+        argv: [timeout, '20', /usr/bin/stat, -c, '%F %U:%G %a', '${{ inputs.intent.storage.root }}']
+        timeoutSec: 30
+  - name: 'Prove the apps folder'
     labels: {role: swamp}
-    dependsOn: [{step: 'Create the apps folder', condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "node-settings-ssh-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs: *ssh
-      inputs:
-        hosts: name:target
-        sudo: true
-        argv: [timeout, '30', python3, -I, -c, '${{ steps["Read the scripts"].outputs.body }}', check, '${{ steps["Read the scripts"].outputs.input }}']
-        timeoutSec: 40
+    dependsOn: [{step: 'Check owner and mode', condition: {type: succeeded}}]
+    task: {type: assert, severity: high, message: The apps folder is not the managed user's real folder with mode 0755.,
+      expr: 'steps["Check owner and mode"].outputs.stdout == "directory " + inputs.intent.storage.user + ":" + inputs.intent.storage.group + " 755"'}
