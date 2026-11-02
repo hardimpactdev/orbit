@@ -24,6 +24,10 @@ final readonly class ScheduleOperationCompletion
         if ($schedule === null) {
             return;
         }
+        if ($operation->input['retire_timer'] ?? false) {
+            // The one-off move removed the old timer units of a Schedule that its own Swamp workflow now fires.
+            return;
+        }
         if ($operation->kind === 'schedule.destroy') {
             if ($outcome->status === OperationStatus::Succeeded) {
                 $schedule->delete();

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers\Domains;
 
+use App\Console\Commands\MoveScheduleToSwampCommand;
 use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Schedules\ScheduleOperationSecrets;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
@@ -24,5 +25,12 @@ final class SchedulesServiceProvider extends ServiceProvider
     {
         $this->app->bind('operation.secret.schedule.command', ScheduleOperationSecrets::class);
         $this->app->tag(['operation.secret.schedule.command'], OperationSecretSource::class);
+    }
+
+    public function boot(): void
+    {
+        if ($this->app->runningInConsole()) {
+            $this->commands([MoveScheduleToSwampCommand::class]);
+        }
     }
 }

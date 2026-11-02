@@ -32,10 +32,10 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: ${{ "schedule-active-check-" + run.id }}
+          behaviorName: ${{ "schedule-idle-" + run.id }}
           methodName: exec
           globalArgs:
-            name: ${{ "schedule-active-check-" + run.id }}
+            name: ${{ "schedule-idle-" + run.id }}
             transport:
               kind: ssh
               user: ${{ inputs.intent.ssh_execution.target.user }}

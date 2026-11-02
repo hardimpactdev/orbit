@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Schedules\ScheduleControlProjection;
 use App\Domain\Schedules\ScheduleOperationAdmission;
+use App\Domain\Schedules\ScheduleOperationCompletion;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -224,4 +226,20 @@ it('sets the trigger again on enable without touching the Node', function (): vo
     expect(array_column(array_slice($this->socket->sent, $before), 'type'))->toBe(['workflow.trigger.set'])
         ->and(Operation::query()->findOrFail($id)->status)->toBe(OperationStatus::Succeeded)
         ->and($schedule->fresh()->desired_timer_state->value)->toBe('enabled');
+});
+
+it('moves a Node timer Schedule to its own workflow first and then removes the timer without deleting the record', function (): void {
+    $schedule = Schedule::query()->create(['target_type' => Node::class, 'target_id' => $this->node->id, 'host_node_id' => $this->node->id,
+        'name' => 'nightly-compact', 'calendar' => '*-*-* 03:17:00', 'command' => 'php compact.php', 'timeout_seconds' => 600,
+        'desired_timer_state' => 'enabled', 'status' => 'active', 'trigger' => 'node']);
+    $this->artisan('schedules:move-to-swamp', ['schedule' => $schedule->id, 'cron' => '17 3 * * *'])->assertSuccessful();
+    $types = array_column($this->socket->sent, 'type');
+    $removal = Operation::query()->where('kind', 'schedule.destroy')->sole();
+    expect(array_slice($types, 0, 4))->toBe(['vault.put', 'workflow.create', 'workflow.edit', 'workflow.trigger.set'])
+        ->and(array_last($this->socket->sent)['payload']['workflowIdOrName'])->toBe('operation-schedule-destroy')
+        ->and($schedule->fresh()->trigger->value)->toBe('swamp')
+        ->and($schedule->fresh()->calendar)->toBe('17 3 * * *')
+        ->and($schedule->fresh()->status->value)->toBe('active');
+    app(ScheduleOperationCompletion::class)->complete($removal, OperationOutcome::succeeded(['ready' => true]));
+    expect($schedule->fresh())->not->toBeNull();
 });
