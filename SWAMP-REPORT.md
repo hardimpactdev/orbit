@@ -1,6 +1,6 @@
 # Orbit on Swamp: notes from our migration
 
-What we built, why, and what could make it smoother. Notes from 1–2 November 2026, for the Swamp team. Times are UTC. The data runs to 2 November, 12:20 UTC.
+What we built, why, and what could make it smoother. Notes from 1–2 November 2026, for the Swamp team. Times are UTC. The data runs to 2 November, 15:45 UTC.
 
 ## Why we wrote this
 
@@ -25,6 +25,8 @@ Our rules for this work are in the [Swamp shape guide](swamp/docs/swamp-shape.md
 We run one `swamp serve` for the whole fleet. Over two days, serve CPU rose to 105–135% on a 4-core node, and we paused all migration work for 50 minutes to understand why.
 
 What we saw points to datastore records that grow with every run: auto-definitions, step leases, worker status outputs, run indexes and revoked grants. Lookups and pollers then seem to read all of them. The largest share came from our own design: we gave behaviors a fresh name per run and did not delete them afterwards. We have fixed that on our side.
+
+In the afternoon of 2 November, after the naming fix, serve CPU per dispatch still roughly doubled while dispatch volume halved. Output files were the only store that grew steadily. We have a lead (note 3), not a conclusion. We also moved most Node work onto official `@swamp/cfgmgmt` behaviors and single `@swamp/ssh` exec calls, which raised a few new questions about cfgmgmt (note 8).
 
 Each section below covers what we were trying to do, what we did and why, what we saw, what we concluded, and a suggestion. We filed the clearer cases on Lab, and each section links to its issue. None of them has a reply from the Swamp team yet, so our conclusions are still open to correction.
 
@@ -59,12 +61,12 @@ Each section below covers what we were trying to do, what we did and why, what w
 |---|---|---|---|
 | [1. Auto-definitions](#1-auto-definitions-and-lookup-cost) ([#4280](https://swamp-club.com/lab/4280)) | Serve at 105–135% CPU for hours, with 13,775 files in one type directory. We paused migration work for 50 min. Our per-run behavior names caused the growth. | Behavior names by target, a CI gate, then a move of finished files and a fresh datastore. CPU fell to 2–25%. | Faster lookup by id for auto-definitions, a way to collect unused ones, and a doc note on the cost of leftovers. |
 | [2. Step leases](#2-step-leases-and-serve-restarts) ([#4287](https://swamp-club.com/lab/4287)) | Step leases grew to 70,000+ files, and CPU rose again to 65–74%. `run gc` and `data gc` removed none of them. | Fewer serve restarts, so that the hourly sweep can run. Once our shipped scripts are gone, we expect few restarts. | A first sweep soon after start, or a command to run it. Useful for any serve that restarts often. |
-| [3. Status outputs](#3-worker-status-outputs) ([#4285](https://swamp-club.com/lab/4285)) | 24,215 output files, growing 44 per minute, with 48% of path walks in one sample. | Nothing yet. Retention bounds them at 1 day. | Skip or cap outputs for worker status changes. |
+| [3. Status outputs](#3-worker-status-outputs) ([#4285](https://swamp-club.com/lab/4285)) | 24,215 output files, growing 44 per minute, with 48% of path walks in one sample. Later, CPU per dispatch roughly doubled while outputs grew from about 60,000 to 78,000 files. | Output retention cut from 1 day to 6 hours, then 2 hours. | Skip or cap outputs for worker status changes. |
 | [4. New extension files](#4-shipping-new-extension-files) ([#4282](https://swamp-club.com/lab/4282), [#4286](https://swamp-club.com/lab/4286)) | New shipped files reached workers only after a restart. One restart coincided with a refused release handoff, and one stop took 6 min after an 11 s drain. | Restart only when shipped files change, after a bounded drain. Once our shipped scripts are gone, this rarely applies to us. | A reload that picks up new files, and a bounded shutdown. Useful for any extension that ships files. |
-| [5. Grant records](#5-grant-records-and-the-access-data-poller) (not filed) | A burst of about 2,600 file operations every 30 s, from 257 records, 199 of them revoked. Our per-workflow grants caused most records. | Grants in repo files. A fresh datastore dropped the revoked records. | A lighter change check, and a way to purge old revoked grants. |
+| [5. Grant records](#5-grant-records-and-the-access-data-poller) (not filed) | A burst of about 2,600 file operations every 30 s, from 257 records, 199 of them revoked. Our per-workflow grants caused most records. Later, serve refused a grant pattern that our own check had accepted. | Grants in repo files. A fresh datastore dropped the revoked records. CI now checks grants with the pinned binary's `serve check-config`. | A lighter change check, a way to purge old revoked grants, and a doc note on the accepted pattern syntax. |
 | [6. Run index](#6-run-index-size) ([#4235](https://swamp-club.com/lab/4235)) | About 2.8 s per run save on a 136.8 MB index. Our large inputs made it grow. | Smaller inputs and 6 h run retention. `run gc` reclaimed 2.18 GB. | Index updates that stay cheap as history grows. |
 | [7. Cleanup commands](#7-cleanup-commands-at-our-scale) (noted in #4280) | One `behavior delete` took 6.9 s. `data gc` and `data prune` ran over 10 min and the client timed out. | A reversible file move, then a fresh datastore. | Bulk delete, and GC with progress. |
-| [8. Smaller questions](#8-smaller-open-questions) | Vault writes, cfgmgmt inputs, one trigger per workflow, waiting, and more. The cfgmgmt items matter more now, because we are moving Node work onto cfgmgmt. | Shipped scripts, extra CI checks, design changes. | See the table in section 8. |
+| [8. Smaller questions](#8-smaller-open-questions) | Vault writes, cfgmgmt host keys, `check` results, docker_container fields, one trigger per workflow, waiting, and more. The cfgmgmt items matter more now, because most Node work runs on cfgmgmt. | Pinned `@swamp/ssh` execs where cfgmgmt has no input we need, native asserts, extra CI checks, design changes. | See the table in section 8. |
 
 ## Timeline (UTC)
 
@@ -93,6 +95,13 @@ Each section below covers what we were trying to do, what we did and why, what w
 | Nov 2, 09:00–11:45 | Our releases restarted serve 9 times. Step leases grew from 6,886 to 37,115 between 09:00 and 11:00, and the data file count never dropped at an hourly mark. |
 | Nov 2, 11:57 | We filed [#4287](https://swamp-club.com/lab/4287) (worker GC timing). |
 | Nov 2, 12:00–12:15 | Serve CPU was back at 65–74%, with 60,500 step leases (70,000 by 12:14). `run gc` and `data gc` at 12:15 removed no leases. |
+| Nov 2, 12:12–12:40 | After a release restarted serve, our release step did not wait until serve was ready, and a queue-worker handoff was refused. That worker was down about 28 minutes. We fixed our readiness wait. |
+| Nov 2, 12:35 | We made removing our shipped scripts the top priority: 253 were left. |
+| Nov 2, about 12:30–14:30 | Serve CPU per dispatch roughly doubled while dispatch volume halved. Output files grew from about 60,000 to 78,000, the only store that grew steadily. |
+| Nov 2, 13:44 and 14:44 | We cut `garbageCollection.outputs` from 1 day to 6 hours, then to 2 hours. |
+| Nov 2, about 14:28 | Serve refused a grant pattern that our own CI check had accepted. We split the pattern into two plain ones. By 14:58, CI checked all grants with the pinned binary's `serve check-config`. |
+| Nov 2, 15:18–15:44 | Task VM provisioning ended with host-key errors. A step we had just moved to cfgmgmt met a reused task VM address with a new host key. We reverted it and moved those steps to `@swamp/ssh` exec with a pinned key. |
+| Nov 2, 15:45 | 94 shipped scripts were left, down from 253 at 12:35. |
 
 From about 02:00 to 08:50 on 2 November, most of our effort went to platform work, and porting ran in one lane at most. Serve CPU was the largest part of that work. On the morning of 2 November we had moved 21 of 127 operation kinds.
 
@@ -164,7 +173,7 @@ If that is right, a serve that lives less than an hour never sweeps leases. `Ret
 3. Restart serve every 30–50 minutes.
 4. Count `.swamp/data/swamp/step-lease`.
 
-**What we changed.** Our release now restarts serve only when shipped extension files change (note 4). Once serve stays up for an hour, the first sweep should remove leases older than 2 hours. As we remove our shipped scripts ([section 9](#9-what-we-changed-on-our-side)), we expect few restarts, so this should affect us much less. It may still matter for any serve that restarts often, through deploys, crashes or host maintenance.
+**What we changed.** Our release now restarts serve only when shipped extension files change (note 4). In the afternoon, when serve was not restarted, the hourly sweep reaped bookkeeping as expected. As we remove our shipped scripts ([section 9](#9-what-we-changed-on-our-side)), we expect few restarts, so this should affect us much less. It may still matter for any serve that restarts often, through deploys, crashes or host maintenance.
 
 **Suggestions.**
 
@@ -191,7 +200,9 @@ If that is right, a serve that lives less than an hour never sweeps leases. `Ret
 2. Dispatch a few hundred short steps, for example a `forEach` that runs `true`.
 3. Count the files in that directory. We saw about two per dispatch.
 
-**What we changed.** Nothing yet. Retention removes them after 1 day. A shorter output window would also drop outputs that we read.
+**What we saw later.** After the naming fix, between about 12:30 and 14:30 UTC, serve CPU per dispatch roughly doubled while dispatch volume halved. Output files were the only store that grew steadily, from about 60,000 to 78,000. Our lead is the per-dispatch output files and the path walks over them. That is a lead, not a conclusion, and something else may explain it.
+
+**What we changed.** Following the [Data reference](https://swamp-club.com/manual/reference/data), we cut `garbageCollection.outputs` from 1 day to 6 hours, then to 2 hours, in [`swamp/.swamp.yaml`](swamp/.swamp.yaml). We first checked that no step reads outputs older than that.
 
 **Suggestion.** Record worker status changes without an output record, or cap those outputs to the last N, as resource data is capped.
 
@@ -268,6 +279,10 @@ Not filed. Found 2 Nov 07:25.
 - A supported purge for revoked grants older than a set age.
 - A note that `--grant-reload manual` does not stop the access-data poller, if our reading is right.
 
+**Grant pattern syntax.** Our grants file gives each vault grant a key pattern. A check in our CI ran the pinned binary's regex check, and it accepted a pattern with an optional group after a quantifier: `^database-destroy-[1-9][0-9]*(-[1-9][0-9]*)?-(fence|drop|gone|restore)$`. Serve refused that pattern at start. We may have used the wrong check.
+
+We split the pattern into two plain ones. CI now validates all grants with the pinned binary's `serve check-config`, through [`swamp/bin/check-grant-patterns.py`](swamp/bin/check-grant-patterns.py), so it applies the same checks as serve start. Suggestion: a doc note on the accepted pattern syntax and regex engine, so authors know the rules up front.
+
 ## 6. Run index size
 
 [Lab #4235](https://swamp-club.com/lab/4235), open, no reply yet. Filed 1 Nov 11:22.
@@ -320,18 +335,19 @@ Noted in #4280, not filed separately.
 
 These are smaller, or are features we looked for and did not find. Each took us real design or debugging time. Some may already have a supported answer that we missed.
 
-The three `@swamp/cfgmgmt` rows matter more to us now. We are replacing our shipped scripts with cfgmgmt behaviors ([section 9](#9-what-we-changed-on-our-side)), so each missing field there keeps a script in place.
+The four `@swamp/cfgmgmt` rows matter more to us now. We are replacing our shipped scripts with cfgmgmt behaviors ([section 9](#9-what-we-changed-on-our-side)), so each missing field there keeps a script in place.
 
 | Topic | What we saw | What we did | Suggestion |
 |---|---|---|---|
 | Writing a vault value from a step ([#4225](https://swamp-club.com/lab/4225)) | A step must move a file from a host into the vault. We found no way to mark `@swamp/ssh` outputs sensitive. `vault put --server` takes the value as an argument, which shows up in `ps`. A local `vault put` writes around serve. We followed [Vaults](https://swamp-club.com/manual/reference/vaults). | We parked this feature and kept our old path. | Sensitive step outputs, `vault put --server` reading stdin, or a native vault-write step. |
 | Schedule triggers per workflow | A workflow kept one schedule trigger, so our second schedule replaced the first. We had designed one trigger per Orbit schedule. | One generated Swamp workflow per schedule, each calling a shared child workflow. | Several triggers per workflow, each with its own inputs, or a doc note. |
 | Waiting for a condition | Container health waits and VM start waits need a wait or retry loop. We did not find a native one. | One bounded `timeout 60` shell command, and `sleep 31` as a delay step. | A native wait or retry-until step with a deadline. |
-| Host keys in `@swamp/cfgmgmt` | cfgmgmt SSH uses `accept-new` with a `strictHostKeyChecking` policy. Its README says to seed `known_hosts` on the runner, which we do. | We seed `known_hosts` from our own pins and check it first. See [worker known hosts](swamp/docs/worker-known-hosts.md). | A per-call host-key input, like `@swamp/ssh` `hostKeys`. |
+| Host keys in `@swamp/cfgmgmt` | cfgmgmt SSH uses `accept-new` with a `strictHostKeyChecking` policy. Its README says to seed `known_hosts` on the runner, which we do. As we understand it, cfgmgmt uses the worker's shared `known_hosts`, and we found no way to pass a pinned key. Our task VMs reuse network addresses with fresh host keys, so a step toward a reused address ended with a host-key error. | For long-lived Nodes, we seed `known_hosts` from our own pins (see [worker known hosts](swamp/docs/worker-known-hosts.md)). For task VMs, we moved those steps to `@swamp/ssh` exec with a pinned key. | A per-call host-key or `known_hosts` input, like `@swamp/ssh` `hostKeys`. We may have missed one. |
+| `check` results in `@swamp/cfgmgmt` | A behavior's `check` reports drift as `non_compliant` in its data, and the step still succeeds. That fits a dry run, but we wanted a failed step when the end state is wrong. | A native `assert` step after each `check`, on `status == "compliant"` and the fields we need, for example in [`workflow-operation-process-create.yaml`](swamp/workflows/workflow-operation-process-create.yaml). | An option to fail the step on drift, or a doc example of the assert pattern. |
 | Rule order in `@swamp/cfgmgmt/firewall` | Operator rules must sit above managed rules, and `port` takes one number. Destination and comment matching shipped on 1 Nov in #4230. Thank you. | One shipped script stays for firewall rules. | An insert position, and port ranges. |
-| Fields in `@swamp/cfgmgmt/docker_container` | `command` is one string, not argv. We found no labels, working directory or health-check fields. `environment` is a plain argument, and the state output includes the current environment. | One `docker` command per step through `@swamp/ssh` exec argv. | An argv command, those fields, and a way to keep secret environment values out of state. |
+| Fields in `@swamp/cfgmgmt/docker_container` | `command` is one string, not argv. We found no labels, working directory or health-check fields. `environment` is a plain argument, and the state output includes the current environment. | One `docker run` per step through `@swamp/ssh` exec argv, with labels and working directory. The official `check` still confirms image, restart policy and state. See the [Process README](swamp/extensions/behaviors/operations/process-commands/README.md). | An argv command, `working_dir` and `labels` fields, and a way to keep secret environment values out of state. |
 | Name rules at validate time | Swamp names do not allow dots. Our computed `behaviorName` with dots passed `swamp workflow validate` in our CI, then 4 production operations ended with errors. Our own rename caused it. | Our [behavior-name gate](swamp/bin/lint-behavior-names.ts) now rejects name parts that can hold a dot. | A doc note on name rules, and a check of literal name parts at validate time. |
-| Validate and runtime checks | A workflow without a `vaults:` list passed `swamp workflow validate`, then could not read its vault. A grant key pattern was refused as "potentially catastrophic backtracking" when serve applied it. | Our own CI checks for both, for example [`check-grant-patterns.ts`](swamp/bin/check-grant-patterns.ts). | The same checks in `validate`. |
+| Validate and runtime checks | A workflow without a `vaults:` list passed `swamp workflow validate`, then could not read its vault. A grant key pattern was refused as "potentially catastrophic backtracking" when serve applied it, and later serve refused a second pattern at start (note 5). | Our own CI checks, now including the pinned binary's `serve check-config` for grants ([`check-grant-patterns.py`](swamp/bin/check-grant-patterns.py)). | The same checks in `validate`, and a doc note on the grant pattern syntax. |
 | Worker capacity on one serve | A 120-item fan-out filled every slot, and other steps ended on the worker-queue timeout (about 60 s). Run start took 33–55 s under that load. | We batch work per host and allow 120 s for run start. | Queued steps that wait longer, or a per-step queue timeout. |
 | One behavior name in a forEach | All items shared one instance lock, and later items timed out. | A per-item `behaviorName`, which led to note 1. | A note next to the disposable-instance recipe and its delete step. |
 | Per-run deadlines | `--timeout` is enforced by the CLI process. We found only the global `max-run-duration` in serve. | Our own deadline tracking. | A per-run deadline on the run request. |
@@ -360,7 +376,7 @@ We have not reduced these to a clear case yet, so they may have other causes.
 - **Fewer restarts.** A release restarts serve only when shipped extension files change, and only after a bounded drain. Otherwise it reloads.
 - **No more shipped scripts.** We are removing the scripts our extensions ship to Nodes. Node work moves to official `@swamp/cfgmgmt` behaviors (systemd, file, docker, firewall, apt, git, user and others), and single commands run as `@swamp/ssh` exec argv. The rule is in the [flow-tighten skill](.agents/skills/flow-tighten/SKILL.md).
 
-For the scripts, we audited 292. 187 can go outright. 11 need a feature we did not find in an official behavior, such as a firewall insert position. 49 more depended on five open questions, which we have since decided. As of 2 November, 12:35 UTC, this conversion is our top priority, with 253 scripts left.
+For the scripts, we audited 292. 187 could go outright. 11 need a feature we did not find in an official behavior, such as a firewall insert position. 49 more depended on five open questions, which we have since decided. This conversion became our top priority at 12:35 UTC on 2 November, with 253 scripts left. At 15:45 UTC, 94 were left. Most Node work now uses official `@swamp/cfgmgmt` behaviors and single `@swamp/ssh` exec calls.
 
 With these changes, notes 2 and 4 (the GC timing and the asset cache) should affect us much less, because new shipped files, and so restarts, become rare. They may still matter for other extensions that ship files and other serves that restart often. The `@swamp/cfgmgmt` items in note 8 matter more to us now, because we rely on cfgmgmt for most Node work.
 
@@ -374,7 +390,7 @@ With these changes, notes 2 and 4 (the GC timing and the asset cache) should aff
 6. **A lighter grant change check, and a purge for old revoked grants.**
 7. **Cleanup at scale:** bulk delete, and GC or prune as a tracked job with progress.
 8. **A vault write that keeps secrets out of argv and history** ([#4225](https://swamp-club.com/lab/4225), or sensitive step outputs).
-9. **Smaller features:** several triggers per workflow, a wait or retry-until step, cfgmgmt host keys, firewall position and ranges, docker_container argv and fields, and the same checks in `validate` as at run time.
+9. **Smaller features:** several triggers per workflow, a wait or retry-until step, a host-key input on cfgmgmt behaviors, a fail-on-drift option for cfgmgmt `check`, firewall position and ranges, docker_container argv, `working_dir` and `labels`, a doc note on grant pattern syntax, and the same checks in `validate` as at run time.
 
 One general idea: a short "running serve under load" page in the manual. It would list what grows with run count (auto-definitions, step leases, status outputs, run indexes, grant versions), which settings and GC kinds bound each one, and what a restart resets. Most of our 2 November went into finding these out, and a page like that would help the next team too.
 
