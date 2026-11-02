@@ -33,8 +33,6 @@ final readonly class NativeRouteLanRemovalProjection implements DirectOperationP
     {
         $result = array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip(['ready', 'error_code']));
 
-        return DB::transaction(function () use ($operation, $data, $result): Operation {
-            return app(DirectOperation::class)->project($operation, $data, $result);
-        });
+        return DB::transaction(fn (): Operation => app(DirectOperation::class)->project($operation, $data, $result));
     }
 }
