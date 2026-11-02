@@ -21,6 +21,7 @@ node.ssh_access_converge
 node.agent_rekey
 database.create
 database.destroy
+database.update
 process.horizon_handoff
 
 vault.setup
