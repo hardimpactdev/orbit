@@ -242,6 +242,26 @@ jobs:
         - type: succeeded
         - type: skipped
     guard: ${{ steps.plan.outputs.provider != "incus" }}
+  - name: Forget the guest host key
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "vm-known-hosts" }}'
+      methodName: execute
+      inputs:
+        # The address goes back to the pool; the next guest there brings its own key.
+        run: |
+          set -eu
+          install -d -m 0700 "$HOME/.ssh"
+          ssh-keygen -R "$ORBIT_ADDRESS" -f "$HOME/.ssh/known_hosts" >/dev/null 2>&1 || true
+        env:
+          ORBIT_ADDRESS: '${{ has(inputs.intent.wireguard_ip) && inputs.intent.wireguard_ip != null ? inputs.intent.wireguard_ip : "" }}'
+    dependsOn:
+    - step: delete
+      condition:
+        type: succeeded
+    guard: ${{ !has(inputs.intent.wireguard_ip) || inputs.intent.wireguard_ip == null }}
   - name: cleanup
     labels: {role: swamp}
     task:

@@ -127,6 +127,8 @@ Full capacity or a missing promoted image for the current recipe returns HTTP 40
 
 The native parent currently supports unrouted workspaces without Project Process or Schedule definitions. Other workspaces return `operation.kind_unavailable` before reserving capacity. It uses the child-observed SSH host key and the captured Node 209 identity; it issues no guest worker credentials.
 
+Task VMs reuse WireGuard addresses. Official `@swamp/ssh` pins the observed host key per step, but the official cfgmgmt behaviors check keys against the 209 worker account's `known_hosts`. So enrollment first replaces any entry for the guest's address with its observed key, and destroy removes the address again.
+
 Success leaves the group `running` and its workspace `source_resolved`. The task branch starts at the pinned start commit. The workspace step refuses a checkout on any other commit. No subtask or check starts. The operation result includes `{ instance_id, node_id, starting_commit, analysis_base }`, naming the workspace Instance, guest Node, start commit and immutable analysis pin. The operation stays running until both VM enrollment and workspace setup finish. A failed native run ends the group `failed`; cancellation ends it `cancelled`. Neither result claims that the VM was destroyed. Cleanup remains a separate native operation.
 
 ##### Optional Swamp worker

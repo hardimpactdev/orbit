@@ -60,6 +60,24 @@ jobs:
 - name: enrollment
   labels: {role: swamp}
   steps:
+  - name: Pin the guest host key
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "vm-known-hosts" }}'
+      methodName: execute
+      inputs:
+        # Official cfgmgmt checks host keys against this worker account's known_hosts and takes no pin.
+        # Task VMs reuse addresses, so the guest's provider-observed key replaces whatever was there.
+        run: |
+          set -eu
+          install -d -m 0700 "$HOME/.ssh"
+          ssh-keygen -R "$ORBIT_ADDRESS" -f "$HOME/.ssh/known_hosts" >/dev/null 2>&1 || true
+          printf '%s\n' "$ORBIT_LINES" >> "$HOME/.ssh/known_hosts"
+        env:
+          ORBIT_ADDRESS: ${{ inputs.guest.ssh_execution.target.host }}
+          ORBIT_LINES: '${{ inputs.guest.ssh_execution.target.host_keys.map(key, inputs.guest.ssh_execution.target.host + " " + key).join("\n") }}'
   - name: provider-plan
     labels: {role: swamp}
     task:
