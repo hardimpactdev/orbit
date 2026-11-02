@@ -47,10 +47,10 @@ Swamp's own skill (`swamp`, installed by `swamp repo upgrade`) explains how to b
 1. For a new command, draft the chart by the README rules first. Then read the chart and the kind's live facts: its workflow in `swamp/workflows/`, its Gateway declaration, and recent runs (`operation-list --kind <kind>`). Use `gh api` only; never `git clone` or `git fetch`.
 2. Walk the steps in order and test each one against rules 1–22. Note the step number, the rule and the change.
 3. Write the proposal: each change with its step numbers and the reason in one line. Add the step count of the common path before and after, and what you keep on purpose and why.
-4. Ask before applying to a reviewed chart. Open the chart in Nick's browser tab (`?flow=<kind>` on the migration dashboard) and explain by step number. Change one chart at a time.
+4. Ask before applying to a reviewed chart. Show Nick the chart rendered (a local docs preview, see the README's "Edit, render and preview") and explain by step number. Change one chart at a time.
 5. Apply the agreed changes:
    - a step that moves to another command is added to that command's chart in the same PR;
    - run `bin/check-flows`;
-   - reload the chart in the tab;
+   - check it in the local docs preview;
    - publish one PR.
 6. A rule that came out of the review goes into this skill, so the next chart benefits.
