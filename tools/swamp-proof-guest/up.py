@@ -6,6 +6,7 @@ worker named orbit-node-209. One nested copy of the seed's node-template plays
 the target Node. Prints one JSON line with public facts and step timings.
 """
 import hashlib
+import ipaddress
 import json
 import os
 import pwd
@@ -131,6 +132,11 @@ def prepare(node, network):
          'sh', bootstrap])
     # Unmanaged SSH allowance and an active backend: the state an enrolled Node has.
     run(['incus', 'exec', node['key'], '--', 'sh', '-c', 'ufw allow 22/tcp comment proof-ssh && ufw --force enable'])
+    # The fleet's member trust: every Node takes any traffic from the private network, so 209 reaches Node ports.
+    # The proof network stands in for the orbit WireGuard interface; the guest NIC name varies, so no interface (version 9).
+    run(['incus', 'exec', node['key'], '--', 'ufw', 'allow', 'from',
+         str(ipaddress.ip_network(f'{network["gateway"]}/{network["prefix"]}', strict=False)),
+         'to', node['address'], 'comment', 'orbit:wireguard-members'])
     if 'app-dev' in node.get('roles', []):
         # The web runtime app-dev role convergence leaves: an Orbit-managed Caddyfile, the hibernation log
         # directory its sites name, and active PHP-FPM masters for the shared pools (version 7, for Route kinds).

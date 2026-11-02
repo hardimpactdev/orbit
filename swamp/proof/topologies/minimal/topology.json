@@ -1,6 +1,6 @@
 {
   "name": "minimal",
-  "version": 8,
+  "version": 9,
   "gateway": "task-vm",
   "network": {
     "name": "oeproof",
