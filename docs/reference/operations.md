@@ -110,7 +110,7 @@ This is the Gateway's budget result, not proof that the native run or its descen
 
 The shared observer projects live step names from native run events without reading history. `current_step_started_at` is the native timestamp when the event supplies one; it stays null when the runtime omits it. `current_step_observed_at` records when the Gateway observed that event. Replayed progress cannot replace a newer event.
 
-A failed or interrupted root retains its first causal step as `failed_step` and a bounded safe diagnostic in `error.detail`. Recorded stderr is preferred; otherwise the native step error is retained. `error.stderr_recorded` distinguishes recorded stderr from missing stderr, including worker disconnection or dispatch refusal. Stdout is never failure evidence.
+A failed or interrupted root retains its first causal step as `failed_step` and a bounded safe diagnostic in `error.detail`. A kind's projection maps that step to its chart step name, a `forEach` iteration such as `Probe the site over TLS-0` included, and records the chart step's error code. Recorded stderr is preferred; otherwise the native step error is retained. `error.stderr_recorded` distinguishes recorded stderr from missing stderr, including worker disconnection or dispatch refusal. Stdout is never failure evidence.
 
 When a kind's workflow has no result-reporting step, the kind declares its terminal result as `native`. Its projector then reads Swamp's own run data keyed by step name ([Swamp command steps](/reference/swamp-command-steps#read-swamps-run-data-instead-of-a-result-step)). `node.wireguard_hub_converge` is the first: its run ends on a native `assert`, and the Gateway records `projected: true` when that check succeeded.
 

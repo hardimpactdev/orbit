@@ -7,6 +7,7 @@ namespace App\Domain\Routes;
 use App\Actions\Routes\RouteTargetState;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\NativeFailedStep;
 use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Models\Operation;
@@ -49,15 +50,7 @@ final readonly class NativeRouteTargetProjection implements DirectOperationProje
         return DB::transaction(function () use ($operation, $data): Operation {
             $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $wasTerminal = $operation->status->terminal();
-            $failure = is_array($data['failure'] ?? null) ? $data['failure'] : [];
-            $failed = is_string($failure['failed_step'] ?? null) ? $failure['failed_step'] : null;
-            $step = null;
-            foreach (array_keys(self::StepCodes) as $label) {
-                // A forEach iteration is named after its step, such as "Stage the new targets-1".
-                if ($failed !== null && ($failed === $label || str_starts_with($failed, $label.'-'))) {
-                    $step = $label;
-                }
-            }
+            $step = NativeFailedStep::label($data, array_keys(self::StepCodes));
             if ($data['status'] === 'failed') {
                 $data['error_code'] = $step === null ? ($data['error_code'] ?? 'route.target_set_failed') : self::StepCodes[$step];
             }
