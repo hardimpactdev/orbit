@@ -317,3 +317,5 @@ Three minimal@10 receipts pass at `bd9af9de1b08f4045b03d7a727dd8589ccb635b0`. Ea
 | Invalid inventory | `conn.pairing_revoke-invalid-list/20261102T192306Z-minimal.json` | 6.34 |
 
 Eleven native workflow tests, three typed data tests and 108 Gateway tests pass. PHPStan, Pint, registry, chart, documentation, shape, naming and placement checks pass. The proof first exposed unexpanded phase names in the fixture; corrected fixtures produced the receipts above. A failed provision used an old parent against the new workspace input; the normal Gateway release resolved that mismatch. A later status-read failure was confirmed succeeded before the proof tool reused that same provision. No production serve restart or reload was used.
+
+Cancellation 8222 destroyed task VM 344 at 2026-11-02T19:27:26Z. The lane holds no VM. The rebased runtime files match the proven source.
