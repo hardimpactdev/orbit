@@ -16,7 +16,6 @@ use App\Domain\Instances\Deployment\InstanceDeploymentRecorder;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationRequestFingerprint;
-use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\RemoteBranchHeads;
 use App\Http\Requests\Operations\StartsOperation;
@@ -97,7 +96,7 @@ it('requires Gateway authority for every policy contract even with target Node a
     $this->assertDatabaseCount('operations', 0);
 })->with([
     ['GET', '/deployment-source/head'], ['GET', '/deployment-source/commits'], ['GET', '/deployment-source/checks'],
-    ['GET', '/deploy/automatic/receipt'], ['POST', '/deploy/automatic/resolve'], ['PUT', '/auto-deploy/policy'], ['POST', '/auto-deploy/events'],
+    ['GET', '/deploy/automatic/receipt'], ['POST', '/deploy/automatic/resolve'], ['PUT', '/auto-deploy/policy'],
 ]);
 
 it('reads the fresh deployment branch head rather than cached policy state', function (): void {
@@ -240,12 +239,11 @@ it('preserves worker-lost outcomes with missing deployment evidence', function (
     $this->assertDatabaseCount('operations', 1);
 });
 
-it('refuses automatic admission publication and delivery while PHP owns the policy', function (): void {
+it('refuses automatic admission and publication while PHP owns the policy', function (): void {
     app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Gateway);
     $this->getJson($this->url)->assertOk()->assertJsonPath('data.auto_deploy.policy_owner', 'gateway');
     $this->withHeader('Idempotency-Key', 'deploy')->postJson($this->url.'/deploy/automatic', ['commit' => $this->sha])->assertConflict()->assertJsonPath('error.code', 'instance.auto_deploy_policy_owner');
     $this->putJson($this->url.'/auto-deploy/policy', policy_publication($this))->assertConflict()->assertJsonPath('error.code', 'instance.auto_deploy_policy_owner');
-    $this->withHeader('Idempotency-Key', 'event')->postJson($this->url.'/auto-deploy/events', ['event' => 'activity', 'result' => 'started'])->assertConflict()->assertJsonPath('error.code', 'instance.auto_deploy_policy_owner');
     $this->assertDatabaseCount('operations', 0);
     expect($this->fixture->instance->fresh()->auto_deploy_state)->toBeNull();
 });
@@ -272,22 +270,6 @@ it('rejects publication after resume or history changes and rejects owner inject
     $this->putJson($this->url.'/auto-deploy/policy', [...$body, 'owner' => 'swamp'])->assertUnprocessable();
     expect($this->fixture->instance->fresh()->auto_deploy_state)->toBeNull();
 })->with(['resume', 'history']);
-
-it('requires stable event keys and validates inputs before admission', function (): void {
-    $this->postJson($this->url.'/auto-deploy/events', ['event' => 'activity', 'result' => 'started'])->assertUnprocessable();
-    $this->withHeader('Idempotency-Key', 'event.invalid')->postJson($this->url.'/auto-deploy/events', ['event' => 'failed'])->assertUnprocessable();
-    $this->withHeader('Idempotency-Key', 'event.invalid')->postJson($this->url.'/auto-deploy/events', ['event' => 'stalled', 'commit' => 'main'])->assertUnprocessable();
-    $this->withHeader('Idempotency-Key', 'event.invalid')->postJson($this->url.'/auto-deploy/events', ['event' => 'activity', 'result' => 'started', 'target' => 'gateway'])->assertUnprocessable();
-    $this->assertDatabaseCount('operations', 0);
-});
-
-it('keeps policy delivery independent of an Instance deployment lock', function (): void {
-    $deployment = policy_receipt_operation($this, 'deploy.busy', $this->sha);
-    $deployment->update(['lock_key' => OperationStore::lockKey('instance', $this->fixture->instance->id)]);
-    $this->withHeader('Idempotency-Key', 'event.busy')->postJson($this->url.'/auto-deploy/events', ['event' => 'activity', 'result' => 'busy'])->assertAccepted()->assertJsonPath('data.target_type', 'instance_policy');
-    expect($deployment->fresh()->lock_key)->toBe('instance:'.$this->fixture->instance->id);
-    $this->assertDatabaseCount('operations', 2);
-});
 
 it('requires valid receipt identity and conflicts on a changed automatic commit', function (): void {
     $this->getJson($this->url.'/deploy/automatic/receipt?request_key=bad/key&commit='.$this->sha)->assertUnprocessable();

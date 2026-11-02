@@ -138,12 +138,9 @@ export const PolicyEventSchema = z.object({
 });
 export type PolicyEvent = z.infer<typeof PolicyEventSchema>;
 export const StateSchema = z.object({
-  events: z.array(z.object({
-    key: z.string(),
-    body: PolicyEventSchema,
-    operation_id: z.number().nullable(),
-    receipt: z.record(z.string(), z.unknown()).nullable(),
-  })).default([]),
+  // Every event this Instance raised; the fire's terminal result carries each new one to the Gateway.
+  events: z.array(z.object({ key: z.string(), body: PolicyEventSchema }))
+    .default([]),
   event_sequence: z.number().int().nonnegative().default(0),
   result: nullable.default(null),
   commit: nullable.default(null),
@@ -732,7 +729,7 @@ export async function tick(
         body.since = alert.key.slice(alert.subject.sha.length + 1);
         body.result = result;
       }
-      state.events.push({ key, body, operation_id: null, receipt: null });
+      state.events.push({ key, body });
     }
     if (activity) {
       state.events.push({
@@ -745,8 +742,6 @@ export async function tick(
           error_code: errorCode,
           message,
         },
-        operation_id: null,
-        receipt: null,
       });
     }
     await save(state);

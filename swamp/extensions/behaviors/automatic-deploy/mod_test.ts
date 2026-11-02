@@ -53,7 +53,7 @@ Deno.test("automatic origin accepts Gateway callers and both stored labels while
     }
   }
   for (
-    const kind of ["rollback", "instance.rollback", "instance.policy_event"]
+    const kind of ["rollback", "instance.rollback"]
   ) {
     for (const triggered_by of ["orbit:auto-deploy", "swamp:auto-deploy"]) {
       assertEquals(

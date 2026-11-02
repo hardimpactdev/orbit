@@ -137,7 +137,6 @@ it('declares node access scope on every active-peer API route', function (): voi
         'instance:analytics:enable' => ServingNode::InstanceOwning,
         'instance:analytics:show' => ServingNode::InstanceOwning,
         'instance:analytics:stats' => ServingNode::InstanceOwning,
-        'instance:auto-deploy:event:create' => ServingNode::Gateway,
         'instance:auto-deploy:policy:update' => ServingNode::Gateway,
         'instance:clone' => ServingNode::CandidateClone,
         'instance:create' => ServingNode::InstanceCreation,

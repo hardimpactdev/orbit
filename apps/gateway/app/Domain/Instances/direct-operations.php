@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\Instances\Deployment\AutomaticDeployActivityProjection;
 use App\Domain\Instances\Deployment\InstanceDeployProjection;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
@@ -15,12 +14,6 @@ use App\Domain\Instances\NativeInstanceTransferProjection;
 use App\Domain\Instances\StepLists\InstanceSetupProjection;
 
 return [
-    'instance.policy_event' => [
-        'workflow' => 'operation-instance-policy-activity',
-        'workflow_inputs' => true,
-        'terminal_result' => ['job' => 'record', 'step' => 'record'],
-        'projection' => AutomaticDeployActivityProjection::class,
-    ],
     'instance.transfer' => ['workflow' => 'operation-instance-transfer', 'workflow_inputs' => true,
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(forward|restore)-route_material_[0-9]+$'],
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*$']],

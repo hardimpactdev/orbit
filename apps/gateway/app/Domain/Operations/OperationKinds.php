@@ -29,8 +29,6 @@ final readonly class OperationKinds
 
     public const string InstanceDeploy = 'instance.deploy';
 
-    public const string InstancePolicyEvent = 'instance.policy_event';
-
     public const string InstanceRollback = 'instance.rollback';
 
     public const string TasksPublish = 'tasks.publish';

@@ -260,7 +260,8 @@ final readonly class SwampCommandStep
             throw $this->unavailable();
         }
         if (isset($declaration['projection'])) {
-            app($declaration['projection'])->applyScheduled($workflowId, $run, $run['status'] === 'succeeded' ? $this->terminalOutput($run, $declaration['terminal_result']) : []);
+            // A failed run passes the result its terminal step printed, if any; an automatic-deploy fire records events before its failure assert.
+            app($declaration['projection'])->applyScheduled($workflowId, $run, $this->terminalOutput($run, $declaration['terminal_result']));
 
             return true;
         }

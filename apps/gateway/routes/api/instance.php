@@ -115,7 +115,6 @@ Route::middleware([
     Route::post('instances/{instance}/smoke/rollback', [InstanceSmokeController::class, 'rollback'])->name('instance:smoke:rollback');
     Route::get('instances/{instance}/smoke/rollback/receipt', [InstanceSmokeController::class, 'rollbackReceipt'])->name('instance:smoke:rollback:receipt');
     Route::put('instances/{instance}/auto-deploy/policy', [InstanceAutomaticDeployPolicyController::class, 'update'])->name('instance:auto-deploy:policy:update');
-    Route::post('instances/{instance}/auto-deploy/events', [InstanceAutomaticDeployPolicyController::class, 'store'])->name('instance:auto-deploy:event:create');
     Route::post('instances/{instance}/deploy/automatic', [InstanceDeploymentsController::class, 'automatic'])->name('instance:deploy:automatic');
     Route::post(
         'instances/{instance}/rollback',

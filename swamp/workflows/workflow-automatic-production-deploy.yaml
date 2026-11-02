@@ -25,3 +25,21 @@ jobs:
           methodName: tick
           inputs:
             instances: "${{ inputs.instances }}"
+      - name: result
+        dependsOn: [{step: tick, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: automatic-deploy-result
+          methodName: execute
+          inputs:
+            run: 'printf "%s\n" "$ORBIT_FIRE"'
+            env:
+              ORBIT_FIRE: "${{ steps.tick.outputs.fire_json }}"
+      - name: failures
+        dependsOn: [{step: result, condition: {type: succeeded}}]
+        task:
+          type: assert
+          expr: steps.tick.outputs.failure_count == 0
+          severity: high
+          message: An Instance's automatic deploy tick failed; the Gateway recorded it from the result.

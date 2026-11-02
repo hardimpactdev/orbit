@@ -66,9 +66,8 @@ function fixture() {
       body: { data: structuredClone(data) },
     });
   };
+  const emitted: { instance: number; key: string; body: unknown }[] = [];
   const admissions = {
-    event: () =>
-      Promise.resolve({ ...operation, id: 201, kind: "instance.policy_event" }),
     deploy: (_id: number, commit: string, key: string) => {
       assertEquals(
         (memory.get("development-7")?.pending as { key: string }).key,
@@ -112,7 +111,14 @@ function fixture() {
       return Promise.resolve(handle);
     },
   };
-  const run = (at = now) => tickDevelopment(http, ctx, admissions, at);
+  const run = (at = now) =>
+    tickDevelopment(
+      http,
+      ctx,
+      admissions,
+      at,
+      (instance, key, body) => emitted.push({ instance, key, body }),
+    );
   return {
     instance,
     listed,
@@ -124,6 +130,7 @@ function fixture() {
     writes,
     operation,
     run,
+    emitted,
     busy: () => {
       busy = true;
     },
@@ -167,7 +174,8 @@ Deno.test("development policy returns only the final checkpoint handle", async (
   assertExists(last);
   assertEquals(handles, [last]);
   assertEquals(f.starts.length, 1);
-  assertEquals(f.memory.get("development-7")?.event, null);
+  // The start raised one Activity event for the fire result; no step posts it.
+  assertEquals(f.emitted.map((e) => [e.instance, (e.body as { result: string }).result]), [[7, "started"]]);
 });
 Deno.test("native development policy saves the exact pinned intent before admission", async () => {
   const f = fixture();
