@@ -39,7 +39,8 @@ final readonly class TaskCheckGitHubTokens
         if ($checks === null) {
             throw new ResourceOperationException('tasks.handoff_ci_unavailable', 'The repository requires Checks read access.', 503);
         }
-        $values = ['github_token' => $this->access->token($repository), 'checks_token' => $checks];
+        $token = $this->access->token($repository);
+        $values = ['github_token' => $token, 'checks_token' => $checks, 'git_authorization' => 'AUTHORIZATION: basic '.base64_encode('x-access-token:'.$token)];
         $references = ValidatedData::object($operation->input['execution_secrets']);
         $copies = [];
         foreach ($values as $name => $value) {

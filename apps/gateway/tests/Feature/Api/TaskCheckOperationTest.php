@@ -283,9 +283,11 @@ it('mints fresh scoped execution copies through the existing mint endpoint after
     $response = $this->postJson('/api/v1/direct-operations/'.$operation->id.'/github-token', ['run_id' => $this->run])->assertOk();
     $response->assertJsonPath('data.execution_secrets', $operation->input['execution_secrets'])->assertJsonMissingPath('data.github.token');
     expect($response->getContent())->not->toContain('synthetic-check-read')->not->toContain('synthetic-check-write')
-        ->and(count($this->socket->sent))->toBe(3);
+        ->and(count($this->socket->sent))->toBe(4);
+    $header = collect($this->socket->sent)->first(static fn (array $message): bool => str_starts_with((string) ($message['payload']['key'] ?? ''), 'task-check-git-'));
+    expect($header['payload']['value'] ?? null)->toStartWith('AUTHORIZATION: basic ');
     $this->postJson('/api/v1/direct-operations/'.$operation->id.'/github-token', ['run_id' => $this->run, 'repository' => 'other/repo'])->assertUnprocessable();
     $operation->update(['cancel_requested_at' => now()]);
     $this->postJson('/api/v1/direct-operations/'.$operation->id.'/github-token', ['run_id' => $this->run])->assertForbidden();
-    expect(count($this->socket->sent))->toBe(3);
+    expect(count($this->socket->sent))->toBe(4);
 });

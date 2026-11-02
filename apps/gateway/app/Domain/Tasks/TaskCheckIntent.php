@@ -62,6 +62,8 @@ final readonly class TaskCheckIntent
                 $copies = [
                     'github_token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-check-write-'.$key],
                     'checks_token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-check-read-'.$key],
+                    // The push reads the token only as a Git extra header, as tasks.publish does.
+                    'git_authorization' => ['vault' => 'orbit-control-inputs', 'key' => 'task-check-git-'.$key],
                 ];
             }
             $check = $task->checks()->create(['kind' => $input->phase, 'status' => TaskCheckStatus::Running, 'pid' => 0, 'process_started' => '', 'head_before' => '', 'tree_before' => '', 'started_at' => now()]);

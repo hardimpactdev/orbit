@@ -20,7 +20,8 @@ inputs:
         enum:
         - github_token
         - checks_token
-      maxProperties: 2
+        - git_authorization
+      maxProperties: 3
       additionalProperties:
         type: object
         properties:
@@ -30,7 +31,7 @@ inputs:
             - orbit-control-inputs
           key:
             type: string
-            pattern: ^task-check-(write|read)-[a-f0-9-]{36}$
+            pattern: ^task-check-(write|read|git)-[a-f0-9-]{36}$
         required:
         - vault
         - key

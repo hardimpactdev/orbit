@@ -21,7 +21,8 @@ inputs:
         enum:
         - github_token
         - checks_token
-      maxProperties: 2
+        - git_authorization
+      maxProperties: 3
       additionalProperties:
         type: object
         properties:
@@ -31,7 +32,7 @@ inputs:
             - orbit-control-inputs
           key:
             type: string
-            pattern: ^task-check-(write|read)-[a-f0-9-]{36}$
+            pattern: ^task-check-(write|read|git)-[a-f0-9-]{36}$
         required:
         - vault
         - key
@@ -233,27 +234,23 @@ jobs:
         ignoreExitCode: true
         timeout: 60000
         env:
-          GIT_TERMINAL_PROMPT: '0'
-          GIT_CONFIG_GLOBAL: /dev/null
-          GIT_CONFIG_NOSYSTEM: '1'
           GIT_ALLOW_PROTOCOL: https
           GIT_CONFIG_COUNT: '4'
+          GIT_CONFIG_GLOBAL: /dev/null
           GIT_CONFIG_KEY_0: credential.helper
+          GIT_CONFIG_KEY_1: core.hooksPath
+          GIT_CONFIG_KEY_2: http.followRedirects
+          GIT_CONFIG_KEY_3: http.https://github.com/.extraheader
+          GIT_CONFIG_NOSYSTEM: '1'
           GIT_CONFIG_VALUE_0: ''
-          GIT_CONFIG_KEY_1: credential.helper
-          GIT_CONFIG_VALUE_1: '!gh auth git-credential'
-          GIT_CONFIG_KEY_2: core.hooksPath
-          GIT_CONFIG_VALUE_2: /dev/null
-          GIT_CONFIG_KEY_3: http.followRedirects
-          GIT_CONFIG_VALUE_3: 'false'
-          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key)
+          GIT_CONFIG_VALUE_1: /dev/null
+          GIT_CONFIG_VALUE_2: 'false'
+          GIT_CONFIG_VALUE_3: ${{ vault.get(inputs.execution_secrets.git_authorization.vault, inputs.execution_secrets.git_authorization.key)
             }}
-          GH_CONFIG_DIR: ${{ "/tmp/orbit-task-check-" + inputs.run_id + "-control/gh" }}
-          GH_PROMPT_DISABLED: '1'
-          GH_NO_UPDATE_NOTIFIER: '1'
-          ORBIT_REPOSITORY: ${{ "/tmp/orbit-task-check-" + inputs.run_id + "-control/repository.git" }}
-          ORBIT_REMOTE: ${{ inputs.candidate.remote }}
+          GIT_TERMINAL_PROMPT: '0'
           ORBIT_REFSPEC: ${{ inputs.candidate.refspec }}
+          ORBIT_REMOTE: ${{ inputs.candidate.remote }}
+          ORBIT_REPOSITORY: ${{ "/tmp/orbit-task-check-" + inputs.run_id + "-control/repository.git" }}
     dependsOn:
     - step: mint_result
       condition:
@@ -288,7 +285,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-check-data'
-      behaviorName: '${{ ("task-check-pending-" + string(inputs.intent.group_id)).split(".").join("-") }}'
+      behaviorName: ${{ ("task-check-pending-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: pending
       inputs:
         pending: true

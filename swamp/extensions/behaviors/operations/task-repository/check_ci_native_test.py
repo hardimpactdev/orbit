@@ -50,7 +50,11 @@ class NativeCheckCI(NativePublicationFixture):
         )
         intent["command_deliverables"] = []
         self.inputs["execution_secrets"] = {}
-        for name, level in [("github_token", "write"), ("checks_token", "read")]:
+        for name, level in [
+            ("github_token", "write"),
+            ("checks_token", "read"),
+            ("git_authorization", "git"),
+        ]:
             key = "task-check-" + level + "-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
             self.inputs["execution_secrets"][name] = {
                 "vault": "orbit-control-inputs",
@@ -63,9 +67,11 @@ class NativeCheckCI(NativePublicationFixture):
         self.server.mints = 0
 
         def publish_copies():
-            for reference in self.server.mint_copies.values():
+            # The Gateway mints the push credential in the Git extra-header form.
+            for name, reference in self.server.mint_copies.items():
+                value = self.authorization if name == "git_authorization" else TOKEN
                 self.cli(
-                    "vault", "put", reference["vault"], reference["key"], input=TOKEN
+                    "vault", "put", reference["vault"], reference["key"], input=value
                 )
 
         self.server.publish_copies = publish_copies
