@@ -12,8 +12,10 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseExecutionIntent;
+use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -33,12 +35,17 @@ final readonly class DatabaseCreateProjection implements DirectOperationProjecti
         $input = $intent->payload['commands']['database-apply']['input'];
         $safe = array_intersect_key($input, array_flip(['repair', 'driver', 'username', 'databases', 'test_prefix', 'locale', 'host', 'port', 'container', 'index', 'patterns', 'allow']));
 
-        $node = Node::query()->findOrFail($operation->node_id);
-        $safe['ssh'] = ['host' => $node->wireguard_ip, 'user' => $node->user, 'host_keys' => is_string($node->ssh_host_key_type) && is_string($node->ssh_host_key) ? [$node->ssh_host_key_type.' '.$node->ssh_host_key] : []];
+        $safe['stage'] = '/run/orbit-database-create-'.$operation->id;
+        $safe['ssh_execution'] = app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($operation->node_id));
+        $secrets = ['admin' => ['vault' => 'orbit-control-inputs', 'key' => "database-server-{$operation->target_id}-admin"],
+            'owner' => ['vault' => 'orbit-control-inputs', 'key' => 'database-create-intent-'.$intent->id]];
+        if (! $operation->status->terminal()) {
+            // The server's own admin key (R3); the owner key holds only the new owner's password and salt.
+            $secrets['admin'] = DatabaseServerAdminSecret::copy(DatabaseServer::query()->findOrFail($operation->target_id));
+            $secrets['owner'] = app(SwampCommandStep::class)->executionCopy($secrets['owner']['vault'], $secrets['owner']['key'], json_encode($input['payload'], JSON_THROW_ON_ERROR));
+        }
 
-        return ['intent' => $safe, 'execution_secrets' => ['database_create' => app(SwampCommandStep::class)->executionCopy(
-            'orbit-control-inputs', 'database-create-intent-'.$intent->id, json_encode(array_intersect_key($input, array_flip(['password', 'payload'])), JSON_THROW_ON_ERROR),
-        )]];
+        return ['intent' => $safe, 'execution_secrets' => $secrets];
     }
 
     public function apply(Operation $operation, array $data): Operation

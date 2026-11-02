@@ -35,7 +35,7 @@ final readonly class DatabaseServerCreateProjection implements DirectOperationPr
             }
         }
 
-        return ['intent' => [...array_intersect_key($input, array_flip(['driver', 'process_id', 'container', 'container_input', 'spec', 'scrub_spec', 'initialize', 'password_variable', 'volume'])),
+        return ['intent' => [...array_intersect_key($input, array_flip(['server_id', 'driver', 'process_id', 'container', 'container_input', 'spec', 'scrub_spec', 'initialize', 'password_variable', 'volume'])),
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($operation->node_id))],
             'execution_secrets' => $secrets];
     }

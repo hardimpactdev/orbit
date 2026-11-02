@@ -28,7 +28,7 @@ trait ServerDatabaseFixtures
         app()->instance(InstanceEnvironmentReader::class, new ServerDatabaseEnvironmentAccess);
         app()->instance(InstanceEnvironmentWriter::class, new ServerDatabaseEnvironmentAccess);
 
-        $gateway = Node::query()->create([
+        $gateway = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND',
             'name' => 'gateway',
             'status' => LifecycleStatus::Active,
             'platform' => 'linux',
@@ -40,7 +40,7 @@ trait ServerDatabaseFixtures
         $this->gateway = $this->markAsGateway($gateway);
         $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
 
-        $node = Node::query()->create([
+        $node = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND',
             'name' => 'beast',
             'status' => LifecycleStatus::Active,
             'platform' => 'linux',

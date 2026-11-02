@@ -1,0 +1,87 @@
+{
+  "kind": "database.create.redis",
+  "workflow": "operation-database-create",
+  "topology": "minimal",
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "expect": {
+    "status": "succeeded"
+  },
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "database-servers",
+      "body": {
+        "slug": "proof-dbsrv-${proof.run}",
+        "node_id": "${node.target}",
+        "driver": "redis",
+        "port": 36391
+      },
+      "bind": "server"
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "database-connections",
+    "body": {
+      "slug": "proof-db-${proof.run}",
+      "server": "proof-dbsrv-${proof.run}",
+      "patterns": [
+        "proof:*"
+      ],
+      "allow": [
+        "@read",
+        "@write"
+      ]
+    }
+  },
+  "phases": [
+    {
+      "name": "Read the scripts",
+      "job": "create",
+      "step": "Read the scripts",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Stage the owner password",
+      "job": "create",
+      "step": "Stage the owner password",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Create owner and databases",
+      "job": "create",
+      "step": "Create owner and databases",
+      "budget_seconds": 120
+    },
+    {
+      "name": "Check the owner login",
+      "job": "create",
+      "step": "Check the owner login",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Remove the staged password",
+      "job": "create",
+      "step": "Remove the staged password",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Report the result",
+      "job": "create",
+      "step": "Report the result",
+      "budget_seconds": 30
+    }
+  ],
+  "parity": [
+    "swamp/proof/database/parity.py",
+    "created"
+  ],
+  "clean_target": [
+    [
+      "sh",
+      "-c",
+      "docker ps --all --quiet --filter name=-proof- | xargs -r docker rm --force"
+    ]
+  ]
+}

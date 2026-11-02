@@ -91,7 +91,7 @@ jobs:
     - {step: source_checked, condition: {type: succeeded}}
     task:
       type: workflow
-      workflowIdOrName: operation-database-create
+      workflowIdOrName: database-clone-create
       inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ steps.assets.outputs.create_intent
           }}', execution_secrets: {database_create: '${{ inputs.execution_secrets.database_clone }}'}}
   - name: mysql_copy

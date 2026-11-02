@@ -33,8 +33,8 @@ return ['database.update' => [
     'workflow' => 'operation-database-create',
     'projection' => DatabaseCreateProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'create', 'step' => 'result'],
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-create-intent-[1-9][0-9]*$']],
+    'terminal_result' => ['job' => 'create', 'step' => 'Report the result'],
+    'execution_copies' => [DatabaseServerAdminSecret::EXECUTION_COPY, ['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-create-intent-[1-9][0-9]*$']],
 ], 'database_server.destroy' => [
     'workflow' => 'operation-database-server-destroy',
     'projection' => DatabaseServerDestroyProjection::class,

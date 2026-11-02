@@ -136,7 +136,7 @@ def sql(i, m, statement, *, owner=False):
     return reply.stdout
 
 
-def valkey(i, m, *argv, private=False):
+def valkey(i, m, *argv, private=False, user="default", denied_ok=False):
     # Use the official Valkey client image; no host package or custom network protocol.
     with credentials(i, m) as path:
         args = [
@@ -156,7 +156,7 @@ def valkey(i, m, *argv, private=False):
             "-p",
             str(i["port"]),
             "--user",
-            "default",
+            user,
         ]
         data = (
             " ".join(json.dumps(a, ensure_ascii=False) for a in argv) + "\n"
@@ -164,6 +164,13 @@ def valkey(i, m, *argv, private=False):
             else None
         )
         reply = command(args if private else [*args, *argv], data)
+    # valkey-cli prints a refused command as Error:"NOPERM ..." after AUTH succeeded; AUTH failed goes to stderr.
+    if (
+        denied_ok
+        and reply.stdout.lower().startswith('error:"noperm')
+        and "AUTH failed" not in reply.stderr
+    ):
+        return "NOPERM"
     try:
         value = json.loads(reply.stdout)
         if (

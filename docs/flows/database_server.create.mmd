@@ -64,9 +64,9 @@ sequenceDiagram
   %%> What it does:
   %%> - reads the shipped phase script on 209, to send it over SSH in argv
   %%> - nothing is copied to Node 12, so nothing is left to clean up
-  SW->>N: Pull the image<br/>@swamp/ssh · docker pull
+  SW->>N: Pull the image<br/>cfgmgmt docker_image present
   %%> How:
-  %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior
+  %%> - Swamp reaches Node 12 from 209 with the official `@swamp/cfgmgmt/docker_image` behavior, `ensure: present`
   %%> What it does:
   %%> - pulls `mysql:8.4`; an image that is already present is kept
   opt driver is redis

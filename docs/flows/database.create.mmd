@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, DECISIONS R1-R4, 5 (swamp role SSH identity), round 2 bugs (server admin password by its own vault key, cleanup on pass or fail). docs/reference/database-servers.md.
+  %% Target design: ADR 0244 task, DECISIONS R1-R4, 5 (swamp role SSH identity), round 2 bugs (server admin password by its own vault key; the owner password is staged and always removed), flow-tighten. docs/reference/database-servers.md.
   %% status: draft
   %% command: database:create
   autonumber
@@ -65,52 +65,51 @@ sequenceDiagram
     %%> - the task number, at once
     %%> Next:
     %%> - the CLI follows the task with `operation:show`
-    SW->>N: Copy the action scripts<br/>@swamp/ssh copy · /tmp/…-5121
+    Note over SW: Read the scripts<br/>database-node-command assets
+    %%> What it does:
+    %%> - reads the shipped phase script on 209, to send it over SSH in argv
+    SW->>N: Stage the owner password<br/>root-only file · /run/…-5121
+    %%> What it does:
+    %%> - writes the owner password, from `vault.get` on standard input, to a root-only file on Node 12
+    %%> Why:
+    %%> - the next step needs two secrets, and a step takes one on standard input: the admin password comes there, the owner password from this file
+    %%> - the admin password never enters the intent's vault entry (R3)
+    SW->>N: Create owner and databases<br/>@swamp/ssh · names, owner, grants
     %%> How:
-    %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior
-    %%> - the SSH identity is the one the `swamp` role owns, at its one role-defined place
-    %%> What it does:
-    %%> - copies the shipped action scripts into `/tmp/orbit-database-create-5121`
-    SW->>N: Check names are free<br/>probe owner and databases
-    %%> What it does:
+    %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior and the `swamp` role's SSH identity
+    %%> - the script runs the fixed `mysql`, `psql` or Valkey client inside the server container
+    %%> - it reads the admin password with `vault.get` on standard input and the owner password from the staged file, never in argv
+    %%> What it does, in order:
     %%> - checks that the database names and the owner are unused, or already belong to this connection
-    %%> Refuses:
-    %%> - a name the server already has for something else (`database.name_conflict`); nothing changes
-    %%> How:
-    %%> - each script runs the fixed `mysql`, `psql` or Valkey client inside the server container
-    %%> - the step reads both passwords with `vault.get` and passes them on standard input, never in argv
-    SW->>N: Create the owner<br/>login with the owner password
-    %%> What it does:
     %%> - creates the owner login, or keeps it when it already exists with this password
+    %%> - creates the primary database, and with `--instance` the test database
+    %%> - grants the owner its databases and test databases, nothing else
+    %%> Refuses:
+    %%> - a name the server already has for something else (`database.name_conflict`), before any change
     %%> Per driver:
     %%> - MySQL, PostgreSQL: one owner per Instance on a server; a second database for Instance 42 reuses it
-    %%> - Valkey: `ACL SETUSER shop reset on #<hash> resetchannels ~<pattern> -@all +<rule> -@admin -@dangerous -function -script`
-    %%> - Valkey with `--allow=flushdb`: `+flushdb` follows the final deny; give the user its own `--database` index
-    SW->>N: Create the databases<br/>shop, shop_test, test pool
-    %%> What it does:
-    %%> - creates the primary database, and with `--instance` the test database
-    %%> Per driver:
-    %%> - PostgreSQL: also `shop_test_test_1` to `_8`, with the chosen locale and `TEMPLATE template0`
-    %%> - Valkey: no database; the connection records index 1, checked against the live server
-    SW->>N: Grant the owner access<br/>only its own databases
-    %%> What it does:
-    %%> - grants the owner its databases and test databases, nothing else
-    %%> Per driver:
     %%> - MySQL: one grant per database, plus one for the test prefix
-    %%> - PostgreSQL: revokes PUBLIC access, then grants the public schema to the owner
-    %%> - Valkey: `ACL SAVE`, so the user survives a restart
+    %%> - PostgreSQL: also `shop_test_test_1` to `_8`, with the chosen locale and `TEMPLATE template0`; revokes PUBLIC access, then grants the public schema to the owner
+    %%> - Valkey: `ACL SETUSER shop reset on #<hash> resetchannels ~<pattern> -@all +<rule> -@admin -@dangerous -function -script`, then `ACL SAVE`; no database, the connection records index 1, checked against the live server
+    %%> - Valkey with `--allow=flushdb`: `+flushdb` follows the final deny; give the user its own `--database` index
     SW->>N: Check the owner login<br/>log in as the owner
     %%> What it does:
     %%> - logs in as the owner and checks it reaches each new database
     %%> Why:
     %%> - the connection only counts as active when the server accepts it
-    SW->>N: Remove the scripts<br/>always runs · rm -rf /tmp/…-5121
+    SW->>N: Remove the staged password<br/>always runs · rm /run/…-5121
     %%> When:
-    %%> - always, after the steps above, whether they passed or failed
+    %%> - always, as the last Node step, whether the steps above passed or failed
     %%> What it does:
-    %%> - removes `/tmp/orbit-database-create-5121`, so no scripts stay on Node 12
+    %%> - removes the staged owner password from Node 12
     %%> If it fails:
-    %%> - the task result does not change; the directory holds no secrets
+    %%> - the task result does not change; the next run on Node 12 overwrites the file
+    Note over SW: Report the result<br/>failed_step · error_code
+    %%> What it does:
+    %%> - maps the first failed step to its error code, for example `database.name_conflict`
+    Note over SW: Fail on an error<br/>assert · exit code 0
+    %%> What it does:
+    %%> - fails the run when the report holds an `error_code`, so the task fails with that code
     alt every step passes
       N-->>SW: owner logs in
       %%> Returns:

@@ -81,13 +81,6 @@ class ServerCreate(unittest.TestCase):
             except create.Refused as error:
                 return {"error_code": error.code}, docker
 
-    def test_pull_keeps_a_present_image(self):
-        result, docker = self.run_phase("pull", {"image inspect": (0, "[]")})
-        self.assertEqual(result, {"pulled": False})
-        self.assertNotIn(["pull", "mysql:8.4"], docker.calls)
-        result, _ = self.run_phase("pull", {"image inspect": (1, ""), "pull": (1, "")})
-        self.assertEqual(result, {"error_code": "database.server_image_pull_failed"})
-
     def test_start_creates_with_the_password_only_in_a_removed_env_file(self):
         result, docker = self.run_phase("start", {"container inspect": (1, "")})
         self.assertEqual(result, {"created": True})
@@ -123,15 +116,6 @@ class ServerCreate(unittest.TestCase):
             "start", {"container inspect": (0, container("b" * 64))}
         )
         self.assertFalse(any(call[0] in ("restart", "start") for call in docker.calls))
-
-    def test_start_refuses_another_process_container(self):
-        result, docker = self.run_phase(
-            "start", {"container inspect": (0, container("a" * 64, process_id="8"))}
-        )
-        self.assertEqual(result, {"error_code": "database.server_container_foreign"})
-        self.assertFalse(
-            any(call[0] in ("create", "rm", "start") for call in docker.calls)
-        )
 
     def test_healthy_reads_docker_health_events(self):
         starting = container("a" * 64).replace('"healthy"', '"starting"')

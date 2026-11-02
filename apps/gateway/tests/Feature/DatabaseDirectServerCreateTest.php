@@ -34,7 +34,7 @@ it('records a server whose run inputs hold vault key names, never a secret', fun
     expect($server->process->runtime_config['environment'])->toBe([]);
     $input = $this->getJson($path.'?run_id='.$this->runId)->assertJsonMissingPath('error')->assertOk()->json('data.input');
     $intent = $input['intent'];
-    expect($intent['driver'])->toBe($driver);
+    expect([$intent['server_id'], $intent['driver']])->toBe([$server->id, $driver]);
     expect($intent['initialize'])->toBe($driver !== 'redis');
     expect($intent['password_variable'])->toBe(['mysql' => 'MYSQL_ROOT_PASSWORD', 'pgsql' => 'POSTGRES_PASSWORD', 'redis' => null][$driver]);
     expect($intent['volume'])->toBe($driver === 'redis' ? 'orbit-proof-data' : null);

@@ -48,19 +48,7 @@ def observe(intent):
     if reply.returncode:
         return None
     value = json.loads(reply.stdout)[0]
-    labels = value["Config"].get("Labels") or {}
-    if labels.get("orbit.process.id") != str(intent["process_id"]):
-        raise Refused("database.server_container_foreign")
     return value
-
-
-def pull(intent, _secret):
-    image = intent["container_input"]["image"]
-    if docker("image", "inspect", image).returncode == 0:
-        return {"pulled": False}
-    if docker("pull", image).returncode:
-        raise Refused("database.server_image_pull_failed")
-    return {"pulled": True}
 
 
 def acl(intent, secret):
@@ -256,7 +244,6 @@ if __name__ == "__main__":
         secret = sys.stdin.read() if phase in ("acl", "start", "login", "scrub") else ""
         secret = secret if phase == "acl" else secret.rstrip("\n")
         result = {
-            "pull": pull,
             "acl": acl,
             "start": start,
             "healthy": healthy,

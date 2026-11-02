@@ -17,7 +17,7 @@ class CloneNative(DatabaseCommands):
  fail=unittest.TestCase.fail
  def setUp(self):
   super().setUp()
-  self.prepare_commands(['workflow-operation-database-clone.yaml','workflow-database-clone-mysql.yaml','workflow-database-clone-sqlite.yaml','workflow-operation-database-create.yaml','workflow-database-create-action.yaml'])
+  self.prepare_commands(['workflow-operation-database-clone.yaml','workflow-database-clone-mysql.yaml','workflow-database-clone-sqlite.yaml','workflow-database-clone-create.yaml','workflow-database-create-action.yaml'])
   shutil.copy(ROOT/'extensions/behaviors/operations/database/clone_input.ts',self.repo/'extensions/behaviors/operations/database/clone_input.ts')
   fake=self.repo/'fixture-ssh';s=fake.read_text()
   s=s.replace("m=json.load(sys.stdin);assert m['password'] not in repr(args)","m={} if scripts[0].startswith('sqlite_clone_') else json.load(sys.stdin)\nif m:assert m['password'] not in repr(args)")

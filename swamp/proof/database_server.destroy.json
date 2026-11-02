@@ -4,18 +4,61 @@
   "topology": "minimal",
   "budget_seconds": 120,
   "queue_timeout_seconds": 30,
-  "expect": {"status": "succeeded"},
+  "expect": {
+    "status": "succeeded"
+  },
   "prepare": [
-    {"method": "POST", "path": "database-servers",
-     "body": {"slug": "proof-gone-${proof.run}", "node_id": "${node.target}", "driver": "redis", "port": 36380},
-     "bind": "server"}
+    {
+      "method": "POST",
+      "path": "database-servers",
+      "body": {
+        "slug": "proof-gone-${proof.run}",
+        "node_id": "${node.target}",
+        "driver": "redis",
+        "port": 36380
+      },
+      "bind": "server"
+    }
   ],
-  "request": {"method": "DELETE", "path": "database-servers/proof-gone-${proof.run}"},
+  "request": {
+    "method": "DELETE",
+    "path": "database-servers/proof-gone-${proof.run}"
+  },
   "phases": [
-    {"name": "Read the scripts", "job": "server", "step": "Read the scripts", "budget_seconds": 30},
-    {"name": "Stop and remove them", "job": "server", "step": "Stop and remove them", "budget_seconds": 120},
-    {"name": "Check they are gone", "job": "server", "step": "Check they are gone", "budget_seconds": 60},
-    {"name": "Report the result", "job": "server", "step": "Report the result", "budget_seconds": 30}
+    {
+      "name": "Stop the container",
+      "job": "server",
+      "step": "Stop the container",
+      "budget_seconds": 90
+    },
+    {
+      "name": "Remove the container",
+      "job": "server",
+      "step": "Remove the container",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Check it is gone",
+      "job": "server",
+      "step": "Check it is gone",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Report the result",
+      "job": "server",
+      "step": "Report the result",
+      "budget_seconds": 30
+    }
   ],
-  "parity": ["swamp/proof/database_server/parity.py", "removed"]
+  "parity": [
+    "swamp/proof/database_server/parity.py",
+    "removed"
+  ],
+  "clean_target": [
+    [
+      "sh",
+      "-c",
+      "docker ps --all --quiet --filter name=-proof- | xargs -r docker rm --force"
+    ]
+  ]
 }

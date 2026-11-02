@@ -9,7 +9,7 @@ covers:
   - apps/gateway/{app/Models/DatabaseServer.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,database/migrations/2026_12_30_000000_add_test_processes_to_database_connections.php}
   - apps/cli/app/Commands/Database/{CreateDatabaseServerCommand,ListDatabaseServersCommand,ShowDatabaseServerCommand,DestroyDatabaseServerCommand,CreateDatabaseUserCommand}.php
   - packages/php-sdk/src/{Requests,Responses}/DatabaseServers/**
-  - swamp/{extensions/behaviors/operations/database-node-command/**,workflows/workflow-operation-database-server-{create,destroy}.yaml}
+  - swamp/{extensions/behaviors/operations/{database-node-command/**,database-server-commands/scripts/{database_create,shipped}.py},workflows/workflow-operation-database-{server-create,server-destroy,create}.yaml}
 ---
 
 # Database servers
@@ -20,7 +20,11 @@ A server's `driver` names its kind. A `mysql` server runs MySQL, a `pgsql` serve
 
 ## Execution
 
-Managed database creation supplies public names and vault descriptors to placed native steps on 209. Official SSH runs one script action at a time on the admitted Node. Native fan-out creates databases and applies grants. Ownership checks precede changes; existing data and passwords survive repair and resume. SQL readiness makes one observation and leaves recovery to native resume. Server startup observes Docker’s healthy, unhealthy or die event without a family readiness deadline. The Gateway projects the recorded Connection after native success.
+Managed database creation runs `operation-database-create` on Node 209 in the [chart's](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/database.create.mmd) four Node steps over official SSH: stage the owner password, create the owner and databases, check the owner login, and remove the staged password.
+
+The create step reads the server's admin password from its own vault key, `database-server-<id>-admin`, on standard input. A step takes one secret on standard input, so the owner password goes first into a root-only file under `/run`, and an always-run step removes it whether the run passed or failed. The owner key holds only the owner's password and salt, never the admin password.
+
+Each step sends the shipped phase module and its library in argv, so no script is copied to the Node. Ownership checks precede changes; existing data and passwords survive a rerun. The Gateway projects the recorded connection after native success.
 
 Database actions return one [Operation](/reference/operations) with HTTP 202. The Gateway validates the request and records intent. Swamp runs one native DAG on the admitted Nodes and returns a bounded result. The CLI follows the Operation; use `--idempotency-key` after a lost start response. List and show read Gateway records. Tables, schema, describe and read-only queries run in the native Database read workflow.
 
@@ -34,7 +38,7 @@ The SQL user parent resolves private data inside its existing read boundary. The
 
 ## Create a server
 
-`database_server.create` records the server and its Process, then starts `operation-database-server-create` with the full public intent. Every step runs on Node 209 and reaches the server Node over official SSH with its recorded host key. The steps follow the [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/database_server.create.mmd): pull the image, write the Valkey ACL file, start the container, wait until healthy, check the admin login, and remove the first-start environment. Each step sends one shipped script phase in argv, so nothing is copied to the Node.
+`database_server.create` records the server and its Process, then starts `operation-database-server-create` with the full public intent. Every step runs on Node 209. The official `@swamp/cfgmgmt/docker_image` behavior pulls the image; the other steps reach the server Node over official SSH with its recorded host key. The steps follow the [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/database_server.create.mmd): pull the image, write the Valkey ACL file, start the container, wait until healthy, check the admin login, and remove the first-start environment. Each step sends one shipped script phase in argv, so nothing is copied to the Node.
 
 The admin password goes to the vault under the server's own key, `database-server-<id>-admin`. Every database kind that logs in as the admin reads that key by name. A Valkey ACL file goes to the vault under `database-server-create-intent-<operation>`. Neither value enters the workflow inputs, a step output, or a command argument; scripts pass them to Docker in a 0600 env file or on standard input.
 
@@ -274,7 +278,7 @@ On a Valkey server, `database:destroy` deletes the connection's ACL user with `A
 
 ## Remove a server
 
-`database:server:destroy <slug>` refuses with `database.server_in_use` (409) while a connection points to the server. A server without a Process has nothing on its Node, so the Gateway deletes the record at once and returns a succeeded Operation with no run (R1). Otherwise admission marks the server as removing, so new database creation refuses it, and starts `operation-database-server-destroy`. Its steps inspect every container of the Process, including slots left by older creates, stop and remove them, and check they are gone. The volume stays, so the data survives. Remove the volume on the Node by hand when its data must go.
+`database:server:destroy <slug>` refuses with `database.server_in_use` (409) while a connection points to the server. A server without a Process has nothing on its Node, so the Gateway deletes the record at once and returns a succeeded Operation with no run (R1). Otherwise admission marks the server as removing, so new database creation refuses it, and starts `operation-database-server-destroy`. Three official SSH steps run one docker command each: stop the container gently, remove it, and check that `docker container inspect` reports it missing. The volume stays, so the data survives. Remove the volume on the Node by hand when its data must go.
 
 `database:server:destroy` starts `operation-database-server-destroy` with the public Process identity and target SSH metadata. All steps select Node 209 with one placement selector and reach the server Node through official SSH. Native fan-out inspects every container slot before any stop or removal. Each slot inspection uses its own SSH model, named by the native run and iteration, so model locks do not serialize independent observations. One shared native child stops and removes each present owned container through the shared Process scripts. The named data volume stays intact.
 
@@ -316,6 +320,8 @@ The server commands return these codes.
 | `database.server_inspect_failed` | 502 | Docker could not list the server's containers. |
 | `database.server_remove_failed` | 502 | Docker could not stop or remove a server container. |
 | `database.server_remove_incomplete` | 502 | A container of the server's Process is still present after removal. |
+| `database.owner_login_failed` | 502 | The new owner could not log in after creation. |
+| `database.create_outcome_unknown` | 502 | The create run ended without a readable result; run the command again. |
 | `database.server_create_failed` | 502 | The create run ended without reaching the admin login check. |
 | `database.server_container_foreign` | 409 | A container with the server's name belongs to another Process; nothing changed. |
 | `database.valkey_acl_failed` | 502 | Docker could not write the Valkey ACL file into the volume. |

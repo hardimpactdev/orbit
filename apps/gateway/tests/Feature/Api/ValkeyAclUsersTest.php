@@ -25,7 +25,7 @@ beforeEach(function (): void {
     $socket->reply = static fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => $sent['payload']['workflowIdOrName'], 'runId' => Str::uuid()->toString()]]];
     app()->instance(WebSocketClient::class, $socket);
 
-    $gateway = Node::query()->create([
+    $gateway = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND',
         'name' => 'gateway',
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
@@ -37,7 +37,7 @@ beforeEach(function (): void {
     $this->gateway = $this->markAsGateway($gateway);
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
 
-    $this->dbNode = Node::query()->create([
+    $this->dbNode = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND',
         'name' => 'services',
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',

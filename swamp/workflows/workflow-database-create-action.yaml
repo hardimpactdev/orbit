@@ -9,7 +9,7 @@ inputs:
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [database.create, database.clone]}
+    kind: {type: string, enum: [database.clone]}
     intent: {type: object}
     intent_json: {type: string}
     execution_secrets: {type: object, properties: {database_create: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^database-(create|clone)-intent-[1-9][0-9]*$'}}, required: [vault, key], additionalProperties: false}}, required: [database_create], additionalProperties: false}

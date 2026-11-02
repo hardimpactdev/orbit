@@ -19,3 +19,4 @@ node.converge
 node.wireguard_hub_converge
 node.ssh_access_converge
 node.agent_rekey
+database.create

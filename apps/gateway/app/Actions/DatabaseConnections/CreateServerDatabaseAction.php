@@ -19,6 +19,7 @@ use App\Domain\Instances\DatabaseClone\DatabaseCloneStep;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\DockerProcessRenderer;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
@@ -66,6 +67,7 @@ final readonly class CreateServerDatabaseAction
             $server = DatabaseServer::query()->whereKey($server->id)->lockForUpdate()->firstOrFail();
             $this->assertActive($server);
             app(DatabaseDestroySafety::class)->assertAcceptsCreates($server);
+            app(SwampSshExecutionInput::class)->forNode($server->node);
             if (($retry = $this->retries->prepare($data)) !== null) {
                 return $retry;
             }
@@ -132,8 +134,8 @@ final readonly class CreateServerDatabaseAction
 
             return $this->retries->record($this->operations->prepare('database.create', 'database_server', $server->id, $server->node_id,
                 ['connection_id' => $connection->id, 'server_id' => $server->id, 'driver' => $server->driver->value],
-                ['database-apply' => ['name' => 'database.create', 'input' => [...$safe, 'password' => $server->root_password,
-                    'payload' => ['password' => $connection->password, 'salt' => base64_encode(random_bytes(16))]], 'protected' => ['password', 'payload'], 'redactions' => [$server->root_password, $connection->password]]],
+                ['database-apply' => ['name' => 'database.create', 'input' => [...$safe,
+                    'payload' => ['password' => $connection->password, 'salt' => base64_encode(random_bytes(16))]], 'protected' => ['payload'], 'redactions' => [$connection->password]]],
                 ['created_connection' => $connection->id, 'attach_instance' => $instance?->id]), $data);
         });
     }

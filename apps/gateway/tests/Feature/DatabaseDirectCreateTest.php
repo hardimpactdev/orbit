@@ -41,12 +41,20 @@ it('starts one direct managed create with safe typed intent and no Gateway probe
     $input = $this->getJson($path.'?run_id='.$this->runId)->assertOk()->json('data.input.intent');
     expect($input)->toMatchArray(['driver' => $driver, 'username' => 'proof'])->not->toHaveKeys(['sql', 'password', 'payload']);
     $this->getJson($path.'/private-material?run_id='.$this->runId)->assertUnprocessable();
-    $material = json_decode($this->socket->sent[0]['payload']['value'], true, flags: JSON_THROW_ON_ERROR);
-    $inputs = $this->socket->sent[1]['payload']['inputs'];
-    expect($inputs['execution_secrets'])->toBe(['database_create' => ['vault' => 'orbit-control-inputs', 'key' => 'database-create-intent-'.$operation->input['intent_id']]]);
+    $puts = collect($this->socket->sent)->where('type', 'vault.put')->pluck('payload.value', 'payload.key');
+    $start = collect($this->socket->sent)->firstWhere('type', '!==', 'vault.put');
+    $inputs = $start['payload']['inputs'];
+    $owner = 'database-create-intent-'.$operation->input['intent_id'];
+    $admin = 'database-server-'.$this->server->id.'-admin';
+    expect($inputs['execution_secrets'])->toBe(['admin' => ['vault' => 'orbit-control-inputs', 'key' => $admin], 'owner' => ['vault' => 'orbit-control-inputs', 'key' => $owner]]);
+    expect($inputs['intent']['stage'])->toBe('/run/orbit-database-create-'.$operation->id);
     $connection = DatabaseConnection::query()->sole();
-    expect($material['password'])->toBe(SERVER_DATABASE_ROOT_SECRET);
-    expect($material['payload']['password'])->toBe($connection->password);
+    // The server's own key holds the admin password; the owner key never does (R3).
+    expect($puts[$admin])->toBe(SERVER_DATABASE_ROOT_SECRET);
+    $material = json_decode($puts[$owner], true, flags: JSON_THROW_ON_ERROR);
+    expect(array_keys($material))->toBe(['password', 'salt']);
+    expect($material['password'])->toBe($connection->password);
+    expect($puts[$owner])->not->toContain(SERVER_DATABASE_ROOT_SECRET);
     expect(json_encode($operation->fresh()->toArray()).$response->getContent())->not->toContain(SERVER_DATABASE_ROOT_SECRET, $connection->password);
     expect(DB::table('database_execution_intents')->sole()->payload)->not->toContain($connection->password);
     $this->postJson($path.'/primitive', ['run_id' => $this->runId])->assertUnprocessable();
@@ -123,12 +131,12 @@ it('abandons an invalid Valkey index reservation without deleting an ACL user', 
 it('keeps recorded create intent immutable and projects terminal history exactly once', function (): void {
     $this->postJson('/api/v1/database-connections', ['slug' => 'native-proof', 'server' => $this->server->slug])->assertAccepted();
     $operation = Operation::query()->sole();
-    $inputs = $this->socket->sent[1]['payload']['inputs'];
+    $inputs = collect($this->socket->sent)->firstWhere('type', '!==', 'vault.put')['payload']['inputs'];
     $this->server->update(['port' => 3333, 'root_password' => 'changed-root-secret']);
     expect(app(DirectOperation::class)->workflowInputs($operation)['intent'])->toBe($inputs['intent']);
     $history = ['id' => $this->runId, 'workflowName' => 'operation-database-create', 'status' => 'succeeded', 'inputs' => $inputs,
         'startedAt' => '2026-10-31T12:00:00Z', 'completedAt' => '2026-10-31T12:00:01Z',
-        'jobs' => [['name' => 'create', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => '{"backend":"active"}']]]]],
+        'jobs' => [['name' => 'create', 'steps' => [['name' => 'Report the result', 'outputs' => ['stdout' => '{"backend":"active"}']]]]],
     ];
     $this->socket->reply = static fn (array $sent): array => [['type' => 'workflow.history.get', 'id' => $sent['id'], 'payload' => ['data' => $history]]];
     config(['swamp.read_token' => 'fake.token']);
@@ -137,5 +145,5 @@ it('keeps recorded create intent immutable and projects terminal history exactly
     app(SwampCommandStep::class)->projectTerminal($projected, ['id' => $this->runId, 'status' => 'succeeded'], $selector);
     expect($projected->status->value)->toBe('succeeded');
     expect($projected->result)->toBe(['backend' => 'active']);
-    expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'workflow.run', 'workflow.history.get']);
+    expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'vault.put', 'workflow.run', 'vault.put', 'workflow.history.get']);
 });

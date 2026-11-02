@@ -4,6 +4,14 @@ import { CreateInput, CreateResult } from "../database/create_input.ts";
 const Failure = z.object({
     error_code: z.literal("database.create_outcome_unknown"),
 }).strict();
+// The database:create phase module and the shared library it imports, sent over SSH in argv.
+const Modules = [
+    "server_common",
+    "create_common",
+    "create_sql",
+    "create_valkey",
+    "database_create",
+];
 type Context = {
     extensionFile(name: string): string;
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
@@ -12,8 +20,17 @@ const Resource = z.object({ stdout: z.string(), exitCode: z.number().int() });
 
 export const behavior = {
     type: "@nckrtl/database-create-command-assets",
-    version: "2026.10.31.1",
+    version: "2026.11.02.1",
     resources: {
+        phase: {
+            schema: z.object({
+                intent_json: z.string(),
+                shipped: z.string(),
+                modules_json: z.string(),
+            }),
+            lifetime: "1d",
+            garbageCollection: 10,
+        },
         item: {
             schema: z.object({ json: z.string() }),
             lifetime: "infinite",
@@ -34,6 +51,28 @@ export const behavior = {
         },
     },
     methods: {
+        phase: {
+            description:
+                "Read the shipped database:create phase module and its library once for official SSH argv, with the public intent as JSON",
+            arguments: z.object({ intent: z.record(z.string(), z.unknown()) })
+                .strict(),
+            execute: async (
+                args: { intent: Record<string, unknown> },
+                ctx: Context,
+            ) => {
+                const read = (name: string) =>
+                    Deno.readTextFile(ctx.extensionFile(`scripts/${name}.py`));
+                const modules: Record<string, string> = {};
+                for (const name of Modules) modules[name] = await read(name);
+                const value = {
+                    intent_json: JSON.stringify(args.intent),
+                    shipped: await read("shipped"),
+                    modules_json: JSON.stringify(modules),
+                };
+                await ctx.writeResource("phase", "phase", value);
+                return value;
+            },
+        },
         item: {
             description: "Serialize the public native fan-out item",
             arguments: z.object({ item: z.record(z.string(), z.unknown()) })

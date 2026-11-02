@@ -64,5 +64,12 @@
   "parity": [
     "swamp/proof/database_server/parity.py",
     "running"
+  ],
+  "clean_target": [
+    [
+      "sh",
+      "-c",
+      "docker ps --all --quiet --filter name=-proof- | xargs -r docker rm --force"
+    ]
   ]
 }
