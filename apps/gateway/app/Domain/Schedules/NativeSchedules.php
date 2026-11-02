@@ -156,8 +156,8 @@ final readonly class NativeSchedules
                 'orbit_target_type' => self::owner($schedule), 'orbit_target_id' => (string) $schedule->target_id],
             'vaults' => [self::Vault],
             'queueTimeout' => 300,
-            'jobs' => [['name' => 'fire', 'target' => 'orbit-node-209', 'steps' => [[
-                'name' => 'Run the Schedule', 'target' => 'orbit-node-209',
+            'jobs' => [['name' => 'fire', 'labels' => ['role' => 'swamp'], 'steps' => [[
+                'name' => 'Run the Schedule', 'labels' => ['role' => 'swamp'],
                 'task' => ['type' => 'workflow', 'workflowIdOrName' => 'task-command-run', 'inputs' => [
                     'node_id' => $target->node->id, 'kind' => 'schedule.run', 'intent' => $intent,
                     'execution_secrets' => ['command' => ['vault' => self::Vault, 'key' => self::commandKey($schedule)]],

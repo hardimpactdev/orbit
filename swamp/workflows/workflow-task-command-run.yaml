@@ -47,10 +47,10 @@ inputs:
   additionalProperties: false
 jobs:
 - name: run
-  target: orbit-node-209
+  labels: {role: swamp}
   steps:
   - name: 'Read the check script'
-    target: orbit-node-209
+    labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/schedule-run-assets'
@@ -58,7 +58,7 @@ jobs:
       methodName: read
       inputs: {}
   - name: 'Check user and directory'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Read the check script', condition: {type: succeeded}}]
     task:
       type: behavior
@@ -84,7 +84,7 @@ jobs:
         stdin: ${{ vault.get(inputs.execution_secrets.command.vault, inputs.execution_secrets.command.key) }}
         timeoutSec: 40
   - name: 'Run the command'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn: [{step: 'Check user and directory', condition: {type: succeeded}}]
     task:
       type: behavior
@@ -104,7 +104,7 @@ jobs:
         timeoutSec: ${{ inputs.intent.schedule.timeout_seconds + 10 }}
         captureOutput: false
   - name: 'Report the result'
-    target: orbit-node-209
+    labels: {role: swamp}
     dependsOn:
     - {step: 'Check user and directory', condition: {type: always}}
     - {step: 'Run the command', condition: {type: always}}
