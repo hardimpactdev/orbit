@@ -67,6 +67,7 @@ Deno.test("converge runs serve with the role's limits and a 5 minute drain, and 
       "orbit-swamp-serve.service",
       "--max-concurrent-scheduled-runs ' + str(data['scheduled_runs']) + ' --shutdown-drain-timeout 5m'",
       "TimeoutStopSec=360",
+      "' SWAMP_DATASTORE_POLL_INTERVAL=5m'",
       "elif not serving() and not systemctl('enable', '--now', 'orbit-swamp-serve.service')",
     ]
   ) assertEquals(SWAMP_WORKERS_PROGRAM.includes(part), true, part);
