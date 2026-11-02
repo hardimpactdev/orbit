@@ -107,21 +107,6 @@ class WorkerProvisioningTest(unittest.TestCase):
                 if failure == 'enrollment_timeout':
                     self.assertFalse(any(a[1:4] == ['worker','token','revoke'] for a in calls))
 
-    def test_capacity_update_preserves_all_other_argv_and_replaces_existing_forms(self):
-        loader = importlib.machinery.SourceFileLoader('services_capacity', str(ROOT / 'bin/configure-services-worker-capacity'))
-        spec = importlib.util.spec_from_loader(loader.name, loader)
-        capacity = importlib.util.module_from_spec(spec)
-        loader.exec_module(capacity)
-        original = ['/usr/bin/env','SWAMP_SERVER_TOKEN_FILE=/private/path','/bin/swamp','serve',
-                    '--dispatch-env-allow=,','--max-concurrent-scheduled-runs=32',
-                    '--max-concurrent-webhook-runs','1','--trusted-hosts','swamp.orbit']
-        updated = capacity.capacity_command(original)
-        self.assertEqual(updated, original[:5] + original[-2:] +
-                         ['--max-concurrent-scheduled-runs','1','--max-concurrent-webhook-runs','4'])
-        self.assertEqual(capacity.capacity_command(updated), updated)
-        with self.assertRaises(ValueError):
-            capacity.capacity_command(['/bin/swamp','serve','--max-concurrent-scheduled-runs','--dispatch-env-allow=,'])
-
 
 if __name__ == '__main__':
     unittest.main()

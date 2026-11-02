@@ -45,7 +45,7 @@ class Node209SourceTest(unittest.TestCase):
                 self.assertNotIn('queueTimeout', definition, path.name)
 
     def test_runtime_credentials_and_generated_records_are_ignored(self):
-        paths = ['models/swamp/enrollment-token/example.yaml', 'vaults/local_encryption/example.yaml', 'bin/__pycache__/deploy-services.pyc']
+        paths = ['models/swamp/enrollment-token/example.yaml', 'vaults/local_encryption/example.yaml', 'bin/__pycache__/serve-command.cpython-313.pyc']
         result = subprocess.run(['git','check-ignore','--no-index',*paths], cwd=ROOT, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0)
         self.assertEqual(set(result.stdout.splitlines()), set(paths))
