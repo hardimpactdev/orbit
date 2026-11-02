@@ -60,6 +60,7 @@ class ToolNative(NativeTestCase):
             for step in workflow['jobs'][0]['steps']:
                 self.assertEqual(step.pop('labels'), {'role': 'swamp'})
                 task = step['task']
+                if step['name'] == 'Set up the Tool Manager': self.assertFalse(task['inputs']['report'])
                 if task.get('type') != 'behavior': continue
                 task['behaviorType'] = re.sub(r'@swamp/cfgmgmt/[a-z_]+', '@fixture/config', task['behaviorType'])
                 if task['behaviorType'].startswith('@swamp/cfgmgmt/'): task['behaviorType'] = '@fixture/config'

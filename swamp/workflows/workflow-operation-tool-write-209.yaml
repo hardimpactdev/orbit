@@ -26,7 +26,7 @@ jobs:
     labels: {role: swamp}
     dependsOn: [{step: assets, condition: {type: succeeded}}]
     guard: ${{ inputs.intent.kind == "tool.update" || !("setup" in inputs.intent) || inputs.intent.setup == null || ("manager_ready" in inputs.intent && inputs.intent.manager_ready) }}
-    task: {type: workflow, workflowIdOrName: operation-tool-manager-setup, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', intent: '${{ inputs.intent }}', ssh: '${{ inputs.ssh }}', report: true}}
+    task: {type: workflow, workflowIdOrName: operation-tool-manager-setup, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', intent: '${{ inputs.intent }}', ssh: '${{ inputs.ssh }}', report: false}}
   - name: Prepare apt keyrings
     labels: {role: swamp}
     dependsOn: [{step: assets, condition: {type: succeeded}}]
