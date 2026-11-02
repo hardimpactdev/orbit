@@ -248,7 +248,7 @@ it('probes only staged private workload TLS and verifies the public listener aft
     expect($published['after']['caddy']['content'])->toContain($route->domain)->not->toContain('/orbit-certificates/route-'.$route->id.'-ingress/');
 })->with(['Ingress is the target' => true, 'separate Ingress' => false]);
 
-it('keeps a published public Route visible after failed removal and restoration', function (bool $process): void {
+it('keeps a published public Route visible after a failed removal', function (bool $process): void {
     $ingress = $this->nodes['new'];
     $ingress->roles()->create(['role' => 'ingress', 'status' => 'active', 'cluster_id' => $ingress->cluster_id]);
     $route = $this->routes['pool'];
@@ -269,8 +269,8 @@ it('keeps a published public Route visible after failed removal and restoration'
 
     lifecycle_project($operation, NativeRouteRemovalProjection::class, 'failed');
 
+    // No rollback: the Route keeps its rows, status and sites; the Operation records the failure for a rerun.
     expect($before)->not->toBeEmpty()
-        ->and($operation->fresh()->result['restored'])->toBeTrue()
         ->and($route->fresh()->status->value)->toBe('active')
         ->and($route->fresh()->sites_published)->toBeTrue()
         ->and($operation->fresh()->error_code)->toBe('route.lifecycle_failed')
@@ -332,7 +332,7 @@ it('withdraws Router Caddy and DNS while excluding the workspace Node that will 
         ->and($capture['execution_secrets'])->toBe([]);
 });
 
-it('keeps a one Route withdrawal below 100 KB on a 126 site Node', function (): void {
+it('keeps a one Route withdrawal below 300 KB on a 126 site Node', function (): void {
     $node = $this->nodes['old'];
     $node->roles()->where('role', 'app-prod')->delete();
     $node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
@@ -354,7 +354,10 @@ it('keeps a one Route withdrawal below 100 KB on a 126 site Node', function (): 
 
     $capture = app(NativeRouteLifecycleInput::class)->capture($this->routes['pool'], [], removing: true);
 
-    expect(strlen(json_encode($capture['intent'], JSON_THROW_ON_ERROR)))->toBeLessThan(100000);
+    // The run writes each Node's whole Caddyfile (rule 22), so the input grows with the Node's sites; the native
+    // frame limit is 1 MiB. The plan carries that file once per Node.
+    expect(strlen(json_encode($capture['intent'], JSON_THROW_ON_ERROR)))->toBeLessThan(300000)
+        ->and(collect($capture['intent']['plan']['retire']['caddy'])->pluck('node_id')->duplicates()->all())->toBe([]);
 });
 
 it('omits unused composing restoration while standalone removal retains it, both without private copies', function (): void {

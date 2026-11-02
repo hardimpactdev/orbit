@@ -75,9 +75,7 @@ async function steps(name: string): Promise<Step[]> {
     return (await read(name)).flow.jobs.flatMap((job) => job.steps) as Step[];
 }
 
-Deno.test("withdrawal certificate cleanup stays visible per scope and gates LAN retirement", async () => {
-    const removal = await steps("operation-route-removal");
-    assert(removal.some((step) => step.task.workflowIdOrName === "route-mutation-withdraw"));
+Deno.test("the task-cancel withdrawal keeps certificate cleanup visible per scope and gates LAN retirement", async () => {
     const withdraw = await steps("route-mutation-withdraw");
     const cleanup = withdraw.find((step) => step.name === "withdraw_cleanup")!;
     assertEquals(cleanup.forEach, {

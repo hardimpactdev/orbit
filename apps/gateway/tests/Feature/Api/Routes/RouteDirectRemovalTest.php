@@ -67,7 +67,8 @@ it('admits complete withdrawal before dispatch and keeps targets until the nativ
         ->and($this->route->targets()->count())->toBe(1);
     $path = '/api/v1/direct-operations/'.$operation->id;
     $this->getJson($path.'?run_id='.$this->runId)->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
-    expect(app(NativeRouteRemovalProjection::class)->input($operation)['intent'])->toMatchArray(['route_id' => $this->route->id, 'removal' => true]);
+    expect(app(NativeRouteRemovalProjection::class)->input($operation)['intent'])->toMatchArray(['offline' => false, 'answer_nodes' => []])
+        ->and(app(NativeRouteRemovalProjection::class)->input($operation)['intent'])->toHaveKeys(['retire', 'pools', 'lan_remove', 'check_nodes']);
     Event::fake([RecordBroadcast::class]);
     $terminal = ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-31T08:00:00.000Z', 'finished_at' => '2026-10-31T08:00:01.000Z', 'result' => ['ready' => true, 'retained_on_nodes' => []]];
     $this->postJson($path.'/result', $terminal)->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
@@ -81,10 +82,13 @@ it('admits complete withdrawal before dispatch and keeps targets until the nativ
     $this->assertDatabaseHas('instances', ['id' => $this->instance->id]);
 });
 
-it('keeps rows and associations when a native withdrawal fails', function (): void {
+it('keeps rows and associations when a native withdrawal fails, with the failed step on the Operation', function (): void {
     $operation = app(AdmitRouteOperationAction::class)->destroy($this->route);
-    app(NativeRouteRemovalProjection::class)->apply($operation, ['run_id' => $this->runId, 'status' => 'failed', 'started_at' => '2026-10-31T08:00:00.000Z', 'finished_at' => '2026-10-31T08:00:01.000Z', 'error_code' => 'route.withdrawal_failed', 'result' => []]);
+    app(NativeRouteRemovalProjection::class)->apply($operation, ['run_id' => $this->runId, 'status' => 'failed', 'started_at' => '2026-10-31T08:00:00.000Z', 'finished_at' => '2026-10-31T08:00:01.000Z',
+        'error_code' => 'operation.native_failed', 'result' => [], 'failure' => ['failed_step' => 'Withdraw site, remove cert-0']]);
     expect($this->route->fresh()->status)->toBe(RouteStatus::Pending)
+        ->and($operation->fresh()->result['failed_step'])->toBe('Withdraw site, remove cert')
+        ->and($operation->fresh()->error_code)->toBe('route.withdraw_failed')
         ->and($this->route->targets()->count())->toBe(1)
         ->and($operation->fresh()->status)->toBe(OperationStatus::Failed);
 });
@@ -127,7 +131,8 @@ it('carries removal APP_URL writes without private material or execution copies'
     $requests = $this->socket->sent;
     expect(array_column($requests, 'type'))->not->toContain('vault.put')
         ->and(end($requests)['type'])->toBe('workflow.run')
-        ->and(end($requests)['payload']['inputs']['intent'])->toBe($operation->input['route_lifecycle'])
+        ->and(end($requests)['payload']['inputs']['intent'])->toBe($operation->input['route_lifecycle']['plan'])
+        ->and(collect($operation->input['route_lifecycle']['plan']['retire']['url_lines'])->pluck('line')->all())->toBe(['APP_URL=https://survivor.private.test'])
         ->and(json_encode(end($requests), JSON_THROW_ON_ERROR))->not->toContain('APP_KEY=');
 });
 
@@ -146,7 +151,7 @@ it('keeps the admitted target immutable when an Instance later moves', function 
     $before = $operation->input;
     $this->instance->update(['node_id' => $this->control->id]);
     $input = app(NativeRouteRemovalProjection::class)->input($operation->fresh());
-    expect($input['intent'])->toBe($before['route_lifecycle'])
+    expect($input['intent'])->toBe($before['route_lifecycle']['plan'])
         ->and($operation->fresh()->status)->toBe(OperationStatus::Running)
         ->and($this->route->targets()->count())->toBe(1);
 });

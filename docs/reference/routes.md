@@ -41,9 +41,19 @@ A failure before the cutover leaves the old Route serving: a domain replacement 
 
 Caddy convergence starts `operation-route-caddy` after intent commits. Its native Node method acquires the canonical publication lock before reading the current public render through the bound Operation GET. Swamp validates the candidate and runs the filesystem swap and Caddy service commands locally with sudo, then reports the result. The Node agent only observes; it does not publish Caddy. The Gateway neither executes Caddy nor exposes a Caddy publication primitive. The shared `swamp.direct_writers` setting accepts only `direct` for this kind; selecting the removed writer refuses admission. Rollback is a revert PR.
 
-Route destroy and withdrawal use one native Swamp DAG. Admission captures all current and transition placements, marks desired withdrawal, and retains Route rows and targets. Swamp publishes fresh DNS, Caddy and PHP state on each admitted Node, restores remaining workload URLs and runtime configuration, then removes unused certificate scopes and LAN rules. Only the parent posts the terminal result. The Gateway deletes exactly the captured Route rows after successful destroy; withdrawal keeps them. Offline removal records retained Node cleanup as residue. Explicit provider-absent Nodes are excluded before account resolution while their Route inventory remains complete.
+Route destroy and withdrawal follow the chart [`route/destroy.mmd`](/cli/route). Admission captures every Node the Route touches and renders each one's whole Caddyfile without the Route. The run removes private DNS outside the TLD and waits the DNS grace. Then each Node gets that Caddyfile and loses the Route's certificate scopes, and development pools converge. LAN tuples and public ports that no published Route needs close last. The end check is the `check` of the same official behaviors: no site, scope or rule of the Route is left.
 
-Swamp calls the shared native `route-certificate-remove` child per admitted scope after Caddy withdrawal and workload URL restoration. Each child removes the scope's Caddy folder and the account copy with `cfgmgmt/directory` `ensure: absent`.
+With `--offline`, the run first tries each Node once. A Node that does not answer is skipped by every later step and keeps residue for `node:converge`; a VPN Node is never skipped. On success the Gateway deletes the captured Route rows; a withdrawal keeps them. A failed removal leaves the Route as it was, and its Operation records the failed step:
+
+| Error code | Step |
+| --- | --- |
+| `private_dns.publication_failed` | `Remove private DNS` |
+| `route.dns_grace_failed` | `Wait the DNS grace` |
+| `route.withdraw_failed` | `Withdraw site, remove cert` |
+| `route.pool_converge_failed` | `Converge PHP-FPM pools` |
+| `route.lan_firewall_failed` | `Remove unused LAN rules` |
+| `route.removal_check_failed` | `Check nothing is left` |
+| `route.withdrawal_failed` | A failure outside these steps |
 
 Every composing workflow that forwards an environment execution copy declares `orbit-control-inputs`. This includes both Route mutation phases and the Cluster Router root and publication phases.
 

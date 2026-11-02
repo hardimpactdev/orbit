@@ -18,6 +18,16 @@ use Illuminate\Support\Facades\DB;
 /** Fresh caller views and minimal terminal projection; no execution receipts. */
 final readonly class NativeRouteRemovalProjection implements DirectOperationProjection, NativeOperationProjection
 {
+    /** Each chart step's error code. A step fails with its own exit code; its stderr carries the reason (rule 14). */
+    public const array StepCodes = [
+        'Remove private DNS' => 'private_dns.publication_failed',
+        'Wait the DNS grace' => 'route.dns_grace_failed',
+        'Withdraw site, remove cert' => 'route.withdraw_failed',
+        'Converge PHP-FPM pools' => 'route.pool_converge_failed',
+        'Remove unused LAN rules' => 'route.lan_firewall_failed',
+        'Check nothing is left' => 'route.removal_check_failed',
+    ];
+
     public function __construct(private DirectOperation $direct) {}
 
     public function native(Operation $operation): bool
@@ -27,7 +37,7 @@ final readonly class NativeRouteRemovalProjection implements DirectOperationProj
 
     public function input(Operation $operation): array
     {
-        return ['intent' => $operation->input['route_lifecycle'], 'execution_secrets' => $operation->input['execution_secrets']];
+        return ['intent' => ValidatedData::object($operation->input['route_lifecycle'])['plan'], 'execution_secrets' => $operation->input['execution_secrets']];
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -43,11 +53,38 @@ final readonly class NativeRouteRemovalProjection implements DirectOperationProj
     private function applyOwned(Operation $operation, array $data): Operation
     {
         $wasTerminal = $operation->status->terminal();
-        $result = ValidatedData::object($data['result'] ?? []);
+        $failure = is_array($data['failure'] ?? null) ? $data['failure'] : [];
+        $failed = is_string($failure['failed_step'] ?? null) ? $failure['failed_step'] : null;
+        $step = null;
+        foreach (array_keys(self::StepCodes) as $label) {
+            // A forEach iteration is named after its step, such as "Check nothing is left-2".
+            if ($failed !== null && ($failed === $label || str_starts_with($failed, $label.'-'))) {
+                $step = $label;
+            }
+        }
+        if ($data['status'] === 'failed') {
+            $data['error_code'] = $step === null ? ($data['error_code'] ?? 'route.withdrawal_failed') : self::StepCodes[$step];
+        }
+        // With --offline, a Node that did not answer was skipped; it keeps residue that node:converge finishes.
+        $plan = ValidatedData::object(ValidatedData::object($operation->input['route_lifecycle'])['plan']);
+        $steps = ValidatedData::object(ValidatedData::object($data['result'] ?? [])['steps'] ?? []);
+        $retained = [];
+        foreach (ValidatedData::integerList($plan['answer_nodes']) as $index => $nodeId) {
+            if ((ValidatedData::object($steps['Check each Node answers-'.$index] ?? [])['status'] ?? null) !== 'succeeded') {
+                $retained[] = ['node_id' => $nodeId, 'steps' => NativeRouteRemovalSteps::ResidueSteps];
+            }
+        }
+        $result = match ($data['status']) {
+            'succeeded' => ['ready' => true, 'route_id' => $operation->target_id, 'retained_on_nodes' => $retained],
+            'failed' => ['error_code' => $data['error_code'], 'failed_step' => $step],
+            default => ValidatedData::object($data['result'] ?? []),
+        };
         $operation = $this->direct->project($operation, $data, $result);
         if ($wasTerminal || ! $operation->status->terminal()) {
             return $operation;
         }
+        // A failed removal leaves the Route as it was: a failed Route renders no site, which would withdraw sites the
+        // run may not have reached. The Operation carries the failed step and its code for the rerun.
         if ($operation->status === OperationStatus::Succeeded) {
             $snapshot = ValidatedData::object($operation->input['route_removal']);
             $rows = array_map(static fn (array $row): array => ['route_id' => ValidatedData::integer($row['route_id']), 'domain' => ValidatedData::string($row['domain']), 'replacement_of' => $row['replacement_of'] === null ? null : ValidatedData::integer($row['replacement_of'])], RouteExecutionProof::objects($snapshot['routes']));

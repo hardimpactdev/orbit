@@ -1,0 +1,64 @@
+{
+  "kind": "route.destroy",
+  "workflow": "operation-route-removal",
+  "topology": "minimal",
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "projects",
+      "operation": false,
+      "bind": "project",
+      "body": {
+        "slug": "proof-destroy",
+        "name": "Proof destroy",
+        "type": "monorepo",
+        "root": "public",
+        "repository_url": "https://github.com/laravel/laravel.git",
+        "default_branch": "13.x"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "instances",
+      "bind": "instance",
+      "body": {
+        "project_id": "${project.id}",
+        "node_id": "${node.target}",
+        "name": "r-${proof.run}"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "routes",
+      "bind": "route",
+      "body": {
+        "instance_id": "${instance.id}",
+        "domain": "r-${proof.run}.proof.test"
+      }
+    }
+  ],
+  "request": {
+    "method": "DELETE",
+    "path": "routes/${route.id}"
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "withdraw",
+      "job": "update",
+      "step": "Withdraw site, remove cert-0",
+      "budget_seconds": 120
+    },
+    {
+      "name": "check",
+      "job": "update",
+      "step": "Check nothing is left-0",
+      "budget_seconds": 60
+    }
+  ],
+  "parity": "swamp/proof/route.destroy/parity.py"
+}

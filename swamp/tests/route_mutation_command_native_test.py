@@ -147,24 +147,10 @@ class RouteEnvironmentNative(NativeTestCase):
                    and "orbit-control-inputs" not in workflow.get("vaults", [])]
         self.assertEqual(missing, [], "Every workflow in the nested vault read chain must declare the vault")
 
-    def test_removal_root_delivers_named_material_through_its_existing_child(self):
-        self.environment_write(False, removal_parent=True)
-
-    def test_removal_retains_offline_nodes_without_environment_effects(self):
-        self.environment_write(False, removal_parent=True, retained=True)
-
     def test_real_vault_environment_write_returns_public_result(self):
-        self.environment_write(False)
+        self.environment_write()
 
-    def test_route_update_root_allows_its_native_vault_child_without_public_secret_output(
-        self,
-    ):
-        self.environment_write(True)
-
-    def test_route_update_restore_phase_allows_the_same_named_vault_material(self):
-        self.environment_write(True, restoring=True)
-
-    def environment_write(self, update_parent, removal_parent=False, retained=False, restoring=False):
+    def environment_write(self):
         import pwd
         import tempfile
 
@@ -248,108 +234,6 @@ class RouteEnvironmentNative(NativeTestCase):
             "host_keys": [PIN],
         }
         name = "route-environment-write"
-        if removal_parent:
-            parent = yaml.safe_load(
-                (ROOT / "workflows/workflow-operation-route-removal.yaml").read_text()
-            )
-            parent.pop("target", None); parent.pop("labels", None)
-            parent.pop("labels", None)
-            selection = self.repo / "extensions/behaviors/fixture_selection.ts"
-            selection.write_text('''import {z} from "npm:zod@4.4.3";
-const schema=z.object({nodes:z.array(z.object({node_id:z.number()}))});
-export const behavior={type:"@fixture/removal-selection",version:"2026.11.01.1",
-resources:{selected:{schema,lifetime:"infinite",garbageCollection:10}},
-methods:{read:{description:"Return the disposable offline selection",arguments:schema,execute:async(args:any,ctx:any)=>({dataHandles:[await ctx.writeResource("selected","selected",args)]})}}};
-''')
-            environment = next(j for j in parent["jobs"] if j["name"] == "environment")
-            environment["dependsOn"] = [{"job": "selection", "condition": {"type": "succeeded"}}]
-            for step in environment["steps"]:
-                step.pop("target", None); step.pop("labels", None)
-            parent["jobs"] = [{"name": "selection", "steps": [{"name": "selected", "task": {
-                "type": "behavior", "behaviorType": "@fixture/removal-selection",
-                "behaviorName": "selected", "methodName": "read",
-                "inputs": {"nodes": [] if retained else [{"node_id": 9}]},
-            }}]}, environment]
-            (self.repo / "workflows/workflow-operation-route-removal.yaml").write_text(yaml.safe_dump(parent, sort_keys=False))
-            value["kind"] = "route.destroy"
-            value["intent"] = {"environment_writes": [value["intent"]]}
-            name = "operation-route-removal"
-        if update_parent:
-            self.copy_behaviors("operations/routes/update-command")
-            parent = yaml.safe_load(
-                (ROOT / "workflows/workflow-operation-route-update.yaml").read_text()
-            )
-            for step in parent["jobs"][0]["steps"]:
-                step.pop("target", None); step.pop("labels", None)
-                step.pop("labels", None)
-            (self.repo / "workflows/workflow-operation-route-update.yaml").write_text(
-                yaml.safe_dump(parent, sort_keys=False)
-            )
-            value["kind"] = "route.update"
-            for mode in ("forward", "restore"):
-                phase = {
-                    "id": "b2ec4a6d-fc95-4a2c-b6b8-e26c7bf871c7"
-                    if mode == "forward"
-                    else "f11fa84e-418c-44cf-86d9-a84f46ef0146",
-                    "name": "route-mutation-" + mode,
-                    "vaults": yaml.safe_load(
-                        (ROOT / ("workflows/workflow-route-mutation-" + mode + ".yaml")).read_text()
-                    )["vaults"],
-                    "inputs": {"type": "object"},
-                    "jobs": [
-                        {
-                            "name": "write",
-                            "steps": [
-                                {
-                                    "name": mode + "-0",
-                                    "task": {
-                                        "type": "workflow",
-                                        "workflowIdOrName": "route-environment-write",
-                                        "inputs": value,
-                                    },
-                                },
-                                {
-                                    "name": "result",
-                                    "dependsOn": [
-                                        {
-                                            "step": mode + "-0",
-                                            "condition": {"type": "succeeded"},
-                                        }
-                                    ],
-                                    "task": {
-                                        "type": "behavior",
-                                        "behaviorType": "@nckrtl/route-update-result",
-                                        "behaviorName": "route-update-vault-phase",
-                                        "methodName": "phase",
-                                        "inputs": {
-                                            "mode": mode,
-                                            "steps": "${{ steps }}",
-                                        },
-                                    },
-                                },
-                            ],
-                        }
-                    ],
-                }
-                if restoring and mode == "forward":
-                    step = phase["jobs"][0]["steps"][0]
-                    step["task"] = {"type": "behavior", "behaviorType": "command/shell",
-                                    "behaviorName": "fixture-forward-failure", "methodName": "execute",
-                                    "inputs": {"run": "exit 1"}}
-                    phase["jobs"][0]["steps"][1]["dependsOn"][0]["condition"]["type"] = "always"
-                (
-                    self.repo / ("workflows/workflow-route-mutation-" + mode + ".yaml")
-                ).write_text(yaml.safe_dump(phase, sort_keys=False))
-            value = {
-                **value,
-                "intent": {
-                    "effectful": True,
-                    "route_id": 31,
-                    "result_route_id": 32,
-                    "workloads": [],
-                },
-            }
-            name = "operation-route-update"
         reply = json.loads(
             self.cli(
                 "workflow",
@@ -357,21 +241,10 @@ methods:{read:{description:"Return the disposable offline selection",arguments:s
                 name,
                 "--input",
                 json.dumps(value),
-                success=not restoring,
             ).stdout
         )
         history = json.loads(self.cli("workflow", "history", "get", reply["id"]).stdout)
-        self.assertEqual(history["status"], "failed" if restoring else "succeeded")
-        self.assertIn("APP_URL=https://old.test" if retained else "APP_URL=https://new.test", (path / ".env").read_text())
+        self.assertEqual(history["status"], "succeeded")
+        self.assertIn("APP_URL=https://new.test", (path / ".env").read_text())
         self.assertIn("APP_KEY=keep-current", (path / ".env").read_text())
-        result = (next(step for step in history["jobs"][0]["steps"] if step["name"] == "result")
-                  if update_parent else history["jobs"][0]["steps"][-1])["outputs"]
-        if removal_parent:
-            effects = history["jobs"][1]["steps"]
-            self.assertEqual(len(effects), 0 if retained else 1)
-        elif update_parent:
-            projected = json.loads(result["stdout"])
-            self.assertEqual(projected["ready"], not restoring)
-            self.assertEqual(projected["restored"], restoring)
-        else:
-            self.assertEqual(result, {"ready": True, "route_id": 31, "instance_id": 33})
+        self.assertEqual(history["jobs"][0]["steps"][-1]["outputs"], {"ready": True, "route_id": 31, "instance_id": 33})

@@ -47,3 +47,4 @@ conn.pairing_revoke
 conn.pairing_create
 route.target_set
 route.update
+route.destroy

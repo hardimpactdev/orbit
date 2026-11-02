@@ -38,7 +38,8 @@ final readonly class NativeRouteRemovalAdmission
         }
         $nodes = array_values(array_unique([$nodeId, ...array_column($snapshot['nodes'], 'node_id'), ...ValidatedData::integerList($snapshot['dns_node_ids'])]));
         sort($nodes);
-        $capture = app(NativeRouteLifecycleInput::class)->capture($route, ['offline' => $offline], true);
+        // No rollback: the run never restores, so no previous material is staged.
+        $capture = app(NativeRouteLifecycleInput::class)->capture($route, ['offline' => $offline], true, restorable: false);
 
         return $this->operations->execute($kind, 'route', $route->id, $nodeId, [
             'route_id' => $route->id, 'route_removal' => $snapshot, 'offline' => $offline,

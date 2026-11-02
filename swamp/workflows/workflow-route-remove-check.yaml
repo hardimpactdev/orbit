@@ -1,0 +1,81 @@
+id: b9ec5074-49d4-5c43-baf3-a69ae6f19cd3
+name: route-remove-check
+description: "route.destroy: one Node shows that nothing of the Route is left (cfgmgmt check)."
+vaults: []
+queueTimeout: 30
+inputs:
+  type: object
+  properties:
+    intent: {type: object}
+    node_id: {type: integer, minimum: 1}
+  required: [intent, node_id]
+  additionalProperties: false
+jobs:
+- name: check
+  labels: {role: swamp}
+  steps:
+    # The Node's Caddyfile is the whole file without the Route.
+  - name: 'caddyfile'
+    labels: {role: swamp}
+    dependsOn: []
+    forEach: {item: site, in: '${{ inputs.intent.retire.caddy.filter(c, string(c.node_id) == string(inputs.node_id)) }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ ("route-caddyfile-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
+      methodName: check
+      globalArgs: {path: /etc/caddy/Caddyfile, content: '${{ self.site.content }}', owner: root, group: caddy, mode: '0640', ensure: present,
+        nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
+        nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
+      inputs: {}
+    # No certificate scope of the Route is left.
+  - name: 'certificates'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'caddyfile', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    forEach: {item: part, in: '${{ inputs.intent.cleanup.filter(c, string(c.node_id) == string(inputs.node_id)) }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/directory'
+      behaviorName: '${{ ("route-cert-remove-" + string(inputs.node_id) + "-" + self.part.leaf.scope.split("/").join("-")).split(".").join("-") }}'
+      methodName: check
+      globalArgs: {path: '${{ "/etc/caddy/orbit-certificates/" + self.part.leaf.scope }}', ensure: absent,
+        nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
+        nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
+      inputs: {}
+    # No removed LAN tuple is left.
+  - name: 'lan'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'caddyfile', condition: {type: always}}
+    - {step: 'certificates', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    forEach: {item: rule, in: '${{ inputs.intent.lan_remove.filter(r, string(r.node_id) == string(inputs.node_id)) }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/firewall'
+      behaviorName: '${{ ("route-lan-retire-" + string(self.rule.node_id) + "-" + string(self.rule.port) + "-" + self.rule.source.split("/").join("-")).split(".").join("-") }}'
+      methodName: check
+      globalArgs: {port: '${{ self.rule.port }}', protocol: '${{ self.rule.protocol }}', action: allow, ensure: absent, source: '${{ self.rule.source }}',
+        nodeHost: '${{ inputs.intent.nodes[string(self.rule.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(self.rule.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(self.rule.node_id)].port }}',
+        nodeIdentityFile: '${{ inputs.intent.nodes[string(self.rule.node_id)].identity_file }}', become: true}
+      inputs: {}
+    # No closed public port is left open.
+  - name: 'ingress'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'caddyfile', condition: {type: always}}
+    - {step: 'certificates', condition: {type: always}}
+    - {step: 'lan', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    forEach: {item: port, in: '${{ inputs.intent.ingress_close.filter(p, string(p.node_id) == string(inputs.node_id)) }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/firewall'
+      behaviorName: '${{ ("route-ingress-port-" + string(inputs.node_id) + "-" + string(self.port.port)).split(".").join("-") }}'
+      methodName: check
+      globalArgs: {port: '${{ self.port.port }}', protocol: tcp, action: allow, ensure: absent,
+        nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
+        nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
+      inputs: {}

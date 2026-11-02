@@ -28,10 +28,12 @@ return [
         'workflow_inputs' => true, 'terminal_result' => ['job' => 'update', 'step' => 'Switch the Router pool-0', 'alternatives' => ['Install cert, publish site-0'], 'native' => true],
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-forward-route_material_[0-9]+$']],
     ],
+    // The end check is a Node's check that nothing of the Route is left; with --offline the first Nodes may be skipped.
     ...array_fill_keys(['route.destroy', 'route.withdraw'], [
         'workflow' => 'operation-route-removal', 'projection' => NativeRouteRemovalProjection::class,
-        'workflow_inputs' => true, 'terminal_result' => ['job' => 'update', 'step' => 'result'],
-        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(forward|restore)-route_material_[0-9]+$']],
+        'workflow_inputs' => true, 'terminal_result' => ['job' => 'update', 'step' => 'Check nothing is left-0',
+            'alternatives' => ['Check nothing is left-1', 'Check nothing is left-2', 'Check nothing is left-3'], 'native' => true],
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-forward-route_material_[0-9]+$']],
     ]),
     'route.lan_remove' => [
         'workflow' => 'operation-route-lan-remove', 'projection' => NativeRouteLanRemovalProjection::class,

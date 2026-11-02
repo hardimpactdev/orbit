@@ -1,0 +1,48 @@
+id: 93fd584e-b2ab-50c1-9c13-d0ce81b6dfc6
+name: route-remove-firewall
+description: "route.destroy: one Node drops the LAN rules and public ports no Route needs."
+vaults: []
+queueTimeout: 30
+inputs:
+  type: object
+  properties:
+    intent: {type: object}
+    node_id: {type: integer, minimum: 1}
+  required: [intent, node_id]
+  additionalProperties: false
+jobs:
+- name: firewall
+  labels: {role: swamp}
+  steps:
+    # A Router LAN tuple that no published Route still needs.
+  - name: 'lan'
+    labels: {role: swamp}
+    dependsOn: []
+    writes: true
+    forEach: {item: rule, in: '${{ inputs.intent.lan_remove.filter(r, string(r.node_id) == string(inputs.node_id)) }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/firewall'
+      behaviorName: '${{ ("route-lan-retire-" + string(self.rule.node_id) + "-" + string(self.rule.port) + "-" + self.rule.source.split("/").join("-")).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {port: '${{ self.rule.port }}', protocol: '${{ self.rule.protocol }}', action: allow, ensure: absent, source: '${{ self.rule.source }}',
+        nodeHost: '${{ inputs.intent.nodes[string(self.rule.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(self.rule.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(self.rule.node_id)].port }}',
+        nodeIdentityFile: '${{ inputs.intent.nodes[string(self.rule.node_id)].identity_file }}', become: true}
+      inputs: {}
+    # The Ingress's public ports, closed after the last public Route.
+  - name: 'ingress'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'lan', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    writes: true
+    forEach: {item: port, in: '${{ inputs.intent.ingress_close.filter(p, string(p.node_id) == string(inputs.node_id)) }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/firewall'
+      behaviorName: '${{ ("route-ingress-port-" + string(inputs.node_id) + "-" + string(self.port.port)).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {port: '${{ self.port.port }}', protocol: tcp, action: allow, ensure: absent,
+        nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
+        nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
+      inputs: {}

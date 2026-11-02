@@ -131,9 +131,14 @@ final readonly class NativeRouteLifecycleInput
             }
         }
 
-        return ['intent' => [...$metadata, 'route_mutations' => $capture['route_mutations'],
-            // Whole after-renders feed route.create's file steps (rule 22); a withdrawal needs none, so its intent stays small.
-            ...($removing ? [] : ['renders' => $capture['renders'] ?? (object) []])],
+        $intent = [...$metadata, 'route_mutations' => $capture['route_mutations'], 'renders' => $capture['renders'] ?? (object) []];
+        if ($removing) {
+            // A removal's steps read only their plan; the whole renders it was built from stay out of the intent.
+            $intent = [...$intent, 'plan' => app(NativeRouteRemovalSteps::class)->build($route, $intent, $metadata['offline'])];
+            unset($intent['renders']);
+        }
+
+        return ['intent' => $intent,
             'certificates' => $capture['certificates'], 'participant_node_ids' => $capture['participant_node_ids'], 'execution_secrets' => $capture['execution_secrets']];
     }
 }
