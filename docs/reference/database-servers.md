@@ -34,7 +34,7 @@ The SQL user parent resolves private data inside its existing read boundary. The
 
 ## Create a server
 
-`database_server.create` records the server and its Process, then starts `operation-database-server-create` with the full public intent. Every step runs on Node 209 and reaches the server Node over official SSH with its recorded host key. The steps follow the [chart](/flows/database_server.create): pull the image, write the Valkey ACL file, start the container, wait until healthy, check the admin login, and remove the first-start environment. Each step sends one shipped script phase in argv, so nothing is copied to the Node.
+`database_server.create` records the server and its Process, then starts `operation-database-server-create` with the full public intent. Every step runs on Node 209 and reaches the server Node over official SSH with its recorded host key. The steps follow the [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/flows/database_server.create.mmd): pull the image, write the Valkey ACL file, start the container, wait until healthy, check the admin login, and remove the first-start environment. Each step sends one shipped script phase in argv, so nothing is copied to the Node.
 
 The admin password goes to the vault under the server's own key, `database-server-<id>-admin`. Every database kind that logs in as the admin reads that key by name. A Valkey ACL file goes to the vault under `database-server-create-intent-<operation>`. Neither value enters the workflow inputs, a step output, or a command argument; scripts pass them to Docker in a 0600 env file or on standard input.
 
