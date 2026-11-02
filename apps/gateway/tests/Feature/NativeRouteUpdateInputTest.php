@@ -7,7 +7,6 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Routes\NativeRouteNodeRender;
-use App\Domain\Routes\NativeRoutePublicationArtifacts;
 use App\Domain\Routes\NativeRouteUpdateInput;
 use App\Domain\Routes\NativeRouteUpdateProjection;
 use App\Domain\Routes\NativeRouteWorkloadPreparation;
@@ -60,20 +59,30 @@ it('captures an unchanged update without host duties or private material', funct
         ->and(Operation::query()->count())->toBe(0);
 });
 
+/** The whole Caddyfile a phase writes on one Node. */
+function native_route_update_caddy(array $phase, int $nodeId): ?string
+{
+    return collect($phase['caddy'])->firstWhere('node_id', $nodeId)['content'] ?? null;
+}
+
 it('freezes a reserved rename without changing stored serving state', function (): void {
     $route = $this->route->fresh();
     $replacement = app(RouteMutationState::class)->reserve($route, 'new.snapshot.test');
     $capture = $this->capture->capture($route, [...$this->input, 'mode' => 'replace_domain', 'candidate_route_id' => $replacement->id]);
+    $plan = $capture['intent']['plan'];
     expect($capture['intent']['effectful'])->toBeTrue()
         ->and($capture['intent']['result_route_id'])->toBe($replacement->id)
         ->and($route->fresh()->domain)->toBe('development.snapshot.old.test')
         ->and($replacement->fresh()->sites_published)->toBeFalse();
-    $publication = collect($capture['intent']['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['intent']['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->node->id);
-    expect($publication['before']['caddy']['content'])->toContain($route->domain)->not->toContain($replacement->domain)
-        ->and($publication['prepared']['caddy']['content'])->toContain($route->domain, $replacement->domain, '-hostname-change')
-        ->and($publication['after']['caddy']['content'])->toContain($replacement->domain)->not->toContain($route->domain, '-hostname-change')
-        ->and($publication['control_node_id'])->toBe(209)
-        ->and($publication['host_keys'])->toBe(['ssh-ed25519 fixture-host-key'])
+    // The publish step serves both names; the withdraw step leaves only the new one.
+    expect(native_route_update_caddy($plan['publish'], $this->node->id))->toContain($route->domain, $replacement->domain)
+        ->and(native_route_update_caddy($plan['retire'], $this->node->id))->toContain($replacement->domain)->not->toContain($route->domain)
+        ->and(collect($plan['leaves'])->pluck('domain')->all())->toContain($replacement->domain)
+        // The temporary leaf serves the new name before the cutover; the Instance's live leaf changes only after it.
+        ->and(collect($plan['publish']['leaf_indexes'])->map(fn (int $i): string => $plan['leaves'][$i]['scope'])->all())->toBe(['app-instance-'.$this->instance->id.'-hostname-change'])
+        ->and(collect($plan['retire']['leaf_indexes'])->map(fn (int $i): string => $plan['leaves'][$i]['scope'])->all())->toBe(['app-instance-'.$this->instance->id])
+        ->and(collect($plan['probes'])->pluck('domain')->unique()->all())->toBe([$replacement->domain])
+        ->and($plan['nodes'][(string) $this->node->id]['host_keys'])->toBe(['ssh-ed25519 fixture-host-key'])
         ->and($capture['participant_node_ids'])->toContain($this->node->id, $this->gateway->id, 209);
 });
 
@@ -87,23 +96,21 @@ it('keeps pending replacements entirely in database intent', function (): void {
 });
 
 it('renders a prospective web root and its shared pools without early DB changes', function (): void {
-    $capture = $this->capture->capture($this->route->fresh(), [...$this->input, 'mode' => 'web_root', 'web_root' => 'docs/public']);
-    $publication = collect($capture['intent']['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['intent']['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->node->id);
-    expect($publication['after']['caddy']['content'])->toContain('/srv/snapshot/docs/public')
-        ->and($publication['before']['caddy']['content'])->not->toContain('/srv/snapshot/docs/public')
-        ->and($this->route->fresh()->web_root)->toBeNull()
-        ->and($capture['intent']['route_mutations']['restore']['routes'][0]['domain'])->toBe($this->route->domain);
+    $plan = $this->capture->capture($this->route->fresh(), [...$this->input, 'mode' => 'web_root', 'web_root' => 'docs/public'])['intent']['plan'];
+    expect(native_route_update_caddy($plan['retire'], $this->node->id))->toContain('/srv/snapshot/docs/public')
+        ->and(native_route_update_caddy($plan['publish'], $this->node->id))->toContain('/srv/snapshot/docs/public')
+        ->and($this->route->fresh()->web_root)->toBeNull();
 });
 
-it('omits unrelated sites from all captured publication deltas', function (): void {
+it('keeps unrelated sites in each whole Caddyfile it writes', function (): void {
     $other = Route::query()->create(['kind' => 'custom_proxy', 'node_id' => $this->node->id,
         'domain' => 'unrelated.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
     $other->customProxy()->create(['node_id' => $this->node->id, 'upstream' => 'http://127.0.0.1:8088']);
     $other->update(['status' => 'active', 'sites_published' => true]);
-    $capture = $this->capture->capture($this->route->fresh(), [...$this->input, 'mode' => 'web_root', 'web_root' => 'docs/public']);
-    $publication = collect($capture['intent']['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['intent']['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->node->id);
-    foreach (['before', 'prepared', 'withdrawn', 'after'] as $stage) {
-        expect($publication[$stage]['caddy']['content'])->not->toContain('unrelated.test');
+    $plan = $this->capture->capture($this->route->fresh(), [...$this->input, 'mode' => 'web_root', 'web_root' => 'docs/public'])['intent']['plan'];
+    // A whole file replaces the Node's Caddyfile, so the other Route's site must stay in it.
+    foreach (['publish', 'retire'] as $phase) {
+        expect(native_route_update_caddy($plan[$phase], $this->node->id))->toContain('unrelated.test');
     }
 });
 
@@ -115,12 +122,12 @@ function native_route_update_operation(array $capture, int $nodeId): Operation
         'input' => ['route_update' => $capture['intent'], 'execution_secrets' => $capture['execution_secrets']]]);
 }
 
-function native_route_update_finish(Operation $operation, bool $success, array $result = []): Operation
+function native_route_update_finish(Operation $operation, bool $success, ?string $failedStep = null): Operation
 {
     return app(NativeRouteUpdateProjection::class)->apply($operation, [
         'run_id' => $operation->state['swamp_run_id'], 'status' => $success ? 'succeeded' : 'failed',
         'started_at' => '2026-10-31T21:00:00Z', 'finished_at' => '2026-10-31T21:01:00Z',
-        'error_code' => $success ? null : 'route.update_failed', 'result' => $result]);
+        'error_code' => $success ? null : 'operation.native_failed', 'result' => [], 'failure' => $failedStep === null ? null : ['failed_step' => $failedStep]]);
 }
 
 it('commits the replacement only from the shared terminal result and accepts replay', function (): void {
@@ -128,33 +135,33 @@ it('commits the replacement only from the shared terminal result and accepts rep
     $candidate = app(RouteMutationState::class)->reserve($route, 'new.snapshot.test');
     $capture = $this->capture->capture($route, [...$this->input, 'mode' => 'replace_domain', 'candidate_route_id' => $candidate->id]);
     $operation = native_route_update_operation($capture, $this->node->id);
-    $result = ['ready' => true, 'selected' => 'after', 'restored' => false];
-    $done = native_route_update_finish($operation, true, $result);
-    expect($done->status->value)->toBe('succeeded')->and($route->fresh())->toBeNull()
+    $done = native_route_update_finish($operation, true);
+    expect($done->status->value)->toBe('succeeded')->and($done->result)->toBe(['ready' => true, 'route_id' => $candidate->id])
+        ->and($route->fresh())->toBeNull()
         ->and($candidate->fresh()->status->value)->toBe('active')->and($candidate->fresh()->replaces_route_id)->toBeNull();
-    expect(native_route_update_finish($done, true, $result)->result)->toBe($result);
+    expect(native_route_update_finish($done, true)->result)->toBe(['ready' => true, 'route_id' => $candidate->id]);
 });
 
-it('removes the reservation after proven restoration and keeps the prior Route active', function (): void {
+it('keeps the old Route serving and marks the replacement failed when a step before the cutover fails', function (): void {
     $route = $this->route->fresh();
     $candidate = app(RouteMutationState::class)->reserve($route, 'new.snapshot.test');
     $capture = $this->capture->capture($route, [...$this->input, 'mode' => 'replace_domain', 'candidate_route_id' => $candidate->id]);
-    $operation = native_route_update_operation($capture, $this->node->id);
-    $done = native_route_update_finish($operation, false, ['ready' => false, 'restored' => true, 'selected' => 'before']);
-    expect($done->status->value)->toBe('failed')->and($route->fresh()->status->value)->toBe('active')
-        ->and($route->fresh()->replaced_by_route_id)->toBeNull()->and($candidate->fresh())->toBeNull();
+    $done = native_route_update_finish(native_route_update_operation($capture, $this->node->id), false, 'Probe the site over TLS-0');
+    expect($done->status->value)->toBe('failed')->and($done->error_code)->toBe('route.probe_failed')
+        ->and($route->fresh()->status->value)->toBe('active')->and($route->fresh()->replaced_by_route_id)->toBe($candidate->id)
+        ->and($candidate->fresh()->status->value)->toBe('failed')->and($candidate->fresh()->failed_step)->toBe('Probe the site over TLS')
+        ->and($candidate->fresh()->sites_published)->toBeFalse();
 });
 
-it('retains both identities and the failure when native restoration is incomplete', function (): void {
+it('selects the new name when a step after the cutover fails, and keeps the old Route retiring', function (): void {
     $route = $this->route->fresh();
     $candidate = app(RouteMutationState::class)->reserve($route, 'new.snapshot.test');
     $capture = $this->capture->capture($route, [...$this->input, 'mode' => 'replace_domain', 'candidate_route_id' => $candidate->id]);
-    $operation = native_route_update_operation($capture, $this->node->id);
-    native_route_update_finish($operation, false, ['ready' => false, 'restored' => false, 'selected' => 'unknown']);
-    expect($route->fresh()->replaced_by_route_id)->toBe($candidate->id)
-        ->and($route->fresh()->sites_published)->toBeTrue()->and($candidate->fresh()->sites_published)->toBeFalse()
-        ->and($candidate->fresh()->failed_step)->toBe('native-update')
-        ->and($route->fresh()->status->value)->toBe('active');
+    $done = native_route_update_finish(native_route_update_operation($capture, $this->node->id), false, 'Withdraw the old site-0');
+    expect($done->error_code)->toBe('route.withdraw_failed')
+        ->and($candidate->fresh()->status->value)->toBe('active')->and($candidate->fresh()->sites_published)->toBeTrue()
+        ->and($route->fresh()->status->value)->toBe('retiring')
+        ->and($route->fresh()->failed_step)->toBe('Withdraw the old site');
 });
 
 it('projects a pending replacement without marking sites active', function (): void {
@@ -162,24 +169,18 @@ it('projects a pending replacement without marking sites active', function (): v
     $route = $this->route->fresh();
     $candidate = app(RouteMutationState::class)->reserve($route, 'pending.snapshot.test');
     $capture = $this->capture->capture($route, [...$this->input, 'mode' => 'replace_pending', 'candidate_route_id' => $candidate->id]);
-    native_route_update_finish(native_route_update_operation($capture, $this->node->id), true, ['ready' => true]);
+    native_route_update_finish(native_route_update_operation($capture, $this->node->id), true);
     expect($route->fresh())->toBeNull()->and($candidate->fresh()->status->value)->toBe('pending')
         ->and($candidate->fresh()->sites_published)->toBeFalse()->and($candidate->fresh()->replaces_route_id)->toBeNull();
 });
 
-it('captures the development permission union and retires only the previous web root', function (): void {
-    $capture = $this->capture->capture($this->route->fresh(), [...$this->input, 'mode' => 'web_root', 'web_root' => 'docs/public']);
-    $workload = $capture['intent']['workloads'][0];
-    expect(array_column($workload['prepare']['source_access']['sites'], 'relative_root'))->toContain('public', 'docs/public')
-        ->and(array_column($workload['selected']['source_access']['sites'], 'relative_root'))->toBe(['docs/public'])
-        ->and(array_column($workload['restore']['source_access']['sites'], 'relative_root'))->toBe(['public'])
-        ->and($workload['prepare']['runtime'])->toBeNull();
-    // Each phase carries its grants as setfacl commands: the checkout deny comes first, the root grant last.
-    $argv = array_column($workload['selected']['acl'], 'argv');
+it('grants Caddy the new development web root in the publish step, checkout deny first', function (): void {
+    $plan = $this->capture->capture($this->route->fresh(), [...$this->input, 'mode' => 'web_root', 'web_root' => 'docs/public'])['intent']['plan'];
+    $argv = array_column($plan['publish']['acl'], 'argv');
     expect($argv[0])->toContain('d:u:caddy:---')
         ->and(end($argv))->toContain('u:caddy:r-X')
         ->and(collect($argv)->flatten()->filter(fn ($part) => is_string($part) && str_ends_with($part, '/docs/public'))->isNotEmpty())->toBeTrue()
-        ->and($workload['selected']['links'])->toBe([]);
+        ->and($plan['publish']['links'])->toBe([]);
 });
 
 it('captures dedicated production pools for union, selected and restoration without installing a runtime', function (): void {
@@ -225,26 +226,20 @@ function native_route_update_public_fixture(object $test): Node
     return $node;
 }
 
-it('opens both public ingress ports for the first published public Route and captures restoration', function (): void {
+it('opens both public ingress ports for the first published public Route', function (): void {
     $ingress = native_route_update_public_fixture($this);
-    $capture = $this->capture->capture($this->route->fresh(), [...$this->input, 'publication' => 'public']);
-    $forward = $capture['intent']['route_mutations']['forward'];
-    $restore = $capture['intent']['route_mutations']['restore'];
-    expect($forward['ingress'])->toBe([['node_id' => $ingress->id, 'rules' => [['port' => 80, 'ensure' => 'present'], ['port' => 443, 'ensure' => 'present']]]])
-        ->and($restore['retire_ingress'][0]['rules'])->toBe([['port' => 80, 'ensure' => 'absent'], ['port' => 443, 'ensure' => 'absent']])
-        ->and($capture['intent']['public_activated'])->toBeTrue()
+    $plan = $this->capture->capture($this->route->fresh(), [...$this->input, 'publication' => 'public'])['intent']['plan'];
+    expect($plan['ingress_ports'])->toBe([['node_id' => $ingress->id, 'port' => 80, 'ensure' => 'present'], ['node_id' => $ingress->id, 'port' => 443, 'ensure' => 'present']])
+        ->and($plan['edge_nodes'])->toBe([$ingress->id])
+        ->and(collect($plan['probes'])->pluck('node_id')->all())->not->toContain($ingress->id)
         ->and($this->route->fresh()->publication->value)->toBe('private');
 });
 
-it('closes the last public ingress ports only in the final selected phase', function (): void {
+it('closes the last public ingress ports', function (): void {
     $ingress = native_route_update_public_fixture($this);
     $this->route->update(['publication' => 'public', 'replacement_step' => RouteReplacementStep::IngressFirewall]);
-    $capture = $this->capture->capture($this->route->fresh(), $this->input);
-    $forward = $capture['intent']['route_mutations']['forward'];
-    expect($forward['ingress'][0]['rules'][0]['ensure'])->toBe('present')
-        ->and($forward['retire_ingress'][0]['node_id'])->toBe($ingress->id)
-        ->and($forward['retire_ingress'][0]['rules'][0]['ensure'])->toBe('absent')
-        ->and($capture['intent']['route_mutations']['restore']['retire_ingress'][0]['rules'][0]['ensure'])->toBe('present');
+    $plan = $this->capture->capture($this->route->fresh(), $this->input)['intent']['plan'];
+    expect($plan['ingress_ports'])->toBe([['node_id' => $ingress->id, 'port' => 80, 'ensure' => 'absent'], ['node_id' => $ingress->id, 'port' => 443, 'ensure' => 'absent']]);
 });
 
 it('keeps shared ingress ports when another published public Route survives', function (): void {
@@ -254,8 +249,8 @@ it('keeps shared ingress ports when another published public Route survives', fu
         'domain' => 'surviving-public.test', 'web_root' => 'docs/public', 'provenance' => 'explicit', 'publication' => 'public', 'status' => 'pending']);
     $other->targets()->create(['instance_id' => $this->instance->id, 'position' => 0]);
     $other->update(['status' => 'active', 'sites_published' => true, 'replacement_step' => RouteReplacementStep::IngressFirewall]);
-    $capture = $this->capture->capture($this->route->fresh(), $this->input);
-    expect($capture['intent']['route_mutations']['forward']['retire_ingress'])->toBe([]);
+    $plan = $this->capture->capture($this->route->fresh(), $this->input)['intent']['plan'];
+    expect(collect($plan['ingress_ports'])->where('ensure', 'absent')->all())->toBe([]);
 });
 
 it('admits the complete immutable web-root update once through the HTTP boundary', function (): void {
@@ -271,12 +266,12 @@ it('admits the complete immutable web-root update once through the HTTP boundary
 
     $operation = Operation::query()->sole();
     expect($operation->kind)->toBe('route.update')
-        ->and($operation->input['route_update']['workloads'][0]['prepare']['source_access']['sites'])->toHaveCount(2)
+        ->and($operation->input['route_update']['plan']['publish']['acl'])->not->toBeEmpty()
         ->and($operation->input)->not->toHaveKeys(['private_bindings', 'environment_fields'])
         ->and($this->route->fresh()->web_root)->toBe('old/public')
         ->and($socket->sent)->toHaveCount(1)
         ->and($socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-route-update')
-        ->and($socket->sent[0]['payload']['inputs']['intent'])->toBe($operation->input['route_update'])
+        ->and($socket->sent[0]['payload']['inputs']['intent'])->toBe($operation->input['route_update']['plan'])
         ->and($socket->sent[0]['payload']['inputs']['execution_secrets'])->toEqual((object) []);
 });
 
@@ -294,12 +289,12 @@ it('keeps renamed URL environment values in execution copies and out of captured
 
     $capture = app(NativeRouteUpdateInput::class)->capture($route, [...$this->input, 'mode' => 'replace_domain', 'candidate_route_id' => $candidate->id]);
 
-    expect($capture['execution_secrets'])->toHaveCount(2)
+    // No rollback: only the new side is staged.
+    expect($capture['execution_secrets'])->toHaveCount(1)
         ->and(json_encode($capture, JSON_THROW_ON_ERROR))->not->toContain('synthetic-update-private-key');
     $values = array_column(array_column($socket->sent, 'payload'), 'value');
-    expect($values)->toHaveCount(2)
-        ->and($values[0])->toContain('synthetic-update-private-key', 'private-copy.snapshot.test')
-        ->and($values[1])->toContain('synthetic-update-private-key', $route->domain);
+    expect($values)->toHaveCount(1)
+        ->and($values[0])->toContain('synthetic-update-private-key', 'private-copy.snapshot.test');
 });
 
 it('refuses public development targets before reserving an Operation or changing the Route', function (): void {
@@ -329,7 +324,24 @@ it('admits public production publication with captured ingress duties and no ear
     $this->patchJson('/api/v1/routes/'.$this->route->id, ['publication' => 'public'])->assertAccepted();
 
     $operation = Operation::query()->sole();
-    expect($operation->input['route_update']['route_mutations']['forward']['ingress'][0]['node_id'])->toBe($ingress->id)
+    expect($operation->input['route_update']['plan']['edge_nodes'])->toBe([$ingress->id])
         ->and($this->route->fresh()->publication->value)->toBe('private')
         ->and($socket->sent)->toHaveCount(1);
+});
+
+it('ends a pending Route domain change at once with no run, and settles the replacement (R1)', function (): void {
+    $this->route->update(['status' => 'pending', 'sites_published' => false]);
+    $socket = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $socket);
+    $this->node->accessibleNodes()->attach($this->gateway);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
+
+    $this->patchJson('/api/v1/routes/'.$this->route->id, ['domain' => 'renamed.snapshot.test'])->assertAccepted()
+        ->assertJsonPath('data.status', 'succeeded');
+
+    $replacement = Route::query()->where('domain', 'renamed.snapshot.test')->sole();
+    expect($socket->sent)->toBe([])
+        ->and($this->route->fresh())->toBeNull()
+        ->and($replacement->status->value)->toBe('pending')->and($replacement->replaces_route_id)->toBeNull()
+        ->and(Operation::query()->sole()->result)->toBe(['ready' => true, 'route_id' => $replacement->id]);
 });

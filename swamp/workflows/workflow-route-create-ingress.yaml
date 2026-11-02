@@ -1,6 +1,6 @@
 id: 4f76810d-dbbb-5b97-9ec5-ed68275ca7fc
 name: route-create-ingress
-description: "route.create: the public site and ports on the Ingress."
+description: "route.create and route.update: the public site and ports on the Ingress."
 vaults: []
 queueTimeout: 30
 inputs:
@@ -14,27 +14,10 @@ jobs:
 - name: create
   labels: {role: swamp}
   steps:
-    # The Ingress's public ports 80 and 443.
-  - name: 'ports'
-    labels: {role: swamp}
-    dependsOn: []
-    writes: true
-    forEach: {item: port, in: '${{ inputs.intent.ingress_ports.filter(p, string(p.node_id) == string(inputs.node_id)) }}'}
-    task:
-      type: behavior
-      behaviorType: '@swamp/cfgmgmt/firewall'
-      behaviorName: '${{ ("route-ingress-port-" + string(inputs.node_id) + "-" + string(self.port.port)).split(".").join("-") }}'
-      methodName: apply
-      globalArgs: {port: '${{ self.port.port }}', protocol: tcp, action: allow, ensure: present,
-        nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
-        nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
-      inputs: {}
-    # The Ingress's whole Caddyfile with the public site.
+    # The Ingress's whole Caddyfile, with or without the public site.
   - name: 'caddyfile'
     labels: {role: swamp}
-    dependsOn:
-    - {step: 'ports', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    dependsOn: []
     writes: true
     forEach: {item: site, in: '${{ inputs.intent.ingress.filter(s, string(s.node_id) == string(inputs.node_id)) }}'}
     task:
@@ -50,7 +33,6 @@ jobs:
   - name: 'caddy-validate'
     labels: {role: swamp}
     dependsOn:
-    - {step: 'ports', condition: {type: always}}
     - {step: 'caddyfile', condition: {type: always}}
     guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
     forEach: {item: site, in: '${{ inputs.intent.ingress.filter(s, string(s.node_id) == string(inputs.node_id)) }}'}
@@ -79,7 +61,6 @@ jobs:
   - name: 'caddy-reload'
     labels: {role: swamp}
     dependsOn:
-    - {step: 'ports', condition: {type: always}}
     - {step: 'caddyfile', condition: {type: always}}
     - {step: 'caddy-validate', condition: {type: always}}
     guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
@@ -106,3 +87,22 @@ jobs:
         sudo: true
         argv: [timeout, '60', systemctl, reload, caddy]
         timeoutSec: 70
+    # After the site: the Ingress's public ports 80 and 443 open, or close for the last public Route.
+  - name: 'ports'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'caddyfile', condition: {type: always}}
+    - {step: 'caddy-validate', condition: {type: always}}
+    - {step: 'caddy-reload', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    writes: true
+    forEach: {item: port, in: '${{ inputs.intent.ingress_ports.filter(p, string(p.node_id) == string(inputs.node_id)) }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/firewall'
+      behaviorName: '${{ ("route-ingress-port-" + string(inputs.node_id) + "-" + string(self.port.port)).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {port: '${{ self.port.port }}', protocol: tcp, action: allow, ensure: '${{ self.port.ensure }}',
+        nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
+        nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
+      inputs: {}

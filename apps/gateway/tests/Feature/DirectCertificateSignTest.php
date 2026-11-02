@@ -280,17 +280,17 @@ it('signs only the captured Route phase when one stable scope changes domain', f
     $certificate = base64_decode($response->json('data.certificates.0.certificate_base64'), true);
     expect(openssl_x509_parse($certificate)['subject']['CN'])->toBe($domain)
         ->and($this->operation->fresh()->input)->toBe($input);
-})->with([['route.update', 'route_update', false], ['route.update', 'route_update', true],
+})->with([
     ['route.create', 'route_lifecycle', false], ['route.create', 'route_lifecycle', true], ['route.destroy', 'route_lifecycle', true]]);
 
-it('signs a target set only for its admitted plan leaves, never a restoring request', function (): void {
-    $input = ['certificates' => [$this->leaf], 'route_target' => ['plan' => ['leaves' => [$this->leaf]]]];
-    $this->operation->update(['kind' => 'route.target_set', 'input' => $input]);
+it('signs an update or a target set only for its admitted plan leaves, never a restoring request', function (string $kind, string $key): void {
+    $input = ['certificates' => [$this->leaf], $key => ['plan' => ['leaves' => [$this->leaf]]]];
+    $this->operation->update(['kind' => $kind, 'input' => $input]);
     $this->postJson($this->path, $this->body)->assertOk()->assertJsonPath('data.certificates.0.scope', 'route-31');
     // A target set has no rollback, so no restoring leaf is ever admitted.
     $this->body['restoring'] = true;
     $this->postJson($this->path, $this->body)->assertStatus(403)->assertJsonPath('error.code', 'certificate.intent_missing');
-});
+})->with([['route.update', 'route_update'], ['route.target_set', 'route_target']]);
 
 it('does not grant Route signing authority from the opposite phase or a flat fallback', function (string $kind, string $key, bool $missing): void {
     $prior = [...$this->leaf, 'domain' => 'before.orbit'];
@@ -306,7 +306,7 @@ it('does not grant Route signing authority from the opposite phase or a flat fal
     $this->postJson($this->path, $this->body)->assertStatus($missing ? 403 : 422)
         ->assertJsonPath('error.code', $missing ? 'certificate.intent_missing' : 'certificate.request_invalid');
     expect(Activity::query()->where('command', 'operation:certificate:sign')->count())->toBe(0);
-})->with([['route.update', 'route_update', false], ['route.update', 'route_update', true],
+})->with([
     ['route.create', 'route_lifecycle', false], ['route.create', 'route_lifecycle', true], ['route.destroy', 'route_lifecycle', true]]);
 
 /** Use the public registry seam until the independently owned parent declaration lands. */

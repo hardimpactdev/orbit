@@ -1,181 +1,189 @@
 id: b1a5e413-5c52-4d05-966b-f78d57c2da06
 name: operation-route-update
-description: Immutable Route workload mutation and restoration through official209 publication children.
-vaults:
-- orbit-control-inputs
+description: "Route update in the chart's steps; Node work through official cfgmgmt and SSH behaviors (rule 22)."
+vaults: [orbit-control-inputs]
+queueTimeout: 30
 inputs:
   type: object
   properties:
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
-    kind:
-      type: string
-      enum:
-      - route.update
-    intent:
-      type: object
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: route.update}
+    intent: {type: object}
     execution_secrets:
       type: object
       additionalProperties:
         type: object
-        additionalProperties: false
         properties:
-          vault:
-            type: string
-            enum:
-            - orbit-control-inputs
-          key:
-            type: string
-            pattern: ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$
-        required:
-        - vault
-        - key
-  required:
-  - operation_id
-  - node_id
-  - kind
-  - intent
-  - execution_secrets
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$'}
+        required: [vault, key]
+        additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
 - name: update
+  labels: {role: swamp}
   steps:
-  - name: prepare
+    # Domain change: per leaf, a Node-local key and its public CSR under the new Route's scope (route-create-csr).
+  - name: 'Make a CSR on the Node'
     labels: {role: swamp}
-    forEach:
-      item: workload
-      in: ${{ inputs.intent.workloads }}
     dependsOn: []
+    writes: true
+    forEach: {item: leaf, in: '${{ inputs.intent.leaf_indexes }}'}
     task:
       type: workflow
-      workflowIdOrName: instance-route-workload
+      workflowIdOrName: route-create-csr
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent:
-          node_id: ${{ self.workload.node_id }}
-          instance_id: ${{ self.workload.instance_id }}
-          connection: ${{ self.workload.connection }}
-          host_keys: ${{ self.workload.host_keys }}
-          plan: ${{ self.workload.prepare }}
-        execution_secrets: {}
-  - name: forward
+        intent: '${{ inputs.intent }}'
+        leaf: '${{ self.leaf }}'
+    # Per leaf: 209 has the CSR signed; the one Gateway call (route-create-sign).
+  - name: 'Sign the CSR'
     labels: {role: swamp}
     dependsOn:
-    - {step: prepare, condition: {type: always}}
-    guard: ${{ !inputs.intent.effectful || steps.exists(k,k.startsWith("prepare-") && steps[k].status == "failed")
-      }}
+    - {step: 'Make a CSR on the Node', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    forEach: {item: leaf, in: '${{ inputs.intent.leaf_indexes }}'}
     task:
       type: workflow
-      workflowIdOrName: route-mutation-forward
+      workflowIdOrName: route-create-sign
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        parent_run_id: ${{ run.id }}
-  - name: retire
+        operation_id: '${{ inputs.operation_id }}'
+        parent_run_id: '${{ run.id }}'
+        leaf: '${{ inputs.intent.leaves[self.leaf] }}'
+        request: '${{ steps["Make a CSR on the Node-" + string(self.leaf)].outputs.csr.stdout }}'
+    # Per Node: certificate, web-root access, pools and the prepared Caddyfile with both sites (route-create-site).
+  - name: 'Install cert, publish site'
     labels: {role: swamp}
-    forEach:
-      item: workload
-      in: ${{ inputs.intent.workloads }}
     dependsOn:
-    - {step: prepare, condition: {type: always}}
-    - {step: forward, condition: {type: always}}
-    guard: ${{ !("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready
-      }}
+    - {step: 'Make a CSR on the Node', condition: {type: always}}
+    - {step: 'Sign the CSR', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    writes: true
+    forEach: {item: node, in: '${{ inputs.intent.publish.site_nodes.map(n, {"node_id": n}) }}'}
     task:
       type: workflow
-      workflowIdOrName: instance-route-workload
+      workflowIdOrName: route-create-site
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent:
-          node_id: ${{ self.workload.node_id }}
-          instance_id: ${{ self.workload.instance_id }}
-          connection: ${{ self.workload.connection }}
-          host_keys: ${{ self.workload.host_keys }}
-          plan: ${{ self.workload.selected }}
-        execution_secrets: {}
-  - name: restore-workload
+        intent: '${{ inputs.intent.publish }}'
+        node_id: '${{ self.node.node_id }}'
+        signed: '${{ inputs.intent.leaf_indexes.map(i, steps["Sign the CSR-" + string(i)].outputs.sign.stdout) }}'
+        execution_secrets: '${{ inputs.execution_secrets }}'
+    # Laravel targets: the APP_URL line, or the production .env from the vault (route-create-site).
+  - name: 'Write the new APP_URL'
     labels: {role: swamp}
-    forEach:
-      item: workload
-      in: ${{ inputs.intent.workloads }}
     dependsOn:
-    - {step: prepare, condition: {type: always}}
-    - {step: forward, condition: {type: always}}
-    - {step: retire, condition: {type: always}}
-    guard: ${{ !(inputs.intent.effectful && (!("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready
-      || steps.exists(k,k.startsWith("retire-") && steps[k].status == "failed"))) }}
+    - {step: 'Make a CSR on the Node', condition: {type: always}}
+    - {step: 'Sign the CSR', condition: {type: always}}
+    - {step: 'Install cert, publish site', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    writes: true
+    forEach: {item: node, in: '${{ inputs.intent.app_url.site_nodes.map(n, {"node_id": n}) }}'}
     task:
       type: workflow
-      workflowIdOrName: instance-route-workload
+      workflowIdOrName: route-create-site
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent:
-          node_id: ${{ self.workload.node_id }}
-          instance_id: ${{ self.workload.instance_id }}
-          connection: ${{ self.workload.connection }}
-          host_keys: ${{ self.workload.host_keys }}
-          plan: ${{ self.workload.restore }}
-        execution_secrets: {}
-  - name: restore
+        intent: '${{ inputs.intent.app_url }}'
+        node_id: '${{ self.node.node_id }}'
+        signed: []
+        execution_secrets: '${{ inputs.execution_secrets }}'
+    # From 209 to each serving Node and the Router on 443 with the new domain as SNI; a failed chain fails the step.
+  - name: 'Probe the site over TLS'
     labels: {role: swamp}
     dependsOn:
-    - {step: prepare, condition: {type: always}}
-    - {step: forward, condition: {type: always}}
-    - {step: retire, condition: {type: always}}
-    - {step: restore-workload, condition: {type: always}}
-    guard: ${{ !(inputs.intent.effectful && (!("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready
-      || steps.exists(k,k.startsWith("retire-") && steps[k].status == "failed"))) }}
-    task:
-      type: workflow
-      workflowIdOrName: route-mutation-restore
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        parent_run_id: ${{ run.id }}
-  - name: result
-    labels: {role: swamp}
-    dependsOn:
-    - {step: prepare, condition: {type: always}}
-    - {step: forward, condition: {type: always}}
-    - {step: retire, condition: {type: always}}
-    - {step: restore-workload, condition: {type: always}}
-    - {step: restore, condition: {type: always}}
+    - {step: 'Make a CSR on the Node', condition: {type: always}}
+    - {step: 'Sign the CSR', condition: {type: always}}
+    - {step: 'Install cert, publish site', condition: {type: always}}
+    - {step: 'Write the new APP_URL', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    forEach: {item: probe, in: '${{ inputs.intent.probes }}'}
     task:
       type: behavior
-      behaviorType: '@nckrtl/route-update-result'
-      behaviorName: route-update-result
-      methodName: read
+      behaviorType: command/shell
+      behaviorName: '${{ ("route-update-probe-" + string(self.probe.node_id)).split(".").join("-") }}'
+      methodName: execute
       inputs:
-        effectful: ${{ inputs.intent.effectful }}
-        failure_code: route.update_failed
-        route_id: ${{ inputs.intent.route_id }}
-        result_route_id: ${{ inputs.intent.result_route_id }}
-        workload_count: ${{ size(inputs.intent.workloads) }}
-        steps: ${{ steps }}
-  - name: complete
+        run: "timeout 20 openssl s_client -connect \"$ORBIT_PROBE_ADDRESS:443\" -servername \"$ORBIT_PROBE_DOMAIN\" -verify_hostname \"$ORBIT_PROBE_DOMAIN\" -verify_return_error -CAfile /usr/local/share/ca-certificates/orbit-managed-root-ca.crt </dev/null"
+        env:
+          ORBIT_PROBE_ADDRESS: '${{ self.probe.address }}'
+          ORBIT_PROBE_DOMAIN: '${{ self.probe.domain }}'
+    # Publication change: the Ingress site, then its public ports (route-create-ingress).
+  - name: 'Open or close the edge'
     labels: {role: swamp}
     dependsOn:
-    - {step: result, condition: {type: always}}
+    - {step: 'Make a CSR on the Node', condition: {type: always}}
+    - {step: 'Sign the CSR', condition: {type: always}}
+    - {step: 'Install cert, publish site', condition: {type: always}}
+    - {step: 'Write the new APP_URL', condition: {type: always}}
+    - {step: 'Probe the site over TLS', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    writes: true
+    forEach: {item: node, in: '${{ inputs.intent.edge_nodes.map(n, {"node_id": n}) }}'}
     task:
-      type: behavior
-      behaviorType: '@nckrtl/route-update-result'
-      behaviorName: route-update-complete
-      methodName: complete
+      type: workflow
+      workflowIdOrName: route-create-ingress
       inputs:
-        stdout: ${{ steps.result.outputs.stdout }}
+        intent: '${{ inputs.intent }}'
+        node_id: '${{ self.node.node_id }}'
+    # Only outside the TLD: records, catalog, then dnsmasq (route-create-dns).
+  - name: 'Move private DNS'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Make a CSR on the Node', condition: {type: always}}
+    - {step: 'Sign the CSR', condition: {type: always}}
+    - {step: 'Install cert, publish site', condition: {type: always}}
+    - {step: 'Write the new APP_URL', condition: {type: always}}
+    - {step: 'Probe the site over TLS', condition: {type: always}}
+    - {step: 'Open or close the edge', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    writes: true
+    forEach: {item: vpn, in: '${{ inputs.intent.dns }}'}
+    task:
+      type: workflow
+      workflowIdOrName: route-create-dns
+      inputs:
+        intent: '${{ inputs.intent }}'
+        node_id: '${{ self.vpn.node_id }}'
+    # Resolvers that honor the TTL stop asking for the old name before its site leaves (route-dns-grace).
+  - name: 'Wait the DNS grace'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Make a CSR on the Node', condition: {type: always}}
+    - {step: 'Sign the CSR', condition: {type: always}}
+    - {step: 'Install cert, publish site', condition: {type: always}}
+    - {step: 'Write the new APP_URL', condition: {type: always}}
+    - {step: 'Probe the site over TLS', condition: {type: always}}
+    - {step: 'Open or close the edge', condition: {type: always}}
+    - {step: 'Move private DNS', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    forEach: {item: wait, in: '${{ inputs.intent.grace }}'}
+    task:
+      type: workflow
+      workflowIdOrName: route-dns-grace
+      inputs: {}
+    # Each Node writes its lasting Caddyfile and drops the old certificates and LAN rules (route-target-retire).
+  - name: 'Withdraw the old site'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Make a CSR on the Node', condition: {type: always}}
+    - {step: 'Sign the CSR', condition: {type: always}}
+    - {step: 'Install cert, publish site', condition: {type: always}}
+    - {step: 'Write the new APP_URL', condition: {type: always}}
+    - {step: 'Probe the site over TLS', condition: {type: always}}
+    - {step: 'Open or close the edge', condition: {type: always}}
+    - {step: 'Move private DNS', condition: {type: always}}
+    - {step: 'Wait the DNS grace', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    writes: true
+    forEach: {item: node, in: '${{ inputs.intent.retire_nodes.map(n, {"node_id": n}) }}'}
+    task:
+      type: workflow
+      workflowIdOrName: route-target-retire
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        kind: '${{ inputs.kind }}'
+        parent_run_id: '${{ run.id }}'
+        intent: '${{ inputs.intent }}'
+        node_id: '${{ self.node.node_id }}'
+        signed: '${{ inputs.intent.leaf_indexes.map(i, steps["Sign the CSR-" + string(i)].outputs.sign.stdout) }}'
+        execution_secrets: '${{ inputs.execution_secrets }}'

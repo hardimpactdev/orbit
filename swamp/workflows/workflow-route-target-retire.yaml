@@ -1,6 +1,6 @@
 id: e845a696-f34b-55d0-b8c1-e1fc26f83820
 name: route-target-retire
-description: "route.target_set: one Node drops the sites, LAN rules and certificates no Route needs."
+description: "route.target_set and route.update: one Node drops the sites, LAN rules and certificates no Route needs."
 vaults: [orbit-control-inputs]
 queueTimeout: 30
 inputs:
@@ -11,6 +11,7 @@ inputs:
     parent_run_id: {type: string, minLength: 1}
     intent: {type: object}
     node_id: {type: integer, minimum: 1}
+    signed: {type: array, items: {type: string}}
     execution_secrets:
       type: object
       additionalProperties:
@@ -20,7 +21,7 @@ inputs:
           key: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$'}
         required: [vault, key]
         additionalProperties: false
-  required: [operation_id, kind, parent_run_id, intent, node_id, execution_secrets]
+  required: [operation_id, kind, parent_run_id, intent, node_id, signed, execution_secrets]
   additionalProperties: false
 jobs:
 - name: retire
@@ -38,7 +39,7 @@ jobs:
       inputs:
         intent: '${{ inputs.intent.retire }}'
         node_id: '${{ inputs.node_id }}'
-        signed: []
+        signed: '${{ inputs.signed }}'
         execution_secrets: '${{ inputs.execution_secrets }}'
     # A LAN rule no Route needs any more.
   - name: 'lan'

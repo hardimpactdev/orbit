@@ -16,7 +16,7 @@ use App\Support\ValidatedData;
  */
 final readonly class NativeRouteTargetPlan
 {
-    private const array SiteLists = ['acl', 'links', 'php_files', 'php_tests', 'php_reloads', 'caddy', 'url_lines', 'env_files'];
+    public const array SiteLists = ['acl', 'links', 'php_files', 'php_tests', 'php_reloads', 'caddy', 'url_lines', 'env_files'];
 
     /**
      * @param  array<string,mixed>  $lifecycle  The capture in route:create's lifecycle shape.
@@ -41,8 +41,8 @@ final readonly class NativeRouteTargetPlan
                 $publish[$list] = $rows($list);
             }
 
-            return [...$result, 'publish' => $this->phase($publish, $common, true), 'stage' => $this->phase($empty, $common, false),
-                'router' => $this->phase($empty, $common, false), 'retire' => $this->phase($empty, $common, false), 'retire_nodes' => []];
+            return [...$result, 'publish' => self::phase($publish, $common, ValidatedData::integerList($plan['leaf_indexes'])), 'stage' => self::phase($empty, $common, []),
+                'router' => self::phase($empty, $common, []), 'retire' => self::phase($empty, $common, []), 'retire_nodes' => []];
         }
 
         $mine = static fn (array $rows, array $nodes): array => array_values(array_filter($rows,
@@ -88,25 +88,53 @@ final readonly class NativeRouteTargetPlan
             }
         }
 
-        $retire = $this->phase($retire, $common, false);
+        $installs = self::installs($lifecycle, RouteExecutionProof::objects($plan['leaves']));
+        $retire['trust'] = $stage['trust'];
+        $retire = self::phase($retire, $common, $installs['late']);
         $retireNodes = array_values(array_unique([...ValidatedData::integerList($retire['site_nodes']), ...array_column($result['cleanup'], 'node_id'), ...array_column($result['lan_absent'], 'node_id')]));
         sort($retireNodes);
 
-        return [...$result, 'publish' => $this->phase($empty, $common, false), 'stage' => $this->phase($stage, $common, true),
-            'router' => $this->phase($router, $common, false), 'retire' => $retire, 'retire_nodes' => $retireNodes];
+        return [...$result, 'publish' => self::phase($empty, $common, []), 'stage' => self::phase($stage, $common, $installs['early']),
+            'router' => self::phase($router, $common, []), 'retire' => $retire, 'retire_nodes' => $retireNodes];
     }
 
     /**
-     * One whole route-create-site intent. Only the phase that installs the leaves sees them.
+     * Splits the leaves by when they may install. A temporary scope, or a scope no site on its Node uses yet, installs
+     * before the cutover. A new version of a scope in use installs after it: the old site still names that scope.
+     *
+     * @param  array<string,mixed>  $lifecycle
+     * @param  list<array<string,mixed>>  $leaves
+     * @return array{early:list<int>,late:list<int>}
+     */
+    public static function installs(array $lifecycle, array $leaves): array
+    {
+        $inUse = [];
+        foreach (is_array($lifecycle['renders'] ?? null) ? $lifecycle['renders'] : [] as $nodeId => $render) {
+            foreach (is_array($render) ? ValidatedData::stringList($render['scopes'] ?? []) : [] as $scope) {
+                $inUse[$nodeId.'/'.$scope] = true;
+            }
+        }
+        $split = ['early' => [], 'late' => []];
+        foreach ($leaves as $index => $leaf) {
+            $scope = ValidatedData::string($leaf['scope']);
+            $late = ! str_ends_with($scope, '-hostname-change') && isset($inUse[ValidatedData::integer($leaf['node_id']).'/'.$scope]);
+            $split[$late ? 'late' : 'early'][] = $index;
+        }
+
+        return $split;
+    }
+
+    /**
+     * One whole route-create-site intent. A phase sees only the leaves it installs.
      *
      * @param  array<string,list<array<string,mixed>>|list<int>>  $lists
      * @param  array<string,mixed>  $common
+     * @param  list<int>  $indexes
      * @return array<string,mixed>
      */
-    private function phase(array $lists, array $common, bool $installs): array
+    public static function phase(array $lists, array $common, array $indexes): array
     {
-        $trust = $installs ? ValidatedData::integerList($lists['trust']) : [];
-        $indexes = $installs ? ValidatedData::integerList($common['leaf_indexes']) : [];
+        $trust = $indexes === [] ? [] : ValidatedData::integerList($lists['trust']);
         $nodes = $trust;
         foreach (['lan', ...self::SiteLists] as $list) {
             foreach (RouteExecutionProof::objects($lists[$list]) as $row) {

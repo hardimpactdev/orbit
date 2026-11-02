@@ -11,9 +11,10 @@ use App\Domain\Routes\RouteOperationProjection;
 
 return [
     'route.update' => [
+        // The end check is the first TLS probe: every effectful update probes a serving Node or the Router.
         'workflow' => 'operation-route-update', 'projection' => NativeRouteUpdateProjection::class,
-        'workflow_inputs' => true, 'terminal_result' => ['job' => 'update', 'step' => 'result'],
-        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(forward|restore)-route_material_[0-9]+$']],
+        'workflow_inputs' => true, 'terminal_result' => ['job' => 'update', 'step' => 'Probe the site over TLS-0', 'native' => true],
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-forward-route_material_[0-9]+$']],
     ],
     // The end check is the first TLS probe: every effectful create probes at least one Node, and a failed probe fails the run.
     'route.create' => [
@@ -25,7 +26,7 @@ return [
         // The end check is the Router switch of a production set, or the one publish step of a development target.
         'workflow' => 'operation-route-target-set', 'projection' => NativeRouteTargetProjection::class,
         'workflow_inputs' => true, 'terminal_result' => ['job' => 'update', 'step' => 'Switch the Router pool-0', 'alternatives' => ['Install cert, publish site-0'], 'native' => true],
-        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(forward|restore)-route_material_[0-9]+$']],
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-forward-route_material_[0-9]+$']],
     ],
     ...array_fill_keys(['route.destroy', 'route.withdraw'], [
         'workflow' => 'operation-route-removal', 'projection' => NativeRouteRemovalProjection::class,

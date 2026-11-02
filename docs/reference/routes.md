@@ -18,9 +18,26 @@ A Route is a domain that reaches an Instance or a Node service. This page explai
 
 The Gateway validates Route changes and records intent as an Operation. Each available kind runs one native Swamp DAG, with Node effects as placed steps. The Gateway keeps Route state, ownership checks, read APIs and minimal result projection. Kinds whose native conversion is incomplete return `operation.kind_unavailable`; there is no polled fallback. Certificate signing runs in Swamp on the control worker.
 
-Domain, publication and web-root updates use the Route admission action. Admission captures the complete previous and prospective Route sites, certificates, URL writes, PHP pools, private DNS and shared LAN tuples. All publication steps run on 209 and use official SSH to the pinned target. The native run restores the captured previous publication when forward work fails; the Gateway applies database state only from the terminal result. Public ingress uses the same pinned tuple child for ports 80 and 443; other public Routes keep their shared rules.
+Domain, publication and web-root updates use the Route admission action. The Gateway renders every file the run writes: each Node's whole Caddyfile, PHP pools, `APP_URL` lines and certificate leaves.
 
-Work-root preparation keeps the previous and selected roots and pools available until publication succeeds, then retires the previous contributions. A pending domain replacement and an unchanged request need no host effects. Incomplete restoration retains both Route identities and records an unknown physical selection on the failed Operation. Instance rename records its own Operation and composes the Route update.
+The run follows the chart [`route/update.mmd`](/cli/route). It publishes the new site beside the old one, writes the new `APP_URL`, and probes TLS. Then it opens or closes the public edge, moves private DNS outside the TLD, waits the DNS grace, and withdraws the old site. There is no rollback.
+
+A pending domain replacement and an unchanged request change no Node, so their Operation has already succeeded and no run starts. Instance rename records its own Operation and composes the Route update.
+
+A failure before the cutover leaves the old Route serving: a domain replacement is marked `failed`, and its new site serves no name. A failure in `Wait the DNS grace` or `Withdraw the old site` comes after the cutover, so the replacement becomes `active` and the old Route stays `retiring` with its `failed_step`. Each step has its own error code:
+
+| Error code | Step |
+| --- | --- |
+| `app-dev.certificate_request_failed` | `Make a CSR on the Node` |
+| `app-dev.certificate_sign_failed` | `Sign the CSR` |
+| `route.publish_failed` | `Install cert, publish site` |
+| `route.app_url_failed` | `Write the new APP_URL` |
+| `route.probe_failed` | `Probe the site over TLS` |
+| `route.ingress_firewall_failed` | `Open or close the edge` |
+| `private_dns.publication_failed` | `Move private DNS` |
+| `route.dns_grace_failed` | `Wait the DNS grace` |
+| `route.withdraw_failed` | `Withdraw the old site` |
+| `route.update_failed` | A failure outside these steps |
 
 Caddy convergence starts `operation-route-caddy` after intent commits. Its native Node method acquires the canonical publication lock before reading the current public render through the bound Operation GET. Swamp validates the candidate and runs the filesystem swap and Caddy service commands locally with sudo, then reports the result. The Node agent only observes; it does not publish Caddy. The Gateway neither executes Caddy nor exposes a Caddy publication primitive. The shared `swamp.direct_writers` setting accepts only `direct` for this kind; selecting the removed writer refuses admission. Rollback is a revert PR.
 
@@ -739,11 +756,11 @@ Each parent prepares exact `{stage, key}` child entries. Child-phase and residue
 
 Target changes broadcast `route.updated` only after the admission transaction commits. A refused preparation leaves the target unchanged and emits no `route.updated` event.
 
-Admission prepares the complete forward and rollback plan in its state transaction. Every child must be registered and declared before the transaction commits. A missing child or shared capability returns `operation.kind_unavailable` with no reserved Route, replacement, role or runnable Operation. Retained Instance rename callers keep the synchronous Route update executor; HTTP and CLI Route updates admit Operations.
+Admission prepares the complete plan in its state transaction. Every child must be registered and declared before the transaction commits. A missing child or shared capability returns `operation.kind_unavailable` with no reserved Route, replacement, role or runnable Operation. Retained Instance rename callers keep the synchronous Route update executor; HTTP and CLI Route updates admit Operations.
 
 A single target binding grants development source access when the Route is not active. It preserves the Route's lifecycle and publication state and leaves the next Caddy build to its owning operation.
 
-A target pool prepares workload certificates under temporary scopes before it changes associations. Gateway-recorded preparation selects those private sites for Caddy. The old associations stay authoritative during preparation. After association commit, environment synchronization and live certificate publication finish before Router publication and authorized Instance removal. A refusal before commit withdraws prepared Caddy sites before removing their certificates. A committed change recovers forward from the saved database proof. A retry keeps that proof until its own database phase commits. Failed Operations preserve the Route phase and error code for the next request. A completed rollback cannot be reported as successful publication.
+A target pool stages workload sites under temporary certificate scopes before the Router selects them; [Native Route targets](/reference/native-route-targets) describes the steps. A new version of a certificate scope that a site still names installs only after the cutover, so the old site keeps a matching certificate until it leaves.
 
 Cluster Router set and unset each start one native `operation-cluster-router` run. Admission captures the candidate, obsolete assignments, workload Nodes, edge Nodes, DNS Nodes and certificate leaves before committing intent.
 
@@ -757,7 +774,7 @@ It commits the new Router before publishing private DNS from that stored selecti
 
 An initial production web-root activation that fails withdraws DNS and Caddy before its pool and certificate cleanup. Removal also updates the URL of the next Route serving that application directory. A late Metrics failure stays on its Operation and leaves the completed Route state intact.
 
-Web-root updates record the new root at an explicit phase. Their Instance children read that stored root. A failed update restores the old root before starting separate rollback children. The restored Route stays active, and its Operation records the failure; the URL-only rollback key is `synchronize-web-root-urls.rollback.<instance_id>`.
+A web-root update publishes the new root in the same steps. The Gateway records the new root from the result. A failed update keeps the old root recorded, and its Operation records the failed step.
 
 Route Operations request `metrics.reconcile` with an empty input only when their planned change alters the sorted public, active hostname catalog grouped by serving Ingress Node, and one active Metrics assignment has an active serving Node. Private-only changes, unchanged publication, target associations and web-root changes leave that catalog unchanged and skip Metrics. FPM monitoring selects active production Instances independently of their Route associations. The Metrics family captures its reconciliation intent when that child is requested.
 

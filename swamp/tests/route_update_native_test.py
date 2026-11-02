@@ -1,165 +1,102 @@
-"""Exercise the real update parent; replace only the child host effects."""
+"""operation-route-update on real native Swamp: the chart's steps, their child runs, and failure stop.
+
+The official cfgmgmt behaviors open their own SSH connections, so these runs keep those lists empty and exercise the
+SSH exec steps through a fixture ssh binary; the topology receipt (swamp/proof/route.update.json) proves the rest.
+"""
 
 import json
-from pathlib import Path
+import sys
+import unittest
 
 import yaml
-from tests import route_mutation_command_native_test as fixture
+from tests.native_harness import ROOT, NativeTestCase
+from tests.route_create_native_test import PIN, SSH
 
-ROOT = Path(__file__).resolve().parents[1]
+SITE = ("acl", "links", "php_files", "php_tests", "php_reloads", "caddy", "url_lines", "env_files", "trust", "lan", "leaf_indexes", "leaves", "site_nodes")
+WORKFLOWS = ("operation-route-update", "route-target-retire", "route-create-csr", "route-create-sign", "route-create-site", "route-create-ingress",
+             "route-create-dns", "route-certificate-remove", "route-dns-grace")
+STEPS = ["Make a CSR on the Node", "Sign the CSR", "Install cert, publish site", "Write the new APP_URL", "Probe the site over TLS",
+         "Open or close the edge", "Move private DNS", "Wait the DNS grace", "Withdraw the old site"]
 
 
-class RouteUpdateNative(fixture.RouteMutationFixture):
-    root_workflow = "operation-route-update"
-    root_kind = "route.update"
-    failure_code = "route.update_failed"
+class RouteUpdateNative(NativeTestCase):
+    native_timeout = 180
 
     def setUp(self):
         super().setUp()
-        self.copy_behaviors("operations/routes/update-command")
-        self.copy_behaviors("operations/firewall")
-        for name in (
-            self.root_workflow,
-            "route-mutation-forward",
-            "route-mutation-restore",
-        ):
-            workflow = yaml.safe_load(
-                (ROOT / "workflows" / ("workflow-" + name + ".yaml")).read_text()
-            )
-            workflow.pop("target", None); workflow.pop("labels", None)
+        self.copy_behaviors("operations/certificates")
+        self.cli("extension", "pull", "@swamp/ssh@2026.10.23.1")
+        self.log = self.repo / "calls.jsonl"
+        identity = self.repo / "identity"
+        identity.write_text("synthetic identity")
+        identity.chmod(0o600)
+        nodes = {str(n): {"host": f"node-{n}.invalid", "user": "orbit", "port": 22, "identity_file": str(identity), "host_keys": [PIN], "account": "orbit"}
+                 for n in (7, 8)}
+        phase = lambda: {**{name: [] for name in SITE}, "root_certificate": "", "nodes": nodes}
+        self.intent = {"leaves": [], "leaf_indexes": [], "probes": [], "dns": [], "grace": [], "ingress": [], "ingress_ports": [], "edge_nodes": [],
+                       "cleanup": [], "lan_absent": [], "retire_nodes": [], "nodes": nodes, "publish": phase(), "app_url": phase(), "retire": phase()}
+
+    def update(self, code=0, success=True):
+        ssh = self.repo / "ssh"
+        ssh.write_text("#!" + sys.executable + "\nLOG = " + repr(str(self.log)) + "\nCODE = " + str(code) + SSH)
+        ssh.chmod(0o700)
+        for name in WORKFLOWS:
+            workflow = yaml.safe_load((ROOT / f"workflows/workflow-{name}.yaml").read_text())
             for job in workflow["jobs"]:
+                job.pop("labels", None)
                 for step in job["steps"]:
-                    step.pop("target", None); step.pop("labels", None)
                     step.pop("labels", None)
-            (self.repo / "workflows" / ("workflow-" + name + ".yaml")).write_text(
-                yaml.safe_dump(workflow, sort_keys=False)
-            )
-        self.input["kind"] = self.root_kind
-        self.input["intent"].update(
-            effectful=True, route_id=31, result_route_id=32, workloads=[]
-        )
-        self.plan["lan"] = []
-        self.plan["url_writes"] = []
+                    if step["task"].get("behaviorType") == "@swamp/ssh":
+                        step["task"]["globalArgs"].update(sshBinary=str(ssh), scpBinary=str(ssh))
+            (self.repo / f"workflows/workflow-{name}.yaml").write_text(yaml.safe_dump(workflow, sort_keys=False))
+        payload = {"operation_id": 73, "node_id": 7, "kind": "route.update", "execution_secrets": {}, "intent": self.intent}
+        run = json.loads(self.cli("workflow", "run", "operation-route-update", "--stdin", input=json.dumps(payload), success=success).stdout)
+        history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
+        self.assertNotIn("No such key", json.dumps(history))
+        self.steps = {step["name"]: step for job in history["jobs"] for step in job["steps"]}
+        calls = [json.loads(line) for line in self.log.read_text().splitlines()] if self.log.exists() else []
+        return run, calls
 
-    def workload(self, fail_phase=""):
-        self.native_env["FIXTURE_FAIL_PHASE"] = fail_phase
-        self.input["intent"]["workloads"] = [
-            {
-                "node_id": 9,
-                "instance_id": 5,
-                "connection": {},
-                "host_keys": [],
-                **{
-                    phase: {"phase": phase}
-                    for phase in ("prepare", "selected", "restore")
-                },
-            }
-        ]
-        workflow = {
-            "id": "e0784b8d-cf13-4d2d-a5b5-bc0d0046b9d3",
-            "name": "instance-route-workload",
-            "inputs": {"type": "object"},
-            "jobs": [
-                {
-                    "name": "fixture",
-                    "steps": [
-                        {
-                            "name": "apply",
-                            "task": {
-                                "type": "behavior",
-                                "behaviorType": "command/shell",
-                                "behaviorName": "fixture-workload",
-                                "methodName": "execute",
-                                "inputs": {
-                                    "run": "python3 - <<'PYTHON'\nimport os\nif os.environ.get('FIXTURE_FAIL_PHASE') == os.environ['PHASE']: raise SystemExit(1)\nprint('{\"ready\":true}')\nPYTHON",
-                                    "env": {"PHASE": "${{ inputs.intent.plan.phase }}"},
-                                },
-                            },
-                        }
-                    ],
-                }
-            ],
-        }
-        (self.repo / "workflows/workflow-instance-route-workload.yaml").write_text(
-            yaml.safe_dump(workflow, sort_keys=False)
-        )
+    def pools(self, phase, node):
+        self.intent[phase]["site_nodes"] = [node]
+        self.intent[phase]["php_tests"] = [{"node_id": node, "argv": ["/usr/sbin/php-fpm8.5", "-t"]}]
 
-    def test_failed_workload_preparation_blocks_forward_and_restores_the_prior_plan(
-        self,
-    ):
-        self.workload("prepare")
-        history, result = self.run_update(success=False)
-        steps = {s["name"]: s for s in history["jobs"][0]["steps"]}
-        self.assertEqual(steps["forward"]["status"], "skipped")
-        self.assertEqual(steps["restore-workload-0"]["status"], "succeeded")
-        self.assertTrue(result["restored"])
-        self.assertFalse(result["ready"])
+    def test_the_workflow_is_the_chart(self):
+        run, calls = self.update()
+        self.assertEqual((run["status"], calls), ("succeeded", []))
+        self.cli("workflow", "validate", "operation-route-update")
+        flow = yaml.safe_load((ROOT / "workflows/workflow-operation-route-update.yaml").read_text())
+        self.assertEqual([step["name"] for step in flow["jobs"][0]["steps"]], STEPS)
 
-    def test_retirement_failure_restores_a_completed_forward(self):
-        self.workload("selected")
-        history, result = self.run_update(success=False)
-        steps = {s["name"]: s for s in history["jobs"][0]["steps"]}
-        self.assertTrue(steps["forward"]["outputs"]["result"]["ready"])
-        self.assertEqual(steps["retire-0"]["status"], "failed")
-        self.assertTrue(result["restored"])
-        self.assertFalse(result["ready"])
+    def test_the_old_site_leaves_only_after_the_probe_and_the_dns_grace(self):
+        self.pools("publish", 7)
+        self.pools("retire", 7)
+        self.intent["retire_nodes"] = [7]
+        self.intent["grace"] = [{"seconds": 1}]
+        run, calls = self.update()
+        self.assertEqual(run["status"], "succeeded")
+        self.assertEqual(len([call for call in calls if "php-fpm8.5" in " ".join(call)]), 2)
+        self.assertLessEqual(self.steps["Install cert, publish site-0"]["completedAt"], self.steps["Wait the DNS grace-0"]["startedAt"])
+        self.assertLessEqual(self.steps["Wait the DNS grace-0"]["completedAt"], self.steps["Withdraw the old site-0"]["startedAt"])
 
-    def run_update(self, success=True):
-        self.cli("workflow", "validate", self.root_workflow)
-        reply = json.loads(
-            self.cli(
-                "workflow",
-                "run",
-                self.root_workflow,
-                "--input",
-                json.dumps(self.input),
-                success=success,
-            ).stdout
-        )
-        history = json.loads(self.cli("workflow", "history", "get", reply["id"]).stdout)
-        result = next(
-            step for step in history["jobs"][0]["steps"] if step["name"] == "result"
-        )
-        return history, json.loads(result["outputs"]["stdout"])
+    def test_a_failed_probe_keeps_the_old_site(self):
+        self.pools("retire", 7)
+        self.intent["retire_nodes"] = [7]
+        self.intent["probes"] = [{"node_id": 7, "address": "127.0.0.1", "domain": "shop.test"}]
+        run, calls = self.update(success=False)
+        self.assertEqual(run["status"], "failed")
+        self.assertEqual(self.steps["Probe the site over TLS-0"]["status"], "failed")
+        self.assertEqual(calls, [])
+        self.assertEqual({step["status"] for name, step in self.steps.items() if name.startswith("Withdraw the old site")}, {"skipped"})
 
-    def test_empty_optional_fanouts_still_publish_and_project(self):
-        history, result = self.run_update()
-        self.assertEqual(history["status"], "succeeded")
-        self.assertTrue(result["ready"])
-        self.assertEqual(result["selected"], "after")
-        self.assertFalse(result["restored"])
-        actions = [
-            json.loads(line)["action"] for line in self.audit.read_text().splitlines()
-        ]
-        self.assertIn("route-dns-publish", actions)
-        self.assertIn("operation-route-caddy-delta", actions)
+    def test_a_failed_publish_command_stops_every_later_step(self):
+        self.pools("publish", 7)
+        self.pools("app_url", 8)
+        run, _ = self.update(code=1, success=False)
+        self.assertEqual(run["status"], "failed")
+        self.assertEqual(self.steps["Install cert, publish site-0"]["status"], "failed")
+        self.assertEqual({step["status"] for name, step in self.steps.items() if name.startswith("Write the new APP_URL")}, {"skipped"})
 
-    def test_unchanged_update_has_no_effects_or_missing_input_reads(self):
-        self.input["intent"] = {
-            "effectful": False,
-            "route_id": 31,
-            "result_route_id": 31,
-            "workloads": [],
-        }
-        _, result = self.run_update()
-        self.assertTrue(result["ready"])
-        self.assertFalse(self.audit.exists())
 
-    def test_failed_forward_restores_before_and_keeps_native_failure(self):
-        self.native_env["FIXTURE_FAIL"] = "route-dns-publish"
-        history, result = self.run_update(success=False)
-        self.assertEqual(history["status"], "failed")
-        self.assertFalse(result["ready"])
-        self.assertTrue(result["restored"])
-        self.assertEqual(result["selected"], "before")
-        self.assertEqual(result["error_code"], self.failure_code)
-
-    def test_failed_restoration_never_claims_the_candidate_or_old_publication(self):
-        self.native_env["FIXTURE_FAIL"] = "route-dns-publish"
-        for path in (self.repo / "workflows").glob("*.yaml"):
-            path.write_text(path.read_text().replace("not marker.exists()", "True"))
-        history, result = self.run_update(success=False)
-        self.assertEqual(history["status"], "failed")
-        self.assertFalse(result["ready"])
-        self.assertFalse(result["restored"])
-        self.assertEqual(result["selected"], "unknown")
+if __name__ == "__main__":
+    unittest.main()

@@ -62,16 +62,21 @@ final readonly class NativeRouteUpdateInput
             $next->replacement_step = null;
             $staged[] = $this->publications->route($next);
         }
+        // No rollback: a failure before the cutover leaves the old site serving, and a rerun continues.
         $capture = $this->publications->capture($previous, $desired, $staged, $previous,
-            $beforeSites, $beforeSites, [], static fn (Closure $render): array => $render());
+            $beforeSites, $beforeSites, [], static fn (Closure $render): array => $render(), restorable: false);
         if ($mode === 'web_root') {
             foreach ($route->targets as $target) {
                 $metadata['workloads'][] = app(NativeRouteWorkloadPreparation::class)->capture($target->instance, $route, $candidate);
             }
         }
-        $capture['intent'] = [...$metadata, 'analytics_changes' => $analytics, 'route_mutations' => $capture['route_mutations']];
-        unset($capture['route_mutations']);
+        $plan = app(NativeRouteUpdatePlan::class)->build($candidate, ['effectful' => true, 'route_mutations' => $capture['route_mutations'],
+            // The temporary leaves serve the new name beside the old one until the cutover.
+            'preparation' => ['certificates' => ValidatedData::object(ValidatedData::object($capture['route_mutations'])['forward'])['prepare_certificates'], 'lan' => []],
+            'renders' => $capture['renders'], 'workloads' => $metadata['workloads']]);
+        unset($metadata['workloads']);
 
-        return $capture;
+        return ['intent' => [...$metadata, 'analytics_changes' => $analytics, 'plan' => $plan], 'certificates' => $capture['certificates'],
+            'participant_node_ids' => $capture['participant_node_ids'], 'execution_secrets' => $capture['execution_secrets']];
     }
 }

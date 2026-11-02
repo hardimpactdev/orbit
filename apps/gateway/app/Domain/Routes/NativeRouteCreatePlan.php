@@ -120,7 +120,7 @@ final readonly class NativeRouteCreatePlan
         foreach (RouteExecutionProof::objects($forward['ingress']) as $row) {
             foreach (RouteExecutionProof::objects($row['rules']) as $rule) {
                 if ($rule['ensure'] === 'present') {
-                    $plan['ingress_ports'][] = ['node_id' => ValidatedData::integer($row['node_id']), 'port' => ValidatedData::integer($rule['port'])];
+                    $plan['ingress_ports'][] = ['node_id' => ValidatedData::integer($row['node_id']), 'port' => ValidatedData::integer($rule['port']), 'ensure' => 'present'];
                     $touched[ValidatedData::integer($row['node_id'])] = true;
                 }
             }

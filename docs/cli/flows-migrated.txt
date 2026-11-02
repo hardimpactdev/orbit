@@ -46,3 +46,4 @@ task_vm.fill_package_cache
 conn.pairing_revoke
 conn.pairing_create
 route.target_set
+route.update

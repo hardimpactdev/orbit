@@ -14,6 +14,7 @@ use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Routes\NativeRouteAdmission;
+use App\Domain\Routes\NativeRouteUpdateProjection;
 use App\Domain\Routes\NativeRouteRemovalAdmission;
 use App\Domain\Routes\PrivateDnsPublicationNodes;
 use App\Domain\Routes\ReservedPrivateHostname;
@@ -218,11 +219,16 @@ final readonly class AdmitRouteOperationAction
             'caller_node_id' => $caller?->id, ...app(NativeRouteAdmission::class)->capture($kind, $route, $input, $nodeId), 'target_instance_ids' => $proposedIds,
             'previous_target_instance_ids' => $previousIds, 'removed_instance_ids' => $removedIds, 'instance_placements' => $placements,
             'detached_instances' => $input['detached_instances'] ?? $this->targets->detachedInstances($removedIds)];
-        // R1: a create retry or target change that no Node sees ends at once, with no run.
-        $intent = $operationInput['route_lifecycle'] ?? $operationInput['route_target'] ?? null;
-        $operation = in_array($kind, ['route.create', 'route.target_set'], true) && is_array($intent) && $intent['effectful'] === false
-            ? $this->operations->record($kind, 'route', $route->id, $nodeId, $operationInput, ['ready' => true, 'route_id' => $route->id], 'operator', $requestId)
-            : $this->operations->execute($kind, 'route', $route->id, $nodeId, $operationInput, 'operator', $requestId);
+        // R1: a create retry, target change or update that no Node sees ends at once, with no run.
+        $intent = $operationInput['route_lifecycle'] ?? $operationInput['route_target'] ?? $operationInput['route_update'] ?? null;
+        if (! is_array($intent) || $intent['effectful'] !== false) {
+            return $this->operations->execute($kind, 'route', $route->id, $nodeId, $operationInput, 'operator', $requestId)->refresh();
+        }
+        $operation = $this->operations->record($kind, 'route', $route->id, $nodeId, $operationInput,
+            ['ready' => true, 'route_id' => ValidatedData::integer($intent['result_route_id'] ?? $route->id)], 'operator', $requestId);
+        if ($kind === 'route.update' && $operation->wasRecentlyCreated) {
+            app(NativeRouteUpdateProjection::class)->settle($operation->refresh());
+        }
 
         return $operation->refresh();
     }

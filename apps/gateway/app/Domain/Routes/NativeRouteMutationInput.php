@@ -74,7 +74,11 @@ final readonly class NativeRouteMutationInput
             $participants[] = ValidatedData::integer($forward['control_node_id']);
             // The whole after-state of the Node, which official cfgmgmt file steps write as is (rule 22).
             $after = ValidatedData::object($forward['after']);
-            $renders[(string) $nodeId] = ['caddy' => ValidatedData::object($after['caddy'])['content'] ?? null, 'php' => $after['php'], 'dns' => $after['dns']];
+            // 'prepared' keeps the old sites beside the new ones, for a change that serves both names before the cutover.
+            $renders[(string) $nodeId] = ['caddy' => ValidatedData::object($after['caddy'])['content'] ?? null, 'php' => $after['php'], 'dns' => $after['dns'],
+                'prepared' => ValidatedData::object(ValidatedData::object($forward['prepared'])['caddy'])['content'] ?? null,
+                // The certificate scopes the Node's sites name now; a new version of one waits for the cutover.
+                'scopes' => ValidatedData::stringList($before['certificate_scopes'])];
             $serves = in_array($nodeId, $addressNodes, true) || $beforeSites->where('nodeId', $nodeId)->contains(static fn (DevelopmentSite $site): bool => in_array($site->domain, $domains, true))
                 || $afterSites->where('nodeId', $nodeId)->contains(static fn (DevelopmentSite $site): bool => in_array($site->domain, $domains, true));
             $restoreConnection = $forward['host_keys'] === null ? $forward['connection']
