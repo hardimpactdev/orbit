@@ -1,8 +1,8 @@
 manifestVersion: 1
 name: "@nckrtl/route-update-result"
-version: 2026.11.01.4
+version: 2026.11.02.1
 visibility: private
 license: MIT
-description: Pure public Route update terminal observation.
+description: Phase and firewall results of the Route mutation children.
 behaviors:
   - operations/routes/update-command/result.ts
