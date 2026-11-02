@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Problems\GatewayLogSignals;
 use Illuminate\Support\Facades\File;
+use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
 
 function gateway_log_record(string $class = 'RuntimeException', string $path = '/gateway/app/Jobs/Probe.php', string $call = 'App\\\\Jobs\\\\Probe->handle()', string $message = 'secret-message-sentinel'): string
 {
@@ -97,7 +98,7 @@ it('ignores validation, sub-500 HTTP exceptions, vendor frames and warnings', fu
     ]));
 
     expect(array_column(gateway_log_collect($this->logDirectory, $initial['cursor'])['signals'], 'exception_class'))
-        ->toBe(['Symfony\\Component\\HttpKernel\\Exception\\ServiceUnavailableHttpException']);
+        ->toBe([ServiceUnavailableHttpException::class]);
 });
 
 it('drops closure line numbers and runtime arguments from frames', function (): void {

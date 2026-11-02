@@ -45,7 +45,7 @@ final readonly class GatewayLogSignals
         $current = array_find($files, static fn (array $file): bool => basename($file['path']) === 'laravel.log');
         $daily = array_values(array_filter($files, static fn (array $file): bool => str_starts_with(basename($file['path']), 'laravel-')));
         usort($daily, static fn (array $a, array $b): int => [$a['mtime'], $a['path']] <=> [$b['mtime'], $b['path']]);
-        $current ??= $daily === [] ? null : $daily[array_key_last($daily)];
+        $current ??= $daily === [] ? null : array_last($daily);
         $at = static fn (array $file, ?int $offset = null): array => ['path' => $file['path'], 'inode' => $file['inode'], 'offset' => $offset ?? $file['size']];
 
         if ($cursor === null) {
@@ -68,7 +68,7 @@ final readonly class GatewayLogSignals
         $eof = $start + strlen($data) >= $size;
         $consumed = match (true) {
             $eof, strlen($data) === self::Cap && count($starts) < 2 => strlen($data),
-            count($starts) > 1 => $starts[array_key_last($starts)],
+            count($starts) > 1 => array_last($starts),
             default => 0,
         };
         $text = substr($data, 0, $consumed);
