@@ -118,6 +118,17 @@ final readonly class NativeSchedules
             'command_hash' => hash('sha256', $schedule->command), 'command' => ['$secret' => 'schedule.command', 'id' => $schedule->target_id]];
     }
 
+    /** Stops the native Schedules of Instances that are being removed; their records go with the Instance.
+     * @param  list<int>  $instanceIds
+     */
+    public function removeForInstances(array $instanceIds): void
+    {
+        foreach (Schedule::query()->whereIn('target_type', Instance::morphTypes())->whereIn('target_id', $instanceIds)
+            ->where('trigger', ScheduleTrigger::Swamp)->orderBy('id')->get() as $schedule) {
+            $this->remove($schedule);
+        }
+    }
+
     public static function owner(Schedule $schedule): string
     {
         return Instance::isMorphType($schedule->target_type) ? 'instance_schedules' : 'node_schedules';

@@ -141,7 +141,7 @@ The Gateway stores only the latest run, from a recorded fire or a manual run's t
 
 Destroy marks the Schedule `removing`, removes its trigger, then deletes its workflow, and deletes the record. Removing a trigger or a workflow that is gone is safe, so a disabled Schedule takes the same path. A fire that already started runs to its end, and the Gateway still records it. When serve does not confirm, the Schedule stays `removing` with `swamp.schedule_publish_unavailable`; repeat destroy. Destroy also deletes the command's vault key with `vault.delete`; a fire that already started read it when it began.
 
-[Instance removal](/reference/instance-removal) removes each Schedule of the Instance without waiting for a running command. It leaves Node Schedules and the Schedules of other Instances in place.
+[Instance removal](/reference/instance-removal) removes each Schedule of the Instance without waiting for a running command. It removes a native Schedule's trigger, workflow and vault key before it admits the removal run. It leaves Node Schedules and the Schedules of other Instances in place.
 
 ## Error codes
 

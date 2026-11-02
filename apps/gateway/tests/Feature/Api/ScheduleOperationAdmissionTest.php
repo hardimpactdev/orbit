@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Schedules\NativeSchedules;
 use App\Domain\Schedules\ScheduleControlProjection;
 use App\Domain\Schedules\ScheduleOperationAdmission;
 use App\Domain\Schedules\ScheduleOperationCompletion;
@@ -12,8 +13,10 @@ use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Project;
 use App\Models\Schedule;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
@@ -286,4 +289,17 @@ it('writes the workflow of a native definition copy on its first enable', functi
     expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'workflow.create', 'workflow.edit', 'workflow.trigger.set'])
         ->and($schedule->fresh()->swamp_workflow_id)->not->toBeNull()
         ->and($schedule->fresh()->desired_timer_state->value)->toBe('enabled');
+});
+
+it('stops the native Schedules of Instances being removed and leaves Node timer Schedules to the removal run', function (): void {
+    $project = Project::query()->create(['name' => 'Removal', 'slug' => 'removal', 'repository_url' => 'git@example.test:removal.git']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'name' => 'main', 'checkout_path' => '/srv/apps/removal', 'status' => 'active']);
+    $fields = ['target_type' => Instance::MorphAlias, 'target_id' => $instance->id, 'host_node_id' => $this->node->id, 'command' => 'php artisan report:send',
+        'timeout_seconds' => 60, 'desired_timer_state' => 'enabled', 'status' => 'active'];
+    $native = Schedule::query()->create([...$fields, 'name' => 'nightly', 'calendar' => '0 3 * * *', 'trigger' => 'swamp', 'swamp_workflow_id' => '7a1b2c3d-1111-4222-8333-944455556666']);
+    $timer = Schedule::query()->create([...$fields, 'name' => 'laravel-scheduler', 'calendar' => '*-*-* *:*:00', 'trigger' => 'node']);
+    app(NativeSchedules::class)->removeForInstances([$instance->id]);
+    expect(array_column($this->socket->sent, 'type'))->toBe(['workflow.trigger.remove', 'workflow.delete', 'vault.delete'])
+        ->and($native->fresh()->status->value)->toBe('removing')
+        ->and($timer->fresh()->status->value)->toBe('active');
 });
