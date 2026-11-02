@@ -236,7 +236,7 @@ API ownership matching removes the shared `api/v1` prefix, so a Form Request use
 7. When the candidate changes the Rust agent, the desktop app, or `.github/workflows/ci.yml`, it runs `cargo fmt --all -- --check` in the matching Rust project.
 8. It runs `bin/check-classification-fakes` on changed test sources. A change to the checker itself checks every project’s tests.
 
-Test inputs need no page: step 1 ignores files under `tests/` and `swamp/proof/`.
+Test inputs need no page: step 1 ignores files under `tests/` and `swamp/proof/`, and test files beside their source (`*_test.ts`, `*_test.py`, `test_*.py`).
 
 When the candidate changes `apps/gateway/resources`, `apps/gateway/tests/Programs`, `apps/gateway/ruff.toml`, or `bin/remote-programs-check`, the gate also runs `bin/remote-programs-check`. See [Remote programs](/reference/remote-programs#lint-and-direct-tests).
 
