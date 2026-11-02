@@ -10,6 +10,7 @@ import json
 import os
 import pwd
 import re
+import secrets
 import subprocess
 import sys
 import time
@@ -119,8 +120,13 @@ def target():
         if time.monotonic() > deadline:
             raise RuntimeError('target SSH with sudo is not reachable from the Swamp host')
         time.sleep(2)
+    # An enrolled Node's agent key; the Gateway records only its verifier (topology version 5).
+    secret = secrets.token_hex(32)
+    run(['incus', 'exec', node['key'], '--', 'sh', '-c', 'install -d -m 0700 /etc/orbit/agent && umask 077 && cat > /etc/orbit/agent/secret'],
+        input=secret)
     return {'key': node['key'], 'address': node['address'], 'host_key_type': host_key[0], 'host_key': host_key[1],
-            'roles': node.get('roles', []), 'settings': node.get('settings', {})}
+            'roles': node.get('roles', []), 'settings': node.get('settings', {}),
+            'agent_secret_hash': hashlib.sha256(secret.encode()).hexdigest()}
 
 
 def grants(manifest):
@@ -228,6 +234,16 @@ def gateway(node):
     run(['composer', 'install', '--no-interaction', '--no-progress', '--prefer-dist', '--no-dev', '--no-scripts', '--optimize-autoloader'],
         user=ACCOUNT, cwd=GATEWAY, timeout=900)
     run(['php', 'artisan', 'package:discover'], user=ACCOUNT, cwd=GATEWAY)
+    # The Orbit public root CA the Node agent's files carry; only its certificate (topology version 5).
+    ca = HOME / '.orbit/ca'
+    if not (ca / 'root.pem').exists():
+        ca.mkdir(parents=True, exist_ok=True)
+        run(['openssl', 'req', '-x509', '-newkey', 'rsa:4096', '-nodes', '-days', '30', '-subj', '/CN=Orbit proof root CA',
+             '-addext', 'basicConstraints=critical,CA:TRUE', '-keyout', str(ca / 'root.key'), '-out', str(ca / 'root.pem')])
+        run(['chown', '-R', f'{ACCOUNT}:{ACCOUNT}', str(HOME / '.orbit/ca')])
+    # The pinned agent delivery a Gateway release writes from the frozen manifest (topology version 5).
+    run(['install', '-D', '-o', ACCOUNT, '-g', ACCOUNT, '-m', '0644', str(GATEWAY / 'resources/agent/frozen-manifest.json'),
+         str(SOURCE / 'apps/agent/delivery/manifest.json')])
     database = STATE / 'gateway.sqlite'
     database.unlink(missing_ok=True)
     database.touch()

@@ -15,9 +15,9 @@ covers:
 
 `orbit node:add <name> [host]` adds a machine to the fleet. For a Node that already exists, the same command converges it again after you change its TLD, roles, or settings. `orbit node:remove <node>` removes the Node from Orbit and leaves the machine reachable over public SSH. [`node`](/cli/node) lists the options.
 
-Standalone `node.converge` and apps-root `node.settings` run on 209 through official SSH with the Node's stored host keys. They pass their complete public intent at admission and need no target worker. Settings runs the shipped apps folder script over official SSH. Converge installs the pinned observer, applies its captured footprint as native steps, and calls existing `agent.configure` without rotating the secret. Neither operation installs a per-Node worker or accepts worker enrollment credentials.
+Standalone `node.converge` and apps-root `node.settings` run on 209 through official SSH with the Node's stored host keys. They pass their complete public intent at admission and need no target worker. Settings runs the shipped apps folder script over official SSH. Converge runs the shipped agent script for the pinned observer and its files, then the fleet recipe's role steps; it calls no agent command and never rotates the secret. Neither operation installs a per-Node worker or accepts worker enrollment credentials.
 
-When executed, frozen `agent.configure` removes an installed per-Node worker service when its observer-only configuration omits that worker. Live rollout must account for that existing side effect and any active work before execution. The Gateway projects the terminal result and records settings or completed footprint artifacts.
+The Gateway projects the terminal result and records settings or completed footprint artifacts.
 
 ### Per-Node Swamp worker
 
