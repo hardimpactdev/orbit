@@ -1,5 +1,6 @@
 # deno-fmt-ignore-file
 # Generated: deno run --allow-read --allow-write extensions/behaviors/operations/node/footprint_workflows.ts
+queueTimeout: 60
 id: 48ce785a-7429-463e-a776-7b5a59bb2961
 name: operation-node-role-relocate-direct
 description: One exact-Node native root; generated from the shared footprint chain.

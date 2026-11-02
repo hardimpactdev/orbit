@@ -30,7 +30,7 @@ class RecipeNative(NativeTestCase):
                     task['behaviorType']='@fixture/recipe-config'
                     # Pinned CLI resume drops explicit globalArgs (serve passes them).
                     # Route fake resource arguments by schema to exercise DAG resume.
-                    task['inputs']={key:value for key,value in task.pop('globalArgs').items() if key in ('nodeHost','path')}
+                    task['inputs']={key:value for key,value in task.pop('globalArgs').items() if key in ('nodeHost','path','service')}
                 # No actual identity value or credential transport is needed by this fake.
                 if 'vault.get' in str(task) and 'inputs' in task:
                     task['inputs']['identity']['expected']='a'*64
@@ -40,7 +40,7 @@ class RecipeNative(NativeTestCase):
         self.path=self.repo/'workflows/workflow-operation-fleet-recipe-direct.yaml'
         self.path.write_text(yaml.safe_dump(workflow,sort_keys=False))
         # The unselected native children still need static identities for validation.
-        for number,name in enumerate(['operation-route-caddy','operation-fleet-peer-dns','route-certificate-remove','route-lan-apply','node-caddy-package','node-private-dns','node-php-runtime','node-route-residue']):
+        for number,name in enumerate(['operation-route-caddy','operation-fleet-peer-dns','route-certificate-remove','route-lan-apply','node-caddy-package','node-caddy-sites','node-private-dns','node-php-runtime','node-route-residue']):
             child={'id':f'c9d03e50-2fe8-4ab8-83bf-{number:012d}','name':name,'inputs':yaml.safe_load((ROOT/f'workflows/workflow-{name}.yaml').read_text())['inputs'],'jobs':[{'name':'fake','steps':[{'name':'apply','task':{'type':'assert','expr':'true','message':'Fixture child succeeded'}}]}]}
             if name.startswith('node-'):
                 child['jobs'][0]['steps'][0]['task']={'type':'behavior','behaviorType':'@fixture/recipe-ssh','behaviorName':name,'methodName':'exec','inputs':{'argv':['native-child',name]}}
@@ -61,9 +61,14 @@ class RecipeNative(NativeTestCase):
     def start(self,success=True):
         payloads=self.intent['footprint']['payloads']
         php={part['version']:part.get('runtime_ini','public ini') for part in payloads.get('php-runtime',{}).get('configurations',[])}
-        self.intent['role_files']={'user':'orbit','home':'/home/orbit','php':php,'php_versions':list(php),'dns':payloads.get('private-dns'),'tmpfiles':payloads.get('tmpfiles',{}).get('rule'),'residue':payloads.get('route-residue')}
+        fp=self.intent['footprint']
+        caddy=payloads.get('caddy')
+        fp['roles']={'user':'orbit','home':'/home/orbit','caddy_package':None,'caddy':None if (caddy or {}).get('error_code') else caddy,'php':php,'php_versions':list(php),'dns':payloads.get('private-dns'),'tmpfiles':payloads.get('tmpfiles',{}).get('rule'),'residue':payloads.get('route-residue')}
+        fp['agent']={'url':payloads['agent']['url'],'files':[{'path':'/etc/orbit/agent/config.toml','content':'public-config'},{'path':'/etc/orbit/agent/ca.pem','content':'public-ca'}],'unit':payloads['agent']['unit'],'checkouts':[]}
+        fp['verifier_hash']='a'*64
+        fp['footprint_check']='a'*64+'  /etc/orbit/agent/secret\n'
         self.cli('workflow','validate','operation-fleet-recipe-direct')
-        result=self.cli('workflow','run','operation-fleet-recipe-direct','--input',json.dumps({'operation_id':7,'node_id':self.intent['node_id'],'kind':'fleet.recipe','intent':self.intent,'execution_secrets':{'observer':{'vault':'orbit-control-inputs','key':'recipe-operation-7-observer'}}}),success=success)
+        result=self.cli('workflow','run','operation-fleet-recipe-direct','--input',json.dumps({'operation_id':7,'node_id':self.intent['node_id'],'kind':'fleet.recipe','intent':self.intent,'execution_secrets':{}}),success=success)
         return json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]['id']
 
     def history(self,root):
@@ -97,17 +102,15 @@ class RecipeNative(NativeTestCase):
         self.assertEqual(caddy,{'name':'caddy','status':'skipped','reason':'caddy_render_refused'})
         self.assertNotIn('caddy-validation',self.calls())
 
-    def test_caddy_validation_refusal_is_a_safe_native_skip(self):
+    def test_invalid_caddy_child_stops_delivery_before_publication(self):
         self.save(caddyInvalid=True)
         self.intent['footprint']['artifacts'].append({'name':'caddy','digest':'c'*64,'required':True,'repair':False})
         self.intent['footprint']['payloads']['caddy']={'content':'public candidate','version':'b'*32,'listen_addresses':[],'unserved':False}
-        root=self.start()
+        root=self.start(success=False)
         history=self.history(root)
-        child=next(s for j in history['jobs'] for s in j['steps'] if s['name']=='caddy-0')
-        self.assertEqual(child['status'],'skipped')
-        result=next(s for j in history['jobs'] for s in j['steps'] if s['name']=='result')
-        caddy=next(a for a in json.loads(result['outputs']['stdout'])['footprint']['artifacts'] if a['name']=='caddy')
-        self.assertEqual(caddy['reason'],'caddy_validate_refused')
+        child=next(s for j in history['jobs'] for s in j['steps'] if s['name']=='Publish Caddy sites')
+        self.assertEqual(child['status'],'failed')
+        self.assertNotIn('delivery',self.calls())
 
     def test_optional_runtime_versions_and_native_children_are_not_dropped(self):
         fp=self.intent['footprint']
@@ -121,7 +124,7 @@ class RecipeNative(NativeTestCase):
         root=self.start()
         history=self.history(root)
         names={s['name']:s['status'] for j in history['jobs'] for s in j['steps']}
-        for name in ('php_plan-0','php_build-0','php_runtime-0','php_runtime-1','caddy-0','dns-0','residue_proven'):
+        for name in ('php_plan-0','php_build-0','Configure PHP-FPM-8.4','Configure PHP-FPM-8.5','Publish Caddy sites','Install private DNS','Clear Route residue'):
             self.assertEqual(names[name],'succeeded',name)
         self.assertEqual(self.calls().count('native-child node-php-runtime'),2)
         self.assertIn('native-child node-private-dns',self.calls())
@@ -134,7 +137,7 @@ class RecipeNative(NativeTestCase):
         root=self.start(success=False)
         history=self.history(root)
         steps={s['name']:s for job in history['jobs'] for s in job['steps']}
-        self.assertEqual(steps['dns-0']['status'],'failed')
+        self.assertEqual(steps['Install private DNS']['status'],'failed')
         self.assertNotIn('node.private-dns-restore',self.calls())
 
     def test_private_dns_failed_catalog_proof_stops_delivery(self):
@@ -145,6 +148,19 @@ class RecipeNative(NativeTestCase):
         self.assertIn('native-child node-private-dns',self.calls())
         self.assertNotIn('delivery',self.calls())
         self.assertNotIn('node.private-dns-restore',self.calls())
+
+    def test_route_residue_cleanup_failure_keeps_delivery_best_effort(self):
+        self.save(fail='native-child node-route-residue')
+        fp=self.intent['footprint']
+        fp['artifacts'].append({'name':'route-residue','digest':'c'*64,'required':True,'repair':False})
+        fp['payloads']['route-residue']={'rows':[]}
+        root=self.start()
+        steps={s['name']:s for j in self.history(root)['jobs'] for s in j['steps']}
+        self.assertEqual(steps['Clear Route residue']['status'],'failed')
+        result=json.loads(steps['result']['outputs']['stdout'])
+        residue=next(a for a in result['footprint']['artifacts'] if a['name']=='route-residue')
+        self.assertEqual(residue,{'name':'route-residue','status':'skipped','reason':'route_residue_cleanup_failed'})
+        self.assertIn('delivery',self.calls())
 
     def test_refusal_before_first_host_effect(self):
         self.intent['footprint']['refusal']='node.footprint_failed'

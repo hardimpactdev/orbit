@@ -2604,35 +2604,3 @@ Deno.test("workflows declare vaults read directly or forwarded as bounded execut
   assert(ratchet(aggregate(findings('${{ vault.get("other", "key") }}')), { schema: 1, entries }).length > 0);
   assert(ratchet(aggregate(findings('${{ vault.get("copies", "key") }} ${{ vault.get("other", "key") }}')), { schema: 1, entries }).length > 0);
 });
-
-Deno.test("observer digest vault value stays at the typed comparison boundary", () => {
-  const file = "workflows/workflow-observer.yaml";
-  const source = `name: observer
-vaults: [orbit-control-inputs]
-inputs:
-  type: object
-  properties:
-    execution_secrets:
-      type: object
-      properties:
-        observer:
-          type: object
-          properties:
-            vault: {type: string, enum: [orbit-control-inputs]}
-jobs:
-- labels: {role: swamp}
-  steps:
-  - task:
-      type: behavior
-      behaviorType: '@nckrtl/node-role-converge-command'
-      methodName: observer_files
-      inputs:
-        identity:
-          expected: "\${{ vault.get(inputs.execution_secrets.observer.vault, inputs.execution_secrets.observer.key) }}"
-`;
-  const findings = (text: string) => analyzeYaml(file, text).findings.filter((f) => f.rule === "vault-placement");
-  assertEquals(findings(source), []);
-  for (const changed of [source.replace("observer_files", "decode"), source.replace("expected:", "stdout:"), source.replace("role: swamp", "node: '12'"), source.replace("@nckrtl/node-role-converge-command", "@custom/observer")]) {
-    assert(findings(changed).length > 0);
-  }
-});

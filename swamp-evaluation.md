@@ -51,13 +51,8 @@ The removal family uses official cfgmgmt and direct SSH argv, with no shipped sc
 | Verify removal | Resource check methods and native assert. Could checks optionally fail on drift while retaining their state? |
 | Purge role data | Guarded official exec covers Docker volumes and ordered Incus project/network/ACL deletion. Could native resource behaviors cover these absent operations? |
 
-## Fleet observer conversion candidates
+## Fleet resource conversion candidates
 
-Pinned Swamp e459 CLI resume discards explicit task `globalArgs`: its direct resolver names the argument `_globalArgs` and calls `resolveOrCreateDefinition` with `undefined`. The run and serve resolvers pass the argument. Could CLI resume preserve the same globals as run and serve? The local Fleet DAG fixture routes its two fake file arguments by schema to test completed-step retention; it does not prove production file transport during CLI resume.
+The official resources keep file publication, systemd apply and restart, and the final digest check visible as separate operations. Could systemd apply restart only when its unit or binary changed and prove the resulting service state? The shared observer flow currently restarts on every visit.
 
-Native CEL refuses operations on a vault Secret, including comparison with the observed digest. The existing typed observer template shaper compares the vault digest at its method boundary and returns only a boolean; native assert consumes it. Could native assert support equality on Secret values without exposing them?
-
-| Chart action | Pinned operations kept visible | Candidate improvement |
-| --- | --- | --- |
-| Apply observer files | digest exec, public template shaping, identity assert, file forEach | Could native assert compare the vault digest directly? |
-| Activate observer | daemon-reload, enable, conditional restart, is-active, native assert | Could systemd apply activate changed files and fail on drift in one check? |
+The bounded digest argv checks the binary, recorded key and public files together. Could official resources expose a composite check without returning file content? The Gateway now supplies only the public verifier digest; no Secret comparison is needed.

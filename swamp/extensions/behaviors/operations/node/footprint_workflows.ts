@@ -309,6 +309,7 @@ export function footprintWorkflow(
     }],
   });
   const workflow = {
+    queueTimeout: 60,
     id: role
       ? relocateRole
         ? "48ce785a-7429-463e-a776-7b5a59bb2961"

@@ -41,6 +41,7 @@ const execute = async (
         return { stdout };
     }
     if (command === "native-child node-private-dns" && (state.dnsValidationInvalid || state.dnsInvalid)) throw new Error("Native DNS child refused");
+    if (command === "native-child node-caddy-sites" && state.caddyInvalid) throw new Error("Native Caddy validation refused");
     let result: unknown = { ready: true, changed: false };
     if (command === "node.private-dns-validate") result = {ready: !state.dnsValidationInvalid, before:{commands:[["/usr/bin/systemctl","stop","orbit-private-dns.service"],["/usr/bin/systemctl","disable","orbit-private-dns.socket"]],records:null,catalog:null}, ...(state.dnsValidationInvalid ? {error_code:"node.private_dns_invalid"} : {})};
     else if (command === "node.private-dns-health") result = {ready: !state.dnsInvalid, ...(state.dnsInvalid ? {error_code:"node.private_dns_failed"} : {})};

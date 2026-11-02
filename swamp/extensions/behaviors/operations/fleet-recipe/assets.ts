@@ -22,7 +22,6 @@ const Intent = z.object({
         payloads: ObjectInput,
         network: ObjectInput.nullable(),
     }).passthrough(),
-    role_files: ObjectInput,
     cli: z.object({
         user: z.string(),
         release: ObjectInput.nullable(),
@@ -147,7 +146,7 @@ export function publicResult(raw: z.infer<typeof ResultArgs>) {
         }
     };
     const failure = Object.entries(steps).find(([name, step]) =>
-        step.status === "failed" && !name.startsWith("residue_")
+        step.status === "failed" && !name.startsWith("residue_") && name !== "Clear Route residue"
     );
     const footprint = assembleFootprint(intent.footprint, steps);
     const failedArtifact = footprint.failed_artifact;

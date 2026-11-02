@@ -24,13 +24,13 @@
     {
       "name": "Observer files",
       "job": "observer",
-      "step": "observer",
+      "step": "Check the footprint",
       "budget_seconds": 1800
     },
     {
       "name": "PHP runtime",
       "job": "footprint",
-      "step": "php_runtime-0",
+      "step": "Configure PHP-FPM-8.5",
       "budget_seconds": 1800
     },
     {

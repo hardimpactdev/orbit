@@ -1,6 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, DECISIONS R1-R4, single-swamp-node, Recall recipe-rollout-is-automatic. docs/reference/node-provisioning.md#converge-a-node-to-a-recipe.
-  %% status: draft
+  %% status: reviewed
   %% command: none · recipe rollout after a release
   %% kind: fleet.recipe
   autonumber
@@ -10,147 +9,370 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
-  Note over GW: Admit recipe for Node 12<br/>recipe sha256:… · task #5161
-  %%> When:
-  %%> - a deployed release carries a new machine software recipe; the Gateway visits the rollout set one Node at a time, in its window
-  %%> - an operator runs `php artisan node:converge-recipe 12` on the Gateway
-  %%> Not included:
-  %%> - no `orbit` command; no per-five-minute Swamp poll admits it
-  %%> Requirements:
-  %%> - Node 12 is an active managed Ubuntu Node on x86_64
-  %%> - no other recipe or fleet rollout change runs on Node 12; the Gateway holds one lock per Node
-  %%> - every role prerequisite is in the recipe, and no managed Tool constraint conflicts with it
-  %%> What it decides:
-  %%> - the desired pins: the union of Node 12's active role profiles; a roleless Node uses `operator`
-  %%> Result:
-  %%> - task #5161 recorded; the attempt is `unverified`; the last verified recipe stays recorded
-  GW->>SW: Start run, full intent<br/>operation-fleet-recipe
+  GW->>SW: Admit the recipe<br/>full non-secret intent
   %%> What it does:
-  %%> - starts one Swamp run on serve (Node 209)
-  %%> Inputs:
-  %%> - the pins: Ubuntu snapshot, packages, artifacts with URLs and SHA-256, PHP set, JavaScript runtimes, browser
-  %%> - Node 12's address, SSH host keys and enrolled account; the SSH identity comes from the `swamp` role
-  SW->>N: Inspect the Node<br/>packages · origins · PHP plan
-  %%> How:
-  %%> - Swamp reaches Node 12 over SSH from 209, with `@swamp/ssh`
-  %%> What it does:
-  %%> - reads installed packages and their origins, and asks `php.install-build` for its plan
-  %%> Refuses:
-  %%> - Docker CE (`node.recipe_docker_provider`), another PHP apt source or extra PHP packages (`node.recipe_php_refused`); then nothing changes
-  SW->>N: Install pinned packages<br/>apt snapshot · no removals
-  %%> What it does:
-  %%> - installs missing or older Ubuntu packages and the exact artifacts, with package removal disabled, then `apt-get check`
-  %%> - refreshes the snapshot indexes only when something needs installation
-  %%> Busy apt lock:
-  %%> - it waits for the lock within the run's time budget, then fails
-  SW->>N: Install the PHP build<br/>php.install-build
-  %%> When:
-  %%> - only on Nodes whose roles run PHP: `app-dev`, `app-prod`, `websocket`, `gateway`
-  %%> What it does:
-  %%> - installs the pinned Sury build from Orbit's mirror, checks each FPM master, and puts the previous build back if a check fails
-  SW->>N: Install JS runtimes<br/>Node · Vite+ · pnpm · Bun
-  %%> What it does:
-  %%> - installs the pinned runtimes from verified archives, without a downloaded installer
-  %%> - removes a duplicate `nodejs` apt package only after the recipe runtime passes its check
-  opt role app-prod
-    SW->>N: Install the browser<br/>headless shell · AppArmor
+  %%> - signed package policy remains the named recipe.py gap; files and role runtime use native resources
+  opt admitted recipe part
+    Note over GW: preflight
+    SW->>SW: intent
     %%> What it does:
-    %%> - installs the digest-pinned Chrome headless shell, root-owned, and loads its one AppArmor `userns` exception
-    %%> If it fails:
-    %%> - the previous AppArmor policy is put back
-  end
-  SW->>N: Restart changed services<br/>only changed packages
-  %%> What it does:
-  %%> - restarts only services of packages whose version changed; nothing else is touched
-  %%> Why a restart:
-  %%> - a new package version only runs after a restart; a reload keeps the old binary
-  opt observer configuration is required
-    SW->>N: observer_identity_command
-    %%> What it does:
-    %%> - reads only the existing agent key's SHA-256 with one bounded argv
-    SW->>SW: observer_files
-    %%> What it does:
-    %%> - renders the public files and compares the digest with the vault value, without returning that value
-    SW->>SW: observer_identity
-    %%> What it checks:
-    %%> - native assert stops publication on a digest mismatch
-    SW->>N: observer_configuration
-    %%> What it does:
-    %%> - one forEach publishes config.toml, ca.pem and orbit-agent.service through official cfgmgmt file
-    opt recorded checkouts exist
-      SW->>N: observer_checkout
-      %%> What it does:
-      %%> - one bounded find argv removes world access from existing .env files
-    end
-    SW->>N: observer_reload
-    %%> What it does:
-    %%> - reloads systemd's unit definitions
-    SW->>N: observer_enable
-    %%> What it does:
-    %%> - enables and starts orbit-agent.service
-    opt binary or configuration changed
-      SW->>N: observer_restart
-      %%> What it does:
-      %%> - restarts the observer to load the new binary or files
-    end
-    SW->>N: observer_verify
-    %%> What it does:
-    %%> - checks orbit-agent.service is active
-    SW->>SW: observer
-    %%> What it checks:
-    %%> - native assert confirms the observer actions succeeded
-  end
-  opt private DNS footprint is required
-    SW->>N: dns
-    %%> What it does:
-    %%> - node-private-dns applies the listener, units, records and catalog through official resources, then proves the loaded catalog
-  end
-  opt PHP runtime footprint is required
-    SW->>N: php_runtime
-    %%> What it does:
-    %%> - one forEach calls node-php-runtime for each admitted PHP version
-  end
-  opt tmpfiles footprint is required
-    SW->>N: tmpfiles
-    %%> What it does:
-    %%> - official cfgmgmt file applies /etc/tmpfiles.d/orbit.conf
-  end
-  opt removed Routes left residue
-    SW->>N: residue_proven
-    %%> What it does:
-    %%> - node-route-residue removes the admitted leftovers, best effort
-  end
-  SW->>N: Check the recipe<br/>versions · service health
-  %%> What it does:
-  %%> - checks every pinned version and the health of each affected service
-  %%> Why:
-  %%> - the recipe only counts as applied when Node 12 shows it
-  %%> Not included:
-  %%> - the CLI and the Node agent; `fleet.rollout` checks those
-  alt every check passes
-    N-->>SW: pins installed · healthy
-    %%> Returns:
-    %%> - the installed versions, and packages newer than the recipe
-    SW-->>GW: Run succeeded<br/>terminal event
-    %%> How the Gateway learns it:
-    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-    Note over GW: Record the recipe<br/>Node 12 verified · task done
-    %%> Result:
-    %%> - Node 12's verified recipe becomes this version; the attempt succeeds
-    %%> - task #5161 succeeds, and the Gateway admits the next Node
-  else a step fails
-    N--xSW: refused or exit ≠ 0
+    %%> - uses @nckrtl/fleet-recipe-command.validate
     %%> When:
-    %%> - a refusal at inspection, a package, PHP, runtime or browser step fails, or a check fails
-    SW--xGW: Run failed<br/>error_code, failed step
-    %%> The Gateway reads:
-    %%> - which step failed and its error code
-    Note over GW: Mark the attempt failed<br/>halt · rerun after a fix
-    %%> Result:
-    %%> - the attempt is marked failed; the last verified recipe stays recorded; task #5161 fails
-    %%> - the recipe rollout halts, so later Nodes stay untouched, and an alert is raised
-    %%> On the Node:
-    %%> - packages installed before the failure stay; a failed PHP build is replaced by the previous one
-    %%> Retry:
-    %%> - safe: every step skips what is already at its pin; it is a new task
+    %%> - only when its native skip guard permits this action
+    SW->>SW: inspect_asset
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.read
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>N: inspect_command
+    %%> What it does:
+    %%> - uses @swamp/ssh.script
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>SW: inspect
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.decode
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>SW: php_plan_asset
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.read
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    %%> How:
+    %%> - one native forEach applies the admitted set
+    SW->>N: php_plan_command
+    %%> What it does:
+    %%> - uses @swamp/ssh.script
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    %%> How:
+    %%> - one native forEach applies the admitted set
+    SW->>SW: php_plan
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.decode
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    %%> How:
+    %%> - one native forEach applies the admitted set
   end
+  opt admitted recipe part
+    Note over GW: packages
+    SW->>SW: packages_window
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.window
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>SW: packages_window_proven
+    %%> What it does:
+    %%> - checks fleet.window_closed
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>SW: packages_asset
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.read
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>N: packages_command
+    %%> What it does:
+    %%> - uses @swamp/ssh.script
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>SW: packages
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.decode
+    %%> When:
+    %%> - only when its native skip guard permits this action
+  end
+  opt admitted recipe part
+    Note over GW: runtimes
+    SW->>SW: runtimes_window
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.window
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>SW: runtimes_window_proven
+    %%> What it does:
+    %%> - checks fleet.window_closed
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>SW: browser_asset
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.read
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>N: browser_command
+    %%> What it does:
+    %%> - uses @swamp/ssh.script
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>SW: browser
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.decode
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>SW: javascript_asset
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.read
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>N: javascript_command
+    %%> What it does:
+    %%> - uses @swamp/ssh.script
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>SW: javascript
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.decode
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>SW: php_build_asset
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.read
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    %%> How:
+    %%> - one native forEach applies the admitted set
+    SW->>N: php_build_command
+    %%> What it does:
+    %%> - uses @swamp/ssh.script
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    %%> How:
+    %%> - one native forEach applies the admitted set
+    SW->>SW: php_build
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.decode
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    %%> How:
+    %%> - one native forEach applies the admitted set
+  end
+  opt admitted recipe part
+    Note over GW: services
+    SW->>SW: services_asset
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.read
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>N: services_command
+    %%> What it does:
+    %%> - uses @swamp/ssh.script
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>SW: services
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.decode
+    %%> When:
+    %%> - only when its native skip guard permits this action
+  end
+  opt admitted recipe part
+    Note over GW: restart
+    SW->>SW: restart_window
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.window
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>SW: restart_window_proven
+    %%> What it does:
+    %%> - checks fleet.window_closed
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>N: restart
+    %%> What it does:
+    %%> - uses @swamp/ssh.exec
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    %%> How:
+    %%> - one native forEach applies the admitted set
+  end
+  opt admitted recipe part
+    Note over GW: settle
+    SW->>N: settle
+    %%> What it does:
+    %%> - uses @swamp/ssh.exec
+    %%> When:
+    %%> - only when its native skip guard permits this action
+  end
+  opt admitted recipe part
+    Note over GW: health
+    SW->>SW: health_asset
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.read
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    %%> How:
+    %%> - one native forEach applies the admitted set
+    SW->>N: health_command
+    %%> What it does:
+    %%> - uses @swamp/ssh.script
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    %%> How:
+    %%> - one native forEach applies the admitted set
+    SW->>SW: health
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.decode
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    %%> How:
+    %%> - one native forEach applies the admitted set
+  end
+  opt admitted recipe part
+    Note over GW: observer
+    SW->>SW: observer_window
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.window
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>SW: observer_window_proven
+    %%> What it does:
+    %%> - checks fleet.window_closed
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>N: Install the Node agent
+    %%> What it does:
+    %%> - uses @swamp/cfgmgmt/fetch.apply
+    SW->>N: Configure the Node agent
+    %%> What it does:
+    %%> - uses @swamp/cfgmgmt/file.apply
+    %%> How:
+    %%> - one native forEach applies the admitted set
+    SW->>N: Start the Node agent
+    %%> What it does:
+    %%> - uses @swamp/cfgmgmt/systemd.apply
+    SW->>N: Restart the Node agent
+    %%> What it does:
+    %%> - uses @swamp/cfgmgmt/systemd.restart
+    SW->>N: Close Instance .env files
+    %%> What it does:
+    %%> - uses @swamp/ssh.exec
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>N: Check the footprint
+    %%> What it does:
+    %%> - uses @swamp/ssh.exec
+  end
+  opt admitted recipe part
+    Note over GW: footprint
+    SW->>SW: footprint_window
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.window
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>SW: footprint_window_proven
+    %%> What it does:
+    %%> - checks fleet.window_closed
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>N: peer_dns
+    %%> What it does:
+    %%> - runs operation-fleet-peer-dns
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    %%> How:
+    %%> - one native forEach applies the admitted set
+    SW->>N: Install Caddy
+    %%> What it does:
+    %%> - runs node-caddy-package
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>N: Publish Caddy sites
+    %%> What it does:
+    %%> - runs node-caddy-sites
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>N: Install private DNS
+    %%> What it does:
+    %%> - runs node-private-dns
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>N: Configure PHP-FPM
+    %%> What it does:
+    %%> - runs node-php-runtime
+    %%> How:
+    %%> - one native forEach applies the admitted set
+    SW->>N: Write the tmpfiles rule
+    %%> What it does:
+    %%> - uses @swamp/cfgmgmt/file.apply
+    %%> When:
+    %%> - only when its native skip guard permits this action
+  end
+  opt admitted recipe part
+    Note over GW: residue
+    SW->>N: Clear Route residue
+    %%> What it does:
+    %%> - runs node-route-residue
+    %%> When:
+    %%> - only when its native skip guard permits this action
+  end
+  opt admitted recipe part
+    Note over GW: delivery
+    SW->>SW: delivery_window
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.window
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>SW: delivery_window_proven
+    %%> What it does:
+    %%> - checks fleet.window_closed
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>SW: cli_asset
+    %%> What it does:
+    %%> - uses @nckrtl/node-role-converge-command.cli
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>N: cli_command
+    %%> What it does:
+    %%> - uses @swamp/ssh.script
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>SW: cli
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.decode
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>SW: verify_asset
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.read
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>N: verify_command
+    %%> What it does:
+    %%> - uses @swamp/ssh.script
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>SW: verify
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.decode
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>SW: delivery_asset
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.read
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>N: delivery_command
+    %%> What it does:
+    %%> - uses @swamp/ssh.exec
+    %%> When:
+    %%> - only when its native skip guard permits this action
+    SW->>SW: delivery
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.decode
+    %%> When:
+    %%> - only when its native skip guard permits this action
+  end
+  opt admitted recipe part
+    Note over GW: result
+    SW->>SW: result
+    %%> What it does:
+    %%> - uses @nckrtl/fleet-recipe-command.result
+    SW->>SW: proven
+    %%> What it does:
+    %%> - checks The complete recipe, footprint and pinned delivery must be proven
+  end
+  GW-->>GW: Project terminal result
+  %%> Result:
+  %%> - record the verified recipe only when required actions and checks pass; no DNS rollback

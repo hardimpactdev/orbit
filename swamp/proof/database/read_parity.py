@@ -3,7 +3,7 @@ import json
 import os
 import sys
 
-operation = json.loads(os.environ['PROOF_OPERATION'])
+operation = json.load(open(os.environ['PROOF_OPERATION_FILE']))
 expected = json.loads(sys.argv[1])
 if operation['status'] != 'succeeded' or operation['result'] != expected:
     sys.exit(f'parity: database.read returned {operation["status"]} {json.dumps(operation["result"])}, expected {json.dumps(expected)}')

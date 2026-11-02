@@ -1556,17 +1556,6 @@ export function analyzeYaml(
     return task.type === "behavior" && task.behaviorType === "@swamp/cfgmgmt/file" &&
       task.methodName === "apply" && object(task.globalArgs).mode === "0600" && worker209(path);
   };
-  // The existing public observer shaper compares only a key digest and emits a boolean.
-  // CEL cannot compare Secret values; the method boundary unwraps the vault value.
-  const observerDigest = (path: string[]) => {
-    if (!file.startsWith("workflows/") || path.join(".").replace(/\.\d+/g, ".#") !==
-      "jobs.#.steps.#.task.inputs.identity.expected" || !worker209(path)) return false;
-    const jobs = Array.isArray(data.jobs) ? data.jobs : [];
-    const steps = object(jobs[Number(path[1])]).steps;
-    const task = object(object(Array.isArray(steps) ? steps[Number(path[3])] : undefined).task);
-    return task.type === "behavior" && task.behaviorType === "@nckrtl/node-role-converge-command" &&
-      task.methodName === "observer_files";
-  };
   const wholeVault = (value: unknown) => {
     if (typeof value !== "string") return false;
     const call = /^\s*\$\{\{\s*vault\.get\(([\s\S]*)\)\s*\}\}\s*$/.exec(value);
@@ -1625,7 +1614,7 @@ export function analyzeYaml(
       ) add("secret-env-source");
       if (
         /vault\.get\s*\(/.test(value) &&
-        !((nativeIdentity || nativeStdin || protectedFileContent(path) || observerDigest(path)) && wholeVault(value)) && !(vaultEnv &&
+        !((nativeIdentity || nativeStdin || protectedFileContent(path)) && wholeVault(value)) && !(vaultEnv &&
           /^\s*\$\{\{\s*vault\.get\([\s\S]*\)\s*\}\}\s*$/.test(
             value,
           ) &&

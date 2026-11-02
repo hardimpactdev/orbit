@@ -246,6 +246,4 @@ Fleet recipe and role callers replace five scripts with official file resources,
 
 Each row's p95 equals its one sample. The recipe proof uses the existing topology-only StaticCliRelease catalog with real public CLI 0.8725.0, downloaded and checked on the Node. Package pins and the agent use the normal recipe and frozen manifest. The retained add/relocate callers have native graph coverage; their whole roots still require target workers and are not proved on minimal.
 
-The role proof found a missing kind input in the native child; its dispatcher now forwards it. The recipe run succeeded before parity exposed Linux's environment size limit. Parity now reads the full Operation from a JSON file. A real subprocess test covers a 1 MiB intent. Ten Fleet, eight role and two retained role graph tests pass, alongside 193 Node Deno and 50 Gateway tests.
-
-Before this note, Orbit shrinks by 1256 lines. Swamp behaviors shrink by 411, workflows by 4, shipped scripts by 789 and tests by 423. Fixtures grow by 184 for the native transport boundaries and real Gateway proofs. Chart, harness and validation changes account for the remainder.
+The pre-rebase recipe run succeeded before parity exposed Linux's environment size limit. Parity now reads the full Operation from a JSON file. A real subprocess test covers a 1 MiB intent. These receipts predate the newer observer and role workflows on main; the reconciled batch needs fresh receipts before publication.

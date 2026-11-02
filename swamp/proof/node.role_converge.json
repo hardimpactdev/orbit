@@ -6,11 +6,13 @@
   "queue_timeout_seconds": 30,
   "before_gateway": [
     [
-      "sh",
-      "-c",
-      "printf '%s' \"$1\" | runuser -u orbit -- env -C apps/gateway php ../../tools/swamp-proof-guest/gateway.php fixture",
-      "sh",
-      "{\"roles\": {\"${node.metrics}\": [\"database\"]}}"
+      "runuser",
+      "-u",
+      "orbit",
+      "--",
+      "php",
+      "swamp/proof/node.role_converge/prepare.php",
+      "${node.metrics}"
     ]
   ],
   "request": {

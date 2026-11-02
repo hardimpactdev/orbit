@@ -8,7 +8,7 @@ The package transaction keeps sources, indexes, exact installation, provider ret
 
 `recipe.py` is the named open rule 22 gap for the signed package transaction, Incus drain and repacked PHP build. Its remaining rollback and ownership logic is part of that pending conversion. The CLI script still has retained callers and is not converted yet. Native SSH exposes service actions separately. The existing PHP and updater tool locks are explicit `flock` commands, not new workflow or admission locks.
 
-Only the observer identity hash has an execution copy. Its exact positive-ID key is `recipe-operation-<id>-observer` in `orbit-control-inputs`. Native `vault.get` passes it directly to the existing template shaper, which compares the observed digest and returns only a boolean. Native assert checks that boolean. No worker enrollment, credential rotation or worker retirement is part of a recipe visit.
+The Gateway captures the agent key's public verifier digest and the desired public files at admission. A bounded `sha256sum --check --strict` command checks the installed binary, recorded key and files. No observer secret is copied into the execution vault. No worker enrollment, credential rotation or worker retirement is part of a recipe visit.
 
 Source checks use the frozen official runtime in an isolated local repository. SSH fixtures never contact Nodes. Live publication, grants and any 12-Node rollout remain separate owner actions.
 
