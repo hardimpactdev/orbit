@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task; DECISIONS R1 + round 2 websocket.sync (no Swamp run, the Gateway closes the task from Reverb's own reports). docs/reference/websocket-apps.md.
-  %% status: draft
+  %% status: migrated
   %% command: websocket:app:rotate
   %% kind: websocket.app_rotate
   autonumber
@@ -43,7 +43,7 @@ sequenceDiagram
     %%> - other apps keep their connections; Reverb does not restart
     N->>GW: Report applied revision<br/>per process and boot
     %%> What it does:
-    %%> - each process reports the revision and credential generation it applied, with its boot identity
+    %%> - each process reports the revision it applied, with its boot identity; that revision fixes the credential generation
   end
   alt every process applied 21
     Note over GW: Close the task<br/>succeeded · old secret revoked
