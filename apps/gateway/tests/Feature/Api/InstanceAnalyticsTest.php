@@ -321,16 +321,14 @@ describe('instance:analytics:disable', function (): void {
         $settings->put($scope, 'analytics.site.'.$this->instance->id, json_encode(['domain' => 'old.example.com', 'timezone' => 'UTC']));
         $this->analytics->roles()->update(['status' => LifecycleStatus::Failed]);
         $this->appRoute->update(['status' => RouteStatus::Retiring, 'sites_published' => false]);
-        analytics_intent_socket();
-        $id = $this->deleteJson($this->url)->assertAccepted()->json('data.id');
+        $socket = analytics_intent_socket();
+        // No tracking host to withdraw: the binding detaches at once, with no run (R1).
+        $id = $this->deleteJson($this->url)->assertAccepted()->assertJsonPath('data.status', 'succeeded')->json('data.id');
         $operation = Operation::query()->findOrFail($id);
-        expect($operation->node_id)->toBe($this->workload->id);
-        $projection = app(AnalyticsDisableProjection::class);
-        $projection->apply($operation, analytics_intent_result('running'));
-        expect($operation->fresh()->input['tracking']['dns_node_ids'])->toBe([]);
-        $projection->apply($operation, analytics_intent_result('succeeded', ['ready' => true, 'enabled' => false, 'domain' => 'old.example.com', 'timezone' => 'UTC', 'detached' => true]));
-        expect($settings->get($scope, 'analytics.site.'.$this->instance->id))->toBeNull();
-        $projection->apply($operation, analytics_intent_result('succeeded', ['ready' => true, 'enabled' => false, 'domain' => 'old.example.com', 'timezone' => 'UTC', 'detached' => true]));
+        expect($operation->node_id)->toBe($this->workload->id)
+            ->and($operation->result)->toBe(['ready' => true, 'enabled' => false, 'detached' => true, 'domain' => 'old.example.com', 'timezone' => 'UTC'])
+            ->and($socket->sent)->toBe([])
+            ->and($settings->get($scope, 'analytics.site.'.$this->instance->id))->toBeNull();
     });
 
 });

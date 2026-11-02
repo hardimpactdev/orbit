@@ -1,8 +1,8 @@
 manifestVersion: 1
 name: "@nckrtl/analytics-site"
-version: 2026.11.02.1
+version: 2026.11.02.2
 visibility: private
 license: MIT
-description: Plausible site action group over HTTP and its terminal result.
+description: Plausible site action group over HTTP.
 behaviors:
   - operations/analytics-site/mod.ts

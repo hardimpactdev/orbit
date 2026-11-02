@@ -87,6 +87,18 @@ final readonly class RecordAnalyticsIntentAction
                     is_array($previous) ? ValidatedData::object($previous) : null);
             }
 
+            // R1: an Instance without tracking hosts has nothing to withdraw, so disabling ends at once with no run.
+            if (! $enabled && $existing === []) {
+                $site = is_array($input['site']) ? $input['site'] : [];
+                $operation = $this->operations->record($intent->kind, 'instance', $instance->id, $nodeId, $input,
+                    ['ready' => true, 'enabled' => false, 'detached' => true, 'domain' => $site['domain'] ?? null, 'timezone' => $site['timezone'] ?? null],
+                    'operator', request()->attributes->getString('orbit.request_id'));
+                if ($operation->wasRecentlyCreated) {
+                    $this->tracking->complete($operation);
+                }
+
+                return $operation;
+            }
             $operation = $this->operations->execute($intent->kind, 'instance', $instance->id, $nodeId, $input,
                 'operator', request()->attributes->getString('orbit.request_id'));
             if ($enabled && $operation->wasRecentlyCreated) {

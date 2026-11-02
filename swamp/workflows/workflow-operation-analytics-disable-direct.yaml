@@ -1,136 +1,64 @@
 id: 46c6bbed-b4ab-4bdc-9a5b-6251a1ddbe41
 name: operation-analytics-disable-direct
-description: Withdraw captured tracking hosts through canonical Route workflows over official SSH from209.
+description: "Analytics disable in the chart's steps (rule 22)."
+vaults: [orbit-control-inputs]
+queueTimeout: 30
 inputs:
   type: object
   properties:
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
-    kind:
-      type: string
-      const: analytics.disable
-    intent:
-      type: object
-      properties:
-        caddy:
-          type: array
-          items:
-            type: object
-        dns:
-          type: array
-          items:
-            type: object
-        cleanup:
-          type: array
-          items:
-            type: object
-        result_json:
-          type: string
-      required:
-      - caddy
-      - dns
-      - cleanup
-      - result_json
-      additionalProperties: false
-    execution_secrets:
-      type: object
-      additionalProperties: false
-  required:
-  - operation_id
-  - node_id
-  - kind
-  - intent
-  - execution_secrets
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: analytics.disable}
+    intent: {type: object}
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
-- name: withdraw
+- name: analytics
+  labels: {role: swamp}
   steps:
-  - name: caddy
+    # Only outside the TLD: records without the tracking hosts, catalog, then dnsmasq (route-create-dns).
+  - name: 'Remove private DNS'
     labels: {role: swamp}
+    dependsOn: []
+    writes: true
+    forEach: {item: vpn, in: '${{ inputs.intent.dns }}'}
     task:
       type: workflow
-      workflowIdOrName: operation-route-caddy-delta
+      workflowIdOrName: route-create-dns
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ self.item }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-    forEach:
-      item: item
-      in: ${{ inputs.intent.caddy }}
-- name: dns
-  dependsOn:
-  - job: withdraw
-    condition:
-      type: succeeded
-  steps:
-  - name: dns
+        intent: '${{ inputs.intent }}'
+        node_id: '${{ self.vpn.node_id }}'
+    # Each Router and Ingress: the whole Caddyfile without the tracking sites, then their scopes (route-target-retire).
+  - name: 'Withdraw sites, certs'
     labels: {role: swamp}
+    dependsOn:
+    - {step: 'Remove private DNS', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    writes: true
+    forEach: {item: node, in: '${{ inputs.intent.retire_nodes.map(n, {"node_id": n}) }}'}
     task:
       type: workflow
-      workflowIdOrName: route-dns-publish
+      workflowIdOrName: route-target-retire
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ self.item }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-    forEach:
-      item: item
-      in: ${{ inputs.intent.dns }}
-- name: grace
-  dependsOn:
-  - job: dns
-    condition:
-      type: succeeded
-  steps:
-  - name: dns-grace
+        operation_id: '${{ inputs.operation_id }}'
+        kind: '${{ inputs.kind }}'
+        parent_run_id: '${{ run.id }}'
+        intent: '${{ inputs.intent }}'
+        node_id: '${{ self.node.node_id }}'
+        signed: []
+        execution_secrets: {}
+    # The cfgmgmt check of each Node's Caddyfile and certificate state (route-remove-check).
+  - name: 'Check the hosts are gone'
     labels: {role: swamp}
-    guard: ${{ inputs.intent.dns.size() == 0 }}
+    dependsOn:
+    - {step: 'Remove private DNS', condition: {type: always}}
+    - {step: 'Withdraw sites, certs', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    forEach: {item: node, in: '${{ inputs.intent.check_nodes.map(n, {"node_id": n}) }}'}
     task:
       type: workflow
-      workflowIdOrName: route-dns-grace
-      inputs: {}
-- name: cleanup
-  dependsOn:
-  - job: grace
-    condition:
-      type: succeeded
-  steps:
-  - name: certificate
-    labels: {role: swamp}
-    task:
-      type: workflow
-      workflowIdOrName: route-certificate-remove
+      workflowIdOrName: route-remove-check
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ self.item }}
-        execution_secrets: ${{ inputs.execution_secrets }}
-        parent_run_id: ${{ run.id }}
-        restoring: false
-    forEach:
-      item: item
-      in: ${{ inputs.intent.cleanup }}
-- name: finish
-  dependsOn:
-  - job: cleanup
-    condition:
-      type: succeeded
-  steps:
-  - name: result
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/analytics-site'
-      behaviorName: '${{ "analytics-disable-result" }}'
-      methodName: result
-      inputs:
-        result_json: ${{ inputs.intent.result_json }}
-vaults: []
+        intent: '${{ inputs.intent }}'
+        node_id: '${{ self.node.node_id }}'

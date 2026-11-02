@@ -68,3 +68,5 @@ tasks.analyze
 metrics.disable
 metrics.enable
 tasks.script
+analytics.enable
+analytics.disable

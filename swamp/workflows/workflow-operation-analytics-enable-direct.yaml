@@ -1,270 +1,133 @@
 id: 38e1a160-f17b-4d31-b77c-36dfd78ed570
 name: operation-analytics-enable-direct
-description: Manage one Plausible site then publish captured tracking Routes through official SSH from209.
-vaults:
-- orbit-control-inputs
+description: "Analytics enable in the chart's steps; Node work through official cfgmgmt and SSH behaviors (rule 22)."
+vaults: [orbit-control-inputs]
+queueTimeout: 30
 inputs:
   type: object
   properties:
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
-    kind:
-      type: string
-      const: analytics.enable
-    intent:
-      type: object
-      properties:
-        certificates: &id001
-          type: array
-          items:
-            type: object
-        router: *id001
-        probes: *id001
-        ingress: *id001
-        dns: *id001
-        retire: *id001
-        cleanup: *id001
-        base_url:
-          type: string
-        site:
-          type: object
-        result_json:
-          type: string
-      required:
-      - certificates
-      - router
-      - probes
-      - ingress
-      - dns
-      - retire
-      - cleanup
-      - base_url
-      - site
-      - result_json
-      additionalProperties: false
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: analytics.enable}
+    intent: {type: object}
     execution_secrets:
       type: object
       properties:
         plausible_credentials:
           type: object
           properties:
-            vault:
-              type: string
-              enum:
-              - orbit-control-inputs
-            key:
-              type: string
-              pattern: ^analytics-plausible-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$
-          required:
-          - vault
-          - key
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^analytics-plausible-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$'}
+          required: [vault, key]
           additionalProperties: false
-      required:
-      - plausible_credentials
+      required: [plausible_credentials]
       additionalProperties: false
-  required:
-  - operation_id
-  - node_id
-  - kind
-  - intent
-  - execution_secrets
+  required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
-- name: site
+- name: analytics
+  labels: {role: swamp}
   steps:
-  - name: site
+    # The Plausible site, goals and settings through its API; the credentials come from the vault.
+  - name: 'Converge the site'
     labels: {role: swamp}
+    dependsOn: []
     task:
       type: behavior
       behaviorType: '@nckrtl/analytics-site'
-      behaviorName: '${{ "analytics-plausible-site" }}'
+      behaviorName: analytics-plausible-site
       methodName: site
       inputs:
-        base_url: ${{ inputs.intent.base_url }}
-        site: ${{ inputs.intent.site }}
+        base_url: '${{ inputs.intent.base_url }}'
+        site: '${{ inputs.intent.site }}'
         env:
-          ORBIT_ANALYTICS_CREDENTIALS: ${{ vault.get(inputs.execution_secrets.plausible_credentials.vault, inputs.execution_secrets.plausible_credentials.key)
-            }}
-- name: certificates
-  dependsOn:
-  - job: site
-    condition:
-      type: succeeded
-  steps:
-  - name: certificates
+          ORBIT_ANALYTICS_CREDENTIALS: '${{ vault.get(inputs.execution_secrets.plausible_credentials.vault, inputs.execution_secrets.plausible_credentials.key) }}'
+    # Per tracking leaf on its Router: a Node-local key and its public CSR (route-create-csr).
+  - name: 'Request the certificate'
     labels: {role: swamp}
+    dependsOn:
+    - {step: 'Converge the site', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    writes: true
+    forEach: {item: leaf, in: '${{ inputs.intent.leaf_indexes }}'}
     task:
       type: workflow
-      workflowIdOrName: route-certificate-publish
+      workflowIdOrName: route-create-csr
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent:
-          node_id: ${{ self.item.leaf.node_id }}
-          leaves: ${{ inputs.intent.certificates.filter(cert,cert.leaf.node_id == self.item.leaf.node_id).map(cert,cert.leaf)
-            }}
-          control_node_id: 209
-          connection: ${{ self.item.connection }}
-          host_keys: ${{ self.item.host_keys }}
-        execution_secrets: {}
-        parent_run_id: ${{ run.id }}
-        restoring: false
-    forEach:
-      item: item
-      in: ${{ inputs.intent.certificates.filter(item,inputs.intent.certificates.filter(first,first.leaf.node_id == item.leaf.node_id)[0].leaf.scope
-        == item.leaf.scope) }}
-- name: router
-  dependsOn:
-  - job: certificates
-    condition:
-      type: succeeded
-  steps:
-  - name: router
+        intent: '${{ inputs.intent }}'
+        leaf: '${{ self.leaf }}'
+    # Per leaf: 209 has the CSR signed; the one Gateway call (route-create-sign).
+  - name: 'Sign the CSR'
     labels: {role: swamp}
+    dependsOn:
+    - {step: 'Converge the site', condition: {type: always}}
+    - {step: 'Request the certificate', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    forEach: {item: leaf, in: '${{ inputs.intent.leaf_indexes }}'}
     task:
       type: workflow
-      workflowIdOrName: operation-route-caddy-delta
+      workflowIdOrName: route-create-sign
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ self.item }}
-        execution_secrets: {}
-    forEach:
-      item: item
-      in: ${{ inputs.intent.router }}
-- name: probes
-  dependsOn:
-  - job: router
-    condition:
-      type: succeeded
-  steps:
-  - name: probes
+        operation_id: '${{ inputs.operation_id }}'
+        parent_run_id: '${{ run.id }}'
+        leaf: '${{ inputs.intent.leaves[self.leaf] }}'
+        request: '${{ steps["Request the certificate-" + string(self.leaf)].outputs.csr.stdout }}'
+    # Each Router and Ingress: certificates, the whole Caddyfile with the tracking sites, then old scopes (route-target-retire).
+  - name: 'Publish Caddy, reload'
     labels: {role: swamp}
+    dependsOn:
+    - {step: 'Converge the site', condition: {type: always}}
+    - {step: 'Request the certificate', condition: {type: always}}
+    - {step: 'Sign the CSR', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    writes: true
+    forEach: {item: node, in: '${{ inputs.intent.retire_nodes.map(n, {"node_id": n}) }}'}
     task:
       type: workflow
-      workflowIdOrName: cluster-router-probe
+      workflowIdOrName: route-target-retire
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ self.item }}
+        operation_id: '${{ inputs.operation_id }}'
+        kind: '${{ inputs.kind }}'
+        parent_run_id: '${{ run.id }}'
+        intent: '${{ inputs.intent }}'
+        node_id: '${{ self.node.node_id }}'
+        signed: '${{ inputs.intent.leaf_indexes.map(i, steps["Sign the CSR-" + string(i)].outputs.sign.stdout) }}'
         execution_secrets: {}
-    forEach:
-      item: item
-      in: ${{ inputs.intent.probes }}
-- name: ingress
-  dependsOn:
-  - job: probes
-    condition:
-      type: succeeded
-  steps:
-  - name: ingress
+    # From 209 to the Router on 443 with the tracking host as SNI; a failed chain fails the step.
+  - name: 'Probe the tracking host'
     labels: {role: swamp}
-    task:
-      type: workflow
-      workflowIdOrName: operation-route-caddy-delta
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ self.item }}
-        execution_secrets: {}
-    forEach:
-      item: item
-      in: ${{ inputs.intent.ingress }}
-- name: dns
-  dependsOn:
-  - job: ingress
-    condition:
-      type: succeeded
-  steps:
-  - name: dns
-    labels: {role: swamp}
-    task:
-      type: workflow
-      workflowIdOrName: route-dns-publish
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ self.item }}
-        execution_secrets: {}
-    forEach:
-      item: item
-      in: ${{ inputs.intent.dns }}
-- name: grace
-  dependsOn:
-  - job: dns
-    condition:
-      type: succeeded
-  steps:
-  - name: grace
-    labels: {role: swamp}
-    task:
-      type: workflow
-      workflowIdOrName: route-dns-grace
-      inputs: {}
-    guard: ${{ inputs.intent.dns.size() == 0 }}
-- name: retire
-  dependsOn:
-  - job: grace
-    condition:
-      type: succeeded
-  steps:
-  - name: retire
-    labels: {role: swamp}
-    task:
-      type: workflow
-      workflowIdOrName: operation-route-caddy-delta
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ self.item }}
-        execution_secrets: {}
-    forEach:
-      item: item
-      in: ${{ inputs.intent.retire }}
-- name: cleanup
-  dependsOn:
-  - job: retire
-    condition:
-      type: succeeded
-  steps:
-  - name: cleanup
-    labels: {role: swamp}
-    task:
-      type: workflow
-      workflowIdOrName: route-certificate-remove
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ self.item }}
-        execution_secrets: {}
-        parent_run_id: ${{ run.id }}
-        restoring: false
-    forEach:
-      item: item
-      in: ${{ inputs.intent.cleanup }}
-- name: finish
-  dependsOn:
-  - job: cleanup
-    condition:
-      type: succeeded
-  steps:
-  - name: result
-    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Converge the site', condition: {type: always}}
+    - {step: 'Request the certificate', condition: {type: always}}
+    - {step: 'Sign the CSR', condition: {type: always}}
+    - {step: 'Publish Caddy, reload', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    forEach: {item: probe, in: '${{ inputs.intent.probes }}'}
     task:
       type: behavior
-      behaviorType: '@nckrtl/analytics-site'
-      behaviorName: '${{ "analytics-enable-result" }}'
-      methodName: result
+      behaviorType: command/shell
+      behaviorName: '${{ ("analytics-probe-" + string(self.probe.node_id) + "-" + self.probe.domain.split("/").join("-")).split(".").join("-") }}'
+      methodName: execute
       inputs:
-        result_json: ${{ inputs.intent.result_json }}
+        run: "timeout 20 openssl s_client -connect \"$ORBIT_PROBE_ADDRESS:443\" -servername \"$ORBIT_PROBE_DOMAIN\" -verify_hostname \"$ORBIT_PROBE_DOMAIN\" -verify_return_error -CAfile /usr/local/share/ca-certificates/orbit-managed-root-ca.crt </dev/null"
+        env:
+          ORBIT_PROBE_ADDRESS: '${{ self.probe.address }}'
+          ORBIT_PROBE_DOMAIN: '${{ self.probe.domain }}'
+    # Only outside the TLD: records, catalog, then dnsmasq (route-create-dns).
+  - name: 'Publish private DNS'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Converge the site', condition: {type: always}}
+    - {step: 'Request the certificate', condition: {type: always}}
+    - {step: 'Sign the CSR', condition: {type: always}}
+    - {step: 'Publish Caddy, reload', condition: {type: always}}
+    - {step: 'Probe the tracking host', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    writes: true
+    forEach: {item: vpn, in: '${{ inputs.intent.dns }}'}
+    task:
+      type: workflow
+      workflowIdOrName: route-create-dns
+      inputs:
+        intent: '${{ inputs.intent }}'
+        node_id: '${{ self.vpn.node_id }}'

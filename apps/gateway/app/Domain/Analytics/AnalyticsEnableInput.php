@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Analytics;
 
-use App\Domain\Routes\NativeCaddyPublicationInput;
 use App\Domain\Routes\NativeRouteCertificateInput;
 use App\Domain\Routes\NativeRoutePublicationInput;
 use App\Domain\Routes\RouteExecutionProof;
@@ -22,8 +21,7 @@ use Illuminate\Support\Collection;
 /** Admission-only Route snapshots; the owning native children apply their deltas. */
 final readonly class AnalyticsEnableInput
 {
-    public function __construct(private DevelopmentSiteRepository $sites, private NativeRoutePublicationInput $publications,
-        private NativeCaddyPublicationInput $connections) {}
+    public function __construct(private DevelopmentSiteRepository $sites, private NativeRoutePublicationInput $publications) {}
 
     /** @param array<string,mixed> $tracking
      * @param  Collection<int,DevelopmentSite>  $before
@@ -56,40 +54,33 @@ final readonly class AnalyticsEnableInput
         $ids = [...ValidatedData::integerList($tracking['publish']), ...ValidatedData::integerList($tracking['remove'])];
         $final = $before->reject(static fn (DevelopmentSite $entry): bool => in_array((int) (preg_match('/\Aroute-([0-9]+)(?:-|\z)/', $entry->scope, $match) ? $match[1] : 0), $ids, true))
             ->concat($prospective(true, true))->keyBy($key)->values();
-        $router = $ingress = $retire = $dns = $certificates = $cleanup = $probes = [];
+        $caddy = $dns = $cleanup = $probes = [];
         foreach (ValidatedData::integerList($tracking['caddy_node_ids']) as $id) {
             $node = Node::query()->findOrFail($id);
-            $connection = $this->connections->connectionForNode($node);
-            $snapshots = array_map(fn (Collection $sites): array => $this->publications->snapshot($node, $sites), [$before, $prepared, $activated, $final]);
-            $delta = static fn (int $from, int $to): array => ['node_id' => $id, 'user' => $node->user, ...$connection,
-                'before' => $snapshots[$from]['caddy'], 'after' => $snapshots[$to]['caddy'], 'direction' => 'forward'];
-            $router[] = $delta(0, 1);
-            $ingress[] = $delta(1, 2);
-            $retire[] = $delta(2, 3);
+            [$from, $to] = [$this->publications->snapshot($node, $before), $this->publications->snapshot($node, $final)];
+            $content = ValidatedData::object($to['caddy'])['content'] ?? null;
+            if (is_string($content) && $content !== (ValidatedData::object($from['caddy'])['content'] ?? null)) {
+                $caddy[] = ['node_id' => $id, 'content' => $content];
+            }
         }
         foreach (ValidatedData::integerList($tracking['dns_node_ids']) as $id) {
             $node = Node::query()->findOrFail($id);
-            $dns[] = ['node_id' => $id, ...$this->connections->connectionForNode($node),
-                'before' => $this->publications->snapshot($node, $before)['dns'], 'after' => $this->publications->snapshot($node, $final)['dns'], 'alternatives' => []];
-        }
-        foreach (RouteExecutionProof::objects($tracking['certificates']) as $leaf) {
-            $node = Node::query()->findOrFail(ValidatedData::integer($leaf['node_id']));
-            $certificates[] = ['leaf' => Arr::except($leaf, ['route_id', 'in_use']), ...$this->connections->connectionForNode($node)];
+            $dns[] = ['node_id' => $id, 'before' => $this->publications->snapshot($node, $before)['dns'], 'after' => $this->publications->snapshot($node, $final)['dns']];
         }
         foreach (RouteExecutionProof::objects($tracking['cleanup']) as $leaf) {
             $node = Node::query()->findOrFail(ValidatedData::integer($leaf['node_id']));
             $scope = ValidatedData::string($leaf['scope']);
             if (! $final->where('nodeId', $node->id)->contains(static fn (DevelopmentSite $entry): bool => ($entry->certificateScope ?? $entry->scope) === $scope)) {
-                $cleanup[] = ['leaf' => [...app(NativeRouteCertificateInput::class)->scopeInput($node, $scope), 'in_use' => false], ...$this->connections->connectionForNode($node)];
+                $cleanup[] = ['node_id' => $node->id, 'leaf' => array_intersect_key(app(NativeRouteCertificateInput::class)->scopeInput($node, $scope), array_flip(['user', 'scope']))];
             }
         }
+        // From 209 to the Router over its private address, with the tracking host as SNI.
         foreach (RouteExecutionProof::objects($tracking['public_verifications']) as $entry) {
-            $node = Node::query()->findOrFail(ValidatedData::integer($entry['node_id']));
-            $probes[] = ['probe' => ValidatedData::object(ValidatedData::object($entry['verification'])['probe']), ...$this->connections->connectionForNode($node)];
+            $probe = ValidatedData::object(ValidatedData::object($entry['verification'])['probe']);
+            $probes[] = ['node_id' => ValidatedData::integer($entry['node_id']), 'address' => ValidatedData::string($probe['address']), 'domain' => ValidatedData::string($probe['domain'])];
         }
+        $leaves = array_map(static fn (array $leaf): array => Arr::except($leaf, ['route_id', 'in_use']), RouteExecutionProof::objects($tracking['certificates']));
 
-        return ['base_url' => $baseUrl, 'site' => $site, 'certificates' => $certificates, 'router' => $router,
-            'probes' => $probes, 'ingress' => $ingress, 'dns' => $dns, 'retire' => $retire, 'cleanup' => $cleanup,
-            'result_json' => json_encode(['ready' => true, 'enabled' => true, 'domain' => $site['domain'], 'timezone' => $site['timezone'], 'readable' => true], JSON_THROW_ON_ERROR)];
+        return ['base_url' => $baseUrl, 'site' => $site, ...app(AnalyticsTrackingSteps::class)->build($caddy, $dns, $cleanup, $leaves, $probes, true)];
     }
 }

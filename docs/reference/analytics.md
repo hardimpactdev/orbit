@@ -150,7 +150,7 @@ The serving Node reaches Plausible over WireGuard. While the analytics role conv
 
 An Instance with a tracking host cannot be removed (`analytics.tracking_hosts_exist`). Disable its analytics first.
 
-Disable captures the public Caddy and private DNS changes before dispatch. All steps run on Node 209 and use official SSH to the admitted hosts. The workflow withdraws the tracking Caddy sections, publishes private DNS, waits for the canonical DNS grace, and removes unused Router certificates. Caddy composition preserves unrelated sections. Certificate removal checks the current adapted Caddy configuration before deletion.
+Disable follows the chart [`instance/analytics-disable.mmd`](/cli/instance/analytics-disable). It removes the tracking hosts from private DNS outside the TLD. Then each Router and Ingress gets its whole Caddyfile without the tracking sites, and their certificate scopes go. `Check the hosts are gone` runs the `check` of the same official behaviors and is the end check. An Instance without tracking hosts has nothing to remove: its Operation has already succeeded, and no run starts.
 
 A failure keeps the tracking records and site binding for diagnosis; native resume repairs host effects without reviving a terminal Gateway Operation. Only successful terminal projection deletes the captured tracking records and binding. Disable does not call Plausible or need its credentials.
 
@@ -194,11 +194,27 @@ Enabling Analytics converges the Plausible site and its tracking Routes in one n
 
 Site management uses `https://analytics.orbit`, matching Plausible’s configured base URL so its Secure session cookies accompany login requests. One shipped script owns the Plausible site action group: login, inspection, create or update when needed, goals batches, verification, Stats API access and logout. The session cookie and CSRF token stay only in that process’s memory. Credentials, cookies and CSRF tokens never enter outputs or session files. Logout runs after success or failure.
 
-A fresh enable admission reconciles the same site without creating a duplicate. A native operator resume repeats the failed `site` action group with a fresh login; a later Route-child failure can resume at that child without repeating provider work. Native resume does not reopen a terminal Gateway Operation. Script failures provide a public error code and safe stderr for the shared F1 failure wrapper and projector; provider bodies never appear in diagnostics.
+Enable follows the chart [`instance/analytics-enable.mmd`](/cli/instance/analytics-enable): `Converge the site`, then the tracking certificate (`Request the certificate`, `Sign the CSR`), `Publish Caddy, reload` with each Router and Ingress's whole Caddyfile, `Probe the tracking host` from Node 209, and private DNS outside the TLD. The end check is the probe, or the publish step for a private host.
+
+A fresh enable admission reconciles the same site without creating a duplicate. A native operator resume repeats `Converge the site` with a fresh login; a later failure can resume at its step without repeating provider work. Native resume does not reopen a terminal Gateway Operation. Script failures provide a public error code and safe stderr for the shared F1 failure wrapper and projector; provider bodies never appear in diagnostics.
 
 The parent composes canonical Route certificate, Caddy, DNS and TLS-probe children through official SSH. The certificate child signs the public CSR with the canonical Gateway primitive. The CA private key stays only in the Gateway; each leaf private key stays on its Node. Only the Router receives an Orbit certificate; public Ingress uses automatic public certificates. The workflow publishes the Router, verifies its private TLS endpoint from Ingress, activates the public handler, publishes private DNS and waits for the canonical 31-second grace before withdrawing old placements. The Instance's existing public Route owns the Ingress port rules.
 
-Only successful terminal projection publishes tracking records, clears retiring placements and saves the site binding. A failure retains the admitted records for diagnosis. Enable and disable return an accepted Operation. Disable preserves the Plausible site and history. Container version updates remain a separate native operation and use a names-only execution-copy reference for the runtime environment.
+Only successful terminal projection publishes tracking records, clears retiring placements and saves the site binding. Each step has its own error code:
+
+| Error code | Step |
+| --- | --- |
+| `analytics.site_failed` | `Converge the site` |
+| `app-dev.certificate_request_failed` | `Request the certificate` |
+| `app-dev.certificate_sign_failed` | `Sign the CSR` |
+| `route.publish_failed` | `Publish Caddy, reload` |
+| `route.probe_failed` | `Probe the tracking host` |
+| `private_dns.publication_failed` | `Publish private DNS`, `Remove private DNS` |
+| `route.withdraw_failed` | `Withdraw sites, certs` |
+| `route.removal_check_failed` | `Check the hosts are gone` |
+| `analytics.enable_failed`, `analytics.disable_failed` | A failure outside these steps |
+
+The Gateway reads the outcome from Swamp's run data, never from step output. A failure retains the admitted records for diagnosis. Enable and disable return an accepted Operation. Disable preserves the Plausible site and history. Container version updates remain a separate native operation and use a names-only execution-copy reference for the runtime environment.
 
 Swamp core supplies ordering, commands, vault resolution and recovery. Official SSH and the cfgmgmt actions owned by Routes supply host effects. The official extension catalogue has no Plausible CE management API, so one Python action group calls that API directly. Native steps split at the provider-to-Route boundary, where guard, placement and recovery needs change. No step reads intent, fetches credentials or projects results through Gateway HTTP.
 

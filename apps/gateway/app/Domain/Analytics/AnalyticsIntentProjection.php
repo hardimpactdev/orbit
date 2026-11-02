@@ -6,14 +6,31 @@ namespace App\Domain\Analytics;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\NativeFailedStep;
+use App\Domain\Operations\NativeOperationProjection;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Native execution uses immutable inputs; only the shared terminal reader projects. */
-final readonly class AnalyticsIntentProjection implements DirectOperationProjection
+final readonly class AnalyticsIntentProjection implements DirectOperationProjection, NativeOperationProjection
 {
+    /** Each chart step's error code. A step fails with its own exit code; its stderr carries the reason (rule 14). */
+    public const array StepCodes = [
+        'Converge the site' => 'analytics.site_failed',
+        'Request the certificate' => 'app-dev.certificate_request_failed',
+        'Sign the CSR' => 'app-dev.certificate_sign_failed',
+        'Publish Caddy, reload' => 'route.publish_failed',
+        'Probe the tracking host' => 'route.probe_failed',
+        'Publish private DNS' => 'private_dns.publication_failed',
+    ];
+
     public function __construct(private DirectOperation $direct, private AnalyticsTrackingIntent $tracking) {}
+
+    public function native(Operation $operation): bool
+    {
+        return true;
+    }
 
     public function input(Operation $operation): array
     {
@@ -32,10 +49,19 @@ final readonly class AnalyticsIntentProjection implements DirectOperationProject
                 $this->tracking->cleanupPlacement($operation);
                 $this->tracking->complete($operation);
             }
-            $result = array_intersect_key(ValidatedData::object($data['result'] ?? []),
-                array_flip(['ready', 'enabled', 'readable', 'domain', 'timezone', 'error_code']));
+            $step = NativeFailedStep::label($data, array_keys(self::StepCodes));
+            if (($data['status'] ?? null) === 'failed') {
+                $data['error_code'] = $step === null ? ($data['error_code'] ?? 'analytics.enable_failed') : self::StepCodes[$step];
+            }
+            // The result comes from the admitted site and Swamp's run status, never from step output.
+            $site = ValidatedData::object($operation->input['site']);
+            $result = match ($data['status'] ?? null) {
+                'succeeded' => ['ready' => true, 'enabled' => true, 'readable' => true, 'domain' => $site['domain'], 'timezone' => $site['timezone']],
+                'failed' => ['ready' => false, 'error_code' => $data['error_code'], 'failed_step' => $step],
+                default => [],
+            };
 
-            return $this->direct->project($operation, $data, in_array($data['status'] ?? null, ['succeeded', 'failed', 'cancelled'], true) ? $result : []);
+            return $this->direct->project($operation, $data, $result);
         });
     }
 }

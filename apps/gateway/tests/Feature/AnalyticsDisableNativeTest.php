@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
@@ -48,27 +49,26 @@ function analyticsDisableTerminal(object $test, string $status = 'succeeded'): O
     $run = ['id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-analytics-disable-direct', 'status' => $status,
         'inputs' => ['operation_id' => $operation->id, 'kind' => $operation->kind, 'node_id' => $operation->node_id],
         'startedAt' => now()->toIso8601String(), 'completedAt' => now()->toIso8601String(),
-        'jobs' => $status === 'succeeded' ? [['name' => 'finish', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => $operation->input['native_disable']['result_json']]]]]] : []];
+        // The end check: the first Node's cfgmgmt check that the tracking hosts are gone.
+        'jobs' => [['name' => 'analytics', 'steps' => [['name' => 'Check the hosts are gone-0', 'status' => $status === 'succeeded' ? 'succeeded' : 'skipped']]]]];
     $test->socket->reply = static fn (array $request): array => [['id' => $request['id'], 'type' => 'workflow.history.get', 'payload' => ['data' => $run]]];
 
-    return app(SwampCommandStep::class)->projectTerminal($operation, $run, ['job' => 'finish', 'step' => 'result']);
+    return app(SwampCommandStep::class)->projectTerminal($operation, $run, app(DirectOperation::class)->definition('analytics.disable')['terminal_result']);
 }
 
 it('captures withdrawal deltas and dispatches full public intent without vault or host calls', function (): void {
     $this->deleteJson($this->url)->assertAccepted();
     $operation = Operation::query()->sole();
     $intent = $operation->input['native_disable'];
-    $router = array_find($intent['caddy'], fn (array $row): bool => $row['node_id'] === $this->router->id);
-    expect($router['before']['content'])->toContain('analytics.shop.example.com');
-    expect($router['after']['content'])->not->toContain('analytics.shop.example.com');
-    expect($router['after']['content'])->toContain('shop.example.com');
+    // The withdraw step writes the Router's whole Caddyfile without the tracking host, then removes its scope.
+    $router = array_find($intent['retire']['caddy'], fn (array $row): bool => $row['node_id'] === $this->router->id);
+    expect($router['content'])->not->toContain('analytics.shop.example.com');
+    expect($router['content'])->toContain('shop.example.com');
     expect($intent['dns'])->toHaveCount(1);
-    expect($intent['dns'][0]['before']['records'])->toContain('analytics.shop.example.com');
-    expect($intent['dns'][0]['after']['records'])->not->toContain('analytics.shop.example.com');
+    expect($intent['dns'][0]['records'])->not->toContain('analytics.shop.example.com');
     expect($intent['cleanup'])->toHaveCount(1);
-    expect($intent['cleanup'][0]['leaf']['scope'])->toBe('route-'.$this->tracking->id.'-router');
-    expect(array_keys($intent['cleanup'][0]['leaf']))->toBe(['node_id', 'user', 'scope', 'agent_sha256', 'in_use']);
-    expect($intent['cleanup'][0]['control_node_id'])->toBe(209);
+    expect($intent['cleanup'][0]['leaf'])->toBe(['user' => $this->router->user, 'scope' => 'route-'.$this->tracking->id.'-router']);
+    expect($intent['check_nodes'])->toContain($this->router->id);
     expect($this->socket->sent)->toHaveCount(1);
     expect($this->socket->sent[0]['payload']['inputs']['intent'])->toBe($intent);
     expect($this->socket->sent[0]['payload']['inputs']['execution_secrets'])->toEqual((object) []);
@@ -126,10 +126,11 @@ it('detaches an empty tracking set without needing SSH targets or an analytics r
     foreach ([$this->router, $this->ingress, $this->vpn] as $node) {
         $node->update(['ssh_host_key_type' => null, 'ssh_host_key' => null]);
     }
+    // Nothing to withdraw: the Operation has already succeeded and no run starts (R1).
     $this->deleteJson($this->url)->assertAccepted();
-    expect(Operation::query()->sole()->input['native_disable'])->toMatchArray(['caddy' => [], 'dns' => [], 'cleanup' => []]);
-    analyticsDisableTerminal($this);
-    expect(Operation::query()->sole()->status->value)->toBe('succeeded');
+    expect(Operation::query()->sole()->status->value)->toBe('succeeded')
+        ->and($this->socket->sent)->toBe([])
+        ->and(app(SettingRepository::class)->get($this->scope, 'analytics.site.'.$this->instance->id))->toBeNull();
 });
 
 it('rolls back desired withdrawal when an admitted SSH target is incomplete', function (): void {

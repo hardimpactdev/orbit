@@ -12,26 +12,6 @@ const Reconciled = z.object({
     timezone: z.string(),
     readable: z.literal(true),
 }).strict();
-const Common = z.object({
-    ready: z.literal(true),
-    domain: Site.shape.domain.nullable(),
-    timezone: z.string().nullable(),
-});
-const Enabled = Common.extend({
-    enabled: z.literal(true),
-    readable: z.literal(true),
-    domain: Site.shape.domain,
-    timezone: z.string().min(1).max(100),
-}).strict();
-const Disabled = Common.extend({
-    enabled: z.literal(false),
-    detached: z.literal(true),
-}).strict();
-const Result = z.discriminatedUnion("enabled", [Enabled, Disabled]);
-const ResultOutput = z.discriminatedUnion("enabled", [
-    Enabled.extend({ stdout: z.string() }),
-    Disabled.extend({ stdout: z.string() }),
-]);
 type Context = {
     writeResource(spec: string, name: string, data: unknown): Promise<unknown>;
 };
@@ -63,20 +43,11 @@ export async function site(input: z.infer<typeof Input>) {
         throw new Error("analytics.provider_failed");
     }
 }
-export function result(raw: string) {
-    const value = Result.parse(JSON.parse(raw));
-    return { ...value, stdout: JSON.stringify(value) };
-}
 export const behavior = {
     type: "@nckrtl/analytics-site",
-    version: "2026.11.02.1",
+    version: "2026.11.02.2",
     resources: {
         site: { schema: Reconciled, lifetime: "1d", garbageCollection: 10 },
-        result: {
-            schema: ResultOutput,
-            lifetime: "1d",
-            garbageCollection: 10,
-        },
     },
     methods: {
         site: {
@@ -86,16 +57,6 @@ export const behavior = {
             execute: async (args: z.infer<typeof Input>, ctx: Context) => {
                 const value = await site(args);
                 await ctx.writeResource("site", "site", value);
-                return value;
-            },
-        },
-        result: {
-            description:
-                "Return the admitted public enable or disable terminal result",
-            arguments: z.object({ result_json: z.string() }).strict(),
-            execute: async (args: { result_json: string }, ctx: Context) => {
-                const value = result(args.result_json);
-                await ctx.writeResource("result", "result", value);
                 return value;
             },
         },

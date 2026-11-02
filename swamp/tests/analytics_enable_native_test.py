@@ -63,10 +63,10 @@ class AnalyticsEnableNative(NativeTestCase):
             ).read_text()
         )
         for job in parent["jobs"]:
+            self.assertEqual(job.pop("labels"), {"role": "swamp"})
             for step in job["steps"]:
                 self.assertEqual(step.pop("labels"), {"role": "swamp"})
-                self.assertNotIn("labels", step)
-        (self.repo / "workflows/workflow-analytics.yaml").write_text(
+        (self.repo / "workflows/workflow-operation-analytics-enable-direct.yaml").write_text(
             yaml.safe_dump(parent, sort_keys=False)
         )
         effect = self.repo / "effect.py"
@@ -79,12 +79,10 @@ print('{"ready":true}')
 """)
         for index, name in enumerate(
             [
-                "route-certificate-publish",
-                "operation-route-caddy-delta",
-                "cluster-router-probe",
-                "route-dns-publish",
-                "route-dns-grace",
-                "route-certificate-remove",
+                "route-create-csr",
+                "route-create-sign",
+                "route-target-retire",
+                "route-create-dns",
             ]
         ):
             child = {
@@ -104,7 +102,8 @@ print('{"ready":true}')
                         "name": "effect",
                         "steps": [
                             {
-                                "name": "apply",
+                                # The parent reads the CSR and the signed leaf by their child step names.
+                                "name": {"route-create-csr": "csr", "route-create-sign": "sign"}.get(name, "apply"),
                                 "task": {
                                     "type": "behavior",
                                     "behaviorType": "command/shell",
@@ -142,28 +141,15 @@ print('{"ready":true}')
             "intent": {
                 "base_url": self.provider.url,
                 "site": self.site,
-                **{
-                    key: [{}]
-                    for key in (
-                        "certificates",
-                        "router",
-                        "probes",
-                        "ingress",
-                        "dns",
-                        "retire",
-                        "cleanup",
-                    )
-                },
-                "certificates": [{"leaf": {"node_id": 14, "scope": "route-7-router"}, "connection": {}, "host_keys": []}],
-                "result_json": json.dumps(
-                    {
-                        "ready": True,
-                        "enabled": True,
-                        "readable": True,
-                        "domain": "shop.test",
-                        "timezone": "UTC",
-                    }
-                ),
+                "leaves": [{"node_id": 14, "scope": "route-7-router", "domain": "analytics.shop.test"}],
+                "leaf_indexes": [0],
+                "nodes": {},
+                "retire": {},
+                "retire_nodes": [14],
+                "cleanup": [],
+                "lan_absent": [],
+                "probes": [],
+                "dns": [{"node_id": 1}],
             },
         }
 
@@ -191,21 +177,9 @@ print('{"ready":true}')
         self.assertEqual(self.provider.sites, {"shop.test": "UTC"})
         self.assertEqual(
             self.audit.read_text().splitlines(),
-            [
-                "route-certificate-publish",
-                "operation-route-caddy-delta",
-                "cluster-router-probe",
-                "operation-route-caddy-delta",
-                "route-dns-publish",
-                "route-dns-grace",
-                "operation-route-caddy-delta",
-                "route-certificate-remove",
-            ],
+            ["route-create-csr", "route-create-sign", "route-target-retire", "route-create-dns"],
         )
         self.assertEqual(run["status"], "succeeded")
-        self.assertTrue(
-            json.loads(run["jobs"][-1]["steps"][0]["outputs"]["stdout"])["readable"]
-        )
         self.assertIn(("GET", "/logout"), self.provider.calls)
 
     def test_updates_previous_domain_and_timezone_without_creating_duplicate_site(self):
@@ -234,7 +208,7 @@ print('{"ready":true}')
         self.assertEqual(run["status"], "failed")
         self.assertFalse(self.audit.exists())
         self.assertIn(("GET", "/logout"), self.provider.calls)
-        self.assertEqual(run["jobs"][-1]["status"], "skipped")
+        self.assertEqual({step["status"] for step in run["jobs"][0]["steps"][1:]}, {"skipped"})
 
     def test_wrong_goals_receipt_refuses_publication(self):
         self.site["goals"] = [
@@ -245,16 +219,12 @@ print('{"ready":true}')
         self.assertFalse(self.audit.exists())
         self.assertIn(("GET", "/logout"), self.provider.calls)
 
-    def test_probe_failure_stops_ingress_dns_retirement_and_success(self):
-        self.native_env["ANALYTICS_FAIL_CHILD"] = "cluster-router-probe"
+    def test_probe_failure_stops_dns_and_success(self):
+        self.inputs["intent"]["probes"] = [{"node_id": 14, "address": "127.0.0.1", "domain": "analytics.shop.test"}]
         self.run_enable(False)
         self.assertEqual(
             self.audit.read_text().splitlines(),
-            [
-                "route-certificate-publish",
-                "operation-route-caddy-delta",
-                "cluster-router-probe",
-            ],
+            ["route-create-csr", "route-create-sign", "route-target-retire"],
         )
 
     def test_failed_site_group_can_use_native_resume_to_reauthenticate(
@@ -270,7 +240,7 @@ print('{"ready":true}')
             "--run",
             run["id"],
             "--from",
-            "site",
+            "Converge the site",
         )
         history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
         self.assertEqual(history["status"], "succeeded")
@@ -285,7 +255,7 @@ print('{"ready":true}')
         self.assertFalse(self.audit.exists())
 
     def test_host_failure_native_resume_does_not_repeat_provider_mutation(self):
-        self.native_env["ANALYTICS_FAIL_CHILD"] = "route-certificate-remove"
+        self.native_env["ANALYTICS_FAIL_CHILD"] = "route-create-dns"
         run = self.run_enable(False)
         self.native_env["ANALYTICS_FAIL_CHILD"] = ""
         before = list(self.provider.calls)
@@ -300,7 +270,7 @@ print('{"ready":true}')
         self.assertEqual(history["status"], "succeeded")
         self.assertEqual(self.provider.calls, before)
         self.assertEqual(
-            self.audit.read_text().splitlines().count("route-certificate-remove"), 2
+            self.audit.read_text().splitlines().count("route-create-dns"), 2
         )
 
     def test_remote_worker_reconciles_the_site_with_the_whole_vault_environment(self):
@@ -452,7 +422,7 @@ print('{"ready":true}')
                 )
                 self.assertEqual(history["status"], "succeeded")
                 site = history["jobs"][0]["steps"][0]
-                self.assertEqual(site["name"], "site")
+                self.assertEqual(site["name"], "Converge the site")
                 self.assertTrue(site["outputs"]["readable"])
                 self.assertEqual(self.provider.sites, {"shop.test": "UTC"})
                 self.assert_private_absent(json.dumps(history))

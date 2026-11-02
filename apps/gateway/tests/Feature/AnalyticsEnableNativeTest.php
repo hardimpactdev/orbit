@@ -6,6 +6,7 @@ use App\Domain\Analytics\AnalyticsIntentProjection;
 use App\Domain\Analytics\AnalyticsStatsKeyStore;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
@@ -53,28 +54,29 @@ function analyticsEnableTerminal(object $test, string $status = 'succeeded'): Op
     $run = ['id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-analytics-enable-direct', 'status' => $status,
         'inputs' => ['operation_id' => $operation->id, 'kind' => $operation->kind, 'node_id' => $operation->node_id],
         'startedAt' => now()->toIso8601String(), 'completedAt' => now()->toIso8601String(),
-        'jobs' => $status === 'succeeded' ? [['name' => 'finish', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => $operation->input['native_enable']['result_json']]]]]] : []];
+        // The end check: the tracking host's probe, or for a private host its publish step.
+        'jobs' => [['name' => 'analytics', 'steps' => [['name' => 'Probe the tracking host-0', 'status' => $status === 'succeeded' ? 'succeeded' : 'skipped']]]]];
     $test->socket->reply = static fn (array $request): array => [['id' => $request['id'], 'type' => 'workflow.history.get', 'payload' => ['data' => $run]]];
 
-    return app(SwampCommandStep::class)->projectTerminal($operation, $run, ['job' => 'finish', 'step' => 'result']);
+    return app(SwampCommandStep::class)->projectTerminal($operation, $run, app(DirectOperation::class)->definition('analytics.enable')['terminal_result']);
 }
 
 it('captures prospective router ingress and DNS publication before dispatch with names-only secrets', function (): void {
     $this->postJson($this->url)->assertAccepted();
     $operation = Operation::query()->sole();
     $intent = $operation->input['native_enable'];
-    $router = array_find($intent['router'], fn (array $row): bool => $row['node_id'] === $this->router->id);
-    $ingressBefore = array_find($intent['router'], fn (array $row): bool => $row['node_id'] === $this->ingress->id);
-    $ingressAfter = array_find($intent['ingress'], fn (array $row): bool => $row['node_id'] === $this->ingress->id);
+    // The publish step writes each Router and Ingress's whole lasting Caddyfile with the tracking host.
+    $router = array_find($intent['retire']['caddy'], fn (array $row): bool => $row['node_id'] === $this->router->id);
+    $ingress = array_find($intent['retire']['caddy'], fn (array $row): bool => $row['node_id'] === $this->ingress->id);
     expect($intent['base_url'])->toBe('https://analytics.orbit');
     expect($operation->input['base_url'])->toBe($intent['base_url']);
-    expect($router['before']['content'])->not->toContain('analytics.shop.example.com');
-    expect($router['after']['content'])->toContain('analytics.shop.example.com');
-    expect($ingressBefore['after']['content'])->toBe($ingressBefore['before']['content']);
-    expect($ingressAfter['after']['content'])->toContain('analytics.shop.example.com');
-    expect($intent['dns'][0]['after']['records'])->toContain('analytics.shop.example.com');
-    expect($intent['probes'][0])->toMatchArray(['control_node_id' => 209, 'probe' => ['address' => $this->router->lan_ip, 'port' => 443, 'domain' => 'analytics.shop.example.com']]);
-    expect($intent['certificates'][0]['leaf'])->not->toHaveKeys(['route_id', 'in_use']);
+    expect($router['content'])->toContain('analytics.shop.example.com');
+    expect($ingress['content'])->toContain('analytics.shop.example.com');
+    expect($intent['retire_nodes'])->toContain($this->router->id, $this->ingress->id);
+    expect($intent['dns'][0]['records'])->toContain('analytics.shop.example.com');
+    // 209 probes the Router's private address with the tracking host as SNI.
+    expect($intent['probes'][0])->toMatchArray(['address' => $this->router->lan_ip, 'domain' => 'analytics.shop.example.com']);
+    expect($intent['leaves'][0])->not->toHaveKeys(['route_id', 'in_use'])->and($intent['leaves'][0]['domain'])->toBe('analytics.shop.example.com');
     expect($this->socket->sent)->toHaveCount(2);
     $copy = $this->socket->sent[0];
     expect($copy['type'])->toBe('vault.put');
