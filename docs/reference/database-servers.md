@@ -5,11 +5,11 @@ covers:
   - apps/gateway/app/Actions/DatabaseServers/**
   - apps/gateway/app/Actions/DatabaseConnections/{CreateServerDatabaseAction,CreateDatabaseUserAction,DropServerDatabaseAction}.php
   - apps/gateway/app/{Domain,Infrastructure}/DatabaseServers/**
-  - apps/gateway/database/migrations/2026_12_30_000000_add_test_processes_to_database_connections.php
   - apps/gateway/app/Http/{Controllers/Api/DatabaseServersController.php,Requests/DatabaseServers/**}
-  - apps/gateway/{app/Models/DatabaseServer.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
+  - apps/gateway/{app/Models/DatabaseServer.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,database/migrations/2026_12_30_000000_add_test_processes_to_database_connections.php}
   - apps/cli/app/Commands/Database/{CreateDatabaseServerCommand,ListDatabaseServersCommand,ShowDatabaseServerCommand,DestroyDatabaseServerCommand,CreateDatabaseUserCommand}.php
   - packages/php-sdk/src/{Requests,Responses}/DatabaseServers/**
+  - swamp/{extensions/behaviors/operations/database-node-command/**,workflows/workflow-operation-database-server-{create,destroy}.yaml}
 ---
 
 # Database servers
@@ -313,6 +313,7 @@ The server commands return these codes.
 | `database.server_unhealthy` | 502 | The container reported unhealthy or exited before it became healthy. |
 | `database.server_login_failed` | 502 | The admin login failed after the container became healthy. |
 | `database.server_scrub_failed` | 502 | Docker could not recreate the container without its first-start password. |
+| `database.server_create_failed` | 502 | The create run ended without reaching the admin login check. |
 | `database.server_container_foreign` | 409 | A container with the server's name belongs to another Process; nothing changed. |
 | `database.valkey_acl_failed` | 502 | Docker could not write the Valkey ACL file into the volume. |
 | `database.server_in_use` | 409 | A connection still points to the server, another database removal or ACL change is running, or closing would lock out a client. |
