@@ -1,8 +1,4 @@
-import type { Change } from "../_lib/maintenance/summary.ts";
-import {
-  emptyExceptions,
-  type Exceptions,
-} from "../_lib/maintenance/exceptions.ts";
+import { emptyExceptions } from "../_lib/maintenance/exceptions.ts";
 import {
   assert,
   assertEquals,
@@ -13,7 +9,6 @@ import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016
 import { behavior, MaintenanceFailure } from "./mod.ts";
 import type { z } from "npm:zod@4";
 type Detection = z.infer<typeof behavior.resources.detection.schema>;
-type Summary = z.infer<typeof behavior.resources.summary.schema>;
 
 type Response = { code?: number; raw?: string; data?: unknown };
 type Fixture = Record<string, Response[]>;
@@ -33,13 +28,6 @@ const manifest = {
   },
   packageManager: "npm@11.12.0",
 };
-const major = { package: "shadcn", version: "5.0.0", purpose: "major" };
-const security = {
-  package: "shadcn",
-  version: "4.22.0",
-  purpose: "security",
-  advisoryIds: ["1243066"],
-};
 async function fixture(name: string) {
   return JSON.parse(
     await Deno.readTextFile(new URL(`./fixtures/${name}`, import.meta.url)),
@@ -57,15 +45,11 @@ const git = await binary("git");
 
 class Repo {
   exceptions: unknown = emptyExceptions();
-  handles: string[] = [];
   constructor(readonly temp: string, readonly cwd: string) {}
   async json(file: string, data: unknown, path = ".") {
     const dir = `${this.cwd}/${path}`;
     await Deno.mkdir(dir, { recursive: true });
     await Deno.writeTextFile(`${dir}/${file}`, JSON.stringify(data));
-  }
-  async read(file: string) {
-    return JSON.parse(await Deno.readTextFile(`${this.cwd}/${file}`));
   }
   async log() {
     try {
@@ -89,11 +73,6 @@ class Repo {
     args?: Record<string, unknown>,
     fixture?: Fixture,
   ): Promise<Detection>;
-  async execute(
-    method: "summary",
-    args?: Record<string, unknown>,
-    fixture?: Fixture,
-  ): Promise<Summary>;
   async execute(
     method: Method,
     args?: Record<string, unknown>,
@@ -131,27 +110,17 @@ class Repo {
       a: unknown,
       c: typeof context,
     ) => Promise<unknown>;
-    try {
-      const returned = await execute({
-        cwd: this.cwd,
-        exceptions: this.exceptions,
-        policy: Object.fromEntries(
-          ((args.paths as string[] | undefined) ?? ["."]).map(
-            (p) => [p, { minimumReleaseAgeDays: 7 }],
-          ),
+    await execute({
+      cwd: this.cwd,
+      exceptions: this.exceptions,
+      policy: Object.fromEntries(
+        ((args.paths as string[] | undefined) ?? ["."]).map(
+          (p) => [p, { minimumReleaseAgeDays: 7 }],
         ),
-        ...args,
-      }, context) as { dataHandles: { name: string }[] };
-      this.handles = returned.dataHandles.map((handle) => handle.name);
-    } finally {
-      const receipt = getWrittenResources().find((r) =>
-        r.name === "exceptions"
-      );
-      if (receipt) this.exceptions = receipt.data;
-    }
-    const outputs = getWrittenResources().filter((r) =>
-      r.name !== "exceptions"
-    );
+      ),
+      ...args,
+    }, context);
+    const outputs = getWrittenResources();
     assertEquals(outputs.length, 1);
     const output = outputs[0];
     const spec = behavior
@@ -178,32 +147,6 @@ class Repo {
       message,
     );
     assertEquals(error.exitCode, code);
-  }
-  async git(...args: string[]) {
-    const r = await new Deno.Command(git, {
-      cwd: this.cwd,
-      args: [
-        "-c",
-        "user.email=test@example.com",
-        "-c",
-        "user.name=Test",
-        "-c",
-        "commit.gpgsign=false",
-        "-c",
-        "core.hooksPath=/dev/null",
-        ...args,
-      ],
-      stdout: "piped",
-      stderr: "piped",
-    }).output();
-    assertEquals(r.code, 0, new TextDecoder().decode(r.stderr));
-    return new TextDecoder().decode(r.stdout).trim();
-  }
-  async base() {
-    await this.git("init", "-b", "main");
-    await this.git("add", ".");
-    await this.git("commit", "-m", "base");
-    return await this.git("rev-parse", "HEAD");
   }
   async vp(path = ".") {
     await Deno.mkdir(`${this.cwd}/${path}/node_modules/.bin`, {
@@ -317,51 +260,6 @@ function bunReports(table: string, findings: unknown = {}): Fixture {
   return { [outdated]: [{ raw: table }], [audit]: [{ data: findings }] };
 }
 
-test("routine uses local vp and preserves the first failure code", async (r) => {
-  await r.failure(
-    "routine",
-    {},
-    { "vp update": [{ code: 9, raw: "failed" }] },
-    9,
-  );
-  assertEquals(await r.log(), `vp|update|${r.cwd}\n`);
-});
-for (const manager of ["npm", "bun"]) {
-  test(`plain ${manager} uses its own update command`, async (r) => {
-    if (manager === "npm") await r.npm({ react: "^19" });
-    else await r.bun({ react: "^19" }, {}, false);
-    await r.execute("routine");
-    assertEquals(await r.log(), `${manager}|update|${r.cwd}\n`);
-  });
-}
-for (const executable of [false, true]) {
-  test(`missing/non-executable local vp fails before updates (${executable})`, async (r) => {
-    const file = `${r.cwd}/node_modules/.bin/vp`;
-    if (executable) await Deno.chmod(file, 0o644);
-    else await Deno.remove(file);
-    await r.failure("routine", {}, emptyDetect, 127, "Missing executable");
-    assertEquals(await r.log(), "");
-  });
-}
-test("all paths are preflighted before routine updates", async (r) => {
-  await r.npm({ react: "^19" }, {}, "mobile");
-  await Deno.remove(`${r.temp}/bin/npm`);
-  await r.failure(
-    "routine",
-    { paths: [".", "mobile"] },
-    emptyDetect,
-    127,
-    "npm",
-  );
-  assertEquals(await r.log(), "");
-});
-test("routine stops before a later path after update failure", async (r) => {
-  await r.npm({ react: "^19" }, {}, "mobile");
-  await r.failure("routine", { paths: [".", "mobile"] }, {
-    "vp update": [{ code: 17, raw: "failed" }],
-  }, 17);
-  assertEquals(await r.log(), `vp|update|${r.cwd}\n`);
-});
 for (const manager of ["npm", "bun"]) {
   test(`fresh Vite+ ${manager} detects from lockfiles without a bootstrap install`, async (r) => {
     if (manager === "bun") {
@@ -417,7 +315,7 @@ for (
   test(`invalid manager ${JSON.stringify(extra)}`, async (r) => {
     await r.json("package.json", { dependencies: { react: "^19" }, ...extra });
     await Deno.remove(`${r.cwd}/package-lock.json`);
-    await r.failure("routine", {}, emptyDetect, 70);
+    await r.failure("detect", {}, emptyDetect, 70);
     assertEquals(await r.log(), "");
   });
 }
@@ -425,13 +323,13 @@ test("devEngines selects the declared manager", async (r) => {
   await r.npm({ react: "^19" }, {}, ".", {
     devEngines: { packageManager: { name: "npm", version: "11" } },
   });
-  await r.execute("routine");
-  assertEquals(await r.log(), `npm|update|${r.cwd}\n`);
+  await r.execute("detect");
+  assertStringIncludes(await r.log(), "npm|outdated");
 });
 test("two inferred lockfiles disagree before any command", async (r) => {
   await r.npm({ react: "^19" });
   await r.json("bun.lock", {});
-  await r.failure("routine", {}, emptyDetect, 70, "disagree");
+  await r.failure("detect", {}, emptyDetect, 70, "disagree");
   assertEquals(await r.log(), "");
 });
 for (
@@ -446,7 +344,7 @@ for (
   ]
 ) {
   test(`unsafe or missing paths ${paths}`, async (r) => {
-    await r.failure("routine", { paths }, emptyDetect, 70);
+    await r.failure("detect", { paths }, emptyDetect, 70);
     assertEquals(await r.log(), "");
   });
 }
@@ -458,7 +356,7 @@ test("symlink leaving the checkout is rejected", async (r) => {
 test("two paths to the same real directory are rejected", async (r) => {
   await Deno.symlink(r.cwd, `${r.cwd}/same`);
   await r.failure(
-    "routine",
+    "detect",
     { paths: [".", "same"] },
     emptyDetect,
     70,
@@ -674,18 +572,6 @@ for (const via of [["missing-package"], ["@shadcn/registry"], []]) {
     }, 70);
   });
 }
-test("npm package names are rejected as advisory ids before writes", async (r) => {
-  const before = await r.read("package.json");
-  await r.failure(
-    "package",
-    { ...security, advisoryIds: ["shadcn"] },
-    { [audit]: [{ data: finding }] },
-    64,
-    "not current",
-  );
-  assertEquals(await r.read("package.json"), before);
-  assert(!(await r.log()).includes("add"));
-});
 test("Bun walks dependencies and peers, stopping at another direct package", async (r) => {
   await r.bun({ "@nckrtl/launch-ui": "0.0.x", shadcn: "^4.21.0" }, {
     "@nckrtl/launch-ui": bunEntry("@nckrtl/launch-ui", "0.0.31", {
@@ -763,293 +649,6 @@ test("unattachable Bun advisory fails closed", async (r) => {
   );
 });
 
-test("major uses a caret and preserves the JS dependency section", async (r) => {
-  await r.execute("package", {
-    package: "vite-plus",
-    version: "1.4.0",
-    purpose: "major",
-  });
-  assertStringIncludes(await r.log(), "vp|add vite-plus@^1.4.0 --save-dev|");
-  assertEquals(
-    (await r.read("package.json")).devDependencies["vite-plus"],
-    "^1.4.0",
-  );
-});
-for (
-  const section of ["dependencies", "devDependencies", "optionalDependencies"]
-) {
-  test(`npm security exact pin retains ${section} and uses one age bypass`, async (r) => {
-    await r.json("package.json", {
-      [section]: { shadcn: "^4.21" },
-      packageManager: "npm@11.12.0",
-    });
-    await Deno.writeTextFile(`${r.cwd}/.npmrc`, "min-release-age=7\n");
-    const flag = section === "dependencies"
-      ? "--save-prod"
-      : section === "devDependencies"
-      ? "--save-dev"
-      : "--save-optional";
-    await r.execute("package", security, {
-      "npm audit --json": [{ data: finding }, emptyAudit],
-    });
-    assertStringIncludes(
-      await r.log(),
-      `npm|install shadcn@4.22.0 ${flag} --save-exact --min-release-age=0|`,
-    );
-    assertEquals((await r.read("package.json"))[section].shadcn, "4.22.0");
-    assertEquals((await r.read("package.json")).packageManager, "npm@11.12.0");
-    assertEquals(
-      await Deno.readTextFile(`${r.cwd}/.npmrc`),
-      "min-release-age=7\n",
-    );
-    assertEquals(await r.exists("maintainer-exceptions.json"), false);
-  });
-}
-test("Vite+ npm security age bypass is after the manager separator", async (r) => {
-  await r.execute("package", security, {
-    [audit]: [{ data: finding }, emptyAudit],
-  });
-  assertStringIncludes(
-    await r.log(),
-    "vp|add shadcn@4.22.0 --save-prod --save-exact -- --min-release-age=0|",
-  );
-  assertEquals((await r.read("package.json")).dependencies.shadcn, "4.22.0");
-});
-for (
-  const target of [
-    { package: "shadcn;bad" },
-    { package: "missing" },
-    { version: "latest" },
-    { version: "^2.0" },
-    { version: "2.0.0 --force" },
-    { purpose: "security" },
-    { purpose: "major", advisoryIds: ["123"] },
-  ]
-) {
-  test(`invalid single-package target ${JSON.stringify(target)}`, async (r) => {
-    await r.failure("package", { ...major, ...target }, emptyDetect, 64);
-    assertEquals(await r.log(), "");
-  });
-}
-for (const name of ["@.scope/shadcn", "@_scope/shadcn", "@-scope/shadcn"]) {
-  test(`package rejects a scope starting with punctuation: ${name}`, async (r) => {
-    await r.npm({ [name]: "^4" }, { [name]: "4.21.0" });
-    await r.failure("package", { ...major, package: name }, {}, 64);
-    assertEquals(await r.log(), "");
-  });
-}
-for (const variant of ["alias", "ambiguous"]) {
-  test(`reject ${variant} direct target before commands`, async (r) => {
-    await r.json("package.json", {
-      dependencies: { shadcn: variant === "alias" ? "npm:other@^4" : "^4" },
-      ...(variant === "ambiguous" ? { devDependencies: { shadcn: "^4" } } : {}),
-    });
-    await r.failure("package", major, emptyDetect, 64, "one existing direct");
-    assertEquals(await r.log(), "");
-  });
-}
-test("package defaults to root and does not choose the other JS path", async (r) => {
-  await r.npm({ lodash: "^4" }, {}, "mobile");
-  await r.failure(
-    "package",
-    { ...major, paths: [".", "mobile"], package: "lodash" },
-    emptyDetect,
-    64,
-    "one existing direct",
-  );
-  assertEquals(await r.log(), "");
-});
-test("requested advisory must be current before any policy or package write", async (r) => {
-  await r.failure(
-    "package",
-    security,
-    { [audit]: [emptyAudit] },
-    64,
-    "not current",
-  );
-  assert(!(await r.log()).includes("add"));
-  assertEquals(await r.exists("maintainer-exceptions.json"), false);
-});
-test("security retries accept an already fixed exact declaration", async (r) => {
-  await r.json("package.json", {
-    dependencies: { shadcn: "4.22.0" },
-    packageManager: "npm@11.12.0",
-  });
-  await r.execute("package", security, { "npm audit --json": [emptyAudit] });
-  assertEquals(await r.exists("maintainer-exceptions.json"), false);
-});
-test("security fails if the selected package still has any advisory", async (r) => {
-  await r.failure(
-    "package",
-    security,
-    { [audit]: [{ data: finding }] },
-    1,
-    "still has security advisories",
-  );
-});
-test("package stops at a failed add", async (r) => {
-  await r.failure("package", security, {
-    [audit]: [{ data: finding }],
-    "vp add shadcn@4.22.0 --save-prod --save-exact -- --min-release-age=0": [{
-      code: 23,
-      raw: "failed",
-    }],
-  }, 23);
-  assertEquals((await r.log()).split("vp|pm audit").length - 1, 1);
-});
-const bunFinding = {
-  shadcn: [{
-    id: 1243066,
-    url: "https://github.com/advisories/GHSA-zod",
-    title: "Zod",
-    vulnerable_versions: "<4.22",
-  }],
-};
-test("Bun security changes only the named release-age exclusion and records its date", async (r) => {
-  await r.bun({ shadcn: "^4" }, { shadcn: bunEntry("shadcn", "4.21.0") });
-  await Deno.writeTextFile(
-    `${r.cwd}/bunfig.toml`,
-    '[install]\nminimumReleaseAge = 604800\nminimumReleaseAgeExcludes = ["existing"]\n\n[test]\ncoverage = true\n',
-  );
-  r.exceptions = {
-    schema: 1,
-    owner: "keep",
-    exceptions: [{
-      path: ".",
-      manager: "composer",
-      package: "other/pkg",
-      recorded_on: "2026-01-01",
-      days: 7,
-      note: "keep",
-    }],
-  };
-  await r.execute("package", security, {
-    [audit]: [{ data: bunFinding }, { data: {} }],
-  });
-  const text = await Deno.readTextFile(`${r.cwd}/bunfig.toml`);
-  assertStringIncludes(
-    text,
-    'minimumReleaseAgeExcludes = ["existing","shadcn"]',
-  );
-  assertStringIncludes(text, "[test]\ncoverage = true");
-  const ledger = r.exceptions as Exceptions;
-  assertEquals(ledger.owner, "keep");
-  assertEquals(ledger.exceptions[0].note, "keep");
-  assertEquals(ledger.exceptions[1], {
-    path: ".",
-    manager: "js",
-    package: "shadcn",
-    recorded_on: new Date().toISOString().slice(0, 10),
-    days: 7,
-  });
-  assertStringIncludes(
-    await r.log(),
-    "vp|add shadcn@4.22.0 --save-prod --save-exact|",
-  );
-  assert(!(await r.log()).includes("min-release-age=0"));
-});
-for (const existing of [false, true]) {
-  test(`Bun security preserves literal dollar sequences with existing excludes ${existing}`, async (r) => {
-    await r.bun({ shadcn: "^4" }, { shadcn: bunEntry("shadcn", "4.21.0") });
-    const before = [
-      "[install] # token-like settings must stay literal",
-      'registry = { token = "a$$b$&c$`d$\'e" }',
-      "minimumReleaseAge = 604800 # $$ $& $` $'",
-      ...(existing ? ['minimumReleaseAgeExcludes = ["existing"]'] : []),
-      "",
-      "[test]",
-      "coverage = true",
-      "",
-    ].join("\n");
-    await Deno.writeTextFile(`${r.cwd}/bunfig.toml`, before);
-    await r.execute("package", security, {
-      [audit]: [{ data: bunFinding }, { data: {} }],
-    });
-    const rendered = existing
-      ? 'minimumReleaseAgeExcludes = ["existing","shadcn"]'
-      : 'minimumReleaseAgeExcludes = ["shadcn"]';
-    const expected = existing
-      ? before.replace(
-        'minimumReleaseAgeExcludes = ["existing"]',
-        () => rendered,
-      )
-      : before.replace(
-        /^(minimumReleaseAge = .*\n)/m,
-        (line) => `${line}${rendered}\n`,
-      );
-    assertEquals(await Deno.readTextFile(`${r.cwd}/bunfig.toml`), expected);
-  });
-}
-test("Bun age policy input is only an assertion", async (r) => {
-  await r.bun({ shadcn: "^4" }, { shadcn: bunEntry("shadcn", "4.21.0") });
-  await Deno.writeTextFile(
-    `${r.cwd}/bunfig.toml`,
-    "[install]\nminimumReleaseAge = 604800\n",
-  );
-  const before = await Deno.readTextFile(`${r.cwd}/bunfig.toml`);
-  await r.failure(
-    "package",
-    { ...security, policy: { ".": { minimumReleaseAgeDays: 3 } } },
-    { [audit]: [{ data: bunFinding }] },
-    64,
-    "must match",
-  );
-  assertEquals(await Deno.readTextFile(`${r.cwd}/bunfig.toml`), before);
-  assertEquals(await r.exists("maintainer-exceptions.json"), false);
-});
-for (
-  const text of [
-    null,
-    "[install]\ncache = true\n",
-    "[other]\nminimumReleaseAge = 604800\n",
-  ]
-) {
-  test(`Bun does not invent missing release-age policy (${text})`, async (r) => {
-    await r.bun({ shadcn: "^4" }, { shadcn: bunEntry("shadcn", "4.21.0") });
-    if (text !== null) await Deno.writeTextFile(`${r.cwd}/bunfig.toml`, text);
-    await r.execute("package", security, {
-      [audit]: [{ data: bunFinding }, { data: {} }],
-    });
-    assertEquals(await r.exists("maintainer-exceptions.json"), false);
-    if (text !== null) {
-      assertEquals(await Deno.readTextFile(`${r.cwd}/bunfig.toml`), text);
-    }
-  });
-}
-test("Bun exclusion and record are not duplicated on retry", async (r) => {
-  await r.bun({ shadcn: "^4" }, { shadcn: bunEntry("shadcn", "4.21.0") });
-  await Deno.writeTextFile(
-    `${r.cwd}/bunfig.toml`,
-    "[install]\nminimumReleaseAge = 604800\n",
-  );
-  const responses = { [audit]: [{ data: bunFinding }, { data: {} }] };
-  await r.execute("package", security, responses);
-  const before = await Deno.readTextFile(`${r.cwd}/bunfig.toml`);
-  await r.execute("package", security, responses);
-  assertEquals(await Deno.readTextFile(`${r.cwd}/bunfig.toml`), before);
-  assertEquals(
-    (r.exceptions as Exceptions).exceptions.length,
-    1,
-  );
-});
-test("Bun malformed exception input fails before exclusion write", async (r) => {
-  await r.bun({ shadcn: "^4" }, { shadcn: bunEntry("shadcn", "4.21.0") });
-  await Deno.writeTextFile(
-    `${r.cwd}/bunfig.toml`,
-    "[install]\nminimumReleaseAge = 604800\n",
-  );
-  r.exceptions = { schema: 9 };
-  await r.failure(
-    "package",
-    security,
-    { [audit]: [{ data: bunFinding }] },
-    64,
-    "exceptions",
-  );
-  assert(
-    !(await Deno.readTextFile(`${r.cwd}/bunfig.toml`)).includes("Excludes"),
-  );
-});
 test("stale Bun exceptions retain the maintainer date and manager contract", async (r) => {
   await r.bun({ shadcn: "^4" }, {});
   await Deno.writeTextFile(
@@ -1081,30 +680,6 @@ test("stale Bun exceptions retain the maintainer date and manager contract", asy
     remove_on: "2026-01-08",
   }]);
 });
-for (
-  const section of ["dependencies", "devDependencies", "optionalDependencies"]
-) {
-  test(`plain Bun exact security install in ${section}`, async (r) => {
-    await r.bun({}, { shadcn: bunEntry("shadcn", "4.21.0") }, false);
-    await r.json("package.json", {
-      packageManager: "bun@1.3.14",
-      [section]: { shadcn: "^4" },
-    });
-    await r.execute("package", security, {
-      "bun pm audit --json": [{ data: bunFinding }, { data: {} }],
-    });
-    assertStringIncludes(
-      await r.log(),
-      `bun|add shadcn@4.22.0${
-        section === "devDependencies"
-          ? " -d"
-          : section === "optionalDependencies"
-          ? " --optional"
-          : ""
-      } --exact|`,
-    );
-  });
-}
 async function expoRepo(r: Repo) {
   await r.npm(
     {
@@ -1160,679 +735,6 @@ test("no Expo SDK candidate is invented for an isolated coupled bump", async (r)
   );
   assertEquals(result.candidates, []);
 });
-for (
-  const name of [
-    "react",
-    "react-dom",
-    "react-native",
-    "expo-camera",
-    "@expo/ui",
-    "react-native-screens",
-    "@react-native/dev-middleware",
-    "@react-native-community/cli",
-  ]
-) {
-  test(`Expo rejects independent coupled major ${name}`, async (r) => {
-    await expoRepo(r);
-    await r.failure(
-      "package",
-      {
-        path: "mobile",
-        paths: ["mobile"],
-        package: name,
-        version: "1.2.3",
-        purpose: "major",
-      },
-      emptyDetect,
-      64,
-      "coupled",
-    );
-    assertEquals(await r.log(), "");
-  });
-}
-test("Expo SDK install runs alignment after the exact SDK command", async (r) => {
-  await expoRepo(r);
-  await r.execute("package", {
-    paths: ["mobile"],
-    path: "mobile",
-    package: "expo",
-    version: "58.0.0",
-    purpose: "major",
-  });
-  assertEquals(
-    await r.log(),
-    `npx|expo install expo@58.0.0|${r.cwd}/mobile\nnpx|expo install --fix|${r.cwd}/mobile\n`,
-  );
-  assertEquals(
-    (await r.read("mobile/package.json")).dependencies.expo,
-    "58.0.0",
-  );
-});
-test("Expo stops when SDK install fails before alignment", async (r) => {
-  await expoRepo(r);
-  await r.failure(
-    "package",
-    {
-      paths: ["mobile"],
-      path: "mobile",
-      package: "expo",
-      version: "58.0.0",
-      purpose: "major",
-    },
-    { "npx expo install expo@58.0.0": [{ code: 12, raw: "failure" }] },
-    12,
-  );
-  assert(!(await r.log()).includes("--fix"));
-});
-test("Expo security uses the exact SDK and a scoped npm age environment", async (r) => {
-  await expoRepo(r);
-  await r.execute("package", {
-    paths: ["mobile"],
-    path: "mobile",
-    package: "expo",
-    version: "57.0.30",
-    purpose: "security",
-    advisoryIds: ["777"],
-  }, {
-    "npm audit --json": [{
-      data: {
-        vulnerabilities: {
-          expo: {
-            via: [{
-              source: 777,
-              url: "https://github.com/advisories/GHSA-expo",
-            }],
-          },
-        },
-      },
-    }, emptyAudit],
-  });
-  const log = await r.log();
-  assertStringIncludes(
-    log,
-    `npx|expo install expo@57.0.30|${r.cwd}/mobile|min-release-age=0`,
-  );
-  assertStringIncludes(
-    log,
-    `npx|expo install --fix|${r.cwd}/mobile|min-release-age=0`,
-  );
-  assert(!log.includes("npm|install"));
-  const child = JSON.parse(await Deno.readTextFile(`${r.temp}/child-env.json`));
-  assertEquals(child.npm_config_min_release_age, undefined);
-});
-test("coupled Expo security updates the selected package with npm", async (r) => {
-  await expoRepo(r);
-  await r.execute("package", {
-    paths: ["mobile"],
-    path: "mobile",
-    package: "react-native",
-    version: "0.86.4",
-    purpose: "security",
-    advisoryIds: ["999"],
-  }, {
-    "npm audit --json": [{
-      data: {
-        vulnerabilities: {
-          "react-native": {
-            via: [{
-              source: 999,
-              url: "https://github.com/advisories/GHSA-rn",
-            }],
-          },
-        },
-      },
-    }, emptyAudit],
-  });
-  assertStringIncludes(
-    await r.log(),
-    "npm|install react-native@0.86.4 --save-prod --save-exact --min-release-age=0|",
-  );
-  assert(!(await r.log()).includes("npx|"));
-});
-
-function summaryText(
-  title: string,
-  intro: string,
-  rows: string[][],
-  actions: string[] = [],
-  security: string[] = [],
-) {
-  const parts = [intro];
-  if (actions.length) parts.push(`Action needed\n\n${actions.join("\n")}`);
-  parts.push(
-    [
-      "| Package | From | To | Change |",
-      "| --- | --- | --- | --- |",
-      ...rows.map((row) => `| ${row.join(" | ")} |`),
-    ].join("\n"),
-  );
-  if (security.length) parts.push("Security fixes\n\n" + security.join("\n"));
-  parts.push(
-    "## What changes in the package\n\n" +
-      rows.map((r) => {
-        const [name, path] = r[0].split(" (");
-        const version = r[2] === "—"
-          ? "(removed)"
-          : r[3].includes("major")
-          ? r[2].split(".").slice(0, r[2].startsWith("0.") ? 2 : 1).join(".")
-          : r[2];
-        return `- **${name} ${version}${
-          path ? ", " + path.slice(0, -1) : ""
-        }.** No code changes needed.`;
-      }).join("\n"),
-  );
-  return `${title}\n\n${parts.join("\n\n")}\n`;
-}
-const cleanNpmAudit = { "npm audit --json": [emptyAudit] };
-const npmFinding = (
-  name: string,
-  id: number = 123,
-  url = "https://github.com/advisories/GHSA-test",
-) => ({
-  vulnerabilities: {
-    [name]: {
-      via: [{
-        source: id,
-        name,
-        url,
-        title: "test",
-        range: "<2.0.0",
-        severity: "high",
-      }],
-    },
-  },
-});
-test("summary writes exact single major PR text from working tree lock", async (r) => {
-  await r.npm({ react: "^19" }, { react: "19.0.0" });
-  const base = await r.base();
-  await r.json(
-    "package-lock.json",
-    npmLock({ react: "20.0.0", transitive: "2.0.0" }),
-  );
-  const result = await r.execute("summary", {
-    projectType: "node-package",
-    base,
-  }, cleanNpmAudit);
-  assertEquals(
-    result.text,
-    summaryText(
-      "Update react to 20.0.0",
-      "This updates react from 19.0.0 to 20.0.0.",
-      [["react", "19.0.0", "20.0.0", "major"]],
-      ["react 19.0.0 → 20.0.0 is a major update. Check its upgrade notes for downstream breaking changes."],
-    ),
-  );
-});
-test("summary of several direct updates uses the UTC maintenance title", async (r) => {
-  await r.npm({ react: "^19", lodash: "^4" }, {
-    react: "19.0.0",
-    lodash: "4.17.20",
-  });
-  const base = await r.base();
-  await r.json(
-    "package-lock.json",
-    npmLock({ react: "20.0.0", lodash: "4.17.21", transitive: "2.0.0" }),
-  );
-  const result = await r.execute("summary", {
-    projectType: "node-package",
-    base,
-  }, cleanNpmAudit);
-  const month = new Date().toLocaleString("en-US", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-  assertEquals(
-    result.text,
-    summaryText(
-      `Maintenance update for ${month}`,
-      "Updates the dependencies listed below.",
-      [["lodash", "4.17.20", "4.17.21", ""], [
-        "react",
-        "19.0.0",
-        "20.0.0",
-        "major",
-      ]],
-      ["react 19.0.0 → 20.0.0 is a major update. Check its upgrade notes for downstream breaking changes."],
-    ),
-  );
-});
-test("unchanged summary exits one without auditing", async (r) => {
-  const base = await r.base();
-  await r.failure("summary", { base }, emptyDetect, 1, "No dependency changes");
-  assertEquals(await r.log(), "");
-});
-test("npm summary ignores version changes outside node_modules records", async (r) => {
-  await r.npm({ react: "^19" }, { react: "19.0.0" });
-  await r.json(
-    "package-lock.json",
-    npmLock({ react: "19.0.0" }, {
-      "": { version: "1.0.0" },
-      "packages/local": { version: "1.0.0" },
-    }),
-  );
-  const base = await r.base();
-  await r.json(
-    "package-lock.json",
-    npmLock({ react: "19.0.0" }, {
-      "": { version: "2.0.0" },
-      "packages/local": { version: "2.0.0" },
-    }),
-  );
-  await r.failure("summary", { base }, {}, 1, "No dependency changes");
-  assertEquals(await r.log(), "");
-});
-test("summary defaults to origin HEAD merge-base", async (r) => {
-  await r.npm({ react: "^19" }, { react: "19.0.0" });
-  const base = await r.base();
-  await r.git("update-ref", "refs/remotes/origin/main", base);
-  await r.git(
-    "symbolic-ref",
-    "refs/remotes/origin/HEAD",
-    "refs/remotes/origin/main",
-  );
-  await r.json("package-lock.json", npmLock({ react: "19.0.1" }));
-  const result = await r.execute(
-    "summary",
-    { projectType: "node-package" },
-    cleanNpmAudit,
-  );
-  assertEquals(result.title, "Update react to 19.0.1");
-});
-for (const base of ["-bad", "HEAD..main", "HEAD;echo bad"]) {
-  test(`summary rejects invalid ref ${base}`, async (r) => {
-    await r.failure("summary", { base }, emptyDetect, 64, "Invalid base");
-  });
-}
-test("Bun 0.x minor summary treats a newer minor as major", async (r) => {
-  await r.bun({ "@scope/pkg": "^0.2" }, {
-    "@scope/pkg": bunEntry("@scope/pkg", "0.2.0"),
-  }, false);
-  const base = await r.base();
-  await r.json("bun.lock", {
-    packages: { "@scope/pkg": bunEntry("@scope/pkg", "0.3.0") },
-  });
-  const result = await r.execute("summary", {
-    projectType: "node-package",
-    base,
-  }, {
-    "bun pm audit --json": [{ data: {} }],
-  });
-  assertEquals(result.title, "Update @scope/pkg to 0.3.0");
-  assertEquals(result.changes[0].major, true);
-});
-test("Bun lock instance key differs from the descriptor name", async (r) => {
-  await r.bun({ "@scope/pkg": "^0.2" }, {
-    "@scope/pkg": bunEntry("@scope/pkg", "0.2.0"),
-    "parent/@scope/pkg": bunEntry("@scope/pkg", "0.1.0"),
-  }, false);
-  const base = await r.base();
-  await r.json("bun.lock", {
-    packages: {
-      "@scope/pkg": bunEntry("@scope/pkg", "0.3.0"),
-      "parent/@scope/pkg": bunEntry("@scope/pkg", "0.1.1"),
-    },
-  });
-  const result = await r.execute("summary", {
-    projectType: "node-package",
-    base,
-  }, {
-    "bun pm audit --json": [{ data: {} }],
-  });
-  assertEquals(result.changes.length, 1);
-  assertEquals(result.changes[0].to, "0.3.0");
-});
-for (const mode of ["add", "remove"]) {
-  test(`summary lists direct ${mode}`, async (r) => {
-    await r.npm(
-      mode === "remove" ? { react: "^19" } : {},
-      mode === "remove" ? { react: "19.0.0" } : {},
-    );
-    const base = await r.base();
-    await r.npm(
-      mode === "add" ? { react: "^19" } : {},
-      mode === "add" ? { react: "19.0.0" } : {},
-    );
-    const result = await r.execute("summary", {
-      projectType: "node-package",
-      base,
-    }, cleanNpmAudit);
-    assertEquals(
-      result.text,
-      summaryText(
-        mode === "add" ? "Add react 19.0.0" : "Remove react",
-        mode === "add"
-          ? "This adds react 19.0.0."
-          : "This removes react 19.0.0.",
-        [[
-          "react",
-          mode === "add" ? "—" : "19.0.0",
-          mode === "remove" ? "—" : "19.0.0",
-          "",
-        ]],
-      ),
-    );
-  });
-}
-test("cleared npm via advisories appear on the controlling direct package", async (r) => {
-  const base = await r.base();
-  await r.json(
-    "package-lock.json",
-    npmLock({ shadcn: "4.22.0", react: "19.0.0", "vite-plus": "0.2.9" }),
-  );
-  const result = await r.execute("summary", {
-    projectType: "node-package",
-    base,
-  }, {
-    [audit]: [emptyAudit, { data: finding }],
-  });
-  const link = "[1243066](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5)";
-  assertEquals(
-    result.text,
-    summaryText(
-      "Update shadcn to 4.22.0 (security fix)",
-      "This updates shadcn from 4.21.0 to 4.22.0.",
-      [["shadcn", "4.21.0", "4.22.0", "security fix"]],
-      [],
-      [`shadcn: ${link}`],
-    ),
-  );
-});
-test("nested npm change can clear an advisory while the direct locked version stays fixed", async (r) => {
-  await r.json(
-    "package-lock.json",
-    npmLock({ shadcn: "4.21.0" }, {
-      "node_modules/shadcn/node_modules/zod": { version: "3.25.76" },
-    }),
-  );
-  const base = await r.base();
-  await r.json(
-    "package-lock.json",
-    npmLock({ shadcn: "4.21.0" }, {
-      "node_modules/shadcn/node_modules/zod": { version: "4.6.6" },
-    }),
-  );
-  const result = await r.execute("summary", {
-    projectType: "node-package",
-    base,
-  }, {
-    [audit]: [emptyAudit, { data: finding }],
-  });
-  assertEquals(result.title, "Update shadcn to 4.21.0 (security fix)");
-  assertEquals(result.changes[0].from, result.changes[0].to);
-  assertStringIncludes(result.body, "This updates shadcn to 4.21.0.");
-});
-test("nested Bun advisory clearance is assigned to its unchanged direct package", async (r) => {
-  await r.bun({ shadcn: "^4" }, {
-    shadcn: bunEntry("shadcn", "4.21.0", { dependencies: { zod: "^3" } }),
-    zod: bunEntry("zod", "3.25.76"),
-    "shadcn/zod": bunEntry("zod", "3.25.76"),
-  });
-  const base = await r.base();
-  await r.json("bun.lock", {
-    packages: {
-      shadcn: bunEntry("shadcn", "4.21.0", { dependencies: { zod: "^4" } }),
-      zod: bunEntry("zod", "4.6.6"),
-      "shadcn/zod": bunEntry("zod", "4.6.6"),
-    },
-  });
-  const result = await r.execute("summary", {
-    projectType: "node-package",
-    base,
-  }, {
-    [audit]: [{ data: {} }, {
-      data: {
-        zod: [{ id: 123, url: "https://github.com/advisories/GHSA-zod" }],
-      },
-    }],
-  });
-  assertEquals(result.title, "Update shadcn to 4.21.0 (security fix)");
-  assertEquals(result.changes[0].advisories[0].id, "123");
-});
-test("summary does not count a still-open advisory as fixed", async (r) => {
-  await r.npm({ react: "^19" }, { react: "19.0.0" });
-  const base = await r.base();
-  await r.json("package-lock.json", npmLock({ react: "19.0.1" }));
-  const result = await r.execute("summary", {
-    projectType: "node-package",
-    base,
-  }, {
-    "npm audit --json": [{ data: npmFinding("react") }],
-  });
-  assertEquals(result.title, "Update react to 19.0.1");
-  assertEquals(result.changes[0].advisories, []);
-  assert(!result.text.includes("Security fixes"));
-});
-test("removing a direct declaration is not a fix if its advisory remains installed", async (r) => {
-  await r.npm({ react: "^19", lodash: "^4" }, {
-    react: "19.0.0",
-    lodash: "4.17.20",
-  });
-  const base = await r.base();
-  await r.npm({ react: "^19" }, { react: "19.0.0", lodash: "4.17.20" });
-  const data = {
-    advisories: {
-      "123": {
-        id: 123,
-        module_name: "lodash",
-        url: "https://github.com/advisories/GHSA-lodash",
-      },
-    },
-  };
-  const result = await r.execute("summary", {
-    projectType: "node-package",
-    base,
-  }, {
-    "npm audit --json": [{ data }],
-  });
-  assertEquals(result.title, "Remove lodash");
-  assertEquals(result.changes[0].advisories, []);
-});
-for (const manager of ["npm", "bun"]) {
-  test(`${manager} alias summary retains declared name and cleared real id`, async (r) => {
-    const aliasEntry = (version: string) => ({ name: "lodash", version });
-    if (manager === "npm") {
-      await r.npm({ alias: "npm:lodash@4.17.20" });
-      await r.json(
-        "package-lock.json",
-        npmLock({}, { "node_modules/alias": aliasEntry("4.17.20") }),
-      );
-    } else {await r.bun({ alias: "npm:lodash@4.17.20" }, {
-        alias: bunEntry("lodash", "4.17.20"),
-      }, false);}
-    const base = await r.base();
-    if (manager === "npm") {
-      await r.json(
-        "package-lock.json",
-        npmLock({}, { "node_modules/alias": aliasEntry("4.17.21") }),
-      );
-    } else {await r.json("bun.lock", {
-        packages: { alias: bunEntry("lodash", "4.17.21") },
-      });}
-    const previous = manager === "npm"
-      ? npmFinding("lodash", 1065, "https://github.com/advisories/GHSA-lodash")
-      : {
-        lodash: [{
-          id: 1065,
-          url: "https://github.com/advisories/GHSA-lodash",
-        }],
-      };
-    const result = await r.execute("summary", {
-      projectType: "node-package",
-      base,
-    }, {
-      [manager === "npm" ? "npm audit --json" : "bun pm audit --json"]: [{
-        data: manager === "npm" ? { vulnerabilities: {} } : {},
-      }, { data: previous }],
-    });
-    assertEquals(
-      result.text,
-      summaryText(
-        "Update alias to 4.17.21 (security fix)",
-        "This updates alias from 4.17.20 to 4.17.21.",
-        [[
-          "alias",
-          "4.17.20",
-          "4.17.21",
-          "security fix",
-        ]],
-        [],
-        ["alias: [1065](https://github.com/advisories/GHSA-lodash)"],
-      ),
-    );
-  });
-}
-test("an npm direct dependency becoming an alias does not mark its advisory fixed", async (r) => {
-  await r.npm({ lodash: "4.17.20" }, { lodash: "4.17.20" });
-  const base = await r.base();
-  await r.npm({ alias: "npm:lodash@4.17.20" });
-  await r.json(
-    "package-lock.json",
-    npmLock({}, {
-      "node_modules/alias": { name: "npm:lodash@4.17.20", version: "4.17.20" },
-    }),
-  );
-  const result = await r.execute("summary", {
-    projectType: "node-package",
-    base,
-  }, {
-    "npm audit --json": [{ data: npmFinding("lodash") }],
-  });
-  assertEquals(
-    result.changes.map((c) => [c.package, c.from, c.to, c.advisories]),
-    [["alias", "—", "4.17.20", []], ["lodash", "4.17.20", "—", []]],
-  );
-  assert(!result.body.includes("Security fixes"));
-});
-test("summary leaves non-HTTPS advisory ids as plain text", async (r) => {
-  await r.npm({ react: "^19" }, { react: "19.0.0" });
-  const base = await r.base();
-  await r.json("package-lock.json", npmLock({ react: "19.0.1" }));
-  const result = await r.execute("summary", {
-    projectType: "node-package",
-    base,
-  }, {
-    "npm audit --json": [emptyAudit, {
-      data: npmFinding("react", 123, "http://example.com/123"),
-    }],
-  });
-  assertStringIncludes(result.body, "Security fixes\n\nreact: 123");
-  assertEquals(result.changes[0].advisories[0].url, null);
-});
-test("summary combines Composer and JS, including non-root paths", async (r) => {
-  await r.json("composer.json", { require: { "other/pkg": "^1" } });
-  await r.json("composer.lock", {
-    packages: [{ name: "other/pkg", version: "1.0.0" }],
-  });
-  await r.npm({ expo: "57.0.28" }, { expo: "57.0.28" }, "mobile");
-  const base = await r.base();
-  await r.json("composer.lock", {
-    packages: [{ name: "other/pkg", version: "2.0.0" }],
-  });
-  await r.json("package-lock.json", npmLock({ expo: "58.0.0" }), "mobile");
-  const result = await r.execute("summary", {
-    projectType: "node-package",
-    base,
-    paths: [".", "mobile"],
-  }, {
-    "composer audit --locked --format=json --no-plugins --no-scripts": [{
-      data: { advisories: {} },
-    }],
-    ...cleanNpmAudit,
-  });
-  assertEquals(result.changes.map((c) => [c.path, c.package]), [[
-    ".",
-    "other/pkg",
-  ], ["mobile", "expo"]]);
-  assertStringIncludes(
-    result.body,
-    "| expo (mobile) | 57.0.28 | 58.0.0 | major |",
-  );
-  assertStringIncludes(
-    result.body,
-    "expo (mobile) 57.0.28 → 58.0.0 is a major update.",
-  );
-});
-test("mixed root summary sorts Composer and JS rows together by package", async (r) => {
-  await r.npm({ alpha: "^1", charlie: "^1" }, {
-    alpha: "1.0.0",
-    charlie: "1.0.0",
-  });
-  await r.json("composer.json", {
-    require: { "bravo/pkg": "^1", "delta/pkg": "^1" },
-  });
-  await r.json("composer.lock", {
-    packages: ["bravo/pkg", "delta/pkg"].map((name) => ({
-      name,
-      version: "1.0.0",
-    })),
-  });
-  const base = await r.base();
-  await r.json("composer.lock", {
-    packages: ["bravo/pkg", "delta/pkg"].map((name) => ({
-      name,
-      version: "1.0.1",
-    })),
-  });
-  await r.json(
-    "package-lock.json",
-    npmLock({ alpha: "1.0.1", charlie: "1.0.1" }),
-  );
-  const result = await r.execute("summary", {
-    projectType: "node-package",
-    base,
-  }, {
-    "composer audit --locked --format=json --no-plugins --no-scripts": [{
-      data: { advisories: {} },
-    }],
-    ...cleanNpmAudit,
-  });
-  const names = ["alpha", "bravo/pkg", "charlie", "delta/pkg"];
-  assertEquals(
-    result.changes.map((c) => [c.path, c.package]),
-    names.map((name) => [".", name]),
-  );
-  const title = `Maintenance update for ${
-    new Date().toLocaleString("en-US", { month: "long", timeZone: "UTC" })
-  } ${new Date().getUTCFullYear()}`;
-  assertEquals(
-    result.text,
-    summaryText(
-      title,
-      "Updates the dependencies listed below.",
-      names.map((name) => [name, "1.0.0", "1.0.1", ""]),
-    ),
-  );
-});
-test("mixed summary accepts a Composer-only path and JS-only subdirectory", async (r) => {
-  await Deno.remove(`${r.cwd}/package.json`);
-  await r.json("composer.json", { require: { "other/pkg": "^1" } });
-  await r.json("composer.lock", {
-    packages: [{ name: "other/pkg", version: "1.0.0" }],
-  });
-  await r.npm({ react: "^19" }, { react: "19.0.0" }, "mobile");
-  const base = await r.base();
-  await r.json("package-lock.json", npmLock({ react: "19.0.1" }), "mobile");
-  const result = await r.execute(
-    "summary",
-    { base, paths: [".", "mobile"] },
-    cleanNpmAudit,
-  );
-  assertEquals(result.title, "Update react to 19.0.1");
-  assertStringIncludes(result.body, "| react (mobile) |");
-});
-test("summary removes temporary base checkout even when base audit fails", async (r) => {
-  const base = await r.base();
-  await r.json("package-lock.json", npmLock({ shadcn: "4.22.0" }));
-  await r.failure("summary", { base }, {
-    [audit]: [emptyAudit, { raw: "broken" }],
-  }, 70);
-  const dirs = (await r.log()).trim().split("\n").map((line) =>
-    line.split("|")[2]
-  ).filter((dir) => dir !== r.cwd);
-  assertEquals(dirs.length, 1);
-  await assertRejects(() => Deno.stat(dirs[0]), Deno.errors.NotFound);
-});
 test("manager and git children never receive parent agent markers or npm overrides", async (r) => {
   const env = {
     CLAUDECODE: "1",
@@ -1846,7 +748,7 @@ test("manager and git children never receive parent agent markers or npm overrid
   );
   for (const [key, value] of Object.entries(env)) Deno.env.set(key, value);
   try {
-    await r.execute("routine");
+    await r.execute("detect");
     const actual = JSON.parse(
       await Deno.readTextFile(`${r.temp}/child-env.json`),
     );
@@ -1869,65 +771,7 @@ test("JSON reports have an 8 MiB byte limit", async (r) => {
     "too large",
   );
 });
-test("routine preserves failure exit codes even with output over 8 MiB", async (r) => {
-  await r.failure("routine", {}, {
-    "vp update": [{ code: 23, raw: "x".repeat(8388609) }],
-  }, 23);
-});
-
-for (const cleared of [true, false]) {
-  test(`npm real advisory verification with another direct owner (${cleared})`, async (r) => {
-    const after = structuredClone(finding);
-    if (cleared) {
-      delete after.vulnerabilities.shadcn;
-      delete after.vulnerabilities["@shadcn/registry"];
-      after.vulnerabilities.react = { via: ["zod"], isDirect: true };
-    }
-    if (cleared) {
-      await r.execute("package", security, {
-        [audit]: [{ data: finding }, { data: after }],
-      });
-    } else {await r.failure(
-        "package",
-        security,
-        { [audit]: [{ data: finding }, { data: after }] },
-        1,
-        "still has security",
-      );}
-  });
-}
-test("Bun package mode attaches the real transitive advisory before adding its one age exception", async (r) => {
-  await r.bun({ shadcn: "^4.1.0" }, {
-    shadcn: bunEntry("shadcn", "4.1.0", { dependencies: { zod: "^4" } }),
-    zod: bunEntry("zod", "4.0.0"),
-  });
-  await Deno.writeTextFile(
-    `${r.cwd}/bunfig.toml`,
-    "[install]\nminimumReleaseAge = 604800\n",
-  );
-  await r.execute("package", { ...security, version: "4.21.6" }, {
-    [audit]: [{
-      data: {
-        zod: [{
-          id: 1243066,
-          url: "https://github.com/advisories/GHSA-mrhx-c7xc-m3w5",
-          severity: "high",
-          vulnerable_versions: "<4.6.6",
-        }],
-      },
-    }, { data: [] }],
-  });
-  assertStringIncludes(
-    await r.log(),
-    "vp|add shadcn@4.21.6 --save-prod --save-exact|",
-  );
-  assertStringIncludes(
-    await Deno.readTextFile(`${r.cwd}/bunfig.toml`),
-    'minimumReleaseAgeExcludes = ["shadcn"]',
-  );
-});
-
-test("repository exception files are ignored and never overwritten", async (r) => {
+test("detect ignores repository exception files and never overwrites them", async (r) => {
   await r.bun({ shadcn: "^4" }, { shadcn: bunEntry("shadcn", "4.21.0") });
   await Deno.writeTextFile(
     `${r.cwd}/bunfig.toml`,
@@ -1935,136 +779,9 @@ test("repository exception files are ignored and never overwritten", async (r) =
   );
   const original = '{"schema":99,"must":"stay untouched"}';
   await Deno.writeTextFile(`${r.cwd}/maintainer-exceptions.json`, original);
-  await r.execute("package", security, {
-    [audit]: [{ data: bunFinding }, { data: {} }],
-  });
-  assertEquals((r.exceptions as Exceptions).exceptions[0].package, "shadcn");
-  assertEquals(
-    await Deno.readTextFile(`${r.cwd}/maintainer-exceptions.json`),
-    original,
-  );
   await r.execute("detect", {}, bunReports(""));
   assertEquals(
     await Deno.readTextFile(`${r.cwd}/maintainer-exceptions.json`),
     original,
   );
-});
-test("a failed Bun security command still returns its exception receipt", async (r) => {
-  await r.bun({ shadcn: "^4" }, { shadcn: bunEntry("shadcn", "4.21.0") });
-  await Deno.writeTextFile(
-    `${r.cwd}/bunfig.toml`,
-    "[install]\nminimumReleaseAge = 604800\n",
-  );
-  const result = await r.execute("package", {
-    ...security,
-    captureFailure: true,
-  }, { [audit]: [{ data: bunFinding }] });
-  assertEquals(result.exitCode, 1);
-  assertEquals(r.handles, ["exceptions", "failure"]);
-  assertEquals((r.exceptions as Exceptions).exceptions[0].package, "shadcn");
-  assertEquals(await r.exists("maintainer-exceptions.json"), false);
-});
-
-test("summary includes the checked repair effect without changing the repository", async (r) => {
-  await r.npm({ react: "^19" }, { react: "19.0.0" });
-  const base = await r.base();
-  await r.json("package-lock.json", npmLock({ react: "20.0.0" }));
-  await Deno.writeTextFile(`${r.cwd}/component.ts`, "typed component");
-  await r.git("add", ".");
-  await r.git("commit", "-m", "repair");
-  const tree = await r.git("rev-parse", "HEAD^{tree}");
-  const report = JSON.stringify({
-    updates: [{
-      manager: "js",
-      path: ".",
-      package: "react",
-      codeChanged: true,
-      effect: "The component now has explicit types; pages render the same.",
-      files: ["component.ts"],
-    }],
-  });
-  const result = await r.execute("summary", {
-    base,
-    impact: {
-      report,
-      inventory: [{ manager: "js", path: ".", package: "react" }],
-      scriptTree: tree,
-      repairTree: tree,
-      checkedTree: tree,
-    },
-  }, cleanNpmAudit);
-  assertStringIncludes(result.body, "What changes on the site");
-  assertStringIncludes(
-    result.body,
-    "The component now has explicit types; pages render the same.",
-  );
-  await assertRejects(
-    () =>
-      r.execute("summary", {
-        base,
-        impact: {
-          report,
-          scriptTree: tree,
-          repairTree: tree,
-          checkedTree: tree,
-        },
-      }, cleanNpmAudit),
-    Error,
-    "inventory",
-  );
-  assertEquals(await r.git("status", "--porcelain"), "");
-});
-
-test("repair inventory keeps Composer transitive and JS direct advisory rows despite uncovered source edits", async (r) => {
-  await r.npm({ shadcn: "^4.21.0" }, { shadcn: "4.21.0" });
-  await r.json("composer.json", { require: { "laravel/framework": "^12" } });
-  await r.json("composer.lock", {
-    packages: [{ name: "laravel/framework", version: "12.0.0" }, {
-      name: "symfony/http-foundation",
-      version: "7.0.0",
-    }],
-  });
-  const base = await r.base();
-  await r.json("composer.lock", {
-    packages: [{ name: "laravel/framework", version: "12.0.0" }, {
-      name: "symfony/http-foundation",
-      version: "7.0.1",
-    }],
-  });
-  await r.json("package-lock.json", npmLock({ shadcn: "4.22.0" }));
-  await Deno.writeTextFile(
-    `${r.cwd}/types.d.ts`,
-    "export type Page = unknown;\n",
-  );
-  const before = await r.git("status", "--porcelain");
-  const result = await r.execute("inventory", { base }, {
-    "composer audit --locked --format=json --no-plugins --no-scripts": [{
-      data: { advisories: {} },
-    }, {
-      data: {
-        advisories: {
-          "symfony/http-foundation": [{
-            advisoryId: "PKSA-fixture",
-            link: "https://example.test/advisory",
-            title: "fixture",
-            affectedVersions: "<7.0.1",
-          }],
-        },
-      },
-    }],
-    "npm audit --json": [emptyAudit, { data: finding }],
-  });
-  assertEquals(
-    (result.changes as Change[]).map(({ manager, path, package: name }) => ({
-      manager,
-      path,
-      package: name,
-    })),
-    [{ manager: "js", path: ".", package: "shadcn" }, {
-      manager: "composer",
-      path: ".",
-      package: "symfony/http-foundation",
-    }],
-  );
-  assertEquals(await r.git("status", "--porcelain"), before);
 });

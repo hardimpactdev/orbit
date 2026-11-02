@@ -128,14 +128,6 @@
     {
       "file": "extensions/behaviors/js-maintenance/_lib/batch.ts",
       "rule": "custom-control",
-      "count": 2,
-      "evidence": [
-        "lock"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/js-maintenance/_lib/workspace.ts",
-      "rule": "custom-control",
       "count": 1,
       "evidence": [
         "lock"
