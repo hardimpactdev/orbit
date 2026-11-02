@@ -24,7 +24,7 @@ A `websocket` move preserves every [Reverb app](/reference/websocket-apps) in th
 
 Role relocation requires its native parent workflow. Until that writer is available, the command returns `operation.kind_unavailable` before effects. The steps below describe the retained placement and identity requirements.
 
-Adding a new Gateway assignment uses the native role-add workflow and still grants access to the VPN and Metrics Nodes. Its resolver policy lives in `orbit-gateway-dns.service`. Native role removal disables and removes that unit, together with the retired WireGuard drop-in. Role add remains subject to the singleton rule; it cannot replace a relocation.
+Adding a new Gateway assignment uses the native role-add workflow and still grants access to the VPN and Metrics Nodes. Its resolver policy lives in `orbit-gateway-dns.service`. Native role removal disables and removes that unit, together with the WireGuard drop-in from earlier releases. Role add remains subject to the singleton rule; it cannot replace a relocation.
 
 ### Rename first
 
