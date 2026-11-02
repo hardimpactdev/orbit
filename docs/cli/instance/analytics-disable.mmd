@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, Recall analytics-plausible-via-swamp (disable keeps the Plausible site), DECISIONS, R1-R4. docs/reference/analytics.md.
+  %% Tightened: flow-tighten 2026-11-02, rules 3, 8, 17, 22 (DNS first and only outside the TLD; sites and certificates withdrawn in one step, as route:destroy does).
   %% status: draft
   %% command: instance:analytics:disable
   %% kind: analytics.disable
@@ -48,22 +49,26 @@ sequenceDiagram
     %%> - the task number, at once
     %%> Next:
     %%> - the CLI follows the task with `operation:show`
-    SW->>N: Withdraw tracking sites<br/>validate · caddy reload
+    opt host outside the TLD
+      Note over SW: Remove private DNS<br/>Node 1 over @swamp/ssh
+      %%> When:
+      %%> - only for a tracking host outside the Cluster or Node TLD; private DNS answers the whole TLD
+      %%> What it does:
+      %%> - removes the hosts' private DNS records and waits the 31-second grace
+      %%> How:
+      %%> - over SSH from 209 to the VPN Node (Node 1), with the `swamp` role's key
+      %%> Why first:
+      %%> - unpublish before removing: the name stops resolving before its site leaves
+    end
+    SW->>N: Withdraw sites, certs<br/>@swamp/cfgmgmt/file absent
     %%> How:
-    %%> - over SSH from 209 with `@swamp/ssh`
+    %%> - over SSH from 209 with `@swamp/ssh` and `@swamp/cfgmgmt/file`; `caddy validate` as one `@swamp/ssh exec`, then a reload
     %%> What it does:
     %%> - removes only the tracking sections; other sites stay; validates, then reloads Caddy without a restart
-    Note over SW: Remove private DNS<br/>Node 1 over @swamp/ssh
-    %%> What it does:
-    %%> - removes the hosts' private DNS records and waits the 31-second grace
-    %%> How:
-    %%> - over SSH from 209 to the VPN Node (Node 1), with the `swamp` role's key
-    SW->>N: Remove unused certificates<br/>checks loaded Caddy first
-    %%> When:
-    %%> - only on a Router; tracking hosts on a Node-scoped Route have no Orbit certificate
-    %%> What it does:
-    %%> - deletes a tracking certificate only when the loaded Caddy config no longer uses it
-    SW->>N: Check the hosts are gone<br/>caddy config · no tracking site
+    %%> - on a Router, then removes the tracking certificates in the same step; tracking hosts on a Node-scoped Route have no Orbit certificate
+    %%> Why one step:
+    %%> - the mirror of `instance:analytics:enable`, and of `route:destroy`; the site goes before its certificate, so no read of the loaded config runs first
+    SW->>N: Check the hosts are gone<br/>@swamp/cfgmgmt/file check
     %%> What it does:
     %%> - reads the loaded Caddy config and checks no tracking site remains
     alt every step passes
