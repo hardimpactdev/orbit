@@ -107,7 +107,7 @@ def parity():
     # Inspect metadata only, never read the credential a second time.
     env = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/home/orbit', 'SWAMP_HOME': str(STATE.parent / 'home'), 'SWAMP_CONFIG_DIR': str(STATE.parent / 'config'), 'SWAMP_API_KEY_FILE': '/home/orbit/.config/swamp/club-api-key', 'SWAMP_NO_UPDATE_CHECK': '1', 'SWAMP_NO_TELEMETRY': '1'}
     inspected = subprocess.run(['/usr/sbin/runuser', '-u', 'orbit', '--', '/usr/local/bin/swamp', 'vault', 'inspect', ref['vault'], ref['key'], '--server', 'wss://swamp.orbit', '--token-file', str(STATE.parent / 'credentials/operator'), '--ca-cert', str(STATE.parent / 'tls/ca.pem'), '--repo-dir', str(SOURCE / 'swamp'), '--json'], capture_output=True, text=True, timeout=30, env=env)
-    assert inspected.returncode != 0 and ('not_found' in inspected.stdout + inspected.stderr or 'not found' in inspected.stdout + inspected.stderr)
+    assert inspected.returncode != 0 and f"Secret '{ref['key']}' does not exist in vault '{ref['vault']}'." in inspected.stdout + inspected.stderr
     path = 'conn/environments/pairing-proof/pairings/' + str(operation['target_id'])
 
     def request(caller, suffix):
