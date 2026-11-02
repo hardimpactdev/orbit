@@ -11,9 +11,9 @@ use Illuminate\Support\Carbon;
 /**
  * One admitted UpCloud recipe attempt, including workers that died before recording a result.
  *
- * @property array{build_id:int,node_id:int,identity:string,generation:int,stamp:string,name:string,source:string,recipe:string,recipe_json:string,deadline_at:int,pi_artifact:array{path:string,sha256:string}|null}|null $intent
- * @property array{builder?:array{uuid:string},smoke?:array{uuid:string},promoted?:bool} $resources
- * @property array{builder:array{private:string,public:string},smoke:array{private:string,public:string}}|null $bootstrap
+ * @property array{build_id:int,node_id:int,identity:string,generation:int,stamp:string,name:string,source:string,recipe:string,agent_sha256:string,host_key:string,upcloud:array{zone:string,plan:string,disk_gb:int},pinned_templates:list<string>,pi_artifact:array{path:string,sha256:string}|null}|null $intent
+ * @property array<string, mixed> $resources
+ * @property array{private:string,public:string}|null $bootstrap The build servers' host key pair; the run start copies the private key to the vault.
  * @property int $id
  * @property string $recipe_identity
  * @property TaskVmImageBuildState $state

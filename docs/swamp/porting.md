@@ -160,7 +160,7 @@ Orbit runs Swamp on one Node, 209. A ported step runs on the swamp workers (`lab
 | `operation-node-wireguard-hub-converge` | 3: `@nckrtl/node-wireguard-direct` |
 | `operation-conn-direct`, `operation-vault-direct`, `operation-dependency-merge` | 3: one step each |
 
-`operation-task-vm-upcloud-image-build` still selects a host worker; that placement must move to 209 before the host worker is removed. Task VM group workers have their own lifecycle. `operation-task-vm-image-build`, `task-vm-image-reaper` and `operation-task-vm-cache-fill` run every step on role `swamp` workers and reach the host over official SSH.
+`operation-task-vm-image-build`, `operation-task-vm-upcloud-image-build`, `task-vm-image-reaper` and `operation-task-vm-cache-fill` run every step on role `swamp` workers. They reach a host or build server over official SSH, and UpCloud with inline `curl` on 209.
 
 ## Test layout
 

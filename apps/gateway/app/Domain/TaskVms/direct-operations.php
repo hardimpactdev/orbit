@@ -61,9 +61,9 @@ return ['task_vm.hub_converge' => [
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-upcloud-token$']],
 ], 'task_vm.upcloud_image_build' => [
     'workflow' => 'operation-task-vm-upcloud-image-build',
-    'writer_config' => 'swamp.direct_writers',
-    'writer_state' => 'task_vm_upcloud_image_writer',
     'projection' => TaskVmUpCloudImageProjection::class,
-    'private_material' => ['upcloud_token' => 'upcloud.api', 'bootstrap' => 'task_vm.image_bootstrap', 'pi_artifact_file' => 'task_vm.image_artifact'],
-    'secret_outputs' => ['bootstrap' => 'task_vm.image_bootstrap'],
+    'workflow_inputs' => true,
+    // No result step: the projector reads the template UUID and the run's step statuses; the native assert is the end check.
+    'terminal_result' => ['job' => 'check', 'step' => TaskVmUpCloudImageProjection::EndCheck, 'native' => true, 'captures' => TaskVmUpCloudImageProjection::captures()],
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-upcloud-token|task-vm-image-bootstrap-[1-9][0-9]*)$']],
 ]];

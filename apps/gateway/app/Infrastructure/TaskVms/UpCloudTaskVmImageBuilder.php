@@ -12,7 +12,6 @@ use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\AgentCommands\AgentGuest;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\TaskVm;
@@ -24,7 +23,7 @@ use Illuminate\Support\Facades\DB;
 final readonly class UpCloudTaskVmImageBuilder
 {
     public function __construct(private RecipeImageBuilds $builds, private StartOperationAction $operations,
-        private RecipeImageInput $recipes, private TaskVmSettings $settings, private SshKeyProvider $keys) {}
+        private RecipeImageInput $recipes, private TaskVmSettings $settings, private UpCloudGuest $guest) {}
 
     public function build(?MachineRecipe $recipe = null, ?int $afterAttemptId = null, ?int $generation = null): Operation
     {
@@ -56,17 +55,16 @@ final readonly class UpCloudTaskVmImageBuilder
                 }
             }
             $stamp = $stampTime->format('YmdHis');
+            // One host key pair pins both build servers; the private key stays encrypted on the attempt until the run start copies it to the vault.
+            $bootstrap = $this->guest->generateHostKey('tvm-image-'.$stamp);
             $input = ['build_id' => $build->id, 'node_id' => $node->id, 'identity' => $recipe->identity, 'generation' => (int) $desired->generation,
                 'stamp' => $stamp, 'name' => 'tvm-image-'.$stamp, 'source' => $upcloud->sourceTemplate,
                 'pi_artifact' => isset($recipe->tools['pi']->artifacts['amd64']) ? ['path' => config()->string('orbit.home').'/sandbox-artifacts/'.$recipe->tools['pi']->artifacts['amd64']->location, 'sha256' => $recipe->tools['pi']->artifacts['amd64']->digest] : null,
                 'recipe' => json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
-                'agent_sha256' => $payload['agent_sha256'], 'gateway_public_key' => $this->keys->publicKey(), 'ssh_identity' => $this->keys->privateKeyPath(),
+                'agent_sha256' => $payload['agent_sha256'], 'host_key' => $bootstrap['public'],
                 'upcloud' => ['zone' => $upcloud->zone, 'plan' => $upcloud->plan, 'disk_gb' => $upcloud->diskGb],
-                'upcloud_token' => ['$secret' => 'upcloud.api', 'id' => $build->id],
-                'bootstrap' => ['$secret' => 'task_vm.image_bootstrap', 'id' => $build->id],
-                'pi_artifact_file' => ['$secret' => 'task_vm.image_artifact', 'id' => $build->id],
                 'pinned_templates' => TaskVm::query()->live()->where('provider', TaskVmProviderKind::UpCloud)->whereNull('provider_id')->whereNotNull('image_fingerprint')->pluck('image_fingerprint')->all()];
-            $build->forceFill(['intent' => $input, 'resources' => []])->save();
+            $build->forceFill(['intent' => $input, 'resources' => [], 'bootstrap' => $bootstrap])->save();
 
             return $this->operations->execute('task_vm.upcloud_image_build', 'task_vm_upcloud_image', $build->id, $node->id, $input, 'task-vm-image', null);
         });

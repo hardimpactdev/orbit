@@ -1434,7 +1434,7 @@ These alternatives were also rejected:
 
 ## UpCloud overflow
 
-Swamp waits for owned image-builder and orphan servers to stop before requesting deletion, then observes their absence. The native orphan sweep verifies the recorded name, label and stopped state and calls UpCloud directly. Image build cleanup still uses its retained Gateway delete primitive until the owning image root moves. Retained synchronous task VM lifecycle callers keep their existing provider until their parent/child cutover.
+The native orphan sweep verifies the recorded name and label and calls UpCloud directly. The template build cleans up its own servers and unverified template from 209. Retained synchronous task VM lifecycle callers keep their existing provider until their parent/child cutover.
 
 
 When beast and shark have no free slot, a group of an opted-in Project may get its [task VM](#task-vms) at UpCloud. The overflow is off by default. It needs both the Gateway-wide switch `ORBIT_TASK_VMS_UPCLOUD_ENABLED=true` and the Project's ID in `ORBIT_TASK_VMS_UPCLOUD_PROJECTS`. Without both, the group waits with `Task VM: no capacity.` as before.
@@ -1475,28 +1475,34 @@ Start and stop are one `POST` each; a stop is soft with a 120-second timeout. De
 
 A park stops the server cleanly, and a hard stop follows after 150 seconds. UpCloud bills a stopped server for its storage only. A destroy stops the server, deletes it with its disk, and waits until it is gone.
 
-Swamp owns UpCloud image cleanup and orphan sweeps. Both native workflows use the Gateway worker and callback-local credentials. These workflows stop a server before deletion and confirm absence afterward. An unported Task VM kind returns `operation.kind_unavailable`; it has no polled executor.
+Swamp owns UpCloud image cleanup and orphan sweeps. Both run on role `swamp` workers on 209 with the token from the vault. An unported Task VM kind returns `operation.kind_unavailable`; it has no polled executor.
 
 Task VM enrollment captures the guest Node and Pi Process intent without executing either. One native root bootstraps through its admitted first-visit transport, records the public SSH identity, publishes the network, issues and installs the exact Node worker, then prepares Pi through the shared native Process installer. Readiness requires execution on that guest's trusted Node worker. The group worker cannot substitute for it. Model-key steps use the stable router behavior shared with teardown. Private credentials stay on the admitted private-material transport; the Gateway projects public results.
 
 ### Build the UpCloud template
 
-`php artisan task-vms:build-upcloud-image` records one image intent and starts `operation-task-vm-upcloud-image-build` directly. One native Swamp workflow runs its API and guest steps on the admitted Gateway Node's worker. It creates billed servers. The Gateway projects progress, owned server UUIDs and the final template; it creates no child Operations and performs no image actions.
+`php artisan task-vms:build-upcloud-image` records one image attempt and starts `operation-task-vm-upcloud-image-build`. It creates billed servers. Every step runs on a role `swamp` worker on 209: each UpCloud request is one inline `curl`, and each guest action is one pinned official `@swamp/ssh` call. No step calls the Gateway. The Gateway records the attempt from the run's terminal result.
 
-| Stage | What it does |
+At admission the Gateway generates one ed25519 host key pair for the build servers and keeps it encrypted on the attempt. At the run start it refuses an attempt whose recipe or agent pin changed with `task_vm.image_build_superseded`. It then copies the UpCloud token to the vault key `task-vm-upcloud-token` and the private host key to `task-vm-image-bootstrap-<attempt>`. The run gets the full public intent: the recipe, the stamp, the public host key and 209's SSH identity. The intent also holds every fixed agent request, the phase units and the templates that live VMs pin.
+
+| Step | What it does |
 | --- | --- |
-| `sweep` | Deletes the build servers and unverified templates that an interrupted build left |
-| `launch` | Boots a builder server from the stock Ubuntu 26.04 template with the base image builder user-data |
-| `cloud-init`, `orbit-user` | Waits for cloud-init over SSH, and checks the pinned `orbit` uid and gid |
-| `apt-source`, `packages`, `javascript`, `rust`, `agent`, `pi` | Prepares Ubuntu snapshot indexes, then installs the base profile through the shared recipe installer with exact versions and integrity pins |
-| `recipe-marker`, `verify`, `masks` | Writes the recipe identity and profile marker, verifies the recipe software, and masks the first-boot and apt timers |
-| `firewall` | Turns ufw on: incoming traffic denied, except the public SSH rule `orbit:public-ssh-recovery` on port 22 |
-| `clean` | Runs the native `image.clean` command |
-| `templatize`, `delete-builder` | Stops the builder, turns its disk into the template `orbit-task-base-<time>-unverified`, and deletes the builder |
-| `smoke` | Boots a server from the template with the task VM user-data, and checks cloud-init, ufw, and the key, uid, and gid of `orbit` |
-| `promote`, `prune` | Records the `orbit.recipe` storage label, renames the template to `orbit-task-base-<time>`, and deletes older verified templates except those pinned by live VMs awaiting server creation |
+| Launch the builder | Creates the builder from the stock Ubuntu 26.04 template, labelled `orbit-task-image=<stamp>`. Over SSH it waits for cloud-init, installs 209's agent against the pin, and checks the `orbit` account and the boot id |
+| Stage the Pi build | Only when the recipe pins one: copies it from the Gateway Node to 209, checks its SHA-256, copies it to the builder and installs it as `/var/cache/orbit/pi/<sha256>.bin` |
+| Run the phases | Runs `apt-source`, `packages`, `javascript`, `rust`, `agent` and `pi` in order through the shared recipe installer; a failed phase stops the chain |
+| Prepare and clean | Writes the recipe marker, verifies the recipe software, masks the first-boot and apt timers, turns ufw on with only the public SSH rule `orbit:public-ssh-recovery`, then runs `image.clean` |
+| Make the template, Read the template | Stops the builder, turns its disk into the template `orbit-task-base-<stamp>-unverified` and reads its UUID |
+| Smoke the template | Creates a server from the template with the same host key, boots it as above, and runs `image.verify` and `image.check` with the firewall check |
+| Promote the template | Records the `orbit.recipe` and `orbit-task-image` labels and renames the template to `orbit-task-base-<stamp>` |
+| List servers, templates, Plan the cleanup | After the build, whatever its outcome, lists the labelled servers and the templates once, and confirms the promotion |
+| Check the template | The end check: the promoted template is the one templatize made |
+| Delete servers, templates | Stops and deletes this attempt's servers with their disks. After promotion it deletes verified templates beyond the two newest that no live VM pins; otherwise it deletes the unverified template |
 
-A failed build deletes its servers and its unverified template, and keeps the previous template. Without a verified template for the claim's recipe, a create fails with `task_vm.base_image_missing`.
+The user data authorizes only the key of 209's worker. Every SSH connection pins the admitted host key, so no connection trusts a key on first use. The boot wait is OpenSSH's own `ConnectionAttempts` under one literal timeout. UpCloud refuses a templatize, a create from a template that is still being prepared, and a delete of a server that is still stopping, and changes nothing. curl's own retry, with a fixed 10-second delay under one literal `timeout`, waits for these states. No script polls.
+
+Each guest call is `orbit-agent command <name>`. The agent exits 0 also when it refuses, so a TypeScript step on 209 checks each reply. A refused reply fails the run with the agent's own error code. A failed UpCloud request in the template, promote or listing step fails with `task_vm.upcloud_failed`. Other failures fail with `task_vm.image_build_failed`.
+
+Deletes are best effort: a failed delete does not change the run's outcome, and the [host sweep](#sweep-upcloud) removes what stays, also a server whose create answer was lost. A failed build keeps the previous template. Without a verified template for the claim's recipe, a create fails with `task_vm.base_image_missing`.
 
 One build runs at a time. A build marks its time stamp as running for two hours, and no sweep deletes the servers or the template of a marked build.
 
@@ -1510,9 +1516,7 @@ Reconcile raises a recipe-maintenance alert when the current identity has a fail
 
 The build keeps the two newest verified templates and any template pinned by a live VM awaiting server creation. Pruning ignores the source template reference once the VM has a server UUID. It also runs with overflow off without enabling claims. A failed build keeps the previous template, but a stale template cannot serve a new claim. Reconcile reports UpCloud token, API, or refresh-dispatch errors and continues Incus submission recovery and image scheduling.
 
-The build takes about 20 minutes. Swamp owns dispatch, placed steps, cancellation and recovery. API credentials and generated guest host keys use the shared private-material and encrypted output boundaries. Private bytes stay out of native arguments, resources, reports and command arguments. The worker pins each guest's generated host key before its first SSH connection. It uses the official Swamp SSH library, pinned at commit `d6f7afdcd6d04a63fdbc6ed56c403832770f67a6`, with the Gateway's existing managed identity. Pi uses the shared bounded private artifact reference and its admitted SHA-256 pin.
-
-Recipe observation uses the same native evaluator as Incus, including the 1440-second phase budget and 60-second consecutive read outage limit. A failed smoke check prevents promotion. Native recovery resumes the same root; an explicit retry records a new attempt.
+The build takes about 20 minutes; its run budget is 2,100 seconds. Swamp owns dispatch, cancellation and recovery. The token and the private host key reach curl only from its environment, through `--variable`; they are never in argv, inputs, outputs or history. Each recipe phase waits at most 1,500 seconds. A failed smoke check prevents promotion. An explicit retry records a new attempt.
 
 ### Sweep UpCloud
 

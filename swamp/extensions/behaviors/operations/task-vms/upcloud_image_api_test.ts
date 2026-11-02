@@ -1,196 +1,354 @@
-import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { type CloudImage, imageCloud } from "./upcloud_image_api.ts";
-import type { CloudRequest } from "./upcloud_sweep.ts";
+import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.19";
+import {
+    cleanupPlan,
+    createdServer,
+    createRequest,
+    madeTemplate,
+    phaseEnvelopes,
+} from "./upcloud_image_api.ts";
+import { recipePhases } from "./images.ts";
+
 const id = (n: number) =>
-  `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+    `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const stamp = "20261031050000";
-const input = {
-  stamp,
-  name: `tvm-image-${stamp}`,
-  identity: `sha256:${"a".repeat(64)}`,
-  progress: { resources: { builder: { uuid: id(1) } }, template_uuid: null },
-} as unknown as CloudImage;
-const label = (value = stamp) => [{ key: "orbit-task-image", value }];
-function server(n: number, value = stamp, title = input.name) {
-  return {
-    uuid: id(n),
-    title,
-    hostname: title,
-    state: "started",
-    labels: { label: label(value) },
-    ip_addresses: { ip_address: [] },
-    storage_devices: { storage_device: [{ storage: id(50) }] },
-  };
-}
-Deno.test("lost-create cleanup removes all exact title and stamp duplicates while preserving foreign servers", async () => {
-  const rows = [
-    server(1),
-    server(2),
-    server(3, "other"),
-    server(4, stamp, "another-title"),
-  ];
-  const deleted: string[] = [];
-  const request: CloudRequest = (method, path) => {
-    if (path.startsWith("server?")) {
-      return Promise.resolve({ servers: { server: rows } });
-    }
-    const uuid = path.split("/")[1].split("?")[0];
-    const row = rows.find((row) => row.uuid === uuid);
-    if (method === "GET") return Promise.resolve(row ? { server: row } : null);
-    if (path.endsWith("/stop")) row!.state = "stopped";
-    if (method === "DELETE") {
-      deleted.push(uuid);
-      rows.splice(rows.indexOf(row!), 1);
-    }
-    return Promise.resolve({});
-  };
-  await imageCloud(input, request).remove("builder");
-  assertEquals(deleted, [id(1), id(2)]);
-  assertEquals(rows.map((row) => row.uuid), [id(3), id(4)]);
+const pin = "a".repeat(64);
+const identity = `sha256:${"b".repeat(64)}`;
+const hostKey =
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG tvm-image";
+const boot = "878a384f-8b8a-4066-bd17-dcad8eac3e86";
+const intent = (pinned: string[] = []) => ({
+    build_id: 9,
+    stamp,
+    name: `tvm-image-${stamp}`,
+    identity,
+    agent_sha256: pin,
+    recipe: { identity, agent_sha256: pin, pi_sha256: null },
+    upcloud: { zone: "nl-ams1", plan: "STARTER-2xCPU-4GB", disk_gb: 30 },
+    host_key: hostKey,
+    ssh: {
+        identity_file: "/etc/orbit/swamp-role-worker/ssh-identity",
+        public_key: "ssh-ed25519 AAAAworker",
+    },
+    phase_keys: Object.fromEntries(recipePhases.map((phase) => [phase, {
+        identity,
+        profile: "base",
+        phase,
+        execution: "upcloud-9",
+    }])),
+    pinned_templates: pinned,
 });
-Deno.test("promote and discard refuse an unlabelled or differently stamped same-title template", async () => {
-  for (const labels of [[], label("other")]) {
-    const writes: string[] = [];
-    const request: CloudRequest = (method, path) => {
-      if (method !== "GET") writes.push(path);
-      return Promise.resolve({
-        storages: {
-          storage: [{
-            uuid: id(20),
-            title: `orbit-task-base-${stamp}-unverified`,
-            access: "private",
-            labels,
-          }],
+const plans = (tier: string | null = "standard") =>
+    JSON.stringify({
+        plans: {
+            plan: [{ name: "STARTER-2xCPU-4GB", storage_tier: tier }, {
+                name: "other",
+                storage_tier: "maxiops",
+            }],
         },
-      });
-    };
-    const cloud = imageCloud(input, request);
-    await assertRejects(() => cloud.promote());
-    await assertRejects(() => cloud.discard());
-    assertEquals(writes, []);
-  }
-});
-Deno.test("prune preserves unlabelled, mismatched and pinned templates", async () => {
-  const template = (n: number, day: string, labels: unknown[]) => ({
-    uuid: id(n),
-    access: "private",
-    title: `orbit-task-base-202610${day}050000`,
-    labels,
-  });
-  const rows = [
-    template(1, "31", label("20261031050000")),
-    template(2, "30", label("20261030050000")),
-    template(3, "29", label("20261029050000")),
-    template(4, "28", []),
-    template(5, "27", label("other")),
-    template(6, "26", label("20261026050000")),
-  ];
-  const deleted: string[] = [];
-  const request: CloudRequest = (method, path) => {
-    if (path === "storage/template") {
-      return Promise.resolve({ storages: { storage: rows } });
-    }
-    const uuid = path.split("/")[1];
-    if (method === "GET") {
-      return Promise.resolve({
-        storage: rows.find((row) => row.uuid === uuid),
-      });
-    }
-    deleted.push(uuid);
-    return Promise.resolve({});
-  };
-  await imageCloud(input, request).prune([id(3)]);
-  assertEquals(deleted, [id(6)]);
-});
-Deno.test("templatize labels only its returned UUID and promotion retains the ownership label", async () => {
-  const row = server(1);
-  row.state = "stopped";
-  let template: Record<string, unknown> | undefined;
-  const request: CloudRequest = (method, path, body) => {
-    if (path === "server?label=orbit-task-image") {
-      return Promise.resolve({ servers: { server: [row] } });
-    }
-    if (path.startsWith("server/")) return Promise.resolve({ server: row });
-    if (path === "storage/template") {
-      return Promise.resolve({
-        storages: { storage: template ? [template] : [] },
-      });
-    }
-    if (path.endsWith("/templatize")) {
-      assertEquals(body, {
-        storage: { title: `orbit-task-base-${stamp}-unverified` },
-      });
-      template = {
-        uuid: id(20),
-        access: "private",
-        ...(body!.storage as object),
-      };
-      return Promise.resolve({ storage: { uuid: id(20) } });
-    }
-    assertEquals(method, "PUT");
-    assertEquals(path, `storage/${id(20)}`);
-    Object.assign(template!, body!.storage);
-    return Promise.resolve({});
-  };
-  const cloud = imageCloud(input, request);
-  assertEquals(await cloud.templatize(), id(20));
-  assertEquals(template!.labels, label());
-  assertEquals(await cloud.promote(), id(20));
-  assertEquals(template!.labels, [{
-    key: "orbit.recipe",
-    value: input.identity,
-  }, ...label()]);
+    });
+
+Deno.test("the create body is public intent with the host key as its only curl expansion", () => {
+    const { create_data } = createRequest(intent(), "builder", id(1), plans());
+    const [before, after] = create_data.split(
+        "{{ORBIT_HOST_PRIVATE_KEY:json:json}}",
+    );
+    assertEquals(create_data.split("{{").length, 2);
+    const body = JSON.parse(before + "KEY" + after).server;
+    assertEquals(body.title, `tvm-image-${stamp}`);
+    assertEquals(body.labels.label, [{
+        key: "orbit-task-image",
+        value: stamp,
+    }]);
+    assertEquals(body.storage_devices.storage_device[0], {
+        action: "clone",
+        storage: id(1),
+        title: `tvm-image-${stamp}-disk`,
+        size: 30,
+        tier: "standard",
+    });
+    const config = JSON.parse(body.user_data.slice("#cloud-config\n".length));
+    assertEquals(config.ssh_keys, {
+        ed25519_private: "KEY",
+        ed25519_public: hostKey,
+    });
+    assertEquals(config.users[0].uid, 1000);
+    assertEquals(config.users[0].ssh_authorized_keys, [
+        "ssh-ed25519 AAAAworker",
+    ]);
 });
 
-Deno.test("launch accepts null storage tiers in the provider plan inventory", async () => {
-  for (const tier of ["standard", null, undefined]) {
-    const intent = {
-      ...input,
-      source: id(40),
-      gateway_public_key: "ssh-ed25519 AAAA gateway",
-      upcloud: { zone: "nl-ams1", plan: "STARTER-2xCPU-4GB", disk_gb: 80 },
-      progress: { resources: {}, template_uuid: null },
-    } as CloudImage;
-    const keys = {
-      builder: {
-        private: "builder-private",
-        public: "ssh-ed25519 AAAA builder",
-      },
-      smoke: { private: "smoke-private", public: "ssh-ed25519 AAAA smoke" },
-    };
-    let creates = 0;
-    const request: CloudRequest = (method, path, body) => {
-      if (path === "server?label=orbit-task-image") {
-        return Promise.resolve({ servers: { server: [] } });
-      }
-      if (path === "plan") {
-        return Promise.resolve({
-          plans: {
-            plan: [
-              { name: "CLOUDNATIVE-1xCPU-4GB", storage_tier: null },
-              { name: intent.upcloud.plan, storage_tier: tier },
-            ],
-          },
-        });
-      }
-      assertEquals([method, path], ["POST", "server"]);
-      const server = body!.server as {
-        storage_devices: { storage_device: Record<string, unknown>[] };
-      };
-      assertEquals(server.storage_devices.storage_device, [{
-        action: "clone",
-        storage: intent.source,
-        title: intent.name + "-disk",
-        size: 80,
-        ...(tier == null ? {} : { tier }),
-      }]);
-      creates++;
-      return Promise.resolve({ server: { uuid: id(1) } });
-    };
-    assertEquals(
-      await imageCloud(intent, request).launch("builder", keys),
-      id(1),
+Deno.test("the smoke server keeps the template's account and omits a tier its plan lacks", () => {
+    const { create_data } = createRequest(
+        intent(),
+        "smoke",
+        id(2),
+        plans(null),
     );
-    assertEquals(creates, 1);
-  }
+    const body = JSON.parse(
+        create_data.replace("{{ORBIT_HOST_PRIVATE_KEY:json:json}}", "KEY"),
+    ).server;
+    assertEquals(body.title, `tvm-image-${stamp}-smoke`);
+    assertEquals("tier" in body.storage_devices.storage_device[0], false);
+    assertEquals("uid" in JSON.parse(body.user_data.slice(14)).users[0], false);
+});
+
+Deno.test("an unknown plan, a foreign expansion or a changed recipe pin refuses before any request", () => {
+    assertThrows(
+        () =>
+            createRequest(
+                {
+                    ...intent(),
+                    upcloud: { ...intent().upcloud, plan: "missing" },
+                },
+                "builder",
+                id(1),
+                plans(),
+            ),
+        Error,
+        "task_vm.upcloud_invalid",
+    );
+    assertThrows(
+        () =>
+            createRequest(
+                {
+                    ...intent(),
+                    ssh: {
+                        ...intent().ssh,
+                        public_key: "ssh-ed25519 {{ORBIT_UPCLOUD_TOKEN}}",
+                    },
+                },
+                "builder",
+                id(1),
+                plans(),
+            ),
+        Error,
+        "task_vm.upcloud_invalid",
+    );
+    assertThrows(() =>
+        createRequest(
+            { ...intent(), recipe: { identity, agent_sha256: "c".repeat(64) } },
+            "builder",
+            id(1),
+            plans(),
+        )
+    );
+});
+
+const answer = (
+    title: string,
+    labels = [{ key: "orbit-task-image", value: stamp }],
+    ips = [{ access: "public", family: "IPv4", address: "94.237.0.207" }],
+) => JSON.stringify({
+    server: {
+        uuid: id(3),
+        title,
+        hostname: title,
+        state: "maintenance",
+        labels: { label: labels },
+        ip_addresses: {
+            ip_address: [{
+                access: "utility",
+                family: "IPv4",
+                address: "10.0.0.5",
+            }, ...ips],
+        },
+        storage_devices: { storage_device: [{ storage: id(4), type: "disk" }] },
+    },
+});
+
+Deno.test("the create answer gives the server, its disk and its one public address", () => {
+    assertEquals(
+        createdServer(intent(), "builder", answer(`tvm-image-${stamp}`)),
+        {
+            uuid: id(3),
+            storage: id(4),
+            address: "94.237.0.207",
+        },
+    );
+    for (
+        const stdout of [
+            answer(`tvm-image-${stamp}-smoke`),
+            answer(`tvm-image-${stamp}`, [{
+                key: "orbit-task-image",
+                value: "20260101000000",
+            }]),
+            answer(`tvm-image-${stamp}`, undefined, []),
+            "not json",
+        ]
+    ) {
+        assertThrows(
+            () => createdServer(intent(), "builder", stdout),
+            Error,
+            "task_vm.upcloud_invalid",
+        );
+    }
+});
+
+Deno.test("the boot id fixes each phase's start and inspect envelope under its admitted key", () => {
+    const reply = JSON.stringify({
+        ok: true,
+        data: { boot_id: boot, state: "missing" },
+    });
+    const shaped = phaseEnvelopes(intent(), reply);
+    assertEquals(shaped.boot_id, boot);
+    assertEquals(Object.keys(shaped.start), [...recipePhases]);
+    const start = JSON.parse(shaped.start.packages);
+    assertEquals(start.agent_sha256, pin);
+    assertEquals(start.deadline_ms, 120000);
+    assertEquals(start.input.key, {
+        identity,
+        profile: "base",
+        phase: "packages",
+        execution: "upcloud-9",
+    });
+    assertEquals(start.input.boot_id, boot);
+    assertEquals(start.input.recipe.identity, identity);
+    assertEquals(JSON.parse(shaped.inspect.pi).input, {
+        key: { identity, profile: "base", phase: "pi", execution: "upcloud-9" },
+        boot_id: boot,
+    });
+    assertThrows(
+        () =>
+            phaseEnvelopes(
+                intent(),
+                JSON.stringify({
+                    ok: false,
+                    error: { code: "agent.version_mismatch" },
+                }),
+            ),
+        Error,
+        "agent.version_mismatch",
+    );
+});
+
+Deno.test("templatize answers with this attempt's unverified template only", () => {
+    assertEquals(
+        madeTemplate(
+            intent(),
+            JSON.stringify({
+                storage: {
+                    uuid: id(5),
+                    title: `orbit-task-base-${stamp}-unverified`,
+                },
+            }),
+        ),
+        { template_uuid: id(5) },
+    );
+    assertThrows(
+        () =>
+            madeTemplate(
+                intent(),
+                JSON.stringify({
+                    storage: {
+                        uuid: id(5),
+                        title: "orbit-task-base-20260101000000-unverified",
+                    },
+                }),
+            ),
+        Error,
+        "task_vm.upcloud_invalid",
+    );
+});
+
+const listing = (templates: unknown[], servers: unknown[] = []) =>
+    JSON.stringify({
+        servers: { servers: { server: servers } },
+        templates: { storages: { storage: templates } },
+    });
+const template = (
+    n: number,
+    title: string,
+    labels: { key: string; value: string }[] = [],
+) => ({
+    uuid: id(n),
+    title,
+    access: "private",
+    state: "online",
+    labels,
+});
+const verified = (n: number, at: string, recipe = identity) =>
+    template(n, `orbit-task-base-${at}`, [{
+        key: "orbit.recipe",
+        value: recipe,
+    }, { key: "orbit-task-image", value: at }]);
+const server = (n: number, title: string, state = "started", at = stamp) => ({
+    uuid: id(n),
+    title,
+    state,
+    labels: { label: [{ key: "orbit-task-image", value: at }] },
+});
+
+Deno.test("after promotion the cleanup removes both servers and prunes beyond the two newest unpinned templates", () => {
+    const plan = cleanupPlan(
+        intent([id(12)]),
+        listing([
+            verified(10, stamp),
+            verified(11, "20261030050000"),
+            verified(12, "20261029050000"),
+            verified(13, "20261028050000"),
+            template(14, "ubuntu-26.04"),
+            template(15, "orbit-task-base-20261027050000"),
+        ], [
+            server(20, `tvm-image-${stamp}`),
+            server(21, `tvm-image-${stamp}-smoke`, "stopped"),
+            server(22, "tvm-image-20261030050000", "started", "20261030050000"),
+            server(23, `tvm-image-${stamp}`, "started", "20261030050000"),
+        ]),
+        id(10),
+    );
+    assertEquals(plan.promoted, true);
+    assertEquals(plan.template_uuid, id(10));
+    assertEquals(plan.deletes, [
+        {
+            uuid: id(20),
+            path: `server/${id(20)}?storages=1&backups=delete`,
+            stop: true,
+        },
+        {
+            uuid: id(21),
+            path: `server/${id(21)}?storages=1&backups=delete`,
+            stop: false,
+        },
+        { uuid: id(13), path: `storage/${id(13)}`, stop: false },
+    ]);
+});
+
+Deno.test("a build that never promoted deletes its unverified template and keeps every verified one", () => {
+    const unverified = template(30, `orbit-task-base-${stamp}-unverified`);
+    for (const uuid of [id(30), ""]) {
+        const plan = cleanupPlan(
+            intent(),
+            listing([
+                unverified,
+                verified(31, "20261030050000"),
+                verified(32, "20261029050000"),
+                verified(33, "20261028050000"),
+            ]),
+            uuid,
+        );
+        assertEquals(plan.promoted, false);
+        assertEquals(plan.template_uuid, "");
+        assertEquals(plan.deletes, [{
+            uuid: id(30),
+            path: `storage/${id(30)}`,
+            stop: false,
+        }]);
+    }
+});
+
+Deno.test("a template without the recipe label is not promoted, so the end check fails and nothing verified goes", () => {
+    const plan = cleanupPlan(
+        intent(),
+        listing([
+            template(40, `orbit-task-base-${stamp}`, [{
+                key: "orbit-task-image",
+                value: stamp,
+            }]),
+            verified(41, "20261030050000"),
+            verified(42, "20261029050000"),
+        ]),
+        id(40),
+    );
+    assertEquals(plan.promoted, false);
+    assertEquals(plan.deletes, []);
 });
