@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R2-R4, swamp-vault-design (Vaultwarden = human copy). docs/reference/vaultwarden.md#sync.
+  %% Tightened: flow-tighten 2026-11-02, rule 6 (deletes and writes in one apply step on the same collection).
   %% status: draft
   %% command: vault:sync
   %% kind: vault.sync
@@ -53,14 +54,13 @@ sequenceDiagram
   %%> - deletes a recorded item whose source is gone, only when its ID and source match the ledger
   %%> Leaves:
   %%> - items without `orbit.source`, and copies the ledger does not name
-  SW->>VW: Delete gone items<br/>bw delete --permanent
+  SW->>VW: Apply the changes<br/>bw delete · bw create · bw edit
   %%> What it does:
-  %%> - deletes each planned item permanently, one per step
+  %%> - deletes each gone item permanently, then creates or rewrites each planned item as a Secure Note with the Database item fields, one `forEach` item each
   %%> Refuses:
   %%> - an item that also belongs to another visible collection: `vault.item_shared`
-  SW->>VW: Write the items<br/>bw create · bw edit
-  %%> What it does:
-  %%> - creates or rewrites each planned item as a Secure Note with the Database item fields, one per step
+  %%> Why one step:
+  %%> - one collection, one plan, one failure handling
   SW->>VW: Log out<br/>bw logout · remove scratch home
   %%> What it does:
   %%> - logs out and deletes the scratch home, on success and on failure

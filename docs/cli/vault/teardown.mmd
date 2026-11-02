@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R1 (--keep-items is record-only), R2-R4, swamp-vault-design. Same shape as tool.remove. docs/reference/vaultwarden.md.
+  %% Tightened: flow-tighten 2026-11-02, rule 16 (the collection read only picks the items, so it folds into the delete step).
   %% status: draft
   %% command: vault:teardown
   %% kind: vault.teardown
@@ -47,14 +48,11 @@ sequenceDiagram
     SW->>VW: Log in and unlock<br/>bw login · unlock · sync
     %%> How:
     %%> - the official Bitwarden CLI on 209, in a scratch home, trusting only the Orbit root CA
-    SW->>VW: Read the collection<br/>bw list items
+    SW->>VW: Delete the items<br/>bw list · bw delete --permanent
     %%> What it does:
-    %%> - finds the items whose ID and decrypted `orbit.source` still match the ledger
+    %%> - lists the collection, picks the items whose ID and decrypted `orbit.source` still match the ledger, and deletes each permanently
     %%> Refuses:
     %%> - before any deletion, when a matching item also belongs to another visible collection: `vault.item_shared`
-    SW->>VW: Delete the items<br/>bw delete --permanent
-    %%> What it does:
-    %%> - deletes each matching item permanently, one per step
     %%> Leaves:
     %%> - unrecorded copies and items whose source differs from the ledger
     SW->>VW: Log out<br/>bw logout · remove scratch home
