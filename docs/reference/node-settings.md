@@ -4,7 +4,7 @@ description: "Typed Node settings for the apps root and operator-owned task VM h
 covers:
   - apps/gateway/app/Domain/Nodes/Storage/**
   - apps/gateway/app/{Actions/Nodes/UpdateNodeSettingsAction,Domain/Nodes/NodeSettingsOperationCompletion,Domain/Nodes/NodeSettingsProjection,Providers/TaskVmServiceProvider}.php
-  - apps/gateway/app/Infrastructure/Nodes/AgentNodeStorageRootPreparer.php
+  - {apps/gateway/app/Infrastructure/Nodes/AgentNodeStorageRootPreparer.php,swamp/extensions/behaviors/operations/node-scripts/{native_test.py,scripts/apps_folder.py,scripts/apps_folder_test.py}}
   - apps/gateway/app/Data/Nodes/{NodeSettingsData,NodeStorageAppsData,NodeTaskVmsData}.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/gateway/app/Http/Requests/Nodes/UpdateNodeSettingsRequest.php
