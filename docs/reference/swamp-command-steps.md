@@ -37,7 +37,7 @@ The shared subscriber calls `projectTerminal(Operation $operation, array $termin
 
 A `completed` event can carry a failed run status. Native `interrupted` remains `interrupted`; it is a terminal non-success status. A failed or cancelled run can have no selected output because the step was skipped. A failed or interrupted run with an empty result projects `{"error_code":"operation.native_failed"}`. This keeps the public result and outer error code consistent for the generic projector without inventing a family failure cause. Cancellation keeps an empty result.
 
-A successful run requires its public JSON object, unless the declaration sets `'outputs' => false`. That form selects an end check that prints nothing, such as a native `assert`: a successful run must show that step succeeded, and the result is empty. `node.wireguard_hub_converge` uses it.
+A successful run requires its public JSON object; a kind without a result step declares `native` instead (below).
 
 Missing, mismatched or unreadable history leaves the Operation unchanged and raises `swamp.terminal_result_unavailable`; it never triggers resubmission.
 
@@ -50,9 +50,9 @@ Flow-tighten rule 14 removes the step that reports a result. A kind without one 
 
 The summary holds the facts of Swamp's `@swamp/workflow-summary` report. It comes from the same history, so there is no second read.
 
-A successful run must show the named step succeeded; otherwise the result is unavailable. Unlike `'outputs' => false`, which gives an empty result, `native` passes each step's outputs, so a projector can record values such as a verifier from the step that produced it. A declaration sets one of the two, not both.
+A successful run must show the named step succeeded; otherwise the result is unavailable. `native` passes each step's outputs, so a projector can record values such as a verifier from the step that produced it.
 
-A projector reads one step's status with `NativeRunResult::stepStatus($result, '<step name>')`, which gives null for an absent step. A failed run projects `error_code` `operation.native_failed` with this result, and the shared failure detail names the failed step. `captures` work the same way in both modes. A declaration without `native` keeps the result-step contract above, so existing kinds are unchanged; new ports drop the result step and declare `native`.
+A projector reads one step's status with `NativeRunResult::stepStatus($result, '<step name>')`, which gives null for an absent step. A failed run projects `error_code` `operation.native_failed` with this result, and the shared failure detail names the failed step. `captures` work with `native` too. A declaration without `native` keeps the result-step contract above, so existing kinds are unchanged; new ports drop the result step and declare `native`.
 
 ### Scheduled observations
 
