@@ -149,7 +149,7 @@ jobs:
             operation_id: '${{ inputs.operation_id }}'
             node_id: '${{ inputs.node_id }}'
             kind: '${{ inputs.kind }}'
-            intent: '${{ {"package": inputs.intent.caddy_package, "ssh": {"target": {"host": inputs.intent.connection.nodeHost, "user": inputs.intent.connection.nodeUser, "port": inputs.intent.connection.nodePort, "host_keys": inputs.intent.host_keys}, "identity_file": inputs.intent.connection.nodeIdentityFile}} }}'
+            intent: '${{ {"package": inputs.intent.caddy_package, "ssh": {"target": {"host": inputs.intent.connection.nodeHost, "user": inputs.intent.connection.nodeUser, "port": inputs.intent.connection.nodePort, "host_keys": inputs.intent.host_keys}, "identity_file": inputs.intent.connection.nodeIdentityFile} } }}'
       - name: firewall
         labels:
           role: swamp
