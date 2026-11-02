@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, Recall analytics-plausible-via-swamp, DECISIONS 1 (cert signing), 2 (DNS hold), R2-R4. docs/reference/analytics.md.
+  %% Target design: ADR 0244 task, Recall analytics-plausible-via-swamp, DECISIONS 1 (cert signing), R2-R4. docs/reference/analytics.md.
   %% status: draft
   %% command: instance:analytics:enable
   autonumber
@@ -81,13 +81,13 @@ sequenceDiagram
   SW->>N: Probe the tracking host<br/>TLS · GET /js/script.js
   %%> What it does:
   %%> - checks the host answers with a valid certificate and serves the script
-  Note over SW: Publish private DNS<br/>open: Nick decides (DNS hold)
+  Note over SW: Publish private DNS<br/>Node 1 over @swamp/ssh
   %%> What it does:
   %%> - publishes the hosts' private DNS records, waits the 31-second grace, then withdraws old placements
-  %%> Open:
-  %%> - the DNS hold (`native-dns-takeover-held`) is in force; Nick decides how Route DNS is published
   %%> Not included:
   %%> - the public CNAME; `instance:analytics:show` names the record to create
+  %%> How:
+  %%> - over SSH from 209 to the VPN Node (Node 1), with the `swamp` role's key
   alt every step passes
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
