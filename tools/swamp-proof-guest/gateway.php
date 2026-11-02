@@ -11,14 +11,15 @@ declare(strict_types=1);
  *            subscriber in production, is not part of the minimal topology.
  *   fires    stdin {schedule, seconds}: the same subscriber, with its shared run reader, until a calendar
  *            fire of that Schedule is recorded as a task.
- *   fixture  stdin {roles: {node_id: [role]}, wireguard_keys: {node_id: public key}, vpn_subnet?, projects: [attributes]}:
- *            the records a kind fixture needs beyond the seed, such as the VPN hub, peers with keys and the VPN
- *            subnet, or a Project under the fixed id its Swamp configuration names.
+ *   fixture  stdin {roles: {node_id: [role]}, wireguard_keys: {node_id: public key}, vpn_subnet?, projects: [attributes],
+ *            extensions: [name]}: the records a kind fixture needs beyond the seed, such as the VPN hub, peers with
+ *            keys and the VPN subnet, a Project under the fixed id its Swamp configuration names, or an extension.
  */
 
 use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\WorkerKnownHostsPublisher;
+use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Swamp\SwampRunSubscriber;
 use App\Models\Node;
@@ -87,6 +88,10 @@ if ($argv[1] === 'fixture') {
         foreach ($roles as $role) {
             Node::query()->findOrFail((int) $id)->roles()->firstOrCreate(['role' => $role], ['status' => 'active']);
         }
+    }
+    // Gateway extensions a kind's projection needs, such as tasks for Project maintenance groups.
+    if (in_array('tasks', $input['extensions'] ?? [], true)) {
+        app(TaskExtensionState::class)->enable();
     }
     // A Project under a fixed id, for kinds whose Swamp side keys source-owned configuration by Project id.
     foreach ($input['projects'] ?? [] as $project) {
