@@ -1,6 +1,6 @@
 {
   "kind": "process.stop.docker",
-  "workflow": "operation-process-control",
+  "workflow": "operation-process-stop",
   "topology": "minimal",
   "budget_seconds": 180,
   "queue_timeout_seconds": 30,
@@ -32,15 +32,15 @@
   },
   "phases": [
     {
-      "name": "Control the Process",
+      "name": "Apply the unit state",
       "job": "runtime",
-      "step": "Control the Process",
+      "step": "Apply the unit state",
       "budget_seconds": 20
     },
     {
-      "name": "Verify the state",
+      "name": "Accept the Process",
       "job": "runtime",
-      "step": "Verify the state",
+      "step": "Accept the Process",
       "budget_seconds": 20
     }
   ],
