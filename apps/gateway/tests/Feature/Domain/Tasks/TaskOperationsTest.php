@@ -59,7 +59,7 @@ it('ignores terminal or unrelated records when admitting the group', function (s
     } elseif ($case === 'other target type') {
         $row['target_type'] = 'instance';
     } else {
-        $row['kind'] = $case === 'undeclared kind' ? 'tasks.removed_kind' : 'github.app_sync';
+        $row['kind'] = $case === 'undeclared kind' ? 'tasks.removed_kind' : 'websocket.sync';
     }
     Operation::query()->create($row);
 

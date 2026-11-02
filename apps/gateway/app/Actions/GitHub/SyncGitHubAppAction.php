@@ -4,38 +4,31 @@ declare(strict_types=1);
 
 namespace App\Actions\GitHub;
 
-use App\Domain\Gateway\GatewayServingHost;
+use App\Data\GitHub\GitHubAppData;
 use App\Domain\GitHub\GitHubAppStore;
-use App\Domain\Operations\OperationIdempotency;
-use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
-use App\Jobs\Operations\RunGitHubAppOperation;
-use App\Models\Operation;
-use Illuminate\Support\Facades\DB;
+use App\Infrastructure\GitHub\HttpGitHubAppManagement;
+use RuntimeException;
 
+/** Reads the App's installations with an App JWT the Gateway signs, stores the observation and answers like show. */
 final readonly class SyncGitHubAppAction
 {
-    public function __construct(private GitHubAppStore $store, private GatewayServingHost $gateway, private OperationStore $operations, private OperationIdempotency $idempotency) {}
+    public function __construct(private GitHubAppStore $store, private HttpGitHubAppManagement $github) {}
 
-    public function handle(?string $requestId = null): Operation
+    public function handle(): GitHubAppData
     {
         $app = $this->store->credentials();
-        $nodeId = $this->gateway->nodeId();
-        if ($app === null || $nodeId === null) {
+        if ($app === null) {
             throw new ResourceOperationException('github.app_missing', 'The Gateway has no registered GitHub App.', 404);
         }
-
-        if (($existing = $this->idempotency->replay('github.app_sync')) !== null) {
-            return $existing;
+        try {
+            $observation = $this->github->sync($app);
+        } catch (RuntimeException) {
+            // The last observation stays; show reports its age.
+            throw new ResourceOperationException('github.unavailable', 'The Gateway could not read the App installations from GitHub.', 503);
         }
+        $this->store->observe($observation);
 
-        return DB::transaction(function () use ($app, $nodeId, $requestId): Operation {
-            $operation = $this->operations->create('github.app_sync', 'node', $nodeId, $nodeId, ['app_id' => $app->appId], 'github.app.sync', $requestId);
-            if ($operation->wasRecentlyCreated) {
-                DB::afterCommit(static fn () => RunGitHubAppOperation::dispatch($operation->id));
-            }
-
-            return $operation;
-        });
+        return GitHubAppData::fromStore($this->store);
     }
 }

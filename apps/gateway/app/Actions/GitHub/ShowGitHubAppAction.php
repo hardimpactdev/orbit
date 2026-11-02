@@ -14,7 +14,7 @@ final readonly class ShowGitHubAppAction
 
     public function handle(): GitHubAppData
     {
-        if ($this->store->credentials() === null && $this->store->registration() === null && $this->store->exchange() === null) {
+        if ($this->store->credentials() === null && $this->store->registration() === null) {
             throw new ResourceOperationException('github.app_missing', 'The Gateway has no GitHub App. Run github:app:install.', 404);
         }
 

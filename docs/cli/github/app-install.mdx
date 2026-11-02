@@ -20,7 +20,7 @@ orbit github:app:install --name=orbit-acme --owner=acme
 
 The CLI prints each URL and opens it in a browser when it can. The browser must reach the Gateway's private HTTPS address, because GitHub redirects to it after registration. On a machine without a browser, open the printed URL on a machine that is on the Orbit VPN.
 
-On a Gateway without an App, confirm registration on GitHub. The callback returns the native registration Operation with HTTP 202. After that Operation succeeds, run `github:app:install` again to open the installation page. Choose the account and repositories in the browser. The CLI returns `pending` without polling or claiming that installation has completed.
+On a Gateway without an App, confirm registration on GitHub. GitHub redirects to the Gateway's callback, which exchanges the one-time code for the App ID, slug and private key and stores the key encrypted. The callback answers with the registered App; it starts no Operation. Then run `github:app:install` again to open the installation page. Choose the account and repositories in the browser. The CLI returns `pending` without polling or claiming that installation has completed.
 
 ## How it works
 

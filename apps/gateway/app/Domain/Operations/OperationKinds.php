@@ -9,10 +9,8 @@ namespace App\Domain\Operations;
  */
 final readonly class OperationKinds
 {
-    /** Kinds the Gateway runs or closes itself, with no Swamp run: the two App-key operations and the WebSocket registry tasks. */
+    /** Kinds the Gateway runs or closes itself, with no Swamp run: the WebSocket registry tasks. */
     private const array GatewayJobs = [
-        'github.app_register' => ['executor' => 'gateway'],
-        'github.app_sync' => ['executor' => 'gateway'],
         'websocket.sync' => ['executor' => 'gateway'],
         'websocket.app_create' => ['executor' => 'gateway'],
         'websocket.app_destroy' => ['executor' => 'gateway'],

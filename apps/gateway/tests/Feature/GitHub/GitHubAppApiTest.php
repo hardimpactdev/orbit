@@ -57,25 +57,6 @@ describe('GitHub App API', function (): void {
         Http::assertNothingSent();
     });
 
-    it('admits code conversion once and never stores the code in public operation state', function (): void {
-        $this->postJson('/api/v1/github/app/install', ['name' => 'orbit'])->assertOk();
-        $store = app(GitHubAppStore::class);
-        $state = $store->registration()->state;
-        $path = '/api/v1/github/app/callback?'.http_build_query(['code' => 'one-time-code-sentinel', 'state' => $state]);
-        $response = $this->get($path)->assertAccepted()->assertHeader('Cache-Control', 'no-store, private')
-            ->assertJsonPath('data.kind', 'github.app_register');
-        $operation = Operation::query()->findOrFail($response->json('data.id'));
-        expect($store->exchange()['operation_id'])->toBe($operation->id);
-        expect(json_encode($operation->toArray()))->not->toContain('one-time-code-sentinel', $state);
-        expect(Setting::query()->where('key', 'github.app.registration_exchange')->value('value'))->not->toContain('one-time-code-sentinel');
-        $this->get($path)->assertUnprocessable()->assertJsonPath('error.code', 'github.registration_invalid');
-        $this->getJson('/api/v1/github/app')->assertOk()->assertJsonPath('data.status', 'pending')
-            ->assertJsonPath('data.installations_status', 'unknown')->assertDontSee('one-time-code-sentinel');
-        $this->postJson('/api/v1/github/app/install', ['name' => 'orbit'])->assertConflict()->assertJsonPath('error.code', 'github.registration_pending');
-        expect(Operation::query()->where('kind', 'github.app_register')->count())->toBe(1);
-        Http::assertNothingSent();
-    });
-
     it('refuses wrong or expired browser state without admitting work', function (bool $expired): void {
         $this->postJson('/api/v1/github/app/install', ['name' => 'orbit'])->assertOk();
         $state = app(GitHubAppStore::class)->registration()->state;
@@ -98,12 +79,10 @@ describe('GitHub App API', function (): void {
         Http::assertNothingSent();
     });
 
-    it('shows the native observation as stale after five minutes without refreshing in PHP', function (): void {
+    it('shows the last sync observation as stale after five minutes without refreshing it', function (): void {
         $this->freezeTime();
         GitHubTestSupport::storeApp();
-        $op = Operation::query()->create(['kind' => 'github.app_sync', 'node_id' => $this->gateway->id,
-            'target_type' => 'node', 'target_id' => $this->gateway->id, 'input' => ['app_id' => 4242], 'status' => 'succeeded']);
-        app(GitHubAppStore::class)->observe($op, ['app_id' => 4242, 'observed_at' => now()->toISOString(),
+        app(GitHubAppStore::class)->observe(['app_id' => 4242, 'observed_at' => now()->toISOString(),
             'installations' => [['id' => 9, 'account' => 'acme', 'type' => 'organization', 'repositories' => 'all', 'suspended' => false]]]);
         $this->getJson('/api/v1/github/app')->assertOk()->assertJsonPath('data.installations_status', 'current')
             ->assertJsonPath('data.installations.0.account', 'acme');

@@ -4,39 +4,53 @@ declare(strict_types=1);
 
 namespace App\Actions\GitHub;
 
-use App\Domain\Gateway\GatewayServingHost;
+use App\Data\GitHub\GitHubAppData;
 use App\Domain\GitHub\GitHubAppStore;
-use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
-use App\Jobs\Operations\RunGitHubAppOperation;
-use App\Models\Operation;
+use App\Infrastructure\GitHub\HttpGitHubAppManagement;
 use App\Models\Setting;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 use SensitiveParameter;
 
-/** Consume browser admission once; the Gateway exchanges the encrypted code. */
+/**
+ * GitHub's redirect after the operator confirmed the App. The Gateway consumes the registration once, exchanges the
+ * one-time code itself and stores the App key encrypted; the key never leaves the Gateway. No Operation or run starts.
+ */
 final readonly class CompleteGitHubAppRegistrationAction
 {
-    public function __construct(private GitHubAppStore $store, private OperationStore $operations, private GatewayServingHost $gateway) {}
+    public function __construct(private GitHubAppStore $store, private HttpGitHubAppManagement $github) {}
 
-    public function handle(#[SensitiveParameter] string $state, #[SensitiveParameter] string $code, ?string $requestId = null): Operation
+    public function handle(#[SensitiveParameter] string $state, #[SensitiveParameter] string $code): GitHubAppData
     {
-        return DB::transaction(function () use ($state, $code, $requestId): Operation {
-            Setting::query()->where('scope_type', 'gateway')->where('scope_id', 0)
-                ->where('key', 'github.app.registration')->lockForUpdate()->first();
+        DB::transaction(function () use ($state, $code): void {
+            $this->lock();
             $registration = $this->store->registration();
-            $nodeId = $this->gateway->nodeId();
             if ($registration === null || ! $registration->matches($state, now()->getTimestamp())
-                || $this->store->credentials() !== null || $this->store->exchange() !== null || $nodeId === null || $code === '' || strlen($code) > 4096) {
+                || $this->store->credentials() !== null || $code === '' || strlen($code) > 4096) {
                 throw new ResourceOperationException('github.registration_invalid', 'The redirect does not match an unused GitHub App registration.', 422);
             }
-            $operation = $this->operations->create('github.app_register', 'node', $nodeId, $nodeId, [
-                'registration_id' => hash('sha256', $state),
-            ], 'github.app.callback', $requestId);
-            $this->store->beginExchange($operation, $code);
-            DB::afterCommit(static fn () => RunGitHubAppOperation::dispatch($operation->id));
-
-            return $operation;
+            // A state is good for one exchange; a retried redirect starts over with github:app:install.
+            $this->store->clearRegistration();
         });
+        try {
+            $credentials = $this->github->register($code);
+        } catch (RuntimeException) {
+            throw new ResourceOperationException('github.registration_failed', 'GitHub refused to exchange the one-time code. Run github:app:install again.', 502);
+        }
+        DB::transaction(function () use ($credentials): void {
+            $this->lock();
+            if ($this->store->credentials() !== null) {
+                throw new ResourceOperationException('github.registration_invalid', 'The Gateway already has a GitHub App.', 422);
+            }
+            $this->store->put($credentials);
+        });
+
+        return GitHubAppData::fromStore($this->store);
+    }
+
+    private function lock(): void
+    {
+        Setting::query()->where('scope_type', 'gateway')->where('scope_id', 0)->where('key', 'like', 'github.app%')->lockForUpdate()->get();
     }
 }

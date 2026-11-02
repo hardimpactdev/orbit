@@ -40,7 +40,7 @@ final readonly class GitHubAppResponse
         $status = $data['status'] ?? null;
         $certainty = $data['installations_status'] ?? null;
         $observedAt = $data['observed_at'] ?? null;
-        if (! is_string($status) || ! in_array($status, ['registered', 'pending', 'failed', 'cancelled'], true)
+        if (! is_string($status) || ! in_array($status, ['registered', 'pending'], true)
             || ! is_string($certainty) || ! in_array($certainty, ['unknown', 'current', 'stale'], true)
             || ! ($observedAt === null || (is_string($observedAt) && \DateTimeImmutable::createFromFormat('Y-m-d\TH:i:s.u\Z', $observedAt) !== false))
             || ($certainty !== 'unknown' && $observedAt === null)) {

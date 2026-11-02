@@ -1,15 +1,14 @@
 ---
 title: "orbit github:app:sync"
 sidebarTitle: "github:app:sync"
-description: "Refresh installation observations in one native Swamp workflow. The command returns its queued Operation without waiting."
+description: "Read the GitHub App installations from GitHub now and show the App."
 ---
 
 ```bash
-orbit github:app:sync [--idempotency-key=KEY] [--json]
-orbit operation:show OPERATION_ID
+orbit github:app:sync [--json]
 ```
 
-Reuse the same key after an uncertain admission. Swamp reads installations using a short-lived App JWT minted by the Gateway; the private signing key stays on the Gateway.
+The Gateway signs a short-lived App JWT, lists the App's installations on GitHub, stores the public observation, and answers like [`github:app:show`](/cli/github/app-show). It starts no Operation and no Swamp run; the App key never leaves the Gateway. When GitHub fails, the last observation stays and the command returns `github.unavailable`.
 
 ## How it works
 

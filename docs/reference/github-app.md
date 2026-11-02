@@ -96,9 +96,9 @@ Run [`orbit github:app:install`](/cli/github/app-install) from a machine whose b
 
 Registration takes one confirmation in the browser. The Gateway serves a page that posts the App's manifest to GitHub. GitHub shows the App name, and you confirm. GitHub App names are unique across GitHub, so GitHub asks for another name when the name is taken. GitHub then redirects the browser to the Gateway with a one-time code and the `state` value that ties it to this registration.
 
-The callback admits the native registration workflow and returns its Operation with HTTP 202. Swamp exchanges the code for the App ID, slug, and private key, then stores credentials through the declared private output. A registration expires after one hour.
+The callback accepts a registration once. The Gateway exchanges the code with GitHub for the App ID, slug and private key, stores the key encrypted, and answers with the registered App. A refused exchange returns `github.registration_failed`; run `github:app:install` again. A registration expires after one hour. The App key never leaves the Gateway, and neither step starts an Operation or a Swamp run.
 
-On the install page, choose the account or organization and all or selected repositories. Run the App sync endpoint after changing installations. Install and show read the last projected observation and explicitly report its age and certainty.
+On the install page, choose the account or organization and all or selected repositories. Run `github:app:sync` after changing installations: the Gateway lists them on GitHub at once and stores the observation. Install and show read the last observation and report its age.
 
 ## Read branch protection
 

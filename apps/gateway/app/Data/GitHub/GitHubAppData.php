@@ -6,7 +6,6 @@ namespace App\Data\GitHub;
 
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubAppStore;
-use App\Models\Operation;
 use App\Support\ValidatedData;
 use Carbon\CarbonImmutable;
 
@@ -24,9 +23,7 @@ final readonly class GitHubAppData
         $status = $observedAt === null ? 'unknown' : (CarbonImmutable::parse($observedAt)->gt(now()->subMinutes(5)) ? 'current' : 'stale');
 
         $app = $store->credentials();
-        $exchangeId = $store->exchange()['operation_id'] ?? null;
-        $exchangeOperation = is_int($exchangeId) ? Operation::query()->find($exchangeId) : null;
-        $registrationStatus = $app !== null ? 'registered' : ($exchangeOperation?->status->terminal() ? $exchangeOperation->status->value : 'pending');
+        $registrationStatus = $app !== null ? 'registered' : 'pending';
 
         return new self($app, is_array($observation['installations'] ?? null) ? array_values(array_map(ValidatedData::object(...), $observation['installations'])) : [], $status, $observedAt, $registrationStatus);
     }

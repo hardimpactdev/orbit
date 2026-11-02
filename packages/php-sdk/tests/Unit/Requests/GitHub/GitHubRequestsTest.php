@@ -37,7 +37,6 @@ it('sends an empty JSON object when no install field is supplied', function (): 
         ->toBe('application/json');
 });
 
-it('preserves the refresh identity without adding execution input', function (): void {
-    $request = new SyncGitHubAppRequest('app-refresh-one');
-    expect($request->headers()->get('Idempotency-Key'))->toBe('app-refresh-one');
+it('sends a plain refresh with no idempotency key, because it starts no Operation', function (): void {
+    expect((new SyncGitHubAppRequest)->headers()->get('Idempotency-Key'))->toBeNull();
 });

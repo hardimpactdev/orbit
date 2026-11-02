@@ -15,7 +15,7 @@ orbit github:app:show [--json]
 | `repositories` | `all` or `selected`. |
 | `suspended` | Whether the account suspended the installation. |
 
-The Gateway returns stored public state. `status` distinguishes registered, pending, failed and cancelled registration. `installations_status` is unknown, current, or stale, and `observed_at` preserves the native observation time. Run `github:app:sync` to refresh it. The result never contains the private key or a token.
+The Gateway returns stored public state. `status` is `registered`, or `pending` while a registration waits for GitHub's redirect. `installations_status` is unknown, current, or stale, and `observed_at` keeps the time of the last sync. Run `github:app:sync` to refresh it. The result never contains the private key or a token.
 
 ## Errors
 

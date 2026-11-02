@@ -221,22 +221,18 @@ describe('github:app:install', function (): void {
 });
 
 describe('github:app:sync', function (): void {
-    it('records one native refresh and returns its Operation without following it', function (bool $json): void {
+    it('reads the installations now and shows the App like github:app:show', function (bool $json): void {
         $mock = MockClient::global([
-            SyncGitHubAppRequest::class => MockResponse::make(['data' => [
-                'id' => 42, 'kind' => 'github.app_sync', 'target_type' => 'node', 'target_id' => 14,
-                'input' => ['app_id' => 4242], 'status' => 'queued', 'sequence' => 1,
-            ], 'meta' => ['request_id' => github_request_id()]], 202),
+            SyncGitHubAppRequest::class => MockResponse::make(['data' => github_app_payload(), 'meta' => ['request_id' => github_request_id()]]),
         ]);
-        $output = github_run('github:app:sync --idempotency-key=refresh-one'.($json ? ' --json' : ''));
+        $output = github_run('github:app:sync'.($json ? ' --json' : ''));
         if ($json) {
             $decoded = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
-            expect($decoded['id'])->toBe(42)->and($decoded['status'])->toBe('queued');
+            expect($decoded['app_id'])->toBe(github_app_payload()['app_id']);
         } else {
-            expect($output)->toContain('Operation 42: queued.', 'orbit operation:show 42');
+            expect($output)->toContain('GitHub App.')->not->toContain('operation:show');
         }
         expect($mock->getLastRequest())->toBeInstanceOf(SyncGitHubAppRequest::class);
-        expect($mock->getLastRequest()->headers()->get('Idempotency-Key'))->toBe('refresh-one');
     })->with([true, false]);
 });
 

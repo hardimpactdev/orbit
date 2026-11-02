@@ -7,17 +7,15 @@ namespace App\Commands\GitHub;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\GitHub\SyncGitHubAppRequest;
-use Orbit\Sdk\Responses\Operations\OperationResponse;
+use Orbit\Sdk\Responses\GitHub\GitHubAppResponse;
 
 final class SyncGitHubAppCommand extends GitHubCommand
 {
     #[\Override]
-    protected $signature = 'github:app:sync
-        {--idempotency-key= : Reuse this key for the same refresh request}
-        {--json : Return machine-readable JSON}';
+    protected $signature = 'github:app:sync {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Record a native workflow request to refresh the GitHub App installations.';
+    protected $description = 'Read the GitHub App installations from GitHub now and show the App.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $factory): int
     {
@@ -25,19 +23,18 @@ final class SyncGitHubAppCommand extends GitHubCommand
         if ($connector === null) {
             return self::FAILURE;
         }
-        $key = $this->option('idempotency-key');
-        $operation = $this->sendWithProgress($connector, new SyncGitHubAppRequest(is_string($key) ? $key : null),
-            OperationResponse::class, ['Refresh GitHub App', 'Recording refresh intent', 'Recorded refresh intent']);
-        if (! $operation instanceof OperationResponse) {
+        $app = $this->sendWithProgress($connector, new SyncGitHubAppRequest, GitHubAppResponse::class,
+            ['Refresh GitHub App', 'Reading installations from GitHub', 'Read installations from GitHub']);
+        if (! $app instanceof GitHubAppResponse) {
             return self::FAILURE;
         }
         if ($this->option('json') === true) {
-            $this->writeJson($operation->toArray());
-        } else {
-            $this->writeHumanMessage('Operation '.$operation->id.': '.$operation->status.'.');
-            $this->writeHumanMessage('Follow it with: orbit operation:show '.$operation->id);
-            $this->writeHumanMessage('Request ID: '.$operation->requestId);
+            $this->writeJson($app->toArray());
+
+            return self::SUCCESS;
         }
+        $this->writeApp($app, 'GitHub App.');
+        $this->writeHumanMessage("Request ID: {$app->requestId}");
 
         return self::SUCCESS;
     }

@@ -703,7 +703,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'github:app:destroy' => [[], ['yes' => false, 'json' => false]],
         'github:app:install' => [[], ['name' => null, 'owner' => null, 'json' => false]],
         'github:app:show' => [[], ['json' => false]],
-        'github:app:sync' => [[], ['idempotency-key' => null, 'json' => false]],
+        'github:app:sync' => [[], ['json' => false]],
         'instance:analytics:disable' => [['instance'], ['yes' => false, 'json' => false]],
         'instance:analytics:enable' => [['instance'], ['host' => [], 'json' => false]],
         'instance:analytics:show' => [['instance'], ['json' => false]],
