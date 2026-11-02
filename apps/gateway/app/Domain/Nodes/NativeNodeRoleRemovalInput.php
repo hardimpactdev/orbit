@@ -51,8 +51,13 @@ final readonly class NativeNodeRoleRemovalInput
             }
             $member = Node::query()->findOrFail($id);
             $snapshot = app(NativeRoutePublicationInput::class)->snapshot($member, $sites);
+            // Removal publishes a complete Caddyfile, not a sparse Route section delta.
+            $caddy = $snapshot['caddy'];
+            if (is_array($caddy)) {
+                unset($caddy['blocks']);
+            }
             $result[] = ['node_id' => $id, ...app(NativeCaddyPublicationInput::class)->connectionForNode($member),
-                'caddy' => in_array($id, $duties['caddy_node_ids'], true) ? $snapshot['caddy'] : null,
+                'caddy' => in_array($id, $duties['caddy_node_ids'], true) ? $caddy : null,
                 'php' => in_array($id, $duties['php_node_ids'], true) ? $snapshot['php'] : null,
                 'dns' => in_array($id, $duties['dns_node_ids'], true) ? $snapshot['dns'] : null];
         }

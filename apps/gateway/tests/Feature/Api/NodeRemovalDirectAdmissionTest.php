@@ -189,6 +189,13 @@ it('captures Metrics teardown for the canonical surviving fleet including209', f
     expect(array_filter($role['files'], static fn (array $file): bool => $file['ssh']['target']['host'] === $control->wireguard_ip && $file['path'] === '/usr/local/bin/orbit-cadvisor'))->not->toBeEmpty();
     expect($role['certificates'])->not->toBeEmpty();
     expect($role['publications'])->not->toBeEmpty();
+    foreach ($role['publications'] as $publication) {
+        foreach (['before', 'after'] as $phase) {
+            if ($publication[$phase]['caddy'] !== null) {
+                expect(array_keys($publication[$phase]['caddy']))->toBe(['content', 'version', 'listen_addresses', 'unserved']);
+            }
+        }
+    }
     expect(array_column($role['firewall'], 'input'))->not->toBeEmpty();
     expect($capture['intent']['preserved_on_node'])->not->toBeEmpty();
 });
