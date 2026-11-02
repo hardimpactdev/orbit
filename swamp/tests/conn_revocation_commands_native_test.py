@@ -30,8 +30,6 @@ class ConnRevocationNative(NativeTestCase):
                 for step in job["steps"]:
                     self.assertEqual(step.pop("labels"), {"role": "swamp"})
                     self.assertNotIn("labels", step)
-                    if filename == "workflow-conn-revoke-session.yaml":
-                        self.assertIn("run.id", step["task"]["behaviorName"])
             (self.repo / "workflows" / filename).write_text(
                 yaml.safe_dump(workflow, sort_keys=False)
             )

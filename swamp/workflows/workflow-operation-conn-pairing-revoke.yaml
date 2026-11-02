@@ -64,50 +64,31 @@ inputs:
 jobs:
 - name: prepare
   steps:
-  - name: assets
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/conn-revocation-plan'
-      behaviorName: '${{ "conn-assets" }}'
-      methodName: assets
-      inputs:
-        intent: ${{ inputs.intent }}
   - name: list
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "conn-list" }}'
+      behaviorName: ${{ "conn-list" }}
       methodName: execute
       inputs:
-        run: '#!/bin/sh
-
-          set -eu
-
-          /usr/bin/python3 -B "${{ steps.assets.outputs.list_script }}"
-
-          '
+        run: 'curl --fail --silent --show-error --max-time 10 --max-filesize 4194304 --variable %ORBIT_CONN_ADMIN_SESSION --expand-header ''Authorization: Bearer {{ORBIT_CONN_ADMIN_SESSION}}'' "${ORBIT_CONN_URL%/}/api/auth/clients"'
         env:
-          ORBIT_CONN_INTENT: ${{ steps.assets.outputs.intent_json }}
-          ORBIT_CONN_ADMIN_SESSION: ${{ vault.get(inputs.execution_secrets.admin_session.vault,
-            inputs.execution_secrets.admin_session.key) }}
-    dependsOn:
-    - step: assets
-      condition:
-        type: succeeded
+          ORBIT_CONN_URL: ${{ inputs.intent.url }}
+          ORBIT_CONN_ADMIN_SESSION: ${{ vault.get(inputs.execution_secrets.admin_session.vault, inputs.execution_secrets.admin_session.key) }}
     guard: ${{ inputs.intent.labels.size() == 0 }}
   - name: select
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@nckrtl/conn-revocation-plan'
-      behaviorName: '${{ "conn-select" }}'
+      behaviorName: ${{ "conn-select" }}
       methodName: select
       inputs:
         intent: ${{ inputs.intent }}
-        stdout: '${{ "list" in steps && steps.list.status == "succeeded" ? steps.list.outputs.stdout
-          : "[]" }}'
+        stdout: '${{ "list" in steps && steps.list.status == "succeeded" ? steps.list.outputs.stdout : "[]" }}'
     dependsOn:
     - step: list
       condition:
@@ -119,7 +100,8 @@ jobs:
       type: succeeded
   steps:
   - name: session
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: workflow
       workflowIdOrName: conn-revoke-session
@@ -140,25 +122,19 @@ jobs:
       type: succeeded
   steps:
   - name: link
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "conn-link-" + string(self._index) }}'
+      behaviorName: ${{ "conn-link-" + string(self._index) }}
       methodName: execute
       inputs:
-        run: '#!/bin/sh
-
-          set -eu
-
-          /usr/bin/python3 -B "${{ steps.assets.outputs.revoke_script }}"
-
-          '
+        run: 'curl --fail --silent --show-error --max-time 10 --max-filesize 4194304 --variable %ORBIT_CONN_ADMIN_SESSION --expand-header ''Authorization: Bearer {{ORBIT_CONN_ADMIN_SESSION}}'' --header ''Content-Type: application/json'' --data "$ORBIT_CONN_BODY" "${ORBIT_CONN_URL%/}/api/auth/pairing-links/revoke"'
         env:
-          ORBIT_CONN_INTENT: ${{ steps.assets.outputs.intent_json }}
-          ORBIT_CONN_ADMIN_SESSION: ${{ vault.get(inputs.execution_secrets.admin_session.vault,
-            inputs.execution_secrets.admin_session.key) }}
-          ORBIT_CONN_REVOKE: ${{ self.item.input_json }}
+          ORBIT_CONN_URL: ${{ inputs.intent.url }}
+          ORBIT_CONN_ADMIN_SESSION: ${{ vault.get(inputs.execution_secrets.admin_session.vault, inputs.execution_secrets.admin_session.key) }}
+          ORBIT_CONN_BODY: ${{ self.item.body }}
     forEach:
       item: item
       in: ${{ steps.select.outputs.links }}
@@ -169,15 +145,15 @@ jobs:
       type: always
   steps:
   - name: result
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@nckrtl/conn-revocation-plan'
-      behaviorName: '${{ "conn-result" }}'
+      behaviorName: ${{ "conn-result" }}
       methodName: finish
       inputs:
-        successful: ${{ steps.all(name, steps[name].status == "succeeded" || steps[name].status
-          == "skipped") }}
-        results: ${{ steps.filter(name, name.startsWith("session-") && steps[name].status
-          == "succeeded").map(name, steps[name].outputs.finish.stdout) }}
+        successful: ${{ steps.all(name, steps[name].status == "succeeded" || steps[name].status == "skipped") }}
+        results: ${{ steps.filter(name, name.startsWith("session-") && steps[name].status == "succeeded").map(name, steps[name].outputs.finish.stdout) }}
         child: false
+        links: ${{ steps.filter(name, name.startsWith("link-") && steps[name].status == "succeeded").map(name, steps[name].outputs.stdout) }}

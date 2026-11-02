@@ -30,7 +30,7 @@ class ConnVaultRemoteAssets(NativeTestCase):
     native_timeout = 120
 
     def test_scripts_resolve_and_are_readable_on_a_separate_worker(self):
-        self.copy_behaviors("operations/conn-revocation", "operations/vault-sync")
+        self.copy_behaviors("operations/vault-sync")
         vault = {
             "url": "https://vault.test",
             "client_id": "public-client",
@@ -70,15 +70,6 @@ PYTHON
                         "write",
                         "logout",
                     )
-                ],
-            ),
-            (
-                "conn",
-                "@nckrtl/conn-revocation-plan",
-                {"url": "http://t3.test", "labels": [], "links": []},
-                [
-                    "${{ steps.conn.outputs.list_script }}",
-                    "${{ steps.conn.outputs.revoke_script }}",
                 ],
             ),
         ):
@@ -263,10 +254,6 @@ PYTHON
                 self.assertEqual(
                     json.loads(outputs["vault-read"]["stdout"]),
                     {"readable": True, "count": 8},
-                )
-                self.assertEqual(
-                    json.loads(outputs["conn-read"]["stdout"]),
-                    {"readable": True, "count": 2},
                 )
                 self.assertTrue(list(cache.rglob("bw.py")))
             finally:

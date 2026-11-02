@@ -6,59 +6,60 @@ export const Intent = z.object({
     labels: z.array(z.string().max(1024)).max(4096),
     links: z.array(Id).max(4096),
 }).strict();
-const Session = z.object({
-    session_id: Id,
-    current: z.boolean(),
-    owned: z.boolean(),
-}).strict();
-const Sessions = z.array(Session).max(4096).refine((rows) =>
-    new Set(rows.map((row) => row.session_id)).size === rows.length
+// One raw T3 `GET /api/auth/clients` reply, read by curl on 209.
+const Observed = z.array(z.object({
+    sessionId: Id,
+    current: z.boolean().optional(),
+    client: z.object({ label: z.string().optional() }).passthrough().nullable().optional(),
+}).passthrough()).max(4096).refine((rows) =>
+    new Set(rows.map((row) => row.sessionId)).size === rows.length
 );
-const Revoke = z.object({ type: z.enum(["session", "link"]), id: Id }).strict();
-const Assets = z.object({
-    list_script: z.string(),
-    revoke_script: z.string(),
-    intent_json: z.string(),
-});
+// One raw T3 revoke reply.
+const Revoked = z.object({ revoked: z.boolean() }).passthrough();
 const Selection = z.object({
     sessions: z.array(Id),
-    links: z.array(z.object({ id: Id, input_json: z.string() })),
+    links: z.array(z.object({ id: Id, body: z.string() })),
 });
-const Authorization = z.object({ absent: z.boolean(), input_json: z.string() });
+const Authorization = z.object({ absent: z.boolean(), body: z.string() });
 const Terminal = z.object({ stdout: z.string() });
 type Context = {
-    extensionFile(path: string): string;
     writeResource(spec: string, name: string, data: unknown): Promise<unknown>;
 };
 
-export function selectSessions(stdout: string): string[] {
-    return Sessions.parse(JSON.parse(stdout)).filter((row) =>
-        row.owned && !row.current
-    ).map((row) => row.session_id);
+function sessions(stdout: string, labels: string[]) {
+    return Observed.parse(JSON.parse(stdout)).map((row) => ({
+        session_id: row.sessionId,
+        current: row.current ?? false,
+        owned: labels.includes(row.client?.label ?? "\u0000"),
+    }));
 }
-export function authorizeSession(stdout: string, id: string) {
-    const current = Sessions.parse(JSON.parse(stdout)).find((row) =>
-        row.session_id === id
-    );
+export function selectSessions(stdout: string, labels: string[]): string[] {
+    return sessions(stdout, labels).filter((row) => row.owned && !row.current)
+        .map((row) => row.session_id);
+}
+export function authorizeSession(stdout: string, id: string, labels: string[]) {
+    const current = sessions(stdout, labels).find((row) => row.session_id === id);
     if (current && (!current.owned || current.current)) {
         throw new Error("conn.session_owner_changed");
     }
-    return {
-        absent: !current,
-        input_json: JSON.stringify(Revoke.parse({ type: "session", id })),
-    };
+    return { absent: !current, body: JSON.stringify({ sessionId: id }) };
 }
+/** Child: raw T3 session revoke replies. Parent: each child's terminal output, and the raw link replies. */
 export function terminalResult(
     successful: boolean,
     results: string[],
     child = false,
+    links: string[] = [],
 ) {
     if (!successful) {
         return { stdout: '{"error_code":"conn.revocation_failed"}' };
     }
+    for (const reply of links) Revoked.parse(JSON.parse(reply));
     const revoked = results.map((value) =>
-        z.object({ revoked_sessions: z.number().int().min(0).max(1) }).strict()
-            .parse(JSON.parse(value)).revoked_sessions
+        child
+            ? Number(Revoked.parse(JSON.parse(value)).revoked)
+            : z.object({ revoked_sessions: z.number().int().min(0).max(1) }).strict()
+                .parse(JSON.parse(value)).revoked_sessions
     ).reduce((sum, value) => sum + value, 0);
     return {
         stdout: JSON.stringify(
@@ -71,9 +72,8 @@ export function terminalResult(
 
 export const behavior = {
     type: "@nckrtl/conn-revocation-plan",
-    version: "2026.10.31.2",
+    version: "2026.11.02.1",
     resources: {
-        assets: { schema: Assets, lifetime: "infinite", garbageCollection: 10 },
         selection: {
             schema: Selection,
             lifetime: "infinite",
@@ -91,22 +91,6 @@ export const behavior = {
         },
     },
     methods: {
-        assets: {
-            description: "Resolve one-request action scripts and public intent",
-            arguments: z.object({ intent: Intent }),
-            execute: async (
-                args: { intent: z.infer<typeof Intent> },
-                ctx: Context,
-            ) => {
-                const value = {
-                    list_script: ctx.extensionFile("scripts/list_sessions.py"),
-                    revoke_script: ctx.extensionFile("scripts/revoke.py"),
-                    intent_json: JSON.stringify(args.intent),
-                };
-                await ctx.writeResource("assets", "assets", value);
-                return value;
-            },
-        },
         select: {
             description: "Select only admitted non-current session identities",
             arguments: z.object({ intent: Intent, stdout: z.string() }),
@@ -115,10 +99,10 @@ export const behavior = {
                 ctx: Context,
             ) => {
                 const value = {
-                    sessions: selectSessions(args.stdout),
+                    sessions: selectSessions(args.stdout, args.intent.labels),
                     links: [...new Set(args.intent.links)].map((id) => ({
                         id,
-                        input_json: JSON.stringify({ type: "link", id }),
+                        body: JSON.stringify({ id }),
                     })),
                 };
                 await ctx.writeResource("selection", "selection", value);
@@ -127,12 +111,12 @@ export const behavior = {
         },
         authorize: {
             description: "Recheck one session against the fresh T3 observation",
-            arguments: z.object({ stdout: z.string(), session_id: Id }),
+            arguments: z.object({ intent: Intent, stdout: z.string(), session_id: Id }),
             execute: async (
-                args: { stdout: string; session_id: string },
+                args: { intent: z.infer<typeof Intent>; stdout: string; session_id: string },
                 ctx: Context,
             ) => {
-                const value = authorizeSession(args.stdout, args.session_id);
+                const value = authorizeSession(args.stdout, args.session_id, args.intent.labels);
                 await ctx.writeResource(
                     "authorization",
                     "authorization",
@@ -148,12 +132,14 @@ export const behavior = {
                 successful: z.boolean(),
                 results: z.array(z.string()),
                 child: z.boolean().default(false),
+                links: z.array(z.string()).default([]),
             }),
             execute: async (
                 args: {
                     successful: boolean;
                     results: string[];
                     child: boolean;
+                    links: string[];
                 },
                 ctx: Context,
             ) => {
@@ -161,6 +147,7 @@ export const behavior = {
                     args.successful,
                     args.results,
                     args.child,
+                    args.links,
                 );
                 await ctx.writeResource("terminal", "terminal", value);
                 return value;

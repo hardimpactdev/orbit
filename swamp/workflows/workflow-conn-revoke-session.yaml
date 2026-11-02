@@ -67,89 +67,65 @@ inputs:
 jobs:
 - name: session
   steps:
-  - name: assets
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/conn-revocation-plan'
-      behaviorName: '${{ "conn-assets" }}'
-      methodName: assets
-      inputs:
-        intent: ${{ inputs.intent }}
   - name: inspect
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "conn-inspect" }}'
+      behaviorName: ${{ "conn-inspect" }}
       methodName: execute
       inputs:
-        run: '#!/bin/sh
-
-          set -eu
-
-          /usr/bin/python3 -B "${{ steps.assets.outputs.list_script }}"
-
-          '
+        run: 'curl --fail --silent --show-error --max-time 10 --max-filesize 4194304 --variable %ORBIT_CONN_ADMIN_SESSION --expand-header ''Authorization: Bearer {{ORBIT_CONN_ADMIN_SESSION}}'' "${ORBIT_CONN_URL%/}/api/auth/clients"'
         env:
-          ORBIT_CONN_INTENT: ${{ steps.assets.outputs.intent_json }}
-          ORBIT_CONN_ADMIN_SESSION: ${{ vault.get(inputs.execution_secrets.admin_session.vault,
-            inputs.execution_secrets.admin_session.key) }}
-    dependsOn:
-    - step: assets
-      condition:
-        type: succeeded
+          ORBIT_CONN_URL: ${{ inputs.intent.url }}
+          ORBIT_CONN_ADMIN_SESSION: ${{ vault.get(inputs.execution_secrets.admin_session.vault, inputs.execution_secrets.admin_session.key) }}
   - name: authorize
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@nckrtl/conn-revocation-plan'
-      behaviorName: '${{ "conn-authorize" }}'
+      behaviorName: ${{ "conn-authorize" }}
       methodName: authorize
       inputs:
         stdout: ${{ steps.inspect.outputs.stdout }}
         session_id: ${{ inputs.session_id }}
+        intent: ${{ inputs.intent }}
     dependsOn:
     - step: inspect
       condition:
         type: succeeded
   - name: revoke
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "conn-revoke" }}'
+      behaviorName: ${{ "conn-revoke" }}
       methodName: execute
       inputs:
-        run: '#!/bin/sh
-
-          set -eu
-
-          /usr/bin/python3 -B "${{ steps.assets.outputs.revoke_script }}"
-
-          '
+        run: 'curl --fail --silent --show-error --max-time 10 --max-filesize 4194304 --variable %ORBIT_CONN_ADMIN_SESSION --expand-header ''Authorization: Bearer {{ORBIT_CONN_ADMIN_SESSION}}'' --header ''Content-Type: application/json'' --data "$ORBIT_CONN_BODY" "${ORBIT_CONN_URL%/}/api/auth/clients/revoke"'
         env:
-          ORBIT_CONN_INTENT: ${{ steps.assets.outputs.intent_json }}
-          ORBIT_CONN_ADMIN_SESSION: ${{ vault.get(inputs.execution_secrets.admin_session.vault,
-            inputs.execution_secrets.admin_session.key) }}
-          ORBIT_CONN_REVOKE: ${{ steps.authorize.outputs.input_json }}
+          ORBIT_CONN_URL: ${{ inputs.intent.url }}
+          ORBIT_CONN_ADMIN_SESSION: ${{ vault.get(inputs.execution_secrets.admin_session.vault, inputs.execution_secrets.admin_session.key) }}
+          ORBIT_CONN_BODY: ${{ steps.authorize.outputs.body }}
     dependsOn:
     - step: authorize
       condition:
         type: succeeded
     guard: ${{ steps.authorize.outputs.absent }}
   - name: finish
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@nckrtl/conn-revocation-plan'
-      behaviorName: '${{ "conn-finish" }}'
+      behaviorName: ${{ "conn-finish" }}
       methodName: finish
       inputs:
-        successful: ${{ steps.all(name, steps[name].status == "succeeded" || steps[name].status
-          == "skipped") }}
-        results: '${{ "revoke" in steps && steps.revoke.status == "succeeded" ? [steps.revoke.outputs.stdout]
-          : [] }}'
+        successful: ${{ steps.all(name, steps[name].status == "succeeded" || steps[name].status == "skipped") }}
+        results: '${{ "revoke" in steps && steps.revoke.status == "succeeded" ? [steps.revoke.outputs.stdout] : [] }}'
         child: true
     dependsOn:
     - step: revoke
