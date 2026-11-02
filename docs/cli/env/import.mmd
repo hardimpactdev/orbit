@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, R2-R4, orbit-gateway-renders-create-env (Gateway owns .env), DECISIONS instance.env_import (vault key env-import-<operation_id>, read once, overwritten empty; retire agent command instance.read-environment). docs/reference/environment-variables.md#import.
+  %% Tightened: flow-tighten 2026-11-02, rules 6, 16 (file check folded into the read).
   %% status: draft
   %% command: env:import
   %% kind: instance.env_import
@@ -44,17 +45,13 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>N: Check the .env file<br/>@swamp/ssh · owner, type, ≤ 1 MiB
+  SW->>N: Read .env into the vault<br/>vault.put env-import-5132
   %%> How:
   %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior
   %%> What it does:
-  %%> - checks the account, the path, the file type and the owner, without following a link
-  %%> - checks the size: at most 1 MiB
-  %%> Not included:
+  %%> - reads the raw bytes of `.env` as the Instance account, without following a link, and puts them in the vault key `env-import-5132`
+  %%> - refuses a file that is not a regular file or is larger than 1 MiB (`env.import_source_missing` for no file)
   %%> - never reads `.env.example`
-  SW->>N: Read .env into the vault<br/>vault.put env-import-5132
-  %%> What it does:
-  %%> - reads the raw bytes of `.env` and puts them in the vault key `env-import-5132`
   %%> - changes nothing on the Node
   %%> Why the vault:
   %%> - values are secrets; they never enter run inputs, outputs or logs
