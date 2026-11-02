@@ -52,12 +52,15 @@ sequenceDiagram
     %%> Result:
     %%> - Tool 31 recorded as installed, with the observed version
     %%> - the apt repository recorded, when one was given
+    %%> - first line: the agent's liveness, online or offline since <time>
     %%> - the answer comes at once; there is no task to follow
-    %%> - when the agent is offline, the answer says "possibly outdated, agent silent since <time>"
+    %%> - when the agent is offline, the facts are marked "possibly outdated, agent silent since <time>"
   else not installed or blocked
     GW--xCLI: Refused<br/>tool.adoption_unsupported
     %%> When:
     %%> - the package isn't installed, its version is outside the constraint, or Orbit can't manage it
     %%> Result:
+    %%> - first line: the agent's liveness, as above
     %%> - nothing is recorded
+    %%> - when the agent is offline, the refusal is marked "possibly outdated, agent silent since <time>"
   end
