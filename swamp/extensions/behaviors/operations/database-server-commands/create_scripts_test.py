@@ -102,6 +102,19 @@ class CreateActions(unittest.TestCase):
             self.assertEqual(common.valkey(i, self.m, 'ACL', 'SETUSER', 'proof', '#private-hash', private=True), 'OK')
         self.assertTrue(all(not p.exists() for p in paths))
 
+    def test_valkey_flushdb_survives_the_final_dangerous_deny_only_when_requested(self):
+        calls = []
+        def valkey_call(i, m, *argv, private=False):
+            calls.append(argv)
+            return 'OK'
+        with patch.object(valkey, 'valkey', valkey_call):
+            for allow in (['@read', 'flushdb'], ['@read']):
+                valkey.set_user({**self.i, 'driver': 'redis', 'username': 'proof', 'patterns': ['proof:*'], 'allow': allow}, self.m, None)
+        flush, plain = calls
+        self.assertEqual(flush[flush.index('-@dangerous'):], ('-@dangerous', '-function', '-script', '+flushdb'))
+        self.assertEqual(plain[plain.index('-@dangerous'):], ('-@dangerous', '-function', '-script'))
+        self.assertNotIn('+flushall', flush)
+
     def test_valkey_auth_failure_diagnostics_refuse_even_with_successful_json(self):
         reply = subprocess.CompletedProcess([], 0, '{"databases":"16"}', 'AUTH failed: private-root-sentinel')
         with patch.object(common, 'command', return_value=reply):

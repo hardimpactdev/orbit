@@ -213,11 +213,13 @@ The Gateway checks an explicit index against the live server before it creates o
 The user is named after the slug. Orbit generates its password and runs:
 
 ```text
-ACL SETUSER <slug> reset on #<sha256 of the password> resetchannels ~<pattern> ... -@all +<rule> ... -@admin -@dangerous -function -script
+ACL SETUSER <slug> reset on #<sha256 of the password> resetchannels ~<pattern> ... -@all +<rule> ... -@admin -@dangerous -function -script [+flushdb]
 ACL SAVE
 ```
 
 Orbit adds every part except the patterns and the rules. So a user never has pub/sub channels or another user's password. The final `-@admin -@dangerous` removes every admin and dangerous command, also one that a category such as `@keyspace` holds. The final `-function -script` removes the `FUNCTION` and `SCRIPT` commands, such as `FUNCTION FLUSH` and `SCRIPT FLUSH`. They act on the whole server, and `@write` and `@slow` hold some of them. `EVAL` stays available when a rule allows it. No user can change the ACL or the server's configuration.
+
+`FLUSHDB` is the one dangerous command a user can get back. When `--allow=flushdb` is given, Orbit adds `+flushdb` after the final deny. `FLUSHDB` clears only the index that the client selected, so give such a user its own `--database` index; a Laravel cache store on Redis needs it for `cache:clear`. ACL rules do not limit which index a client selects, so the index separates apps only while each app selects its own. `FLUSHALL` stays denied.
 
 The Gateway refuses these inputs with `validation.failed`:
 

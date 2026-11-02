@@ -84,7 +84,8 @@ sequenceDiagram
     %%> - creates the owner login, or keeps it when it already exists with this password
     %%> Per driver:
     %%> - MySQL, PostgreSQL: one owner per Instance on a server; a second database for Instance 42 reuses it
-    %%> - Valkey: `ACL SETUSER shop reset on #<hash> resetchannels ~<pattern> -@all +<rule> -@admin -@dangerous`
+    %%> - Valkey: `ACL SETUSER shop reset on #<hash> resetchannels ~<pattern> -@all +<rule> -@admin -@dangerous -function -script`
+    %%> - Valkey with `--allow=flushdb`: `+flushdb` follows the final deny; give the user its own `--database` index
     SW->>N: Create the databases<br/>shop, shop_test, test pool
     %%> What it does:
     %%> - creates the primary database, and with `--instance` the test database
