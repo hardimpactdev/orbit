@@ -105,12 +105,12 @@ fn watch_entry(value: &Value) -> Option<WatchEntry> {
         start,
     })
 }
-/// Parses `GET /api/v1/agent/workspaces`. Invalid entries and repeated Instances are dropped.
+/// Parses the `workspaces` of `GET /api/v1/agent/watch`. Invalid entries and repeated Instances are dropped.
 pub fn parse_watch_list(body: &Value) -> Result<Vec<WatchEntry>, &'static str> {
     let data = body
-        .get("data")
+        .pointer("/data/workspaces")
         .and_then(Value::as_array)
-        .ok_or("workspace list has no data array")?;
+        .ok_or("watch list has no workspaces array")?;
     let mut seen = BTreeSet::new();
     Ok(data
         .iter()
@@ -118,6 +118,21 @@ pub fn parse_watch_list(body: &Value) -> Result<Vec<WatchEntry>, &'static str> {
         .filter(|entry| seen.insert(entry.instance_id))
         .take(MAX_WORKSPACES)
         .collect())
+}
+
+/// Parses the role `services` of `GET /api/v1/agent/watch`, keeping only plain unit names.
+pub fn parse_watch_services(body: &Value) -> Result<Vec<String>, &'static str> {
+    let data = body
+        .pointer("/data/services")
+        .and_then(Value::as_array)
+        .ok_or("watch list has no services array")?;
+    let services: BTreeSet<String> = data
+        .iter()
+        .filter_map(Value::as_str)
+        .filter(|name| crate::facts::valid_service(name))
+        .map(str::to_owned)
+        .collect();
+    Ok(services.into_iter().collect())
 }
 
 /// Process-wide libgit2 settings. Call once before the first read.
@@ -371,10 +386,10 @@ impl Watched {
 async fn fetch_watch_list(
     client: &reqwest::Client,
     gateway: &str,
-) -> Result<Vec<WatchEntry>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(Vec<WatchEntry>, Vec<String>), Box<dyn std::error::Error + Send + Sync>> {
     let body: Value = client
         .get(format!(
-            "{}/api/v1/agent/workspaces",
+            "{}/api/v1/agent/watch",
             gateway.trim_end_matches('/')
         ))
         .timeout(Duration::from_secs(15))
@@ -383,7 +398,7 @@ async fn fetch_watch_list(
         .error_for_status()?
         .json()
         .await?;
-    Ok(parse_watch_list(&body)?)
+    Ok((parse_watch_list(&body)?, parse_watch_services(&body)?))
 }
 /// Locks the shared states, recovering from a poisoned lock.
 pub fn lock_workspaces(
@@ -480,12 +495,14 @@ async fn check_pass(
         let _ = tx.send(WorkspaceUpdate::List);
     }
 }
-/// Pulls the watch list every 60 s and checks the listed checkouts every 2 s, also while realtime is down.
+/// Pulls the watch list every 60 s and checks the listed checkouts every 2 s, also while realtime is down. It
+/// passes the listed role services to the facts reporter through `services`.
 pub async fn watch_workspaces(
     client: reqwest::Client,
     gateway: String,
     shared: SharedWorkspaces,
     tx: mpsc::UnboundedSender<WorkspaceUpdate>,
+    services: tokio::sync::watch::Sender<Vec<String>>,
 ) {
     let mut watched = BTreeMap::new();
     let mut list_tick = tokio::time::interval(LIST_INTERVAL);
@@ -497,8 +514,13 @@ pub async fn watch_workspaces(
         tokio::select! {
             biased;
             _ = list_tick.tick() => match fetch_watch_list(&client, &gateway).await {
-                Ok(entries) => {
+                Ok((entries, listed)) => {
                     last_error = None;
+                    services.send_if_modified(|current| {
+                        let changed = *current != listed;
+                        *current = listed;
+                        changed
+                    });
                     if apply_watch_list(&mut watched, &shared, entries) {
                         check_pass(&mut watched, &shared, &tx, false).await;
                         let _ = tx.send(WorkspaceUpdate::List);
@@ -705,7 +727,7 @@ mod tests {
     #[test]
     fn watch_list_keeps_valid_unique_entries_up_to_64() {
         let hex = "9f2c4be07d1a6c35e8f0b2a4d6c8e0f1a3b5c7d9";
-        let body = json!({"data": [
+        let body = json!({"data": {"services": [], "workspaces": [
             {"instance_id": 31, "path": "/home/orbit/apps/x/y", "base": "main", "start": hex},
             {"instance_id": 32, "path": "/home/orbit/apps/x/z", "base": "main", "start": null},
             {"instance_id": 31, "path": "/other", "base": "main", "start": null},
@@ -723,7 +745,7 @@ mod tests {
             {"instance_id": 12, "path": "/a", "base": "main", "start": 5},
             {"instance_id": 13, "base": "main"},
             "not an object"
-        ], "meta": {"request_id": "x"}});
+        ]}, "meta": {"request_id": "x"}});
         let entries = parse_watch_list(&body).unwrap();
         assert_eq!(
             entries,
@@ -742,13 +764,26 @@ mod tests {
                 },
             ]
         );
-        let many = json!({"data": (1..=100).map(|id| json!({"instance_id": id, "path": format!("/w/{id}"), "base": "main", "start": null})).collect::<Vec<_>>()});
+        let many = json!({"data": {"workspaces": (1..=100).map(|id| json!({"instance_id": id, "path": format!("/w/{id}"), "base": "main", "start": null})).collect::<Vec<_>>()}});
         let entries = parse_watch_list(&many).unwrap();
         assert_eq!(entries.len(), MAX_WORKSPACES);
         assert_eq!(entries.last().unwrap().instance_id, 64);
-        assert!(parse_watch_list(&json!({"data": {}})).is_err());
+        assert!(parse_watch_list(&json!({"data": []})).is_err());
         assert!(parse_watch_list(&json!({"message": "x"})).is_err());
-        assert!(parse_watch_list(&json!({"data": []})).unwrap().is_empty());
+        assert!(parse_watch_list(&json!({"data": {"workspaces": []}}))
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn watch_services_keep_plain_unit_names_once_in_order() {
+        let body = json!({"data": {"services": ["docker.service", "caddy.service", "caddy.service", "../x.service", 5, "caddy"]}});
+
+        assert_eq!(
+            parse_watch_services(&body).unwrap(),
+            vec!["caddy.service".to_owned(), "docker.service".to_owned()]
+        );
+        assert!(parse_watch_services(&json!({"data": {}})).is_err());
     }
 
     #[test]

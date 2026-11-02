@@ -28,6 +28,11 @@
             ],
             "settings": null,
             "updating": null,
+            "swamp_worker_selected": false,
+            "agent": {
+                "state": "online",
+                "since": null
+            },
             "access": {
                 "can_access": [],
                 "accessible_by": []

@@ -15,5 +15,7 @@ Route::middleware([RequireActiveWireGuardPeer::class, RequireNodeAgentSecret::cl
         Route::get('realtime', [AgentRealtimeController::class, 'show'])->name('agent:realtime');
         Route::post('broadcasting/auth', [AgentRealtimeController::class, 'authenticate'])->name('agent:realtime:auth');
         Route::get('workspaces', [AgentRealtimeController::class, 'workspaces'])->name('agent:workspaces');
+        Route::get('watch', [AgentRealtimeController::class, 'watch'])->name('agent:watch');
+        Route::post('facts', [AgentRealtimeController::class, 'facts'])->name('agent:facts');
         Route::get('log-streams', [AgentRealtimeController::class, 'logStreams'])->name('agent:log-streams');
     });

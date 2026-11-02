@@ -9,7 +9,7 @@ covers:
   - apps/gateway/app/{Http/Controllers/Api/AgentRealtimeController,Actions/Gateway/BootstrapGatewayAction}.php
   - {apps/gateway/app/Http/Middleware/RequireNodeAgentSecret.php,swamp/workflows/workflow-operation-node-agent-rekey.yaml}
   - apps/gateway/app/{Domain/Nodes/{NodeAgentRekey*,NodeConverge*},Actions/Nodes/StartNodeConvergeAction,Console/Commands/RekeyNodeAgentCommand}.php
-  - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
+  - apps/gateway/{database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_11_120000_create_node_facts_table}.php,app/Models/NodeFact.php,app/Data/Nodes/NodeAgentData.php,app/Domain/NodeFacts/**,app/Actions/NodeFacts/**}
 ---
 
 # Node agent
@@ -73,29 +73,53 @@ The values use the same words as the `runtime_state` field of the Process API. T
 
 Without Docker, the agent watches systemd only and reports Docker as `absent`. It checks for the socket every 10 seconds and sends a new snapshot when it appears. When the Docker event stream ends, the agent reconnects and sends a new snapshot. It merges changes to one unit that arrive within 250 milliseconds and sends only the latest state. It sends a heartbeat every 5 seconds and a complete snapshot at least every 60 seconds.
 
+## Facts
+
+The agent reports facts the Gateway stores and answers reads from, such as Doctor, without reaching the Node. It sends each fact with `POST /api/v1/agent/facts`, one kind per request, over HTTP with its [agent secret](#agent-secret). Facts do not depend on Reverb.
+
+```json
+{
+  "kind": "host",
+  "observed_at": "2026-11-02T18:00:00Z",
+  "data": { "os": "linux", "arch": "x86_64", "filesystems": [{ "mount": "/", "size": 85899345920, "free": 52613349376 }] }
+}
+```
+
+| Kind | Data | Read |
+| --- | --- | --- |
+| `host` | `os`, `arch`, and the `mount`, `size` and `free` bytes of each data filesystem (ext2–4, XFS, Btrfs, ZFS, F2FS; no snap mounts; at most 64) | every 60 seconds |
+| `units` | `docker` (`available` or `absent`), and each `orbit-process-*` unit, each Process container, and each role service from the [watch list](#watch-list), with its `runtime` and `state`. A role service that is not installed reads `not-found`. | every 10 seconds |
+
+The agent sends a fact when it changed, and again every 10 minutes. The Gateway answers `204`. It stores one row per Node and kind in `node_facts`, with the agent's `observed_at` and its own `received_at`. A report whose content is unchanged reads one row and writes nothing. A change compares and writes in one short transaction with no remote call inside. A request over 1 MiB fails with `agent.fact_too_large` (413), and invalid data fails with `validation.failed` (422).
+
 ## Task workspaces
 
 The agent reports the Git state of each [task](/reference/tasks) checkout on its Node, so the Gateway can skip `git` over SSH. It reads only Git metadata, never file contents or file names, and it starts no program.
 
 ### Watch list
 
-The agent asks `GET /api/v1/agent/workspaces` which checkouts to watch, at start and every 60 seconds:
+The agent asks `GET /api/v1/agent/watch` what to watch, at start and every 60 seconds:
 
 ```json
 {
-  "data": [
-    {
-      "instance_id": 31,
-      "path": "/home/orbit/apps/orbit/task-58",
-      "base": "main",
-      "start": "9f2c4be07d1a6c35e8f0b2a4d6c8e0f1a3b5c7d9"
-    }
-  ],
+  "data": {
+    "services": ["caddy.service", "docker.service"],
+    "workspaces": [
+      {
+        "instance_id": 31,
+        "path": "/home/orbit/apps/orbit/task-58",
+        "base": "main",
+        "start": "9f2c4be07d1a6c35e8f0b2a4d6c8e0f1a3b5c7d9"
+      }
+    ]
+  },
   "meta": { "request_id": "..." }
 }
 ```
 
-The list holds the Instances on the caller's Node that hold the workspace of an unfinished task: `backlog` or `todo` with an Instance, `reserved`, `running`, `reviewing`, or `settling`. `base` is the Project's default branch. `start` is the Instance's starting commit, or null. The list is empty while Tasks is disabled, and it holds at most 64 entries.
+`services` are the services of the Node's roles, which the agent reports as [facts](#facts). Only plain unit names ending in `.service` are accepted. Agents released before the observer pass still ask `GET /api/v1/agent/workspaces`, which returns only the `workspaces` list. The Gateway serves it until every Node runs the new agent.
+
+`workspaces` holds the Instances on the caller's Node that hold the workspace of an unfinished task: `backlog` or `todo` with an Instance, `reserved`, `running`, `reviewing`, or `settling`. `base` is the Project's default branch. `start` is the Instance's starting commit, or null. The list is empty while Tasks is disabled, and it holds at most 64 entries.
 
 The agent accepts only a normalized absolute path of at most 4,096 bytes that opens as the root of a Git work tree. A linked worktree works. It never opens a path that the list does not name, and never opens a submodule.
 
@@ -455,10 +479,15 @@ The view lives in its own file cache store in `ORBIT_HOME/cache/agent-view`, wha
 | Entry | Contents | Kept for |
 | --- | --- | --- |
 | One per Node | Units, `docker` state, task workspaces, agent version, log channel membership, last `sequence`, and the Gateway time of the last event | 60 seconds after its last write |
+| One per Node | The Gateway time of the agent's last event | No expiry |
 | One per Node with open log streams | Each stream's ID, source, `lines`, opening Node, and lease end | Until its last lease ends |
 | One for the subscriber | Whether realtime is configured, whether the socket is connected, the number of joined channels, and the time of the last write | 30 seconds after its last write |
 
 The subscriber accepts an event only when Reverb's `user_id` is `agent.{id}`. It applies a snapshot once every part has arrived, and starts over when the agent's `sequence` restarts. It removes a Node's entry when `agent.{id}` leaves the channel. It keeps a unit only when the name has the form `orbit-process-{id}-{name}`, the runtime is `systemd` or `docker`, and the state is a short lowercase word.
+
+### Liveness
+
+[`node:list`](/cli/node/list), [`node:show`](/cli/node/show) and the Node API show each Node's agent as `online` while an agent event arrived in the last 15 seconds. After that, it shows `offline` with `since`, the time of the last event, which the view keeps without expiry. A Node whose agent never sent an event is `not_seen`. While the subscriber is down, every Node is `unknown`.
 
 ### Freshness
 

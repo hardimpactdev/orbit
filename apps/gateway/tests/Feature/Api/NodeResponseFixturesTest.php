@@ -9,9 +9,11 @@ use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
+use Illuminate\Support\Carbon;
 use Orbit\Sdk\Requests\Nodes\AddNodeRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRoleRequest;
@@ -81,9 +83,16 @@ describe('node response fixtures', function (): void {
             'ssh_host_fingerprint' => 'SHA256:4dxvKOYfyTcqJHYoxamTSu9bYYI5KE3xYWQPCAmeUTo',
         ]);
         NodeRole::query()->create(['node_id' => $node->id, 'role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+        // The Gateway's own agent went silent at 17:55; app-dev's agent is online.
+        Carbon::setTestNow('2026-11-02 17:55:00');
+        seed_agent_view(Node::query()->where('name', 'gateway')->value('id'), []);
+        Carbon::setTestNow('2026-11-02 18:00:00');
+        seed_agent_view($node->id, []);
+        app(CacheAgentStateView::class)->putSubscriber(true, true, 2);
 
         record_fixture($this->getJson('/api/v1/nodes')->assertOk(), 'nodes/node-list/default', ListNodesRequest::class, 'GET /api/v1/nodes');
         record_fixture($this->getJson("/api/v1/nodes/{$node->id}")->assertOk(), 'nodes/node-show/default', ShowNodeRequest::class, 'GET /api/v1/nodes/{node}');
+        Carbon::setTestNow();
     });
 
     it('records a created node', function (): void {

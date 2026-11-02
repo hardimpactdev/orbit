@@ -109,9 +109,12 @@ describe('the Gateway view of Node agents', function (): void {
         try {
             app(CacheAgentStateView::class)->putNode(7, [], 'available', 1, CacheAgentStateView::now(), null);
 
-            expect(glob($home.'/cache/agent-view/*/*/*'))->toHaveCount(1)
+            // One file for the Node's view and one for its last-seen time.
+            expect(glob($home.'/cache/agent-view/*/*/*'))->toHaveCount(2)
                 ->and(Cache::get('agent-view.node.7'))->toBeNull()
-                ->and(app(AgentStateView::class)->node(7)->freshness)->toBe(AgentViewFreshness::Fresh);
+                ->and(Cache::get('agent-view.last-seen.7'))->toBeNull()
+                ->and(app(AgentStateView::class)->node(7)->freshness)->toBe(AgentViewFreshness::Fresh)
+                ->and(app(AgentStateView::class)->lastSeen(7))->not->toBeNull();
         } finally {
             (new Filesystem)->deleteDirectory($home);
         }

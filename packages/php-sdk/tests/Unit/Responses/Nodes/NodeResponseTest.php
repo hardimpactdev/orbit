@@ -275,6 +275,7 @@ function node_response_public_data(): array
         'roles' => ['app-dev'],
         'settings' => null,
         'updating' => null,
+        'agent' => null,
     ];
 }
 

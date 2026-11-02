@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Nodes;
 
+use App\Domain\NodeFacts\NodeAgentLiveness;
 use App\Domain\Nodes\NodeUpdates;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
@@ -41,6 +42,7 @@ final class NodeData extends Data
         public ?NodeSettingsData $settings = null,
         public ?NodeUpdatingData $updating = null,
         public bool $swampWorkerSelected = false,
+        public ?NodeAgentData $agent = null,
     ) {}
 
     /**
@@ -85,6 +87,7 @@ final class NodeData extends Data
             settings: new NodeSettingsNormalizer()->fromStored($node->settings),
             updating: $updating,
             swampWorkerSelected: app(NodeWorkerRollout::class)->allows($node),
+            agent: app(NodeAgentLiveness::class)->for($node),
         );
     }
 

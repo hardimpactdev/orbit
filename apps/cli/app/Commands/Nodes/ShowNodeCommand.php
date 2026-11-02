@@ -52,6 +52,7 @@ final class ShowNodeCommand extends NodeCommand
         $fields = [
             'ID' => $node->id,
             'Status' => $node->status,
+            'Agent' => $node->agent?->label(),
             'Roles' => $node->roles,
             'SSH' => NodeOutput::sshEndpoint($node),
             'Cluster' => $node->clusterId,

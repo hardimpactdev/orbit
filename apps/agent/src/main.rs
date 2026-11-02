@@ -1,7 +1,9 @@
 use bollard::{container::ListContainersOptions, system::EventsOptions, Docker};
 use futures_util::{SinkExt, StreamExt};
 use orbit_agent::{
-    docker_container_name, docker_status, gateway_client, iso_now, lock_single_instance,
+    docker_container_name, docker_status,
+    facts::{self, FactSender},
+    gateway_client, iso_now, lock_single_instance,
     logs::{
         controller::{run_controller, spawn_stream, GatewayList, LogHub},
         limits::BATCH_INTERVAL,
@@ -15,7 +17,12 @@ use orbit_agent::{
     SNAPSHOT_INTERVAL,
 };
 use serde_json::{json, Value};
-use std::{collections::HashMap, error::Error, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeMap, HashMap},
+    error::Error,
+    sync::Arc,
+    time::Duration,
+};
 use tokio::{
     sync::{mpsc, watch},
     time::{Instant, Interval},
@@ -129,11 +136,19 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
     configure_libgit2()?;
     let workspaces = SharedWorkspaces::default();
     let (workspace_tx, mut workspace_rx) = mpsc::unbounded_channel();
+    let (services_tx, services_rx) = watch::channel(Vec::new());
     tokio::spawn(watch_workspaces(
         client.clone(),
         config.gateway_url.clone(),
         workspaces.clone(),
         workspace_tx,
+        services_tx,
+    ));
+    tokio::spawn(report_facts(
+        client.clone(),
+        config.gateway_url.clone(),
+        connection.clone(),
+        services_rx,
     ));
     let (log_hub, log_prompts) = LogHub::new();
     tokio::spawn(run_controller(
@@ -620,6 +635,161 @@ async fn systemd_snapshot(
         })
         .collect())
 }
+/// Every `orbit-process-*` container with its state.
+async fn docker_process_units(docker: &Docker) -> Result<Vec<Unit>, bollard::errors::Error> {
+    let options = Some(ListContainersOptions::<String> {
+        all: true,
+        ..Default::default()
+    });
+    Ok(docker
+        .list_containers(options)
+        .await?
+        .into_iter()
+        .filter_map(|container| {
+            let name = docker_container_name(container.names.as_deref().unwrap_or_default())?;
+            Some(Unit {
+                name,
+                runtime: "docker".into(),
+                runtime_status: docker_status(container.state.as_deref().unwrap_or("exited"))
+                    .into(),
+            })
+        })
+        .collect())
+}
+
+/// Reads and reports the `host` and `units` facts over HTTP, independent of realtime (Node agent observer pass).
+async fn report_facts(
+    client: reqwest::Client,
+    gateway: String,
+    connection: Connection,
+    services: watch::Receiver<Vec<String>>,
+) {
+    let manager = match Proxy::new(
+        &connection,
+        SYSTEMD_DEST,
+        SYSTEMD_PATH,
+        "org.freedesktop.systemd1.Manager",
+    )
+    .await
+    {
+        Ok(manager) => manager,
+        Err(error) => {
+            eprintln!("orbit-agent: facts cannot reach systemd: {error}");
+            std::process::exit(1);
+        }
+    };
+    let url = format!("{}/api/v1/agent/facts", gateway.trim_end_matches('/'));
+    let mut sender = FactSender::default();
+    let mut units_tick = tokio::time::interval(facts::UNITS_INTERVAL);
+    let mut host_tick = tokio::time::interval(facts::HOST_INTERVAL);
+    units_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    host_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut last_error: Option<String> = None;
+    loop {
+        let (kind, data) = tokio::select! {
+            _ = units_tick.tick() => {
+                let names = services.borrow().clone();
+                match observed_units(&manager, &names).await {
+                    Ok((units, docker)) => ("units", facts::units_data(&units, docker)),
+                    Err(error) => {
+                        eprintln!("orbit-agent: systemd D-Bus read for facts failed: {error}");
+                        std::process::exit(1);
+                    }
+                }
+            },
+            _ = host_tick.tick() => ("host", facts::host_data(std::env::consts::OS, std::env::consts::ARCH, &observed_filesystems())),
+        };
+        let now = std::time::Instant::now();
+        let Some(body) = sender.body(kind, &data, &facts::observed_at(), now) else {
+            continue;
+        };
+        let result = async {
+            client
+                .post(&url)
+                .json(&body)
+                .timeout(Duration::from_secs(30))
+                .send()
+                .await?
+                .error_for_status()
+        }
+        .await;
+        match result {
+            Ok(_) => {
+                sender.sent(kind, &data, now);
+                last_error = None;
+            }
+            Err(error) => {
+                let error = error.to_string();
+                if last_error.as_ref() != Some(&error) {
+                    eprintln!("orbit-agent: {kind} fact report failed: {error}");
+                    last_error = Some(error);
+                }
+            }
+        }
+    }
+}
+
+/// The `orbit-process-*` units, the listed role services, and the Process containers, by (runtime, name).
+async fn observed_units(
+    manager: &Proxy<'_>,
+    services: &[String],
+) -> Result<(BTreeMap<(String, String), String>, bool), Box<dyn Error + Send + Sync>> {
+    let mut units: BTreeMap<(String, String), String> = systemd_snapshot(manager)
+        .await?
+        .into_values()
+        .map(|unit| ((unit.runtime, unit.name), unit.runtime_status))
+        .collect();
+    if !services.is_empty() {
+        type Row = (
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            OwnedObjectPath,
+            u32,
+            String,
+            OwnedObjectPath,
+        );
+        let rows: Vec<Row> = manager.call("ListUnitsByNames", &(services,)).await?;
+        for (name, _, load, active, _, _, _, _, _, _) in rows {
+            // A service that is not installed reads as not-found, so Doctor can name it.
+            let state = if load == "not-found" { load } else { active };
+            units.insert(("systemd".into(), name), state);
+        }
+    }
+    let docker = if std::path::Path::new("/run/docker.sock").exists() {
+        match Docker::connect_with_unix_defaults() {
+            Ok(docker) => docker_process_units(&docker).await.ok(),
+            Err(_) => None,
+        }
+    } else {
+        None
+    };
+    let available = docker.is_some();
+    for unit in docker.unwrap_or_default() {
+        units.insert((unit.runtime, unit.name), unit.runtime_status);
+    }
+    Ok((units, available))
+}
+
+/// The size and free space of every data filesystem; one that cannot be read is left out.
+fn observed_filesystems() -> Vec<facts::Filesystem> {
+    let mounts = std::fs::read_to_string("/proc/self/mounts").unwrap_or_default();
+    facts::data_mounts(&mounts)
+        .into_iter()
+        .filter_map(|mount| {
+            let stat = rustix::fs::statvfs(mount.as_str()).ok()?;
+            Some(facts::Filesystem {
+                size: stat.f_blocks.saturating_mul(stat.f_frsize),
+                free: stat.f_bavail.saturating_mul(stat.f_frsize),
+                mount,
+            })
+        })
+        .collect()
+}
+
 async fn docker_watcher(tx: mpsc::UnboundedSender<DockerUpdate>) {
     let mut available = false;
     loop {
@@ -639,11 +809,7 @@ async fn docker_watcher(tx: mpsc::UnboundedSender<DockerUpdate>) {
             tokio::time::sleep(Duration::from_secs(10)).await;
             continue;
         };
-        let options = Some(ListContainersOptions::<String> {
-            all: true,
-            ..Default::default()
-        });
-        let Ok(containers) = docker.list_containers(options).await else {
+        let Ok(snapshot) = docker_process_units(&docker).await else {
             if available {
                 let _ = tx.send(DockerUpdate::Absent);
                 available = false;
@@ -651,18 +817,6 @@ async fn docker_watcher(tx: mpsc::UnboundedSender<DockerUpdate>) {
             tokio::time::sleep(Duration::from_secs(10)).await;
             continue;
         };
-        let snapshot = containers
-            .into_iter()
-            .filter_map(|container| {
-                let name = docker_container_name(container.names.as_deref().unwrap_or_default())?;
-                Some(Unit {
-                    name,
-                    runtime: "docker".into(),
-                    runtime_status: docker_status(container.state.as_deref().unwrap_or("exited"))
-                        .into(),
-                })
-            })
-            .collect();
         let _ = tx.send(DockerUpdate::Connected(snapshot));
         available = true;
         let filters = HashMap::from([("type".to_string(), vec!["container".to_string()])]);

@@ -652,7 +652,7 @@ TAGS = [
     ('internal', 'Node callbacks', 'Endpoints that managed Nodes and Caddy call; operators do not call them.'),
 ]
 TAG_BY_PREFIX = {p: t for p, t, _ in TAGS}
-INTERNAL = {'project:dependency-read-token', 'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
+INTERNAL = {'project:dependency-read-token', 'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:watch', 'agent:facts', 'agent:log-streams', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
 INTERNAL.update({'observation:plan', 'observation:health'})
 DEFINITION_ROUTES = {
     'ProjectRuntimeDefinitionsController@processIndex': 'List process definitions',
@@ -720,6 +720,8 @@ SUMMARIES = {
     'realtime:auth': 'Authorize the orbit broadcast channel', 'realtime:show': 'Show the Reverb connection',
     'agent:realtime': "Show the agent's Reverb connection", 'agent:realtime:auth': "Authorize the agent's presence channel",
     'agent:workspaces': "List the task checkouts the agent watches",
+    'agent:watch': "List what the agent watches",
+    'agent:facts': "Report one fact the agent observed",
     'agent:log-streams': "List the live log streams the agent reads",
     'instance:log-stream:create': 'Open a live Instance log stream', 'instance:log-stream:renew': 'Renew a live Instance log stream', 'instance:log-stream:destroy': 'Close a live Instance log stream',
     'process:log-stream:create': 'Open a live Process log stream', 'process:log-stream:renew': 'Renew a live Process log stream', 'process:log-stream:destroy': 'Close a live Process log stream',
@@ -769,6 +771,8 @@ DESCRIPTIONS = {
     'agent:realtime:auth': "The `orbit-agent` on a managed Node calls this endpoint to join its own presence channels. The Gateway signs member `agent.{id}` on `presence-node.{id}` or `presence-node-logs.{id}` only for a request from that Node's WireGuard address that carries the Node's agent secret. The response carries the Pusher `auth` and `channel_data` values.",
     'instance:logs': "Returns one redacted tail of the Instance's application log, `storage/logs/laravel.log` or the newest `laravel-*.log`, read over SSH. `lines` is 1 to 1,000, default 100. Open a live log stream to follow new lines.",
     'process:logs': "Returns one redacted tail of the Process's journal or container output, read over SSH. `lines` is 1 to 1,000, default 100. Open a live log stream to follow new lines.",
+    'agent:watch': "The `orbit-agent` on a managed Node calls this endpoint at start and every 60 seconds to learn what to watch: `services`, the systemd services of the Node's roles, and `workspaces`, the task checkouts that `agent:workspaces` lists. The Gateway identifies the Node from the WireGuard address and the agent's bearer secret.",
+    'agent:facts': "The `orbit-agent` on a managed Node sends one fact it observed, of kind `host` or `units`, when it changed and every 10 minutes. The Gateway stores the latest fact per Node and kind. An unchanged fact writes nothing. The answer is 204 either way.",
     'agent:log-streams': "The `orbit-agent` on a managed Node calls this endpoint to learn which logs to read for live log streams: when it joins its log channel, after each `log-streams.changed` event, and every 15 seconds while it reads a stream. The Gateway identifies the Node from the WireGuard address and the agent's bearer secret, and lists at most 16 open streams whose source is on that Node, each with its ID, `lines`, and one `laravel`, `journal`, or `docker` source that the Gateway resolved from its own records.",
     'instance:log-stream:create': "Opens a live log stream of the Instance's application log for one Reverb socket, with the access rule of `instance:logs`. The response signs the socket's subscription to `private-log-stream.{id}`; the Gateway then relays redacted lines from the Node agent there as `log.lines` events. Returns `logs.live_unavailable` with `details.reason` when the live path is not available, and `logs.stream_limit` when the Node already has 16 open streams.",
     'instance:log-stream:renew': 'Extends the lease of a live Instance log stream to 60 seconds from now. Only the Node that opened the stream can renew it. Does not record Activity.',
@@ -2038,6 +2042,23 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             'start': {'type': ['string', 'null'], 'description': "The Instance's starting commit, or null."},
         }, 'required': ['instance_id', 'path', 'base', 'start']}
         responses['200'] = envelope({'type': 'array', 'items': workspace}, 'The request succeeded.')
+    elif route['name'] == 'agent:watch':
+        workspace = {'type': 'object', 'properties': {
+            'instance_id': {'type': 'integer'}, 'path': {'type': 'string'}, 'base': {'type': 'string'}, 'start': {'type': ['string', 'null']},
+        }, 'required': ['instance_id', 'path', 'base', 'start']}
+        responses['200'] = envelope({'type': 'object', 'properties': {
+            'services': {'type': 'array', 'items': {'type': 'string'}, 'description': "Systemd services of the Node's roles, such as `caddy.service`."},
+            'workspaces': {'type': 'array', 'items': workspace, 'description': 'Task checkouts, as `agent:workspaces` lists them.'},
+        }, 'required': ['services', 'workspaces']}, 'The request succeeded.')
+    elif route['name'] == 'agent:facts':
+        op['requestBody'] = {'required': True, 'content': {'application/json': {'schema': {'type': 'object', 'additionalProperties': False,
+            'required': ['kind', 'observed_at', 'data'], 'description': 'At most 1 MiB.', 'properties': {
+                'kind': {'type': 'string', 'enum': ['host', 'units']},
+                'observed_at': {'type': 'string', 'format': 'date-time', 'description': "The agent's time, to the second or millisecond, in UTC."},
+                'data': {'type': 'object', 'description': 'The fact, as the Node agent reference defines each kind.'},
+            }}}}}
+        responses['204'] = {'description': 'The Gateway stored the fact, or it was unchanged.'}
+        responses['413'] = error_response('The request is larger than 1 MiB (`agent.fact_too_large`).')
     elif route['name'] == 'agent:log-streams':
         source = {'type': 'object', 'properties': {
             'type': {'type': 'string', 'enum': ['laravel', 'journal', 'docker'], 'description': 'The source type.'},
@@ -2131,9 +2152,9 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         if route['name'] == 'project:document:create':
             responses.pop('200', None)
             responses['201'] = envelope(ref('DocumentEntryData'), 'Created.')
-    if route['name'] in ('agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams'):
+    if route['name'] in ('agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:watch', 'agent:facts', 'agent:log-streams'):
         responses['401'] = error_response('The request carries no agent secret (`agent.secret_required`).')
-    if route['name'] in ('agent:realtime', 'agent:workspaces', 'agent:log-streams'):
+    if route['name'] in ('agent:realtime', 'agent:workspaces', 'agent:watch', 'agent:facts', 'agent:log-streams'):
         responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`), its agent secret does not match (`agent.secret_invalid`), or its Node is not eligible for an agent (`agent.node_ineligible`).')
     elif route['name'] == 'project:dependency-read-token':
         responses['403'] = error_response('Services-only authorization or GitHub installation/token refusal (`dependency_token.forbidden`, `dependency_token.refused`).')

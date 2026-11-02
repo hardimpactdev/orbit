@@ -36,6 +36,7 @@ final readonly class NodeResponse
         /** @var list<array{project_id: int, project_slug: string, node_id: int, node_name: string, development_instance_count: int}>|null */
         public ?array $excludedProjects = null,
         public ?NodeUpdatingResponse $updating = null,
+        public ?NodeAgentResponse $agent = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -78,6 +79,7 @@ final readonly class NodeResponse
             settings: self::settings($data['settings'] ?? null),
             excludedProjects: self::exclusions($data['excluded_projects'] ?? null),
             updating: NodeUpdatingResponse::tryFromGatewayData($data['updating'] ?? null),
+            agent: NodeAgentResponse::tryFromGatewayData($data['agent'] ?? null),
         );
     }
 
@@ -108,6 +110,7 @@ final readonly class NodeResponse
             'roles' => $this->roles,
             'settings' => $this->settings?->toArray(),
             'updating' => $this->updating?->toArray(),
+            'agent' => $this->agent?->toArray(),
             'request_id' => $this->requestId,
         ];
 

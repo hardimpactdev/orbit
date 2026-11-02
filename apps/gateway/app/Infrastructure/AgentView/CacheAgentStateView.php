@@ -30,6 +30,8 @@ final readonly class CacheAgentStateView implements AgentStateView
 
     private const string SUBSCRIBER_KEY = 'agent-view.subscriber';
 
+    private const string LAST_SEEN_KEY = 'agent-view.last-seen.';
+
     public function __construct(private Repository $cache) {}
 
     /**
@@ -83,6 +85,18 @@ final readonly class CacheAgentStateView implements AgentStateView
     }
 
     #[\Override]
+    public function lastSeen(int $nodeId): ?float
+    {
+        try {
+            $seen = $this->cache->get(self::LAST_SEEN_KEY.$nodeId);
+        } catch (Throwable) {
+            return null;
+        }
+
+        return is_numeric($seen) ? (float) $seen : null;
+    }
+
+    #[\Override]
     public function subscriber(): ?AgentViewSubscriberHealth
     {
         try {
@@ -121,6 +135,8 @@ final readonly class CacheAgentStateView implements AgentStateView
             'workspaces' => array_values($workspaces),
             'logs' => $logs,
         ], self::NodeTtlSeconds);
+        // Kept without expiry, so a silent agent still shows since when, as the reported version is.
+        $this->cache->forever(self::LAST_SEEN_KEY.$nodeId, $receivedAt);
     }
 
     public function forgetNode(int $nodeId): void

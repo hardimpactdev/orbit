@@ -7,3 +7,15 @@ description: "Show one Node, with its architecture, WireGuard and LAN addresses,
 ```bash
 orbit node:show <node> [--json]
 ```
+
+The `Agent` field shows whether the Node's agent is online. The JSON field is `agent`, with `state` and `since`:
+
+| `state` | Meaning |
+| --- | --- |
+| `online` | An agent event arrived in the last 15 seconds. |
+| `offline` | No event for longer; `since` is the time of the last one. |
+| `not_seen` | The Gateway never received an event from this agent. |
+| `unknown` | The Gateway's [agent view](/reference/node-agent#gateway-view) is down, so it cannot tell. |
+
+A Node that runs no observing agent, such as an unmanaged Node, has `agent: null`.
+

@@ -25,4 +25,7 @@ interface AgentStateView
     public function node(int $nodeId): AgentNodeView;
 
     public function subscriber(): ?AgentViewSubscriberHealth;
+
+    /** The Gateway time of the agent's last event, kept after the Node's view expires; null when never seen. */
+    public function lastSeen(int $nodeId): ?float;
 }

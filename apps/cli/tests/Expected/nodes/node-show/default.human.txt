@@ -13,6 +13,8 @@ Loading Node...
 │
 ├  Status                        active
 │
+├  Agent                         online
+│
 ├  Roles                         app-dev
 │
 ├  SSH                           orbit@94.237.40.75:22

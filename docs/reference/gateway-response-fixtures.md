@@ -80,6 +80,8 @@ The `tasks/tasks-question-close` fixtures record a question closed as `supersede
 
 The `tasks/tasks-agent-show` fixtures record four agent thread reads. `default` is a live snapshot with a `cursor` and `archived` false, and `delta` is a read after a cursor with `kind` `delta`. `pending` is the empty snapshot of a thread that has not started. `archived` is a saved transcript with `archived` true and a null `cursor`. The SDK and the CLI replay all four.
 
+Node fixtures include `agent`, the [agent liveness](/reference/node-agent#liveness). `NodeResponseFixturesTest` seeds the agent-view cache, so the Gateway Node is offline since a fixed time and the app-dev Node is online. Re-record the node-list, node-show and node-add responses together when `agent` changes.
+
 Connection fixtures include nullable `locale` and `lan_host` separately from the default WireGuard `host`. A null LAN host means LAN selection is unavailable. Record server and connection changes through `DatabaseServerResponseFixturesTest` and `GatewayResponseFixturesTest`, then replay changed fixtures with `bin/cli-contract --changed <base>`.
 
 ## Validate a fixture

@@ -28,7 +28,12 @@
                     "app-dev"
                 ],
                 "settings": null,
-                "updating": null
+                "updating": null,
+                "swamp_worker_selected": false,
+                "agent": {
+                    "state": "online",
+                    "since": null
+                }
             },
             {
                 "id": 1,
@@ -53,7 +58,12 @@
                     "gateway"
                 ],
                 "settings": null,
-                "updating": null
+                "updating": null,
+                "swamp_worker_selected": false,
+                "agent": {
+                    "state": "offline",
+                    "since": "2026-11-02T17:55:00Z"
+                }
             }
         ],
         "meta": {

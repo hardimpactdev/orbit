@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Broadcasting\PresenceChannelSigner;
+use App\Actions\NodeFacts\AgentWatchListAction;
+use App\Actions\NodeFacts\RecordNodeFactAction;
 use App\Actions\Tasks\ListAgentWorkspacesAction;
 use App\Data\Tasks\AgentWorkspaceData;
 use App\Domain\Broadcasting\RealtimeConnection;
 use App\Domain\Logs\LogStream;
 use App\Domain\Logs\LogStreamStore;
+use App\Domain\NodeFacts\NodeFactKind;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Shared\ResourceOperationException;
 use App\Http\Controllers\Controller;
@@ -17,11 +20,18 @@ use App\Http\Requests\AgentRealtimeAuthRequest;
 use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Support\ValidatedData;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 
 final class AgentRealtimeController extends Controller
 {
+    private const int FactBytes = 1_048_576;
+
     public function show(Request $request, RealtimeConnection $realtime, ManagedNodeEligibility $eligibility): JsonResponse
     {
         $node = $this->peer($request);
@@ -52,6 +62,40 @@ final class AgentRealtimeController extends Controller
             'data' => array_map(static fn (AgentWorkspaceData $workspace): array => $workspace->toArray(), $action->execute($node)),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ]);
+    }
+
+    /** What the caller's agent watches: its role services and task checkouts. */
+    public function watch(Request $request, ManagedNodeEligibility $eligibility, AgentWatchListAction $action): JsonResponse
+    {
+        $node = $this->peer($request);
+        $this->ensureEligible($node, $eligibility);
+
+        return response()->json([
+            'data' => $action->execute($node),
+            'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
+        ]);
+    }
+
+    /** One fact the caller's agent observed. An unchanged fact writes nothing; the answer is 204 either way. */
+    public function facts(Request $request, ManagedNodeEligibility $eligibility, RecordNodeFactAction $action): Response
+    {
+        $node = $this->peer($request);
+        $this->ensureEligible($node, $eligibility);
+        if (strlen($request->getContent()) > self::FactBytes) {
+            throw new ResourceOperationException('agent.fact_too_large', 'An agent fact is at most 1 MiB.', 413);
+        }
+        $kind = NodeFactKind::from(ValidatedData::string(
+            Validator::make($request->all(), ['kind' => ['required', 'string', Rule::enum(NodeFactKind::class)]])->validate()['kind']));
+        $rules = ['observed_at' => ['required', 'date_format:Y-m-d\\TH:i:s.v\\Z,Y-m-d\\TH:i:s\\Z'], 'data' => ['required', 'array']];
+        foreach ($kind->rules() as $field => $rule) {
+            $rules['data.'.$field] = $rule;
+        }
+        // The kind's rules require named fields, so a list never reaches the object read below.
+        $envelope = Validator::make($request->all(), $rules)->validate();
+        $data = ValidatedData::object($envelope['data']);
+        $action->execute($node, $kind, CarbonImmutable::parse(ValidatedData::string($envelope['observed_at'])), $data);
+
+        return response()->noContent();
     }
 
     /**

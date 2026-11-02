@@ -108,6 +108,7 @@ function list_nodes_gateway_data(): array
                 'rollout' => 12,
                 'release' => null,
             ],
+            'agent' => ['state' => 'offline', 'since' => '2026-11-02T17:55:00Z'],
         ],
         [
             'id' => 7,
@@ -131,6 +132,7 @@ function list_nodes_gateway_data(): array
             'roles' => ['app-prod'],
             'settings' => null,
             'updating' => null,
+            'agent' => null,
         ],
     ];
 }
