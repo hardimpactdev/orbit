@@ -590,7 +590,7 @@ Cache initialization, read-only mounting and guest seeding compose as steps of t
 
 The `builds` queue records one `task_vm.fill_package_cache` intent with the observed lockfile inventory. The intent holds at most 2 batches of 4,096 archives, so the requests and the replies fit the run's one terminal read; a larger inventory is refused with `task_vm.package_cache_invalid_result`.
 
-At the run start the Gateway mints a GitHub installation token with metadata read access when a Composer archive needs one. The vault holds only the request's `github_token` member, as `task-vm-cache-fill-github-<node>`: the token, or null. Serve redacts every vault value it reads with a pattern built from that value, so vault values stay small.
+At the run start the Gateway mints a GitHub installation token with metadata read access when a Composer archive needs one. The vault holds only the request's `github_token` member, as `task-vm-cache-fill-github-<node>`: the token, or null. Serve redacts every vault value it reads with a pattern built from that value, so vault values stay small. The Gateway accepts a token of up to 1,024 letters, digits, `_`, `-` and `.`, which covers current installation tokens of several hundred characters.
 
 The workflow inputs hold each batch's public agent request up to that member, the batch numbers, the integrity conflicts, the host's SSH target and the vault key name. The step's stdin is the request, the vault member and the closing braces. The token never enters argv, environment variables, files, workflow inputs or run history.
 

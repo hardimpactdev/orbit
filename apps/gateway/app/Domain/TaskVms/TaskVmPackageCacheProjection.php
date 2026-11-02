@@ -104,12 +104,20 @@ final readonly class TaskVmPackageCacheProjection implements DirectOperationProj
     {
         $input = $this->input($operation);
         $token = $this->githubToken($operation, TaskVmInputs::artifacts($operation->input['artifacts']));
-        if ($token !== null && preg_match('/\A[A-Za-z0-9_]{1,255}\z/D', $token) !== 1) {
+        if ($token !== null && ! self::tokenFitsVault($token)) {
             throw new ResourceOperationException('task_vm.package_cache_failed', 'The GitHub installation token has an unexpected form.', 502);
         }
 
         return [...$input, 'execution_secrets' => ['github_token' => app(SwampCommandStep::class)->executionCopy(
             'orbit-control-inputs', 'task-vm-cache-fill-github-'.$operation->node_id, '"github_token":'.json_encode($token, JSON_THROW_ON_ERROR))]];
+    }
+
+    /** GitHub installation tokens are `ghs_` plus base64url-like text (letters, digits, `_`, `-`, `.`), several hundred
+     * characters long. The vault member must stay small and free of JSON or pattern metacharacters beyond those.
+     */
+    public static function tokenFitsVault(string $token): bool
+    {
+        return preg_match('/\A[A-Za-z0-9_.\-]{1,1024}\z/D', $token) === 1;
     }
 
     /** A metadata-read installation token for Composer archives on GitHub; npm archives need none.

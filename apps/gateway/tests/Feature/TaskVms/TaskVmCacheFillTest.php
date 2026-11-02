@@ -75,6 +75,17 @@ function cacheFillTerminal(Operation $op, string $status, array $replies): Opera
         'failure' => $status === 'failed' ? ['failed_step' => 'Check every archive', 'detail' => 'task_vm.package_cache_failed'] : null]);
 }
 
+it('accepts the GitHub installation token forms the vault member may carry', function (): void {
+    // A current installation token: ghs_, then about 390 characters including '-' and '.'.
+    $current = 'ghs_'.str_repeat('Ab3-x.Y_', 48);
+    expect(strlen($current))->toBeGreaterThan(255)
+        ->and(TaskVmPackageCacheProjection::tokenFitsVault($current))->toBeTrue()
+        ->and(TaskVmPackageCacheProjection::tokenFitsVault('ghs_'.str_repeat('a', 36)))->toBeTrue()
+        ->and(TaskVmPackageCacheProjection::tokenFitsVault('ghs_a"b'))->toBeFalse()
+        ->and(TaskVmPackageCacheProjection::tokenFitsVault("ghs_a\nb"))->toBeFalse()
+        ->and(TaskVmPackageCacheProjection::tokenFitsVault(''))->toBeFalse();
+});
+
 it('starts one native run on role swamp with the public requests as inputs and only the token member in the vault', function (): void {
     $artifacts = array_map(cacheFillArtifact(...), array_map(static fn (int $i): string => 'archive-'.$i, range(0, 4096)));
     $op = cacheFillAdmission($artifacts);
