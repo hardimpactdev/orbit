@@ -46,7 +46,7 @@ For Schedules:
 
 Step labels become the progress names, so keep them stable and meaningful.
 
-Still open for Nick: the DNS hold for Routes, `instance:smoke`, and live `node:role:relocate`. Chart these with a `Note` that says "open: Nick decides", and list them in your report.
+Still open for Nick: `instance:smoke` and live `node:role:relocate`. There is no DNS hold: Swamp on 209 reaches every Node, the VPN Node included. Chart these with a `Note` that says "open: Nick decides", and list them in your report.
 
 The migration's `DECISIONS.md` (on mini: `~/migration-dashboard/flows/DECISIONS.md`) holds the orchestrator's decisions. Where it differs from this page, `DECISIONS.md` wins. The proving order is in `~/migration-dashboard/data/proof-order.json` on mini.
 
