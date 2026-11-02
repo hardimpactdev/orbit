@@ -17,6 +17,7 @@ use App\Domain\Routes\NativeRouteTransferPlan;
 use App\Domain\Routes\NativeRouteTransferPublication;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Schedules\ScheduleTrigger;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
@@ -30,6 +31,7 @@ use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\Schedule;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeRoutePublicationSocket;
 
@@ -216,6 +218,34 @@ it('refuses a transfer without stored environment configuration before reserving
     expect(fn () => app(NativeInstanceTransferIntent::class)->assertSupported($instance, null))
         ->toThrow(ResourceOperationException::class, 'Import or store environment configuration');
 });
+
+it('pauses the Schedules at run start and republishes them for the recorded placement at the end', function (string $checkpoint, string $status, bool $moved): void {
+    $this->instance->update(['status' => InstanceState::Active, 'provisioning_step' => 'active']);
+    $schedule = Schedule::query()->create(['target_type' => Instance::MorphAlias, 'target_id' => $this->instance->id,
+        'host_node_id' => $this->node->id, 'name' => 'scheduler', 'calendar' => '* * * * *', 'command' => 'php artisan schedule:run',
+        'timeout_seconds' => 60, 'desired_timer_state' => 'enabled', 'status' => 'active', 'trigger' => ScheduleTrigger::Swamp,
+        'swamp_workflow_id' => 'c2f6c3a9-6a4e-4e53-9d1e-3f1c0f1e2a7b']);
+    $vault = $this->socket->reply;
+    $this->socket->reply = static fn (array $sent): array => match ($sent['type']) {
+        'workflow.trigger.remove', 'workflow.edit' => [['type' => $sent['type'], 'id' => $sent['id'], 'payload' => ['data' => []]]],
+        'workflow.trigger.set' => [['type' => $sent['type'], 'id' => $sent['id'], 'payload' => ['data' => ['workflowName' => $sent['payload']['workflowName'],
+            'entry' => ['schedule' => $sent['payload']['schedule']]]]]],
+        default => $vault($sent),
+    };
+    $operation = native_transfer_operation($this);
+    app(NativeInstanceTransferProjection::class)->workflowInput($operation);
+    expect(collect($this->socket->sent)->pluck('type'))->toContain('workflow.trigger.remove')->not->toContain('workflow.trigger.set');
+    $this->socket->sent = [];
+    app(NativeInstanceTransferProjection::class)->apply($operation, native_transfer_result($checkpoint, $status));
+    $node = $moved ? $this->destination : $this->node;
+    $edit = collect($this->socket->sent)->firstWhere('type', 'workflow.edit');
+    expect($schedule->fresh()->host_node_id)->toBe($node->id)
+        ->and(json_decode($edit['payload']['content'], true)['tags']['orbit_node_id'])->toBe((string) $node->id)
+        ->and(collect($this->socket->sent)->pluck('type')->last())->toBe('workflow.trigger.set');
+})->with([
+    'cutover' => ['cutover', 'succeeded', true],
+    'restored' => ['rollback', 'failed', false],
+]);
 
 it('captures both native Process placements and commits paths only from terminal cutover', function (): void {
     $process = native_transfer_process($this);

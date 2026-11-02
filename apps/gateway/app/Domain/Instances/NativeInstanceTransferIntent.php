@@ -20,8 +20,7 @@ final readonly class NativeInstanceTransferIntent
 {
     public function assertSupported(Instance $instance, ?string $sqliteSource): void
     {
-        if (TaskVm::forNode($instance->node) !== null || $sqliteSource !== null
-            || $instance->project->scheduleDefinitions()->exists()) {
+        if (TaskVm::forNode($instance->node) !== null || $sqliteSource !== null) {
             throw new ResourceOperationException('operation.kind_unavailable', 'This transfer needs native database, VM or runtime composition that is not available yet.', 503);
         }
         if (! is_bool($instance->source_is_laravel)) {

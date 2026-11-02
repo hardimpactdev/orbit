@@ -18,7 +18,9 @@ The CLI calls `POST /api/v1/instances/{instance}/transfer` and follows the retur
 
 Both Nodes must be active Linux Nodes with an active `app-dev` role and an active Cluster. The source must be an active development Instance with one authoritative Route and no removal in progress. The destination must be a different Node that the Project permits. A stored absolute destination apps path is required. The run trusts the recorded source placement and reads no source facts before it stops Processes. Extraction refuses an occupied destination path.
 
-The current native admission refuses VM placements, SQLite copies and Instances with Schedule definitions. It returns `operation.kind_unavailable` before reserving or moving anything. It also refuses an unknown source profile. Existing external database bindings stay with the Instance.
+The current native admission refuses VM placements and SQLite copies. It returns `operation.kind_unavailable` before reserving or moving anything.
+
+An Instance's Schedules move with it. At run start the Gateway removes their native triggers, so no fire runs against either Node during the move. When the run ends, the Gateway rewrites each published Schedule's workflow for the recorded placement and sets its trigger again: on the destination after a cutover, on the source after a failed move. It also refuses an unknown source profile. Existing external database bindings stay with the Instance.
 
 Each additional Route with a web root must be active and have no domain or placement change. A public web-root Route cannot move across Clusters. The Route family captures the complete primary and web-root inventory and reserves any replacement primary during admission.
 

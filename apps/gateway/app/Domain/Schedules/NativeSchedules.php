@@ -123,6 +123,32 @@ final readonly class NativeSchedules
             'command_hash' => hash('sha256', $schedule->command), 'command' => ['$secret' => 'schedule.command', 'id' => $schedule->target_id]];
     }
 
+    /** Removes the triggers of an Instance's native Schedules while it moves, so no fire runs against either Node. */
+    public function pauseForInstance(int $instanceId): void
+    {
+        foreach ($this->published($instanceId) as $schedule) {
+            $this->workflows->removeTrigger(self::workflowName($schedule));
+        }
+    }
+
+    /**
+     * After a move ends, rewrites each published Schedule for its recorded placement and restores its desired trigger:
+     * Node 15 after a cutover, Node 12 again after a failed move.
+     */
+    public function republishForInstance(int $instanceId): void
+    {
+        foreach ($this->published($instanceId) as $schedule) {
+            $this->publish($schedule, $schedule->desired_timer_state);
+        }
+    }
+
+    /** @return list<Schedule> */
+    private function published(int $instanceId): array
+    {
+        return array_values(Schedule::query()->whereIn('target_type', Instance::morphTypes())->where('target_id', $instanceId)
+            ->where('trigger', ScheduleTrigger::Swamp)->whereNotNull('swamp_workflow_id')->orderBy('id')->get()->all());
+    }
+
     /** Stops the native Schedules of Instances that are being removed; their records go with the Instance.
      * @param  list<int>  $instanceIds
      */

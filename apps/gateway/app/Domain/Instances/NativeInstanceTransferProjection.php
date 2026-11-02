@@ -17,6 +17,7 @@ use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\ProcessInstallationBatch;
 use App\Domain\Routes\NativeRouteTransferPlan;
+use App\Domain\Schedules\NativeSchedules;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampCommandStep;
@@ -24,6 +25,7 @@ use App\Models\Instance;
 use App\Models\InstanceTransfer;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Schedule;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -74,6 +76,8 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
         }
 
         $instance->loadMissing('project');
+        // No Schedule fires against either Node while the Instance moves; the terminal projection sets the triggers again.
+        app(NativeSchedules::class)->pauseForInstance($instance->id);
         $destination = ValidatedData::object($plan['destination']);
         // The Gateway renders the destination .env from stored configuration for Node 15's placement; it travels only
         // through the vault, never in the archive.
@@ -96,7 +100,8 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
 
     public function apply(Operation $operation, array $data): Operation
     {
-        return DB::transaction(function () use ($operation, $data): Operation {
+        $ended = false;
+        $projected = DB::transaction(function () use ($operation, $data, &$ended): Operation {
             $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $this->direct->assertRun($operation, ValidatedData::string($data['run_id']));
             $transfer = InstanceTransfer::query()->lockForUpdate()->findOrFail(ValidatedData::string($operation->input['transfer_id']));
@@ -113,6 +118,7 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
             }
             $snapshot = ValidatedData::object($operation->input['route_transfer']);
             if (! $operation->status->terminal() && $status->terminal()) {
+                $ended = true;
                 if ($result['cutover'] && $transfer->cutover_at === null) {
                     app(InstanceTransferProcesses::class)->cutover($instance, $transfer, ValidatedData::object($operation->input['process_installations']));
                     $instance->update(['node_id' => $transfer->destination_node_id, 'name' => $transfer->destination_name,
@@ -121,6 +127,8 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
                         'vite_port' => DB::table('vite_port_assignments')->where('instance_id', $instance->id)->where('node_id', $transfer->destination_node_id)->value('port'),
                         'ssr_port' => DB::table('ssr_port_assignments')->where('instance_id', $instance->id)->where('node_id', $transfer->destination_node_id)->value('port')]);
                     $this->routes->cutover($snapshot);
+                    Schedule::query()->whereIn('target_type', Instance::morphTypes())->where('target_id', $instance->id)
+                        ->update(['host_node_id' => $transfer->destination_node_id]);
                     $transfer->update(['cutover_at' => now(), 'current_step' => InstanceTransferStep::Cutover]);
                 }
                 if ($result['restored'] && $transfer->cutover_at === null) {
@@ -143,6 +151,13 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
 
             return $this->direct->project($operation, $data, $result);
         });
+        // After the commit: the Schedules' workflows follow the recorded placement, Node 15 after a cutover and Node 12
+        // again after a failed move, and their triggers come back.
+        if ($ended) {
+            app(NativeSchedules::class)->republishForInstance($operation->target_id);
+        }
+
+        return $projected;
     }
 
     /**

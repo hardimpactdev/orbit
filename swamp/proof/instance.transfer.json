@@ -53,6 +53,17 @@
         "instance_id": "${instance.id}",
         "domain": "t-${proof.run}.proof.test"
       }
+    },
+    {
+      "method": "POST",
+      "path": "schedules",
+      "body": {
+        "target_type": "instance",
+        "target_id": "${instance.id}",
+        "name": "moved-${proof.run}",
+        "calendar": "@hourly",
+        "command": "true"
+      }
     }
   ],
   "request": {

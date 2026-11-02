@@ -23,7 +23,6 @@ use App\Domain\Routes\NativeRouteTransferPublication;
 use App\Domain\Routes\RoutePlacement;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteStateResolver;
-use App\Domain\Schedules\ScheduleTargetUseGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Cluster;
@@ -43,7 +42,6 @@ final readonly class StartInstanceTransferAction
         private OperationIdempotency $idempotency,
         private ManagedCheckoutOverlap $checkoutOverlap,
         private RouteStateResolver $routeState,
-        private ScheduleTargetUseGuard $schedules,
     ) {}
 
     public function execute(Instance $instance, TransferInstanceData $data, ?string $caller = null, ?string $requestId = null): Operation
@@ -139,7 +137,6 @@ final readonly class StartInstanceTransferAction
 
     private function reserve(Instance $instance, TransferInstanceData $data): InstanceTransfer
     {
-        $this->schedules->assertInstanceStable($instance);
         [$destination, $path, $domain, $route] = $this->preflight($instance, $data);
 
         return InstanceTransfer::query()->create([
