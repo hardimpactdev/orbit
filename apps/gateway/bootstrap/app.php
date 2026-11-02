@@ -61,6 +61,7 @@ $app = Application::configure(basePath: dirname(__DIR__))
         // Housekeeping of the Gateway's own tables and Horizon metrics: Gateway-local, no Node and no Swamp work.
         GatewaySchedule::command($schedule, 'orbit:activity-finalize-interrupted', uniqueFor: 600, overlapMinutes: 10)->everyFiveMinutes();
         GatewaySchedule::command($schedule, 'queue:prune-failed', uniqueFor: 3600, overlapMinutes: 60, arguments: ['--hours='.config()->integer('retention.failed_jobs_hours')])->daily();
+        GatewaySchedule::command($schedule, 'activitylog:clean', uniqueFor: 3600, overlapMinutes: 60, arguments: ['--days='.config()->integer('retention.activity_log_days'), '--force'])->daily();
         // Horizon's metrics for its dashboard, only while Horizon runs.
         GatewaySchedule::command($schedule, 'horizon:snapshot', uniqueFor: 300)->everyFiveMinutes()
             ->when(static fn (): bool => GatewayQueueRedis::configured());

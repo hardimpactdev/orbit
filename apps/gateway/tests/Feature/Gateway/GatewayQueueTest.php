@@ -21,6 +21,7 @@ use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Jobs\RunScheduledCommand;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
+use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
 use App\Models\Operation;
@@ -373,6 +374,31 @@ describe('Gateway self-maintenance', function (): void {
         config(['orbit.gateway_queue.connection' => '', 'retention.failed_jobs_hours' => 48]);
 
         $event = gateway_queue_event('queue:prune-failed --hours=48');
+
+        expect([$event->expression, $event->withoutOverlapping, $event->expiresAt])->toBe(['0 0 * * *', true, 60]);
+    });
+
+    it('cleans Activity records past the retention daily, also while Tasks is disabled', function (): void {
+        app(TaskExtensionState::class)->disable();
+        config(['orbit.gateway_queue.connection' => 'services-valkey', 'retention.activity_log_days' => 2]);
+        $activity = static fn (int $hours): int => Activity::query()->forceCreate(['log_name' => 'gateway', 'description' => 'proof', 'request_id' => (string) Str::uuid(), 'command' => 'proof', 'status' => 'succeeded',
+            'created_at' => now()->subHours($hours), 'updated_at' => now()->subHours($hours)])->id;
+        $activity(49);
+        $kept = $activity(47);
+
+        $event = gateway_queue_event('activitylog:clean');
+        $job = gateway_queue_dispatched($event);
+        gateway_queue_run($job);
+
+        expect([$event->expression, $event->filtersPass(app())])->toBe(['0 0 * * *', true])
+            ->and([$job->command, $job->arguments, $job->uniqueFor, $job->queue])->toBe(['activitylog:clean', ['--days=2', '--force'], 3600, GatewayQueue::Tasks->value])
+            ->and(Activity::query()->pluck('id')->all())->toBe([$kept]);
+    });
+
+    it('registers Activity cleaning with the same arguments without the Gateway queue', function (): void {
+        config(['orbit.gateway_queue.connection' => '', 'retention.activity_log_days' => 30]);
+
+        $event = gateway_queue_event('activitylog:clean --days=30 --force');
 
         expect([$event->expression, $event->withoutOverlapping, $event->expiresAt])->toBe(['0 0 * * *', true, 60]);
     });

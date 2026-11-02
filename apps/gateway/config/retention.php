@@ -11,4 +11,5 @@ return [
     'log_rotate_keep' => max(1, (int) env('ORBIT_LOG_ROTATE_KEEP', 7)),
     'failed_jobs_hours' => max(1, (int) env('ORBIT_FAILED_JOBS_HOURS', 168)),
     'job_batch_hours' => max(1, (int) env('ORBIT_JOB_BATCH_HOURS', 24)),
+    'activity_log_days' => max(1, (int) env('ORBIT_ACTIVITY_LOG_DAYS', 30)),
 ];

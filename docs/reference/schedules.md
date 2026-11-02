@@ -18,7 +18,7 @@ A Schedule runs one command on a calendar for one Node or one Instance. The Gate
 
 Per-minute schedulers on production Instances, such as `laravel-scheduler` and `powersync-health`, keep a systemd timer on their Node until the serve load and outage test passes. The calendar's form picks the path: a cron expression makes a native Schedule, and a systemd calendar keeps the [Node timer](#node-timers). Production preparation copies each Project definition this way; a native copy starts active and disabled, and its workflow is written when it is first enabled. [`schedule`](/cli/schedule) lists the commands. [Processes and schedules](/reference/processes-and-schedules) describes Project Schedule definitions and their Instance copies.
 
-An Orbit Schedule is separate from the Gateway's Laravel schedule. Swamp owns [observation schedules](/reference/gateway-queue#scheduled-work), including Doctor collection, Horizon health and operation recovery. The Gateway scheduler keeps its own self-maintenance: Activity finalization, Horizon metrics snapshots, and batch and failed-job pruning. Hourly `problems:file` stays in the Gateway scheduler with its lock.
+An Orbit Schedule is separate from the Gateway's Laravel schedule. Swamp owns [observation schedules](/reference/gateway-queue#scheduled-work), including Doctor collection, Horizon health and operation recovery. The Gateway scheduler keeps its own self-maintenance: Activity finalization and cleaning, Horizon metrics snapshots, and batch and failed-job pruning. Hourly `problems:file` stays in the Gateway scheduler with its lock.
 
 The Gateway also runs `orbit:auto-deploy` every minute without overlap for [automatic deployments](/reference/deployments#automatic-deployments). That internal tick is not a user-created Schedule and does not install a timer on an app-dev Node. Every five minutes Swamp also reads the Gateway endpoint that resolves the [desired fleet state](/reference/self-update#how-the-gateway-resolves-it) so the CLI release check never waits in a request.
 
@@ -32,7 +32,7 @@ While the Gateway queue is set, Swamp requests [operation recovery](/reference/o
 
 The Gateway attempts `project-documents:cleanup:work` every five minutes without overlap. Each run processes at most 100 due document-body cleanup records, and only while the restore-time gate is running. See [Project Documents](/reference/project-documents#publish-and-recover) for authorization, durable claims, retry bounds, and permanent abandoned-upload fences. This worker is separate from reserved-probe reconciliation.
 
-The Gateway prunes failed queue jobs and batch metadata daily. [Gateway disk retention](/reference/gateway-recovery#disk-retention) describes the configurable cutoffs.
+The Gateway prunes failed queue jobs, batch metadata, and Activity older than 30 days daily. [Gateway disk retention](/reference/gateway-recovery#disk-retention) describes the configurable cutoffs.
 
 ## Execution
 
