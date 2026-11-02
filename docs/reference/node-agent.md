@@ -538,9 +538,9 @@ The agent converge writes these files on a Linux Node:
 | Unit | `/etc/systemd/system/orbit-agent.service`, marked `# Managed by Orbit: agent` |
 | Kept binary | `/usr/local/bin/orbit-agent.previous`, the binary before the last replacement |
 
-Standalone `node:converge` runs the shipped `agent.py` script over official SSH from 209; it calls no agent command. `Install the Node agent` leaves a binary that matches the pin alone. Otherwise it downloads the release, checks its SHA-256, keeps the old binary as `orbit-agent.previous`, and renames the new one in. Other running services of the old binary restart on the new one.
+Standalone `node:converge` uses official `@swamp/cfgmgmt` behaviors over SSH from 209; it calls no agent command. `Install the Node agent` downloads the pinned release with `fetch` and checks its SHA-256; a binary that matches the pin is left alone. `Configure the Node agent` writes the configuration and certificate with `file`. `Start the Node agent` writes the unit the Gateway rendered with `systemd`, then enables and starts it, and `Restart the Node agent` restarts it. That part only runs when its digest changed, or with `--force`.
 
-`Configure the Node agent` checks that the installed secret matches the verifier the Gateway recorded. A missing or mismatched secret refuses with `agent.secret_mismatch` before any write; [`orbit:node-agent-rekey`](#agent-secret) makes a new one. The step never writes a secret. It writes the configuration, certificate and unit, and restarts the agent only when one of them or the binary changed. `Check the footprint` then reads the agent back. A passing converge clears the Node's recorded failed pin. `agent.remove` stops the agent and removes its unit, binary, and directory.
+The converge never writes the secret. Its end check reads the SHA-256 of the binary and of the secret, and Swamp's native `assert` compares them with the pin and the recorded verifier. A missing or mismatched secret fails the converge with the agent part unapplied; [`orbit:node-agent-rekey`](#make-a-new-agent-key) makes a new one. A passing converge clears the Node's recorded failed pin. `agent.remove` stops the agent and removes its unit, binary, and directory.
 
 The unit runs the agent as `root` with `Restart=always` and `RestartSec=2`. It grants no capabilities and sets `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=tmpfs`, `BindReadOnlyPaths=-{Instance root}`, `PrivateTmp=yes`, `MemoryMax=128M`, and `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`. The memory limit also covers the `journalctl` processes of live journal streams.
 
@@ -554,7 +554,7 @@ The Instance root is the Node's [apps root](/reference/node-settings#derive-the-
 
 The Instance root and each checkout must stay world-traversable, mode `0755` as Orbit creates them. Otherwise the agent leaves the checkout out. Orbit removes the world bits from an Instance `.env` when it configures the Laravel URL, after registration or transfer, and on each agent converge. Agent converge independently closes environment permissions for the Instances under the Node's apps root; it does not rely on registration or transfer having run.
 
-For Laravel, it uses the shared [application directory](/reference/projects#application-directory): root `apps/site/public` means `<checkout>/apps/site/.env`, not only `<checkout>/.env`. Root `public` and non-Laravel Instances keep the checkout-root path. It closes only regular environment files, without following symlinks or discovering apps by scanning the repository. The Gateway sends the checkout list to the converge's configure step, which closes each `.env` it finds.
+For Laravel, it uses the shared [application directory](/reference/projects#application-directory): root `apps/site/public` means `<checkout>/apps/site/.env`, not only `<checkout>/.env`. Root `public` and non-Laravel Instances keep the checkout-root path. It closes only regular environment files, without following symlinks or discovering apps by scanning the repository. The converge's `Close Instance .env files` step closes them in one `find`, best effort.
 
 The Gateway converges the agent at these points.
 

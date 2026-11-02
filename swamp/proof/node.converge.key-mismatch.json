@@ -34,7 +34,7 @@
       "name": "Install the Node agent",
       "job": "converge",
       "step": "Install the Node agent",
-      "budget_seconds": 250
+      "budget_seconds": 120
     }
   ],
   "parity": [
