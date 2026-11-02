@@ -20,9 +20,10 @@
       "env",
       "-C",
       "apps/gateway",
+      "PROOF_TARGET_NODE=${node.target}",
       "php",
       "-r",
-      "require \"vendor/autoload.php\"; $app=require \"bootstrap/app.php\"; $app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap(); app(App\\Domain\\Tasks\\TaskExtensionState::class)->enable(); App\\Models\\ProblemCollectorState::query()->delete(); file_put_contents(storage_path(\"logs/laravel.log\"), \"[2026-11-02 12:00:00] proof.INFO: doctor proof marker\\n\", FILE_APPEND);"
+      "require \"vendor/autoload.php\"; $app=require \"bootstrap/app.php\"; $app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap(); app(App\\Domain\\Tasks\\TaskExtensionState::class)->enable(); App\\Models\\Node::findOrFail((int) getenv(\"PROOF_TARGET_NODE\"))->accessibleNodes()->syncWithoutDetaching([app(App\\Domain\\Nodes\\NodeAccessAuthorizer::class)->activeGatewayId()]); App\\Models\\ProblemCollectorState::query()->delete(); file_put_contents(storage_path(\"logs/laravel.log\"), \"[2026-11-02 12:00:00] proof.INFO: doctor proof marker\\n\", FILE_APPEND);"
     ]
   ],
   "request": {
