@@ -394,6 +394,18 @@ Cancellation 8321 destroyed task VM 363 at 2026-11-02T21:14:01Z. The lane holds 
 
 Orbit grows by 190 lines, including the proof index. Runtime code shrinks by 270. Swamp grows by 82: behaviors shrink by 116, workflows by 193 and tests by 79; proof declarations, parity fixtures and the receipt index add 470. The growth proves real SSH, Git and TLS behavior without writing to an external repository. No shipped script is added or removed.
 
+## Instance rollback runs its chart with official link and SSH steps
+
+`instance.rollback` was refused at admission, and its native root was one node-placed TypeScript step that read the Operation back from the Gateway. It now follows its chart on `role=swamp`. Admission holds the Instance, checks the release against the releases its deployment history retains, freezes the release, commit, PHP-FPM service and restartable Processes, and records the running rollback row, so automatic deployment pauses at once. Four steps run: `Activate release` (`@swamp/cfgmgmt/link` forEach, `current` last), `Refresh PHP cache` (one SSH argv, `systemctl reload`), `Restart Processes` (SSH argv forEach, `reload-or-restart` or `docker restart`) and `Check the selection` (native assert on the link read back). The Gateway records the outcome, the selected checkout and the rolled-away commit block from native run data.
+
+F9 deviations: admission reads no Node; the Gateway applies the retention rule to its deployment history. The PHP step reloads instead of converging the pool, because a rollback changes no Instance-level PHP input. The Process step uses SSH argv for both runtimes. The supersede of a queued deploy is not carried over: `StartOperationAction` ignored it already, and production deploys are still refused.
+
+Native finding (pinned e459): a failed `forEach` iteration does not stop later iterations, even with `concurrency: 1`. The `current` item therefore guards on a failed earlier `Activate release-` item; the native test proves `current` stays put when the release is gone. An empty `forEach` records no step, so a `dependsOn` on it never resolves; the end check depends only on steps that always run.
+
+Receipt `/home/nckrtl/swamp-execution/evidence/proof/instance.rollback/20261102T225819Z-minimal.json`, source `2f1b9c253c`, minimal@11, Operation 3: proof_pass true, 4.36 s admission to terminal, steps 1.29 s, 1.02 s and 0.02 s against a 180 s fixture budget. One sample; the run budget is a provisional 900 s and `queueTimeout` 30. The fixture has no Process: `process.create` on the app-prod peer refuses at its start step in this topology. Four native tests cover the restart path, a failed restart and a removed release. Group 2771 was cancelled and its VM destroyed at 2026-11-02T23:01:10Z.
+
+Orbit shrinks by 689 lines. Swamp behaviors lose 924 lines; the workflow adds 86, native tests change by -29, and the proof fixture adds 103. No shipped script is added or removed.
+
 ### WebSocket app creation: report-driven confirmation
 
 `websocket.app_create` already follows R1: the Gateway saves the registry intent and Operation; the pinned Reverb server pulls the registry and its boot report closes the Operation. No workflow, Node command or shipped script is needed. The chart now records this path as migrated. The real Reverb proof accepts the new app's signed publish, retains the pre-existing Gateway connection, and verifies unchanged Reverb PID and boot identities, with no secret in the public Operation.

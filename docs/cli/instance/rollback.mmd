@@ -1,7 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task + full intent as inputs, single-swamp-node; DECISIONS 4 / R1-R4 (process.stop shape), round 2 (admit instead of refuse; php_input and runtime_definitions as inputs), 3 (rollback removes the auto-deploy schedule); rule 7 (reload over restart, restart_on_deploy only). docs/reference/deployments.md#roll-back.
   %% Tightened: flow-tighten 2026-11-02, rules 5, 16, 22 (no release read: the Gateway records retained releases and holds the Instance lock; cfgmgmt link/systemd).
-  %% status: draft
+  %% status: migrated
   %% command: instance:rollback
   %% kind: instance.rollback
   autonumber
