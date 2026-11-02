@@ -598,7 +598,7 @@ Each signal updates one row in `problem_fingerprints`. The fingerprint is unique
 | Column | Meaning |
 | --- | --- |
 | `fingerprint` | Stable key, at most 255 characters |
-| `source` | `doctor`, `activity`, `log`, `assist`, or `release` |
+| `source` | `doctor`, `activity`, `log`, `assist`, `release`, or `swamp` |
 | `first_seen`, `last_seen` | Signal time of the first accepted signal, and of the latest |
 | `occurrences` | How many 5-minute windows were counted, not how many log lines |
 | `evidence` | A small JSON sample |
@@ -650,6 +650,8 @@ Readiness counts these occurrences and their times. It does not count log lines.
 The tests below use only the current episode. That episode is the occurrence history stored on the row: the time and the signal count of each 5-minute window.
 
 Doctor is ready after two of those times at least 10 minutes apart. A miss does not delete the row, and it does not reset the episode.
+
+A `swamp` problem from the [Swamp datastore watch](/reference/operations#swamp-datastore-watch) is ready the same way, after two fires at least 10 minutes apart. The first later fire that does not report it resolves it.
 
 A release alert is ready after one occurrence. A release command raises it once for a deliberate verdict, so there is no noise to wait out.
 

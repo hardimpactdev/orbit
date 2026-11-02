@@ -1,0 +1,34 @@
+id: 11bb5e01-eb16-4425-930e-2b7e2a8bd100
+name: swamp-datastore-watch
+description: Every 15 minutes, count the files of Swamp serve's datastore on Node 209 and sample serve CPU; the Gateway raises a problem past a bound.
+trigger:
+  schedule: '0 */15 * * * *'
+reports:
+  skip: ["@swamp/workflow-summary"]
+vaults: []
+queueTimeout: 120
+jobs:
+  - name: watch
+    steps:
+      - name: measure
+        labels: {role: swamp}
+        queueTimeout: 120
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: swamp-datastore-watch
+          methodName: execute
+          inputs:
+            # Read-only: file counts per datastore directory, auto-definitions per type, and serve CPU over a 5 s sample.
+            run: |
+              set -eu
+              data=/home/orbit/apps/orbit-monorepo-staging/checkout/swamp/.swamp
+              files() { if [ -d "$data/$1" ]; then find "$data/$1" -type f | wc -l; else echo 0; fi; }
+              types=$(find "$data/auto-definitions" -type f -name '*.yaml' -printf '%h\n' 2>/dev/null \
+                | sed "s|^$data/auto-definitions/||" | sort | uniq -c \
+                | jq -Rn '[inputs | capture("^ *(?<count>[0-9]+) (?<type>.+)$") | {(.type): (.count | tonumber)}] | add // {}')
+              pid=$(systemctl show -p MainPID --value orbit-swamp-serve.service)
+              cpu=$(top -b -n 2 -d 5 -p "$pid" | awk -v pid="$pid" '$1 == pid { cpu = $9 } END { print cpu + 0 }')
+              jq -cn --argjson types "$types" --argjson outputs "$(files outputs)" --argjson runs "$(files workflow-runs)" \
+                --argjson data "$(files data)" --argjson grants "$(files grants)" --argjson cpu "$cpu" \
+                '{auto_definitions: $types, outputs: $outputs, workflow_runs: $runs, data: $data, grants: $grants, serve_cpu_percent: $cpu}'

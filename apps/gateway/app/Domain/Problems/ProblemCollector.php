@@ -101,6 +101,27 @@ final readonly class ProblemCollector
         return ['fingerprint' => $fingerprint, 'stored' => true];
     }
 
+    /**
+     * Records the Swamp datastore watch's findings for one fire under `swamp|{key}`, and resolves every open watch
+     * fingerprint that the fire no longer reports.
+     *
+     * @param  array<string, array<string, mixed>>  $findings  observation per key
+     */
+    public function recordSwamp(array $findings, CarbonInterface $seenAt): void
+    {
+        DB::transaction(function () use ($findings, $seenAt): void {
+            $current = [];
+            foreach ($findings as $key => $observation) {
+                $current[] = $fingerprint = $this->fingerprint(ProblemSource::Swamp, $key);
+                $this->record($fingerprint, ProblemSource::Swamp, $observation, $seenAt);
+            }
+            $cleared = ProblemFingerprint::query()->where('source', ProblemSource::Swamp)->whereNotIn('fingerprint', $current)->lockForUpdate()->get();
+            foreach ($cleared as $row) {
+                $this->recovery->resolve($row, 'bound_clear');
+            }
+        });
+    }
+
     public function recordDoctor(DoctorReportData $report, Carbon $startedAt): void
     {
         $issues = $this->doctorIssues($report);

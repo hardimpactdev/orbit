@@ -29,6 +29,21 @@ Every `instance.create` or `instance.deploy` Operation that enters `failed` or `
 
 The alert uses the existing [signed release webhook](/reference/gateway-recovery#webhook), with event `instance.operation_failed`. It includes the Operation, Instance and Node IDs, kind, native root run ID, failed step and error code. It does not include inputs, private material, output or stderr. The Activity command `instance:failure-alert` records the notification and webhook outcome. An unavailable webhook does not change the failed Operation. Both release webhook settings must be configured for delivery; otherwise Activity records `not_configured`.
 
+## Swamp datastore watch
+
+The native schedule `swamp-datastore-watch` runs every 15 minutes on the swamp role's workers on Node 209. It reads only: one `command/shell` step counts the files under serve's datastore, `.swamp/` in the serve checkout, and samples serve's CPU over 5 seconds with `top`. It prints one JSON result with the auto-definitions per type, `outputs`, `workflow_runs`, `data`, `grants` and `serve_cpu_percent`. The step never calls the Gateway.
+
+The Gateway reads the terminal `measure` output through the shared scheduled-result reader and raises a [problem](/reference/tasks#fingerprints) with source `swamp` for each crossed bound:
+
+| Key | Raised when |
+| --- | --- |
+| `datastore\|auto_definitions\|<type>` | One auto-definition type holds more than 2,000 files |
+| `datastore\|outputs` | `outputs` holds more than 50,000 files |
+| `serve\|cpu` | Serve used more than 50% CPU over the sample |
+| `watch\|failed` | A watch run did not succeed, so the datastore is unwatched |
+
+A key is filed once two fires at least 10 minutes apart report it. The first later fire that does not report a key resolves it. A replayed or older run changes nothing. Large auto-definition directories are the known cause of high serve CPU ([Lab #4280](https://swamp-club.com/lab/4280)).
+
 ## Swamp credential expiry alerts
 
 The native schedule `swamp-credential-monitor` runs every hour at minute 7 on the swamp role's workers. It is alert only: it reads expiry metadata and changes no credential or grant. Its `check` step runs as `orbit`, with no serve token and no `sudo`, and reads these sources:
