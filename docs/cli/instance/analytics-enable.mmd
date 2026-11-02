@@ -54,9 +54,9 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>P: Converge the site<br/>command/shell · site.py
+  SW->>P: Converge the site<br/>@nckrtl/analytics-site · site
   %%> How:
-  %%> - one shipped script logs in at `https://analytics.orbit` with the vault credentials
+  %%> - the behavior on Node 209 logs in at `https://analytics.orbit` over HTTP with the vault credentials
   %%> What it does:
   %%> - creates the site when it is missing, or updates it; never a duplicate
   %%> - sets the timezone and the requested goals, checks them, and logs out, also after a failure

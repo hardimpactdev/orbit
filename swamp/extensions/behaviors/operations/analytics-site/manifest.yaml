@@ -1,11 +1,8 @@
 manifestVersion: 1
 name: "@nckrtl/analytics-site"
-version: 2026.11.01.2
+version: 2026.11.02.1
 visibility: private
 license: MIT
-description: Public Plausible input, site action group and terminal result.
+description: Plausible site action group over HTTP and its terminal result.
 behaviors:
   - operations/analytics-site/mod.ts
-additionalFiles:
-  - scripts/common.py
-  - scripts/site.py

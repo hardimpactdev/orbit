@@ -74,36 +74,19 @@ inputs:
   - execution_secrets
   additionalProperties: false
 jobs:
-- name: prepare
-  steps:
-  - name: assets
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/analytics-site'
-      behaviorName: '${{ "analytics-assets" }}'
-      methodName: assets
-      inputs:
-        base_url: ${{ inputs.intent.base_url }}
-        site: ${{ inputs.intent.site }}
 - name: site
-  dependsOn:
-  - job: prepare
-    condition:
-      type: succeeded
   steps:
   - name: site
     labels: {role: swamp}
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "analytics-site" }}'
-      methodName: execute
+      behaviorType: '@nckrtl/analytics-site'
+      behaviorName: '${{ "analytics-plausible-site" }}'
+      methodName: site
       inputs:
-        run: /usr/bin/python3 -B "$ORBIT_ANALYTICS_SCRIPT"
+        base_url: ${{ inputs.intent.base_url }}
+        site: ${{ inputs.intent.site }}
         env:
-          ORBIT_ANALYTICS_SCRIPT: ${{ steps.assets.outputs.site_script }}
-          ORBIT_ANALYTICS_INPUT: ${{ steps.assets.outputs.input_json }}
           ORBIT_ANALYTICS_CREDENTIALS: ${{ vault.get(inputs.execution_secrets.plausible_credentials.vault, inputs.execution_secrets.plausible_credentials.key)
             }}
 - name: certificates

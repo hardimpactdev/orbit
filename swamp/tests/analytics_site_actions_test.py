@@ -12,7 +12,17 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from tests.fixtures.plausible_http import PlausibleFixture
 
-SCRIPT = ROOT / "extensions/behaviors/operations/analytics-site/scripts/site.py"
+MODULE = ROOT / "extensions/behaviors/operations/analytics-site/mod.ts"
+# Runs the behavior's site action group the way its method does, printing the public result or error code.
+RUNNER = f"""
+import {{ site }} from {json.dumps(MODULE.as_uri())};
+try {{
+    console.log(JSON.stringify(await site(JSON.parse(Deno.env.get("ORBIT_ANALYTICS_INPUT")))));
+}} catch (error) {{
+    console.log(JSON.stringify({{ error_code: error.message }}));
+    Deno.exit(1);
+}}
+"""
 
 
 class PlausibleSiteAction(unittest.TestCase):
@@ -29,19 +39,26 @@ class PlausibleSiteAction(unittest.TestCase):
     def invoke(self):
         with tempfile.TemporaryDirectory() as scratch:
             reply = subprocess.run(
-                [sys.executable, "-B", str(SCRIPT)],
+                ["deno", "eval", "--quiet", RUNNER],
                 cwd=scratch,
                 env=dict(
                     os.environ,
                     ORBIT_ANALYTICS_INPUT=json.dumps(
-                        {"base_url": self.provider.url, "site": self.site}
+                        {
+                            "base_url": self.provider.url,
+                            "site": self.site,
+                            "env": {
+                                "ORBIT_ANALYTICS_CREDENTIALS": json.dumps(
+                                    self.provider.credentials
+                                )
+                            },
+                        }
                     ),
-                    ORBIT_ANALYTICS_CREDENTIALS=json.dumps(self.provider.credentials),
                 ),
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=5,
+                timeout=60,
             )
             self.assertEqual(list(Path(scratch).iterdir()), [])
         for value in [

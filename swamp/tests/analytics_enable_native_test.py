@@ -303,7 +303,7 @@ print('{"ready":true}')
             self.audit.read_text().splitlines().count("route-certificate-remove"), 2
         )
 
-    def test_remote_worker_receives_manifest_scripts_and_whole_vault_environment(self):
+    def test_remote_worker_reconciles_the_site_with_the_whole_vault_environment(self):
         self.native_timeout = 120
         for path in (self.repo / "workflows").glob("*.yaml"):
             workflow = yaml.safe_load(path.read_text())
@@ -451,10 +451,9 @@ print('{"ready":true}')
                     self.cli("workflow", "history", "get", result["id"], *flags).stdout
                 )
                 self.assertEqual(history["status"], "succeeded")
-                assets = history["jobs"][0]["steps"][0]["outputs"]
-                self.assertIn("worker-cache", assets["site_script"])
-                self.assertTrue(Path(assets["site_script"]).is_file(), "Site action group not shipped")
-                self.assertTrue(Path(assets["site_script"]).with_name("common.py").is_file())
+                site = history["jobs"][0]["steps"][0]
+                self.assertEqual(site["name"], "site")
+                self.assertTrue(site["outputs"]["readable"])
                 self.assertEqual(self.provider.sites, {"shop.test": "UTC"})
                 self.assert_private_absent(json.dumps(history))
             finally:

@@ -1,26 +1,28 @@
-import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.14";
-import { assets, behavior, result } from "./mod.ts";
+import {
+    assertEquals,
+    assertRejects,
+    assertThrows,
+} from "jsr:@std/assert@1.0.14";
+import { behavior, result, site } from "./mod.ts";
 import { Site } from "../analytics/plausible.ts";
-Deno.test("one provider action group receives complete public intent and its shipped script", () => {
+Deno.test("the site action group refuses unexpected input and non-JSON credentials before any request", async () => {
     const input = {
         base_url: "https://analytics.orbit",
         site: {
             domain: "shop.test",
             previous_domain: null,
             timezone: "UTC",
-            goals: [{
-                goal_type: "Goal.CustomEvent" as const,
-                goal: { event_name: "Signup" },
-            }],
+            goals: [],
         },
+        env: { ORBIT_ANALYTICS_CREDENTIALS: "not json" },
     };
-    const value = assets(input, { extensionFile: (path) => "/cache/" + path });
-    assertEquals(JSON.parse(value.input_json), input);
-    assertEquals(value.site_script, "/cache/scripts/site.py");
-    assertThrows(() =>
-        assets({ ...input, password: "private" } as typeof input, {
-            extensionFile: (path) => path,
-        })
+    await assertRejects(
+        () => site(input),
+        Error,
+        "analytics.credentials_invalid",
+    );
+    await assertRejects(() =>
+        site({ ...input, password: "private" } as typeof input)
     );
 });
 Deno.test("provider intent rejects private or unsupported goal fields", () => {

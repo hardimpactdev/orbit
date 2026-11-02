@@ -1,8 +1,17 @@
 import { z } from "npm:zod@4.4.3";
 import { Site } from "../analytics/plausible.ts";
-const Input = z.object({ base_url: z.string().url(), site: Site }).strict();
-const Assets = z.object({ input_json: z.string(), site_script: z.string() })
-    .strict();
+import { reconcile, Refusal } from "./site.ts";
+const Input = z.object({
+    base_url: z.string().url(),
+    site: Site,
+    env: z.object({ ORBIT_ANALYTICS_CREDENTIALS: z.string() }).strict(),
+}).strict();
+const Reconciled = z.object({
+    ready: z.literal(true),
+    domain: Site.shape.domain,
+    timezone: z.string(),
+    readable: z.literal(true),
+}).strict();
 const Common = z.object({
     ready: z.literal(true),
     domain: Site.shape.domain.nullable(),
@@ -24,17 +33,35 @@ const ResultOutput = z.discriminatedUnion("enabled", [
     Disabled.extend({ stdout: z.string() }),
 ]);
 type Context = {
-    extensionFile(path: string): string;
     writeResource(spec: string, name: string, data: unknown): Promise<unknown>;
 };
-export function assets(
-    input: z.infer<typeof Input>,
-    ctx: Pick<Context, "extensionFile">,
-) {
-    return {
-        input_json: JSON.stringify(Input.parse(input)),
-        site_script: ctx.extensionFile("scripts/site.py"),
-    };
+/** One site action group; the credentials stay in memory and never reach a resource or an error. */
+export async function site(input: z.infer<typeof Input>) {
+    const { base_url, site, env } = Input.parse(input);
+    let secret: unknown;
+    try {
+        secret = JSON.parse(env.ORBIT_ANALYTICS_CREDENTIALS);
+    } catch {
+        throw new Refusal(
+            "analytics.credentials_invalid",
+            "Plausible credentials are not JSON.",
+        );
+    }
+    try {
+        return await reconcile(base_url, site, secret);
+    } catch (error) {
+        // Only code-owned public diagnostics; never provider bodies or exception values.
+        if (error instanceof Refusal) {
+            console.error(error.detail);
+            throw new Error(error.code);
+        }
+        console.error(
+            `Plausible site action failed (${
+                (error as Error)?.name ?? "Error"
+            }).`,
+        );
+        throw new Error("analytics.provider_failed");
+    }
 }
 export function result(raw: string) {
     const value = Result.parse(JSON.parse(raw));
@@ -42,9 +69,9 @@ export function result(raw: string) {
 }
 export const behavior = {
     type: "@nckrtl/analytics-site",
-    version: "2026.11.01.2",
+    version: "2026.11.02.1",
     resources: {
-        assets: { schema: Assets, lifetime: "1d", garbageCollection: 10 },
+        site: { schema: Reconciled, lifetime: "1d", garbageCollection: 10 },
         result: {
             schema: ResultOutput,
             lifetime: "1d",
@@ -52,13 +79,13 @@ export const behavior = {
         },
     },
     methods: {
-        assets: {
+        site: {
             description:
-                "Resolve one shipped Plausible site action group and its public input",
+                "Reconcile one Plausible site over HTTP and close its management session",
             arguments: Input,
             execute: async (args: z.infer<typeof Input>, ctx: Context) => {
-                const value = assets(args, ctx);
-                await ctx.writeResource("assets", "assets", value);
+                const value = await site(args);
+                await ctx.writeResource("site", "site", value);
                 return value;
             },
         },
