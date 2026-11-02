@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R1-R4 (process.stop shape), official @swamp/cfgmgmt behaviors, single-swamp-node. docs/reference/metrics.md.
+  %% Tightened: flow-tighten 2026-11-02, rules 18, 22 (allows via cfgmgmt firewall, beside the install).
   %% status: reviewed
   %% command: metrics:exporter:enable
   %% kind: metrics.exporter_enable
@@ -51,9 +52,12 @@ sequenceDiagram
   %%> - starts both, and restarts them if they stop
   %%> How:
   %%> - official `@swamp/cfgmgmt` behaviors (apt, fetch, file, systemd) over SSH from 209
-  SW->>N: Allow the Metrics Node<br/>ufw · ports 9100, 9102
+  SW->>N: Allow the Metrics Node<br/>@swamp/cfgmgmt/firewall
   %%> What it does:
-  %%> - adds firewall allows on Node 12 for the Metrics Node's address only
+  %%> - adds firewall allows on Node 12 for the Metrics Node's address only, ports 9100 and 9102
+  %%> How:
+  %%> - `@swamp/cfgmgmt/firewall`: a managed rule goes below the operator rules, so appending is right and no insert position is needed
+  %%> - runs beside the install step; neither needs the other
   SW->>N: Check the endpoints<br/>both answer on WireGuard
   %%> What it does:
   %%> - checks once that both exporters answer on their ports
