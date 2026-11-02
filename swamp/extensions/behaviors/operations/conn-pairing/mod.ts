@@ -19,7 +19,7 @@ const Terminal = z.object({ stdout: z.string() });
 const Args = z.object({
     intent: Intent,
     directory: z.string().regex(/^\/tmp\/orbit-conn-pairing\.[A-Za-z0-9]+$/),
-    http_status: z.string(),
+    http_status: z.string().regex(/^[0-9]{3}$/),
     env: z.object({ ORBIT_CONN_ADMIN_SESSION: z.string().min(1) }),
 });
 type Context = {
@@ -40,8 +40,9 @@ export async function issue(
     const modelId = z.string().uuid().parse(ctx.modelId);
     const credentialKey =
         `nckrtl-conn-pairing-${modelId}-issue-issued-pairing-${args.intent.pairing_id}-credential`;
-    if (args.http_status.trim() !== "200") {
-        throw new Error(args.http_status.trim() === "401" ? "conn.session_rejected" : "conn.pairing_outcome_unknown");
+    const status = Number(args.http_status.trim());
+    if (!(status >= 200 && status < 300)) {
+        throw new Error(status === 401 ? "conn.session_rejected" : "conn.pairing_outcome_unknown");
     }
     let issued: z.infer<typeof Issued>;
     try {
@@ -72,7 +73,7 @@ export async function issue(
 }
 export const behavior = {
     type: "@nckrtl/conn-pairing",
-    version: "2026.11.02.1",
+    version: "2026.11.02.2",
     resources: {
         issued: { schema: Issued, lifetime: "infinite", garbageCollection: 10 },
         terminal: {

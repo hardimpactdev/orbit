@@ -14,7 +14,7 @@ Deno.test("private reply writes a pairing-specific native sensitive resource and
     const writes: { spec: string; name: string; data: unknown }[] = [];
     const context = { modelId: "00000000-0000-4000-8000-000000000001", writeResource: async (spec: string, name: string, data: unknown) => { writes.push({ spec, name, data }); return {}; } };
     await issue(args(directory), context);
-    await issue(args(directory, "200", 8), context);
+    await issue(args(directory, "201", 8), context);
     assertEquals(writes.map((x) => x.name), ["pairing-7", "terminal", "pairing-8", "terminal"]);
     for (const [index, id] of [[1, 7], [3, 8]]) {
         const terminal = JSON.stringify(writes[index].data);
