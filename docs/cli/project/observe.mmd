@@ -1,5 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task (driver workflow) started by a Schedule, Recall swamp-owns-dependencies, R1-R3.
+  %% Tightened: flow-tighten 2026-11-02, rules 14, 15 (no input read, no report step).
+  %% Decided: Nick 2026-11-02, maintenance is opt-in per Project.
   %% status: draft
   %% command: none · maintenance-projects Schedule
   %% kind: project.observe
@@ -14,7 +16,7 @@ sequenceDiagram
   %%> When:
   %%> - every hour at :17:40; the Gateway publishes the Schedule and its full inputs with `workflow.trigger.set`
   %%> What it does:
-  %%> - the `maintenance-projects` Schedule's own run selects which Projects need a detect, a routine or an observe now
+  %%> - the `maintenance-projects` Schedule's own run selects which opted-in Projects need an inspect, a routine or an observe now
   %%> - it picks observe for a Project with a maintenance task group that waits on a pull request or on capacity
   %%> How the Gateway learns it:
   %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
@@ -22,14 +24,15 @@ sequenceDiagram
   %%> - one request per Project and mode, with a key such as `4-observe-2026-11-02T17:17`
   %%> Not included:
   %%> - no command: no person starts `project.observe` directly
-  Note over GW: Admit observe, mint token<br/>task #5152 · trigger: schedule
+  Note over GW: Admit observe, scope reads<br/>task #5152 · trigger: schedule
   %%> Requirements:
+  %%> - maintenance is on for Project 4 (`project:maintenance:enable`); it is off by default
   %%> - Project 4 reads its repository through the GitHub App, with a default branch and a task check
   %%> - no other `project.detect`, `project.routine` or `project.observe` task runs for Project 4
   %%> - the request key wasn't admitted before
   %%> What it does:
   %%> - captures the Project and its task groups, with their watched PRs
-  %%> - mints a GitHub App token with `contents: read` and `pull_requests: read`, into the vault as `project-dependency-read-5152` (R3)
+  %%> - when there are watched PRs, mints a GitHub App token with `contents: read` and `pull_requests: read`, into the vault as `project-dependency-read-5152` (R3)
   %%> Result:
   %%> - task #5152 recorded, kind `project.observe`, driver `workflow`, on Node 209
   %%> - no Node is a target; the work only reads GitHub
@@ -39,11 +42,6 @@ sequenceDiagram
   %%> Inputs:
   %%> - the captured Project and task groups
   %%> - the vault key names of the token, never the token
-  Note over SW: Read the admitted input<br/>project-maintenance-input read
-  %%> What it does:
-  %%> - checks the admitted Project, task groups and watched pull request URLs
-  %%> Not included:
-  %%> - it reads nothing from the Gateway; the intent is the input
   SW->>GH: Read the watched PRs<br/>gh pr view · dependency-evidence
   %%> What it does:
   %%> - reads the number, state and head of each watched pull request of Project 4
@@ -53,9 +51,8 @@ sequenceDiagram
   %%> What it does:
   %%> - links the PR states to the Project's last findings in Swamp data
   %%> - names task groups that waited for capacity and can start now
-  Note over SW: Report the result<br/>observations · requests
   %%> Returns:
-  %%> - prints the PR observations and the groups that can resume as one JSON object, which the Gateway reads from the run
+  %%> - the PR observations and the groups that can resume, as this step's output, which the Gateway reads from the terminal result
   alt observation done
     GH-->>SW: PR #57 merged
     %%> Returns:

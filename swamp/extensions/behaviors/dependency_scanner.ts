@@ -31,6 +31,12 @@ const ScanResult = z.object({
   scan_succeeded: z.boolean().optional(),
 });
 export const scanResources = {
+  maintenanceResult: {
+    description: "Typed Project maintenance result from the action that produced it",
+    schema: z.object({ result: z.record(z.string(), z.unknown()) }).strict(),
+    lifetime: "infinite",
+    garbageCollection: 1,
+  },
   scanResult: {
     description: "Public result of the admitted native scan",
     schema: ScanResult,
@@ -103,6 +109,7 @@ export const scanMethod = {
 };
 
 const RefreshInput = z.object({
+  result: z.record(z.string(), z.unknown()).optional(),
   rows: z.array(
     z.object({
       project: DependencyProjectSchema,
@@ -120,7 +127,7 @@ export const refreshMethod = {
     raw: z.infer<typeof RefreshInput>,
     ctx: DependencyContext,
   ) => {
-    const { rows } = RefreshInput.strip().parse(raw),
+    const { rows, result } = RefreshInput.strip().parse(raw),
       handles: { name: string; version?: number }[] = [];
     const context: DependencyContext = {
       ...ctx,
@@ -139,6 +146,9 @@ export const refreshMethod = {
       );
       if (current?.publication_id !== row.index.publication_id) continue;
       await reconcileDependencyIndex(row.index, context, row.evidence);
+    }
+    if (result !== undefined) {
+      handles.push(await ctx.writeResource("maintenanceResult", "refresh-result", { result }));
     }
     return { dataHandles: handles };
   },

@@ -9,6 +9,18 @@ from unittest.mock import patch
 
 
 class Parity(unittest.TestCase):
+    def test_public_hook_bindings_cannot_replace_topology_or_secret_bindings(self):
+        source = Path(__file__).parent / 'swamp-proof-guest/run.py'
+        spec = importlib.util.spec_from_file_location('proof_guest', source)
+        runner = importlib.util.module_from_spec(spec)
+        with patch.object(sys, 'argv', ['run.py', str(source.parent), 'fixture']):
+            spec.loader.exec_module(runner)
+        context = {'node.target': 209, 'secret.token': 'private'}
+        runner.public_bindings([json.dumps({'bindings': {'operation': 73, 'node.target': 99,
+                                                       'secret.token': 'replace', 'invalid': {}, 'boolean': True}})], context)
+        self.assertEqual(runner.bind('operations/${fixture.operation}', context), 'operations/73')
+        self.assertEqual(context, {'node.target': 209, 'secret.token': 'private', 'fixture.operation': 73})
+
     def test_large_operation_is_loaded_from_its_file(self):
         source = Path(__file__).parent / 'swamp-proof-guest/run.py'
         spec = importlib.util.spec_from_file_location('proof_guest', source)

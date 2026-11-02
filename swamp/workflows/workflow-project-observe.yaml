@@ -23,79 +23,93 @@ inputs:
     kind: {type: string, const: project.observe}
     intent:
       type: object
-    execution_secrets:
-      type: object
-      properties:
-        github_token:
-          type: object
-          properties:
-            vault:
-              type: string
-              enum:
-              - orbit-control-inputs
-            key:
-              type: string
-              pattern: ^project-dependency-read-[1-9][0-9]*$
-          required:
-          - vault
-          - key
-          additionalProperties: false
-        git_authorization:
-          type: object
-          properties:
-            vault:
-              type: string
-              enum:
-              - orbit-control-inputs
-            key:
-              type: string
-              pattern: ^project-dependency-auth-[1-9][0-9]*$
-          required:
-          - vault
-          - key
-          additionalProperties: false
       additionalProperties: false
       required:
-      - github_token
-      - git_authorization
+      - project
+      - groups
+      - pr_urls
+      - admitted_at
+      properties:
+        project:
+          type: object
+          required:
+          - id
+          - repository
+          - default_branch
+          - check
+          additionalProperties: false
+          properties:
+            id:
+              type: integer
+              minimum: 1
+            repository:
+              type: string
+              minLength: 1
+            default_branch:
+              type: string
+              minLength: 1
+            check:
+              type: string
+              minLength: 1
+        groups:
+          type: array
+          items:
+            type: object
+        pr_urls:
+          type: array
+          maxItems: 128
+          items:
+            type: string
+            pattern: ^https://github\.com/[^/]+/[^/]+/pull/[1-9][0-9]*$
+        admitted_at:
+          type: string
+          format: date-time
+    execution_secrets:
+      type: object
+      properties: {}
+      propertyNames:
+        enum:
+        - github_token
+      maxProperties: 1
+      additionalProperties:
+        type: object
+        properties:
+          vault:
+            type: string
+            enum:
+            - orbit-control-inputs
+          key:
+            type: string
+            pattern: ^project-dependency-read-[1-9][0-9]*$
+        required:
+        - vault
+        - key
+        additionalProperties: false
 reports:
   skip:
   - '@swamp/workflow-summary'
 jobs:
 - name: observe
-  labels: {role: swamp}
+  labels:
+    role: swamp
   steps:
-  - name: Read the admitted input
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/project-maintenance-input'
-      behaviorName: project-input
-      methodName: read
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
   - name: Read the watched PRs
-    labels: {role: swamp}
-    dependsOn:
-    - step: Read the admitted input
-      condition:
-        type: succeeded
+    labels:
+      role: swamp
     task:
       type: workflow
       workflowIdOrName: project-dependency-evidence
       inputs:
         operation_id: ${{ inputs.operation_id }}
-        project: ${{ steps["Read the admitted input"].outputs.project }}
-        groups: ${{ steps["Read the admitted input"].outputs.groups }}
-        pr_urls: ${{ steps["Read the admitted input"].outputs.pr_urls }}
-        previous_pr: ${{ steps["Read the admitted input"].outputs.previous_pr }}
-        execution_secrets:
-          github_token: ${{ inputs.execution_secrets.github_token }}
+        project: ${{ inputs.intent.project }}
+        groups: ${{ inputs.intent.groups }}
+        pr_urls: ${{ inputs.intent.pr_urls }}
+        previous_pr: []
+        execution_secrets: ${{ inputs.execution_secrets }}
+    dependsOn: []
   - name: Refresh the findings index
-    labels: {role: swamp}
+    labels:
+      role: swamp
     dependsOn:
     - step: Read the watched PRs
       condition:
@@ -105,20 +119,8 @@ jobs:
       modelIdOrName: orbit-gateway
       methodName: refresh
       inputs:
-        rows: '${{ steps["Read the admitted input"].outputs.previous_index == null ? [] : [{"project":steps["Read the admitted input"].outputs.project,"index":steps["Read the admitted input"].outputs.previous_index,"evidence":steps["Read the watched PRs"].outputs.evidence.evidence}]
-          }}'
-  - name: Report the result
-    labels: {role: swamp}
-    dependsOn:
-    - step: Refresh the findings index
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: project-observation-result
-      methodName: execute
-      inputs:
-        run: printf "%s\n" "$ORBIT_RESULT"
-        env:
-          ORBIT_RESULT: ${{ steps["Read the watched PRs"].outputs.evidence.result_json }}
+        rows: '${{ steps["Read the watched PRs"].outputs.evidence.previous_index == null ? [] : [{"project":steps["Read
+          the watched PRs"].outputs.evidence.project,"index":steps["Read the watched PRs"].outputs.evidence.previous_index,"evidence":steps["Read
+          the watched PRs"].outputs.evidence.evidence}] }}'
+        result: ${{ steps["Read the watched PRs"].outputs.evidence.result }}
+queueTimeout: 30

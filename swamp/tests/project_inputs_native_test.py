@@ -51,6 +51,11 @@ class ProjectInputsNativeTest(NativeTestCase):
         self.inputs["kind"] = "project." + mode
 
     def run_workflow(self, mode, success=True):
+        if mode == "observe":
+            self.inputs["intent"]["pr_urls"] = list(dict.fromkeys(
+                url for group in self.inputs["intent"]["groups"]
+                if group.get("status") not in ("completed", "cancelled", "failed")
+                for url in (group.get("pr_url"), group.get("watched_pr_url")) if url))
         source = self.repo / "input.json"
         source.write_text(json.dumps(self.inputs))
         self.cli("workflow", "validate", "project-" + mode)
@@ -104,13 +109,10 @@ class ProjectInputsNativeTest(NativeTestCase):
 
     def test_observe_returns_public_evidence_without_gateway_calls(self):
         self.workflow("observe")
-        self.inputs["execution_secrets"] = {
-            "github_token": {"vault": "orbit-control-inputs", "key": "project-dependency-read-901"},
-            "git_authorization": {"vault": "orbit-control-inputs", "key": "project-dependency-auth-901"},
-        }
+        self.inputs["execution_secrets"] = {}
         history, steps = self.run_workflow("observe")
         self.assertEqual(history["status"], "succeeded")
-        result = json.loads(steps["Report the result"]["outputs"]["stdout"])
+        result = steps["Refresh the findings index"]["outputs"]["result"]
         self.assertEqual(result, {"project_id": 32, "observations": [], "resume_group_ids": [], "requests": []})
 
     def test_observe_correlates_one_bounded_read_with_the_captured_group(self):
@@ -125,13 +127,26 @@ class ProjectInputsNativeTest(NativeTestCase):
         self.cli("vault", "put", "orbit-control-inputs", "project-dependency-read-901", input="fixture-observe-token")
         self.inputs["execution_secrets"] = {
             "github_token": {"vault": "orbit-control-inputs", "key": "project-dependency-read-901"},
-            "git_authorization": {"vault": "orbit-control-inputs", "key": "project-dependency-auth-901"},
         }
         history, steps = self.run_workflow("observe")
         self.assertEqual(history["status"], "succeeded")
-        result = json.loads(steps["Report the result"]["outputs"]["stdout"])
+        result = steps["Refresh the findings index"]["outputs"]["result"]
         self.assertEqual(result["observations"], [{"group_id": 55, "url": url, "state": "merged", "head": "a" * 40}])
         self.assertEqual(result["requests"], [])
+
+    def test_observe_fails_a_github_read_without_projecting_partial_evidence(self):
+        self.workflow("observe")
+        self.inputs["intent"]["groups"] = [{"id": 55, "project_id": 32, "status": "running", "pr_url": "https://github.com/nckrtl/launch/pull/17"}]
+        gh = self.tools / "gh"
+        gh.write_text("#!/bin/sh\nexit 23\n")
+        gh.chmod(0o755)
+        self.cli("vault", "create", "local_encryption", "orbit-control-inputs")
+        self.cli("vault", "put", "orbit-control-inputs", "project-dependency-read-901", input="fixture-observe-token")
+        self.inputs["execution_secrets"] = {"github_token": {"vault": "orbit-control-inputs", "key": "project-dependency-read-901"}}
+        history, steps = self.run_workflow("observe", success=False)
+        self.assertEqual(history["status"], "failed")
+        self.assertEqual(steps["Read the watched PRs"]["status"], "failed")
+        self.assertEqual(steps["Refresh the findings index"]["status"], "skipped")
 
     def test_scan_acquisition_failure_preserves_failure_and_cleans_local_data(self):
         self.workflow("detect")

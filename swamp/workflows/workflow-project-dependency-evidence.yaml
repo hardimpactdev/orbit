@@ -1,7 +1,6 @@
 id: 7d77e663-d6a1-4dfa-96ac-625b826ad094
 name: project-dependency-evidence
-description: One bounded native PR read per admitted URL, followed by native evidence
-  correlation.
+description: One bounded native PR read per admitted URL, followed by native evidence correlation.
 vaults:
 - orbit-control-inputs
 inputs:
@@ -20,6 +19,24 @@ inputs:
       minimum: 1
     project:
       type: object
+      required:
+      - id
+      - repository
+      - default_branch
+      - check
+      additionalProperties: false
+      properties:
+        id:
+          type: integer
+          minimum: 1
+        repository:
+          type: string
+        default_branch:
+          type: string
+          minLength: 1
+        check:
+          type: string
+          minLength: 1
     groups:
       type: array
       items:
@@ -35,63 +52,65 @@ inputs:
         type: object
     execution_secrets:
       type: object
-      properties:
-        github_token:
-          type: object
-          properties:
-            vault:
-              type: string
-              enum:
-              - orbit-control-inputs
-            key:
-              type: string
-              pattern: ^project-dependency-read-[1-9][0-9]*$
-          required:
-          - vault
-          - key
-          additionalProperties: false
-      additionalProperties: false
-      required:
-      - github_token
+      properties: {}
+      propertyNames:
+        enum:
+        - github_token
+      maxProperties: 1
+      additionalProperties:
+        type: object
+        properties:
+          vault:
+            type: string
+            enum:
+            - orbit-control-inputs
+          key:
+            type: string
+            pattern: ^project-dependency-read-[1-9][0-9]*$
+        required:
+        - vault
+        - key
+        additionalProperties: false
 reports:
   skip:
   - '@swamp/workflow-summary'
 jobs:
 - name: read
-  labels: {role: swamp}
+  labels:
+    role: swamp
   steps:
   - name: pr-${{ self._index }}
-    labels: {role: swamp}
+    labels:
+      role: swamp
     forEach:
       item: pr
       in: ${{ inputs.pr_urls }}
     dependsOn: []
-    allowFailure: true
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "project-pr-" + string(self._index) }}
+      behaviorName: ${{ "project-pr-" + string(inputs.project.id) + "-" + string(self._index) }}
       methodName: execute
       inputs:
-        run: 'gh pr view "$ORBIT_PR_URL" --json number,url,headRefOid,state
-
-          '
+        run: timeout 60 gh pr view "$ORBIT_PR_URL" --json number,url,headRefOid,state
         env:
           ORBIT_PR_URL: ${{ self.pr }}
           GH_TOKEN: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key)
             }}
           GH_PROMPT_DISABLED: '1'
-          GH_CONFIG_DIR: ${{ "/home/orbit/.cache/orbit-dependency-scans/" + run.id
-            + "/gh-config" }}
+          GH_CONFIG_DIR: ${{ "/home/orbit/.cache/orbit-dependency-scans/" + run.id + "/gh-config" }}
+        timeout: 65000
 - name: evidence
-  labels: {role: swamp}
+  labels:
+    role: swamp
   dependsOn:
   - job: read
     condition:
-      type: always
+      type: succeeded
   steps:
   - name: evidence
-    labels: {role: swamp}
+    labels:
+      role: swamp
     task:
       type: behavior
       behaviorType: '@nckrtl/project-maintenance-input'
@@ -103,3 +122,4 @@ jobs:
         urls: ${{ inputs.pr_urls }}
         readings: ${{ steps }}
         previous_pr: ${{ inputs.previous_pr }}
+queueTimeout: 30

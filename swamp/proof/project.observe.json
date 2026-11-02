@@ -1,0 +1,57 @@
+{
+  "kind": "project.observe",
+  "workflow": "project-observe",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "before_gateway": [
+    [
+      "sh",
+      "-c",
+      "printf '%s' \"$1\" | runuser -u orbit -- env -C apps/gateway php ../../tools/swamp-proof-guest/gateway.php fixture",
+      "sh",
+      "{\"projects\": [{\"id\": 32, \"name\": \"Launch\", \"slug\": \"launch\", \"type\": \"laravel-app\", \"root\": \"public\", \"repository_url\": \"https://github.com/nckrtl/launch.git\", \"default_branch\": \"main\", \"source_access\": \"github_app\", \"task_check\": \"composer check\"}], \"extensions\": [\"tasks\"]}"
+    ]
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "projects/32/maintenance/enable",
+      "operation": false
+    }
+  ],
+  "after_prepare": [
+    [
+      "runuser",
+      "-u",
+      "orbit",
+      "--",
+      "php",
+      "swamp/proof/project.observe/prepare.php",
+      "${proof.run}"
+    ]
+  ],
+  "request": {
+    "method": "GET",
+    "path": "operations/${fixture.operation}"
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Read the watched PRs",
+      "job": "observe",
+      "step": "Read the watched PRs",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Refresh the findings index",
+      "job": "observe",
+      "step": "Refresh the findings index",
+      "budget_seconds": 60
+    }
+  ],
+  "parity": "swamp/proof/project.observe/parity.py"
+}

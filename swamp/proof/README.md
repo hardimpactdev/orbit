@@ -43,6 +43,8 @@ Always finish with `down`. Proof VMs do not outlive the proof. Two mechanisms ca
 
 Parity reads the full Operation from the JSON file named by `PROOF_OPERATION_FILE`. The runner passes paths for large data, so recipe intents do not exceed the operating system environment size limit.
 
+A `before_gateway` or `after_prepare` hook may also end with `{"bindings": {"operation": 73}}`. These public scalar values bind only under `${fixture.operation}`; they cannot replace Node or secret bindings. An internal kind such as `project.observe` uses its normal Schedule admission action in a hook and follows the returned Operation through the API. Private values still use the separate `secrets` channel.
+
 ## Receipts
 
 `run` writes `~/swamp-execution/evidence/proof/<kind>/<UTC>-minimal.json`. A receipt names the topology and version, the commit, the VM, the Operation and native run, per-step and phase timings, parity, `up` to receipt time and time since first provision. `proof_pass` is true only when the Gateway and native status match `expect.status`, parity passes and every budget holds.

@@ -54,11 +54,9 @@ final readonly class ProjectMaintenanceProjection implements DirectOperationProj
                     'Authorization: Bearer '.$this->token($operation, ['contents' => 'read'])->reveal())]];
         }
         $copies = [];
-        if ($operation->kind === 'project.observe') {
-            $token = $this->token($operation, ['contents' => 'read', 'pull_requests' => 'read']);
-            $copies['github_token'] = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'project-dependency-read-'.$operation->id, $token->reveal());
-            $copies['git_authorization'] = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'project-dependency-auth-'.$operation->id,
-                'AUTHORIZATION: basic '.base64_encode('x-access-token:'.$token->reveal()));
+        if ($operation->kind === 'project.observe' && ($operation->input['pr_urls'] ?? []) !== []) {
+            $copies['github_token'] = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'project-dependency-read-'.$operation->id,
+                $this->token($operation, ['contents' => 'read', 'pull_requests' => 'read'])->reveal());
         }
 
         return ['intent' => $operation->input, 'execution_secrets' => $copies];
@@ -92,6 +90,9 @@ final readonly class ProjectMaintenanceProjection implements DirectOperationProj
                 $result = $data['status'] === 'succeeded' ? $this->inspected($operation, $result) : ['error_code' => $data['error_code'] ?? 'project.scan_failed'];
 
                 return app(DirectOperation::class)->project($operation, $data, $this->admit($operation, $result, $data['status'] === 'succeeded'));
+            }
+            if ($operation->kind === 'project.observe') {
+                $result = ValidatedData::object($result['maintenance'] ?? []);
             }
             if ($data['status'] === 'succeeded' && ($result['project_id'] ?? null) !== $operation->target_id) {
                 throw new ResourceOperationException('operation.result_invalid', 'Project result identity differs from the admitted input.', 422);
@@ -143,7 +144,7 @@ final readonly class ProjectMaintenanceProjection implements DirectOperationProj
     {
         $admitted = ValidatedData::object($operation->input['project']);
         $project = Project::query()->find($operation->target_id);
-        if ($project === null || $project->repository_url !== ($admitted['repository'] ?? null)
+        if ($project === null || ! $project->maintenance || $project->repository_url !== ($admitted['repository'] ?? null)
             || $project->default_branch !== ($admitted['default_branch'] ?? null) || $project->task_check !== ($admitted['check'] ?? null)) {
             return;
         }
@@ -205,7 +206,7 @@ final readonly class ProjectMaintenanceProjection implements DirectOperationProj
         }
         $project = Project::query()->whereKey($operation->target_id)->lockForUpdate()->firstOrFail();
         $admittedProject = ValidatedData::object($operation->input['project']);
-        if ($project->repository_url !== $admittedProject['repository'] || $project->default_branch !== $admittedProject['default_branch']
+        if (! $project->maintenance || $project->repository_url !== $admittedProject['repository'] || $project->default_branch !== $admittedProject['default_branch']
             || $project->task_check !== $admittedProject['check']) {
             return [...$result, 'admitted_group_ids' => [], 'admission_blocked' => 'project_settings_changed'];
         }

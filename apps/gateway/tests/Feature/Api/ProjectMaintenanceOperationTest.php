@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Projects\ProjectMaintenanceIntent;
 use App\Domain\Projects\ProjectMaintenanceProjection;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskExtensionState;
@@ -110,7 +112,7 @@ it('projects bounded native PR evidence only while the admitted watch remains cu
     }
     $result = ['project_id' => $this->project->id, 'observations' => [['group_id' => $group->id, 'url' => $url, 'state' => 'merged']], 'requests' => []];
     app(ProjectMaintenanceProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded',
-        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null, 'result' => $result]);
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null, 'result' => ['maintenance' => $result]]);
     expect($group->fresh()->watched_pr_state)->toBe($changed ? 'closed' : 'merged')
         ->and(Task::topLevel()->count())->toBe(1)
         ->and($operation->fresh()->status->value)->toBe('succeeded');
@@ -182,7 +184,7 @@ it('retries a capacity-blocked captured group only from a new terminal observati
             'groups' => [['id' => $group->id, 'maintenance' => $group->maintenance]]], 'state' => ['swamp_run_id' => '06bb3b9e-d877-49b0-8b6b-cf257e227c39']]);
     app(TaskExtensionState::class)->disable();
     $data = ['run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(), 'error_code' => null,
-        'result' => ['project_id' => $this->project->id, 'observations' => [], 'resume_group_ids' => [$group->id], 'requests' => []]];
+        'result' => ['maintenance' => ['project_id' => $this->project->id, 'observations' => [], 'resume_group_ids' => [$group->id], 'requests' => []]]];
     app(ProjectMaintenanceProjection::class)->apply($operation, $data);
     expect($group->fresh()->assistance_requested)->toBeTrue()
         ->and($group->fresh()->assistance_reason)->toContain('extension.disabled')
@@ -292,3 +294,34 @@ describe('project:maintenance:inspect', function (): void {
         expect($operation->fresh()->status->value)->toBe('failed')->and(ProjectInspection::query()->count())->toBe(0);
     });
 });
+
+it('observes a Project without watched PRs without issuing a GitHub credential', function (): void {
+    $operation = app(ProjectMaintenanceIntent::class)->start($this->project, 'observe');
+    expect($operation->kind)->toBe('project.observe')
+        ->and($operation->input['pr_urls'])->toBe([])
+        ->and($this->socket->sent)->toHaveCount(1)
+        ->and($this->socket->sent[0]['payload']['inputs']['execution_secrets'])->toBeObject();
+});
+
+it('refuses a foreign watched PR before issuing a credential or starting a run', function (): void {
+    Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Wrong watch', 'brief' => 'Foreign pull request.',
+        'status' => 'running', 'orchestration' => 'external', 'watched_pr_url' => 'https://github.com/other/project/pull/1']);
+    expect(fn () => app(ProjectMaintenanceIntent::class)->start($this->project, 'observe'))
+        ->toThrow(ResourceOperationException::class, 'A watched pull request must belong to this Project.');
+    expect(Operation::query()->count())->toBe(0)->and($this->socket->sent)->toBe([]);
+});
+
+it('keeps a disabled Project unchanged when an earlier observation finishes', function (): void {
+    $group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Watching', 'brief' => 'Observe only while enabled.',
+        'status' => 'running', 'orchestration' => 'external', 'watched_pr_url' => 'https://github.com/nckrtl/launch/pull/17', 'watched_pr_state' => 'open']);
+    $operation = Operation::query()->create(['kind' => 'project.observe', 'target_type' => 'project', 'target_id' => $this->project->id,
+        'node_id' => 209, 'status' => 'running', 'input' => ['project' => ['repository' => $this->project->repository_url, 'default_branch' => 'main', 'check' => 'composer check'],
+            'groups' => [['id' => $group->id, 'watched_pr_state' => 'open']]], 'state' => ['swamp_run_id' => '06bb3b9e-d877-49b0-8b6b-cf257e227c39']]);
+    $this->project->update(['maintenance' => false]);
+    app(ProjectMaintenanceProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded',
+        'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(), 'error_code' => null,
+        'result' => ['maintenance' => ['project_id' => $this->project->id, 'observations' => [['group_id' => $group->id, 'url' => $group->watched_pr_url, 'state' => 'merged']], 'requests' => []]]]);
+    expect($group->fresh()->watched_pr_state)->toBe('open')
+        ->and($operation->fresh()->result['admission_blocked'])->toBe('project_settings_changed');
+});
+

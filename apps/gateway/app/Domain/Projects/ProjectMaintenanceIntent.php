@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Projects;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
@@ -36,15 +37,35 @@ final readonly class ProjectMaintenanceIntent
             if (! $project->maintenance) {
                 throw new ResourceOperationException('project.maintenance_disabled', 'Dependency maintenance is off for this Project; turn it on with project:maintenance:enable.', 409);
             }
-            $groups = $kind === 'project.detect' ? [] : Task::topLevel()->where('project_id', $project->id)->orderBy('id')->get([
+            $groups = $kind === 'project.detect' ? collect() : Task::topLevel()->where('project_id', $project->id)->orderBy('id')->get([
                 'id', 'project_id', 'status', 'orchestration', 'brief', 'pr_url', 'watched_pr_url', 'watched_pr_state', 'taskable_id', 'maintenance',
-            ])->toArray();
+            ]);
+            $urls = [];
+            if ($kind === 'project.observe') {
+                $repository = GitHubRepository::fromOrigin($project->repository_url);
+                foreach ($groups as $group) {
+                    if (in_array($group->status->value, ['completed', 'cancelled', 'failed'], true)) {
+                        continue;
+                    }
+                    foreach (array_filter([$group->pr_url, $group->watched_pr_url]) as $url) {
+                        if ($repository?->pullRequestNumber($url) === null) {
+                            throw new ResourceOperationException('project.pr_identity_mismatch', 'A watched pull request must belong to this Project.', 422);
+                        }
+                        $urls[] = $url;
+                    }
+                }
+                $urls = array_values(array_unique($urls));
+                if (count($urls) > 128) {
+                    throw new ResourceOperationException('project.maintenance_too_large', 'Observe at most 128 watched pull requests in one Project.', 422);
+                }
+            }
 
             return $this->start->execute($kind, 'project', $project->id, 209, [
                 'project' => ['id' => $project->id, 'repository' => $project->repository_url,
                     'default_branch' => $project->default_branch, 'check' => $project->task_check],
                 // An inspection reads no group; the Gateway checks open work from its own records when it admits one.
-                ...($kind === 'project.detect' ? ['open' => $open] : ['groups' => $groups]), 'admitted_at' => now()->toIso8601ZuluString(),
+                ...($kind === 'project.detect' ? ['open' => $open] : ['groups' => $groups->toArray()]),
+                ...($kind === 'project.observe' ? ['pr_urls' => $urls] : []), 'admitted_at' => now()->toIso8601ZuluString(),
             ], 'project-maintenance', $requestId);
         });
     }

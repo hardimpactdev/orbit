@@ -326,7 +326,7 @@ export const behavior = {
             description:
                 "Combine captured groups and bounded native GitHub observations",
             arguments: z.object({
-                project: DependencyProjectSchema,
+                project: Snapshot,
                 groups: ProjectIntent.shape.groups,
                 urls: z.array(z.string()),
                 previous_pr: z.array(PrSchema).max(1),
@@ -334,7 +334,7 @@ export const behavior = {
             }).strict(),
             async execute(
                 args: {
-                    project: z.infer<typeof DependencyProjectSchema>;
+                    project: z.infer<typeof Snapshot>;
                     groups: Record<string, unknown>[];
                     urls: string[];
                     previous_pr: z.infer<typeof PrSchema>[];
@@ -342,9 +342,28 @@ export const behavior = {
                 },
                 ctx: Context,
             ) {
+                const project = await configuredProject(args.project, ctx);
+                const indexes = await ctx.queryData(
+                    `modelName == "orbit-gateway" && name == ${
+                        JSON.stringify(
+                            await indexName(
+                                project.projectId,
+                                `refs/heads/${project.defaultBranch}`,
+                            ),
+                        )
+                    }`,
+                );
+                if (indexes.length > 1) {
+                    throw new Error("duplicate_dependency_index");
+                }
+                const previous = indexes.length
+                    ? IndexSchema.parse(
+                        (indexes[0] as { attributes: unknown }).attributes,
+                    )
+                    : null;
                 const evidence = await batchEvidence(
-                    args.project,
-                    args.previous_pr[0] ?? null,
+                    project,
+                    previous?.batch_pr ?? args.previous_pr[0] ?? null,
                     {
                         ...ctx,
                         definition: { name: "orbit-gateway" },
@@ -383,7 +402,7 @@ export const behavior = {
                         throw new Error("pr_identity_mismatch");
                     }
                     return args.groups.filter((g) =>
-                        g.project_id === args.project.projectId &&
+                        g.project_id === project.projectId &&
                         (g.pr_url === url || g.watched_pr_url === url)
                     ).map((g) => ({
                         group_id: g.id,
@@ -393,20 +412,22 @@ export const behavior = {
                     }));
                 });
                 return await output(ctx, {
+                    project,
+                    previous_index: previous,
                     evidence: BatchEvidenceSchema.parse(evidence),
                     observations,
-                    result_json: JSON.stringify({
-                        project_id: args.project.projectId,
+                    result: {
+                        project_id: project.projectId,
                         observations,
                         resume_group_ids: args.groups.filter((g) =>
-                            g.project_id === args.project.projectId &&
+                            g.project_id === project.projectId &&
                             g.status === "todo" &&
                             (g.maintenance as
                                     | { admission_pending?: boolean }
                                     | null)?.admission_pending === true
                         ).map((g) => g.id),
                         requests: [],
-                    }),
+                    },
                 });
             },
         },

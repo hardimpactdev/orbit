@@ -40,6 +40,17 @@ def bind(value, context):
     return value
 
 
+def public_bindings(lines, context):
+    """Hooks may name public records created through an internal admission action."""
+    try:
+        made = json.loads(lines[-1]) if lines else {}
+    except ValueError:
+        return
+    if isinstance(made, dict) and isinstance(made.get('bindings'), dict):
+        context.update({'fixture.' + name: value for name, value in made['bindings'].items()
+                        if re.fullmatch('[a-z_]+', name) and isinstance(value, (str, int)) and not isinstance(value, bool)})
+
+
 def gateway(request, seconds):
     result = run(['php', str(SOURCE / 'tools/swamp-proof-guest/gateway.php'), 'request'], input=json.dumps({**request, 'seconds': seconds}),
                  user='orbit', cwd=SOURCE / 'apps/gateway', timeout=seconds + 60, check=False)
@@ -121,6 +132,7 @@ def main():
     # requests only. Receipts keep request paths, never bodies, so the values reach only the Gateway's admission.
     for argv in fixture.get('before_gateway', []):
         lines = run([str(arg) for arg in bind(argv, context)], cwd=SOURCE, timeout=900).stdout.strip().splitlines()
+        public_bindings(lines, context)
         try:
             made = json.loads(lines[-1]) if lines else {}
         except ValueError:
@@ -160,7 +172,8 @@ def main():
     # Gateway records a request needs that only the prepared records make possible, such as a Route that failed after
     # its sites were published; run as root on the task VM from the staged checkout, like before_gateway.
     for argv in fixture.get('after_prepare', []):
-        run([str(arg) for arg in bind(argv, context)], cwd=SOURCE, timeout=900)
+        lines = run([str(arg) for arg in bind(argv, context)], cwd=SOURCE, timeout=900).stdout.strip().splitlines()
+        public_bindings(lines, context)
     for argv in fixture.get('before_target', []):
         on_target(up['target']['key'], bind(argv, context))
     request = bind(fixture['request'], context)
