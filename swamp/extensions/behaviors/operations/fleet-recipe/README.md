@@ -6,7 +6,7 @@ The DAG separates inspection, the signed package transaction, browser, JavaScrip
 
 The package transaction keeps sources, indexes, exact installation, provider retirement, preferences and receipts together. The shipped recipe policy is also the existing Nodes JavaScript policy; its parent supplies the script through the manifest context. Node role and recipe callers use the shared native PHP runtime, private DNS and Route residue workflows. There is no second recipe policy or per-Node Fleet executor.
 
-`recipe.py` is the named open rule 22 gap for the signed package transaction, Incus drain and repacked PHP build. Its remaining rollback and ownership logic is part of that pending conversion. The CLI script still has retained callers and is not converted yet. Native SSH exposes service actions separately. The existing PHP and updater tool locks are explicit `flock` commands, not new workflow or admission locks.
+`recipe.py` is the named open rule 22 gap for the signed package transaction, Incus drain and repacked PHP build. Its remaining rollback and ownership logic is part of that pending conversion. The CLI step runs the shared native `node-cli-install` child; no CLI script ships. Native SSH exposes service actions separately. The existing PHP and updater tool locks are explicit `flock` commands, not new workflow or admission locks.
 
 The Gateway captures the agent key's public verifier digest and the desired public files at admission. A bounded `sha256sum --check --strict` command checks the installed binary, recorded key and files. No observer secret is copied into the execution vault. No worker enrollment, credential rotation or worker retirement is part of a recipe visit.
 

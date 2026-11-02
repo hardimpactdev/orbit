@@ -18,7 +18,7 @@ covers:
 
 ## Desired fleet state
 
-Fleet rollout calls the root `cli.self-update` agent command. It supplies the managed account and, only after an authorized Gateway rollback, an exact CLI version to permit. Rust checks the installed CLI, runs the fixed executable with root's profile, and returns its parsed report and bounded diagnostics. The Gateway decides whether that result converged, needs catch-up, or permits a retry. The command holds its own target lock; the CLI installer retains the shared update lock, so a child installer never waits on its parent. An unrecognized or malformed CLI report never counts as a successful update.
+Fleet rollout and `fleet.cli_converge` do not call `orbit self-update` or an agent command. Swamp publishes the release from Node 209 over SSH with the native [`node-cli-install`](/reference/node-provisioning#orbit-cli) child: `@swamp/cfgmgmt` fetches the binary with its checksum, checks its version, and switches the same link that `orbit self-update` keeps. A Node that runs a newer release or a commit build keeps it.
 
 The desired fleet state names what every machine should run for the Gateway's commit. The Gateway separately converges the [Orbit footprint](/reference/node-provisioning#converge-the-orbit-footprint); `self-update` does not apply those artifacts or remove files left by deleted artifacts.
 
@@ -151,10 +151,9 @@ Every download runs `curl --disable` with HTTPS only, at most 5 redirects, and a
 The CLI changes under one lock: `/run/lock/orbit-self-update.lock` as root on Linux, `/var/run/orbit-self-update.lock` as root on macOS, and `$ORBIT_HOME/self-update.lock` for any other user. A second run waits up to 120 seconds for the CLI step and then fails with `self_update.busy`. Gateway steps hold the same lock:
 
 - the [agent converge](/reference/node-agent#install-and-upgrade), whose `agent.configure` holds it from the secret check through the agent restart;
-- the [fleet rollout](/reference/gateway-recovery#one-node), whose `cli.install` holds it while it installs the CLI;
 - a release's [runtime handoff](/reference/gateway-recovery#gateway-node-agent), while it updates the Gateway Node's agent.
 
-So a Gateway step never replaces a binary while a self-update replaces the CLI. The converge and the rollout wait up to 300 seconds for the lock, and the handoff waits up to 120 seconds.
+So these Gateway steps never replace a binary while a self-update replaces the CLI. The converge waits up to 300 seconds for the lock, and the handoff waits up to 120 seconds. The native CLI publication takes no lock: it writes a new versioned file and switches the link atomically, so a concurrent self-update ends with one complete release on the link.
 
 Each candidate gets its own name, `.<file>.orbit-candidate-<random>`, created exclusively next to its target. A candidate with that pattern can only be left by an interrupted run, so the command deletes them before it downloads.
 
