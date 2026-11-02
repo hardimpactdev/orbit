@@ -37,7 +37,7 @@ it('admits keyed native cancellation without prematurely ending a board group', 
     $operation = Operation::query()->findOrFail($id);
     expect($operation->kind)->toBe('tasks.cancel')->and($operation->node_id)->toBe(209)
         ->and($this->group->fresh()->status)->toBe(TaskGroupStatus::Todo)
-        ->and(app(DirectOperation::class)->definition('tasks.cancel')['terminal_result'])->toBe(['job' => 'cancel', 'step' => 'result']);
+        ->and(app(DirectOperation::class)->definition('tasks.cancel')['terminal_result'])->toBe(['job' => 'cancel', 'step' => 'Check the VM is gone']);
     $this->postJson($this->url)->assertAccepted()->assertJsonPath('data.id', $id);
     $operation->update(['status' => OperationStatus::Running]);
     app(TaskCancelProjection::class)->apply($operation, ['run_id' => '8ba8f6c9-0a5e-44da-9710-4bde40935894', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(), 'status' => 'succeeded', 'result' => ['group_id' => $this->group->id, 'instance_id' => null, 'cleanup_complete' => true], 'error_code' => null]);

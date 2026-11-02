@@ -38,10 +38,14 @@ final readonly class TaskCancelProjection implements DirectOperationProjection, 
             if ($operation->status->terminal()) {
                 return $operation;
             }
+            $group = Task::topLevel()->lockForUpdate()->findOrFail($operation->target_id);
             if ($data['status'] === 'succeeded') {
+                $push = $operation->input['push'] ?? null;
+                if (is_array($push) && is_string($push['commit'] ?? null)) {
+                    TaskFinalReview::recordRemovalPush($group, $push['commit']);
+                }
                 app(TaskCancelIntent::class)->input($operation);
             }
-            $group = Task::topLevel()->lockForUpdate()->findOrFail($operation->target_id);
             $result = ValidatedData::object($data['result'] ?? []);
             if ($data['status'] === 'succeeded') {
                 if (($result['group_id'] ?? null) !== $group->id || ($result['instance_id'] ?? null) !== ($operation->input['instance_id'] ?? null)

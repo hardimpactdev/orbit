@@ -64,6 +64,9 @@ if (process.env.BASE) {
 
 // For a migrated kind, the Swamp lane's calls and notes are the workflow's steps, by the same names.
 const workflows = readdirSync(`${root}/swamp/workflows`).filter((n) => n.endsWith('.yaml')).map((n) => readFileSync(`${root}/swamp/workflows/${n}`, 'utf8'))
+// A child workflow may accept its callers' kinds; the Gateway declaration names the workflow that runs the kind.
+const gateway = readdirSync(`${root}/apps/gateway/app/Domain`).flatMap((d) => { try { return [readFileSync(`${root}/apps/gateway/app/Domain/${d}/direct-operations.php`, 'utf8')] } catch { return [] } }).join('\n')
+const runs = (yaml, kind) => { const named = gateway.match(new RegExp(`'${kind.replace('.', '\\.')}' => \\[\\s*'workflow' => '([\\w-]+)'`))?.[1]; return named === undefined || yaml.match(/^name: (\S+)$/m)?.[1] === named }
 const declares = (yaml, kind) => (yaml.match(/^ {4}kind: \{type: string, (?:const: ([\w.]+)|enum: \[([^\]]+)\])\}/m) ?? []).slice(1).some((v) => v?.split(/,\s*/).includes(kind))
 const stepNames = (yaml, kind) => {
   const names = []; let steps = null, item = null
@@ -84,7 +87,7 @@ const stepNames = (yaml, kind) => {
   return names
 }
 for (const kind of list(readFileSync(`${dir}/flows-migrated.txt`, 'utf8'))) {
-  const yaml = workflows.filter((w) => declares(w, kind))
+  const declared = workflows.filter((w) => declares(w, kind)), yaml = declared.length > 1 ? declared.filter((w) => runs(w, kind)) : declared
   if (yaml.length !== 1) { fail(`flows-migrated.txt: ${kind} is declared by ${yaml.length} workflows, expected 1`); continue }
   if (!charts.has(kind)) { fail(`flows-migrated.txt: ${kind} has no chart`); continue }
   const src = readFileSync(`${dir}/${charts.get(kind)}`, 'utf8')

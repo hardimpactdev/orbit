@@ -492,7 +492,7 @@ The Node `tvm-<id>` has user `orbit`, role `app-dev`, the dev Cluster, and the r
 
 ### Destroy a task VM
 
-An ended group is `completed`, `failed`, or `cancelled`. Orbit removes its workspace with the VM through the same cleanup path for all three statuses. The checkout lives on the VM's disk, so Orbit deletes no checkout in the guest. Before removal, the group pushes its latest reviewed, unpublished head to origin under the shared [removal rule](/reference/tasks#complete-and-cleanup) and logs the SHA. A failed or pending push keeps the workspace and VM, including a stopped VM. A merged task is never pushed during cleanup.
+An ended group is `completed`, `failed`, or `cancelled`. Orbit removes its workspace with the VM through the same cleanup path for all three statuses. The checkout lives on the VM's disk, so Orbit deletes no checkout in the guest. Before removal, the cancel run pushes the latest approved, unpublished commit from the running VM to origin under the shared [removal rule](/reference/tasks#cancel-a-stuck-task). A failed push keeps the workspace and VM. A parked VM cannot push, so cancel refuses until the work is published. A merged task is never pushed during cleanup.
 
 A parked VM starts before preservation is attempted. Pushes, fetches, checks, and agent turns need the VM `ready`, so they finish before the VM is deleted. Workspace removal on a task VM runs these steps:
 
@@ -524,7 +524,7 @@ Keep a host's `settings.task_vms` until all its task VMs are `destroyed`, becaus
 
 #### A VM that dies before its group ends
 
-Workspace removal deletes a dead VM like a live one. Only the Project's teardown steps need SSH to the VM. When they cannot run, removal fails and the group asks for `removal_failure` assistance. An ownership refusal has the same kind. Runtime decisions use the open request and kind, not its reason text.
+Workspace removal deletes a dead VM like a live one. Only the push of approved work and the Project's teardown steps need SSH to the VM. The run reads the VM's power first and skips teardown on a stopped VM. When a guest step fails, removal fails and the group asks for `removal_failure` assistance. An ownership refusal has the same kind. Runtime decisions use the open request and kind, not its reason text.
 
 When the group has ended, or is `settling` or `waiting_for_review`, each tick then also queues `DestroyTaskVm` for that task VM. A group in another state, for example one whose cancel failed while the VM ran, keeps its workspace and its assistance request. Cancel it again: cancel then removes the workspace with the VM and queues `DestroyTaskVm`.
 

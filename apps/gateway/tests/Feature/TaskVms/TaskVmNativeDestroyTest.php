@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\TaskVms\StartTaskVmDestroyAction;
+use App\Domain\GitHub\GitHubApi;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
@@ -39,6 +40,7 @@ use App\Models\TaskVm;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\TaskVmSettingsBuilder;
 
@@ -392,6 +394,45 @@ it('projects the complete Tasks ending parent without deleting records at admiss
     app(TaskCancelProjection::class)->apply($operation->fresh(), $data);
     expect(Instance::query()->find($workspace->id))->toBeNull()->and($group->fresh()->status)->toBe(TaskGroupStatus::Cancelled)
         ->and($group->fresh()->taskable_id)->toBeNull()->and($this->vm->fresh()->state)->toBe(TaskVmState::Destroyed);
+});
+
+it('plans the push of approved work from a ready VM and records it only on success', function (): void {
+    enable_operation_queue();
+    app(TaskExtensionState::class)->enable();
+    GitHubTestSupport::storeApp();
+    $github = Mockery::mock(GitHubApi::class);
+    $github->shouldReceive('repositoryInstallation')->andReturn(123);
+    $github->shouldReceive('repositoryPullRequestToken')->twice()->andReturn('synthetic-cancel-push-token');
+    app()->instance(GitHubApi::class, $github);
+    $workspace = destroyOwnedWorkspace($this->vm);
+    $group = Task::topLevel()->findOrFail($this->vm->group_id);
+    $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
+    $sha = str_repeat('c', 40);
+    TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => $sha, 'source' => TaskReviewedCommitSource::OrbitPush]);
+    $this->vm->update(['state' => TaskVmState::Parked]);
+    expect(fn () => app(TaskCancelIntent::class)->start($group->fresh(), 'fixture', null))->toThrow(ResourceOperationException::class, 'Publish the approved work');
+    $this->vm->update(['state' => TaskVmState::Ready]);
+    $this->vm->node->update(['status' => LifecycleStatus::Active, 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG']);
+    $run = '8ba8f6c9-0a5e-44da-9710-4bde40935894';
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $message): array => $message['type'] === 'vault.put' ? [['type' => 'vault.put', 'id' => $message['id'], 'payload' => ['data' => ['vaultName' => $message['payload']['vaultName'], 'secretKey' => $message['payload']['key'], 'vaultType' => 'local_encryption']]]]
+        : [['type' => 'event', 'id' => $message['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-task-cancel', 'runId' => $run]]];
+    app()->instance(WebSocketClient::class, $socket);
+    $operation = app(TaskCancelIntent::class)->start($group->fresh(), 'fixture', null);
+    $push = $operation->input['push'];
+    expect($push['commit'])->toBe($sha)->and($push['refspec'])->toBe($sha.':refs/heads/task-'.$group->id)
+        ->and($push['remote'])->toBe('https://github.com/acme/workspace.git')->and($push['object_format'])->toBe('sha1')
+        ->and($push['checkout_path'])->toBe($workspace->checkout_path)->and($push['github_token']['key'])->toStartWith('task-publish-token-')
+        ->and(json_encode($operation->input))->not->toContain('synthetic-cancel-push-token')
+        ->and(app(TaskCancelIntent::class)->input($operation)['intent']['push'])->toBe($push)
+        ->and(TaskReviewedCommit::query()->where('sha', $sha)->value('pushed_at'))->toBeNull();
+    app(TaskCancelProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'failed', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(), 'error_code' => 'tasks.push_failed', 'result' => []]);
+    expect(TaskReviewedCommit::query()->where('sha', $sha)->value('pushed_at'))->toBeNull()->and($workspace->fresh())->not->toBeNull();
+    $retry = app(TaskCancelIntent::class)->start($group->fresh(), 'fixture', null);
+    app(TaskCancelProjection::class)->apply($retry, ['run_id' => $run, 'status' => 'succeeded', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(), 'error_code' => null,
+        'result' => ['group_id' => $group->id, 'instance_id' => $workspace->id, 'cleanup_complete' => true, 'vm' => destroyCompleteResult($this->vm)]]);
+    expect(TaskReviewedCommit::query()->where('sha', $sha)->value('pushed_at'))->not->toBeNull()
+        ->and($group->fresh()->status)->toBe(TaskGroupStatus::Cancelled)->and(Instance::query()->find($workspace->id))->toBeNull();
 });
 
 it('captures cancellation of its exclusive routed workspace without touching the stopped guest', function (): void {

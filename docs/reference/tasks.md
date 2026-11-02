@@ -1242,8 +1242,9 @@ Cancel removes the task's workspace, then marks the task and its open subtasks `
 
 Cancel uses forced [Instance removal](/reference/instance-removal), including Project teardown and checkout deletion. A development workspace in `source_resolved` can have no Route or exactly one pending or failed Route targeting only that Instance. The eligible Route and its RouteTarget are removed with the workspace. An active or shared Route still prevents removal, keeps the Instance, and follows the removal-refused rule below.
 
-- **Settling without a pull request.** Cancel first pushes the latest approved commit to `task-{id}`, so you can open a pull request from it. A failed push returns HTTP 502 `tasks.push_failed` and keeps the task.
-- **VM task settling without a pull request.** The first cancel queues the push and returns `tasks.push_failed` with `Cancel again in a minute.` A later cancel finds the push done and ends the task.
+- **Approved work not on origin.** The cancel run first pushes the latest approved commit to `task-{id}` without force. You can then open a pull request from it. The Gateway mints the push token at admission.
+- **Failed push.** The run fails before any removal. The task and its VM stay.
+- **Parked VM with approved work.** A parked VM cannot push. Cancel refuses with HTTP 409 `tasks.push_failed`; publish the work first.
 - **Review and merge.** Cancel pushes only an approved commit that a final review approved. It removes approved work that no final review saw.
 - **Confirmed VM power-off.** Cancel ends the task and keeps its Instance attached after the provider confirms power-off. It requests `removal_failure` assistance. Missing or stale Node observations do not permit this shortcut.
 - **Retry after power-off.** Once the VM is available, cancel retries preservation and removal. A failed or pending push keeps the workspace.
@@ -1259,7 +1260,7 @@ Swamp requests group completion or cancellation through the API. The Gateway sto
 
 `tasks:group:complete` accepts a settling or waiting-for-review group. It can also complete a running or reviewing group when its watched PR has ended. Repeating completion on a completed group retries its attached workspace removal. An explicit cancellation or completion remains available even though automatic orchestration is removed.
 
-Teardown steps run before the workspace and task VM are destroyed. Recorded approved work is preserved through the existing removal push contract. Cleanup does not choose new task work or merge a PR.
+Teardown steps run before the workspace and task VM are destroyed, and only while the provider reports the VM running. Recorded approved work is pushed first, as [Cancel a stuck task](#cancel-a-stuck-task) describes. Cleanup does not choose new task work or merge a PR.
 
 Task VM Node cleanup records `task_vm.destroy` and returns. Swamp proves provider absence, removes any remaining workspace records, admits the owning `node.remove` child, and only then marks the VM destroyed. Already queued `DestroyTaskVm` jobs record the same intent; they perform no VM or Node work and never wait for completion. Workspace teardown, preservation and the retained provider deletion still run before this admission; their separate caller cutover remains pending.
 

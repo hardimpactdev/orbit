@@ -20,6 +20,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\TaskVm;
+use App\Support\ValidatedData;
 use Illuminate\Database\Eloquent\Collection;
 
 /** Immutable same-VM cleanup intent; no provider or guest effect at admission. */
@@ -33,17 +34,17 @@ final readonly class TaskVmDestroyIntent
         return $this->captureCleanup($vm);
     }
 
-    /** The owning Tasks parent removes this workspace before executing the destroy child.
+    /** The owning Tasks parent removes this workspace before executing the destroy child; it may push `$pushing` first.
      * @return array<string,mixed>
      */
-    public function captureForWorkspace(TaskVm $vm, Instance $ownedInstance): array
+    public function captureForWorkspace(TaskVm $vm, Instance $ownedInstance, ?string $pushing = null): array
     {
         $workspace = Instance::query()->findOrFail($ownedInstance->id);
         if ($vm->node_id === null || $workspace->node_id !== $vm->node_id) {
             throw new ResourceOperationException('task_vm.workspace_mismatch', 'Cleanup requires the workspace on its exact VM Node.', 409);
         }
 
-        return [...$this->captureCleanup($vm, $workspace), 'instance_id' => $workspace->id,
+        return [...$this->captureCleanup($vm, $workspace, $pushing), 'instance_id' => $workspace->id,
             'workspace_routed' => $workspace->task_workspace_routed,
             'project_id' => $workspace->project_id, 'checkout_path' => $workspace->checkout_path];
     }
@@ -73,7 +74,8 @@ final readonly class TaskVmDestroyIntent
             throw new ResourceOperationException('operation.execution_forbidden', 'The ending parent no longer owns its admitted provider executor.', 422);
         }
         $this->guestIdentity($vm);
-        $this->preserved($vm);
+        $push = $captured['push'] ?? null;
+        $this->preserved($vm, is_array($push) ? ValidatedData::nullableString($push['commit'] ?? null) : null);
         $this->available($vm, $workspace, $operation);
         $routes = $workspace?->routes()->orderBy('routes.id')->get() ?? new Collection;
         $capturedRoutes = RouteExecutionProof::objects($captured['workspace_routes'] ?? []);
@@ -90,9 +92,9 @@ final readonly class TaskVmDestroyIntent
     }
 
     /** @return array<string,mixed> */
-    private function captureCleanup(TaskVm $vm, ?Instance $workspace = null): array
+    private function captureCleanup(TaskVm $vm, ?Instance $workspace = null, ?string $pushing = null): array
     {
-        $this->preserved($vm);
+        $this->preserved($vm, $pushing);
         $this->available($vm, $workspace);
         $host = $this->executor($vm);
         $this->guestIdentity($vm);
@@ -191,9 +193,10 @@ final readonly class TaskVmDestroyIntent
         }
     }
 
-    private function preserved(TaskVm $vm): void
+    /** Approved work survives removal: it is published, or the ending run pushes exactly that commit first. */
+    private function preserved(TaskVm $vm, ?string $pushing = null): void
     {
-        if ($vm->group !== null && TaskFinalReview::unpublishedRemovalCommit($vm->group) !== null) {
+        if ($vm->group !== null && ! in_array(TaskFinalReview::unpublishedRemovalCommit($vm->group), [null, $pushing], true)) {
             throw new ResourceOperationException('task_vm.workspace_not_preserved', 'Publish the approved Task work before removing its VM.', 409);
         }
     }

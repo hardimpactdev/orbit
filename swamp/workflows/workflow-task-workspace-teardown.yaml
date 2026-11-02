@@ -1,7 +1,7 @@
 id: 6e47270b-266c-463f-9fa8-d595e26e7150
 name: task-workspace-teardown
-description: Run each captured workspace teardown command as one official SSH exec
-  argv from 209 before VM destruction; no script reaches the VM.
+description: Read the VM power, then run each captured workspace teardown command as
+  one official SSH exec argv from 209 while the VM runs; no script reaches the VM.
 vaults:
 - orbit-control-inputs
 inputs:
@@ -47,6 +47,18 @@ jobs:
 - name: teardown
   labels: {role: swamp}
   steps:
+  - name: power
+    labels: {role: swamp}
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-provider-power
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: '${{ "provider_input" in inputs.intent ? inputs.intent.provider_input : {} }}'
+        execution_secrets: '${{ "provider" in inputs.intent && inputs.intent.provider == "upcloud" ? {"upcloud":inputs.execution_secrets.upcloud} : {} }}'
+        action: inspect
   - name: assets
     labels: {role: swamp}
     task:
@@ -83,8 +95,13 @@ jobs:
         hosts: name:target
         argv: ${{ steps.assets.outputs.teardown[self._index] }}
         timeoutSec: ${{ self.item.timeout_seconds }}
+    # A stopped VM skips guest teardown; the VM is destroyed next anyway.
+    guard: ${{ !steps.power.outputs.result.running }}
     dependsOn:
     - step: assets
+      condition:
+        type: succeeded
+    - step: power
       condition:
         type: succeeded
     forEach:
@@ -134,7 +151,7 @@ jobs:
     - step: output_local
       condition:
         type: succeeded
-    guard: ${{ size(inputs.intent.teardown) == 0 }}
+    guard: ${{ size(inputs.intent.teardown) == 0 || !steps.power.outputs.result.running }}
     allowFailure: true
   - name: output
     labels: {role: swamp}
@@ -174,7 +191,7 @@ jobs:
     - step: output_copy
       condition:
         type: always
-    guard: ${{ size(inputs.intent.teardown) == 0 }}
+    guard: ${{ size(inputs.intent.teardown) == 0 || !steps.power.outputs.result.running }}
     allowFailure: true
   - name: cleanup_local
     labels: {role: swamp}

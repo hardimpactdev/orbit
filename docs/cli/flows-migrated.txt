@@ -38,3 +38,4 @@ vault.sync
 node.remove
 node.role_remove
 route.create
+tasks.cancel

@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
 
 import yaml
@@ -90,6 +91,7 @@ export const behavior={type:"@fixture/destroy",version:"2026.11.01.1",resources:
             task_vm_id=10,
             teardown=[],
             workspace_routes=[],
+            push=None,
             provider="incus",
             provider_input={"fixture_running": True},
             fixture_result={
@@ -127,6 +129,16 @@ export const behavior={type:"@fixture/destroy",version:"2026.11.01.1",resources:
         (self.repo / "workflows/workflow-teardown.yaml").write_text(
             yaml.safe_dump(flow, sort_keys=False)
         )
+        push = yaml.safe_load(
+            (ROOT / "workflows/workflow-task-approved-push.yaml").read_text()
+        )
+        for job in push["jobs"]:
+            job.pop("labels", None)
+            for step in job["steps"]:
+                self.assertEqual(step.pop("labels"), {"role": "swamp"})
+        (self.repo / "workflows/workflow-approved-push.yaml").write_text(
+            yaml.safe_dump(push, sort_keys=False)
+        )
 
     def workflow(self, kind):
         self.flow = yaml.safe_load(
@@ -161,7 +173,7 @@ export const behavior={type:"@fixture/destroy",version:"2026.11.01.1",resources:
     def receipt(self, run):
         history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
         return json.loads(
-            next(s for s in history["jobs"][0]["steps"] if s["name"] == "result")[
+            next(s for s in history["jobs"][0]["steps"] if s["name"] == "Check the VM is gone")[
                 "outputs"
             ]["stdout"]
         )
@@ -220,7 +232,7 @@ export const behavior={type:"@fixture/destroy",version:"2026.11.01.1",resources:
         self.assertTrue(self.receipt(run)["cleanup_complete"])
         history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
         teardown = next(
-            s for s in history["jobs"][0]["steps"] if s["name"] == "teardown"
+            s for s in history["jobs"][0]["steps"] if s["name"] == "Run teardown steps"
         )["outputs"]
         self.assertEqual(teardown["teardown-0"]["stdout"], "")
         self.assertEqual(
@@ -247,8 +259,8 @@ export const behavior={type:"@fixture/destroy",version:"2026.11.01.1",resources:
         self.assertTrue(self.receipt(run)["cleanup_complete"])
         history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
         states = {s["name"]: s["status"] for s in history["jobs"][0]["steps"]}
-        self.assertEqual(states["teardown"], "skipped")
-        self.assertEqual(states["vm"], "succeeded")
+        self.assertEqual(states["Run teardown steps"], "succeeded")
+        self.assertEqual(states["Destroy the task VM"], "succeeded")
 
     def test_exclusive_route_withdrawal_precedes_vm_destroy(self):
         self.inputs["intent"]["workspace_routes"] = [{"fixture_ready": True}]
@@ -256,18 +268,20 @@ export const behavior={type:"@fixture/destroy",version:"2026.11.01.1",resources:
         self.assertTrue(self.receipt(run)["cleanup_complete"])
         history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
         steps = {s["name"]: s for s in history["jobs"][0]["steps"]}
-        self.assertEqual(steps["withdraw"]["status"], "succeeded")
-        self.assertLessEqual(steps["withdraw"]["completedAt"], steps["vm"]["startedAt"])
+        self.assertEqual(steps["Withdraw the Route"]["status"], "succeeded")
+        self.assertLessEqual(
+            steps["Withdraw the Route"]["completedAt"],
+            steps["Destroy the task VM"]["startedAt"],
+        )
 
     def test_route_public_failure_refuses_vm_delete_even_when_child_succeeds(self):
         self.inputs["intent"]["workspace_routes"] = [{"fixture_ready": False}]
         run = self.run_workflow(success=False)
         history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
         states = {s["name"]: s["status"] for s in history["jobs"][0]["steps"]}
-        self.assertEqual(states["withdraw"], "succeeded")
-        self.assertEqual(states["withdrawn"], "failed")
-        self.assertNotEqual(states.get("vm"), "succeeded")
-        self.assertNotEqual(states.get("result"), "succeeded")
+        self.assertEqual(states["Withdraw the Route"], "succeeded")
+        self.assertNotEqual(states.get("Destroy the task VM"), "succeeded")
+        self.assertEqual(states["Check the VM is gone"], "failed")
 
     def test_teardown_failure_does_not_claim_vm_cleanup(self):
         self.inputs["intent"]["teardown"] = [
@@ -289,8 +303,55 @@ export const behavior={type:"@fixture/destroy",version:"2026.11.01.1",resources:
         self.assertEqual((self.workspace / "teardown-started").read_text(), "started")
         history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
         states = {s["name"]: s["status"] for s in history["jobs"][0]["steps"]}
-        self.assertNotEqual(states.get("vm"), "succeeded")
-        self.assertNotEqual(states.get("result"), "succeeded")
+        self.assertNotEqual(states.get("Destroy the task VM"), "succeeded")
+        self.assertNotEqual(states.get("Check the VM is gone"), "succeeded")
+
+    def push_intent(self):
+        remote = self.repo / "remote.git"
+        subprocess.check_call(["git", "init", "-q", "--bare", str(remote)])
+        (self.workspace / "approved.txt").write_text("approved")
+        self.git("add", "approved.txt")
+        self.git("commit", "-qm", "approved")
+        commit = self.git("rev-parse", "HEAD")
+        # Uncommitted work after the approval is never pushed.
+        (self.workspace / "approved.txt").write_text("later")
+        key = "task-publish-token-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        self.cli("vault", "create", "local_encryption", "orbit-control-inputs")
+        self.cli("vault", "put", "orbit-control-inputs", key, input="fixture-token")
+        self.inputs["intent"]["push"] = {
+            "commit": commit,
+            "checkout_path": str(self.workspace),
+            "remote": "file://" + str(remote),
+            "refspec": commit + ":refs/heads/task-1",
+            "object_format": "sha1",
+            "ssh_execution": self.inputs["intent"]["ssh_execution"],
+            "github_token": {"vault": "orbit-control-inputs", "key": key},
+        }
+        return remote, commit
+
+    def test_approved_work_is_pushed_without_force_before_removal(self):
+        remote, commit = self.push_intent()
+        run = self.run_workflow()
+        self.assertTrue(self.receipt(run)["cleanup_complete"])
+        pushed = subprocess.check_output(
+            ["git", "-C", str(remote), "rev-parse", "refs/heads/task-1"]
+        ).decode().strip()
+        self.assertEqual(pushed, commit)
+        steps = self.steps(run)
+        self.assertLessEqual(
+            steps["Push approved work"]["completedAt"],
+            steps["Destroy the task VM"]["startedAt"],
+        )
+
+    def test_failed_push_stops_before_any_removal(self):
+        remote, _ = self.push_intent()
+        (remote / "hooks/pre-receive").write_text("#!/bin/sh\nexit 1\n")
+        (remote / "hooks/pre-receive").chmod(0o755)
+        run = self.run_workflow(success=False)
+        states = {name: step["status"] for name, step in self.steps(run).items()}
+        self.assertEqual(states["Push approved work"], "failed")
+        self.assertNotEqual(states.get("Withdraw the Route"), "succeeded")
+        self.assertNotEqual(states.get("Destroy the task VM"), "succeeded")
 
 
 if __name__ == "__main__":
