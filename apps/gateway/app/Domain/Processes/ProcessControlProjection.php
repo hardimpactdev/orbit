@@ -52,7 +52,11 @@ final readonly class ProcessControlProjection implements DirectOperationProjecti
         $status = OperationStatus::from(ValidatedData::string($data['status']));
         $code = ValidatedData::nullableString($data['error_code'] ?? null);
         $reported = ValidatedData::object($data['result'] ?? []);
-        $desired = $operation->kind === 'process.stop' ? 'stopped' : ($operation->input['desired'] ?? 'running');
+        $desired = match ($operation->kind) {
+            'process.stop', 'process.destroy' => 'stopped',
+            'process.start', 'process.restart' => 'running',
+            'process.create', 'process.update' => ValidatedData::string($operation->input['desired']),
+        };
         $state = $status === OperationStatus::Succeeded && $operation->kind !== 'process.destroy'
             ? ($operation->input['runtime'] === 'systemd'
                 ? ($desired === 'running' ? 'active' : 'inactive')

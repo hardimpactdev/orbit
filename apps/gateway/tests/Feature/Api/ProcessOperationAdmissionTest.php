@@ -328,3 +328,30 @@ it('keeps activation pending until native acceptance records the rendered unit h
     expect($compliant->input['activation_pending'])->toBeFalse()
         ->and($process->systemd_activation_hash)->toBe($compliant->input['content_hash']);
 });
+
+it('projects a systemd start or restart as active when admission captured a stopped Process', function (string $verb): void {
+    $payload = [...$this->payload, 'runtime' => 'systemd', 'command' => ['/bin/sleep', 'infinity']];
+    unset($payload['image']);
+    $this->postJson('/api/v1/processes', $payload)->assertAccepted();
+    Operation::query()->sole()->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
+    $process = Process::query()->sole();
+    $process->update(['status' => 'active', 'desired_state' => 'stopped']);
+    $this->postJson('/api/v1/processes/'.$process->id.'/'.$verb)->assertAccepted();
+    $operation = Operation::query()->where('kind', 'process.'.$verb)->sole();
+    expect($operation->input['desired'])->toBe('stopped');
+    $runId = $operation->state['swamp_run_id'];
+    $definition = app(DirectOperation::class)->definition($operation->kind);
+    $history = ['id' => $runId, 'workflowName' => $definition['workflow'], 'status' => 'succeeded',
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
+        'startedAt' => '2026-11-02T00:00:00Z', 'completedAt' => '2026-11-02T00:00:01Z',
+        'jobs' => [['name' => 'runtime', 'steps' => [['name' => 'Accept the Process', 'status' => 'succeeded']]]],
+    ];
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $history]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.read_token' => 'synthetic-native-reader']);
+    $terminal = app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $runId, 'status' => 'succeeded'], $definition['terminal_result']);
+    expect($terminal->result)->toBe(['ready' => true, 'state' => 'active'])
+        ->and($process->refresh()->desired_state->value)->toBe('running')
+        ->and($socket->sent)->toHaveCount(1);
+})->with(['start', 'restart']);
