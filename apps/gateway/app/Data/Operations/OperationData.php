@@ -9,8 +9,9 @@ use DateTimeInterface;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
+use Spatie\LaravelData\Optional;
 
-/** One operation without its steps (docs/reference/operations.md#the-record). `operation:show` adds `steps`. */
+/** The public Operation record. Reads and cancellation use a compact input and observed native steps. */
 #[MapOutputName(SnakeCaseMapper::class)]
 final class OperationData extends Data
 {
@@ -43,7 +44,38 @@ final class OperationData extends Data
         public ?array $error = null,
         public ?string $currentStepStartedAt = null,
         public ?string $currentStepObservedAt = null,
+        /** @var list<array{name:string,job:string,status:string,started_at:?string,finished_at:?string}>|Optional */
+        public array|Optional $steps = new Optional,
     ) {}
+
+    /** Public reads retain domain results without returning the execution plan. */
+    public static function summary(Operation $operation, ?string $callerNodeName = null): self
+    {
+        $data = self::fromModel($operation, $callerNodeName);
+        $data->input = array_filter($operation->input, static fn (mixed $value): bool => $value === null || is_bool($value) || is_int($value) || is_float($value)
+            || (is_string($value) && strlen($value) <= 512));
+        $data->steps = self::recordedSteps($operation);
+
+        return $data;
+    }
+
+    /** @return list<array{name:string,job:string,status:string,started_at:?string,finished_at:?string}> */
+    private static function recordedSteps(Operation $operation): array
+    {
+        $progress = $operation->state['native_progress'] ?? [];
+        $rows = is_array($progress) && is_array($progress['steps'] ?? null) ? $progress['steps'] : [];
+        $steps = [];
+        foreach ($rows as $row) {
+            if (! is_array($row) || ! is_string($row['name'] ?? null) || ! is_string($row['job'] ?? null) || ! is_string($row['status'] ?? null)) {
+                continue;
+            }
+            $steps[] = ['name' => $row['name'], 'job' => $row['job'], 'status' => $row['status'],
+                'started_at' => is_string($row['started_at'] ?? null) ? $row['started_at'] : null,
+                'finished_at' => is_string($row['finished_at'] ?? null) ? $row['finished_at'] : null];
+        }
+
+        return $steps;
+    }
 
     private static function progressTime(Operation $operation, string $field): ?string
     {

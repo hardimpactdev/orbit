@@ -63,3 +63,14 @@ it('requires a key and refuses cancellation of completed groups', function (): v
     $this->group->update(['status' => TaskGroupStatus::Completed]);
     $this->withHeader('Idempotency-Key', 'cancel.closed')->postJson($this->url)->assertConflict()->assertJsonPath('error.code', 'tasks.not_cancellable');
 });
+
+it('returns compact cancellation replays without copying the captured teardown plan', function (): void {
+    $id = $this->withHeader('Idempotency-Key', 'cancel.compact')->postJson($this->url)->assertAccepted()->json('data.id');
+    $operation = Operation::query()->findOrFail($id);
+    $input = [...$operation->input, 'teardown' => ['payload' => str_repeat('captured-intent-', 15000)]];
+    $operation->update(['input' => $input]);
+    $reply = $this->postJson($this->url)->assertAccepted()->assertJsonPath('data.id', $id)
+        ->assertJsonMissingPath('data.input.teardown')->assertJsonPath('data.steps', []);
+    expect(strlen($reply->getContent()))->toBeLessThan(4096);
+    expect($operation->fresh()->input)->toBe($input);
+});

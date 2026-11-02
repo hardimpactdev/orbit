@@ -128,7 +128,7 @@ A direct Operation may admit immutable `input.participant_node_ids`. A foreign p
 
 ## The record
 
-`input` is the stored argument object. Operations with no arguments serialize it as an empty array (`[]`).
+`operation:show`, `operation:cancel` and `tasks:cancel` return a summary of `input`: top-level scalars and strings of at most 512 bytes. Nested execution plans, scripts, SSH configuration and vault references stay in the stored Operation. The workflow still receives its full admitted intent. Empty summaries serialize as `[]`. Domain results, including bounded analysis reports, remain available. `steps` contains only recorded names, jobs, statuses and times, with no nested payload or command output.
 
 Every operation has the same fields, whatever its kind.
 
@@ -154,23 +154,15 @@ Every operation has the same fields, whatever its kind.
 
 A cancelled operation has an `error_code` only when a rollback superseded it: `operation.superseded`.
 
-`operation:show` adds `steps`, in order:
+`operation:show` and cancellation replies include observed native `steps`, in event order:
 
 | Field | Contract |
 | --- | --- |
-| `name` | Unique within the operation, such as `source_preparation` or `before_activation.migrate` |
-| `position` | The step's place, from 1 |
-| `status` | `pending`, `running`, `waiting`, `succeeded`, `failed`, or `cancelled` |
-| `resumable` | Whether the step may run again after a lost worker |
-| `sequence` | The operation's `sequence` when this step last changed |
-| `started_at`, `finished_at` | ISO 8601 times, or null |
-| `error_code` | The error of a failed step, or null |
-| `output` | The last 8 KiB of the step's standard output and standard error, as UTF-8 text |
-| `output_truncated` | Whether earlier output was dropped from `output` |
+| `name`, `job` | Native step and job labels |
+| `status` | `running`, `succeeded`, `failed` or `skipped` |
+| `started_at`, `finished_at` | Recorded ISO 8601 times, or null |
 
-The Gateway replaces each byte of output that is not valid UTF-8 with the character U+FFFD. An operation fails outside a step when, for example, it cannot take the Instance's lock.
-
-The steps appear when a worker first starts the operation, all `pending`. A queued operation has none. A best-effort step that fails, such as a development deploy step with `required: false`, ends `failed`, and the operation continues. `failed_step` names only the step that ended the operation.
+These summaries come from the Gateway's recorded events, without another native history read. Older Operations or a queued run can have no recorded steps. The summary does not claim that unobserved steps completed.
 
 `result` depends on the kind. For `instance.deploy` and `instance.rollback` it is `{ deployment_id, release, selected_release, commit }`, where `deployment_id` is the [deployment history row](/reference/deployments#history) that holds the full log.
 

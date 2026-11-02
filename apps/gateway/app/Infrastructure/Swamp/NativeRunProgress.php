@@ -46,7 +46,17 @@ final readonly class NativeRunProgress
                     'name' => $event['stepId'], 'status' => 'failed', 'error' => $event['error'] ?? null,
                 ]]]]], $operation);
             }
-            $state['native_progress'] = ['run' => $runId, 'seq' => $event['seq'], 'active' => $active];
+            $steps = is_array($progress['steps'] ?? null) ? $progress['steps'] : [];
+            $prior = is_array($steps[$key] ?? null) ? $steps[$key] : [];
+            $finished = $event['completedAt'] ?? null;
+            $steps[$key] = ['name' => mb_strcut($event['stepId'], 0, 240).($index === '' ? '' : '-'.$index), 'job' => mb_strcut($event['jobId'], 0, 255),
+                'status' => match ($event['kind']) {
+                    'step_started' => 'running', 'step_completed' => 'succeeded', 'step_failed' => 'failed', default => 'skipped',
+                },
+                'started_at' => $active[$key]['started_at'] ?? $prior['started_at'] ?? null,
+                'finished_at' => $event['kind'] === 'step_started' ? null
+                    : (is_string($finished) && NativeRunTimestamp::parse($finished) !== null ? $finished : null)];
+            $state['native_progress'] = ['run' => $runId, 'seq' => $event['seq'], 'active' => $active, 'steps' => $steps];
             $current = $active === [] ? null : end($active);
             $failure = $state['native_failure'] ?? null;
             app(OperationStore::class)->change($operation, [

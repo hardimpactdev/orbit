@@ -43,7 +43,7 @@ final class OperationsController extends Controller
     #[RequiresNodeAccess(ServingNode::OperationOwning)]
     public function show(ShowOperationRequest $request, Operation $operation, ReadOperationAction $read): JsonResponse
     {
-        return $this->respond($request, OperationData::fromModel($read->execute($operation), $operation->caller_node_name)->toArray());
+        return $this->respond($request, OperationData::summary($read->execute($operation), $operation->caller_node_name)->toArray());
     }
 
     #[RequiresNodeAccess(ServingNode::OperationOwning)]
@@ -51,7 +51,7 @@ final class OperationsController extends Controller
     {
         $callerNodeName = $operation->caller_node_name;
 
-        return $this->respond($request, OperationData::fromModel($action->execute($operation), $callerNodeName)->toArray());
+        return $this->respond($request, OperationData::summary($action->execute($operation), $callerNodeName)->toArray());
     }
 
     /** @param array<int|string, mixed> $data */

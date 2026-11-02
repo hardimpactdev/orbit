@@ -275,3 +275,10 @@ it('preserves live step time precision without inventing a native start time', f
     expect($operation->currentStepStartedAt)->toBeNull();
     expect($operation->toArray()['current_step_observed_at'])->toBe($observed);
 });
+
+it('preserves compact native step summaries in Operation JSON', function (): void {
+    $steps = [['name' => 'Remove VM', 'job' => 'cancel', 'status' => 'succeeded', 'started_at' => null, 'finished_at' => null]];
+    $operation = OperationResponse::fromGatewayData(operation_payload(['steps' => $steps]), 'fixture-request');
+    expect($operation->steps)->toBe($steps)->and($operation->toArray()['steps'])->toBe($steps);
+    expect(OperationResponse::fromGatewayData(operation_payload(['steps' => []]), 'fixture-request')->toArray()['steps'])->toBe([]);
+});

@@ -43,6 +43,8 @@ final readonly class OperationResponse
         public ?array $error = null,
         public ?string $currentStepStartedAt = null,
         public ?string $currentStepObservedAt = null,
+        /** @var list<array<string, mixed>>|null */
+        public ?array $steps = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -85,6 +87,7 @@ final readonly class OperationResponse
             error: self::map($data['error'] ?? null),
             currentStepStartedAt: self::text($data, 'current_step_started_at'),
             currentStepObservedAt: self::text($data, 'current_step_observed_at'),
+            steps: self::steps($data['steps'] ?? null),
         );
     }
 
@@ -127,7 +130,26 @@ final readonly class OperationResponse
             'poll_after_seconds' => $this->pollAfterSeconds,
         ];
 
-        return [...$data, 'request_id' => $this->requestId];
+        return [...$data, ...($this->steps === null ? [] : ['steps' => $this->steps]), 'request_id' => $this->requestId];
+    }
+
+    /** @return list<array<string, mixed>>|null */
+    private static function steps(mixed $value): ?array
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            return null;
+        }
+        $steps = [];
+        foreach ($value as $row) {
+            $step = self::map($row);
+            if ($step === null || ! is_string($step['name'] ?? null) || ! is_string($step['job'] ?? null) || ! is_string($step['status'] ?? null)) {
+                return null;
+            }
+            $steps[] = ['name' => $step['name'], 'job' => $step['job'], 'status' => $step['status'],
+                'started_at' => self::text($step, 'started_at'), 'finished_at' => self::text($step, 'finished_at')];
+        }
+
+        return $steps;
     }
 
     /** @param array<string, mixed> $data */

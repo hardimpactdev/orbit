@@ -795,6 +795,10 @@ it('keeps separate progress for simultaneous forEach iterations of one step', fu
 
     expect($operation->fresh()->current_step)->toBe('inspect')
         ->and($operation->fresh()->state['native_progress']['active'])->toHaveCount(1);
+    $steps = OperationData::summary($operation->fresh())->toArray()['steps'];
+    expect(array_column($steps, 'status'))->toBe(['succeeded', 'running']);
+    expect(array_column($steps, 'name'))->toBe(['inspect-0', 'inspect-1']);
+    expect($steps[0])->not->toHaveKeys(['input', 'outputs', 'error']);
 });
 
 it('keeps observing live steps after another root queues terminal history', function (): void {

@@ -186,7 +186,7 @@ The CLI follows the operation with the shared operation display. It accepts `--i
 
 The MCP tool `tasks-worker` takes the enrollment token as an argument, so it reaches the caller transcript. Gateway redaction does not remove it from that transcript.
 
-To stop a waiting provision, use `tasks:cancel`. Cancellation first requests cancellation of an existing native group Operation and refuses while that Operation remains active. A fresh keyed request then admits one `tasks.cancel` Operation.
+To stop a waiting provision, use `tasks:cancel`. Cancellation first requests cancellation of an existing native group Operation and refuses while that Operation remains active. A fresh keyed request then admits one `tasks.cancel` Operation. Its admission and keyed replays return the [compact Operation summary](/reference/operations#the-record), including recorded step metadata. The teardown plan stays in the Gateway and the native run; it is not copied into each cancellation reply.
 
 Its native ending DAG checks provider state, withdraws the workspace’s exclusive Route and Caddy publications, runs captured teardown commands only while the VM runs, then composes the canonical TaskVM destroy child. The child prints no result: once the run succeeds, the Gateway records the VM cleanup from the intent it captured at admission. Each teardown command runs like a setup command: one official `@swamp/ssh exec` argument list in the checkout. Its output stays out of native history; the teardown run keeps a redacted tail of at most 4 KiB per command.
 

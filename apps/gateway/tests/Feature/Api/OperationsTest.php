@@ -116,3 +116,20 @@ describe('reading operations', function (): void {
         ($this->asCaller)()->getJson('/api/v1/operations/999999')->assertNotFound();
     });
 });
+
+it('returns a compact execution summary while preserving the stored intent and domain result', function (): void {
+    $operation = operation_row($this, 'succeeded');
+    $input = ['instance_id' => $this->fixture->instance->id, 'commit' => str_repeat('a', 40), 'force' => false,
+        'teardown' => ['script' => str_repeat('large-plan-', 20000)], 'content' => str_repeat('x', 4096),
+        'execution_secrets' => ['token' => ['vault' => 'control', 'key' => 'reference']]];
+    $result = ['artifact' => ['body' => 'complete bounded evidence', 'sha256' => str_repeat('b', 64)]];
+    $step = ['name' => 'Remove VM', 'job' => 'cancel', 'status' => 'succeeded', 'started_at' => null, 'finished_at' => null];
+    $operation->update(['input' => $input, 'result' => $result, 'state' => ['native_progress' => ['steps' => ['step-1' => [...$step, 'outputs' => ['raw' => str_repeat('private-payload-', 10000)]]]]]]);
+
+    $reply = ($this->asCaller)()->getJson('/api/v1/operations/'.$operation->id)->assertOk()
+        ->assertJsonPath('data.input', array_intersect_key($input, array_flip(['instance_id', 'commit', 'force'])))
+        ->assertJsonPath('data.result', $result)->assertJsonPath('data.steps', [$step]);
+    expect(strlen($reply->getContent()))->toBeLessThan(4096);
+    cancel_operation($this, $operation->id)->assertOk()->assertJsonPath('data.steps', [$step])->assertJsonMissingPath('data.input.teardown');
+    expect($operation->fresh()->input)->toBe($input)->and($operation->fresh()->result)->toBe($result);
+});

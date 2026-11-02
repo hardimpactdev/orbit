@@ -321,7 +321,7 @@ final class TaskGroupsController extends Controller
         $requestId = $request->attributes->getString('orbit.request_id');
         $operation = $action->start($group, CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
 
-        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
+        return response()->json(['data' => OperationData::summary($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     /** @return array{request_id: string} */
