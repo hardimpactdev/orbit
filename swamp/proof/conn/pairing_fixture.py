@@ -111,7 +111,7 @@ def parity():
     path = 'conn/environments/pairing-proof/pairings/' + str(operation['target_id'])
 
     def request(caller, suffix):
-        response = subprocess.run(['runuser', '-u', 'orbit', '--', 'php', str(SOURCE / 'tools/swamp-proof-guest/gateway.php'), 'request'], input=json.dumps({'method': 'GET', 'path': path, 'caller': caller, 'operation': False, 'key': 'proof-' + os.environ['PROOF_RUN'] + suffix, 'seconds': 30}), cwd=SOURCE / 'apps/gateway', capture_output=True, text=True, timeout=60, check=True)
+        response = subprocess.run(['runuser', '-u', 'orbit', '--', 'php', str(SOURCE / 'tools/swamp-proof-guest/gateway.php'), 'request'], input=json.dumps({'method': 'GET', 'path': path, 'caller': caller, 'operation': False, 'key': 'proof-' + os.environ['PROOF_RUN'] + suffix, 'seconds': 30}), cwd=SOURCE / 'apps/gateway', capture_output=True, text=True, timeout=60, check=False)
         return json.loads(response.stdout.strip().splitlines()[-1])
 
     foreign = request(up['targets'][-1]['address'], '-foreign')
