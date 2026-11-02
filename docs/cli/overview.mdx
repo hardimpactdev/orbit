@@ -76,6 +76,14 @@ When a command permits a prompt, enter a value or select from its admitted choic
 
 Use `--no-interaction` or `-n` to disable prompts. Supply required values through the command's arguments and options. For automation, use the command's documented noninteractive inputs and explicit consent option.
 
+## Update settings or enable a behavior
+
+`<noun>:update` changes a record's settings, such as an Instance's branch or a Route's publication. Applying a setting can include work on a Node.
+
+`<noun>:<feature>:enable` and `:disable` turn on or off something that keeps acting by itself after the command returns: a watcher, a trigger, automation, an exporter, or an extension. Examples are `schedule:enable`, `metrics:exporter:enable`, and `instance:auto-deploy:enable`.
+
+Ask whether Orbit keeps doing something by itself after the command. If it does, the command is an `enable` or `disable` pair. Otherwise it is a flag on `update`.
+
 ## Confirm destructive changes
 
 Read the command's confirmation and override options before automating a destructive change. An existing consent option and an override can have different effects. For example, discarding dirty source is separate from choosing an output format. Do not assume that `--force` has the same meaning across families or that selecting JSON authorizes a mutation.
