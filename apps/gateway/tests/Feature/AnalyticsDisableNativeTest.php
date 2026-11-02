@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Settings\SettingRepository;
@@ -85,6 +87,29 @@ it('projects successful detachment once and preserves a later tracking host', fu
     expect(app(SettingRepository::class)->get($this->scope, 'analytics.site.'.$this->instance->id))->toBeNull();
     expect(Operation::query()->sole()->result)->toBe(['ready' => true, 'enabled' => false, 'detached' => true, 'domain' => 'shop.example.com', 'timezone' => 'UTC']);
     expect(array_count_values(array_column($this->socket->sent, 'type'))['workflow.history.get'])->toBe(1);
+});
+
+it('projects a run that met its budget although the slow start reply arrived after the admission deadline', function (): void {
+    $this->deleteJson($this->url)->assertAccepted();
+    $operation = Operation::query()->sole();
+    $runId = $operation->state['swamp_run_id'];
+    // Serve replied with the run id only after the 600-second admission deadline (ops 7148, 7409).
+    $operation->update(['state' => array_diff_key($operation->state, ['swamp_run_id' => true])]);
+    $this->travel(600)->seconds();
+    $expired = app(ExpireOperationAction::class)->execute($operation->fresh());
+    expect($expired->error_code)->toBe('operation.timed_out');
+    expect($this->tracking->fresh())->not->toBeNull();
+    $expired->update(['state' => [...$expired->state, 'swamp_run_id' => $runId]]);
+    $this->travel(60)->seconds();
+
+    analyticsDisableTerminal($this);
+
+    $projected = Operation::query()->sole();
+    expect($projected->status)->toBe(OperationStatus::Succeeded);
+    expect($projected->error_code)->toBeNull();
+    expect($projected->state)->not->toHaveKeys(['native_timeout', 'native_timeout_restore']);
+    expect($projected->cancel_requested_at)->toBeNull();
+    expect($this->tracking->fresh())->toBeNull();
 });
 
 it('retains tracking records and the provider binding on failure or cancellation', function (string $status): void {

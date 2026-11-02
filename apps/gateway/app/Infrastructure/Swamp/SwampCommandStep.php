@@ -116,7 +116,7 @@ final readonly class SwampCommandStep
             return $operation;
         }
         $operation->refresh();
-        if ($operation->status->terminal() && ! ExpireOperationAction::awaitsSettlement($operation)) {
+        if ($operation->status->terminal() && ! ExpireOperationAction::expiredUnsettled($operation)) {
             return $operation;
         }
         $run = $this->history($runId);
@@ -145,6 +145,10 @@ final readonly class SwampCommandStep
         }
         if ($deadline !== null && ! $deadline->isFuture() && ($completedAt === null || $completedAt->greaterThan($deadline))) {
             $operation = app(ExpireOperationAction::class)->execute($operation);
+        }
+        // An expiry the run beat, typically at the admission deadline before a slow start reply bound the run.
+        if (ExpireOperationAction::expiredUnsettled($operation) && $completedAt !== null && $deadline !== null && $completedAt->lessThan($deadline)) {
+            $operation = app(ExpireOperationAction::class)->reopen($operation, $runId);
         }
         if (ExpireOperationAction::awaitsSettlement($operation)) {
             return app(ExpireOperationAction::class)->settle($operation, $runId, $run['status']);
