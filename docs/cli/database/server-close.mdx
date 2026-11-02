@@ -10,3 +10,7 @@ orbit database:server:close <slug> [--idempotency-key=KEY] [--json]
 ```
 
 The Gateway refuses with `database.server_in_use` while a connection on the server has no password, or while a client other than the Gateway is logged in as `default`. A server that is already closed runs a readiness check. The command exists only for the adopted Valkey Processes.
+
+## How it works
+
+<div className="flow-at" data-chart="database/server-close"></div>

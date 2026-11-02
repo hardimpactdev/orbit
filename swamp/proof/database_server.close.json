@@ -1,0 +1,62 @@
+{
+  "kind": "database_server.close",
+  "workflow": "operation-database-server-close",
+  "topology": "minimal",
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "clean_target": [
+    [
+      "sh",
+      "-c",
+      "docker rm -f proof-valkey-open >/dev/null 2>&1 || true"
+    ]
+  ],
+  "before_target": [
+    [
+      "sh",
+      "-c",
+      "docker rm -f proof-valkey-open >/dev/null 2>&1; docker run -d --name proof-valkey-open --network host valkey/valkey:8.1 sh -c 'touch /data/users.acl && exec valkey-server --port 36390 --aclfile /data/users.acl' >/dev/null && for i in $(seq 1 30); do docker exec proof-valkey-open valkey-cli -p 36390 PING 2>/dev/null | grep -q PONG && exit 0; sleep 1; done; exit 1"
+    ]
+  ],
+  "before_gateway": [
+    [
+      "sh",
+      "-c",
+      "cd apps/gateway && runuser -u orbit -- php -r \"$1\" \"$2\" \"$3\" 2>&1",
+      "sh",
+      "require 'vendor/autoload.php'; $app = require 'bootstrap/app.php'; $app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();$n = App\\Models\\Node::query()->findOrFail((int) $argv[1]);$p = App\\Models\\Process::query()->create(['owner_type' => App\\Models\\Node::class, 'owner_id' => $n->id, 'name' => 'proof-valkey-open', 'runtime' => 'docker', 'runtime_config' => [], 'restart_policy' => 'unless-stopped', 'desired_state' => 'running', 'status' => 'active']);App\\Models\\DatabaseServer::query()->create(['slug' => 'proof-open-'.$argv[2], 'driver' => 'redis', 'node_id' => $n->id, 'process_id' => $p->id, 'tag' => '8.1', 'port' => 36390, 'root_password' => 'proof-admin-'.$argv[2], 'status' => 'active', 'default_open' => true]);",
+      "${node.target}",
+      "${proof.run}"
+    ]
+  ],
+  "request": {
+    "method": "POST",
+    "path": "database-servers/proof-open-${proof.run}/close"
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "List default clients",
+      "job": "closure",
+      "step": "List default clients",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Close default access",
+      "job": "closure",
+      "step": "Close default access",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Check default access",
+      "job": "closure",
+      "step": "Check default access",
+      "budget_seconds": 60
+    }
+  ],
+  "parity": [
+    "swamp/proof/database_server.close/parity.py"
+  ]
+}

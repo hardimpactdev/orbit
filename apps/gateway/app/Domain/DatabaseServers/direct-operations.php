@@ -53,8 +53,8 @@ return ['database.update' => [
     'workflow' => 'operation-database-server-close',
     'projection' => DatabaseServerCloseProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'closure', 'step' => 'result'],
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-server-close-intent-[1-9][0-9]*$']],
+    'terminal_result' => ['job' => 'closure', 'step' => 'Prove default is closed', 'native' => true],
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-server-close-intent-[1-9][0-9]*-(check|close)$']],
 ], 'database_user.create' => [
     'workflow' => 'operation-database-user-create',
     'projection' => DatabaseUserProjection::class,

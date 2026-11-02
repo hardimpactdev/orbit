@@ -17,7 +17,7 @@
     {"vault": "orbit-control-inputs", "key_pattern": "^task-vm-upcloud-token$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^metrics-role-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^database-update-intent-[1-9][0-9]*$", "actions": ["write", "read"]},
-    {"vault": "orbit-control-inputs", "key_pattern": "^database-server-close-intent-[1-9][0-9]*$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^database-server-close-intent-[1-9][0-9]*-(check|close)$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^database-destroy-[1-9][0-9]*-(fence|drop|gone|restore)$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^database-destroy-owned-[1-9][0-9]*-[1-9][0-9]*-(fence|drop|gone|restore)$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^database-server-create-(intent|start|login)-[1-9][0-9]*$", "actions": ["write", "read"]},

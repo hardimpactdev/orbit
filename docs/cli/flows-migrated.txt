@@ -30,3 +30,4 @@ vault.setup
 tool.install
 tool.update
 tool.remove
+database_server.close

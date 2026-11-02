@@ -9,7 +9,7 @@ covers:
   - apps/gateway/{app/Models/DatabaseServer.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,database/migrations/2026_12_30_000000_add_test_processes_to_database_connections.php}
   - apps/cli/app/Commands/Database/{CreateDatabaseServerCommand,ListDatabaseServersCommand,ShowDatabaseServerCommand,DestroyDatabaseServerCommand,CreateDatabaseUserCommand}.php
   - packages/php-sdk/src/{Requests,Responses}/DatabaseServers/**
-  - swamp/{extensions/behaviors/operations/database-server-commands/assets.ts,workflows/workflow-operation-database-{server-create,server-destroy,create,destroy,user-create}.yaml}
+  - swamp/workflows/workflow-operation-database-{server-create,server-destroy,server-close,create,destroy,user-create}.yaml
 ---
 
 # Database servers
@@ -131,12 +131,12 @@ The server's Process is an ordinary Docker Node Process: read its logs, stop it,
 orbit database:server:close beast-valkey
 ```
 
-Swamp runs the named Valkey command for `ACL SETUSER default resetpass #<sha256 of the admin password>` and `ACL SAVE`. It refuses with `database.server_in_use` (409) and changes nothing while either of these holds:
+Swamp runs one `valkey-cli` call per step from 209, in a throwaway `valkey/valkey:8.1` container on the server's Node. Each call reads its whole stdin from the vault: an `AUTH default` line with the admin password, then the step's commands. The password never enters argv. The close sends `ACL SETUSER default resetpass #<sha256 of the admin password>`, `ACL SAVE` and `CLIENT KILL USER default SKIPME yes`. The end check is a `PING` without a password, which must answer `NOAUTH`. The command refuses with `database.server_in_use` (409) and changes nothing while either of these holds:
 
 - A connection on the server has no password. Its clients would be locked out. Destroy it, or move its clients first.
 - A client other than the Gateway is logged in as `default`. The result contains only the fixed refusal code.
 
-After saving the password, the Node program revokes every other `default` session, including one accepted between the client check and the password change. A retry repeats the save and revocation before it records closure. A client that is not connected at that moment is not seen, so move every client before you close the server. The command exists only for the two adopted Processes.
+After saving the password, the close revokes every other `default` session, including one accepted between the client check and the password change. A failed save has no rollback: the live ACL stays closed, and a rerun repeats the close. The Gateway deletes both vault inputs when the task ends. A client that is not connected at that moment is not seen, so move every client before you close the server. The command exists only for the two adopted Processes.
 
 ## Create a database on a server
 
@@ -418,10 +418,8 @@ PostgreSQL cannot run `DROP DATABASE` in a transaction, so an infrastructure fai
 
 ### Direct default-user closure
 
-`database:server:close` starts `operation-database-server-close` with captured public intent and a vault descriptor. Native steps on 209 use official SSH to run shipped scripts on the server Node: probe default-user clients, set the password, save ACLs, restore anonymous access after a failed save, and disconnect default-user sessions. The password reaches the official Valkey CLI through a protected temporary environment file and never enters arguments or outputs.
-
-Save failure restores anonymous access only when it was open on entry, then reports a bounded failure. Native resume from the first `assets` step repeats the checks with the admitted password; terminal result delivery alone repeats no effects. The Gateway records `default_open=false` only after success.
+`database:server:close` starts `operation-database-server-close` with captured public intent and two vault inputs. Native steps on 209 use official SSH and ship no script. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/database/server-close.mmd) shows the steps. The Gateway records `default_open=false` only after the end check passed, and reads a failed `Prove no other client` as `database.server_in_use`; any other failed step is `database.server_command_failed`.
 
 A first Valkey adoption refused before mutation releases only its reserved Database server record. Its existing Process, container, data volume and connection remain unchanged, so correcting the connection password permits another adoption. Later or uncertain failures retain their records for inspection.
 
-A failed ACL save attempts to restore `nopass` only if anonymous access was open before the action. If that restoration also fails, the Operation reports `database.server_restore_failed` and `default_open=unknown`. The server records `default_open=null`, failed status and `database.default_access_unknown`, and emits one critical alert. ACL generation refuses this unknown state until the operator verifies access.
+A server recorded with `default_open=null` by an earlier release has unknown default access. ACL generation refuses that state until the operator verifies access.
