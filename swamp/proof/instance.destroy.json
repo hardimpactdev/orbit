@@ -63,9 +63,13 @@
   ],
   "before_target": [
     [
+      "runuser",
+      "-u",
+      "orbit",
+      "--",
       "sh",
       "-c",
-      "printf '.env\\n' >> /home/orbit/apps/proof-destroy/d-${proof.run}/.git/info/exclude; git -C /home/orbit/apps/proof-destroy/d-${proof.run} status --porcelain --untracked-files=all >&2"
+      "printf '.env\\n' >> /home/orbit/apps/proof-destroy/d-${proof.run}/.git/info/exclude"
     ]
   ],
   "request": {
