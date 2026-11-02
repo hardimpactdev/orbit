@@ -393,3 +393,11 @@ Eight native publication tests, nine Gateway tests and nine shared data tests pa
 Cancellation 8321 destroyed task VM 363 at 2026-11-02T21:14:01Z. The lane holds no VM. The publication workflow, data, admission, projection and shared terminal/SSH helpers match the proven source after rebase.
 
 Orbit grows by 190 lines, including the proof index. Runtime code shrinks by 270. Swamp grows by 82: behaviors shrink by 116, workflows by 193 and tests by 79; proof declarations, parity fixtures and the receipt index add 470. The growth proves real SSH, Git and TLS behavior without writing to an external repository. No shipped script is added or removed.
+
+### WebSocket app creation: report-driven confirmation
+
+`websocket.app_create` already follows R1: the Gateway saves the registry intent and Operation; the pinned Reverb server pulls the registry and its boot report closes the Operation. No workflow, Node command or shipped script is needed. The chart now records this path as migrated. The real Reverb proof accepts the new app's signed publish, retains the pre-existing Gateway connection, and verifies unchanged Reverb PID and boot identities, with no secret in the public Operation.
+
+Receipt: `/home/nckrtl/swamp-execution/evidence/proof/websocket.app_create/20261102T213728Z-minimal.json`, source `ef5c581810`, minimal@11, Operation 3. One success: 12.17 s to terminal (sample p95 12.17 s), 13.9 s fixture wall time, 90 s budget; `queueTimeout` does not apply because no Swamp run starts. Scripts deleted: 0. Production code growth: 0; the new `swamp/` lines are proof fixtures and parity checks, including shared revocation checks for the next two kinds. Four stale CLI snapshots now describe the existing record-only Operation rendering.
+
+Limits: one Reverb process, test apps, a VM-local Orbit CA and no production load. The shared topology supplies a notification token missing from the current role renderer. This is bootstrapping evidence, not proof of that renderer or multi-process scale. Existing Gateway tests cover multiple process boots, supersession, refusal and idempotency.
