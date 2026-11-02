@@ -30,9 +30,9 @@ final readonly class SwampScheduleWorkflows
         return $workflowId;
     }
 
-    public function delete(string $workflowId): void
+    public function delete(string $name): void
     {
-        $this->request('workflow.delete', ['workflowIdOrName' => $workflowId], missingIsDone: true);
+        $this->request('workflow.delete', ['workflowIdOrName' => $name], missingIsDone: true);
     }
 
     /** Deletes a vault key on serve; a key that is gone is done. */
@@ -79,7 +79,11 @@ final readonly class SwampScheduleWorkflows
                     }
                     if (($message['type'] ?? null) === 'error') {
                         $error = is_array($message['error'] ?? null) ? $message['error'] : [];
-                        if ($missingIsDone && ($error['code'] ?? null) === 'not_found') {
+                        // Pinned serve wraps workflow.delete's missing resource in its operation error.
+                        $missingWorkflow = $type === 'workflow.delete' && is_string($payload['workflowIdOrName'] ?? null)
+                            && ($error['code'] ?? null) === 'workflow_delete_failed'
+                            && ($error['message'] ?? null) === 'Workflow not found: '.$payload['workflowIdOrName'];
+                        if ($missingIsDone && (($error['code'] ?? null) === 'not_found' || $missingWorkflow)) {
                             return [];
                         }
                         // Serve validates the workflow, including its cron trigger, before it saves it.

@@ -101,7 +101,7 @@ final readonly class NativeSchedules
         try {
             $this->workflows->removeTrigger(self::workflowName($schedule));
             if ($schedule->swamp_workflow_id !== null) {
-                $this->workflows->delete($schedule->swamp_workflow_id);
+                $this->workflows->delete(self::workflowName($schedule));
             }
             // A fire that already started read the command when it began.
             $this->workflows->deleteSecret(self::Vault, self::commandKey($schedule));

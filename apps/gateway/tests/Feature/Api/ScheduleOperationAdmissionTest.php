@@ -215,10 +215,41 @@ it('removes the trigger, then the workflow, and deletes the record with a succee
     expect(array_column($sent, 'type'))->toBe(['workflow.trigger.remove', 'workflow.delete', 'vault.delete'])
         ->and($sent[2]['payload'])->toBe(['vaultName' => 'orbit-control-inputs', 'key' => 'schedule-command-'.$schedule->id])
         ->and($sent[0]['payload'])->toBe(['workflowName' => 'schedule-'.$schedule->id])
-        ->and($sent[1]['payload'])->toBe(['workflowIdOrName' => $schedule->swamp_workflow_id])
+        ->and($sent[1]['payload'])->toBe(['workflowIdOrName' => 'schedule-'.$schedule->id])
         ->and(Operation::query()->findOrFail($id)->status)->toBe(OperationStatus::Succeeded)
         ->and(Schedule::query()->count())->toBe(0);
 });
+
+it('finishes destroy when native resources are already gone', function (): void {
+    $this->postJson('/api/v1/schedules', $this->payload)->assertAccepted();
+    $schedule = Schedule::query()->sole();
+    $this->socket->reply = static fn (array $request): array => [['type' => 'error', 'id' => $request['id'], 'error' => [
+        'code' => $request['type'] === 'workflow.delete' ? 'workflow_delete_failed' : 'not_found',
+        'message' => $request['type'] === 'workflow.delete' ? 'Workflow not found: '.$request['payload']['workflowIdOrName'] : 'Already gone',
+    ]]];
+
+    $id = $this->deleteJson('/api/v1/schedules/'.$schedule->id)->assertAccepted()->json('data.id');
+
+    expect(Operation::query()->findOrFail($id)->status)->toBe(OperationStatus::Succeeded);
+    $this->assertModelMissing($schedule);
+});
+
+it('keeps destroy unconfirmed for authorization and other delete failures', function (string $code, string $message): void {
+    $this->postJson('/api/v1/schedules', $this->payload)->assertAccepted();
+    $schedule = Schedule::query()->sole();
+    $this->socket->reply = static fn (array $request): ?array => $request['type'] === 'workflow.delete'
+        ? [['type' => 'error', 'id' => $request['id'], 'error' => ['code' => $code, 'message' => $message]]]
+        : NativeScheduleReplies::for($request);
+
+    $this->deleteJson('/api/v1/schedules/'.$schedule->id)->assertStatus(503)->assertJsonPath('error.code', 'swamp.schedule_publish_unavailable');
+
+    expect($schedule->fresh()->status->value)->toBe('removing');
+    expect(Operation::query()->where('kind', 'schedule.destroy')->count())->toBe(0);
+})->with([
+    ['unauthorized', 'Access denied'],
+    ['workflow_delete_failed', 'Storage unavailable'],
+    ['workflow_delete_failed', 'Workflow not found: another-workflow'],
+]);
 
 it('keeps a Schedule removing when serve does not confirm the removal, and a rerun finishes it', function (): void {
     $this->postJson('/api/v1/schedules', $this->payload)->assertAccepted();
