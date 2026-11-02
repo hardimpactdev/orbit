@@ -1,0 +1,127 @@
+{
+  "kind": "tasks.analyze",
+  "workflow": "operation-task-analyze",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "clean_target": [
+    [
+      "sh",
+      "-c",
+      "rm -rf /srv/proof-task-* /tmp/orbit-task-index-*"
+    ]
+  ],
+  "before_gateway": [
+    [
+      "sh",
+      "-c",
+      "printf '%s' \"$1\" | runuser -u orbit -- env -C apps/gateway php ../../tools/swamp-proof-guest/gateway.php fixture",
+      "sh",
+      "{\"extensions\": [\"tasks\"], \"projects\": [{\"id\": 90, \"name\": \"Proof task\", \"slug\": \"proof-task\", \"type\": \"node-package\", \"root\": \".\", \"repository_url\": \"https://github.com/hardimpactdev/proof-task.git\", \"default_branch\": \"main\", \"source_access\": \"github_app\"}], \"task_groups\": [{\"id\": 900, \"project_id\": 90, \"title\": \"Proof task\", \"brief\": \"Proof\", \"status\": \"running\", \"orchestration\": \"external\", \"taskable\": {\"instance\": 9000}, \"subtasks\": [{\"id\": 901, \"position\": 1, \"title\": \"Proof\", \"brief\": \"Proof\", \"status\": \"running\"}]}], \"instances\": [{\"id\": 9000, \"project_id\": 90, \"node_id\": \"${node.target}\", \"name\": \"task-proof\", \"branch\": \"task-proof\", \"checkout_path\": \"/srv/proof-task-${proof.run}\", \"task_workspace_owner_id\": 900}], \"task_vms\": [{\"group_id\": 900, \"node_id\": \"${node.target}\", \"status\": \"ready\"}], \"operations\": [{\"kind\": \"tasks.provision\", \"target_type\": \"task_group\", \"target_id\": 900, \"node_id\": \"${node.target}\", \"status\": \"succeeded\", \"result\": {\"analysis_base\": {\"base\": \"c59d29169be449d7f7458a07062068eadb099389\", \"instance_id\": 9000, \"repository\": \"https://github.com/hardimpactdev/proof-task.git\", \"branch\": \"task-proof\"}}}]}"
+    ]
+  ],
+  "before_target": [
+    [
+      "install",
+      "-d",
+      "-o",
+      "orbit",
+      "-g",
+      "orbit",
+      "/srv/proof-task-${proof.run}"
+    ],
+    [
+      "runuser",
+      "-u",
+      "orbit",
+      "--",
+      "sh",
+      "-c",
+      "set -e\nw=/srv/proof-task-$1\nmkdir -p \"$w/bin\" \"$w/scripts\"\ncd \"$w\"\nprintf '%s\\n' '#!/usr/bin/python3' 'import json, sys' 'v = json.load(sys.stdin)' 'r = {k: v[k] for k in (\"execution_id\", \"plan_sha256\", \"base\", \"head\", \"tree\")}' 'r.update(schema=1, status=\"ready\", diagnostics=[], report={\"schema\": \"proof.v1\", \"data\": {}})' 'print(json.dumps(r))' > bin/task-analyze\nprintf '%s\\n' '#!/bin/sh' 'printf \"%s\\n\" \"$@\"' > scripts/proof\nchmod 0755 bin/task-analyze scripts/proof\ngit init -q -b task-proof\ngit add bin/task-analyze scripts/proof\nGIT_AUTHOR_DATE=2026-11-02T00:00:00Z GIT_COMMITTER_DATE=2026-11-02T00:00:00Z git -c user.name=Proof -c user.email=proof@example.test -c commit.gpgsign=false commit -qm proof\n",
+      "sh",
+      "${proof.run}"
+    ]
+  ],
+  "request": {
+    "method": "POST",
+    "path": "task-groups/900/analyze",
+    "body": {
+      "subtask": 901,
+      "plan": {
+        "id": "proof",
+        "revision": 1,
+        "source": {
+          "brief_id": "proof",
+          "revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "asserted_by": "proof",
+        "complete": true,
+        "paths": [
+          {
+            "change": "add",
+            "path": "proof.txt"
+          }
+        ]
+      },
+      "plan_sha256": "02080510daa7c6013cce799dd8e8bc062ea10b0aa52b372bc20ad2adbda1392f",
+      "base": "c59d29169be449d7f7458a07062068eadb099389",
+      "head": "c59d29169be449d7f7458a07062068eadb099389",
+      "tree": "6ec379d8236f79ea2d1c2f6ec29821e5991b04fb"
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "inspect",
+      "job": "analysis",
+      "step": "inspect",
+      "budget_seconds": 15
+    },
+    {
+      "name": "entrypoint",
+      "job": "analysis",
+      "step": "entrypoint",
+      "budget_seconds": 15
+    },
+    {
+      "name": "snapshot-before-add",
+      "job": "analysis",
+      "step": "snapshot-before-add",
+      "budget_seconds": 15
+    },
+    {
+      "name": "gate",
+      "job": "analysis",
+      "step": "gate",
+      "budget_seconds": 10
+    },
+    {
+      "name": "execute",
+      "job": "analysis",
+      "step": "execute",
+      "budget_seconds": 30
+    },
+    {
+      "name": "snapshot-after-add",
+      "job": "analysis",
+      "step": "snapshot-after-add",
+      "budget_seconds": 15
+    },
+    {
+      "name": "shape",
+      "job": "analysis",
+      "step": "shape",
+      "budget_seconds": 10
+    },
+    {
+      "name": "result",
+      "job": "analysis",
+      "step": "result",
+      "budget_seconds": 10
+    }
+  ],
+  "parity": "swamp/proof/tasks.analyze/parity.py"
+}
