@@ -110,6 +110,9 @@ def main():
     # Earlier attempts may have left target state behind; the fixture names what a clean start is.
     for argv in fixture.get('clean_target', []):
         on_target(up['target']['key'], argv)
+    # A kind that needs a service the topology lacks, such as Plausible, sets it up on this VM first.
+    for argv in fixture.get('before_gateway', []):
+        run(bind(argv, context), cwd=SOURCE, timeout=900)
     for index, raw in enumerate(fixture.get('prepare', [])):
         request = bind(raw, context)
         reply = gateway({**request, 'caller': operator, 'key': f'proof-{run_id}-prepare-{index}'}, fixture['budget_seconds'])

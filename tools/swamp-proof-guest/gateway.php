@@ -11,6 +11,8 @@ declare(strict_types=1);
  *            subscriber in production, is not part of the minimal topology.
  *   fires    stdin {schedule, seconds}: the same subscriber, with its shared run reader, until a calendar
  *            fire of that Schedule is recorded as a task.
+ *   fixture  stdin {roles: {node_id: [role]}, wireguard_keys: {node_id: public key}}: the Node records a kind
+ *            fixture needs beyond the seed, such as the VPN hub and peers with keys.
  */
 
 use App\Domain\Gateway\GatewayQueue;
@@ -67,6 +69,18 @@ if ($argv[1] === 'seed') {
     $operator->accessibleNodes()->attach([$gateway->id, $target->id]);
     app(WorkerKnownHostsPublisher::class)->publish();
     echo json_encode(['nodes' => ['gateway' => $gateway->id, 'operator' => $operator->id, 'target' => $target->id]]), PHP_EOL;
+    exit(0);
+}
+
+if ($argv[1] === 'fixture') {
+    foreach ($input['roles'] ?? [] as $id => $roles) {
+        foreach ($roles as $role) {
+            Node::query()->findOrFail((int) $id)->roles()->firstOrCreate(['role' => $role], ['status' => 'active']);
+        }
+    }
+    foreach ($input['wireguard_keys'] ?? [] as $id => $key) {
+        Node::query()->findOrFail((int) $id)->update(['wireguard_public_key' => $key]);
+    }
     exit(0);
 }
 

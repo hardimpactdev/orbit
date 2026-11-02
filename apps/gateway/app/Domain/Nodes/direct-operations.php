@@ -27,7 +27,8 @@ return ['node.worker_known_hosts' => [
 ], 'node.wireguard_hub_converge' => [
     'workflow' => 'operation-node-wireguard-hub-converge',
     'projection' => NodeWireGuardHubProjection::class,
-    'private_material' => ['configuration' => 'node.vpn_configuration'],
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'hub', 'step' => 'Apply the hub config'],
 ], 'node.remove' => [
     'workflow' => 'operation-node-remove', 'projection' => NodeRemovalProjection::class,
     'workflow_inputs' => true,
