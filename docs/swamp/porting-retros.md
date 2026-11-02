@@ -238,7 +238,7 @@ Proof failures found a nested Caddy field and sparse Route block metadata passed
 
 Fleet recipe and role callers replace five scripts with official file resources, bounded identity and checkout argv, and the shared native PHP, private DNS and Route residue workflows. The Gateway captures their public file intent and SSH descriptor. DNS rollback is removed. The final CLI script remains queued; recipe.py is the approved open gap. The release checkout owns its worker renderer; extension manifests omit it. No new kind is declared done.
 
-| Fresh receipt on minimal@10 | Runtime, one sample | Run budget / queue timeout |
+| Pre-rebase receipt on minimal@10 | Runtime, one sample | Run budget / queue timeout |
 | --- | --- | --- |
 | `evidence/proof/node.converge/20261102T163119Z-minimal.json` | 64.13 s | 1800 / 30 s |
 | `evidence/proof/node.role_converge/20261102T164744Z-minimal.json` | 37.01 s | 1800 / 60 s |
@@ -247,3 +247,9 @@ Fleet recipe and role callers replace five scripts with official file resources,
 Each row's p95 equals its one sample. The recipe proof uses the existing topology-only StaticCliRelease catalog with real public CLI 0.8725.0, downloaded and checked on the Node. Package pins and the agent use the normal recipe and frozen manifest. The retained add/relocate callers have native graph coverage; their whole roots still require target workers and are not proved on minimal.
 
 The pre-rebase recipe run succeeded before parity exposed Linux's environment size limit. Parity now reads the full Operation from a JSON file. A real subprocess test covers a 1 MiB intent. These receipts predate the newer observer and role workflows on main; the reconciled batch needs fresh receipts before publication.
+
+The reconciled source is `8673ef0142`. It keeps the newer observer and sole-role workflows from main. The recipe tests found two dependency errors. When peer DNS selected no work, the workflow skipped other writes. A failure in required footprint work could still reach delivery. Native completion dependencies now cover the optional set, and delivery requires footprint success. Route residue failure remains best effort. Eleven complete recipe DAG cases, two retained-role cases, 39 Gateway cases and 113 Deno cases pass; the chart, documentation, shape, naming and placement checks pass too. The separate generated-workflow suite adds four passing cases.
+
+Fresh proof provisioning for this source refused group 2641 with `tasks.capacity_unavailable`: recipe `42499493220f` waits for images on Beast and Shark. No retry loop ran. Cancellation 8075 confirms destruction at 17:23:50Z. No new receipt or rule 22 done claim is made. The CLI script replacement and all its live callers are handed to the docs lane; the other eight Tools adoption scripts stay frozen for the observer pass.
+
+Before these final notes, this batch removes 1083 net Orbit lines. Swamp behaviors shrink by 337, shipped scripts by 789, tests and fixtures by 440, and configuration by 9. Workflows grow by 11 for the retained native boundaries and dependencies. Proof fixtures grow by 119 for the actual recipe and CLI release catalog; maintained docs grow by 317 for the real chart labels. The remaining 45 lines cover Gateway intent and the large-Operation parity-file transport. The five deleted script sources total 789 lines; the release-only worker renderer is removed from manifest shipping, not counted as a deleted script.
