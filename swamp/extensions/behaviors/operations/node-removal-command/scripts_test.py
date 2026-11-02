@@ -68,6 +68,22 @@ class RemovalScripts(unittest.TestCase):
         self.assertNotIn(key, after)
         self.assertEqual(m.without_peer(after, key), after)
 
+    def test_hub_withdraw_removes_only_this_peer_live_and_its_peer_file(self):
+        m = module('hub_peer')
+        key, other = 'A' * 43 + '=', 'B' * 43 + '='
+        with tempfile.TemporaryDirectory() as root:
+            m.CONFIG, m.PEERS, m.LOCK = Path(root, 'orbit.conf'), Path(root, 'orbit-peers.d'), Path(root, 'lock')
+            m.PEERS.mkdir()
+            m.CONFIG.write_text('[Interface]\nAddress = 10.44.0.1/24\n\n[Peer]\nPublicKey = ' + key + '\nAllowedIPs = 10.44.0.19/32\n')
+            (m.PEERS / '19.conf').write_text('[Peer]\nPublicKey = ' + key + '\nAllowedIPs = 10.44.0.19/32\n')
+            (m.PEERS / '20.conf').write_text('[Peer]\nPublicKey = ' + other + '\nAllowedIPs = 10.44.0.20/32\n')
+            with patch('subprocess.run') as run:
+                self.assertEqual(m.withdraw({'public_key': key}), {'withdrawn': True})
+            # One live removal of this key; never a syncconf that would drop peers loaded from their own files.
+            self.assertEqual([call.args[0] for call in run.call_args_list], [['/usr/bin/wg', 'set', 'orbit', 'peer', key, 'remove']])
+            self.assertNotIn(key, m.CONFIG.read_text())
+            self.assertEqual(sorted(p.name for p in m.PEERS.iterdir()), ['20.conf'])
+
     def test_ci_retains_reserved_resources_but_refuses_occupied_project(self):
         m = module('ci_project')
         def call(argv, **_kwargs):

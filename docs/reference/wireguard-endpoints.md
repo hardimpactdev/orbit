@@ -95,6 +95,8 @@ One Swamp run on 209 reaches the hub over SSH as root, with no script on the hub
 
 The load adds new peers and removes stale ones. Unchanged peers keep their sessions, and the interface keeps its key.
 
+Node removal withdraws one peer the same way: it drops the peer from `orbit.conf` and its file from `orbit-peers.d`, and removes only that peer from the live interface with `wg set … remove`. A whole `wg syncconf` from one file would drop every peer that file does not list.
+
 `wg syncconf` removes the interface key when its input has none, which the topology proof showed. Composing the key in on the Node keeps it out of the Gateway, the vault and the run history.
 
 The run ends with the official `@swamp/cfgmgmt/systemd` check that `wg-quick@orbit` runs and is enabled, and a native assert that every admitted peer is live.

@@ -10,6 +10,7 @@ from pathlib import Path
 
 REMOVAL_INPUT = None
 CONFIG = Path("/etc/wireguard/orbit.conf")
+PEERS = Path("/etc/wireguard/orbit-peers.d")
 LOCK = Path("/run/lock/orbit-wireguard-peer.lock")
 
 
@@ -21,42 +22,37 @@ def without_peer(text, public_key):
     ))
 
 
-def sync(text):
+def write(text):
     fd, name = tempfile.mkstemp(prefix="or-rm-", suffix=".conf", dir=CONFIG.parent)
-    runtime = None
     try:
         with os.fdopen(fd, "w") as stream:
             os.fchmod(stream.fileno(), 0o600)
             stream.write(text)
             stream.flush()
             os.fsync(stream.fileno())
-        stripped = subprocess.run(["/usr/bin/wg-quick", "strip", name], capture_output=True, check=True).stdout
-        runtime, runtime_name = tempfile.mkstemp(prefix=".orbit-runtime-", dir=CONFIG.parent)
-        with os.fdopen(runtime, "wb") as stream:
-            os.fchmod(stream.fileno(), 0o600)
-            stream.write(stripped)
-        runtime = runtime_name
-        subprocess.run(["/usr/bin/wg", "syncconf", "orbit", runtime], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         os.replace(name, CONFIG)
     finally:
         Path(name).unlink(missing_ok=True)
-        if isinstance(runtime, str):
-            Path(runtime).unlink(missing_ok=True)
 
 
 def withdraw(data):
-    if not re.fullmatch(r"[A-Za-z0-9+/]{43}=", data["public_key"]):
+    key = data["public_key"]
+    if not re.fullmatch(r"[A-Za-z0-9+/]{43}=", key):
         raise ValueError("wireguard.peer_invalid")
     fd = os.open(LOCK, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         before = CONFIG.read_text()
-        after = without_peer(before, data["public_key"])
-        try:
-            sync(after)
-        except Exception:
-            sync(before)
-            raise
+        after = without_peer(before, key)
+        if after != before:
+            write(after)
+        # The hub also loads one file per peer; drop this Node's and nothing else.
+        for path in PEERS.glob("*.conf"):
+            if re.search(r"(?m)^\s*PublicKey\s*=\s*" + re.escape(key) + r"\s*$", path.read_text()):
+                path.unlink()
+        # Only this peer leaves the live interface: a whole syncconf would drop every peer the file does not list.
+        subprocess.run(["/usr/bin/wg", "set", "orbit", "peer", key, "remove"], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return {"withdrawn": True}
 
 
