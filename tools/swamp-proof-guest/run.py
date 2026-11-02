@@ -111,8 +111,16 @@ def main():
     for argv in fixture.get('clean_target', []):
         on_target(up['target']['key'], argv)
     # A kind that needs a service the topology lacks, such as Plausible, sets it up on this VM first.
+    # Its last stdout line may be {"secrets": {name: value}}: test credentials it made, bound as ${secret.<name>} into
+    # requests only. Receipts keep request paths, never bodies, so the values reach only the Gateway's admission.
     for argv in fixture.get('before_gateway', []):
-        run(bind(argv, context), cwd=SOURCE, timeout=900)
+        lines = run(bind(argv, context), cwd=SOURCE, timeout=900).stdout.strip().splitlines()
+        try:
+            made = json.loads(lines[-1]) if lines else {}
+        except ValueError:
+            made = {}
+        if isinstance(made, dict) and isinstance(made.get('secrets'), dict):
+            context |= {'secret.' + name: value for name, value in made['secrets'].items()}
     for index, raw in enumerate(fixture.get('prepare', [])):
         request = bind(raw, context)
         reply = gateway({**request, 'caller': operator, 'key': f'proof-{run_id}-prepare-{index}'}, fixture['budget_seconds'])
