@@ -1,0 +1,38 @@
+id: 3e352398-69b5-5d9f-bde5-169d23c088ee
+name: cluster-router-select
+description: "cluster.router_set: private DNS answers with the new Router, then the DNS grace."
+vaults: []
+queueTimeout: 30
+inputs:
+  type: object
+  properties:
+    intent: {type: object}
+  required: [intent]
+  additionalProperties: false
+jobs:
+- name: select
+  labels: {role: swamp}
+  steps:
+    # Each VPN Node: records, catalog, then dnsmasq (route-create-dns).
+  - name: 'records'
+    labels: {role: swamp}
+    dependsOn: []
+    writes: true
+    forEach: {item: vpn, in: '${{ inputs.intent.dns }}'}
+    task:
+      type: workflow
+      workflowIdOrName: route-create-dns
+      inputs:
+        intent: '${{ inputs.intent }}'
+        node_id: '${{ self.vpn.node_id }}'
+    # Resolvers that honor the TTL stop asking the old Router (route-dns-grace).
+  - name: 'grace'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'records', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    forEach: {item: wait, in: '${{ inputs.intent.grace }}'}
+    task:
+      type: workflow
+      workflowIdOrName: route-dns-grace
+      inputs: {}

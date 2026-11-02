@@ -24,7 +24,7 @@ final readonly class NativeClusterRouterPublicationInput
         private NativeRouteCertificateInput $certificates, private NativeCaddyPublicationInput $connections) {}
 
     /** @param array<string,mixed> $inventory
-     * @return array{cluster_router:array<string,mixed>,route_mutations:array<string,mixed>,certificates:list<array<string,mixed>>,participant_node_ids:list<int>}
+     * @return array{cluster_router:array<string,mixed>,renders:array<int|string,array<string,mixed>>|object,route_mutations:array<string,mixed>,certificates:list<array<string,mixed>>,participant_node_ids:list<int>}
      */
     public function capture(Operation $operation, array $inventory): array
     {
@@ -114,10 +114,22 @@ final readonly class NativeClusterRouterPublicationInput
         }
         $inventory['old_nodes'] = $oldNodes;
 
+        // Each Node's whole files, which the run writes as they are (rule 22); compaction below keeps only deltas.
+        $renders = [];
+        foreach ($rows as $row) {
+            $content = static function (string $state) use ($row): ?string {
+                $caddy = ValidatedData::object(ValidatedData::object($row[$state])['caddy']);
+
+                return is_string($caddy['content'] ?? null) ? $caddy['content'] : null;
+            };
+            $renders[(string) $row['node_id']] = ['before' => $content('before'), 'prepared' => $content('prepared'), 'caddy' => $content('after'),
+                'php' => ValidatedData::object($row['after'])['php'], 'dns' => ValidatedData::object($row['after'])['dns'], 'dns_before' => ValidatedData::object($row['before'])['dns'],
+                'scopes' => ValidatedData::stringList(ValidatedData::object($row['before'])['certificate_scopes'])];
+        }
         $compact = app(NativeRoutePublicationArtifacts::class)->capture($rows);
         $rows = $compact['publications'];
 
-        return ['cluster_router' => $inventory, 'route_mutations' => ['schema_version' => 2, 'artifacts' => $compact['artifacts'],
+        return ['cluster_router' => $inventory, 'renders' => $renders === [] ? (object) [] : $renders, 'route_mutations' => ['schema_version' => 2, 'artifacts' => $compact['artifacts'],
             'forward' => $this->stage($forwardLeaves, $forwardLan, $after, $routes, $rows, $forwardRetire, $restoreLeaves, true),
             'restore' => $this->stage($restoreLeaves, $restoreLan, $before, $routes, $rows, $restoreRetire, $forwardLeaves)],
             'certificates' => [...$this->changedLeaves($forwardLeaves, $restoreLeaves), ...$this->changedLeaves($restoreLeaves, $forwardLeaves)], 'participant_node_ids' => $participantIds];

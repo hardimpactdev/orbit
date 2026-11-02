@@ -1,0 +1,61 @@
+id: d20ef954-1554-5201-973a-6f61376700e0
+name: cluster-router-revert
+description: "cluster.router_set: the captured Caddy, LAN and DNS state back, so the old Router keeps serving."
+vaults: [orbit-control-inputs]
+queueTimeout: 30
+inputs:
+  type: object
+  properties:
+    intent: {type: object}
+  required: [intent]
+  additionalProperties: false
+jobs:
+- name: revert
+  labels: {role: swamp}
+  steps:
+    # Each Node's whole before Caddyfile, validated and reloaded (route-create-site).
+  - name: 'sites'
+    labels: {role: swamp}
+    dependsOn: []
+    writes: true
+    forEach: {item: node, in: '${{ inputs.intent.restore.site_nodes.map(n, {"node_id": n}) }}'}
+    task:
+      type: workflow
+      workflowIdOrName: route-create-site
+      inputs:
+        intent: '${{ inputs.intent.restore }}'
+        node_id: '${{ self.node.node_id }}'
+        signed: []
+        execution_secrets: {}
+    # A LAN rule the change added.
+  - name: 'lan'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'sites', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    writes: true
+    forEach: {item: rule, in: '${{ inputs.intent.restore_lan }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/firewall'
+      behaviorName: '${{ ("route-lan-" + string(self.rule.node_id) + "-" + string(self.rule.port) + "-" + self.rule.source.split("/").join("-")).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {port: '${{ self.rule.port }}', protocol: '${{ self.rule.protocol }}', action: allow, ensure: absent, source: '${{ self.rule.source }}',
+        nodeHost: '${{ inputs.intent.nodes[string(self.rule.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(self.rule.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(self.rule.node_id)].port }}',
+        nodeIdentityFile: '${{ inputs.intent.nodes[string(self.rule.node_id)].identity_file }}', become: true}
+      inputs: {}
+    # Each VPN Node's before records (route-create-dns).
+  - name: 'dns'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'sites', condition: {type: always}}
+    - {step: 'lan', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    writes: true
+    forEach: {item: vpn, in: '${{ inputs.intent.restore_dns_plan.dns }}'}
+    task:
+      type: workflow
+      workflowIdOrName: route-create-dns
+      inputs:
+        intent: '${{ inputs.intent.restore_dns_plan }}'
+        node_id: '${{ self.vpn.node_id }}'

@@ -78,7 +78,7 @@ sequenceDiagram
   %%> - checks from Node 7 that every Cluster Route's workload answers with a valid certificate
   %%> Why:
   %%> - Node 7 only becomes the Router when it can serve every Route
-  Note over SW: Select Node 7 in DNS<br/>Node 1 over @swamp/ssh
+  Note over SW: Select the Router in DNS<br/>Node 1 over @swamp/ssh
   %%> What it does:
   %%> - private DNS answers members' Cluster names with Node 7's LAN address, then waits the 31-second DNS grace
   %%> How:

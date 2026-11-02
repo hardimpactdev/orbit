@@ -7,6 +7,7 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Routes\NativeClusterRouterIntent;
 use App\Domain\Routes\NativeClusterRouterProjection;
 use App\Domain\Routes\NativeClusterRouterPublicationInput;
+use App\Domain\Routes\NativeClusterRouterSteps;
 use App\Domain\Routes\NativeRoutePublicationArtifacts;
 use App\Domain\Routes\RoutePublicationSites;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -150,15 +151,18 @@ it('omits unrelated private sites from deltas and excludes their leaf scopes fro
 it('starts with the full captured public intent and never renders a fresh participant callback', function (): void {
     $inventory = app(NativeClusterRouterIntent::class)->forOperation($this->operation);
     $capture = app(NativeClusterRouterPublicationInput::class)->capture($this->operation, $inventory);
-    $this->operation->input = [...$this->operation->input, 'cluster_router' => $inventory, ...$capture];
-    $expected = $this->operation->input;
+    $input = [...$this->operation->input, 'cluster_router' => $inventory, ...$capture];
+    $this->operation->input = [...$input, 'cluster_router_plan' => app(NativeClusterRouterSteps::class)->build($input, false)];
+    $expected = $this->operation->input['cluster_router_plan'];
     $this->candidate->update(['wireguard_ip' => '10.44.0.250']);
 
     $input = app(NativeClusterRouterProjection::class)->input($this->operation);
 
+    // The run reads only its step plan: the whole files and leaves admitted with the Operation.
     expect($input)->toBe(['intent' => $expected, 'execution_secrets' => []])
-        ->and($input['intent']['certificates'])->not->toBeEmpty()
-        ->and($input['intent']['route_mutations'])->toHaveKeys(['forward', 'restore']);
+        ->and($input['intent']['leaves'])->not->toBeEmpty()
+        ->and($input['intent']['candidate'][0]['node_id'])->toBe($this->candidate->id)
+        ->and($input['intent']['publish']['caddy'])->not->toBeEmpty();
 });
 
 it('captures official Router ingress families and preserves shared workload tuples at retirement', function (): void {

@@ -1,0 +1,64 @@
+id: 26151fce-b162-5a77-be75-ca9997d7afb8
+name: operation-cluster-router-unset
+description: "Cluster Router unset in the chart's steps (rule 22)."
+vaults: [orbit-control-inputs]
+queueTimeout: 30
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: cluster.router_unset}
+    intent: {type: object}
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+- name: router
+  labels: {role: swamp}
+  steps:
+    # Each Router Node's whole Caddyfile without the Router sites, then its certificates (route-target-retire).
+  - name: 'Withdraw the Router sites'
+    labels: {role: swamp}
+    dependsOn: []
+    writes: true
+    forEach: {item: node, in: '${{ inputs.intent.retire_nodes.map(n, {"node_id": n}) }}'}
+    task:
+      type: workflow
+      workflowIdOrName: route-target-retire
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        kind: '${{ inputs.kind }}'
+        parent_run_id: '${{ run.id }}'
+        intent: '${{ inputs.intent }}'
+        node_id: '${{ self.node.node_id }}'
+        signed: []
+        execution_secrets: {}
+    # The Router LAN rules that no Route needs (route-remove-firewall).
+  - name: 'Remove the LAN rules'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Withdraw the Router sites', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    writes: true
+    forEach: {item: node, in: '${{ inputs.intent.firewall_nodes.map(n, {"node_id": n}) }}'}
+    task:
+      type: workflow
+      workflowIdOrName: route-remove-firewall
+      inputs:
+        intent: '${{ inputs.intent }}'
+        node_id: '${{ self.node.node_id }}'
+    # The cfgmgmt check of each Node's file, certificate and firewall state (route-remove-check).
+  - name: 'Check the rules are gone'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Withdraw the Router sites', condition: {type: always}}
+    - {step: 'Remove the LAN rules', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
+    forEach: {item: node, in: '${{ inputs.intent.check_nodes.map(n, {"node_id": n}) }}'}
+    task:
+      type: workflow
+      workflowIdOrName: route-remove-check
+      inputs:
+        intent: '${{ inputs.intent }}'
+        node_id: '${{ self.node.node_id }}'

@@ -48,3 +48,5 @@ conn.pairing_create
 route.target_set
 route.update
 route.destroy
+cluster.router_set
+cluster.router_unset

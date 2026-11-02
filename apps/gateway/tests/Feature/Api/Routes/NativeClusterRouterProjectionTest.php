@@ -162,9 +162,24 @@ it('records only bounded Router results and refuses an old checkpoint after comp
     $data = ['run_id' => $runId, 'status' => 'succeeded', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
         'result' => ['ready' => true, 'certificate_requests' => [['scope' => 'stale']], 'raw_output' => 'discard']];
     $result = $projection->apply($operation, $data);
-    expect($result->result)->toBe(['ready' => true])->and($result->state)->not->toHaveKey('certificate_requests');
+    // The result comes from Swamp's run status, never from step output.
+    expect($result->result)->toBe(['ready' => true, 'selected' => true, 'cleanup_complete' => true])->and($result->state)->not->toHaveKey('certificate_requests');
     $this->newRole->update(['status' => LifecycleStatus::Failed]);
     expect(fn () => $projection->apply($operation, [...$data, 'status' => 'running', 'result' => ['checkpoint' => 'router-selected']]))
         ->toThrow(ResourceOperationException::class);
     expect($this->newRole->fresh()->status)->toBe(LifecycleStatus::Failed);
 });
+
+it('reads the Router outcome from the failed step: before the selection the old Router stays, after it the candidate serves', function (string $failed, bool $selected): void {
+    $runId = 'b9a1f2c4-0f6e-4b8e-9d3a-2a7d8c1e5f60';
+    $operation = Operation::query()->create(['kind' => 'cluster.router_set', 'target_type' => 'cluster_router',
+        'target_id' => $this->candidate->cluster_id, 'node_id' => $this->candidate->id, 'input' => $this->operation->input,
+        'status' => 'running', 'sequence' => 1, 'state' => ['swamp_run_id' => $runId]]);
+
+    $done = app(NativeClusterRouterProjection::class)->apply($operation, ['run_id' => $runId, 'status' => 'failed', 'started_at' => now()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'error_code' => 'operation.native_failed', 'result' => [], 'failure' => ['failed_step' => $failed]]);
+
+    expect($done->result['selected'])->toBe($selected)
+        ->and($this->newRole->fresh()->status)->toBe($selected ? LifecycleStatus::Active : LifecycleStatus::Failed)
+        ->and($this->oldRole->fresh()->status)->toBe($selected ? LifecycleStatus::Removing : LifecycleStatus::Active);
+})->with([['Probe the workloads-1', false], ['Retire the old Router-0', true]]);

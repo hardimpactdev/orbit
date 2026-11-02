@@ -11,6 +11,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ClusterRouterReplacementStep;
 use App\Domain\Routes\NativeClusterRouterIntent;
 use App\Domain\Routes\NativeClusterRouterPublicationInput;
+use App\Domain\Routes\NativeClusterRouterSteps;
 use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Shared\LifecycleStatus;
@@ -60,8 +61,8 @@ final readonly class AdmitClusterRouterOperationAction
                 ['cluster_id' => $cluster->id, 'node_id' => $node->id, 'candidate_role_id' => $candidate->id, 'old_role_id' => $current?->id,
                     'old_node_id' => $current?->node_id, 'route_ids' => $routeIds, 'node_ids' => $nodeIds], 'operator', $requestId);
             $intent = app(NativeClusterRouterIntent::class)->forOperation($operation);
-            $operation->update(['input' => [...$operation->input, 'cluster_router' => $intent,
-                ...app(NativeClusterRouterPublicationInput::class)->capture($operation, $intent)]]);
+            $input = [...$operation->input, 'cluster_router' => $intent, ...app(NativeClusterRouterPublicationInput::class)->capture($operation, $intent)];
+            $operation->update(['input' => [...$input, 'cluster_router_plan' => app(NativeClusterRouterSteps::class)->build($input, false)]]);
 
             return $operation->refresh();
         }));
@@ -87,8 +88,8 @@ final readonly class AdmitClusterRouterOperationAction
             $operation = $this->operations->execute('cluster.router_unset', 'cluster_router', $cluster->id, $nodeId,
                 ['cluster_id' => $cluster->id, 'assignment_ids' => $assignments->modelKeys(), 'node_ids' => $nodeIds], 'operator', $requestId);
             $intent = app(NativeClusterRouterIntent::class)->forOperation($operation);
-            $operation->update(['input' => [...$operation->input, 'cluster_router' => $intent,
-                ...app(NativeClusterRouterPublicationInput::class)->capture($operation, $intent)]]);
+            $input = [...$operation->input, 'cluster_router' => $intent, ...app(NativeClusterRouterPublicationInput::class)->capture($operation, $intent)];
+            $operation->update(['input' => [...$input, 'cluster_router_plan' => app(NativeClusterRouterSteps::class)->build($input, true)]]);
 
             return $operation->refresh();
         }));

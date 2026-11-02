@@ -93,15 +93,10 @@ final readonly class NativeRouteCreatePlan
             $leaves[ValidatedData::integer($leaf['node_id']).'/'.ValidatedData::string($leaf['scope'])] = $leaf;
         }
         foreach (array_values($leaves) as $leaf) {
-            $nodeId = ValidatedData::integer($leaf['node_id']);
-            $scope = ValidatedData::string($leaf['scope']);
-            $version = ValidatedData::string($leaf['version']);
-            // The account keeps its own copy for development servers; the run reads the account's home on the Node.
-            $plan['leaves'][] = ['node_id' => $nodeId, 'scope' => $scope, 'domain' => ValidatedData::string($leaf['domain']), 'root_hash' => ValidatedData::string($leaf['root_hash']),
-                'directory' => self::CaddyCertificates.'/'.$scope.'/versions/'.$version, 'current' => self::CaddyCertificates.'/'.$scope.'/current', 'target' => 'versions/'.$version,
-                'user' => app(RouteRenderContext::class)->user(Node::query()->findOrFail($nodeId))];
-            $trust[$nodeId] = $nodeId;
-            $touched[$nodeId] = true;
+            $row = self::leaf($leaf);
+            $plan['leaves'][] = $row;
+            $trust[$row['node_id']] = $row['node_id'];
+            $touched[$row['node_id']] = true;
         }
         if ($plan['leaves'] !== []) {
             $root = app(LeafCertificateSigner::class)->rootCertificate();
@@ -164,6 +159,24 @@ final readonly class NativeRouteCreatePlan
         }
 
         return $this->result($route, $plan, array_values($trust), $root, $nodes);
+    }
+
+    /**
+     * One admitted leaf as the CSR, sign and install steps read it.
+     *
+     * @param  array<string,mixed>  $leaf
+     * @return array{node_id:int,scope:string,domain:string,root_hash:string,directory:string,current:string,target:string,user:string}
+     */
+    public static function leaf(array $leaf): array
+    {
+        $nodeId = ValidatedData::integer($leaf['node_id']);
+        $scope = ValidatedData::string($leaf['scope']);
+        $version = ValidatedData::string($leaf['version']);
+
+        // The account keeps its own copy for development servers; the run reads the account's home on the Node.
+        return ['node_id' => $nodeId, 'scope' => $scope, 'domain' => ValidatedData::string($leaf['domain']), 'root_hash' => ValidatedData::string($leaf['root_hash']),
+            'directory' => self::CaddyCertificates.'/'.$scope.'/versions/'.$version, 'current' => self::CaddyCertificates.'/'.$scope.'/current', 'target' => 'versions/'.$version,
+            'user' => app(RouteRenderContext::class)->user(Node::query()->findOrFail($nodeId))];
     }
 
     /**

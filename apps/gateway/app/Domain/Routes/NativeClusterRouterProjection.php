@@ -7,21 +7,41 @@ namespace App\Domain\Routes;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationPublicView;
+use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Support\ValidatedData;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
 /** Project the native terminal transition. No host reads or intermediate callbacks. */
-final readonly class NativeClusterRouterProjection implements DirectOperationProjection, DirectOperationPublicView
+final readonly class NativeClusterRouterProjection implements DirectOperationProjection, DirectOperationPublicView, NativeOperationProjection
 {
+    /** Each chart step's error code. A step fails with its own exit code; its stderr carries the reason (rule 14). */
+    public const array StepCodes = [
+        'Prepare the Router' => 'cluster.router_prepare_failed',
+        'Request the certificates' => 'app-dev.certificate_request_failed',
+        'Sign the CSRs' => 'app-dev.certificate_sign_failed',
+        'Open LAN paths' => 'route.lan_firewall_failed',
+        'Install certs, publish' => 'route.publish_failed',
+        'Probe the workloads' => 'route.probe_failed',
+        'Select the Router in DNS' => 'private_dns.publication_failed',
+        'Retire the old Router' => 'cluster.router_retire_failed',
+        'Withdraw the Router sites' => 'route.withdraw_failed',
+        'Remove the LAN rules' => 'route.lan_firewall_failed',
+        'Check the rules are gone' => 'route.removal_check_failed',
+    ];
+
+    public function native(Operation $operation): bool
+    {
+        return true;
+    }
+
     public function input(Operation $operation): array
     {
-        return ['intent' => $operation->input, 'execution_secrets' => []];
+        return ['intent' => ValidatedData::object($operation->input['cluster_router_plan']), 'execution_secrets' => []];
     }
 
     /** @return list<int> */
@@ -49,8 +69,26 @@ final readonly class NativeClusterRouterProjection implements DirectOperationPro
         return DB::transaction(function () use ($operation, $data): Operation {
             $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $terminal = $operation->status->terminal();
-            $raw = ValidatedData::object($data['result'] ?? []);
-            $result = Arr::only($raw, ['ready', 'selected', 'restored', 'cleanup_complete', 'failed_step', 'error_code']);
+            $failure = is_array($data['failure'] ?? null) ? $data['failure'] : [];
+            $failed = is_string($failure['failed_step'] ?? null) ? $failure['failed_step'] : null;
+            $step = null;
+            foreach (array_keys(self::StepCodes) as $label) {
+                // A forEach iteration is named after its step, such as "Probe the workloads-2".
+                if ($failed !== null && ($failed === $label || str_starts_with($failed, $label.'-'))) {
+                    $step = $label;
+                }
+            }
+            if ($data['status'] === 'failed') {
+                $data['error_code'] = $step === null ? ($data['error_code'] ?? 'cluster.router_failed') : self::StepCodes[$step];
+            }
+            $steps = ValidatedData::object(ValidatedData::object($data['result'] ?? [])['steps'] ?? []);
+            $restored = (ValidatedData::object($steps['Restore the before state'] ?? [])['status'] ?? null) === 'succeeded';
+            // A failed retire comes after the selection: the candidate serves and a rerun finishes the old Router.
+            $result = match ($data['status']) {
+                'succeeded' => ['ready' => true, 'selected' => true, 'cleanup_complete' => true],
+                'failed' => ['ready' => false, 'selected' => $step === 'Retire the old Router', 'restored' => $restored, 'failed_step' => $step, 'error_code' => $data['error_code']],
+                default => [],
+            };
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if (! $terminal) {
                 $this->project($projected, [...$data, 'result' => $result]);
