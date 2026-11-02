@@ -1,5 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task + full intent as inputs, R1-R4, single-swamp-node; DECISIONS scope (SQLite only when chosen, Schedules move, cert from destination CSR in-run), 1 (signing is the one step→Gateway call), DNS hold retired (PR #2443); tightened by flow-tighten 2026-11-02 (rules 3, 6, 8, 13); .env and Processes as in instance.create. docs/reference/instance-transfer.md.
+  %% Tightened: flow-tighten 2026-11-02, rules 5, 17, 22 (destination preflight from recorded state; cfgmgmt file/systemd, Route publish as in route:create).
+  %% Decided: Nick 2026-11-02, .env.testing only for an owned MySQL/PostgreSQL database, written by the same file step.
   %% status: draft
   %% command: instance:transfer
   %% kind: instance.transfer
@@ -30,13 +32,14 @@ sequenceDiagram
   %%> Requirements:
   %%> - your Node has access grants to Node 12 and Node 15
   %%> - both Nodes have the `app-dev` role and belong to active Clusters
-  %%> - Project 7 may be placed on Node 15, and the destination path is free
+  %%> - Project 7 may be placed on Node 15, and the destination path and planned ports are free, from Node 15's recorded Instances and Processes
   %%> - Instance 42 is an active development Instance with one active Route, and no removal runs
   %%> Plans:
   %%> - the Processes from Project 7's definitions for `development`, with Node 15's ports
   %%> - the Route on Node 15, and the Schedules' new target
   %%> Renders .env:
   %%> - from the stored environment of Instance 42, with Node 15 values such as `APP_URL`
+  %%> - `.env.testing` only when Instance 42 owns a database on a MySQL or PostgreSQL server: `.env` with `APP_ENV=testing` and the test database credentials
   %%> Result:
   %%> - Instance 42 marked transferring; task #5133 recorded with the full intent
   GW->>SW: Pause Schedule triggers<br/>workflow trigger removal
@@ -62,17 +65,12 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>D: Check the destination<br/>@swamp/ssh · path, ports free
-  %%> What it does:
-  %%> - checks that the destination path is free and the planned ports are unused
-  %%> Why first:
-  %%> - Node 12 keeps running until Node 15 is known to be ready
-  SW->>S: Stop source Processes<br/>Instance 42 only
+  SW->>S: Stop source Processes<br/>@swamp/cfgmgmt/systemd stop
   %%> What it does:
   %%> - stops the Processes of Instance 42 on Node 12; downtime starts here
   %%> Keeps:
   %%> - the Process units, for a restore if the move fails
-  SW->>S: Archive the checkout<br/>git state, SQLite if chosen
+  SW->>S: Archive the checkout<br/>@swamp/ssh exec · tar
   %%> What it does:
   %%> - packs the Git history, branch, origin, index, unstaged edits and untracked files
   %%> - adds the SQLite file only when `--sqlite-source-path` was given
@@ -80,18 +78,19 @@ sequenceDiagram
   %%> - `.env`; the Gateway rendered a new one for Node 15
   %%> Linked worktree:
   %%> - becomes an independent checkout on Node 15; the common repository on Node 12 stays unchanged
-  SW->>D: Unpack, write .env, CSR<br/>209 scratch · vault env-5133
+  SW->>D: Unpack, write .env, CSR<br/>@swamp/cfgmgmt/file · 0600
   %%> How:
   %%> - copies the archive over `@swamp/ssh` through private scratch space on 209, and checks its hash
   %%> What it does:
-  %%> - extracts it into the destination path, as Node 15's managed user
-  %%> - writes the rendered `.env` from the vault into the checkout, readable only by its owner
+  %%> - extracts it into the destination path, as Node 15's managed user, with one `tar` argv
+  %%> - writes the rendered `.env` from `vault.get env-5133` with `@swamp/cfgmgmt/file`, mode 0600, owned by the managed user
+  %%> - writes any `.env.testing` in the same `file` step, replacing its content; a Git-tracked one stays untouched
   %%> - creates a private key and a certificate signing request for the Route's domain; the key never leaves Node 15
   %%> Refuses:
   %%> - paths or links that escape the checkout
   %%> Cleanup:
   %%> - removes the scratch archives on all three Nodes
-  SW->>D: Run Project setup steps<br/>@swamp/ssh · own timeout each
+  SW->>D: Run Project setup steps<br/>@swamp/ssh exec · in order
   %%> What it does:
   %%> - runs the Project's setup steps, as in `instance:create`, so dependencies match Node 15
   %%> Typical steps:
@@ -103,28 +102,31 @@ sequenceDiagram
   GW-->>SW: signed certificate
   %%> Returns:
   %%> - the certificate for the CSR, scoped to task #5133
-  SW->>D: Create, start Processes<br/>Project definitions · development
+  SW->>D: Create, start Processes<br/>@swamp/cfgmgmt/systemd · forEach
   %%> What it does:
   %%> - creates the Instance's Processes on Node 15 from Project 7's definitions for `development`, and starts them
   %%> - Processes recorded as stopped stay stopped
-  SW->>D: Publish the Route<br/>shared Route mutation · reload
+  SW->>D: Publish the Route<br/>@swamp/cfgmgmt/file · reload
   %%> What it does:
-  %%> - installs the certificate, the Caddy site and the PHP pool on Node 15 through the shared Route mutation, and reloads Caddy; no restart
+  %%> - installs the certificate, the Caddy site and the PHP pool on Node 15 in one step, as `route:create` does, and reloads Caddy; no restart
   %%> - changes private DNS only when the domain is outside the Cluster TLD; a domain inside it needs no record
   %%> Why last:
   %%> - Node 15 becomes reachable only after its Processes run
   %%> Cutover:
   %%> - from here Node 15 serves Instance 42
-  SW->>D: Check the destination<br/>Vite listens, site answers
+  SW->>D: Check the destination<br/>@swamp/cfgmgmt check · curl
   %%> What it does:
-  %%> - checks that the Processes run and the Route answers on Node 15
+  %%> - the systemd behaviors' `check`: the Processes run on Node 15
+  %%> - one `curl` with the Route's domain as SNI: the site answers
+  %%> Why:
+  %%> - the one end check before the source is retired
   alt destination checks pass
-    SW->>S: Retire the source<br/>Processes, site, cert, checkout
+    SW->>S: Retire the source<br/>@swamp/cfgmgmt · absent
     %%> What it does:
-    %%> - removes the Process units, Caddy site, PHP pool and certificate of Instance 42 on Node 12, and reloads Caddy
-    %%> - deletes only the checkout whose identity the run captured
+    %%> - removes the Process units, Caddy site, PHP pool and certificate of Instance 42 on Node 12 with `ensure: absent`, and reloads Caddy
+    %%> - deletes the recorded checkout with one `rm -rf` argv
     %%> If it fails:
-    %%> - Node 15 stays authoritative; the leftovers on Node 12 are reported for repair
+    %%> - best effort: Node 15 stays authoritative; the leftovers on Node 12 are harmless and a rerun removes them
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
     %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
