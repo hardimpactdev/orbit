@@ -221,7 +221,7 @@ final class SwampScheduledResults
         }
         // A Schedule's own workflow fires root runs; a run already hinted is followed after its Schedule is gone.
         if ($candidates !== []) {
-            $fires = array_flip(Schedule::query()->whereIn('swamp_workflow_id', array_unique($candidates))->pluck('swamp_workflow_id')->all());
+            $fires = array_flip(array_filter(Schedule::query()->whereIn('swamp_workflow_id', array_unique($candidates))->pluck('swamp_workflow_id')->all(), is_string(...)));
             foreach ($candidates as $run => $workflow) {
                 if (isset($fires[$workflow]) || ($this->runs[$run] ?? null) === self::Fire.$workflow) {
                     $observed[$run] = self::Fire.$workflow;

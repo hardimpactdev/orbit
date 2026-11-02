@@ -7,6 +7,7 @@ namespace App\Infrastructure\Swamp;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Support\ValidatedData;
 use Throwable;
 
 /** Writes one Schedule's own workflow and its trigger on serve through the official workflow frames. */
@@ -85,7 +86,7 @@ final readonly class SwampScheduleWorkflows
                         throw $this->unavailable();
                     }
 
-                    return $data;
+                    return ValidatedData::object($data);
                 }
             }
             throw $this->unavailable();

@@ -9,7 +9,7 @@ covers:
   - apps/gateway/app/Http/{Controllers/Api/Schedule*,Requests/Schedules/*}.php
   - apps/gateway/{app/Models/Schedule.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,database/migrations/2027_01_10_120000_add_native_trigger_to_schedules.php}
   - apps/gateway/app/{Infrastructure/Swamp/SwampScheduleWorkflows.php,Jobs/Operations/ProjectSwampScheduleFire.php}
-  - {packages/php-sdk/src/{Requests,Responses}/Schedules/**,swamp/workflows/workflow-task-command-run.yaml}
+  - packages/php-sdk/src/{Requests,Responses}/Schedules/**
 ---
 
 # Schedules

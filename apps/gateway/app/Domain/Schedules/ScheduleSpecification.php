@@ -10,7 +10,7 @@ use SensitiveParameter;
 /** Gateway intent for the agent's Schedule installation and inspection commands. */
 final readonly class ScheduleSpecification
 {
-    /** @return array{id: string, user: string, group: string, home: string, working_directory: string, shell: string, login_shell: bool, command: string, calendar: string, timeout_seconds: int, desired: string} */
+    /** @return array{id: string, user: string, group: ?string, home: ?string, working_directory: ?string, shell: ?string, login_shell: bool, command: string, calendar: string, timeout_seconds: int, desired: string} */
     public function input(#[SensitiveParameter] Schedule $schedule, ScheduleTarget $target): array
     {
         return [
