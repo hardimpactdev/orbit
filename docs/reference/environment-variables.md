@@ -117,6 +117,8 @@ On `app-prod`, every release links `.env` in its application directory to the pr
 
 Import reads the Instance's `.env`. It never reads `.env.example`. A Swamp run on Node 209 checks the file type, the owner, and the size over SSH, then copies the bytes into the Swamp vault key `instance-env-import.content.<operation>`. A missing, unsafe, or oversized file fails the Operation with `env.import_source_missing`. The run returns only the size and sha256. The Gateway reads the vault key once, checks the sha256, parses and stores the file, and then deletes the key, also after a failure. A sha256 mismatch fails with `env.import_unconfirmed` and stores nothing. The [`env:import` chart](/cli/env/import) shows each step.
 
+The Operation declaration names the same exact vault key pattern as the intended Gateway grant policy. The registry check verifies that policy against the declarations before release.
+
 The importer accepts blank lines, comments, quoted and escaped values, multiline quoted values, and expansion of keys from the same file. It does not read the Gateway's own environment. A duplicate key, an unresolved expansion, invalid syntax, or a file over 1 MiB refuses the whole import. Orbit stores keys and values only, without comments or formatting.
 
 Without `replace`, a file key that is already stored fails the Operation with `env.import_conflict`, and nothing is stored. With `replace`, matching keys take the file value, new keys are added, and stored keys that the file lacks stay.
