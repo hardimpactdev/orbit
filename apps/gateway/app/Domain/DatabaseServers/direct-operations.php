@@ -9,6 +9,7 @@ use App\Domain\DatabaseServers\DatabaseCreateProjection;
 use App\Domain\DatabaseServers\DatabaseDestroyOwnedProjection;
 use App\Domain\DatabaseServers\DatabaseDestroyProjection;
 use App\Domain\DatabaseServers\DatabaseReadProjection;
+use App\Domain\DatabaseServers\DatabaseServerAdminSecret;
 use App\Domain\DatabaseServers\DatabaseServerCloseProjection;
 use App\Domain\DatabaseServers\DatabaseServerCreateProjection;
 use App\Domain\DatabaseServers\DatabaseServerDestroyProjection;
@@ -43,7 +44,8 @@ return ['database.update' => [
     'workflow' => 'operation-database-server-create',
     'projection' => DatabaseServerCreateProjection::class,
     'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'server', 'step' => 'result'],
+    'terminal_result' => ['job' => 'server', 'step' => 'Report the result'],
+    'execution_copies' => [DatabaseServerAdminSecret::EXECUTION_COPY, ['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-server-create-intent-[1-9][0-9]*$']],
 ], 'database.write' => [
     'workflow' => 'operation-database-write',
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-write-intent-[1-9][0-9]*$']],

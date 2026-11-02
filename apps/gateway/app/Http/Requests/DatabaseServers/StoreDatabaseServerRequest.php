@@ -33,10 +33,7 @@ final class StoreDatabaseServerRequest extends FormRequest
             'node_id' => ['required', 'integer', 'min:1', 'exists:nodes,id', self::strictInteger(...)],
             'driver' => ['sometimes', 'string', Rule::enum(DatabaseDriver::class)->only([DatabaseDriver::Mysql, DatabaseDriver::Redis, DatabaseDriver::Pgsql])],
             'tag' => ['sometimes', 'string', 'max:128', 'regex:'.($this->input('driver') === 'pgsql' ? DatabaseServerProcess::POSTGRES_TAG_PATTERN : self::TAG_PATTERN)],
-            'port' => ['sometimes', 'integer', 'min:1', 'max:65535', self::strictInteger(...), 'prohibits:process_id'],
-            // Adoption of an existing Valkey Process (ADR 0221): the Process supplies the port.
-            'process_id' => ['required_with:connection', 'integer', 'min:1', self::strictInteger(...)],
-            'connection' => ['required_with:process_id', 'string', 'max:63', 'regex:'.DatabaseConnectionFieldRules::SLUG_PATTERN],
+            'port' => ['sometimes', 'integer', 'min:1', 'max:65535', self::strictInteger(...)],
         ];
     }
 
@@ -46,7 +43,7 @@ final class StoreDatabaseServerRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['slug', 'node_id', 'driver', 'tag', 'port', 'process_id', 'connection'],
+                ['slug', 'node_id', 'driver', 'tag', 'port'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -57,7 +54,6 @@ final class StoreDatabaseServerRequest extends FormRequest
     {
         $validated = $this->validated();
         $driver = DatabaseDriver::tryFrom(is_string($validated['driver'] ?? null) ? $validated['driver'] : '') ?? DatabaseDriver::Mysql;
-        $processId = is_int($validated['process_id'] ?? null) ? $validated['process_id'] : null;
 
         return new CreateDatabaseServerData(
             slug: is_string($validated['slug'] ?? null) ? $validated['slug'] : '',
@@ -68,13 +64,7 @@ final class StoreDatabaseServerRequest extends FormRequest
                 : match ($driver) {
                     DatabaseDriver::Redis => self::DEFAULT_VALKEY_TAG, DatabaseDriver::Pgsql => '18', default => self::DEFAULT_TAG
                 },
-            port: match (true) {
-                $processId !== null => null,
-                is_int($validated['port'] ?? null) => $validated['port'],
-                default => $driver->defaultPort() ?? self::DEFAULT_PORT,
-            },
-            processId: $processId,
-            connection: is_string($validated['connection'] ?? null) ? $validated['connection'] : null,
+            port: is_int($validated['port'] ?? null) ? $validated['port'] : ($driver->defaultPort() ?? self::DEFAULT_PORT),
         );
     }
 

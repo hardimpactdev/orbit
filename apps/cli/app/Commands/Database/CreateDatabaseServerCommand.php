@@ -21,8 +21,6 @@ final class CreateDatabaseServerCommand extends DatabaseCommand
         {slug : Database server slug}
         {--node= : Node ID or registered name}
         {--driver= : Server driver: mysql, redis, or pgsql. Defaults to mysql}
-        {--process= : Existing Valkey Process ID to adopt}
-        {--connection= : Existing redis connection for adoption}
         {--tag= : Image tag. Defaults to 8.4 for mysql or 8.1 for redis or 18 for pgsql}
         {--port= : Port to publish on the Node private addresses. Defaults to 3306 for mysql or 6379 for redis or 5432 for pgsql}
         {--idempotency-key= : Reuse a key to retry this operation start}
@@ -42,15 +40,6 @@ final class CreateDatabaseServerCommand extends DatabaseCommand
         $driver = $this->stringOption('driver');
         if ($driver !== null && ! in_array($driver, ['mysql', 'redis', 'pgsql'], true)) {
             return $this->renderGatewayFailure('database.driver_invalid', 'Server driver must be mysql, redis, or pgsql.');
-        }
-
-        $process = $this->option('process');
-        $processId = null;
-        if ($process !== null) {
-            $processId = filter_var($process, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-            if (! is_int($processId)) {
-                return $this->renderGatewayFailure('database.process_invalid', 'Process ID must be a positive integer.');
-            }
         }
 
         $tag = $this->stringOption('tag');
@@ -92,8 +81,6 @@ final class CreateDatabaseServerCommand extends DatabaseCommand
             tag: $tag,
             port: $parsedPort,
             driver: $driver,
-            processId: $processId,
-            connection: $this->stringOption('connection'),
             idempotencyKey: is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null,
         ), OperationResponse::class);
 

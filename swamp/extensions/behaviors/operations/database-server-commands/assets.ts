@@ -1,14 +1,5 @@
 import { z } from "npm:zod@4.4.3";
 
-const State = z.object({
-    present: z.boolean(),
-    state: z.string(),
-    spec: z.string().regex(/^[a-f0-9]{64}$/).optional(),
-}).strict();
-const Plan = State.extend({
-    replace: z.boolean(),
-    rollback_slot: z.enum(["rollback-running", "rollback-stopped"]),
-});
 type Context = {
     extensionFile(name: string): string;
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
@@ -27,7 +18,6 @@ export const behavior = {
             lifetime: "infinite",
             garbageCollection: 10,
         },
-        plan: { schema: Plan, lifetime: "infinite", garbageCollection: 10 },
         result: {
             schema: z.object({
                 stdout: z.string(),
@@ -256,29 +246,6 @@ export const behavior = {
                     exitCode: "backend" in result ? 0 : 1,
                 };
                 await ctx.writeResource("result", "result", value);
-                return value;
-            },
-        },
-        plan: {
-            description:
-                "Select native container replacement branches from one public observation",
-            arguments: z.object({
-                stdout: z.string().max(4096),
-                spec: z.string().regex(/^[a-f0-9]{64}$/),
-            }).strict(),
-            execute: async (
-                args: { stdout: string; spec: string },
-                ctx: Context,
-            ) => {
-                const state = State.parse(JSON.parse(args.stdout));
-                const value = Plan.parse({
-                    ...state,
-                    replace: state.present && state.spec !== args.spec,
-                    rollback_slot: state.state === "running"
-                        ? "rollback-running"
-                        : "rollback-stopped",
-                });
-                await ctx.writeResource("plan", "plan", value);
                 return value;
             },
         },

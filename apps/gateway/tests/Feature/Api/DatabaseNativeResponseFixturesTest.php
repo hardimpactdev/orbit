@@ -8,7 +8,7 @@ use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 
 it('records terminal Database Operations for client contract replay', function (string $fixture, string $kind, string $driver): void {
     $this->travelTo(new DateTimeImmutable('2026-10-31T09:00:00+00:00'));
-    $node = $this->markAsGateway(Node::query()->create([
+    $node = $this->markAsGateway(Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND',
         'name' => 'gateway', 'status' => 'active', 'platform' => 'linux',
         'wireguard_ip' => '10.44.0.1', 'public_ssh_host' => '192.0.2.1',
     ]));

@@ -41,23 +41,29 @@ sequenceDiagram
   %%> - nothing has happened on the Node yet
   GW->>SW: Store the root password<br/>vault orbit-control-inputs
   %%> What it does:
-  %%> - writes an execution copy of the root password to the Swamp vault, under the key `database-server-create-intent-5150`
+  %%> - writes an execution copy of the root password to the Swamp vault, under the server's own key `database-server-14-admin`
+  %%> - for redis: also writes the ACL file, which holds only password hashes, under `database-server-create-intent-5150`
   %%> Why:
   %%> - the password never enters the intent, the run inputs, the Process record or a command argument (R3)
   %%> - steps read it with `vault.get` and pass it on standard input
+  %%> - every later database kind that logs in as the admin reads the same key by name
   GW->>SW: Start run, full intent<br/>operation-database-server-create
   %%> What it does:
   %%> - starts one Swamp run on serve (Node 209)
   %%> Inputs:
   %%> - driver, image, port, container name and volume
   %%> - the private bindings: Node 12's WireGuard address, and its LAN address when it has one
-  %%> - the vault key name of the password, never the value
+  %%> - the vault key names of the password and the ACL file, never the values
   %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
   GW-->>CLI: 202 Accepted<br/>task #5150
   %%> What you get:
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
+  Note over SW: Read the scripts<br/>database-node-command assets
+  %%> What it does:
+  %%> - reads the shipped phase script on 209, to send it over SSH in argv
+  %%> - nothing is copied to Node 12, so nothing is left to clean up
   SW->>N: Pull the image<br/>@swamp/ssh · docker pull
   %%> How:
   %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior
@@ -100,6 +106,12 @@ sequenceDiagram
     %%> Result:
     %%> - the password is absent from the container environment and `docker inspect`
   end
+  Note over SW: Report the result<br/>backend · failed_step · error_code
+  %%> What it does:
+  %%> - maps the first failed step to its error code, for example `database.server_unhealthy`
+  Note over SW: Fail on an error<br/>assert · exit code 0
+  %%> What it does:
+  %%> - fails the run when the report holds an `error_code`, so the task fails with that code
   alt every step succeeds
     N-->>SW: healthy, login works
     %%> Returns:

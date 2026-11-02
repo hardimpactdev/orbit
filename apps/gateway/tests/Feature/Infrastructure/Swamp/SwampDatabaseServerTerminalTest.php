@@ -13,7 +13,7 @@ use App\Models\Operation;
 use Tests\Support\FakeRoutePublicationSocket;
 
 it('retains native interruption and records server failure without deleting its state', function (string $kind, string $initial): void {
-    $node = Node::query()->create(['name' => 'interrupted-database', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.9']);
+    $node = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND', 'name' => 'interrupted-database', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.9']);
     $server = DatabaseServer::query()->create(['slug' => 'interrupted-proof', 'driver' => 'redis', 'node_id' => $node->id,
         'tag' => '8.0', 'port' => 6379, 'root_password' => 'fixture-root', 'status' => $initial]);
     $intent = DatabaseExecutionIntent::query()->create(['target_type' => 'database_server', 'target_id' => $server->id,
@@ -40,6 +40,6 @@ it('retains native interruption and records server failure without deleting its 
     expect($projected->error_code)->toBe('operation.native_failed');
     expect($server->fresh()->status->value)->toBe('failed');
     expect($server->fresh()->error_code)->toBe('operation.native_failed');
-    expect($server->fresh()->failed_step)->toBe('database-apply');
+    expect($server->fresh()->failed_step)->toBe($kind === 'database_server.create' ? null : 'database-apply');
     expect(DatabaseServer::query()->count())->toBe(1);
 })->with([['database_server.create', 'provisioning'], ['database_server.destroy', 'removing']]);

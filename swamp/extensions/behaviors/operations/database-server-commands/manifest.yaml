@@ -12,11 +12,7 @@ behaviors:
   - operations/database-server-commands/destroy_plan.ts
   - operations/database-server-commands/create_assets.ts
 additionalFiles:
-  - scripts/process.py
   - scripts/server_common.py
-  - scripts/inspect_policy.py
-  - scripts/write_acl.py
-  - scripts/ready.py
   - scripts/wait_ready.py
   - scripts/user_common.py
   - scripts/user_wal.py

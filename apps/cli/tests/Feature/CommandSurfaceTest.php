@@ -655,7 +655,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'database:server:close' => [['slug'], ['idempotency-key' => null, 'json' => false]],
         'database:server:create' => [
             ['slug'],
-            ['node' => null, 'driver' => null, 'process' => null, 'connection' => null, 'tag' => null, 'port' => null, 'idempotency-key' => null, 'json' => false],
+            ['node' => null, 'driver' => null, 'tag' => null, 'port' => null, 'idempotency-key' => null, 'json' => false],
         ],
         'database:server:destroy' => [['slug'], ['force' => false, 'idempotency-key' => null, 'json' => false]],
         'database:server:list' => [[], ['json' => false]],
