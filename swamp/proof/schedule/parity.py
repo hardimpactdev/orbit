@@ -1,6 +1,6 @@
 """Schedule contract (ADR 0244): the Schedule's own workflow and trigger on serve, and the command's effect on the target.
 
-Arguments: present, absent, or ran. present also needs the cron the trigger must carry; ran needs the marker file
+Arguments: present, disabled, absent, or ran. present also needs the cron the trigger must carry; ran needs the marker file
 the command touched on the target. Nothing is ever installed on the target Node.
 """
 import json
@@ -44,6 +44,11 @@ if expected == 'absent':
     sys.exit(0)
 check(code == 0, 'the trigger can be read')
 override = json.loads(out[out.index('{'):]).get('override') or {}
+if expected == 'disabled':
+    found, _ = native('workflow', 'get', workflow)
+    check(found == 0 and not override, 'the workflow stays and has no trigger')
+    print(f'parity: {operation["kind"]} leaves {workflow} without a trigger')
+    sys.exit(0)
 if expected == 'present':
     check(override.get('schedule') == detail[0], f'the trigger is {override.get("schedule")!r}')
 if expected == 'ran':
