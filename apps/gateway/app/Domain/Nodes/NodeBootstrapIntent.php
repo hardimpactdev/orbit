@@ -54,8 +54,11 @@ final readonly class NodeBootstrapIntent
             || ! is_string($fingerprint) || preg_match('/\ASHA256:[A-Za-z0-9+\/]{43}\z/D', $fingerprint) !== 1) {
             throw $this->invalid();
         }
+        if ($kind === 'node.macos_inspect' && (! is_string($node->ssh_host_key_type) || ! is_string($node->ssh_host_key))) {
+            throw $this->invalid();
+        }
         $artifacts = [];
-        if ($kind !== 'node.bootstrap_probe') {
+        if (! in_array($kind, ['node.bootstrap_probe', 'node.macos_inspect'], true)) {
             foreach ($this->delivery->artifacts() as $key => $artifact) {
                 $url = $artifact['url'] ?? null;
                 if (in_array($key, ['linux-x86_64', 'macos-x86_64', 'macos-aarch64'], true)
@@ -70,7 +73,7 @@ final readonly class NodeBootstrapIntent
             'target' => ['node_id' => $node->id, 'host' => $candidate->public_ssh_host, 'port' => $candidate->public_ssh_port,
                 'user' => in_array($kind, ['node.bootstrap_verify', 'node.macos_inspect'], true) ? $candidate->user : $bootstrap,
                 'fingerprint' => $fingerprint,
-                ...($kind === 'node.bootstrap_probe' ? ['host_keys' => is_string($node->ssh_host_key_type) && is_string($node->ssh_host_key)
+                ...(in_array($kind, ['node.bootstrap_probe', 'node.macos_inspect'], true) ? ['host_keys' => is_string($node->ssh_host_key_type) && is_string($node->ssh_host_key)
                     ? [$node->ssh_host_key_type.' '.$node->ssh_host_key] : []] : [])],
             'managed_user' => $candidate->user, 'expected_architecture' => $expected, 'address' => $candidate->wireguard_ip,
             'artifacts' => $artifacts,
@@ -78,7 +81,7 @@ final readonly class NodeBootstrapIntent
             'firewall' => $candidate->platform === 'linux' && $roleless ? $this->firewall->publicSsh($candidate, true) : null];
     }
 
-    /** Custody is the admitted target; execution remains on the Gateway holding its SSH key. */
+    /** Custody is the admitted target; native reads use the Gateway-owned execution-copy key. */
     public function owns(Operation $operation): bool
     {
         return in_array($operation->kind, self::Kinds, true) && $operation->target_type === 'node'

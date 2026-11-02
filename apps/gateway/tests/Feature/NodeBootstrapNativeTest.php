@@ -205,3 +205,43 @@ it('refuses the probe before recording work when its execution copy cannot be pu
         fclose($identity);
     }
 });
+
+it('inspects a Mac from 209 with complete intent and projects its native check', function (?string $code): void {
+    config(['swamp.read_token' => 'fixture.read.token']);
+    $this->target->update(['platform' => 'macos', 'architecture' => 'arm64', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'mac-public-key']);
+    $identity = tmpfile();
+    fwrite($identity, 'private-mac-bootstrap-sentinel');
+    $keys = Mockery::mock(SshKeyProvider::class);
+    $keys->shouldReceive('privateKeyPath')->andReturn(stream_get_meta_data($identity)['uri']);
+    app()->instance(SshKeyProvider::class, $keys);
+    try {
+        $operation = app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.macos_inspect');
+        expect($operation->node_id)->toBe($this->gateway->id);
+        expect($operation->input['bootstrap']['artifacts'])->toBe([]);
+        expect($operation->input)->not->toHaveKeys(['bootstrap_identity', 'private_bindings']);
+        expect($operation->input['bootstrap']['target']['host_keys'])->toBe(['ssh-ed25519 mac-public-key']);
+        $definition = app(DirectOperation::class)->definition($operation->kind);
+        expect($definition['workflow_inputs'])->toBeTrue()->and($definition['terminal_result']['native'])->toBeTrue();
+        $this->getJson('/api/v1/direct-operations/'.$operation->id.'/private-material?run_id='.$this->run)->assertUnprocessable();
+        $status = $code === null ? 'succeeded' : 'failed';
+        $history = ['id' => $this->run, 'workflowName' => 'operation-node-macos-inspect', 'status' => $status,
+            'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
+            'startedAt' => now()->toISOString(), 'completedAt' => now()->toISOString(), 'jobs' => [['name' => 'bootstrap', 'steps' => [
+                ['name' => 'Inspect the Mac', 'status' => 'succeeded', 'outputs' => ['architecture' => 'arm64', 'verified' => $code === null, 'error_code' => $code]],
+                ['name' => 'Check the Mac', 'status' => $status],
+            ]]]];
+        $this->socket->reply = static fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $history]]];
+        $projected = app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $this->run], $definition['terminal_result']);
+        expect($projected->status->value)->toBe($status)->and($projected->error_code)->toBe($code);
+        expect($this->target->fresh()->user)->toBe('prior');
+        expect(json_encode([$operation->input, $projected->result]))->not->toContain('private-mac-bootstrap-sentinel');
+    } finally {
+        fclose($identity);
+    }
+})->with([null, 'node.platform_mismatch', 'node.architecture_mismatch', 'node.macos_wireguard_required']);
+
+it('refuses Mac inspection without admitted public host keys before any remote call', function (): void {
+    $this->target->update(['platform' => 'macos', 'architecture' => 'arm64']);
+    expect(fn () => app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.macos_inspect'))->toThrow(ResourceOperationException::class);
+    expect($this->socket->sent)->toBe([]);
+});

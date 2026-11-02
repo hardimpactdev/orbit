@@ -21,7 +21,7 @@ final readonly class NodeBootstrapProjection implements DirectOperationProjectio
     {
         $intent = ['bootstrap' => $operation->input['bootstrap']];
 
-        return $operation->kind === 'node.bootstrap_probe'
+        return in_array($operation->kind, ['node.bootstrap_probe', 'node.macos_inspect'], true)
             ? ['intent' => $intent, 'execution_secrets' => $operation->input['execution_secrets']]
             : $intent;
     }
@@ -32,6 +32,12 @@ final readonly class NodeBootstrapProjection implements DirectOperationProjectio
             'probed', 'installed', 'changed', 'bootstrapped', 'bootstrap_verified', 'architecture', 'host_type', 'public_key',
             'host_key_fingerprint', 'account', 'error_code',
         ]));
+
+        if ($operation->kind === 'node.macos_inspect' && in_array($data['status'] ?? null, ['failed', 'interrupted'], true)) {
+            $data['error_code'] = in_array($result['error_code'] ?? null, ['node.platform_mismatch', 'node.architecture_unsupported', 'node.architecture_mismatch', 'node.macos_wireguard_required'], true)
+                ? $result['error_code'] : 'node.bootstrap_channel_uncertain';
+            $result['error_code'] = $data['error_code'];
+        }
 
         return DB::transaction(function () use ($operation, $data, $result): Operation {
             $operation = app(DirectOperation::class)->project($operation, $data, $result);

@@ -53,6 +53,8 @@ Doctor reports `node.worker_failed` for a failed unit. The Node exporter exposes
 
 After review and fleet agent update, prove each selected Node before announcing it ready. VPN and usexit remain outside the current worker rollout. The canary verifies root-owned agent configuration against the expected Node ID and user, hostname, effective user and `sudo -n`. Record its native run ID and worker instance identity before announcing that Node live. Removing a Node from the rollout and converging disables the unit without waiting on its own worker; credentials and cache remain for recovery. macOS launchd is deferred until implemented and proven.
 
+Standalone `node.macos_inspect` runs on 209 with the admitted SSH host keys and an execution-copy bootstrap key. It reads only platform, architecture and interface addresses, then uses a native assert. It checks or installs no agent, account, package or runtime on the Mac.
+
 ## Add a Node
 
 A new Node needs a public SSH host and an approved SSH host key fingerprint, `--host-key-fingerprint`. Without the fingerprint, the Gateway refuses with `node.ssh_host_fingerprint_required`. A Node with `app-dev` needs a TLD, unless it joins an active Cluster that has one. Otherwise the Gateway refuses with `node.tld_required`. Platforms are `linux` for Ubuntu 26.04 service Nodes and `macos` for selected tools. [macOS Nodes](#macos-nodes) use a separate enrollment path.

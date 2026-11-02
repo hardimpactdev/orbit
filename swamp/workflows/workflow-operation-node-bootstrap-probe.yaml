@@ -1,6 +1,7 @@
 id: 50dfa101-dcab-4fc4-aaac-e47dd1b47f0b
 name: operation-node-bootstrap-probe
 description: Read-only bootstrap using official SSH methods and native terminal projection.
+queueTimeout: 30
 vaults:
 - orbit-control-inputs
 inputs:
@@ -62,10 +63,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "bootstrap-ssh-" + string(inputs.node_id) }}'
+      behaviorName: '${{ "bootstrap-ssh-" + string(inputs.intent.bootstrap.node_id) }}'
       methodName: exec
       globalArgs: &id002
-        name: '${{ "bootstrap-ssh-" + string(inputs.node_id) }}'
+        name: '${{ "bootstrap-ssh-" + string(inputs.intent.bootstrap.node_id) }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.bootstrap.target.user }}
@@ -87,7 +88,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "bootstrap-ssh-" + string(inputs.node_id) }}'
+      behaviorName: '${{ "bootstrap-ssh-" + string(inputs.intent.bootstrap.node_id) }}'
       methodName: collect-host-public-key
       globalArgs: *id002
       inputs:
@@ -105,7 +106,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/node-bootstrap-probe-result'
-      behaviorName: '${{ "bootstrap-result-" + string(inputs.node_id) }}'
+      behaviorName: '${{ "bootstrap-result-" + string(inputs.intent.bootstrap.node_id) }}'
       methodName: read
       inputs:
         bootstrap: ${{ inputs.intent.bootstrap }}

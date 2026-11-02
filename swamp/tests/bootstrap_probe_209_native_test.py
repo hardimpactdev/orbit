@@ -45,7 +45,7 @@ elif 'ssh_host' in sys.argv[-1]:print(os.environ['HOST_PUBLIC_KEY'])
         fake.chmod(0o755)
         self.native_env.update(PATH=str(tools) + ':' + os.environ['PATH'], AUDIT=str(audit), HOST_PUBLIC_KEY=public)
         inputs = {'operation_id': 1, 'node_id': 14, 'kind': 'node.bootstrap_probe',
-                  'intent': {'bootstrap': {'platform': 'linux', 'expected_architecture': 'x86_64',
+                  'intent': {'bootstrap': {'node_id': 99, 'platform': 'linux', 'expected_architecture': 'x86_64',
                       'target': {'host': 'admitted-target', 'port': 2222, 'user': 'bootstrap', 'host_keys': [public]}}},
                   'execution_secrets': {'bootstrap_identity': {'vault': 'orbit-control-inputs', 'key': 'bootstrap-identity-node-14'}}}
         self.cli('workflow', 'validate', 'operation-node-bootstrap-probe')
@@ -54,5 +54,6 @@ elif 'ssh_host' in sys.argv[-1]:print(os.environ['HOST_PUBLIC_KEY'])
         run = decoder.raw_decode(result.stdout[result.stdout.index('{'):])[0]
         history = self.cli('workflow', 'history', 'get', run['id'])
         self.assertIn('"probed":true', history.stdout.replace('\\"', '"').replace(' ', ''))
+        self.assertIn('bootstrap-ssh-99', history.stdout)
         self.assertIn('bootstrap@admitted-target', audit.read_text())
         self.assertNotIn('gateway.orbit', audit.read_text())

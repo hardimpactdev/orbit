@@ -26,11 +26,11 @@ final readonly class AdmitNodeBootstrapAction
         $input = $this->intent->input($node, $kind, $candidate);
         $root = Node::query()->find($this->gateway->nodeId());
         if ($root === null || $root->status !== LifecycleStatus::Active || $root->platform !== 'linux') {
-            throw new ResourceOperationException('node.bootstrap_gateway_unavailable', 'Bootstrap requires its active Gateway worker.', 409);
+            throw new ResourceOperationException('node.bootstrap_gateway_unavailable', 'Bootstrap requires its active Gateway identity owner.', 409);
         }
         $participants = array_values(array_unique([$root->id, $node->id]));
         $operationInput = ['bootstrap' => $input, 'participant_node_ids' => $participants];
-        if ($kind === 'node.bootstrap_probe') {
+        if (in_array($kind, ['node.bootstrap_probe', 'node.macos_inspect'], true)) {
             $identity = @file_get_contents($this->keys->privateKeyPath());
             if (! is_string($identity) || $identity === '') {
                 throw new ResourceOperationException('node.bootstrap_identity_unavailable', 'The bootstrap SSH identity is unavailable.', 503);

@@ -98,57 +98,9 @@ Deno.test("standalone bootstrap kinds compose native lower actions without child
     }
   }
 });
-Deno.test("Mac inspection only probes and verifies its existing account", async () => {
+Deno.test("Linux host bootstrap refuses a Mac", async () => {
   const f = fixture();
-  f.actions.probe = () => {
-    f.calls.push("probe");
-    return Promise.resolve({
-      ...observation,
-      platform: "macos",
-      architecture: "arm64",
-      probed: true,
-    });
-  };
-  f.actions.verify = () => {
-    f.calls.push("verify");
-    return Promise.resolve({
-      ...observation,
-      platform: "macos",
-      architecture: "arm64",
-      bootstrapped: true,
-    });
-  };
-  const raw = {
-    ...input(),
-    platform: "macos",
-    expected_architecture: "arm64",
-    managed_user: "candidate",
-    target: { ...input().target, user: "candidate" },
-    command: null,
-    artifacts: {
-      "macos-aarch64": { sha256: pin, url: "https://example.com/observer" },
-    },
-  };
-  const result = await applyBootstrap(
-    "node.macos_inspect",
-    raw,
-    "/private/key",
-    environment,
-    undefined,
-    f.actions,
-  );
-  assertEquals(f.calls, ["probe", "verify"]);
-  assertEquals(result.bootstrap_verified, true);
-  await assertRejects(() =>
-    applyBootstrap(
-      "node.bootstrap_host",
-      raw,
-      "/private/key",
-      environment,
-      undefined,
-      f.actions,
-    )
-  );
+  await assertRejects(() => applyBootstrap("node.bootstrap_host", { ...input(), platform: "macos", command: null }, "/private/key", environment, undefined, f.actions));
 });
 Deno.test("bootstrap protocol keeps identity callback-local and projects only bounded observations", async () => {
   const secret = "/private/bootstrap-key-sentinel";

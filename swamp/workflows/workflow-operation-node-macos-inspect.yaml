@@ -1,26 +1,129 @@
 id: d842de15-e892-48d2-aca0-acaefba9ce5f
 name: operation-node-macos-inspect
-description: Run the admitted node.macos_inspect intent in one native root.
-vaults: []
+description: Inspect the existing Mac from 209, with pinned official SSH and no Node worker.
+vaults:
+- orbit-control-inputs
 inputs:
+  type: object
   properties:
-    operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
-    kind: { type: string, enum: [node.macos_inspect] }
-  required: [operation_id, node_id, kind]
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind: {type: string, enum: [node.macos_inspect]}
+    intent:
+      type: object
+      properties:
+        bootstrap:
+          type: object
+      required:
+      - bootstrap
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      properties:
+        bootstrap_identity:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^bootstrap-identity-node-[1-9][0-9]*$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      required:
+      - bootstrap_identity
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
 jobs:
-  - name: bootstrap
-    labels: {node: '${{ string(inputs.node_id) }}'}
-    steps:
-      - name: apply
-        writes: true
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/node-bootstrap-direct"
-          behaviorName: '${{ "node-bootstrap-" + string(inputs.node_id) }}'
-          methodName: apply
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
+- name: bootstrap
+  labels:
+    role: swamp
+  steps:
+  - name: Read Mac platform
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "bootstrap-macos-" + string(inputs.intent.bootstrap.node_id) }}
+      methodName: exec
+      globalArgs: &id001
+        name: ${{ "bootstrap-macos-" + string(inputs.intent.bootstrap.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.bootstrap.target.user }}
+          port: ${{ inputs.intent.bootstrap.target.port }}
+          identityContent: ${{ vault.get(inputs.execution_secrets.bootstrap_identity.vault, inputs.execution_secrets.bootstrap_identity.key)
+            }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.bootstrap.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.bootstrap.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - uname
+        - -sm
+        timeoutSec: 20
+  - name: Read Mac addresses
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "bootstrap-macos-" + string(inputs.intent.bootstrap.node_id) }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /sbin/ifconfig
+        timeoutSec: 20
+  - name: Inspect the Mac
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Read Mac platform
+      condition:
+        type: succeeded
+    - step: Read Mac addresses
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-bootstrap-macos-result'
+      behaviorName: ${{ "bootstrap-macos-result-" + string(inputs.intent.bootstrap.node_id) }}
+      methodName: inspect
+      inputs:
+        expected_architecture: ${{ inputs.intent.bootstrap.expected_architecture }}
+        address: ${{ inputs.intent.bootstrap.address }}
+        platform: ${{ steps["Read Mac platform"].outputs }}
+        network: ${{ steps["Read Mac addresses"].outputs }}
+  - name: Check the Mac
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Inspect the Mac
+      condition:
+        type: succeeded
+    task:
+      type: assert
+      expr: steps["Inspect the Mac"].outputs.verified
+      severity: high
+      message: The Mac must have its admitted WireGuard address
+queueTimeout: 30

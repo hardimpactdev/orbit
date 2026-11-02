@@ -18,7 +18,6 @@ const Kind = z.enum([
   "node.bootstrap_install",
   "node.bootstrap_host",
   "node.bootstrap_verify",
-  "node.macos_inspect",
 ]);
 const Args = DirectArgs.extend({
   kind: Kind,
@@ -59,9 +58,6 @@ export async function applyBootstrap(
   firewall = convergeFirewall,
 ) {
   const input = BootstrapInput.parse(raw);
-  if (kind === "node.macos_inspect" && input.platform !== "macos") {
-    throw new Error("node.platform_mismatch");
-  }
   if (
     ["node.bootstrap_host", "node.bootstrap_verify"].includes(kind) &&
     input.platform !== "linux"
