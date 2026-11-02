@@ -201,6 +201,7 @@ jobs:
   - name: 'Report the result'
     labels: {role: swamp}
     dependsOn:
+    - {step: 'Read the scripts', condition: {type: always}}
     - {step: 'Verify the source', condition: {type: always}}
     - {step: 'Check work is pushed', condition: {type: always}}
     - {step: 'Stop, remove Processes', condition: {type: always}}
@@ -235,7 +236,7 @@ jobs:
           if status == 'succeeded' and exit_code == '0':
               inspection = verified.get('source_inspection')
           # Script phases report their own error code; child workflows and the teardown runner map to the legacy codes.
-          phases = [('VERIFIED', 'Verify the source', 'instance.source_identity_invalid'), ('PUSHED', 'Check work is pushed', 'instance.remove_refused'),
+          phases = [('READ', 'Read the scripts', 'instance.removal_incomplete'), ('VERIFIED', 'Verify the source', 'instance.source_identity_invalid'), ('PUSHED', 'Check work is pushed', 'instance.remove_refused'),
                     ('PROCESSES', 'Stop, remove Processes', 'instance.removal_incomplete'), ('TEARDOWN', 'Run teardown steps', 'instance.teardown_step_failed'),
                     ('SQLITE', 'Remove SQLite files', 'instance.removal_incomplete'), ('ROUTE', 'Withdraw the Route', 'instance.removal_incomplete'),
                     ('REMOVED', 'Remove the source', 'instance.remove_refused'), ('GONE', 'Check it is gone', 'instance.removal_incomplete')]
@@ -256,6 +257,9 @@ jobs:
           sys.exit(0 if result['removed'] else 1)
           PY
         env:
+          READ_STATUS: '${{ "Read the scripts" in steps ? steps["Read the scripts"].status : "skipped" }}'
+          READ_EXIT: ''
+          READ_STDOUT: ''
           VERIFIED_STATUS: '${{ "Verify the source" in steps ? steps["Verify the source"].status : "skipped" }}'
           VERIFIED_EXIT: '${{ "Verify the source" in steps && steps["Verify the source"].status == "succeeded" ? string(steps["Verify the source"].outputs.exitCode) : "" }}'
           VERIFIED_STDOUT: '${{ "Verify the source" in steps && steps["Verify the source"].status == "succeeded" ? steps["Verify the source"].outputs.stdout : "" }}'

@@ -238,6 +238,11 @@ class InstanceDestroyNative(InstanceNativeFixture):
         self.assertEqual((result['failed_step'],result['error_code']),('Verify the source','instance.unsafe_content'))
         self.assertTrue((self.application/'uncommitted').is_file())
         self.assertEqual(self.steps['Remove the source']['status'],'skipped')
+    def test_a_missing_shipped_script_fails_at_read_the_scripts_and_changes_nothing(self):
+        (self.repo/'extensions/behaviors/operations/instance-dev-command/destroy/verify.py').unlink()
+        _,result = self.destroy(False)
+        self.assertEqual((result['removed'],result['failed_step'],result['error_code']),(False,'Read the scripts','instance.removal_incomplete'))
+        self.assertTrue(self.application.is_dir())
     def test_a_retained_capture_is_reused_after_the_checkout_is_gone(self):
         run,first = self.destroy()
         self.input['intent']['source_capture'] = first['source_inspection']
