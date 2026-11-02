@@ -76,3 +76,4 @@ instance.deploy
 tasks.park
 tasks.maintenance
 node.role_relocate
+node.role_converge

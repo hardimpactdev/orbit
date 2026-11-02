@@ -63,7 +63,7 @@ After the assignment moves, Swamp removes the Gateway role's recorded firewall r
 4. From a peer that trusts the Orbit CA, run `curl https://<new-wireguard-ip>/up`, then `curl https://gateway.orbit/up`.
 5. Point CLI profiles that name the old WireGuard address at the new one.
 6. The `gateway.serving_node_id` setting still names the old Node, so that Node keeps Gateway authority. Only a Gateway bootstrap records a new serving Node.
-7. Run `orbit node:add <node>` or a role converge on each Node, so its [Node agent](/reference/node-agent#how-it-connects) learns the new Gateway address. A role converge rewrites the agent configuration and keeps the agent key; it fails when the key does not match the recorded verifier.
+7. Run `orbit node:converge <node>` on each Node, so its [Node agent](/reference/node-agent#how-it-connects) learns the new Gateway address. Role convergence applies only the role's resources and leaves the observer configuration to Node convergence.
 8. Stop Caddy and PHP-FPM on the old Node once the new `/up` answers.
 
 After the split, private DNS publication runs over SSH on the `vpn` Node. Inspect the catalog and the listener there, not on the Gateway. The publication installs the listener release from the Gateway's own code, so the `vpn` Node needs no Orbit checkout. The WireGuard hub keys stay on the `vpn` Node in `/etc/wireguard/orbit.conf`. A Metrics converge that fails while it publishes DNS keeps Grafana, Prometheus, and `/etc/orbit/metrics` in place.

@@ -54,7 +54,7 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  %% Each Swamp label below is an actual parent workflow step.
+  %% Each Swamp label below is an actual shared resource workflow step.
   %% Official child workflows retain their own resource checks.
   SW->>N: Read the OS release<br/>SSH argv
   SW->>SW: Require supported Ubuntu<br/>native assert
@@ -124,8 +124,6 @@ sequenceDiagram
   opt role plan needs this action
   SW->>N: Write private files<br/>cfgmgmt file
   end
-  %%> Secrets:
-  %%> - vault.get supplies the complete private file to cfgmgmt file; owner and mode 0600 apply without logging its content
   opt role plan needs this action
   SW->>N: Publish the Reverb release<br/>cfgmgmt link
   end
@@ -143,6 +141,9 @@ sequenceDiagram
   end
   opt role plan needs this action
   SW->>N: Restart Reverb<br/>cfgmgmt systemd
+  end
+  opt role plan needs this action
+  SW->>N: Start Reverb<br/>cfgmgmt systemd
   end
   opt role plan needs this action
   SW->>SW: Plan Metrics containers<br/>public resource plan
@@ -204,31 +205,31 @@ sequenceDiagram
   opt role plan needs this action
   SW->>N: Set the Grafana password<br/>SSH argv
   end
-  opt Swamp role
+  opt role plan needs this action
   SW->>N: Apply Swamp identity<br/>SSH argv
   end
-  opt Swamp role
+  opt role plan needs this action
   SW->>N: Apply Swamp serve<br/>cfgmgmt systemd
   end
-  opt Swamp role
+  opt role plan needs this action
   SW->>N: Apply Swamp worker unit<br/>cfgmgmt systemd
   end
-  opt Swamp role
+  opt role plan needs this action
   SW->>N: Start ${{ self.worker }}<br/>cfgmgmt systemd
   end
-  opt Swamp role
+  opt role plan needs this action
   SW->>N: Check Swamp serve<br/>cfgmgmt systemd
   end
-  opt Swamp role
+  opt role plan needs this action
   SW->>N: Check Swamp worker unit<br/>cfgmgmt systemd
   end
-  opt Swamp role
+  opt role plan needs this action
   SW->>N: Check ${{ self.worker }}<br/>cfgmgmt systemd
   end
-  opt Swamp role
+  opt role plan needs this action
   SW->>N: Check Swamp identity<br/>cfgmgmt file
   end
-  opt Swamp role
+  opt role plan needs this action
   SW->>SW: Check Swamp runtime<br/>native assert
   end
   opt role plan needs this action
@@ -268,8 +269,6 @@ sequenceDiagram
   opt role plan needs this action
   SW->>M: Publish Prometheus config<br/>SSH argv
   end
-  %%> Why:
-  %%> - copy onto the existing file so the running container reads its bind-mounted inode after SIGHUP
   opt role plan needs this action
   SW->>M: Reload Prometheus<br/>SSH argv
   end
@@ -312,9 +311,8 @@ sequenceDiagram
   end
   SW->>SW: Check the role<br/>native assert
   %%> Role boundary:
-  %%> - node:converge owns the Node observer, its configuration and the Orbit CLI
-  %%> End checks:
-  %%> - official package, directory, file, container and systemd checks supply compliance; the native assertion requires it
+  %%> - node:converge owns the Node observer and Orbit CLI
+  %%> - official resource checks supply compliance; Check the role requires it
   alt every step passes
     N-->>SW: role services ready
     %%> Returns:

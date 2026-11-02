@@ -84,6 +84,15 @@ final readonly class NativeNodeRoleRuntimeInput
                 ['url' => 'http://'.$node->wireguard_ip.':3000/api/health', 'require_success' => true]];
         } else {
             $spec = ValidatedData::object($snapshot['runtime']);
+            if ($operation->kind === 'node.role_converge') {
+                $clickhouse = Node::query()->findOrFail(ValidatedData::integer(ValidatedData::object($spec['clickhouse'])['node_id']));
+                $runtime['analytics'] = ['process_id' => ValidatedData::object($spec['installation'])['process_id'],
+                    'intent' => [], 'initialize' => [], 'clickhouse_node_id' => $clickhouse->id,
+                    'clickhouse_ssh' => app(SwampSshExecutionInput::class)->forNode($clickhouse), 'health_url' => $spec['health_url']];
+                $runtime['probes'][] = ['url' => $spec['health_url'], 'require_success' => true];
+
+                return ['intent' => $runtime, 'execution_secrets' => $copies];
+            }
             $process = Process::query()->whereKey(ValidatedData::object($spec['installation'])['process_id'])->where('owner_type', Node::class)
                 ->where('owner_id', $node->id)->where('name', PlausibleProcess::NAME)->firstOrFail();
             $input = app(ProcessOperationAdmission::class)->inputFor($process, 'create');

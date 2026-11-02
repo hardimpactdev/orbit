@@ -63,7 +63,7 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
 
     public function apply(Operation $operation, array $data): Operation
     {
-        if ($operation->kind === 'node.role_add' && isset($operation->input['native_role'])) {
+        if (in_array($operation->kind, ['node.role_add', 'node.role_converge'], true) && isset($operation->input['native_role'])) {
             if (! in_array($data['status'] ?? null, ['succeeded', 'failed', 'cancelled', 'interrupted'], true)) {
                 throw new ResourceOperationException('operation.result_invalid', 'Native role addition projects terminal results only.', 422);
             }

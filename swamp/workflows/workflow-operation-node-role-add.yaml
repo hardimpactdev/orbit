@@ -1,6 +1,6 @@
 id: 00fd4b62-f72a-4795-9924-a48704608c88
 name: operation-node-role-add
-description: Apply role-owned resources from captured intent through Node 209. Node convergence owns the observer and CLI.
+description: Apply or converge the captured role-owned resources from Node 209. Node convergence owns the observer and CLI.
 vaults:
 - orbit-control-inputs
 queueTimeout: 30
@@ -13,7 +13,7 @@ inputs:
     node_id:
       type: integer
       minimum: 1
-    kind: {type: string, enum: [node.role_add]}
+    kind: {type: string, enum: [node.role_add, node.role_converge]}
     intent:
       type: object
     execution_secrets:
@@ -423,7 +423,7 @@ jobs:
     writes: true
     forEach:
       item: file
-      in: ${{ inputs.intent.runtime.files }}
+      in: ${{ inputs.intent.runtime.files.filter(f, inputs.kind != "node.role_converge" || f.path != "/etc/orbit/metrics/prometheus.yml") }}
     task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ "role-add-runtime-file-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: apply, globalArgs: {
         nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file
           }}', become: true, path: '${{ self.file.path }}', content: '${{ self.file.content }}', owner: '${{ self.file.owner }}', group: '${{ self.file.group }}', mode: '${{ self.file.mode
@@ -535,12 +535,27 @@ jobs:
     labels:
       role: swamp
     writes: true
-    guard: ${{ inputs.intent.runtime.websocket == null }}
+    guard: ${{ inputs.intent.runtime.websocket == null || (inputs.kind == "node.role_converge" && steps["Publish the Reverb release-0"].outputs.changes.size() == 0 && steps["Write private
+      files-0"].outputs.changes.size() == 0 && steps["Apply runtime units-0"].outputs.changes.size() == 0 && steps["Check out Reverb-0"].outputs.changes.size() == 0) }}
     task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ "role-add-reverb-restart-"+string(inputs.node_id) }}', methodName: restart, globalArgs: {nodeHost: '${{
           inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file
           }}', become: true, service: orbit-websocket.service, ensure: running, enabled: true}, inputs: {}}
   dependsOn:
   - {job: phase_29, condition: {type: succeeded}}
+- name: reverb_start
+  labels:
+    role: swamp
+  dependsOn:
+  - {job: phase_30, condition: {type: succeeded}}
+  steps:
+  - name: Start Reverb
+    labels:
+      role: swamp
+    writes: true
+    guard: ${{ inputs.intent.runtime.websocket == null }}
+    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ "role-native-reverb-start-"+string(inputs.node_id) }}', methodName: apply, globalArgs: {nodeHost: '${{
+          inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file
+          }}', become: true, service: orbit-websocket.service, ensure: running, enabled: true}, inputs: {}}
 - name: phase_31
   labels:
     role: swamp
@@ -553,7 +568,7 @@ jobs:
           inputs.intent.runtime.metrics == null ? 1 : inputs.intent.runtime.metrics.assignment_id }}', address: '${{ inputs.intent.runtime.metrics == null ? "127.0.0.1" : inputs.intent.runtime.metrics.address
           }}', files: '${{ inputs.intent.runtime.metrics == null ? [] : inputs.intent.runtime.metrics.files }}'}}
   dependsOn:
-  - {job: phase_30, condition: {type: succeeded}}
+  - {job: reverb_start, condition: {type: succeeded}}
 - name: phase_32
   labels:
     role: swamp
@@ -570,6 +585,25 @@ jobs:
           inputs.intent.ssh.identity_file }}', become: true, image: '${{ self.service.image }}', ensure: present}, inputs: {}}
   dependsOn:
   - {job: phase_31, condition: {type: succeeded}}
+- name: metrics_inspect
+  labels:
+    role: swamp
+  dependsOn:
+  - {job: phase_32, condition: {type: succeeded}}
+  steps:
+  - name: Inspect Metrics containers
+    guard: ${{ inputs.kind != "node.role_converge" }}
+    labels:
+      role: swamp
+    forEach:
+      item: service
+      in: '${{ inputs.intent.runtime.metrics == null ? [] : steps["Plan Metrics containers"].outputs.services }}'
+    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/docker_container', behaviorName: '${{ "role-converge-metrics-inspect-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: check,
+      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
+          inputs.intent.ssh.identity_file }}', become: true, name: '${{ self.service.name }}', image: '${{ self.service.image }}', ensure: running}, inputs: {}}
+    dataOutputOverrides:
+    - specName: state
+      vaultName: orbit-control-inputs
 - name: phase_33
   labels:
     role: swamp
@@ -586,7 +620,7 @@ jobs:
             }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys
                 }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["timeout","60"]+self.service.volume_args }}', timeoutSec: 905}}
   dependsOn:
-  - {job: phase_32, condition: {type: succeeded}}
+  - {job: metrics_inspect, condition: {type: succeeded}}
 - name: phase_34
   labels:
     role: swamp
@@ -604,6 +638,8 @@ jobs:
     dataOutputOverrides:
     - specName: state
       vaultName: orbit-control-inputs
+    guard: ${{ inputs.kind == "node.role_converge" && steps["Inspect Metrics containers-"+string(self._index)].outputs.status == "compliant" && (self.service.name != "orbit-metrics-grafana"
+      || (steps.filter(k,k.startsWith("Write runtime files-") || k.startsWith("Write private files-")).all(k,steps[k].outputs.changes.size() == 0))) }}
   dependsOn:
   - {job: phase_33, condition: {type: succeeded}}
 - name: phase_35
@@ -621,6 +657,8 @@ jobs:
         name: '${{ "role-add-metrics-run-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port
             }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys
                 }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ self.service.argv }}', timeoutSec: 905}}
+    guard: ${{ inputs.kind == "node.role_converge" && steps["Inspect Metrics containers-"+string(self._index)].outputs.status == "compliant" && (self.service.name != "orbit-metrics-grafana"
+      || (steps.filter(k,k.startsWith("Write runtime files-") || k.startsWith("Write private files-")).all(k,steps[k].outputs.changes.size() == 0))) }}
   dependsOn:
   - {job: phase_34, condition: {type: succeeded}}
 - name: phase_36
@@ -789,12 +827,13 @@ jobs:
     role: swamp
   steps:
   - name: Pull the Analytics image
+    guard: ${{ inputs.kind == "node.role_converge" }}
     labels:
       role: swamp
     writes: true
     forEach:
       item: analytics
-      in: '${{ inputs.intent.runtime.analytics == null ? [] : [inputs.intent.runtime.analytics] }}'
+      in: '${{ inputs.kind == "node.role_converge" ? [] : inputs.intent.runtime.analytics == null ? [] : [inputs.intent.runtime.analytics] }}'
     task: {type: behavior, behaviorType: '@swamp/cfgmgmt/docker_image', behaviorName: '${{ "role-add-analytics-image-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: apply,
       globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
           inputs.intent.ssh.identity_file }}', become: true, image: '${{ self.analytics.intent.installation.definition.image }}', ensure: present}, inputs: {}}
@@ -805,12 +844,13 @@ jobs:
     role: swamp
   steps:
   - name: Prepare Analytics storage
+    guard: ${{ inputs.kind == "node.role_converge" }}
     labels:
       role: swamp
     writes: true
     forEach:
       item: initialization
-      in: '${{ inputs.intent.runtime.analytics == null ? [] : inputs.intent.runtime.analytics.initialize }}'
+      in: '${{ inputs.kind == "node.role_converge" ? [] : inputs.intent.runtime.analytics == null ? [] : inputs.intent.runtime.analytics.initialize }}'
     concurrency: 1
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-analytics-initialize-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {
         name: '${{ "role-add-analytics-initialize-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{
@@ -823,12 +863,13 @@ jobs:
     role: swamp
   steps:
   - name: Apply Analytics runtime
+    guard: ${{ inputs.kind == "node.role_converge" }}
     labels:
       role: swamp
     writes: true
     forEach:
       item: analytics
-      in: '${{ inputs.intent.runtime.analytics == null ? [] : [inputs.intent.runtime.analytics] }}'
+      in: '${{ inputs.kind == "node.role_converge" ? [] : inputs.intent.runtime.analytics == null ? [] : [inputs.intent.runtime.analytics] }}'
     task: {type: workflow, workflowIdOrName: operation-process-create, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: process.create, intent: '${{
           self.analytics.intent }}', execution_secrets: {environment: '${{ inputs.intent.runtime.analytics == null ? {} : inputs.execution_secrets["analytics_environment"] }}'}}}
   dependsOn:
@@ -1469,8 +1510,10 @@ jobs:
   - {job: phase_28, condition: {type: completed}}
   - {job: phase_29, condition: {type: completed}}
   - {job: phase_30, condition: {type: completed}}
+  - {job: reverb_start, condition: {type: completed}}
   - {job: phase_31, condition: {type: completed}}
   - {job: phase_32, condition: {type: completed}}
+  - {job: metrics_inspect, condition: {type: completed}}
   - {job: phase_33, condition: {type: completed}}
   - {job: phase_34, condition: {type: completed}}
   - {job: phase_35, condition: {type: completed}}
@@ -1533,6 +1576,7 @@ jobs:
         nodeHost: '${{ self.metrics.ssh.target.host }}', nodeUser: '${{ self.metrics.ssh.target.user }}', nodePort: '${{ self.metrics.ssh.target.port }}', nodeIdentityFile: '${{ self.metrics.ssh.identity_file
           }}', become: true, path: '${{ self.metrics.candidate }}', ensure: absent}, inputs: {}}
   - name: Remove init containers
+    guard: ${{ inputs.kind == "node.role_converge" }}
     labels:
       role: swamp
     writes: true

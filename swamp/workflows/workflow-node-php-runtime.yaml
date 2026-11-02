@@ -107,6 +107,7 @@ jobs:
         nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
       inputs: {}
   - name: 'Reload PHP-FPM'
+    guard: ${{ inputs.kind == "node.role_converge" && steps["Write the runtime settings"].outputs.changes.size() == 0 && steps["Enable the runtime settings"].outputs.changes.size() == 0 && steps["Set the stop timeout"].outputs.changes.size() == 0 }}
     labels: {role: swamp}
     dependsOn: [{step: 'Enable PHP-FPM', condition: {type: succeeded}}]
     writes: true

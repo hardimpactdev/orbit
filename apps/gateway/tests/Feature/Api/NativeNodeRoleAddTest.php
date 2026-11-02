@@ -170,3 +170,18 @@ it('removes the native Gateway DNS unit along with the retired resolver drop-in'
         ->and(array_column($plan['files'], 'path'))->toContain('/etc/systemd/system/orbit-gateway-dns.service',
             '/etc/systemd/system/wg-quick@orbit.service.d/orbit-gateway-dns.conf');
 });
+
+
+it('converges a role on a Node with other roles without an observer identity or a target worker', function (): void {
+    $this->node->roles()->create(['role' => RoleName::Database, 'status' => 'active']);
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    $this->node->forceFill(['agent_secret_hash' => null])->save();
+    $operation = app(AdmitNodeRoleOperationAction::class)->add($this->node, RoleName::Database, true);
+    $input = app(DirectOperation::class)->workflowInputs($operation);
+
+    expect($operation->kind)->toBe('node.role_converge')
+        ->and($input['intent']['role'])->toBe('database')
+        ->and($input['intent']['ssh']['control_node_id'])->toBe(209)
+        ->and($input['intent'])->not->toHaveKeys(['agent', 'verifier_hash', 'cli', 'secret_hash'])
+        ->and($this->node->roles()->where('role', RoleName::AppDev)->sole()->status->value)->toBe('active');
+});

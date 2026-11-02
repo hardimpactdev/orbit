@@ -811,11 +811,13 @@ a nonempty cache owned by root or a symlink. Credential ownership stays the same
 
 Adding `gateway`, `ingress`, `app-dev`, `app-prod`, `metrics`, `database`, `websocket`, `analytics`, or `ci-runner` records one `node.role_add` Operation and returns HTTP 202. `node:role:add` follows that Operation. `--converge` records `node.role_converge` for an existing assignment and uses its role convergence DAG. VPN and Router retain their protected-role policy.
 
-The Gateway validates the Node and records its assignment, runtime intent, public certificate plan and exact participants. Swamp performs the baseline, runtime, certificate and publication work in one native DAG. Role additions and Node convergence generate their footprint stages from one template. Agent actions, child Operations and polled execution are absent. The frozen agent continues to provide observations.
+The Gateway freezes the role's public packages, files, services, certificate requests, publications and Metrics changes at admission. The control worker on Node 209 applies them over pinned SSH. Neither additions nor role convergence require a worker on the target. Both use the shared native role resource graph; Node convergence separately owns the observer and Orbit CLI.
 
-The root records certificate publication before rendering Caddy, then records WebSocket serving state before publishing DNS. It captures the final footprint after those state changes, so a successful role records the files it actually published. Analytics runtime success records its managed Process even when a later publication fails. Gateway DNS routing failures remain follow-up warnings and retain Gateway authority. Exporter children share the prospective certificate plan. They omit Caddy and PHP publication when the parent owns that Node’s complete publication, so a role change reloads each configuration once.
+Private role files come from execution vault values and use mode `0600`. The Gateway projects the native terminal check, completed certificate and Caddy publication, and role-owned artifact digests. Finished host changes remain after failure. Analytics addition records its managed Process when its runtime succeeded, even if a later publication fails. No step reads intent or sends a result callback to the Gateway.
 
-Execution requires an admitted Node worker or the approved canonical proxy for every applicable effect participant. A complete Metrics fleet containing a member with neither transport refuses before host effects; it does not drop that member or claim success. Existing credential types stay inside the shared private callback. Role additions can read their admitted agent hash and cannot write it.
+Exporter children share the prospective certificate plan. They omit Caddy and PHP publication when the parent owns that Node’s complete publication, so a role change reloads each configuration once.
+
+
 
 ### Native role lifecycle
 
@@ -854,8 +856,8 @@ After checking its admitted publication participant, the parent uses `NodeRolePu
 
 ## Native role convergence
 
-Existing Database-only and Ingress-only assignments use `operation-node-role-converge-209` when no serving Metrics fleet needs reconciliation. The admitted public intent includes the canonical209 SSH descriptor and full target pins. Account lookup, observer binary delivery, OS prerequisites, peer DNS repair, observer configuration and service, and CLI installation are native steps through official SSH. The observer configuration contains no worker stanza or token. The Gateway records state only from the terminal run result.
+`node:role:add NODE ROLE --converge` requires an existing assignment. It uses the same native resource graph as role addition for every mutable role, including Nodes with several roles and fleets with Metrics. It applies role-owned packages, files, runtime and publication from the frozen intent. It installs no observer or CLI and needs no observer secret.
 
-Ingress also installs the canonical pinned Caddy package, publishes the admitted complete Caddy catalog through the Route child, and applies its canonical firewall rules after publication. Each firewall rule is a visible official SSH action using the canonical catalog's UFW arguments and UFW's idempotence; this root does not use the retained status parser. Publication and firewall failures fail the role. Failed prerequisites fail the role; observer, peer DNS and CLI failures remain explicit follow-ups.
+Matching Reverb inputs skip its restart, while an inactive service starts. Matching Metrics containers keep running. Prometheus configuration is validated, copied onto the existing bind-mounted file and reloaded with SIGHUP. Analytics convergence repairs role-owned configuration and checks its existing Process; it creates no Process and runs no database migration.
 
-Other role sets use the shared retained role-add graph and keep their current dependencies. The duplicate retained converge graph is removed. The shared child receives the original root run ID for existing callbacks. Native admissions cannot use the retained callback execution path. Cancellation sends one request to Swamp’s native cancellation endpoint; only the terminal run settles the Operation. An unconfirmed cancellation remains an explicit error and does not invent a terminal state. This partial switch does not provide enrollment restoration or change hub, peer, Metrics or Tool kinds.
+Official resource checks and the native role assertion determine completion. The Gateway marks the same assignment active on success or failed at the native step on failure. Finished changes remain for the next convergence. Cancellation goes to the bound Swamp run, and only its terminal event settles the Operation.

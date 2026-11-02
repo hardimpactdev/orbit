@@ -10,7 +10,6 @@ use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsStorageProcessGuard;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NativeNodeRoleAddInput;
-use App\Domain\Nodes\NativeNodeRoleConvergeInput;
 use App\Domain\Nodes\NativeNodeRoleRelocateInput;
 use App\Domain\Nodes\NativeNodeRoleRemovalInput;
 use App\Domain\Nodes\NodeRoleCertificateInput;
@@ -63,20 +62,17 @@ final readonly class AdmitNodeRoleOperationAction
             if ($role === RoleName::Database && (! is_string($node->wireguard_ip) || $node->wireguard_ip === '')) {
                 throw new ResourceOperationException('database.wireguard_ip_missing', 'The database role requires its recorded WireGuard address.', 422);
             }
-            $nativeAdd = ! $converge;
-            $native = $nativeAdd || NativeNodeRoleConvergeInput::supports($node, $role);
-            if ($duringProvisioning || ! app(ManagedNodeEligibility::class)->allows($node)
-                || (! $native && ! app(NodeRolePlacement::class)->allows($node))) {
+            if ($duringProvisioning || ! app(ManagedNodeEligibility::class)->allows($node)) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'Role work requires its exact managed Node worker.', 422);
             }
             if (! $this->roles->definition($role)->mutable) {
                 throw new RoleAssignmentException("Role [{$role->value}] is protected from generic mutation.");
             }
             $this->assign->preflight($node, $role);
-            if (! $nativeAdd && (! is_string($node->agent_secret_hash) || preg_match('/\A[a-f0-9]{64}\z/D', $node->agent_secret_hash) !== 1)) {
-                throw new ResourceOperationException('node.agent_rekey_required', 'The role needs the existing recorded Node agent identity.', 409);
-            }
             $existing = $node->roles()->where('role', $role)->first();
+            if ($converge && $existing === null) {
+                throw new RoleAssignmentException("Role [{$role->value}] is not assigned; add it before convergence.");
+            }
             if ($existing !== null && ! $converge && ! ($role === RoleName::Ingress && $existing->status === LifecycleStatus::Active)) {
                 throw new RoleAssignmentException("Role [{$role->value}] is already assigned; explicit convergence is required.");
             }
@@ -88,7 +84,7 @@ final readonly class AdmitNodeRoleOperationAction
                 $this->analyticsStorage->assert($analytics->postgresProcessId, $analytics->clickhouseProcessId);
                 $this->analytics->store($node, $analytics);
             }
-            $beforePublications = $nativeAdd ? app(NativeNodeRoleRemovalInput::class)->publications($node, $role) : [];
+            $beforePublications = app(NativeNodeRoleRemovalInput::class)->publications($node, $role);
             $operation = $this->operations->execute($kind, 'node', $node->id, $node->id,
                 ['node_id' => $node->id, 'role' => $role->value, 'converge' => $converge], 'operator', $requestId);
             if (! $operation->wasRecentlyCreated) {
@@ -102,26 +98,19 @@ final readonly class AdmitNodeRoleOperationAction
             if ($role === RoleName::Gateway) {
                 app(GrantGatewayRoleAccessAction::class)->execute($node);
             }
-            app(NodeRoleRuntimeInput::class)->prepare($node, $assignment);
+            if (! $converge || $role !== RoleName::Analytics) {
+                app(NodeRoleRuntimeInput::class)->prepare($node, $assignment);
+            }
             $snapshot = app(NodeRoleDirectInput::class)->capture($node->refresh(), $assignment, $created);
-            if (! $nativeAdd && ValidatedData::object($snapshot['footprint'])['refusal'] !== null) {
-                throw new ResourceOperationException('operation.kind_unavailable', 'An applicable footprint contribution has no native action.', 422);
-            }
             $metrics = $snapshot['metrics_fleet'] === null ? null : ValidatedData::object($snapshot['metrics_fleet']);
-            $native = $nativeAdd || ($native && $metrics === null);
-            if (! $native && ! app(NodeRolePlacement::class)->allows($node)) {
-                throw new ResourceOperationException('operation.kind_unavailable', 'This role set requires its existing Node worker.', 422);
-            }
             $metricsOwner = $metrics === null ? $node->id : ValidatedData::integer($metrics['metrics_node_id']);
             $runtime = ValidatedData::object($snapshot['runtime'] ?? []);
             $clickhouse = ValidatedData::object($runtime['clickhouse'] ?? []);
-            $nativeInput = $nativeAdd
-                ? app(NativeNodeRoleAddInput::class)->capture($node, $assignment, $snapshot, $beforePublications, $operation)
-                : ($native ? app(NativeNodeRoleConvergeInput::class)->capture($node, $assignment, $snapshot) : null);
+            $nativeInput = app(NativeNodeRoleAddInput::class)->capture($node, $assignment, $snapshot, $beforePublications, $operation);
             $this->store->change($operation, ['input' => [...$operation->input, '_role' => $snapshot,
-                ...($nativeInput === null ? [] : ['native_role' => $nativeInput['intent'], 'execution_secrets' => $nativeInput['execution_secrets'] ?? []]),
+                'native_role' => $nativeInput['intent'], 'execution_secrets' => $nativeInput['execution_secrets'],
                 'participant_node_ids' => array_values(array_unique([$node->id,
-                    ...($nativeInput['participant_node_ids'] ?? []),
+                    ...$nativeInput['participant_node_ids'],
                     ...NodeRolePublicationInput::participants(ValidatedData::object($snapshot['publication'])),
                     ...NodeRoleCertificateInput::participants(ValidatedData::object($snapshot['certificates'])),
                     ...NodeRoleMetricsInput::participants($metrics),

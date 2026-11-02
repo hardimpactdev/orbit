@@ -92,9 +92,9 @@ if 'install' in sys.argv:
         self.intent['runtime'] = {'directories': [], 'files': [], 'secret_files': [], 'units': [], 'probes': [], 'groups': [], 'users': [],
                                   'websocket': None, 'metrics': None, 'analytics': None, 'gateway_dns': None, 'swamp': None, 'ci_host': False}
 
-    def run_role(self, success=True):
+    def run_role(self, success=True, kind="node.role_add"):
         result = json.loads(self.cli('workflow', 'run', 'operation-node-role-add', '--input', json.dumps({
-            'operation_id': 9001, 'node_id': 701, 'kind': 'node.role_add', 'intent': self.intent, 'execution_secrets': {},
+            'operation_id': 9001, 'node_id': 701, 'kind': kind, 'intent': self.intent, 'execution_secrets': {},
         }), success=success).stdout)
         return json.loads(self.cli('workflow', 'history', 'get', result['id']).stdout)
 
@@ -142,3 +142,14 @@ if 'install' in sys.argv:
         self.assertIn('--no-remove', install)
         self.assertIn('--no-upgrade', install)
         self.assertIn('DPkg::Lock::Timeout=60', install)
+    def test_role_convergence_repairs_its_file_without_installing_the_observer(self):
+        path = self.host / 'role.conf'
+        path.write_text('drift\n')
+        self.intent['files'] = [{'path': str(path), 'content': 'desired role\n',
+                                 'owner': pwd.getpwuid(os.getuid()).pw_name,
+                                 'group': grp.getgrgid(os.getgid()).gr_name, 'mode': '0644'}]
+        history = self.run_role(kind='node.role_converge')
+        self.assertEqual(path.read_text(), 'desired role\n')
+        statuses = {step['name']: step['status'] for job in history['jobs'] for step in job['steps']}
+        self.assertEqual(statuses['Check the role'], 'succeeded')
+        self.assertNotIn('Install the Node agent', statuses)
