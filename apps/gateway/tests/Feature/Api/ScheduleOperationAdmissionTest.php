@@ -233,13 +233,16 @@ it('keeps a Schedule removing when serve does not confirm the removal, and a rer
 });
 
 it('sets the trigger again on enable without touching the Node', function (): void {
-    $this->postJson('/api/v1/schedules', $this->payload)->assertAccepted();
+    $this->postJson('/api/v1/schedules', [...$this->payload, 'start' => false])->assertAccepted();
     $schedule = Schedule::query()->sole();
     $before = count($this->socket->sent);
     $id = $this->postJson('/api/v1/schedules/'.$schedule->id.'/activate')->assertAccepted()->assertJsonPath('data.kind', 'schedule.enable')->json('data.id');
-    expect(array_column(array_slice($this->socket->sent, $before), 'type'))->toBe(['workflow.edit', 'workflow.trigger.set'])
+    expect(array_column(array_slice($this->socket->sent, $before), 'type'))->toBe(['workflow.trigger.set'])
         ->and(Operation::query()->findOrFail($id)->status)->toBe(OperationStatus::Succeeded)
         ->and($schedule->fresh()->desired_timer_state->value)->toBe('enabled');
+    $before = count($this->socket->sent);
+    $this->postJson('/api/v1/schedules/'.$schedule->id.'/activate')->assertAccepted();
+    expect(array_column(array_slice($this->socket->sent, $before), 'type'))->toBe(['workflow.trigger.set']);
 });
 
 it('creates and runs a Schedule from its Placement without reading the account on the Node', function (): void {

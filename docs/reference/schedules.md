@@ -116,7 +116,9 @@ The Gateway's shared reader records a running `schedule.run` Operation when a ro
 
 ## Enable
 
-Enable writes the command copy and the Schedule's workflow, sets its trigger, and stores `enabled` after serve confirms; a repeat does it again. Disable removes the trigger and stores `disabled`; the workflow stays, and a fire that already started finishes. If serve does not confirm, the desired state stays unchanged. A Node timer Schedule refuses enable with `schedule.target_invalid`, because its timer is always on. Production Schedules resolve `current` each time they run, so a new release changes later runs.
+Enable sets the Schedule's trigger and stores `enabled` after serve confirms; a repeat sets it again and keeps the existing workflow. A copied Project definition with no workflow gets its command copy and workflow first.
+
+Disable removes the trigger and stores `disabled`; the workflow stays, and a fire that already started finishes. If serve does not confirm, the desired state stays unchanged. A Node timer Schedule refuses enable with `schedule.target_invalid`, because its timer is always on. Production Schedules resolve `current` each time they run, so a new release changes later runs.
 
 ## Node timers
 

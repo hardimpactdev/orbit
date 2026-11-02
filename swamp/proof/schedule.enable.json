@@ -16,7 +16,8 @@
         "name": "enable-${proof.run}",
         "calendar": "0 3 1 1 *",
         "command": "true",
-        "timeout_seconds": 60
+        "timeout_seconds": 60,
+        "start": false
       }
     }
   ],

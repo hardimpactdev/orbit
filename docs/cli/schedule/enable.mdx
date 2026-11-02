@@ -8,6 +8,8 @@ description: "Set the trigger of one Schedule. The command is idempotent. Use it
 orbit schedule:enable <schedule> [--idempotency-key=KEY] [--json]
 ```
 
+An existing workflow keeps its fixed intent; enable only sets its trigger. A copied Project definition with no workflow gets its command copy and workflow first.
+
 ## How it works
 
 <div className="flow-at" data-chart="schedule/enable"></div>

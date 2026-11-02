@@ -55,8 +55,13 @@ final readonly class NativeSchedules
     public function enable(Schedule $schedule, ?Node $caller, ?string $requestId): Operation
     {
         $input = $this->input($schedule, $caller);
-        // A copy from a Project definition starts with no workflow; enable writes it first.
-        $this->publish($schedule, DesiredTimerState::Enabled);
+        if ($schedule->swamp_workflow_id === null) {
+            // A copy from a Project definition starts with no workflow; enable writes it first.
+            $this->publish($schedule, DesiredTimerState::Enabled);
+        } else {
+            $this->targets->placementOf($schedule);
+            $this->applyTrigger($schedule, DesiredTimerState::Enabled);
+        }
 
         return $this->record($schedule, 'enable', $input, $requestId, ['desired_timer_state' => DesiredTimerState::Enabled], RecordEventType::ScheduleUpdated);
     }
