@@ -6,8 +6,8 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Routes\RouteOperationProjection;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\WebSocket\DirectWebSocketProjection;
 use App\Infrastructure\Certificates\FilesystemRootCertificate;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
@@ -310,7 +310,7 @@ function direct_sign_websocket_parent(string $kind, array $input): void
 
             public function definitions(): array
             {
-                return [$this->kind => ['workflow' => 'test-websocket-signing', 'projection' => DirectWebSocketProjection::class]];
+                return [$this->kind => ['workflow' => 'test-websocket-signing', 'projection' => RouteOperationProjection::class]];
             }
         }]));
     }

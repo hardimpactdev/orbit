@@ -22,6 +22,7 @@ use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
+use App\Jobs\WebSocket\CloseWebSocketOperations;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -62,6 +63,9 @@ $app = Application::configure(basePath: dirname(__DIR__))
         GatewaySchedule::command($schedule, 'queue:prune-failed', uniqueFor: 3600, overlapMinutes: 60, arguments: ['--hours='.config()->integer('retention.failed_jobs_hours')])->daily();
         // Horizon's metrics for its dashboard, only while Horizon runs.
         GatewaySchedule::command($schedule, 'horizon:snapshot', uniqueFor: 300)->everyFiveMinutes()
+            ->when(static fn (): bool => GatewayQueueRedis::configured());
+        // Reverb reports close WebSocket registry tasks; this fails the ones whose processes stopped reporting.
+        GatewaySchedule::job($schedule, new CloseWebSocketOperations)->everyMinute()
             ->when(static fn (): bool => GatewayQueueRedis::configured());
         // Reconcile the deployed recipe each minute; only an identity change queues image builds.
         GatewaySchedule::job($schedule, new RefreshTaskVmBaseImages)->everyMinute()

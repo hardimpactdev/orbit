@@ -9,9 +9,14 @@ namespace App\Domain\Operations;
  */
 final readonly class OperationKinds
 {
+    /** Kinds the Gateway runs or closes itself, with no Swamp run: the two App-key operations and the WebSocket registry tasks. */
     private const array GatewayJobs = [
         'github.app_register' => ['executor' => 'gateway'],
         'github.app_sync' => ['executor' => 'gateway'],
+        'websocket.sync' => ['executor' => 'gateway'],
+        'websocket.app_create' => ['executor' => 'gateway'],
+        'websocket.app_destroy' => ['executor' => 'gateway'],
+        'websocket.app_rotate' => ['executor' => 'gateway'],
     ];
 
     /** The form of every kind name, `<family>.<verb>` in lower case, such as `instance.deploy`. */
@@ -82,7 +87,7 @@ final readonly class OperationKinds
         return app(DirectOperation::class)->definition($kind) !== null;
     }
 
-    /** The two App-key operations must stay inside the Gateway. */
+    /** The App-key operations and the WebSocket registry tasks stay inside the Gateway. */
     public static function gatewayJob(string $kind): bool
     {
         return isset(self::GatewayJobs[$kind]);
