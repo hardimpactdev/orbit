@@ -147,7 +147,7 @@ After saving the password, the Node program revokes every other `default` sessio
 orbit database:create dlf-leden --server=beast-mysql --instance=60
 ```
 
-The database name comes from the slug, with hyphens replaced by underscores. On MySQL, a database name longer than 64 characters, or a user name longer than 32, ends in an underscore and an 8-character hash. PostgreSQL names are limited to 63 ASCII characters and use the same hash suffix when shortened. Orbit generates the owner password.
+The database name comes from the slug, with hyphens replaced by underscores. On MySQL, a database name ends in an underscore and an 8-character hash when its grant form is longer than 64 characters, and a user name when it is longer than 32. The grant form escapes each underscore, and the test prefix grant also adds `%`. PostgreSQL names are limited to 63 ASCII characters and use the same hash suffix when shortened. Orbit generates the owner password.
 
 On MySQL and PostgreSQL, each Instance has one owner user on a server, named `<project>_<instance>` like its databases. A second database for the same Instance reuses that user and its password. That user can reach only the databases the Instance owns and their test databases. A database created without `--instance` gets its own user, named like the database. The connection gets the server's driver, the server's Node address and port, and a link to the server.
 
