@@ -17,9 +17,9 @@ class FleetReleaseNative(NativeTestCase):
     def setUp(self):
         super().setUp()
         self.copy_behaviors('automatic-deploy', 'operations', 'node-worker')
-        module = self.repo / 'extensions/behaviors/operations/fleet-recipe/fleet_release.ts'
+        module = self.repo / 'extensions/behaviors/operations/fleet/release.ts'
         module.write_text('import { http } from "./release_native_fixture.ts";\n' +
-                          module.read_text().replace('fleetRelease();', 'fleetRelease(() => http, () => new Date("2026-10-31T02:30:00Z"));'))
+                          module.read_text().replace('export const behavior = fleetRelease();', 'export const behavior = fleetRelease(() => http, () => new Date("2026-10-31T02:30:00Z"));'))
         # Only the SSH and file transports are held: the observer fetch records the effect, the SSH reads print the running digest.
         (self.repo / 'extensions/behaviors/fleet-host-fixture.ts').write_text('''import {z} from "npm:zod@4.4.3";
 const node=(host:string)=>Number(host.split(".").pop());
@@ -31,7 +31,7 @@ return {dataHandles:[await ctx.writeResource("state",ctx.globalArgs.nodeHost,(s.
 exec:{description:"Fake SSH",arguments:z.object({argv:z.array(z.string())}).passthrough(),execute:async(a:any,ctx:any)=>{const s=load();const n=node(ctx.globalArgs.nodeHost);
 if(a.argv.includes("restart")){s.restarts=(s.restarts||[]).concat([n]);save(s);return {stdout:""};}
 const out={stdout:`${s.running?.[n]??"b".repeat(64)}  /proc/41/exe\\nactive\\n`};await ctx.writeResource("output","output",out);return out;}}}};''')
-        shutil.copy(ROOT / 'extensions/behaviors/operations/fleet/release_native_fixture.ts', module.parent)
+        pass  # the fixture already sits beside release.ts
         # The real node-cli-install child has its own native test; this one records the effect and fails on request.
         (self.repo / 'extensions/behaviors/fleet-cli-fixture.ts').write_text('''import {z} from "npm:zod@4.4.3";
 export const behavior={type:"@fixture/fleet-cli",version:"2026.11.02.1",resources:{result:{schema:z.record(z.string(),z.unknown()),lifetime:"1d",garbageCollection:10}},methods:{
@@ -136,7 +136,7 @@ const result={installed:a.version,configured:true,version:a.version};await ctx.w
         for node in self.state['operation']['input']['nodes']:
             node['daytime'] = False
         # 02:30Z is 03:30 Amsterdam; use a summer boundary by pinning the fixture's clock.
-        module = self.repo / 'extensions/behaviors/operations/fleet-recipe/fleet_release.ts'
+        module = self.repo / 'extensions/behaviors/operations/fleet/release.ts'
         module.write_text(module.read_text().replace('2026-10-31T02:30:00Z', '2026-10-31T12:30:00Z'))
         state, _ = self.run_parent()
         self.assertEqual(state['effects'], [])

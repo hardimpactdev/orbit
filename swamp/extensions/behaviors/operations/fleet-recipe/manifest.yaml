@@ -8,6 +8,6 @@ behaviors:
   - operations/fleet-recipe/assets.ts
   - operations/fleet-recipe/node_role.ts
   - operations/fleet-recipe/observer_assets.ts
-  - operations/fleet-recipe/fleet_release.ts
+  - operations/fleet/release.ts
 additionalFiles:
   - scripts/recipe.py

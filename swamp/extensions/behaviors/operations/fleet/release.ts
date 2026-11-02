@@ -157,7 +157,7 @@ export function fleetRelease(
     }
     return {
         type: "@nckrtl/fleet-release",
-        version: "2026.10.31.1",
+        version: "2026.11.02.1",
         globalArguments: Globals,
         resources: {
             admission: {
@@ -437,3 +437,5 @@ export function fleetRelease(
         },
     };
 }
+// The definition is exported from this module itself; serve bundles the module that declares the type.
+export const behavior = fleetRelease();
