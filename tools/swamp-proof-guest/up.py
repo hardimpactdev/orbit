@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 
 SOURCE = Path(sys.argv[1]).resolve()
-TOPOLOGY = json.loads((SOURCE / 'swamp/proof/topologies/minimal/topology.json').read_text())
+TOPOLOGY = json.loads((SOURCE / 'swamp/proof/topologies' / (sys.argv[2] if len(sys.argv) > 2 else 'minimal') / 'topology.json').read_text())
 ACCOUNT = 'orbit'
 HOME = Path('/home/orbit')
 STATE = HOME / '.orbit/swamp-proof'
@@ -79,12 +79,22 @@ def private(path, value):
 
 @step('target')
 def target():
+    """Every Node of the topology; the first is the fixtures' target."""
     run(['bin/e2e-topology-host-setup'], cwd=SOURCE)
     network = TOPOLOGY['network']
-    node = TOPOLOGY['nodes'][0]
     if run(['incus', 'network', 'list', '--format', 'csv', '--columns', 'n']).split().count(network['name']) == 0:
         run(['incus', 'network', 'create', network['name'], f'ipv4.address={network["gateway"]}/{network["prefix"]}',
              'ipv4.nat=true', 'ipv6.address=none'])
+    if not IDENTITY.exists():
+        IDENTITY.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'swamp-proof-worker', '-f', str(IDENTITY)])
+        run(['chown', '-R', 'orbit:orbit', str(IDENTITY.parent)])
+    # The swamp role's worker key path, which every migrated step's SSH uses (ADR 0243).
+    run(['install', '-D', '-o', 'orbit', '-g', 'orbit', '-m', '0400', str(IDENTITY), '/etc/orbit/swamp-role-worker/ssh-identity'])
+    return [prepare(node, network) for node in TOPOLOGY['nodes']]
+
+
+def prepare(node, network):
     # Re-running up on a held VM keeps the target it already made.
     if node['key'] not in run(['incus', 'list', '--format', 'csv', '--columns', 'n']).split():
         run(['incus', 'copy', 'node-template', node['key'], '-c', f'limits.memory={node["memory"]}', '-c', 'limits.cpu=1',
@@ -94,20 +104,14 @@ def target():
     deadline = time.monotonic() + 900
     while subprocess.run(['incus', 'exec', node['key'], '--', 'true'], capture_output=True, check=False).returncode:
         if time.monotonic() > deadline:
-            raise RuntimeError('target agent did not start')
+            raise RuntimeError(f'{node["key"]} agent did not start')
         time.sleep(2)
     # Exit 2 is "done with recoverable errors": the template guest has no Incus datasource.
     if subprocess.run(['incus', 'exec', node['key'], '--', 'cloud-init', 'status', '--wait'],
                       capture_output=True, timeout=600, check=False).returncode not in (0, 2):
-        raise RuntimeError('target cloud-init did not finish')
+        raise RuntimeError(f'{node["key"]} cloud-init did not finish')
     run(['incus', 'file', 'push', str(SOURCE / 'apps/e2e/resources/guest/prepare-node.sh'), f'{node["key"]}/root/prepare-node.sh'])
     run(['incus', 'exec', node['key'], '--', 'bash', '/root/prepare-node.sh', 'configure-runtime'])
-    if not IDENTITY.exists():
-        IDENTITY.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'swamp-proof-worker', '-f', str(IDENTITY)])
-        run(['chown', '-R', 'orbit:orbit', str(IDENTITY.parent)])
-    # The swamp role's worker key path, which every migrated step's SSH uses (ADR 0243).
-    run(['install', '-D', '-o', 'orbit', '-g', 'orbit', '-m', '0400', str(IDENTITY), '/etc/orbit/swamp-role-worker/ssh-identity'])
     public = IDENTITY.with_suffix('.pub').read_text().split()
     run(['incus', 'exec', node['key'], '--', 'bash', '/root/prepare-node.sh', 'gateway-authorize', ' '.join(public[:2])])
     # The Gateway's bootstrap key, which an enrolled Node accepts beside the worker key (topology version 6).
@@ -126,7 +130,7 @@ def target():
                           '-o', 'UserKnownHostsFile=/dev/null', '-o', 'ConnectTimeout=5', f'orbit@{node["address"]}', 'sudo', '-n', 'true'],
                          capture_output=True, check=False).returncode:
         if time.monotonic() > deadline:
-            raise RuntimeError('target SSH with sudo is not reachable from the Swamp host')
+            raise RuntimeError(f'{node["key"]} SSH with sudo is not reachable from the Swamp host')
         time.sleep(2)
     # An enrolled Node's agent key; the Gateway records only its verifier (topology version 5).
     secret = secrets.token_hex(32)
@@ -237,7 +241,7 @@ def swamp():
 
 
 @step('gateway')
-def gateway(node):
+def gateway(nodes):
     # API contract generation (post-install bin/build-api) is a build output the proof does not use.
     run(['composer', 'install', '--no-interaction', '--no-progress', '--prefer-dist', '--no-dev', '--no-scripts', '--optimize-autoloader'],
         user=ACCOUNT, cwd=GATEWAY, timeout=900)
@@ -270,19 +274,19 @@ def gateway(node):
     run(['chown', 'orbit:orbit', str(database)])
     run(['php', 'artisan', 'migrate', '--force'], user=ACCOUNT, cwd=GATEWAY, timeout=600)
     facts = {'gateway': TOPOLOGY['network']['gateway'], 'gateway_host_key': Path('/etc/ssh/ssh_host_ed25519_key.pub').read_text().split()[1],
-             'operator': TOPOLOGY['operator']['address'], 'target': node}
+             'operator': TOPOLOGY['operator']['address'], 'targets': nodes}
     return json.loads(run(['php', str(SOURCE / 'tools/swamp-proof-guest/gateway.php'), 'seed'], input=json.dumps(facts), user=ACCOUNT, cwd=GATEWAY))
 
 
 def main():
     if os.geteuid() != 0:
         raise RuntimeError('run as root')
-    node = target()
+    nodes = target()
     swamp()
-    seeded = gateway(node)
+    seeded = gateway(nodes)
     facts = {'ready': True, 'commit': run(['git', '-C', str(SOURCE), 'rev-parse', 'HEAD'], user=ACCOUNT).strip(),
              'topology': TOPOLOGY['name'], 'topology_version': TOPOLOGY['version'], 'nodes': seeded['nodes'],
-             'operator_address': TOPOLOGY['operator']['address'], 'target': node, 'timings': timings}
+             'operator_address': TOPOLOGY['operator']['address'], 'target': nodes[0], 'targets': nodes, 'timings': timings}
     (STATE / 'up.json').write_text(json.dumps(facts))
     print(json.dumps(facts))
 

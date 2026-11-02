@@ -106,16 +106,16 @@ def last_json(text):
     return json.loads(text.strip().splitlines()[-1])
 
 
-def topology():
-    return json.loads((ROOT / 'swamp/proof/topologies/minimal/topology.json').read_text())
+def topology(name):
+    return json.loads((ROOT / 'swamp/proof/topologies' / name / 'topology.json').read_text())
 
 
 def provision(gateway, state):
     vm = state['vm']
     if 'group_id' not in vm:
         group = gateway.request('POST', 'task-groups', {
-            'project_id': 62, 'title': f'topology minimal@{state["topology_version"]} {ROOT.name}',
-            'brief': 'Disposable minimal proof topology. No product work, publication or merge.',
+            'project_id': 62, 'title': f'topology {state["topology"]}@{state["topology_version"]} {ROOT.name}',
+            'brief': f'Disposable {state["topology"]} proof topology. No product work, publication or merge.',
             'orchestration': 'external', 'status': 'todo',
             'tasks': [{'title': 'Host the proof topology', 'brief': 'Run kind fixtures and keep their receipts.',
                        'deliverables': [{'id': 'proof', 'type': 'review', 'description': 'Proof receipt.'}]}]})
@@ -140,13 +140,15 @@ def provision(gateway, state):
     return Guest(state['guest_host'], vm['name'])
 
 
-def up(gateway):
+def up(gateway, name='minimal'):
     if subprocess.run(['git', '-C', str(ROOT), 'status', '--porcelain'], capture_output=True, text=True, check=True).stdout.strip():
         raise ProofError('Commit the worktree first; the topology serves one exact commit.')
     commit = subprocess.run(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()
     state = json.loads(SESSION.read_text()) if SESSION.is_file() else None
+    if state and not state['vm'].get('destroyed') and state['topology'] != name:
+        raise ProofError(f'The session holds topology {state["topology"]}; use down first.')
     if not state or state['vm'].get('destroyed'):
-        spec = topology()
+        spec = topology(name)
         state = {'topology': spec['name'], 'topology_version': spec['version'], 'nonce': secrets.token_hex(8), 'vm': {},
                  'receipts': [], 'up_started_at': utc(), 'up_started_epoch': time.time()}
     state.setdefault('receipts', [])
@@ -166,7 +168,7 @@ def up(gateway):
     guest.call(['runuser', '-u', 'orbit', '--', 'git', 'clone', '-q', '--no-checkout', '/home/orbit/swamp-proof/source.bundle', SOURCE])
     guest.call(['runuser', '-u', 'orbit', '--', 'git', '-C', SOURCE, 'checkout', '-q', '--detach', commit])
     staged = time.time() - started
-    facts = last_json(guest.call(['python3', '-I', f'{SOURCE}/tools/swamp-proof-guest/up.py', SOURCE], timeout=2700))
+    facts = last_json(guest.call(['python3', '-I', f'{SOURCE}/tools/swamp-proof-guest/up.py', SOURCE, state['topology']], timeout=2700))
     if not facts.get('ready') or facts['commit'] != commit:
         raise ProofError('The topology did not come up on the staged commit.')
     state.update(ready=True, ready_at=utc(), ready_epoch=time.time(), facts=facts,
@@ -206,6 +208,9 @@ def refresh(guest, state):
 def run(state, kind):
     if not state.get('ready') or state['vm'].get('destroyed'):
         raise ProofError('Use up first.')
+    fixture = json.loads((ROOT / 'swamp/proof' / f'{kind}.json').read_text())
+    if fixture.get('topology', 'minimal') != state['topology']:
+        raise ProofError(f'{kind} needs topology {fixture.get("topology", "minimal")}; this session holds {state["topology"]}.')
     guest = Guest(state['guest_host'], state['vm']['name'])
     refresh(guest, state)
     started = time.time()
@@ -218,7 +223,7 @@ def run(state, kind):
                            'up_to_receipt_seconds': round(time.time() - state['last_up_started_epoch'], 1),
                            'since_first_provision_seconds': round(time.time() - state['up_started_epoch'], 1)},
                'up_started_at': state['up_started_at'], 'written_at': utc(), **body}
-    destination = EVIDENCE / kind / (datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ') + '-minimal.json')
+    destination = EVIDENCE / kind / (datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ') + f'-{state["topology"]}.json')
     save(destination, receipt)
     state['receipts'].append(str(destination))
     state['last_run_epoch'] = time.time()
@@ -288,7 +293,7 @@ def reap(gateway, now=None):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest='action', required=True)
-    sub.add_parser('up')
+    sub.add_parser('up').add_argument('--topology', default='minimal', help='Topology under swamp/proof/topologies (default minimal).')
     runner = sub.add_parser('run')
     runner.add_argument('kind', nargs='+')
     sub.add_parser('receipt')
@@ -312,7 +317,7 @@ def main(argv=None):
                 for name in reap(Gateway()):
                     print(f'swamp-proof: took down expired session {name}', file=sys.stderr)
             if args.action == 'up':
-                state = up(Gateway())
+                state = up(Gateway(), args.topology)
                 print(json.dumps({key: state[key] for key in ('topology', 'topology_version', 'commit', 'vm', 'timings')}))
                 return 0
             state = json.loads(SESSION.read_text())

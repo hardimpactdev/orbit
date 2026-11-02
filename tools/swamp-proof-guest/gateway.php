@@ -54,23 +54,27 @@ if ($argv[1] === 'seed') {
     if (Node::query()->exists()) {
         throw new RuntimeException('proof.seed_database_not_empty');
     }
-    // Only the target is reached over SSH; the other two need a well-formed key and no host.
+    // Only the targets are reached over SSH; the other two need a well-formed key and no host.
     $unused = base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).random_bytes(32));
     // Records first, then one known-hosts publication with the complete pin snapshot, as after enrollment.
-    [$gateway, $operator, $target] = Node::withoutEvents(fn (): array => [
+    [$gateway, $operator, $targets] = Node::withoutEvents(fn (): array => [
         // The Gateway hard-codes Node 209 as the Swamp Node; here this VM carries gateway and swamp together (F14).
         node('gateway', $input['gateway'], $input['gateway_host_key'], ['gateway', 'swamp'], 209),
         node('operator', $input['operator'], $unused),
-        node($input['target']['key'], $input['target']['address'], $input['target']['host_key'],
-            $input['target']['roles'] ?? [], settings: $input['target']['settings'] ?? []),
+        array_map(static fn (array $target): Node => node($target['key'], $target['address'], $target['host_key'],
+            $target['roles'] ?? [], settings: $target['settings'] ?? []), $input['targets']),
     ]);
     // The verifier of the agent key up.py wrote on the target, as after enrollment.
     // No WireGuard in this topology: the target is no private DNS peer.
     $target->forceFill(['agent_secret_hash' => $input['target']['agent_secret_hash'] ?? null, 'wireguard_public_key' => null])->saveQuietly();
     app(GatewayServingHost::class)->remember($gateway);
-    $operator->accessibleNodes()->attach([$gateway->id, $target->id]);
+    $operator->accessibleNodes()->attach([$gateway->id, ...array_map(static fn (Node $target): int => $target->id, $targets)]);
     app(WorkerKnownHostsPublisher::class)->publish();
-    echo json_encode(['nodes' => ['gateway' => $gateway->id, 'operator' => $operator->id, 'target' => $target->id]]), PHP_EOL;
+    $nodes = ['gateway' => $gateway->id, 'operator' => $operator->id];
+    foreach ($targets as $target) {
+        $nodes[$target->name] = $target->id;
+    }
+    echo json_encode(['nodes' => $nodes]), PHP_EOL;
     exit(0);
 }
 
