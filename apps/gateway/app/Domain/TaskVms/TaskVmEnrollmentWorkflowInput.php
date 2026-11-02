@@ -59,11 +59,10 @@ final readonly class TaskVmEnrollmentWorkflowInput
             'pi_artifact' => ['path' => $this->settings->piArtifactPath, 'sha256' => $this->settings->piArtifactSha256,
                 'ssh_execution' => $this->ssh->forNode($gateway)],
             'process_unit' => $installation['content'],
-            'certificate' => ValidatedData::string(ValidatedData::object($public['agent'])['certificate']),
-            'pi_url' => $this->pi->baseUrl($guest),
+            'models_json' => json_encode(ValidatedData::object($public['runtime'])['models'], JSON_THROW_ON_ERROR),
+            'certificate_json' => json_encode(['certificate' => ValidatedData::object($public['agent'])['certificate']], JSON_THROW_ON_ERROR),
+            'runtime_json' => json_encode(['pi_sha256' => $this->settings->piArtifactSha256, 'pi_port' => $this->pi->port(), 'pi_url' => $this->pi->baseUrl($guest)], JSON_THROW_ON_ERROR),
             'execution_secrets' => [...$model['execution_secrets'],
-                // The whole Pi model file is one vault value: Swamp writes a secret as file content, never spliced into text.
-                'pi_models' => $this->shared->executionCopy('orbit-control-inputs', 'task-vm-pi-models-'.$vm->id, $this->piModels($runtime, $vm)),
                 'pi_token' => $this->shared->executionCopy('orbit-control-inputs', 'task-vm-pi-token-'.$vm->id, $vm->pi_token ?? throw new \LogicException('The VM has no Pi token.'))],
         ];
     }
@@ -72,15 +71,5 @@ final readonly class TaskVmEnrollmentWorkflowInput
     public function capture(TaskVm $vm): array
     {
         return $this->fromCaptured($vm, $this->enrollment->capture($vm));
-    }
-
-    /** @param  array<string,mixed>  $runtime */
-    private function piModels(array $runtime, TaskVm $vm): string
-    {
-        return json_encode(['providers' => ['orbit-task-vm' => [
-            'baseUrl' => rtrim(ValidatedData::string($runtime['origin']), '/').'/v1', 'api' => 'openai-responses',
-            'apiKey' => $vm->model_key ?? throw new \LogicException('The VM has no model key.'),
-            'models' => array_map(static fn (string $id): array => ['id' => $id, 'reasoning' => true], ValidatedData::stringList($runtime['models']))]]],
-            JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n";
     }
 }

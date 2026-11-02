@@ -53,8 +53,9 @@ class UpCloudCompositionNative(unittest.TestCase):
         self.vm.assert_private_absent()
 
     def test_cloud_enrollment_composes_actual_runtime_with_only_runtime_descriptors(self):
+        self.vm.copy_behaviors('operations/task-vm-pi')
         secret = 'native-cloud-runtime-fixture-c98dce'
-        for key in ('task-vm-pi-models-42', 'task-vm-pi-token-42'):
+        for key in ('task-vm-model-key-42', 'task-vm-pi-token-42'):
             self.vm.cli('vault', 'put', 'orbit-control-inputs', key, input=secret)
         self.vm.secrets = (*self.vm.secrets, secret)
         self.vm.intent['runtime'].update({'pi_sha256': 'a' * 64, 'origin': 'http://192.0.2.6'})

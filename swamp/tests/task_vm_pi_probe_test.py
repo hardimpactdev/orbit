@@ -34,23 +34,20 @@ class PiProbeTest(unittest.TestCase):
             with tempfile.TemporaryDirectory() as directory:
                 token = Path(directory) / 'token'
                 token.write_text('guest-local-probe-secret')
-                url = f'http://127.0.0.2:{server.server_port}'
-                env = {**os.environ, 'no_proxy': '*', 'NO_PROXY': '*'}
-                runtime = yaml.safe_load((ROOT / 'workflows/workflow-task-vm-runtime.yaml').read_text())
-                argv = next(step for job in runtime['jobs'] for step in job['steps'] if step['name'] == 'Probe the Pi server')['task']['inputs']['argv']
-                for suffix, expected in (('', 0), ('/unavailable', 22)):
-                    command = [arg.replace('/home/orbit/.pi/agent/orbit-token', str(token)) for arg in argv[:-1]] + [url + suffix]
-                    result = subprocess.run(command, text=True, capture_output=True, env=env)
-                    self.assertEqual(result.returncode, expected, result.stderr)
-                    # The bearer reaches curl as a header file, never as an argument.
-                    self.assertNotIn('guest-local-probe-secret', ' '.join(command) + result.stdout + result.stderr)
-                value = yaml.safe_load((ROOT / 'workflows/workflow-operation-task-vm-resume.yaml').read_text())
-                step = next(step for job in value['jobs'] for step in job['steps'] if 'urllib.request' in str(step['task'].get('inputs', {}).get('argv', [])))
-                code = step['task']['inputs']['argv'][-1].replace('/home/orbit/.pi/agent/orbit-token', str(token))
-                for suffix, expected in (('', 0), ('/unavailable', 1)):
-                    result = subprocess.run([sys.executable, '-c', code], input=json.dumps({'pi_url': url + suffix, 'pi_port': 1}), text=True, capture_output=True, env=env)
-                    self.assertEqual(result.returncode, expected, result.stderr)
-                    self.assertNotIn('guest-local-probe-secret', result.stdout + result.stderr)
+                for workflow in ('task-vm-runtime', 'operation-task-vm-resume'):
+                    value = yaml.safe_load((ROOT / 'workflows' / f'workflow-{workflow}.yaml').read_text())
+                    step = next(step for job in value['jobs'] for step in job['steps'] if 'urllib.request' in str(step['task'].get('inputs', {}).get('argv', [])))
+                    code = step['task']['inputs']['argv'][-1].replace('/home/orbit/.pi/agent/orbit-token', str(token))
+                    url = f'http://127.0.0.2:{server.server_port}'
+                    env = {**os.environ, 'no_proxy': '*', 'NO_PROXY': '*'}
+                    for suffix, expected in (('', 0), ('/unavailable', 1)):
+                        result = subprocess.run([sys.executable, '-c', code], input=json.dumps({'pi_url': url + suffix, 'pi_port': 1}), text=True, capture_output=True, env=env)
+                        self.assertEqual(result.returncode, expected, result.stderr)
+                        self.assertNotIn('guest-local-probe-secret', result.stdout + result.stderr)
+                        if expected == 0:
+                            self.assertEqual(json.loads(result.stdout), {'pi_ready': True})
+                        else:
+                            self.assertEqual(result.stderr.strip(), 'task_vm.resume_failed')
                 self.assertEqual(len(seen), 4)
                 self.assertTrue(all(auth == 'Bearer guest-local-probe-secret' for _, auth in seen))
         finally:

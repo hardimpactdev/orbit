@@ -38,7 +38,7 @@ inputs:
             - orbit-control-inputs
           key:
             type: string
-            pattern: ^(task-vm-(model-key|pi-token|pi-models|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$
+            pattern: ^(task-vm-(model-key|pi-token|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$
         required:
         - vault
         - key
@@ -835,10 +835,11 @@ jobs:
           runtime: ${{ inputs.intent.runtime }}
           pi_artifact: ${{ inputs.intent.pi_artifact }}
           process_unit: ${{ inputs.intent.process_unit }}
-          certificate: ${{ inputs.intent.certificate }}
-          pi_url: ${{ inputs.intent.pi_url }}
+          models_json: ${{ inputs.intent.models_json }}
+          certificate_json: ${{ inputs.intent.certificate_json }}
+          runtime_json: ${{ inputs.intent.runtime_json }}
           ssh_execution: ${{ inputs.guest.ssh_execution }}
-        execution_secrets: ${{ {"pi_models":inputs.execution_secrets.pi_models,"pi_token":inputs.execution_secrets.pi_token}
+        execution_secrets: ${{ {"model_key":inputs.execution_secrets.model_key,"pi_token":inputs.execution_secrets.pi_token}
           }}
     dependsOn:
     - step: model
