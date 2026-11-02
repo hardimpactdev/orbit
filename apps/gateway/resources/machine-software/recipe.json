@@ -300,6 +300,11 @@
             "package": "logrotate",
             "version": "3.22.0-1build1"
         },
+        "mysql-client": {
+            "source": "ubuntu",
+            "package": "mysql-client",
+            "version": "8.4.11-0ubuntu0.26.04.1"
+        },
         "nftables": {
             "source": "ubuntu",
             "package": "nftables",
@@ -761,6 +766,11 @@
                 }
             }
         },
+        "postgresql-client": {
+            "source": "ubuntu",
+            "package": "postgresql-client",
+            "version": "18+290ubuntu1"
+        },
         "rsync": {
             "source": "ubuntu",
             "package": "rsync",
@@ -795,6 +805,11 @@
                     "sha256": "b22c09ab9e258ec5571da170d88bd1624a4ea602e6d70d95720c5b47494cadce"
                 }
             }
+        },
+        "sqlite3": {
+            "source": "ubuntu",
+            "package": "sqlite3",
+            "version": "3.46.1-9ubuntu0.3"
         },
         "sudo": {
             "source": "ubuntu",
@@ -1129,7 +1144,8 @@
             "bun",
             "vp-cli",
             "php:8.5",
-            "php:8.4"
+            "php:8.4",
+            "sqlite3"
         ],
         "app-prod": [
             "acl",
@@ -1170,7 +1186,8 @@
             "libxext6",
             "libxfixes3",
             "libxkbcommon0",
-            "libxrandr2"
+            "libxrandr2",
+            "sqlite3"
         ],
         "operator": [],
         "ci-runner": [
@@ -1183,7 +1200,9 @@
             "php:8.5"
         ],
         "swamp": [
-            "caddy"
+            "caddy",
+            "mysql-client",
+            "postgresql-client"
         ]
     },
     "base": [
@@ -1244,7 +1263,10 @@
         "libxrandr2",
         "php:8.5",
         "php:8.4",
-        "swamp"
+        "swamp",
+        "sqlite3",
+        "mysql-client",
+        "postgresql-client"
     ],
     "artifact_mirror": "https://github.com/hardimpactdev/orbit/releases/download/php-build-mirror",
     "git": {

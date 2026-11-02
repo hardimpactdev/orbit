@@ -308,16 +308,16 @@ describe('machine recipe structure and identity', function (): void {
             ->and($recipe->tools['incus']->version)->toBe($document['tools']['incus']['version']);
         $imagePackages = ['openssh-server', ...TaskVmCloudInit::WorkspaceTools, ...$topology, ...TaskVmCloudInit::ChromiumLibraries];
         // Topology Nodes copy the base image. Its gateway VM holds the vpn role (dnsmasq) and serves topology Git over HTTP (fcgiwrap).
-        $base = [...array_diff($development, ['php8.4-opentelemetry', 'php8.5-opentelemetry']), ...$imagePackages, 'dnsmasq', 'fcgiwrap', 'rust', 'rust-std', 'cargo', 'clippy', 'rustfmt', 'pi', 'swamp'];
+        $base = [...array_diff($development, ['php8.4-opentelemetry', 'php8.5-opentelemetry']), ...$imagePackages, 'dnsmasq', 'fcgiwrap', 'rust', 'rust-std', 'cargo', 'clippy', 'rustfmt', 'pi', 'swamp', 'sqlite3', 'mysql-client', 'postgresql-client'];
         $profiles = [
             'operator' => $common,
             'gateway' => [...$common, 'caddy', 'logrotate', ...$php85],
             'vpn' => [...$common, 'dnsmasq', 'openssl', ...$php85],
-            'app-prod' => [...$production, ...TaskVmCloudInit::ChromiumLibraries, 'apparmor', 'chrome-headless-shell', ...$php85],
-            'app-dev' => $development,
+            'app-prod' => [...$production, ...TaskVmCloudInit::ChromiumLibraries, 'apparmor', 'chrome-headless-shell', 'sqlite3', ...$php85],
+            'app-dev' => [...$development, 'sqlite3'],
             'base' => $base,
             'ci-runner' => [...$common, ...RecipeLoader::IncusPackages, 'acl', 'attr', 'git', 'unzip', ...$php85],
-            'swamp' => [...$common, 'caddy'],
+            'swamp' => [...$common, 'caddy', 'mysql-client', 'postgresql-client'],
         ];
         expect($php)->toBe([...array_values(array_unique([...$recipe->php('8.5')->packages, ...$recipe->php('8.4')->packages])), 'dpkg-repack']);
         foreach ($profiles as $role => $expected) {

@@ -28,6 +28,7 @@ final readonly class RecipeLoader
             'libcups2t64', 'libdbus-1-3', 'libdrm2', 'libgbm1', 'libglib2.0-0t64', 'libnspr4', 'libnss3',
             'libpango-1.0-0', 'libx11-6', 'libxcb1', 'libxcomposite1', 'libxdamage1', 'libxext6',
             'libxfixes3', 'libxkbcommon0', 'libxrandr2',
+            'sqlite3', 'mysql-client', 'postgresql-client',
         ], 'ubuntu');
         foreach ([...self::IncusPackages, 'git', 'git-man', 'caddy', 'chrome-headless-shell', 'vp', 'vp-cli', 'node', 'pnpm', 'bun', 'swamp', 'rust', 'cargo', 'rust-std', 'clippy', 'rustfmt', 'libgd3', 'php-common'] as $name) {
             $catalog[$name] = 'artifact';
