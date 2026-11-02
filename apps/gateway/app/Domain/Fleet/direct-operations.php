@@ -13,7 +13,6 @@ return [
         'projection' => RecipeDirectProjection::class,
         'workflow_inputs' => true,
         'terminal_result' => ['job' => 'result', 'step' => 'result'],
-        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^recipe-operation-[1-9][0-9]*-observer$']],
     ],
     'fleet.rollout' => [
         'workflow' => 'operation-fleet-rollout',

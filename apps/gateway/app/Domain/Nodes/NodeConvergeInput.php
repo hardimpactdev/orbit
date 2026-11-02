@@ -59,8 +59,11 @@ final readonly class NodeConvergeInput
             $payloads['route-residue'] = $residue;
         }
 
-        return [...$snapshot, 'payloads' => $payloads, 'user' => $node->user,
-            'ssh' => app(SwampSshExecutionInput::class)->forNode($node), 'agent' => $this->agentFiles($node, $payloads)];
+        $native = [...$snapshot, 'payloads' => $payloads, 'user' => $node->user,
+            'ssh' => app(SwampSshExecutionInput::class)->forNode($node), 'agent' => $this->agentFiles($node, $payloads),
+            'roles' => $this->roles($node, $payloads), 'verifier_hash' => $node->agent_secret_hash];
+
+        return $native['agent'] === null || ! is_string($native['verifier_hash']) ? $native : [...$native, 'footprint_check' => self::footprintCheck($native)];
     }
 
     /**

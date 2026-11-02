@@ -108,13 +108,12 @@ it('admits one direct recipe run without host calls or executor prerequisites', 
     $operation = app(AdmitNodeRecipeAction::class)->execute($node, new RecipeLoader()->load(), $automatic);
 
     expect($agents->calls)->toBe([])
-        ->and($socket->sent)->toHaveCount(2)
-        ->and($socket->sent[0]['type'])->toBe('vault.put')
-        ->and($socket->sent[0]['payload']['key'])->toBe('recipe-operation-'.$operation->id.'-observer')
-        ->and($socket->sent[1]['payload']['workflowIdOrName'])->toBe('operation-fleet-recipe-direct')
-        ->and($socket->sent[1]['payload']['inputs']['intent'])->toBe($operation->input)
-        ->and($socket->sent[1]['payload']['inputs']['execution_secrets'])->toBe(['observer' => ['vault' => 'orbit-control-inputs', 'key' => 'recipe-operation-'.$operation->id.'-observer']])
-        ->and(json_encode($socket->sent[1]))->not->toContain(str_repeat('a', 64), 'worker_credentials', 'enrollment_token')
+        ->and($socket->sent)->toHaveCount(1)
+        ->and($socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-fleet-recipe-direct')
+        ->and($socket->sent[0]['payload']['inputs']['intent'])->toBe($operation->input)
+        ->and((array) $socket->sent[0]['payload']['inputs']['execution_secrets'])->toBe([])
+        ->and($socket->sent[0]['payload']['inputs']['intent']['footprint']['verifier_hash'])->toBe(str_repeat('a', 64))
+        ->and(json_encode($socket->sent[0]))->not->toContain('worker_credentials', 'enrollment_token')
         ->and($operation->lock_key)->toBe('recipe:node:'.$node->id)
         ->and($operation->state)->not->toHaveKeys(['executor_runs', 'children', 'lease', 'steps'])
         ->and($operation->run_constraints)->toBeNull()
@@ -287,10 +286,11 @@ it('previews desired recipe pins without an agent or native transport call', fun
         ->and($agents->calls)->toBe([]);
 });
 
-it('declares only an observer execution copy and no per-Node worker material', function (): void {
+it('declares no execution copy and no per-Node worker material', function (): void {
     [$operation, $node] = recipeDirectIntent();
     $definition = app(DirectOperation::class)->definition('fleet.recipe');
     expect($definition)->not->toHaveKey('private_material')
+        ->and($definition)->not->toHaveKey('execution_copies')
         ->and($definition['workflow_inputs'])->toBeTrue()
         ->and($definition['terminal_result'])->toBe(['job' => 'result', 'step' => 'result'])
         ->and(app(NodeWorkerEnrollment::class)->ownerId($operation))->toBeNull()
@@ -315,7 +315,7 @@ it('admits HTTP recipe intent through existing Node access without an executor r
     $this->postJson('/api/v1/fleet/nodes/'.$node->id.'/recipe', ['automatic' => false])->assertUnprocessable();
     $response = $this->postJson('/api/v1/fleet/nodes/'.$node->id.'/recipe', ['automatic' => true])->assertAccepted();
     expect($response->json('data.kind'))->toBe('fleet.recipe')
-        ->and($agents->calls)->toBe([])->and($socket->sent)->toHaveCount(2);
+        ->and($agents->calls)->toBe([])->and($socket->sent)->toHaveCount(1);
 });
 
 function recipeNativeSocket(): FakeRoutePublicationSocket

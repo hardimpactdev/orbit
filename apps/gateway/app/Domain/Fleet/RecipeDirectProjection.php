@@ -25,15 +25,12 @@ final readonly class RecipeDirectProjection implements DirectOperationProjection
         $input = $operation->input;
         unset($input['secret_hash']);
 
-        $node = Node::query()->findOrFail($operation->node_id);
-        $hash = $node->agent_secret_hash;
-        if (! is_string($hash) || preg_match('/\A[a-f0-9]{64}\z/D', $hash) !== 1) {
+        $footprint = ValidatedData::object($input['footprint'] ?? []);
+        if (! is_string($footprint['verifier_hash'] ?? null) || preg_match('/\A[a-f0-9]{64}\z/D', $footprint['verifier_hash']) !== 1) {
             throw new ResourceOperationException('node.agent_identity_missing', 'Recipe convergence requires the existing observer identity.', 409);
         }
 
-        return ['intent' => $input, 'execution_secrets' => ['observer' => app(SwampCommandStep::class)->executionCopy(
-            'orbit-control-inputs', 'recipe-operation-'.$operation->id.'-observer', $hash,
-        )]];
+        return ['intent' => $input, 'execution_secrets' => []];
     }
 
     public function apply(Operation $operation, array $data): Operation

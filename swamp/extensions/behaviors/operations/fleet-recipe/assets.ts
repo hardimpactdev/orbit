@@ -81,59 +81,41 @@ export function assembleFootprint(
     steps: Record<string, z.infer<typeof Step>>,
 ) {
     const intent = { footprint };
-    const output = (name: string) => {
-        const row = steps[name]?.outputs ?? {};
-        try {
-            return ObjectInput.parse(
-                typeof row.stdout === "string" ? JSON.parse(row.stdout) : row,
-            );
-        } catch {
-            return {};
-        }
-    };
     const artifacts: Record<string, unknown>[] = [];
     let failedArtifact: string | undefined;
+    const versions = Object.keys(
+        ObjectInput.parse(
+            ObjectInput.parse(intent.footprint.roles ?? {}).php ?? {},
+        ),
+    );
     const names: Record<string, string[]> = {
-        agent: ["observer"],
-        "caddy-package": ["caddy_package-0"],
-        caddy: ["caddy-0"],
+        agent: ["Restart the Node agent", "Check the footprint"],
+        "caddy-package": ["Install Caddy"],
+        caddy: ["Publish Caddy sites"],
         "peer-dns": ["peer_dns-0"],
-        "private-dns": ["listener-0", "dns-0"],
-        "route-residue": ["residue_proven"],
-        "php-runtime": ["php_runtime"],
-        tmpfiles: ["tmpfiles-0"],
+        "private-dns": ["Install private DNS"],
+        "route-residue": ["Clear Route residue"],
+        "php-runtime": versions.map((version) => "Configure PHP-FPM-" + version),
+        tmpfiles: ["Write the tmpfiles rule"],
     };
     for (const artifact of intent.footprint.artifacts) {
         if (artifact.name === "caddy") {
             const caddy = ObjectInput.parse(
                 intent.footprint.payloads.caddy ?? {},
             );
-            const reason = caddy.error_code === "caddy.render_failed"
-                ? "caddy_render_refused"
-                : output("caddy_checked-0").valid === false
-                ? "caddy_validate_refused"
-                : undefined;
-            if (reason) {
-                artifacts.push({ name: "caddy", status: "skipped", reason });
+            if (caddy.error_code === "caddy.render_failed") {
+                artifacts.push({
+                    name: "caddy",
+                    status: "skipped",
+                    reason: "caddy_render_refused",
+                });
                 continue;
             }
         }
 
         const required = names[artifact.name] ?? [];
         const proven = required.length > 0 &&
-            required.every((name) =>
-                name === "php_runtime"
-                    ? Object.entries(steps).filter(([key]) =>
-                                key.startsWith("php_runtime-")
-                            ).length ===
-                            (intent.footprint.payloads["php-runtime"] as {
-                                configurations: unknown[];
-                            }).configurations.length &&
-                        Object.entries(steps).filter(([key]) =>
-                            key.startsWith("php_runtime-")
-                        ).every(([, step]) => step.status === "succeeded")
-                    : steps[name]?.status === "succeeded"
-            );
+            required.every((name) => steps[name]?.status === "succeeded");
         if (!artifact.required || proven) {
             artifacts.push({
                 name: artifact.name,

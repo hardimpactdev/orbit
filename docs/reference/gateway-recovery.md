@@ -1192,7 +1192,7 @@ An unreachable Node changed nothing, so it does not halt the fleet; the catch-up
 
 ## Recipe convergence
 
-[Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) applies and verifies machine software on one Node. It shares the Node role and self-update locks with release rollout.
+[Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) applies and verifies machine software on one Node. It shares the Node role and self-update locks with release rollout. It applies the footprint with the same steps as `node:converge`, and the Gateway refuses a recipe footprint without the agent key verifier.
 
 Release rollout updates Orbit itself, with a timer to catch up missed Nodes. [Nightly recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) waits for every configured host to promote the deployed recipe, then calls Node recipe convergence in fleet order. That page owns the schedule, night window, alerts, and recovery policy, including the guarded rebuild of a failed App-owned nightly PR on newer main. Closed PRs and PRs modified by a person are never refreshed. A mention from another issue or PR does not count as a modification.
 
