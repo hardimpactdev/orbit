@@ -30,8 +30,9 @@ printf '{"roles":{"%s":["vpn"]},"wireguard_keys":{"%s":"%s","%s":"AgICAgICAgICAg
 
 ip link add wgproof type wireguard
 # AppArmor confines wg to /etc/wireguard and stdin; this VM keeps its own /etc/wireguard untouched.
-wg set wgproof private-key /dev/stdin listen-port 51821 \
-  peer "$hub_public" endpoint 10.231.0.10:51820 allowed-ips 10.99.0.1/32 persistent-keepalive 2 < "$state/peer.key"
+# A pipe, not a redirect: /dev/stdin on a redirect resolves to the file path, which AppArmor still checks.
+cat "$state/peer.key" | wg set wgproof private-key /dev/stdin listen-port 51821 \
+  peer "$hub_public" endpoint 10.231.0.10:51820 allowed-ips 10.99.0.1/32 persistent-keepalive 2
 ip link set wgproof up
 handshake() { incus exec target -- wg show orbit latest-handshakes | awk -v k="$peer_public" '$1==k {print $2}'; }
 deadline=$((SECONDS + 60))
