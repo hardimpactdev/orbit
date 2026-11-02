@@ -37,7 +37,7 @@ if expected == 'destroyed':
         check(len(secret) >= 32, 'the server admin password is readable for the secret check')
         leaks = subprocess.run(['grep', '-rlF', '--', secret, 'swamp', '/home/orbit/.orbit/swamp-proof'], capture_output=True, text=True, check=False).stdout.split()
         check(leaks == [], f'the admin password appears in plaintext in {leaks[:5]}')
-    print(f'parity: {operation["kind"]} removed the databases on {operation["input"]["driver"]}' + (' and left no plaintext admin login' if operation['input']['driver'] != 'pgsql' else '') + f'')
+    print(f'parity: {operation["kind"]} removed the databases on {operation["input"]["driver"]}' + (' and left no plaintext admin login' if operation['input']['driver'] != 'pgsql' else '') + '')
     sys.exit(0)
 check(operation['status'] == 'succeeded' and operation['result'] == {'backend': 'active'}, 'the projected result is backend active')
 stage = '/run/orbit-database-create-' + str(operation['id'])
