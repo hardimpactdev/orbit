@@ -1,6 +1,7 @@
 sequenceDiagram
   %% Target design: swamp/workflows/workflow-operation-task-vm-image-build.yaml, docs/reference/compute-drivers.md#build-the-base-image and #the-topology-seed, docs/cli/README.md design rules R2-R4.
-  %% Tightened: flow-tighten 2026-11-02, rules 14 (no `*-reply` check steps), 15 (no `plan` step), 16 (pid read folds into phase start), 6 (boot, prepare, smoke merges), 8 (owner check before the phases), 18 (reset and cleanup as one forEach; Pi staging beside boot), 19 (cleanup on completed), 22 (each Node action one `@swamp/ssh exec` argv).
+  %% Kept: rule 14 and 16 do not apply: `orbit-agent command` exits 0 and prints `{ok:false}` on a refusal (apps/agent/src/command/mod.rs), so each agent call keeps a typed reply check; `image.start-phase` returns no main PID (Observation in apps/agent/src/commands/image_recipe/lifecycle.rs), so the PID is one `systemctl show` read.
+  %% Tightened: flow-tighten 2026-11-02, rules 15 (no `plan` step), 6 (boot, prepare, smoke merges), 8 (owner check before the phases), 18 (reset and cleanup as one forEach; Pi staging beside boot), 19 (cleanup on completed), 22 (each Node action one `@swamp/ssh exec` argv).
   %% status: draft
   %% command: none · recipe image build for an Incus host
   %% kind: task_vm.image_build
@@ -58,11 +59,11 @@ sequenceDiagram
     %%> Phases:
     %%> - `apt-source`, `packages`, `javascript`, `rust`, `agent`, `pi`, in this order
     %%> How:
-    %%> - `image.start-phase` starts or observes the guest's bounded systemd service and returns its main PID (rule 16: no separate `-pid` step)
+    %%> - `image.start-phase` starts or observes the guest's bounded systemd service; one `systemctl show --property=MainPID` read gives its main PID
     %%> - `timeout 1500 tail --pid=PID -f /dev/null` waits; a `guard` skips it when the phase already ended
     %%> - `image.inspect-phase` must report `complete` for the same boot id
-    %%> Not included:
-    %%> - no `*-reply` step: a refused agent reply fails the step with its own exit code and error code (rule 14)
+    %%> Reply checks:
+    %%> - the agent exits 0 and prints `{ok:false}` on a refusal, so a typed reply step on 209 fails with the agent's own error code
   end
   SW->>H: Prepare and clean<br/>prepare · ssh-enable · clean
   %%> What it does:
