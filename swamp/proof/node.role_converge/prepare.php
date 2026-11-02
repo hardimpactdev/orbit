@@ -10,4 +10,5 @@ require $root.'/vendor/autoload.php';
 $app = require $root.'/bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
 $node = Node::findOrFail((int) $argv[1]);
+$node->roles()->where('role', '!=', 'database')->delete();
 $node->roles()->firstOrCreate(['role' => 'database'], ['status' => 'active']);
