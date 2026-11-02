@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R1-R4, firewall.allow shape, Gateway signs CSRs (root-of-trust), single-swamp-node. docs/cli/route.mdx, docs/reference/routes.md (Change an existing Route).
+  %% Tightened: flow-tighten 2026-11-02, rules 3, 17, 22 (cert install folded into the publish step as in route:create; DNS and its grace only outside the TLD; cfgmgmt file/line).
   %% status: draft
   %% command: route:update
   %% kind: route.update
@@ -68,21 +69,19 @@ sequenceDiagram
     GW-->>SW: Signed certificate<br/>Orbit CA key stays in Gateway
     %%> Returns:
     %%> - one public certificate bundle per leaf
-    SW->>N: Install the certificate<br/>/etc/caddy/orbit-certificates
-    %%> What it does:
-    %%> - writes the certificate next to its key, owned `root:caddy`, mode 0750, and checks it
   end
-  SW->>N: Publish the Caddy site<br/>caddy validate, then reload
+  SW->>N: Install cert, publish site<br/>@swamp/cfgmgmt/file · reload
   %%> What it does:
+  %%> - when the domain changes: writes the new certificate next to its key, owned `root:caddy`, mode 0750, in the same step, as `route:create` does
   %%> - domain: adds the new site next to the old one
   %%> - web root: points the site at the new directory, after the web-root access step for a development target
   %%> - validates the whole Caddyfile, then reloads Caddy; never a restart (rule 7)
   %%> Refuses:
   %%> - a validation error; the old Caddyfile stays in place
   opt Laravel target, new URL
-    SW->>N: Write the new APP_URL<br/>route-environment-write
+    SW->>N: Write the new APP_URL<br/>@swamp/cfgmgmt/line
     %%> What it does:
-    %%> - development: sets `APP_URL` in `.env` and in the cached configuration
+    %%> - development: sets the `APP_URL=` line in `.env` with `@swamp/cfgmgmt/line`, and refreshes the cached configuration
     %%> - production: renders the stored environment against the new Route and replaces only the home's `.env`
     %%> Not included:
     %%> - Composer, Artisan, deploy or restart commands
@@ -102,7 +101,10 @@ sequenceDiagram
     %%> - the public DNS record and Let's Encrypt issuance; Caddy retries issuance on its own
   end
   opt domain changes
+    opt domain outside the TLD
     SW->>V: Move private DNS<br/>records + catalog, then reload
+    %%> When:
+    %%> - only when the old or new domain is outside the Cluster or Node TLD; private DNS answers the whole TLD, so a name inside it needs no record
     %%> What it does:
     %%> - publishes `shop.example.test` and removes `shop.test`
     %%> - checks the loaded catalog and a DNS reply
@@ -113,7 +115,8 @@ sequenceDiagram
     %%> - resolvers that honor the TTL stop asking for the old name before its site leaves
     %%> How:
     %%> - a native wait in the run; it holds no Gateway lock
-    SW->>N: Withdraw the old site<br/>caddy reload · certificate rm
+    end
+    SW->>N: Withdraw the old site<br/>@swamp/cfgmgmt/file absent
     %%> What it does:
     %%> - removes Route 14's site blocks and reloads Caddy
     %%> - then removes Route 14's certificate scopes and the LAN tuples no other Route needs
