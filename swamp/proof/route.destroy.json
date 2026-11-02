@@ -2,6 +2,7 @@
   "kind": "route.destroy",
   "workflow": "operation-route-removal",
   "topology": "minimal",
+  "clean": true,
   "budget_seconds": 1800,
   "queue_timeout_seconds": 30,
   "prepare": [
