@@ -1,6 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 import {
     finish,
+    flatten,
     imported,
     prepare,
     PublishInput,
@@ -22,7 +23,7 @@ const data = async (ctx: Context, value: unknown) => ({
 /** Pure input and result shaping for tasks.publish; no execution, HTTP or credentials. */
 export const behavior = {
     type: "@nckrtl/task-publication-data",
-    version: "2026.11.02.1",
+    version: "2026.11.02.2",
     resources: {
         public: {
             description: "Public publication inputs and observations",
@@ -71,9 +72,20 @@ export const behavior = {
             execute: (args: unknown, ctx: Context) => data(ctx, pullPlan(args)),
         },
         result: {
-            description: "Shape the public terminal publication result",
-            arguments: Observed,
-            execute: (args: unknown, ctx: Context) => data(ctx, finish(args)),
+            description:
+                "Shape the public terminal publication result from the parent run's steps and this step's own",
+            arguments: Observed.extend({ parent: Args.default({}) }),
+            execute: (
+                args: z.infer<typeof Observed> & { parent: Record<string, unknown> },
+                ctx: Context,
+            ) =>
+                data(
+                    ctx,
+                    finish({
+                        input: args.input,
+                        steps: { ...flatten(args.parent), ...args.steps },
+                    }),
+                ),
         },
     },
 };

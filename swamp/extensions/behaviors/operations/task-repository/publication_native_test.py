@@ -251,6 +251,12 @@ except Exception as error:
         (self.repo / "workflows/workflow-task-publication-fixture.yaml").write_text(
             yaml.safe_dump(flow, sort_keys=False)
         )
+        # Each chart step of the publication is a child workflow.
+        for child in ("check", "export", "import", "push", "pull-request"):
+            name = "workflow-task-publication-" + child + ".yaml"
+            (self.repo / "workflows" / name).write_text(
+                yaml.safe_dump(self.copy_flow(name), sort_keys=False)
+            )
 
     def copy_flow(self, name):
         """The workflow as written, with only its scratch roots under the fixture."""
@@ -292,11 +298,14 @@ except Exception as error:
         return json.loads(raw)
 
     def result(self, run):
+        """The receipt as the Gateway reads it: the last step's stdout, else the PR step's."""
         history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
+        steps = {step["name"]: step for step in history["jobs"][0]["steps"]}
+        last = steps["Revoke the token"]
+        if last["status"] == "succeeded":
+            return json.loads(last["outputs"]["stdout"])
         return json.loads(
-            next(
-                step for step in history["jobs"][0]["steps"] if step["name"] == "result"
-            )["outputs"]["stdout"]
+            steps["Open or update the PR"]["outputs"]["shape_result"]["result_json"]
         )
 
     def scratch(self):

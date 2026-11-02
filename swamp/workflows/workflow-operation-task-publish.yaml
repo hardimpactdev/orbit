@@ -1,6 +1,6 @@
 id: dd1ccba6-5339-44da-8040-616a905706a4
 name: operation-task-publish
-description: Publish the admitted checked commit; task VM work is official SSH exec argv, 209 work is inline git and gh api.
+description: Publish the admitted checked commit in the chart's six steps; task VM work is official SSH exec argv, 209 work is inline git and gh api.
 vaults:
 - orbit-control-inputs
 inputs:
@@ -12,10 +12,7 @@ inputs:
     node_id:
       type: integer
       minimum: 1
-    kind:
-      type: string
-      enum:
-      - tasks.publish
+    kind: {type: string, const: tasks.publish}
     intent:
       type: object
     execution_secrets:
@@ -49,325 +46,112 @@ jobs:
 - name: publish
   labels: {role: swamp}
   steps:
-  - name: prepare
+  - name: Check the workspace
     labels: {role: swamp}
     task:
-      type: behavior
-      behaviorType: '@nckrtl/task-publication-data'
-      behaviorName: '${{ "task-publication-prepare" }}'
-      methodName: prepare
+      type: workflow
+      workflowIdOrName: task-publication-check
       inputs:
-        intent: ${{ inputs.intent }}
+        operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
-  - name: snapshot-index
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        scratch: ${{ "/tmp/orbit-task-publish-" + run.id }}
+  - name: Export the commit
+    labels: {role: swamp}
+    guard: ${{ !steps["Check the workspace"].outputs.verify.admitted }}
+    task:
+      type: workflow
+      workflowIdOrName: task-publication-export
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        scratch: ${{ "/tmp/orbit-task-publish-" + run.id }}
+    dependsOn:
+    - step: Check the workspace
+      condition:
+        type: always
+  - name: Import into a bare repo
+    labels: {role: swamp}
+    guard: ${{ !steps["Check the workspace"].outputs.verify.admitted }}
+    task:
+      type: workflow
+      workflowIdOrName: task-publication-import
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        scratch: ${{ "/tmp/orbit-task-publish-" + run.id }}
+        prepared: ${{ steps["Check the workspace"].outputs.prepare }}
+    dependsOn:
+    - step: Check the workspace
+      condition:
+        type: always
+    - step: Export the commit
+      condition:
+        type: always
+  - name: Push the branch
+    labels: {role: swamp}
+    guard: '${{ !("Import into a bare repo" in steps && steps["Import into a bare repo"].outputs.import_result.imported) }}'
+    task:
+      type: workflow
+      workflowIdOrName: task-publication-push
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        scratch: ${{ "/tmp/orbit-task-publish-" + run.id }}
+        prepared: ${{ steps["Check the workspace"].outputs.prepare }}
+    dependsOn:
+    - step: Check the workspace
+      condition:
+        type: always
+    - step: Export the commit
+      condition:
+        type: always
+    - step: Import into a bare repo
+      condition:
+        type: always
+  - name: Open or update the PR
     labels: {role: swamp}
     task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-publication-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: &ssh_args
-        name: '${{ ("task-publication-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      type: workflow
+      workflowIdOrName: task-publication-pull-request
       inputs:
-        hosts: name:target
-        argv:
-        - env
-        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-publish-" + run.id + ".index" }}
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - read-tree
-        - HEAD
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        scratch: ${{ "/tmp/orbit-task-publish-" + run.id }}
+        prepared: ${{ steps["Check the workspace"].outputs.prepare }}
+        pushed: '${{ ("Push the branch" in steps && steps["Push the branch"].outputs.push_result.pushed) }}'
+        observed: ${{ steps }}
     dependsOn:
-    - step: prepare
+    - step: Check the workspace
       condition:
-        type: succeeded
-  - name: snapshot-add
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-publication-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        argv:
-        - env
-        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-publish-" + run.id + ".index" }}
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - add
-        - --all
-    dependsOn:
-    - step: snapshot-index
+        type: always
+    - step: Export the commit
       condition:
-        type: succeeded
-  - name: snapshot-tree
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-publication-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        argv:
-        - env
-        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-publish-" + run.id + ".index" }}
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - write-tree
-    dependsOn:
-    - step: snapshot-add
+        type: always
+    - step: Import into a bare repo
       condition:
-        type: succeeded
-  - name: snapshot-head
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-publication-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        argv:
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - rev-parse
-        - HEAD
-    dependsOn:
-    - step: snapshot-tree
+        type: always
+    - step: Push the branch
       condition:
-        type: succeeded
-  - name: verify
+        type: always
+  - name: Revoke the token
     labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-publication-data'
-      behaviorName: '${{ "task-publication-verify" }}'
-      methodName: verify
-      inputs:
-        input: ${{ inputs.intent }}
-        steps: ${{ steps }}
-    dependsOn:
-    - step: snapshot-head
-      condition:
-        type: succeeded
-  - name: export
-    labels: {role: swamp}
-    guard: ${{ !steps.verify.outputs.admitted }}
-    writes: true
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-publication-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        argv:
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - bundle
-        - create
-        - ${{ "/tmp/orbit-task-publish-" + run.id + ".bundle" }}
-        - HEAD
-    dependsOn:
-    - step: verify
-      condition:
-        type: succeeded
-  - name: copy_bundle
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-publication-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: copy
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        src: ${{ "/tmp/orbit-task-publish-" + run.id + ".bundle" }}
-        dst: ${{ "/tmp/orbit-task-publish-" + run.id + "-candidate.bundle" }}
-        direction: from
-    dependsOn:
-    - step: export
-      condition:
-        type: succeeded
-  - name: import
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "task-publication-import" }}'
-      methodName: execute
-      inputs:
-        run: |
-          set -eu
-          git init --quiet --bare --template= --object-format="$ORBIT_OBJECT_FORMAT" "$ORBIT_REPOSITORY"
-          git -C "$ORBIT_REPOSITORY" fetch --quiet --no-tags "$ORBIT_BUNDLE" HEAD:refs/heads/candidate
-          git -C "$ORBIT_REPOSITORY" rev-parse refs/heads/candidate 'refs/heads/candidate^{tree}'
-        ignoreExitCode: true
-        timeout: 60000
-        env:
-          GIT_CONFIG_GLOBAL: /dev/null
-          GIT_CONFIG_NOSYSTEM: '1'
-          ORBIT_OBJECT_FORMAT: ${{ steps.prepare.outputs.object_format }}
-          ORBIT_BUNDLE: ${{ "/tmp/orbit-task-publish-" + run.id + "-candidate.bundle" }}
-          ORBIT_REPOSITORY: ${{ "/tmp/orbit-task-publish-" + run.id + ".git" }}
-    dependsOn:
-    - step: copy_bundle
-      condition:
-        type: succeeded
-  - name: import_result
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-publication-data'
-      behaviorName: '${{ "task-publication-import_result" }}'
-      methodName: imported
-      inputs:
-        input: ${{ inputs.intent }}
-        steps: ${{ steps }}
-    dependsOn:
-    - step: import
-      condition:
-        type: succeeded
-  - name: push
-    labels: {role: swamp}
-    guard: ${{ !steps.import_result.outputs.imported }}
-    writes: true
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "task-publication-push" }}'
-      methodName: execute
-      inputs:
-        run: |
-          git -C "$ORBIT_REPOSITORY" push --porcelain -- "$ORBIT_REMOTE" "$ORBIT_REFSPEC"
-        ignoreExitCode: true
-        timeout: 60000
-        env:
-          GIT_TERMINAL_PROMPT: '0'
-          GIT_CONFIG_GLOBAL: /dev/null
-          GIT_CONFIG_NOSYSTEM: '1'
-          GIT_ALLOW_PROTOCOL: https
-          GIT_CONFIG_COUNT: '4'
-          GIT_CONFIG_KEY_0: credential.helper
-          GIT_CONFIG_VALUE_0: ''
-          GIT_CONFIG_KEY_1: credential.helper
-          GIT_CONFIG_VALUE_1: '!gh auth git-credential'
-          GIT_CONFIG_KEY_2: core.hooksPath
-          GIT_CONFIG_VALUE_2: /dev/null
-          GIT_CONFIG_KEY_3: http.followRedirects
-          GIT_CONFIG_VALUE_3: 'false'
-          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
-          GH_CONFIG_DIR: ${{ "/tmp/orbit-task-publish-" + run.id + "-gh" }}
-          GH_PROMPT_DISABLED: '1'
-          GH_NO_UPDATE_NOTIFIER: '1'
-          ORBIT_REPOSITORY: ${{ "/tmp/orbit-task-publish-" + run.id + ".git" }}
-          ORBIT_REMOTE: ${{ steps.prepare.outputs.remote }}
-          ORBIT_REFSPEC: ${{ steps.prepare.outputs.refspec }}
-    dependsOn:
-    - step: import_result
-      condition:
-        type: succeeded
-  - name: push_result
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-publication-data'
-      behaviorName: '${{ "task-publication-push_result" }}'
-      methodName: pushed
-      inputs:
-        input: ${{ inputs.intent }}
-        steps: ${{ steps }}
-    dependsOn:
-    - step: push
-      condition:
-        type: succeeded
-  - name: read_pull
-    labels: {role: swamp}
-    guard: ${{ inputs.intent.pull_request == null || !steps.push_result.outputs.pushed }}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "task-publication-read_pull" }}'
-      methodName: execute
-      inputs:
-        run: |
-          gh api --method GET "$ORBIT_PATH" -f state=open -f head="$ORBIT_HEAD" -f per_page=100
-        ignoreExitCode: true
-        timeout: 30000
-        env:
-          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
-          GH_CONFIG_DIR: ${{ "/tmp/orbit-task-publish-" + run.id + "-gh" }}
-          GH_PROMPT_DISABLED: '1'
-          GH_NO_UPDATE_NOTIFIER: '1'
-          ORBIT_PATH: ${{ "repos/" + inputs.intent.repository + "/pulls" }}
-          ORBIT_HEAD: ${{ steps.prepare.outputs.pull_head }}
-    dependsOn:
-    - step: push_result
-      condition:
-        type: succeeded
-  - name: pull_plan
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-publication-data'
-      behaviorName: '${{ "task-publication-pull_plan" }}'
-      methodName: pull
-      inputs:
-        input: ${{ inputs.intent }}
-        steps: ${{ steps }}
-    dependsOn:
-    - step: read_pull
-      condition:
-        type: succeeded
-  - name: write_pull
-    labels: {role: swamp}
-    guard: ${{ steps.pull_plan.outputs.method == "" }}
-    writes: true
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "task-publication-write_pull" }}'
-      methodName: execute
-      inputs:
-        run: |
-          printf '%s' "$ORBIT_BODY" | gh api --method "$ORBIT_METHOD" "$ORBIT_PATH" --input -
-        ignoreExitCode: true
-        timeout: 30000
-        env:
-          GH_TOKEN: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
-          GH_CONFIG_DIR: ${{ "/tmp/orbit-task-publish-" + run.id + "-gh" }}
-          GH_PROMPT_DISABLED: '1'
-          GH_NO_UPDATE_NOTIFIER: '1'
-          ORBIT_METHOD: ${{ steps.pull_plan.outputs.method }}
-          ORBIT_PATH: ${{ steps.pull_plan.outputs.path }}
-          ORBIT_BODY: ${{ steps.pull_plan.outputs.body }}
-    dependsOn:
-    - step: pull_plan
-      condition:
-        type: succeeded
-  - name: revoke
-    labels: {role: swamp}
+    # Revokes the token, removes the 209 scratch files, prints the receipt and fails on its error code.
+    # A failed step keeps no stdout, so the Gateway then reads the receipt from the PR step.
     task:
       type: behavior
       behaviorType: command/shell
@@ -375,149 +159,33 @@ jobs:
       methodName: execute
       inputs:
         run: |
-          gh api --method DELETE installation/token
-        timeout: 30000
+          gh api --method DELETE installation/token >/dev/null 2>&1 || printf 'token revoke failed; it expires within one hour\n' >&2
+          rm -rf -- "$ORBIT_SCRATCH-candidate.bundle" "$ORBIT_SCRATCH.git" "$GH_CONFIG_DIR"
+          printf '%s\n' "$ORBIT_RESULT"
+          test "$ORBIT_FAILED" = false
+        timeout: 60000
         env:
           GH_TOKEN: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
           GH_CONFIG_DIR: ${{ "/tmp/orbit-task-publish-" + run.id + "-gh" }}
           GH_PROMPT_DISABLED: '1'
           GH_NO_UPDATE_NOTIFIER: '1'
-    allowFailure: true
+          ORBIT_SCRATCH: ${{ "/tmp/orbit-task-publish-" + run.id }}
+          ORBIT_RESULT: '${{ "Open or update the PR" in steps && "outputs" in steps["Open or update the PR"] && "shape_result" in steps["Open or update the PR"].outputs ? steps["Open or update the PR"].outputs.shape_result.result_json : "{\"error_code\":\"tasks.publish_failed\"}" }}'
+          ORBIT_FAILED: '${{ "Open or update the PR" in steps && "outputs" in steps["Open or update the PR"] && "shape_result" in steps["Open or update the PR"].outputs ? string(steps["Open or update the PR"].outputs.shape_result.failed) : "true" }}'
     dependsOn:
-    - step: write_pull
+    - step: Check the workspace
       condition:
         type: always
-    - step: push
+    - step: Export the commit
       condition:
         type: always
-  - name: cleanup_remote
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("task-publication-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *ssh_args
-      inputs:
-        hosts: name:target
-        argv:
-        - rm
-        - -f
-        - --
-        - ${{ "/tmp/orbit-task-publish-" + run.id + ".index" }}
-        - ${{ "/tmp/orbit-task-publish-" + run.id + ".bundle" }}
-    allowFailure: true
-    dependsOn:
-    - step: revoke
+    - step: Import into a bare repo
       condition:
         type: always
-  - name: cleanup_local
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "task-publication-cleanup_local" }}'
-      methodName: execute
-      inputs:
-        run: |
-          rm -rf -- "$ORBIT_BUNDLE" "$ORBIT_REPOSITORY"
-        env:
-          ORBIT_BUNDLE: ${{ "/tmp/orbit-task-publish-" + run.id + "-candidate.bundle" }}
-          ORBIT_REPOSITORY: ${{ "/tmp/orbit-task-publish-" + run.id + ".git" }}
-    allowFailure: true
-    dependsOn:
-    - step: revoke
+    - step: Push the branch
       condition:
         type: always
-  - name: shape_result
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-publication-data'
-      behaviorName: '${{ "task-publication-shape_result" }}'
-      methodName: result
-      inputs:
-        input: ${{ inputs.intent }}
-        steps: ${{ steps }}
-    dependsOn:
-    - step: prepare
+    - step: Open or update the PR
       condition:
         type: always
-    - step: snapshot-index
-      condition:
-        type: always
-    - step: snapshot-add
-      condition:
-        type: always
-    - step: snapshot-tree
-      condition:
-        type: always
-    - step: snapshot-head
-      condition:
-        type: always
-    - step: verify
-      condition:
-        type: always
-    - step: export
-      condition:
-        type: always
-    - step: copy_bundle
-      condition:
-        type: always
-    - step: import
-      condition:
-        type: always
-    - step: import_result
-      condition:
-        type: always
-    - step: push
-      condition:
-        type: always
-    - step: push_result
-      condition:
-        type: always
-    - step: read_pull
-      condition:
-        type: always
-    - step: pull_plan
-      condition:
-        type: always
-    - step: write_pull
-      condition:
-        type: always
-    - step: revoke
-      condition:
-        type: always
-    - step: cleanup_remote
-      condition:
-        type: always
-    - step: cleanup_local
-      condition:
-        type: always
-  - name: result
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "task-publication-result" }}'
-      methodName: execute
-      inputs:
-        run: |
-          printf '%s\n' "$ORBIT_RESULT"
-        env:
-          ORBIT_RESULT: ${{ steps.shape_result.outputs.result_json }}
-    dependsOn:
-    - step: shape_result
-      condition:
-        type: succeeded
-  - name: outcome
-    labels: {role: swamp}
-    task:
-      type: assert
-      expr: '!steps.shape_result.outputs.failed'
-      message: The task publication was refused or failed.
-      severity: high
-    dependsOn:
-    - step: result
-      condition:
-        type: succeeded
+queueTimeout: 60

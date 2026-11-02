@@ -24,7 +24,10 @@ final readonly class TaskPublishProjection implements DirectOperationProjection
     {
         return DB::transaction(function () use ($operation, $data): Operation {
             $terminal = $operation->status->terminal();
-            $result = ValidatedData::object($data['result'] ?? []);
+            $result = $data['result'] = self::receipt(ValidatedData::object($data['result'] ?? []));
+            if (in_array($data['status'], ['failed', 'interrupted'], true) && is_string($result['error_code'] ?? null)) {
+                $data['error_code'] = $result['error_code'];
+            }
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if (! $terminal && $projected->status->value === 'succeeded' && isset($result['pull_request_url'])) {
                 Task::topLevel()->whereKey($operation->target_id)->update([
@@ -37,5 +40,23 @@ final readonly class TaskPublishProjection implements DirectOperationProjection
 
             return $projected;
         });
+    }
+
+    /**
+     * The last step prints the receipt and fails on its error code; a failed step keeps no stdout,
+     * so the receipt then comes from the pull request step, which always ends with it.
+     *
+     * @param  array<string,mixed>  $result
+     * @return array<string,mixed>
+     */
+    private static function receipt(array $result): array
+    {
+        $captured = $result['receipt'] ?? null;
+        unset($result['receipt']);
+        if ($result === [] && is_array($captured) && is_string($captured['result_json'] ?? null)) {
+            return ValidatedData::object(json_decode($captured['result_json'], true, flags: JSON_THROW_ON_ERROR));
+        }
+
+        return $result;
     }
 }

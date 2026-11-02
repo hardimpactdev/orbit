@@ -50,3 +50,4 @@ route.update
 route.destroy
 cluster.router_set
 cluster.router_unset
+tasks.publish

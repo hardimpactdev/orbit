@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\GitHub\GitHubApi;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskPublishProjection;
@@ -107,16 +108,41 @@ it('projects the native PR metadata once without changing group status', functio
         'id' => $this->run, 'workflowName' => 'operation-task-publish', 'status' => 'succeeded',
         'inputs' => ['operation_id' => $id, 'node_id' => $group->taskable->node_id, 'kind' => 'tasks.publish'],
         'startedAt' => $body['started_at'], 'completedAt' => $body['finished_at'],
-        'jobs' => [['name' => 'publish', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => json_encode($result, JSON_THROW_ON_ERROR)]]]]],
+        'jobs' => [['name' => 'publish', 'steps' => [['name' => 'Revoke the token', 'status' => 'succeeded', 'outputs' => ['stdout' => json_encode($result, JSON_THROW_ON_ERROR)]]]]],
     ]]]];
     $projector = app(SwampCommandStep::class);
     $operation = Operation::findOrFail($id);
-    $projector->projectTerminal($operation, ['id' => $this->run, 'status' => 'succeeded'], ['job' => 'publish', 'step' => 'result']);
-    $projector->projectTerminal($operation, ['id' => $this->run, 'status' => 'succeeded'], ['job' => 'publish', 'step' => 'result']);
+    $selector = app(DirectOperation::class)->definition('tasks.publish')['terminal_result'];
+    $projector->projectTerminal($operation, ['id' => $this->run, 'status' => 'succeeded'], $selector);
+    $projector->projectTerminal($operation, ['id' => $this->run, 'status' => 'succeeded'], $selector);
     expect($operation->fresh()->result)->toBe($result)
         ->and(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'workflow.run', 'workflow.history.get']);
     expect($group->fresh()->pr_url)->toBe($url)->and($group->fresh()->watched_pr_url)->toBe($url)->and($group->fresh()->status->value)->toBe('running');
 })->with([false, true]);
+
+it('keeps the receipt code of a failed publication from the pull request step', function (): void {
+    [$group, $task] = native_publish_group();
+    $group->project->update(['default_branch' => 'main']);
+    $check = native_publish_check($task);
+    $id = $this->postJson('/api/v1/task-groups/'.$group->id.'/publish', ['check' => $check->id], ['Idempotency-Key' => 'native-publish-failed'])->assertAccepted()->json('data.id');
+    config(['swamp.read_token' => 'native-reader']);
+    $receipt = json_encode(['error_code' => 'tasks.not_fast_forward'], JSON_THROW_ON_ERROR);
+    $this->socket->reply = fn (array $message): array => [['type' => 'workflow.history.get', 'id' => $message['id'], 'payload' => ['data' => [
+        'id' => $this->run, 'workflowName' => 'operation-task-publish', 'status' => 'failed',
+        'inputs' => ['operation_id' => $id, 'node_id' => $group->taskable->node_id, 'kind' => 'tasks.publish'],
+        'startedAt' => '2026-10-31T08:00:00.000Z', 'completedAt' => '2026-10-31T08:01:00.000Z',
+        'jobs' => [['name' => 'publish', 'steps' => [
+            ['name' => 'Open or update the PR', 'status' => 'succeeded', 'outputs' => ['shape_result' => ['result_json' => $receipt, 'failed' => true]]],
+            ['name' => 'Revoke the token', 'status' => 'failed', 'outputs' => null],
+        ]]],
+    ]]]];
+    $operation = Operation::findOrFail($id);
+    app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $this->run, 'status' => 'failed'], app(DirectOperation::class)->definition('tasks.publish')['terminal_result']);
+    expect($operation->fresh()->status->value)->toBe('failed')
+        ->and($operation->fresh()->error_code)->toBe('tasks.not_fast_forward')
+        ->and($operation->fresh()->result)->toBe(['error_code' => 'tasks.not_fast_forward'])
+        ->and($group->fresh()->pr_url)->toBeNull();
+});
 
 it('retires publish private-material reads after the input switch', function (): void {
     [$group, $task] = native_publish_group();

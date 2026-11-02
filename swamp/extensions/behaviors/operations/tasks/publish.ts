@@ -205,6 +205,26 @@ function written(item: Run, expected: number): number | null {
         : null;
 }
 
+/**
+ * Each publication step of the parent run is a child workflow; the parent sees
+ * a child's step outputs under its own step. This lifts them to one flat map
+ * keyed by the child step names that `run` reads.
+ */
+export function flatten(parent: Steps): Steps {
+    const flat: Steps = {};
+    for (const step of Object.values(parent)) {
+        const outputs = ObjectValue.safeParse(
+            ObjectValue.safeParse(step).data?.outputs,
+        );
+        for (const [name, value] of Object.entries(outputs.data ?? {})) {
+            if (ObjectValue.safeParse(value).success) {
+                flat[name] = { outputs: value };
+            }
+        }
+    }
+    return flat;
+}
+
 /** The public terminal result, recomputed from the raw step outputs. */
 export function finish(raw: unknown) {
     const { input, steps } = z.object({
