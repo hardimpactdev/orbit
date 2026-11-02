@@ -35,6 +35,8 @@ const GlobalArgsSchema = driver.globalArguments.extend({
 type Context = Parameters<typeof driver.methods.tick.execute>[1] & {
   globalArgs: z.infer<typeof GlobalArgsSchema>;
   repoDir: string;
+  /** Fixture dependency; Swamp's production context does not provide this. */
+  launchRun?: (input: Record<string, unknown>) => Promise<string>;
 };
 const RequestSchema = GroupRunSchema.extend({ runId: z.string() });
 const RecoverySchema = z.object({
@@ -75,7 +77,10 @@ const getRun = async (ctx: Context, id: string) =>
     id,
   ]) as unknown as NativeGroupRun;
 
-async function launchGroupRun(ctx: Context, intent: GroupRun) {
+async function launchGroupRun(ctx: Context, intent: GroupRun, pace: "none" | "busy" = "none") {
+  if (ctx.launchRun) {
+    return await ctx.launchRun({ ...intent, definition: ctx.definition.name, preapprovalModel: ctx.globalArgs.preapprovalModel, pace });
+  }
   const result = await command(ctx, [
     "workflow",
     "run",
@@ -87,6 +92,7 @@ async function launchGroupRun(ctx: Context, intent: GroupRun) {
     ...intent,
     definition: ctx.definition.name,
     preapprovalModel: ctx.globalArgs.preapprovalModel,
+    pace,
   });
   if (typeof result.runId !== "string") {
     throw new Error("group workflow launch has no run id");
@@ -379,43 +385,39 @@ export const behavior = {
             ctx.globalArgs.preapprovalModel,
           ),
         });
-        const handle = await ctx.writeResource("result", "result", {
-          terminal: (item.waiting ?? "").startsWith("terminal ("),
-          // Parked at a human gate: wait long; a wake signal resumes it.
-          idle: (item.waiting ?? "").startsWith("assistance:"),
-        });
+        const terminal = (item.waiting ?? "").startsWith("terminal (");
+        // At a human gate the chain stops; an event (wake) or reconcile restarts it.
+        const idle = (item.waiting ?? "").startsWith("assistance:");
+        const handle = await ctx.writeResource("result", "result", { terminal, idle });
+        if (!terminal && !idle) {
+          await handoffGroupRun(request, {
+            read: () => read<GroupRun>(ctx, "intent"),
+            save: async (intent) => {
+              await ctx.writeResource("intent", "intent", intent);
+            },
+            owner: () => read<GroupRun>(ctx, "owner"),
+            launch: (intent) => launchGroupRun(ctx, intent, item.waiting ? "busy" : "none"),
+          });
+          await ctx.writeResource("failures", "failures", clearedFailures(request));
+        }
         return { dataHandles: [handle] };
       },
     },
-    handoff: {
-      description: "Start the next generation as the owning run's last step",
-      arguments: RequestSchema,
-      execute: async (request: z.infer<typeof RequestSchema>, ctx: Context) => {
-        await handoffGroupRun(request, {
-          read: () => read<GroupRun>(ctx, "intent"),
-          save: async (intent) => {
-            await ctx.writeResource("intent", "intent", intent);
-          },
-          owner: () => read<GroupRun>(ctx, "owner"),
-          launch: (intent) => launchGroupRun(ctx, intent),
-        });
-        await ctx.writeResource("failures", "failures", clearedFailures(request));
-        return { dataHandles: [] };
-      },
-    },
     wake: {
-      description: "Wake the group's waiting run after an event (plan, approval)",
+      description: "After an event (plan, approval, answer), wake the group's waiting run or start its next generation",
       arguments: z.object({ workItem: GroupRunSchema.shape.workItem }),
       execute: async (args: { workItem: string }, ctx: Context) => {
         const intent = await read<GroupRun>(ctx, "intent");
-        if (intent?.workItem !== args.workItem) throw new Error("group has no owning run");
         const { waits } = await command(ctx, ["workflow", "waits"]) as {
           waits: { waitId: string; workflowName: string; runId: string; expired: boolean }[];
         };
-        // A busy owner is not waiting; it reads the new state on its next tick.
-        const wait = waits.find((w) => w.workflowName === "group-run" && w.runId === intent.runId && !w.expired);
-        if (wait) await command(ctx, ["workflow", "signal", wait.waitId, "--payload", "{}"]);
-        return { dataHandles: [] };
+        const wait = waits.find((w) => w.workflowName === "group-run" && w.runId === intent?.runId && !w.expired);
+        if (wait) {
+          await command(ctx, ["workflow", "signal", wait.waitId, "--payload", "{}"]);
+          return { dataHandles: [] };
+        }
+        // No waiting run: a busy owner reads the new state itself; an ended chain restarts here.
+        return await behavior.methods.ensure.execute({ workItem: args.workItem }, ctx);
       },
     },
     retry: {

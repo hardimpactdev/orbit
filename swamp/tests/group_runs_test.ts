@@ -258,6 +258,7 @@ Deno.test("forty independent group drives progress concurrently beyond one invoc
   );
   let active = 0, peak = 0, progressed = 0, totalCalls = 0;
   const counts: number[] = [];
+  const successors: Record<string, unknown>[] = [];
   const results = await Promise.allSettled(
     Array.from({ length: 40 }, async (_, index) => {
       const workItem = `tg-${index + 1}`;
@@ -336,6 +337,10 @@ Deno.test("forty independent group drives progress concurrently beyond one invoc
           return Promise.resolve({ name });
         },
         logger: { info() {}, warning() {} },
+        launchRun: (input: Record<string, unknown>) => {
+          successors.push(input);
+          return Promise.resolve(`successor-${index}`);
+        },
       };
       try {
         await groupRun.methods.drive.execute(request, context);
@@ -346,6 +351,9 @@ Deno.test("forty independent group drives progress concurrently beyond one invoc
   );
   assertEquals(progressed, 39);
   assertEquals(results.filter((r) => r.status === "rejected").length, 1);
+  // Each group waiting on its running job hands itself to generation 2, paced; no poll.
+  assertEquals(successors.length, 39);
+  assert(successors.every((s) => s.generation === 2 && s.pace === "busy"));
   assert(peak > 1, "groups must be in flight concurrently");
   assert(
     totalCalls > 100,

@@ -1,6 +1,8 @@
 id: c1adc889-3366-40d0-bcf7-099179e97093
 name: group-run
-description: One admitted generation of one task group, followed by a durable wait.
+description: >-
+  One admitted generation of one task group. Its drive hands the group to the next
+  generation, which waits a minute first when this one waited on a Gateway operation.
 autoResume: true
 inputs:
   type: object
@@ -11,6 +13,8 @@ inputs:
     key: { type: string }
     definition: { type: string }
     preapprovalModel: { type: string }
+    # busy: the previous generation waited on a running Gateway operation.
+    pace: { type: string, enum: [none, busy], default: none }
   required: [workItem, factory, generation, key, definition, preapprovalModel]
 reports:
   skip: ["@swamp/workflow-summary"]
@@ -30,24 +34,10 @@ jobs:
             generation: '${{ inputs.generation }}'
             key: '${{ inputs.key }}'
             runId: '${{ run.id }}'
-      - name: drive
-        dependsOn: [{ step: claim, condition: { type: succeeded } }]
-        guard: '${{ !steps.claim.outputs.admitted }}'
-        labels: {role: swamp}
-        task:
-          type: behavior
-          behavior: '${{ inputs.definition }}'
-          methodName: drive
-          inputs:
-            workItem: '${{ inputs.workItem }}'
-            factory: '${{ inputs.factory }}'
-            generation: '${{ inputs.generation }}'
-            key: '${{ inputs.key }}'
-            runId: '${{ run.id }}'
-      # Waiting on a running Gateway operation: look again in a minute, or at once on a wake.
+      # Look again in a minute, or at once when an event wakes this wait.
       - name: wait
-        dependsOn: [{ step: drive, condition: { type: succeeded } }]
-        guard: '${{ steps.drive.outputs.terminal || steps.drive.outputs.idle }}'
+        dependsOn: [{ step: claim, condition: { type: succeeded } }]
+        guard: '${{ !steps.claim.outputs.admitted || inputs.pace != "busy" }}'
         allowFailure: true
         labels: {role: swamp}
         task:
@@ -56,29 +46,16 @@ jobs:
           schema:
             type: object
             additionalProperties: false
-      # Parked at a human gate: only an event (plan, approval, answer) wakes it.
-      - name: park
-        dependsOn: [{ step: drive, condition: { type: succeeded } }]
-        guard: '${{ steps.drive.outputs.terminal || !steps.drive.outputs.idle }}'
-        allowFailure: true
-        labels: {role: swamp}
-        task:
-          type: wait_for_signal
-          timeout: 86400
-          schema:
-            type: object
-            additionalProperties: false
-      # The owner starts its own next generation; no poll is needed while the group is active.
-      - name: handoff
+      - name: drive
         dependsOn:
-          - { step: wait, condition: { type: completed } }
-          - { step: park, condition: { type: completed } }
-        guard: '${{ steps.drive.outputs.terminal }}'
+          - { step: claim, condition: { type: succeeded } }
+          - { step: wait, condition: { type: or, conditions: [{ type: completed }, { type: skipped }] } }
+        guard: '${{ !steps.claim.outputs.admitted }}'
         labels: {role: swamp}
         task:
           type: behavior
           behavior: '${{ inputs.definition }}'
-          methodName: handoff
+          methodName: drive
           inputs:
             workItem: '${{ inputs.workItem }}'
             factory: '${{ inputs.factory }}'
