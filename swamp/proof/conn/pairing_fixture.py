@@ -105,7 +105,8 @@ def parity():
     ref = reference(json.loads(Path(os.environ['PROOF_OUTPUTS']).read_text()))
     assert ref and f'-pairing-{operation["target_id"]}-credential' in ref['key']
     # Inspect metadata only, never read the credential a second time.
-    inspected = subprocess.run(['/usr/local/bin/swamp', 'vault', 'inspect', ref['vault'], ref['key'], '--server', 'wss://swamp.orbit', '--token-file', str(STATE.parent / 'credentials/operator'), '--ca-cert', str(STATE.parent / 'tls/ca.pem'), '--repo-dir', str(SOURCE / 'swamp'), '--json'], capture_output=True, text=True, timeout=30)
+    env = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/home/orbit', 'SWAMP_HOME': str(STATE.parent / 'home'), 'SWAMP_CONFIG_DIR': str(STATE.parent / 'config'), 'SWAMP_API_KEY_FILE': '/home/orbit/.config/swamp/club-api-key', 'SWAMP_NO_UPDATE_CHECK': '1', 'SWAMP_NO_TELEMETRY': '1'}
+    inspected = subprocess.run(['runuser', '-u', 'orbit', '--', '/usr/local/bin/swamp', 'vault', 'inspect', ref['vault'], ref['key'], '--server', 'wss://swamp.orbit', '--token-file', str(STATE.parent / 'credentials/operator'), '--ca-cert', str(STATE.parent / 'tls/ca.pem'), '--repo-dir', str(SOURCE / 'swamp'), '--json'], capture_output=True, text=True, timeout=30, env=env)
     assert inspected.returncode != 0 and ('not_found' in inspected.stdout + inspected.stderr or 'not found' in inspected.stdout + inspected.stderr)
     path = 'conn/environments/pairing-proof/pairings/' + str(operation['target_id'])
 
