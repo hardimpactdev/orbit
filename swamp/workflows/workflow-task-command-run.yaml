@@ -9,6 +9,8 @@ inputs:
   properties:
     # Absent on a calendar fire of schedule-<id>; the Gateway records that fire as its own task.
     operation_id: {type: integer, minimum: 1}
+    # On a calendar fire, the root run of schedule-<id>; the Gateway finds this run's result by it.
+    fire_run_id: {type: string, format: uuid}
     node_id: {type: integer, minimum: 1}
     kind: {type: string, enum: [schedule.run]}
     intent:

@@ -50,14 +50,20 @@ beforeEach(function (): void {
 function nativeScheduleFireHistory(object $test, string $status, ?string $code = null): void
 {
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => [
-        'id' => $test->runId, 'workflowId' => $test->workflowId, 'workflowName' => 'schedule-'.$test->scheduleId, 'status' => $status,
-        'tags' => ['orbit_schedule_id' => $test->scheduleId, 'orbit_node_id' => (string) $test->node->id,
-            'orbit_target_type' => 'node_schedules', 'orbit_target_id' => (string) $test->node->id],
-        'startedAt' => '2026-11-02T03:00:00Z', 'completedAt' => $status === 'running' ? null : '2026-11-02T03:00:04Z',
-        'jobs' => $code === null ? [] : [['name' => 'fire', 'steps' => [['name' => 'Run the Schedule', 'status' => 'failed',
-            'outputs' => ['Report the result' => ['stdout' => json_encode(['error_code' => $code])]]]]]],
-    ]]]];
+    $child = 'd275eb23-7ac4-4487-80d1-57a038a92676';
+    $socket->reply = fn (array $request): array => match (true) {
+        $request['type'] === 'workflow.run.search' => [['type' => 'workflow.run.search', 'id' => $request['id'], 'payload' => ['data' => [
+            'results' => $code === null || $request['payload']['inputs'] !== ['fire_run_id' => $test->runId] ? [] : [['runId' => $child]]]]]],
+        ($request['payload']['workflowIdOrName'] ?? null) === $child => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => [
+            'id' => $child, 'jobs' => [['name' => 'run', 'steps' => [['name' => 'Report the result', 'outputs' => ['stdout' => json_encode(['error_code' => $code])]]]]]]]]],
+        default => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => [
+            'id' => $test->runId, 'workflowId' => $test->workflowId, 'workflowName' => 'schedule-'.$test->scheduleId, 'status' => $status,
+            'tags' => ['orbit_schedule_id' => $test->scheduleId, 'orbit_node_id' => (string) $test->node->id,
+                'orbit_target_type' => 'node_schedules', 'orbit_target_id' => (string) $test->node->id],
+            'startedAt' => '2026-11-02T03:00:00Z', 'completedAt' => $status === 'running' ? null : '2026-11-02T03:00:04Z',
+            'jobs' => [],
+        ]]]]
+    };
     app()->instance(WebSocketClient::class, $socket);
 }
 

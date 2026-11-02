@@ -192,17 +192,20 @@ final readonly class SwampCommandStep
         return ! $running;
     }
 
-    /** The nested task-command-run's public result, which its parent step exposes by child step name.
+    /** The public result of the fire's nested task-command-run, found by the fire's run id.
      * @param  array<string,mixed>  $run
      * @return array<string,mixed>
      */
     private function fireResult(array $run): array
     {
-        foreach (is_array($run['jobs'] ?? null) ? $run['jobs'] : [] as $job) {
+        $reply = $this->read('workflow.run.search', ['workflow' => 'task-command-run', 'inputs' => ['fire_run_id' => $run['id']], 'limit' => 1]);
+        $data = $reply['data'] ?? null;
+        $rows = is_array($data) && is_array($data['results'] ?? null) ? $data['results'] : [];
+        $child = is_array($rows[0] ?? null) && is_string($rows[0]['runId'] ?? null) ? $this->history($rows[0]['runId']) : [];
+        foreach (is_array($child['jobs'] ?? null) ? $child['jobs'] : [] as $job) {
             foreach (is_array($job) && is_array($job['steps'] ?? null) ? $job['steps'] : [] as $step) {
-                $child = is_array($step) && ($step['name'] ?? null) === 'Run the Schedule' && is_array($step['outputs'] ?? null)
-                    ? ($step['outputs']['Report the result'] ?? null) : null;
-                $stdout = is_array($child) ? ($child['stdout'] ?? null) : null;
+                $stdout = is_array($step) && ($step['name'] ?? null) === 'Report the result' && is_array($step['outputs'] ?? null)
+                    ? ($step['outputs']['stdout'] ?? null) : null;
                 $result = is_string($stdout) ? json_decode($stdout, true) : null;
                 if (is_array($result) && (($result['ready'] ?? null) === true || is_string($result['error_code'] ?? null))) {
                     return $result;
@@ -210,7 +213,7 @@ final readonly class SwampCommandStep
             }
         }
 
-        return $run['status'] === 'succeeded' ? ['ready' => true] : ['error_code' => 'schedule.run_failed'];
+        return $run['status'] === 'succeeded' ? ['ready' => true] : ['error_code' => 'operation.native_failed'];
     }
 
     /** A terminal scheduled root observes existing pending Operations; it never replaces their admission roots.

@@ -180,7 +180,7 @@ final readonly class NativeSchedules
             'jobs' => [['name' => 'fire', 'labels' => ['role' => 'swamp'], 'steps' => [[
                 'name' => 'Run the Schedule', 'labels' => ['role' => 'swamp'],
                 'task' => ['type' => 'workflow', 'workflowIdOrName' => 'task-command-run', 'inputs' => [
-                    'node_id' => $target->node->id, 'kind' => 'schedule.run', 'intent' => $intent,
+                    'node_id' => $target->node->id, 'kind' => 'schedule.run', 'fire_run_id' => '${{ run.id }}', 'intent' => $intent,
                     'execution_secrets' => ['command' => ['vault' => self::Vault, 'key' => self::commandKey($schedule)]],
                 ]],
             ]]]],
