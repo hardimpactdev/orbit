@@ -263,10 +263,15 @@ def gateway(nodes):
     run(['php', 'artisan', 'package:discover'], user=ACCOUNT, cwd=GATEWAY)
     # The Orbit public root CA the Node agent's files carry; only its certificate (topology version 5).
     ca = HOME / '.orbit/ca'
+    # Strict TLS clients, such as Python's, refuse a CA without keyUsage; a held VM's older root is replaced (version 8).
+    if (ca / 'root.pem').exists() and 'Certificate Sign' not in subprocess.run(
+            ['openssl', 'x509', '-in', str(ca / 'root.pem'), '-noout', '-ext', 'keyUsage'], capture_output=True, text=True, check=False).stdout:
+        (ca / 'root.pem').unlink()
     if not (ca / 'root.pem').exists():
         ca.mkdir(parents=True, exist_ok=True)
         run(['openssl', 'req', '-x509', '-newkey', 'rsa:4096', '-nodes', '-days', '30', '-subj', '/CN=Orbit proof root CA',
-             '-addext', 'basicConstraints=critical,CA:TRUE', '-keyout', str(ca / 'root.key'), '-out', str(ca / 'root.pem')])
+             '-addext', 'basicConstraints=critical,CA:TRUE', '-addext', 'keyUsage=critical,keyCertSign,cRLSign',
+             '-keyout', str(ca / 'root.key'), '-out', str(ca / 'root.pem')])
         run(['chown', '-R', f'{ACCOUNT}:{ACCOUNT}', str(HOME / '.orbit/ca')])
     # The pinned agent delivery a Gateway release writes from the frozen manifest (topology version 5).
     run(['install', '-D', '-o', ACCOUNT, '-g', ACCOUNT, '-m', '0644', str(GATEWAY / 'resources/agent/frozen-manifest.json'),
