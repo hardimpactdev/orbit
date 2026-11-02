@@ -84,7 +84,11 @@ export async function composeCaddy(raw: unknown) {
 }
 const Php = z.object({
     account_user: Name,
-    configurations: z.record(Version, z.string().max(1048576)),
+    // The Gateway stores intent as decoded JSON, so a Node without pools arrives as [] rather than {}.
+    configurations: z.preprocess(
+        (value) => Array.isArray(value) && value.length === 0 ? {} : value,
+        z.record(Version, z.string().max(1048576)),
+    ),
 }).strict();
 const PhpArgs = Placement.extend({ before: Php, after: Php }).strict();
 export function planPhp(raw: unknown) {

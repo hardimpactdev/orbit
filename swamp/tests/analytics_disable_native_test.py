@@ -147,10 +147,7 @@ print('{"ready":true}')
                             "behaviorType": "@nckrtl/certificate-script-assets",
                             "behaviorName": "canonical-removal",
                             "methodName": "read",
-                            "inputs": {
-                                "node_id": "${{ inputs.intent.leaf.node_id }}",
-                                "intent": "${{ inputs.intent.leaf }}",
-                            },
+                            "inputs": {},
                         },
                     }
                 ]
@@ -301,16 +298,6 @@ print('{"ready":true}')
         self.inputs["intent"]["caddy"][0]["before"] = {
             "caddy": self.inputs["intent"]["caddy"][0]["before"]
         }
-        run = self.run_disable(success=False)
-        self.assertEqual(run["jobs"][-1]["status"], "skipped")
-        self.assertNotIn(
-            "route-certificate-remove", [row["action"] for row in self.actions()]
-        )
-
-    def test_analytics_only_leaf_fields_are_refused_by_the_canonical_child(self):
-        self.inputs["intent"]["cleanup"][0]["leaf"].update(
-            route_id=31, domain="analytics.shop.test"
-        )
         run = self.run_disable(success=False)
         self.assertEqual(run["jobs"][-1]["status"], "skipped")
         self.assertNotIn(

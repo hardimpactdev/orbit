@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: Nick 2026-11-01, liveness 2026-11-02. Like doctor: only the Node agent reads Nodes; adopt checks its latest report. No task, no Swamp run, no SSH (R1).
+  %% Target design: Nick 2026-11-01. Like doctor: only the Node agent reads Nodes; adopt checks its latest report. No task, no Swamp run, no SSH (R1).
   %% status: reviewed
   %% command: tool:adopt
   %% kind: tool.adopt
@@ -10,11 +10,6 @@ sequenceDiagram
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant A as Node agent<br/>orbit-agent
-  loop on a short interval
-    A->>GW: Heartbeat
-    %%> Result:
-    %%> - the Gateway marks the Node online, or offline when heartbeats stop
-  end
   loop continuously, on change
     Note over A: Observe packages<br/>per Tool Manager, apt sources
     %%> What it observes:
@@ -47,17 +42,23 @@ sequenceDiagram
   %%> - the package is installed, and its version fits `--constraint`
   %%> - Orbit can manage this package later (no adoption block)
   %%> - with `--repository`: the apt source and signing key on the Node match the definition
+  %%> - the report is fresh enough to trust
   alt package can be adopted
     GW-->>CLI: Tool recorded<br/>Tool 31: installed 14.1.0
     %%> Result:
     %%> - Tool 31 recorded as installed, with the observed version
     %%> - the apt repository recorded, when one was given
     %%> - the answer comes at once; there is no task to follow
-    %%> - when the agent is offline, the answer says "possibly outdated, agent silent since <time>"
   else not installed or blocked
     GW--xCLI: Refused<br/>tool.adoption_unsupported
     %%> When:
     %%> - the package isn't installed, its version is outside the constraint, or Orbit can't manage it
     %%> Result:
     %%> - nothing is recorded
+  else agent silent too long
+    GW--xCLI: Can't verify<br/>Node 12 facts too old
+    %%> When:
+    %%> - the Node agent hasn't reported recently, so the Gateway can't trust what it knows
+    %%> Result:
+    %%> - nothing is recorded; try again when the agent reports
   end

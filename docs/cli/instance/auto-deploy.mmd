@@ -1,6 +1,5 @@
 sequenceDiagram
   %% Target design: DECISIONS 3 (automatic deploy = Gateway-published native schedule, no POST back), R1-R2, ADR 0244, behavior names by target. Replaces instance.policy_event. docs/reference/deployments.md#automatic-deployments.
-  %% Tightened: flow-tighten 2026-11-02, rules 3, 5 (no per-minute Node read: the schedule inputs carry the deployed commit, and the Gateway republishes them on each deploy).
   %% status: reviewed
   %% command: instance:auto-deploy:enable · Automatic deploys
   %% kind: instance.auto_deploy
@@ -36,7 +35,6 @@ sequenceDiagram
   %%> - publishes one native Swamp schedule for Instance 42
   %%> Inputs:
   %%> - branch, `merge_check`, blocked commits, retry times
-  %%> - the deployed commit; the Gateway republishes the inputs after each deploy or rollback
   %%> - vault key names for the read token; the Gateway keeps the token fresh in the vault
   %%> Why:
   %%> - the run has everything it needs; it never calls the Gateway
@@ -52,7 +50,9 @@ sequenceDiagram
     %%> - skips blocked commits and commits whose retry isn't due
     %%> Not included:
     %%> - never deploys a red or pending commit
-    %%> - compares with the deployed commit from the inputs; no SSH to the production Node each minute
+    SW->>N: Read the live commit<br/>current → release REVISION
+    %%> What it does:
+    %%> - reads which commit Instance 42 runs now, from the Node itself
     alt a newer green commit
       SW->>N: Deploy the pinned commit<br/>deploy-42 · prepare … check
       %%> What it does:

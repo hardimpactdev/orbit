@@ -17,8 +17,24 @@ use App\Support\ValidatedData;
 /** Existing workload roots and pools captured for native prepare, retirement and restoration. */
 final readonly class NativeRouteWorkloadPreparation
 {
-    /** @return array<string,mixed> */
+    /**
+     * Each phase also carries its Caddy access commands and selected-release links (RouteWebRootCommands).
+     *
+     * @return array<string,mixed>
+     */
     public function capture(Instance $instance, ?Route $before, Route $after, bool $withdrawal = false): array
+    {
+        $capture = $this->phases($instance, $before, $after, $withdrawal);
+        foreach (['prepare', 'selected', 'restore'] as $name) {
+            $phase = ValidatedData::object($capture[$name]);
+            $capture[$name] = [...$phase, ...RouteWebRootCommands::phase($instance->node_id, $phase, $instance)];
+        }
+
+        return $capture;
+    }
+
+    /** @return array<string,mixed> */
+    private function phases(Instance $instance, ?Route $before, Route $after, bool $withdrawal): array
     {
         $instance->loadMissing(['node', 'project']);
         $common = ['node_id' => $instance->node_id, 'instance_id' => $instance->id,

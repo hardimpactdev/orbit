@@ -1,193 +1,80 @@
 id: 2c16b6c3-e9db-48ec-af98-05cb1a473782
 name: route-certificate-remove
 queueTimeout: 30
-description: Remove only an admitted scope absent from freshly adapted Caddy references.
+description: "One Node: a withdrawn scope's certificate folders, removed by official steps."
 vaults: []
 inputs:
   type: object
   properties:
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
-    kind:
-      type: string
-    parent_run_id:
-      type: string
-    restoring:
-      type: boolean
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string}
+    parent_run_id: {type: string}
+    restoring: {type: boolean}
     intent:
       type: object
       properties:
-        leaf:
-          type: object
-        control_node_id:
-          type: integer
-          const: 209
-        connection:
-          type: object
-        host_keys:
-          type: array
-          items:
-            type: string
-          minItems: 1
-      required:
-      - leaf
-      - control_node_id
-      - connection
-      - host_keys
+        control_node_id: {type: integer, const: 209}
+        connection: {type: object}
+        host_keys: {type: array, items: {type: string}, minItems: 1}
+        leaf: {type: object}
+      required: [leaf, control_node_id, connection, host_keys]
       additionalProperties: false
-    execution_secrets:
-      type: object
-      additionalProperties: false
-  required:
-  - operation_id
-  - node_id
-  - kind
-  - parent_run_id
-  - restoring
-  - intent
-  - execution_secrets
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [operation_id, node_id, kind, parent_run_id, restoring, intent, execution_secrets]
   additionalProperties: false
 jobs:
 - name: certificate
   steps:
-  - name: assets
+    # The account's passwd line: its home places the account copy.
+  - name: 'Read the account'
     labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/certificate-script-assets'
-      behaviorName: '${{ "route-cert-assets-certificate-script-assets" }}'
-      methodName: read
-      inputs:
-        node_id: ${{ inputs.intent.leaf.node_id }}
-        intent: ${{ inputs.intent.leaf }}
-  - name: prepare-assets
-    labels: {role: swamp}
-    dependsOn:
-    - step: assets
-      condition:
-        type: succeeded
+    dependsOn: []
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-ssh-prepare-assets-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
+      behaviorName: '${{ ("route-cert-account-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
-      globalArgs: &id001
-        name: '${{ ("route-ssh-prepare-assets-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
+      globalArgs:
+        name: '${{ ("route-cert-account-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
         transport:
           kind: ssh
-          user: ${{ inputs.intent.connection.nodeUser }}
-          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
-          port: ${{ inputs.intent.connection.nodePort }}
+          user: '${{ inputs.intent.connection.nodeUser }}'
+          port: '${{ inputs.intent.connection.nodePort }}'
+          identityFile: '${{ inputs.intent.connection.nodeIdentityFile }}'
         hosts:
         - name: target
-          address: ${{ inputs.intent.connection.nodeHost }}
-          transport:
-            hostKeys: ${{ inputs.intent.host_keys }}
+          address: '${{ inputs.intent.connection.nodeHost }}'
+          transport: {hostKeys: '${{ inputs.intent.host_keys }}'}
       inputs:
         hosts: name:target
-        argv:
-        - /usr/bin/mkdir
-        - -p
-        - -m
-        - '0700'
-        - ${{ "/tmp/orbit-route-" + run.id }}
-  - name: copy-assets
+        argv: '${{ ["timeout", "10", "getent", "passwd", inputs.intent.leaf.user] }}'
+        timeoutSec: 20
+    # The scope's Caddy folder, gone.
+  - name: 'Remove the Caddy pair'
     labels: {role: swamp}
-    dependsOn:
-    - step: prepare-assets
-      condition:
-        type: succeeded
+    dependsOn: [{step: 'Read the account', condition: {type: succeeded}}]
+    writes: true
     task:
       type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-ssh-copy-assets-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
-      methodName: copy
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        src: ${{ steps.assets.outputs.scripts_directory }}
-        dst: ${{ "/tmp/orbit-route-" + run.id + "/" }}
-        direction: to
-        recursive: true
-  - name: remove
+      behaviorType: '@swamp/cfgmgmt/directory'
+      behaviorName: '${{ ("route-cert-remove-" + string(inputs.intent.connection.nodeHost) + "-" + inputs.intent.leaf.scope).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {path: '${{ "/etc/caddy/orbit-certificates/" + inputs.intent.leaf.scope }}', ensure: absent,
+        nodeHost: '${{ inputs.intent.connection.nodeHost }}', nodeUser: '${{ inputs.intent.connection.nodeUser }}', nodePort: '${{ inputs.intent.connection.nodePort }}',
+        nodeIdentityFile: '${{ inputs.intent.connection.nodeIdentityFile }}', become: true}
+      inputs: {}
+    # The scope's account copy, gone.
+  - name: 'Remove the account pair'
     labels: {role: swamp}
+    dependsOn: [{step: 'Remove the Caddy pair', condition: {type: succeeded}}]
+    writes: true
     task:
       type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-ssh-remove-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv:
-        - env
-        - ${{ 'ORBIT_CERTIFICATE_INPUT=' + string(steps.assets.outputs.input_json) }}
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-route-" + run.id + "/scripts/remove.py" }}
-        sudo: true
-    dependsOn:
-    - step: copy-assets
-      condition:
-        type: succeeded
-  - name: inspect
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-ssh-inspect-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv:
-        - env
-        - ${{ 'ORBIT_CERTIFICATE_EXPECT_PRESENT=' + string('false') }}
-        - ${{ 'ORBIT_CERTIFICATE_INPUT=' + string(steps.assets.outputs.input_json) }}
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-route-" + run.id + "/scripts/inspect.py" }}
-        sudo: true
-    dependsOn:
-    - step: remove
-      condition:
-        type: succeeded
-  - name: cleanup-assets
-    labels: {role: swamp}
-    dependsOn:
-    - step: inspect
-      condition:
-        type: always
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-ssh-cleanup-assets-" + string(inputs.intent.connection.nodeHost)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv:
-        - /usr/bin/rm
-        - -rf
-        - ${{ "/tmp/orbit-route-" + run.id }}
-  - name: result
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-mutation-command'
-      behaviorName: '${{ "route-cert-result-route-mutation-command" }}'
-      methodName: certificateRemoved
-      inputs:
-        leaf: ${{ inputs.intent.leaf }}
-        stdout: ${{ steps.inspect.outputs.stdout }}
-    dependsOn:
-    - step: inspect
-      condition:
-        type: succeeded
-    - step: cleanup-assets
-      condition:
-        type: succeeded
+      behaviorType: '@swamp/cfgmgmt/directory'
+      behaviorName: '${{ ("route-cert-remove-copy-" + string(inputs.intent.connection.nodeHost) + "-" + inputs.intent.leaf.scope).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {path: '${{ steps["Read the account"].outputs.stdout.split(":")[5] + "/.orbit/certificates/" + inputs.intent.leaf.scope }}', ensure: absent,
+        nodeHost: '${{ inputs.intent.connection.nodeHost }}', nodeUser: '${{ inputs.intent.connection.nodeUser }}', nodePort: '${{ inputs.intent.connection.nodePort }}',
+        nodeIdentityFile: '${{ inputs.intent.connection.nodeIdentityFile }}', become: true}
+      inputs: {}

@@ -1,6 +1,5 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS 1 (token minted at admission, vault) and R2-R4, swamp-tasks-model. docs/reference/tasks.md#publish-an-external-group.
-  %% Tightened: flow-tighten 2026-11-02, rule 16 (no tip read: a push without force refuses a divergent tip and pushes nothing for an identical one).
   %% status: draft
   %% command: tasks:publish
   %% kind: tasks.publish
@@ -59,12 +58,14 @@ sequenceDiagram
   Note over SW: Import into a bare repo<br/>scratch repository on 209
   %%> What it does:
   %%> - imports the bundle into a disposable bare repository on 209; only this repository uses the token
+  SW->>GH: Read the remote tip<br/>git ls-remote task-42
+  %%> What it does:
+  %%> - reads the branch `task-42` with the token from `vault.get`
+  %%> - an identical tip skips the push; a divergent tip fails with `tasks.not_fast_forward`
   SW->>GH: Push the branch<br/>git push task-42 · no force
   %%> What it does:
-  %%> - pushes the checked commit to `task-42` without force, with the token from `vault.get`
-  %%> - an identical tip pushes nothing
+  %%> - pushes the checked commit to `task-42` without force
   %%> Refuses:
-  %%> - a divergent tip: git refuses the push by itself, mapped to `tasks.not_fast_forward`; no tip read runs first
   %%> - an installation without `Workflows` write when the commit changes `.github/workflows/`: `tasks.workflows_permission`
   opt with --title and --body
     SW->>GH: Open or update the PR<br/>task-42 → default branch

@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/tool-adopt-command'
-version: 2026.11.02.7
+version: 2026.11.02.6
 visibility: private
 license: MIT
 description: Native Tool commands and typed decisions; shared query scripts remain

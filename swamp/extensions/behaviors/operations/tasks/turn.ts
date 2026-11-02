@@ -175,10 +175,14 @@ export const turnDataResources = {
             send_json: z.string(),
         }),
     },
-    snapshot: {
+    candidate: {
         lifetime: "infinite",
         garbageCollection: 10,
-        schema: z.object({ stdout: z.string(), head: Sha, tree: Sha }),
+        schema: z.object({
+            admitted: z.boolean(),
+            error_code: z.enum(["tasks.head_moved", "tasks.analysis_stale"])
+                .nullable().default(null),
+        }),
     },
     turnResult: {
         lifetime: "infinite",
@@ -198,32 +202,25 @@ export const turnDataMethods = {
                     "prepared",
                     {
                         ...prepare(args),
-                        directory: ctx.extensionFile("scripts/observe.py")
+                        directory: ctx.extensionFile("scripts/snapshot.py")
                             .replace(/\/[^/]+$/, ""),
                     },
                 ),
             ],
         }),
     },
-    snapshot: {
-        description:
-            "Shape immutable Git object identities from native SSH commands",
-        arguments: z.object({ head: z.string(), tree: z.string() }),
-        execute: async (
-            args: { head: string; tree: string },
-            ctx: PublicContext,
-        ) => ({
+    candidate: {
+        description: "Decode public candidate evidence for native branching",
+        arguments: z.object({ value: z.string() }),
+        execute: async (args: { value: string }, ctx: PublicContext) => ({
             dataHandles: [
-                await ctx.writeResource("snapshot", "snapshot", {
-                    head: Sha.parse(args.head.trim()),
-                    tree: Sha.parse(args.tree.trim()),
-                    stdout: JSON.stringify(
-                        Snapshot.parse({
-                            head: args.head.trim(),
-                            tree: args.tree.trim(),
-                        }),
+                await ctx.writeResource(
+                    "candidate",
+                    "candidate",
+                    turnDataResources.candidate.schema.parse(
+                        JSON.parse(args.value),
                     ),
-                }),
+                ),
             ],
         }),
     },

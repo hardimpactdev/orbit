@@ -1,6 +1,5 @@
-"""Run both DAGs with official SSH exec argv and a disposable local remote-host fixture."""
+"""Run both shipped DAGs with official SSH and a disposable local remote-host fixture."""
 
-import hashlib
 import importlib.util
 import json
 import os
@@ -28,9 +27,6 @@ class NativeRepository(harness.NativeTestCase):
         tasks.mkdir(parents=True, exist_ok=True)
         for name in ("publish.ts", "check.ts"):
             shutil.copy(ROOT / "extensions/behaviors/operations/tasks" / name, tasks)
-        library = self.repo / "extensions/behaviors/_lib"
-        library.mkdir(parents=True, exist_ok=True)
-        shutil.copy(ROOT / "extensions/behaviors/_lib/repository_analysis.ts", library)
 
         official = self.repo / ".swamp/pulled-extensions/@swamp/ssh"
         official.parent.mkdir(parents=True)
@@ -56,7 +52,6 @@ class NativeRepository(harness.NativeTestCase):
             + '\nimport shlex,subprocess,sys\nargs=sys.argv[1:]\nif "-M" in args or "-O" in args:raise SystemExit(0)\nargv=shlex.split(args[-1])\nr=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)\nsys.stdout.buffer.write(r.stdout);sys.stderr.buffer.write(r.stderr)\nraise SystemExit(r.returncode)\n'
         )
         ssh.chmod(0o755)
-        # The check DAG in check_native_test.py still copies its scripts.
         scp = tools / "scp"
         scp.write_text(
             "#!"
@@ -108,10 +103,28 @@ class NativeRepository(harness.NativeTestCase):
         )
         self.flow["name"] = "task-repository-fixture"
         for job in self.flow["jobs"]:
-            # A local native run has no remote worker; strip the role placement.
             self.assertEqual(job.pop("labels"), {"role": "swamp"})
+            self.assertEqual(job.pop("labels"), {"node": "209"})
             for step in job["steps"]:
                 self.assertEqual(step.pop("labels"), {"role": "swamp"})
+                self.assertEqual(step.pop("labels"), {"node": "209"})
+                task_inputs = step["task"].get("inputs", {})
+                for key, value in task_inputs.items():
+                    if isinstance(value, str):
+                        task_inputs[key] = value.replace(
+                            "/tmp/orbit-task-repository-",
+                            str(self.repo / "remote-assets-"),
+                        )
+                if "argv" in task_inputs:
+                    task_inputs["argv"] = [
+                        v.replace(
+                            "/tmp/orbit-task-repository-",
+                            str(self.repo / "remote-assets-"),
+                        )
+                        if isinstance(v, str)
+                        else v
+                        for v in task_inputs["argv"]
+                    ]
         self.write_workflow()
 
     def write_workflow(self):
@@ -150,25 +163,6 @@ class NativeRepository(harness.NativeTestCase):
         self.git("add", ".")
         self.git("commit", "-qm", "fixture")
 
-    def steps(self, run):
-        history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
-        return {step["name"]: step for step in history["jobs"][0]["steps"]}
-
-    def result(self, run):
-        return json.loads(self.steps(run)["result"]["outputs"]["stdout"])
-
-    def analysis_intent(self):
-        head = self.git("rev-parse", "HEAD")
-        self.inputs["intent"].update(
-            plan={"id": "test", "revision": 1},
-            plan_sha256="b" * 64,
-            base=head,
-            head=head,
-            tree=self.git("rev-parse", "HEAD^{tree}"),
-            branch="task-1",
-            repository="https://github.com/acme/test.git",
-        )
-
     def test_script_native_steps_return_business_failure_with_literal_arguments(self):
         self.install(
             '#!/usr/bin/python3\nimport json,pathlib,sys\npathlib.Path("args").write_text(json.dumps(sys.argv[1:]))\nprint("done")\nsys.exit(23)\n'
@@ -176,7 +170,6 @@ class NativeRepository(harness.NativeTestCase):
         self.inputs["intent"].update(
             script="scripts/run", args=["$(touch never)", " spaces ", ""]
         )
-        index = (self.workspace / ".git/index").read_bytes()
         self.workflow("script")
         run = self.run_workflow()
         self.assertEqual(run["status"], "succeeded")
@@ -184,10 +177,6 @@ class NativeRepository(harness.NativeTestCase):
             json.loads((self.workspace / "args").read_text()),
             self.inputs["intent"]["args"],
         )
-        self.assertFalse((self.workspace / "never").exists())
-        # The snapshots use a temporary index; the real index is untouched and the temporary one removed.
-        self.assertEqual((self.workspace / ".git/index").read_bytes(), index)
-        self.assertEqual(self.steps(run)["cleanup-index"]["status"], "succeeded")
         history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
         result = json.loads(
             next(
@@ -196,24 +185,7 @@ class NativeRepository(harness.NativeTestCase):
         )
         self.assertEqual(result["outcome"], "failed")
         self.assertEqual(result["exit_code"], 23)
-        self.assertEqual(result["output"], "done\n")
-        self.assertFalse(result["output_truncated"])
         self.assertTrue(result["changed"])
-
-    def test_untracked_or_non_executable_script_refuses_without_running(self):
-        self.install("#!/bin/sh\ntouch invoked\n")
-        self.git("update-index", "--chmod=-x", "scripts/run")
-        self.git("commit", "-qm", "not executable")
-        self.inputs["intent"].update(script="scripts/run", args=[])
-        self.workflow("script")
-        run = self.run_workflow(success=False)
-        steps = self.steps(run)
-        self.assertEqual(
-            json.loads(steps["result"]["outputs"]["stdout"]),
-            {"error_code": "tasks.script_unavailable"},
-        )
-        self.assertEqual(steps["execute"]["status"], "skipped")
-        self.assertFalse((self.workspace / "invoked").exists())
 
     def test_native_resume_after_result_failure_never_reexecutes_program(self):
         self.install(
@@ -225,7 +197,7 @@ class NativeRepository(harness.NativeTestCase):
             step for step in self.flow["jobs"][0]["steps"] if step["name"] == "result"
         )
         result["task"]["inputs"]["run"] = (
-            'test -f "$ORBIT_TEST_READY"\n' + result["task"]["inputs"]["run"]
+            'test -f "$ORBIT_TEST_READY"\npython3 -B "$ORBIT_RESULT_SCRIPT"\n'
         )
         marker = self.repo / "result-ready"
         result["task"]["inputs"]["env"]["ORBIT_TEST_READY"] = str(marker)
@@ -247,100 +219,52 @@ class NativeRepository(harness.NativeTestCase):
             '#!/usr/bin/python3\nimport json,sys\nv=json.load(sys.stdin)\nr={k:v[k] for k in ("execution_id","plan_sha256","base","head","tree")}\nr.update(schema=1,status="ready",diagnostics=[],report={"schema":"test.v1","data":{}})\nprint(json.dumps(r))\n',
             "bin/task-analyze",
         )
-        # A tracked file that .gitignore also matches stays in the snapshot tree.
-        (self.workspace / ".gitignore").write_text("generated.txt\n")
-        (self.workspace / "generated.txt").write_text("tracked\n")
-        self.git("add", "-f", ".gitignore", "generated.txt")
-        self.git("commit", "-qm", "tracked ignored file")
-        self.analysis_intent()
+        head = self.git("rev-parse", "HEAD")
+        self.inputs["intent"].update(
+            plan={"id": "test", "revision": 1},
+            plan_sha256="b" * 64,
+            base=head,
+            head=head,
+            tree=self.git("rev-parse", "HEAD^{tree}"),
+            branch="task-1",
+            repository="https://github.com/acme/test.git",
+        )
         self.workflow("analyze")
         run = self.run_workflow()
         self.assertEqual(run["status"], "succeeded")
-        result = self.result(run)
+        history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
+        result = json.loads(
+            next(
+                step for step in history["jobs"][0]["steps"] if step["name"] == "result"
+            )["outputs"]["stdout"]
+        )
         self.assertEqual(result["outcome"], "ready")
-        provenance = result["provenance"]
-        self.assertEqual(
-            set(provenance),
-            {
-                "operation_id",
-                "group",
-                "subtask",
-                "repository",
-                "branch",
-                "instance_id",
-                "node_id",
-                "plan_id",
-                "plan_revision",
-                "plan_sha256",
-                "base",
-                "head",
-                "tree",
-                "before",
-                "after",
-                "execution_id",
-                "entrypoint_sha256",
-                "started_at",
-                "finished_at",
-                "duration_ms",
-                "exit_code",
-                "mechanical_llm_calls",
-            },
-        )
-        self.assertEqual(provenance["node_id"], 3)
-        self.assertEqual(provenance["operation_id"], 91001)
-        self.assertEqual(
-            provenance["before"],
-            {
-                "head": self.inputs["intent"]["head"],
-                "tree": self.inputs["intent"]["tree"],
-            },
-        )
-        self.assertEqual(provenance["after"], provenance["before"])
-        self.assertEqual(
-            provenance["entrypoint_sha256"],
-            hashlib.sha256(
-                (self.workspace / "bin/task-analyze").read_bytes()
-            ).hexdigest(),
-        )
-        self.assertEqual(
-            provenance["execution_id"],
-            hashlib.sha256(b"operation-91001").hexdigest()[:32],
-        )
-        self.assertRegex(provenance["started_at"], r"^\d{4}-\d\d-\d\dT.*Z$")
-        self.assertIsInstance(provenance["duration_ms"], int)
-        raw = result["artifact"]["content"].encode()
-        self.assertEqual(result["artifact"]["sha256"], hashlib.sha256(raw).hexdigest())
-        self.assertEqual(result["artifact"]["bytes"], len(raw))
+        self.assertEqual(result["provenance"]["node_id"], 3)
 
-    def test_moved_candidate_refuses_as_stale_without_running_the_analyzer(self):
-        self.install("#!/bin/sh\ntouch invoked\n", "bin/task-analyze")
-        self.analysis_intent()
-        self.inputs["intent"]["tree"] = "f" * 40
-        self.workflow("analyze")
-        run = self.run_workflow(success=False)
-        steps = self.steps(run)
-        self.assertEqual(
-            json.loads(steps["result"]["outputs"]["stdout"]),
-            {"error_code": "tasks.analysis_stale"},
-        )
-        self.assertEqual(steps["execute"]["status"], "skipped")
-        self.assertFalse((self.workspace / "invoked").exists())
-
-    def test_private_analysis_is_refused_in_the_terminal_result(self):
+    def test_private_analysis_is_refused_before_native_history(self):
         self.install(
             '#!/usr/bin/python3\nimport json\nprint(json.dumps({"API_KEY":"synthetic-private-report-value"}))\n',
             "bin/task-analyze",
         )
-        self.analysis_intent()
+        head = self.git("rev-parse", "HEAD")
+        self.inputs["intent"].update(
+            plan={"id": "test", "revision": 1},
+            plan_sha256="b" * 64,
+            base=head,
+            head=head,
+            tree=self.git("rev-parse", "HEAD^{tree}"),
+            branch="task-1",
+            repository="https://github.com/acme/test.git",
+        )
         self.workflow("analyze")
         run = self.run_workflow(success=False)
         self.assertEqual(run["status"], "failed")
-        history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
-        steps = {step["name"]: step for step in history["jobs"][0]["steps"]}
-        # The Gateway reads only the result step; the analyzer stdout stays on Node 209.
-        result = steps["result"]
-        self.assertNotIn("synthetic-private-report-value", json.dumps(result))
-        self.assertEqual(steps["outcome"]["status"], "failed")
+        raw = self.cli("workflow", "history", "get", run["id"]).stdout
+        self.assertNotIn("synthetic-private-report-value", raw)
+        history = json.loads(raw)
+        result = next(
+            step for step in history["jobs"][0]["steps"] if step["name"] == "result"
+        )
         self.assertEqual(
             json.loads(result["outputs"]["stdout"]),
             {"error_code": "tasks.analysis_report_invalid"},

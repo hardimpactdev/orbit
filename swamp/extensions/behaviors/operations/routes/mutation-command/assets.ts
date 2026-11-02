@@ -71,26 +71,13 @@ const RouteObservation = z.object({
         z.object({ node_id: Id, scope: z.string() }).strict(),
     ),
 }).strict();
-const Write = z.object({
-    index: z.number().int().nonnegative(),
-    route_id: Id,
-    node_id: Id,
-    instance_id: Id,
-    name: z.enum([
-        "instance.write-environment",
-        "instance.write-directory-url",
-        "instance.write-development-url",
-    ]),
-    input: z.record(z.string(), z.unknown()),
-    secret_field: z.string(),
-}).strict();
 type Context = {
     extensionFile(path: string): string;
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
 };
 export const behavior = {
     type: "@nckrtl/route-mutation-command",
-    version: "2026.11.01.3",
+    version: "2026.11.02.1",
     resources: {
         lan_changes: {
             schema: z.object({
@@ -287,39 +274,6 @@ export const behavior = {
                 ],
             }),
         },
-        certificateRemoved: {
-            description:
-                "Decode certificate absence after fresh loaded-scope protection",
-            arguments: z.object({
-                leaf: z.object({ node_id: Id, scope: z.string() })
-                    .passthrough(),
-                stdout: z.string(),
-            }),
-            execute: async (
-                args: {
-                    leaf: { node_id: number; scope: string };
-                    stdout: string;
-                },
-                ctx: Context,
-            ) => {
-                z.object({ present: z.literal(false) }).parse(
-                    JSON.parse(args.stdout),
-                );
-                return {
-                    dataHandles: [
-                        await ctx.writeResource(
-                            "contribution",
-                            "contribution",
-                            {
-                                ready: true,
-                                node_id: args.leaf.node_id,
-                                scope: args.leaf.scope,
-                            },
-                        ),
-                    ],
-                };
-            },
-        },
         result: {
             description:
                 "Report every required native contribution for the parent terminal result",
@@ -386,40 +340,6 @@ export const behavior = {
                             "completion",
                             result,
                         ),
-                    ],
-                };
-            },
-        },
-        environment: {
-            description:
-                "Resolve the script for one public admitted environment write",
-            arguments: z.object({ intent: Write }),
-            execute: async (args: { intent: unknown }, ctx: Context) => {
-                const value = Write.parse(args.intent);
-                const output = {
-                    script: ctx.extensionFile("scripts/write_environment.py"),
-                    scripts_directory: ctx.extensionFile("scripts"),
-                    input_json: JSON.stringify(value),
-                };
-                return {
-                    dataHandles: [
-                        await ctx.writeResource("assets", "assets", output),
-                    ],
-                };
-            },
-        },
-        environmentResult: {
-            description: "Decode the public result of one environment write",
-            arguments: z.object({ stdout: z.string() }),
-            execute: async (args: { stdout: string }, ctx: Context) => {
-                const result = z.object({
-                    ready: z.literal(true),
-                    route_id: Id,
-                    instance_id: Id,
-                }).strict().parse(JSON.parse(args.stdout));
-                return {
-                    dataHandles: [
-                        await ctx.writeResource("result", "result", result),
                     ],
                 };
             },

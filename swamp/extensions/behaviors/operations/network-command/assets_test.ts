@@ -1,5 +1,5 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.19";
-import { dnsDecision, dnsResult, INSPECT, inspection, publicKey } from "./assets.ts";
+import { dnsDecision, dnsResult, publicKey } from "./assets.ts";
 import { workflow } from "./workflows.ts";
 const key = "A".repeat(43) + "=";
 const policy = {
@@ -8,122 +8,85 @@ const policy = {
     public_key: key,
     domains: ["orbit"],
 };
-const hook = String
-    .raw`PostUp = resolvectl dns %i 10.44.0.1; resolvectl domain %i \~orbit`;
-/** The six sections the read step prints, in INSPECT order. */
-const observed = (delta: Partial<Record<string, string>> = {}) => {
-    const parts = {
-        key,
-        servers: "Global:\nLink 2 (orbit): 10.44.0.1\nLink 3 (eth0): 192.0.2.53",
-        domains: "Link 2 (orbit): ~orbit",
-        route: "Link 2 (orbit): no",
-        state: "orbit\n10.44.0.1\norbit",
-        hooks: hook,
-        ...delta,
-    };
-    return [parts.key, parts.servers, parts.domains, parts.route, parts.state, parts.hooks]
-        .join("\n@@\n") + "\n";
+const observation = {
+    state: "orbit\n10.44.0.1\norbit",
+    hooks: String
+        .raw`PostUp = resolvectl dns %i 10.44.0.1; resolvectl domain %i \~orbit`,
+    dns: "Link 2 (orbit): 10.44.0.1",
+    domains: "Link 2 (orbit): ~orbit",
+    default_route: "Link 2 (orbit): no",
+    uplink: true,
+    old_link: "orbit",
+    public_key: key,
 };
-Deno.test("the read step prints six sections the parser splits", () => {
-    assertEquals(INSPECT.split(" && echo @@ && ").length, 6);
-    assertEquals(inspection(observed(), "10.44.0.1"), {
-        state: "orbit\n10.44.0.1\norbit",
-        hooks: hook,
-        dns: "Link 2 (orbit): 10.44.0.1",
-        domains: "Link 2 (orbit): ~orbit",
-        default_route: "Link 2 (orbit): no",
-        uplink: true,
-        old_link: "orbit",
-        public_key: key,
-    });
-    assertThrows(() => inspection(key + "\n@@\n", "10.44.0.1"));
-});
-Deno.test("the uplink ignores the orbit link, loopback, the VPN server and the old marker server", () => {
-    for (
-        const servers of [
-            "Global:\nLink 2 (orbit): 10.44.0.1",
-            "Global: 127.0.0.53\nLink 2 (orbit): 10.44.0.1",
-            "Link 3 (eth0): 10.44.0.1 10.44.0.9%eth0",
-        ]
-    ) {
-        assertEquals(
-            inspection(
-                observed({ servers, state: "eth0\n10.44.0.9\norbit" }),
-                "10.44.0.1",
-            ).uplink,
-            false,
-        );
-    }
-    assertEquals(
-        inspection(observed({ servers: "Link 3 (eth0): 192.0.2.53#dns.example" }), "10.44.0.1").uplink,
-        true,
-    );
-});
-Deno.test("a missing marker means the orbit link; an unsafe marker link is refused", () => {
-    assertEquals(inspection(observed({ state: "" }), "10.44.0.1").old_link, "orbit");
-    assertThrows(() => inspection(observed({ state: "eth0;rm\n10.44.0.1" }), "10.44.0.1"));
-});
 Deno.test("matching DNS policy skips effects and native result strips helper fields", () => {
-    assertEquals(dnsDecision(observed(), policy), {
+    assertEquals(dnsDecision(JSON.stringify(observation), policy), {
         changed: false,
         old_link: "orbit",
     });
-    const result = dnsResult(observed(), policy);
+    const result = dnsResult(JSON.stringify(observation), policy);
     assertEquals(Object.hasOwn(result, "old_link"), false);
-    assertEquals(Object.hasOwn(result, "public_key"), false);
     assertEquals(result.uplink, true);
 });
 Deno.test("drift on old uplink is explicit; failed final comparison never reports success", () => {
-    assertEquals(dnsDecision(observed({ state: "eth0\n10.44.0.1\nold" }), policy), {
+    const before = {
+        ...observation,
+        state: "eth0\n10.44.0.1\nold",
+        old_link: "eth0",
+    };
+    assertEquals(dnsDecision(JSON.stringify(before), policy), {
         changed: true,
         old_link: "eth0",
     });
     for (
-        const delta of [
-            { servers: "Link 2 (orbit): 10.44.0.1" },
-            { hooks: "bad" },
-            { domains: "Link 2 (orbit): ~." },
-            { key: "B".repeat(43) + "=" },
-        ]
+        const delta of [{ uplink: false }, { hooks: "bad" }, {
+            domains: "Link 2 (orbit): ~.",
+        }, { public_key: "B".repeat(43) + "=" }]
     ) {
-        assertThrows(() => dnsResult(observed(delta), policy));
+        assertThrows(() =>
+            dnsResult(JSON.stringify({ ...observation, ...delta }), policy)
+        );
     }
 });
 Deno.test("public peer keys must match existing identity and not collide", () => {
-    assertEquals(publicKey(key + "\n", null, []), key);
-    assertThrows(() => publicKey(key, "B".repeat(43) + "=", []));
-    assertThrows(() => publicKey(key, null, [key]));
-    assertThrows(() => publicKey("not a key", null, []));
+    assertEquals(publicKey(JSON.stringify({ public_key: key }), null, []), key);
+    assertThrows(() =>
+        publicKey(JSON.stringify({ public_key: key }), "B".repeat(43) + "=", [])
+    );
+    assertThrows(() =>
+        publicKey(JSON.stringify({ public_key: key }), null, [key])
+    );
 });
-Deno.test("both direct roots run on 209 with official behaviors only", () => {
+Deno.test("both direct roots select209 exclusively and expose one action per SSH step", () => {
     for (const network of [true, false]) {
         const w = workflow(network);
         assertEquals(w.labels, { role: "swamp" });
         for (const step of w.jobs[0].steps) {
             assertEquals(step.labels, { role: "swamp" });
             assertEquals(Object.hasOwn(step, "target"), false);
-            const task = step.task as { behaviorType: string; methodName: string };
+            const task = step.task as {
+                behaviorType: string;
+                methodName: string;
+            };
             assertEquals(
-                task.behaviorType === "@nckrtl/network-command" ||
-                    task.behaviorType === "@swamp/ssh" && task.methodName === "exec" ||
-                    task.behaviorType.startsWith("@swamp/cfgmgmt/"),
+                ["@nckrtl/network-command", "@swamp/ssh"].includes(
+                    task.behaviorType,
+                ),
                 true,
-                step.name as string,
             );
         }
     }
 });
-Deno.test("no WireGuard file content carries a private key", () => {
-    const text = JSON.stringify(workflow(true));
-    assertEquals(text.includes("PrivateKey = %s"), true);
-    for (const step of workflow(true).jobs[0].steps) {
-        const args = (step.task as { globalArgs?: { content?: string } }).globalArgs;
-        if (args?.content) assertEquals(args.content.includes("PrivateKey"), false);
-    }
-});
+
 Deno.test("roleless operator DNS accepts its admitted private-only uplink exception", () => {
-    const privateOnly = observed({ servers: "Link 2 (orbit): 10.44.0.1" });
-    assertThrows(() => dnsDecision(privateOnly, policy));
-    assertEquals(dnsDecision(privateOnly, policy, false).changed, false);
-    assertEquals(dnsResult(privateOnly, policy, false).uplink, false);
+    const privateOnly = { ...observation, uplink: false };
+    assertThrows(() => dnsDecision(JSON.stringify(privateOnly), policy));
+    assertEquals(
+        dnsDecision(JSON.stringify(privateOnly), policy, false).changed,
+        false,
+    );
+    assertEquals(
+        dnsResult(JSON.stringify(privateOnly), policy, false).uplink,
+        false,
+    );
 });

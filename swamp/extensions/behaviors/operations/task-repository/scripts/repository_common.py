@@ -1,11 +1,14 @@
 """Public repository identity, snapshots and output formatting for Tasks actions."""
 
+import hashlib
 import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import tempfile
+from pathlib import Path
 
 
 class Refusal(Exception):
@@ -52,6 +55,36 @@ def snapshot(root):
             "head": git(root, "rev-parse", "HEAD"),
             "tree": git(root, "write-tree", env=env),
         }
+
+
+def executable(root, relative):
+    if (
+        not isinstance(relative, str)
+        or not re.fullmatch(r"[A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)*", relative)
+        or any(part in (".", "..") for part in relative.split("/"))
+    ):
+        raise Refusal("tasks.script_unavailable")
+    path = os.path.join(root, relative)
+    try:
+        details = os.lstat(path)
+        if (
+            not stat.S_ISREG(details.st_mode)
+            or not details.st_mode & 0o111
+            or os.path.realpath(path) != path
+        ):
+            raise Refusal("tasks.script_unavailable")
+        content = Path(path).read_bytes()
+        tracked = subprocess.check_output(
+            ["git", "-C", root, "show", "HEAD:" + relative], stderr=subprocess.DEVNULL
+        )
+        if (
+            content != tracked
+            or git(root, "ls-tree", "HEAD", "--", relative).split()[0] != "100755"
+        ):
+            raise Refusal("tasks.script_unavailable")
+        return hashlib.sha256(content).hexdigest()
+    except (OSError, subprocess.SubprocessError, IndexError):
+        raise Refusal("tasks.script_unavailable") from None
 
 
 def program_environment(ssr):

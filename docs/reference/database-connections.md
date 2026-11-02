@@ -93,7 +93,7 @@ Native resume retries a failed terminal projection from its saved safe outcome w
 
 Deletion returns `database_connection.required_by_ai_router` (409) while [AI router setup](/reference/ai-router#follow-the-cache-connection) uses the connection. This guard stays active when the extension switch is off; teardown releases it.
 
-A change to a record does not change the keys that an earlier Instance attachment stored. Attach the connection again to update them. A connection update returns a `database.update` Operation. Only a new index on a managed Valkey server starts a run: one `valkey-cli` call on the server Node reads the database count, with `AUTH` from the vault on standard input. The Gateway applies the index only when it is below that count (`database.index_invalid` otherwise). Every other change is record-only: the Gateway writes it at once, and the Operation has already succeeded.
+A change to a record does not change the keys that an earlier Instance attachment stored. Attach the connection again to update them. A connection update returns a `database.update` Operation. Proposed attributes remain encrypted until native validation succeeds; failure leaves the record unchanged. Valkey index limits are checked on the server Node.
 
 The workflow receives the captured endpoint, proposed index and SSH identity as public intent. A placed step on Node 209 uses official SSH and the official Valkey CLI to read the server limit. Its admin password comes from a named execution copy in Swamp vaults. An update that only changes the record skips SSH and secret resolution. The shared terminal subscriber applies a successful patch once.
 

@@ -58,26 +58,7 @@ jobs:
         intent: ${{ inputs.intent }}
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
-      behaviorName: ${{ "task-turn-prepare" }}
-  - name: prepare_local
-    labels: {role: swamp}
-    dependsOn:
-    - step: prepare
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: command/shell
-      methodName: execute
-      inputs:
-        run: 'umask 077
-
-          mkdir -p "$ORBIT_DIRECTORY"
-
-          '
-        env:
-          ORBIT_DIRECTORY: ${{ "/tmp/orbit-task-turn-local-" + run.id }}
-      behaviorName: task-turn-prepare-local
+      behaviorName: '${{ "task-turn-prepare" }}'
   - name: prepare_assets
     labels: {role: swamp}
     dependsOn:
@@ -87,16 +68,16 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-prepare-assets-" + string(inputs.node_id) }}
+      behaviorName: '${{ ("task-turn-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
-      globalArgs:
-        name: ${{ "task-turn-prepare-assets-" + string(inputs.node_id) }}
-        transport: &id001
+      globalArgs: &id001
+        name: '${{ ("task-turn-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+        transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
           port: ${{ inputs.intent.ssh_execution.target.port }}
           identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts: &id002
+        hosts:
         - name: target
           address: ${{ inputs.intent.ssh_execution.target.host }}
           transport:
@@ -104,16 +85,10 @@ jobs:
       inputs:
         hosts: name:target
         argv:
-        - timeout
-        - '60'
         - mkdir
-        - -m
-        - '0700'
         - -p
-        - ${{ "/tmp/orbit-task-turn-" + run.id + "/scripts" }}
-        timeoutSec: 60
+        - ${{ "/tmp/orbit-task-turn-" + run.id }}
     guard: ${{ steps.prepare.outputs.error_code != null }}
-    writes: true
   - name: copy_assets
     labels: {role: swamp}
     dependsOn:
@@ -123,147 +98,35 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("task-turn-copy-assets-" + string(inputs.node_id) + "-" + self.file).split(".").join("-") }}
+      behaviorName: '${{ ("task-turn-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: copy
-      globalArgs:
-        name: ${{ ("task-turn-copy-assets-" + string(inputs.node_id) + "-" + self.file).split(".").join("-") }}
-        transport: *id001
-        hosts: *id002
+      globalArgs: *id001
       inputs:
         hosts: name:target
-        src: ${{ steps.prepare.outputs.directory + "/" + self.file }}
-        dst: ${{ "/tmp/orbit-task-turn-" + run.id + "/scripts/" }}
+        src: ${{ steps.prepare.outputs.directory }}
+        dst: ${{ "/tmp/orbit-task-turn-" + run.id + "/" }}
+        recursive: true
         direction: to
-        timeoutSec: 60
-    writes: true
-    forEach:
-      item: file
-      in: ${{ ["receipt_prepare.py", "receipt_helper.py"] }}
-  - name: snapshot_before_index
-    labels: {role: swamp}
-    dependsOn:
-    - step: copy_assets
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-snapshot-before-index-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "task-turn-snapshot-before-index-" + string(inputs.node_id) }}
-        transport: *id001
-        hosts: *id002
-      inputs:
-        hosts: name:target
-        argv:
-        - timeout
-        - '60'
-        - cp
-        - --
-        - ${{ inputs.intent.checkout_path + "/.git/index" }}
-        - ${{ "/tmp/orbit-task-turn-" + run.id + "/before.index" }}
-        timeoutSec: 60
-    writes: true
-  - name: snapshot_before_add
-    labels: {role: swamp}
-    dependsOn:
-    - step: snapshot_before_index
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-snapshot-before-add-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "task-turn-snapshot-before-add-" + string(inputs.node_id) }}
-        transport: *id001
-        hosts: *id002
-      inputs:
-        hosts: name:target
-        argv:
-        - timeout
-        - '60'
-        - env
-        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-turn-" + run.id + "/before.index" }}
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - add
-        - --all
-        timeoutSec: 60
-    writes: true
-  - name: snapshot_before_head
-    labels: {role: swamp}
-    dependsOn:
-    - step: copy_assets
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-snapshot-before-head-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "task-turn-snapshot-before-head-" + string(inputs.node_id) }}
-        transport: *id001
-        hosts: *id002
-      inputs:
-        hosts: name:target
-        argv:
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - rev-parse
-        - HEAD
-        timeoutSec: 60
-  - name: snapshot_before_tree
-    labels: {role: swamp}
-    dependsOn:
-    - step: snapshot_before_add
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-snapshot-before-tree-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "task-turn-snapshot-before-tree-" + string(inputs.node_id) }}
-        transport: *id001
-        hosts: *id002
-      inputs:
-        hosts: name:target
-        argv:
-        - timeout
-        - '60'
-        - env
-        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-turn-" + run.id + "/before.index" }}
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - write-tree
-        timeoutSec: 60
-    writes: true
   - name: snapshot_before
     labels: {role: swamp}
     dependsOn:
-    - step: snapshot_before_head
-      condition:
-        type: succeeded
-    - step: snapshot_before_tree
+    - step: copy_assets
       condition:
         type: succeeded
     task:
       type: behavior
-      behaviorType: '@nckrtl/task-turn-data'
-      behaviorName: task-turn-snapshot-before
-      methodName: snapshot
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-turn-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *id001
       inputs:
-        head: ${{ steps.snapshot_before_head.outputs.stdout }}
-        tree: ${{ steps.snapshot_before_tree.outputs.stdout }}
-  - name: receipt_prepare
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-turn-" + run.id + "/scripts/snapshot.py" }}
+        stdin: ${{ steps.prepare.outputs.intent_json }}
+  - name: candidate
     labels: {role: swamp}
     dependsOn:
     - step: snapshot_before
@@ -272,12 +135,42 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-receipt-prepare-" + string(inputs.node_id) }}
+      behaviorName: '${{ ("task-turn-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
-      globalArgs:
-        name: ${{ "task-turn-receipt-prepare-" + string(inputs.node_id) }}
-        transport: *id001
-        hosts: *id002
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-turn-" + run.id + "/scripts/candidate.py" }}
+        - ${{ steps.snapshot_before.outputs.stdout }}
+        stdin: ${{ steps.prepare.outputs.intent_json }}
+  - name: candidate_result
+    labels: {role: swamp}
+    dependsOn:
+    - step: candidate
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-turn-data'
+      behaviorName: '${{ "task-turn-candidate-result" }}'
+      methodName: candidate
+      inputs:
+        value: ${{ steps.candidate.outputs.stdout }}
+  - name: receipt_prepare
+    labels: {role: swamp}
+    dependsOn:
+    - step: candidate_result
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-turn-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *id001
       inputs:
         hosts: name:target
         argv:
@@ -285,8 +178,7 @@ jobs:
         - -B
         - ${{ "/tmp/orbit-task-turn-" + run.id + "/scripts/receipt_prepare.py" }}
         stdin: ${{ steps.prepare.outputs.intent_json }}
-        timeoutSec: 60
-    writes: true
+    guard: ${{ !steps.candidate_result.outputs.admitted }}
   - name: session_create
     labels: {role: swamp}
     dependsOn:
@@ -307,7 +199,7 @@ jobs:
           ORBIT_PI_URL: ${{ steps.prepare.outputs.pi_url }}
           ORBIT_PI_BODY: ${{ steps.prepare.outputs.create_json }}
           ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/session_create.py" }}
-      behaviorName: ${{ "task-turn-session_create" }}
+      behaviorName: '${{ "task-turn-session_create" }}'
     guard: ${{ !inputs.intent.new_session }}
   - name: message_send
     labels: {role: swamp}
@@ -335,7 +227,7 @@ jobs:
           ORBIT_PI_URL: ${{ steps.prepare.outputs.pi_url }}
           ORBIT_PI_BODY: ${{ steps.prepare.outputs.send_json }}
           ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/message_send.py" }}
-      behaviorName: ${{ "task-turn-message_send" }}
+      behaviorName: '${{ "task-turn-message_send" }}'
   - name: observe
     labels: {role: swamp}
     dependsOn:
@@ -356,341 +248,65 @@ jobs:
           ORBIT_PI_URL: ${{ steps.prepare.outputs.pi_url }}
           ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/observe.py" }}
         timeout: 1800000
-      behaviorName: ${{ "task-turn-observe" }}
-  - name: snapshot_after_index
-    labels: {role: swamp}
-    dependsOn:
-    - step: observe
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-snapshot-after-index-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "task-turn-snapshot-after-index-" + string(inputs.node_id) }}
-        transport: *id001
-        hosts: *id002
-      inputs:
-        hosts: name:target
-        argv:
-        - timeout
-        - '60'
-        - cp
-        - --
-        - ${{ inputs.intent.checkout_path + "/.git/index" }}
-        - ${{ "/tmp/orbit-task-turn-" + run.id + "/after.index" }}
-        timeoutSec: 60
-    writes: true
-  - name: snapshot_after_add
-    labels: {role: swamp}
-    dependsOn:
-    - step: snapshot_after_index
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-snapshot-after-add-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "task-turn-snapshot-after-add-" + string(inputs.node_id) }}
-        transport: *id001
-        hosts: *id002
-      inputs:
-        hosts: name:target
-        argv:
-        - timeout
-        - '60'
-        - env
-        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-turn-" + run.id + "/after.index" }}
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - add
-        - --all
-        timeoutSec: 60
-    writes: true
-  - name: snapshot_after_head
-    labels: {role: swamp}
-    dependsOn:
-    - step: observe
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-snapshot-after-head-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "task-turn-snapshot-after-head-" + string(inputs.node_id) }}
-        transport: *id001
-        hosts: *id002
-      inputs:
-        hosts: name:target
-        argv:
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - rev-parse
-        - HEAD
-        timeoutSec: 60
-  - name: snapshot_after_tree
-    labels: {role: swamp}
-    dependsOn:
-    - step: snapshot_after_add
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-snapshot-after-tree-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "task-turn-snapshot-after-tree-" + string(inputs.node_id) }}
-        transport: *id001
-        hosts: *id002
-      inputs:
-        hosts: name:target
-        argv:
-        - timeout
-        - '60'
-        - env
-        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-turn-" + run.id + "/after.index" }}
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - write-tree
-        timeoutSec: 60
-    writes: true
+      behaviorName: '${{ "task-turn-observe" }}'
   - name: snapshot_after
     labels: {role: swamp}
     dependsOn:
-    - step: snapshot_after_head
-      condition:
-        type: succeeded
-    - step: snapshot_after_tree
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-turn-data'
-      behaviorName: task-turn-snapshot-after
-      methodName: snapshot
-      inputs:
-        head: ${{ steps.snapshot_after_head.outputs.stdout }}
-        tree: ${{ steps.snapshot_after_tree.outputs.stdout }}
-  - name: receipt_exists
-    labels: {role: swamp}
-    dependsOn:
-    - step: snapshot_after
+    - step: observe
       condition:
         type: succeeded
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-receipt-exists-" + string(inputs.node_id) }}
+      behaviorName: '${{ ("task-turn-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
-      globalArgs:
-        name: ${{ "task-turn-receipt-exists-" + string(inputs.node_id) }}
-        transport: *id001
-        hosts: *id002
+      globalArgs: *id001
       inputs:
         hosts: name:target
         argv:
-        - test
-        - -f
-        - ${{ inputs.intent.checkout_path + "/.git/orbit/receipt.json" }}
-        timeoutSec: 60
-        okExitCodes:
-        - 0
-        - 1
-  - name: receipt_copy
-    labels: {role: swamp}
-    dependsOn:
-    - step: receipt_exists
-      condition:
-        type: succeeded
-    - step: prepare_local
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-receipt-copy-" + string(inputs.node_id) }}
-      methodName: copy
-      globalArgs:
-        name: ${{ "task-turn-receipt-copy-" + string(inputs.node_id) }}
-        transport: *id001
-        hosts: *id002
-      inputs:
-        hosts: name:target
-        direction: from
-        src: ${{ inputs.intent.checkout_path + "/.git/orbit/receipt.json" }}
-        dst: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/receipt.json" }}
-        timeoutSec: 60
-    guard: ${{ steps.receipt_exists.outputs.exitCode != 0 }}
-  - name: difference_counts
-    labels: {role: swamp}
-    dependsOn:
-    - step: snapshot_after
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-difference-counts-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "task-turn-difference-counts-" + string(inputs.node_id) }}
-        transport: *id001
-        hosts: *id002
-      inputs:
-        hosts: name:target
-        argv:
-        - timeout
-        - '60'
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - diff
-        - --no-renames
-        - --numstat
-        - -z
-        - ${{ "--output=/tmp/orbit-task-turn-" + run.id + "/difference.numstat" }}
-        - '${{ inputs.intent.role == "reviewer" ? steps.snapshot_before.outputs.head : steps.snapshot_before.outputs.tree }}'
-        - ${{ steps.snapshot_after.outputs.tree }}
-        - --
-        timeoutSec: 60
-    writes: true
-    guard: ${{ inputs.intent.role == "implementer" }}
-  - name: difference_counts_copy
-    labels: {role: swamp}
-    dependsOn:
-    - step: difference_counts
-      condition:
-        type: succeeded
-    - step: prepare_local
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-difference-counts-copy-" + string(inputs.node_id) }}
-      methodName: copy
-      globalArgs:
-        name: ${{ "task-turn-difference-counts-copy-" + string(inputs.node_id) }}
-        transport: *id001
-        hosts: *id002
-      inputs:
-        hosts: name:target
-        direction: from
-        src: ${{ "/tmp/orbit-task-turn-" + run.id + "/difference.numstat" }}
-        dst: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/difference.numstat" }}
-        timeoutSec: 60
-  - name: difference_patch
-    labels: {role: swamp}
-    dependsOn:
-    - step: snapshot_after
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-difference-patch-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "task-turn-difference-patch-" + string(inputs.node_id) }}
-        transport: *id001
-        hosts: *id002
-      inputs:
-        hosts: name:target
-        argv:
-        - timeout
-        - '60'
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - diff
-        - --no-renames
-        - ${{ "--output=/tmp/orbit-task-turn-" + run.id + "/difference.patch" }}
-        - '${{ inputs.intent.role == "reviewer" ? steps.snapshot_before.outputs.head : steps.snapshot_before.outputs.tree }}'
-        - ${{ steps.snapshot_after.outputs.tree }}
-        - --
-        timeoutSec: 60
-    writes: true
-    guard: ${{ inputs.intent.role == "implementer" }}
-  - name: difference_patch_copy
-    labels: {role: swamp}
-    dependsOn:
-    - step: difference_patch
-      condition:
-        type: succeeded
-    - step: prepare_local
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-difference-patch-copy-" + string(inputs.node_id) }}
-      methodName: copy
-      globalArgs:
-        name: ${{ "task-turn-difference-patch-copy-" + string(inputs.node_id) }}
-        transport: *id001
-        hosts: *id002
-      inputs:
-        hosts: name:target
-        direction: from
-        src: ${{ "/tmp/orbit-task-turn-" + run.id + "/difference.patch" }}
-        dst: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/difference.patch" }}
-        timeoutSec: 60
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-turn-" + run.id + "/scripts/snapshot.py" }}
+        stdin: ${{ steps.prepare.outputs.intent_json }}
   - name: receipt_read
     labels: {role: swamp}
     dependsOn:
-    - step: receipt_copy
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-    - step: receipt_exists
+    - step: snapshot_after
       condition:
         type: succeeded
     task:
       type: behavior
-      behaviorType: command/shell
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-turn-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *id001
       inputs:
-        run: 'python3 -B "$ORBIT_ACTION" "$ORBIT_RECEIPT"
-
-          '
-        env:
-          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/receipt_read.py" }}
-          ORBIT_RECEIPT: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/receipt.json" }}
-      behaviorName: task-turn-receipt-read
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-turn-" + run.id + "/scripts/receipt_read.py" }}
+        stdin: ${{ steps.prepare.outputs.intent_json }}
   - name: difference
     labels: {role: swamp}
     dependsOn:
-    - step: difference_counts_copy
-      condition:
-        type: succeeded
-    - step: difference_patch_copy
+    - step: receipt_read
       condition:
         type: succeeded
     task:
       type: behavior
-      behaviorType: command/shell
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("task-turn-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *id001
       inputs:
-        run: 'python3 -B "$ORBIT_ACTION" "$ORBIT_COUNTS" "$ORBIT_PATCH"
-
-          '
-        env:
-          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/difference.py" }}
-          ORBIT_COUNTS: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/difference.numstat" }}
-          ORBIT_PATCH: ${{ "/tmp/orbit-task-turn-local-" + run.id + "/difference.patch" }}
-      behaviorName: task-turn-difference
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-turn-" + run.id + "/scripts/difference.py" }}
+        - ${{ steps.snapshot_before.outputs.stdout }}
+        stdin: ${{ steps.prepare.outputs.intent_json }}
     guard: ${{ inputs.intent.role == "implementer" }}
   - name: interrupt
     labels: {role: swamp}
@@ -711,142 +327,35 @@ jobs:
           ORBIT_PI_TOKEN: ${{ vault.get(inputs.execution_secrets.pi_token.vault, inputs.execution_secrets.pi_token.key) }}
           ORBIT_PI_URL: ${{ steps.prepare.outputs.pi_url }}
           ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/interrupt.py" }}
-      behaviorName: ${{ "task-turn-interrupt" }}
+      behaviorName: '${{ "task-turn-interrupt" }}'
     guard: ${{ (has(steps.observe) && steps.observe.status == "succeeded") || !has(steps.message_send) || steps.message_send.status != "succeeded" }}
-  - name: restore_reset
+  - name: restore
     labels: {role: swamp}
     dependsOn:
     - step: difference
       condition:
-        type: or
-        conditions:
-        - type: completed
-        - type: skipped
+        type: always
     - step: interrupt
       condition:
-        type: or
-        conditions:
-        - type: completed
-        - type: skipped
-    - step: snapshot_before
+        type: always
+    - step: candidate
       condition:
         type: succeeded
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-restore-reset-" + string(inputs.node_id) }}
+      behaviorName: '${{ ("task-turn-ssh-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
       methodName: exec
-      globalArgs:
-        name: ${{ "task-turn-restore-reset-" + string(inputs.node_id) }}
-        transport: *id001
-        hosts: *id002
+      globalArgs: *id001
       inputs:
         hosts: name:target
         argv:
-        - timeout
-        - '60'
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - reset
-        - --quiet
-        - --hard
-        - ${{ inputs.intent.candidate }}
-        timeoutSec: 60
-    writes: true
-    guard: ${{ inputs.intent.role != "reviewer" }}
-  - name: restore_clean
-    labels: {role: swamp}
-    dependsOn:
-    - step: restore_reset
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-restore-clean-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "task-turn-restore-clean-" + string(inputs.node_id) }}
-        transport: *id001
-        hosts: *id002
-      inputs:
-        hosts: name:target
-        argv:
-        - timeout
-        - '60'
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - clean
-        - --quiet
-        - -fd
-        timeoutSec: 60
-    writes: true
-  - name: restore_head
-    labels: {role: swamp}
-    dependsOn:
-    - step: restore_clean
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-restore-head-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "task-turn-restore-head-" + string(inputs.node_id) }}
-        transport: *id001
-        hosts: *id002
-      inputs:
-        hosts: name:target
-        argv:
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - rev-parse
-        - HEAD
-        timeoutSec: 60
-  - name: restore_tree
-    labels: {role: swamp}
-    dependsOn:
-    - step: restore_clean
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-restore-tree-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "task-turn-restore-tree-" + string(inputs.node_id) }}
-        transport: *id001
-        hosts: *id002
-      inputs:
-        hosts: name:target
-        argv:
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - write-tree
-        timeoutSec: 60
-  - name: restore
-    labels: {role: swamp}
-    dependsOn:
-    - step: restore_head
-      condition:
-        type: succeeded
-    - step: restore_tree
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-turn-data'
-      behaviorName: task-turn-restore
-      methodName: snapshot
-      inputs:
-        head: ${{ steps.restore_head.outputs.stdout }}
-        tree: ${{ steps.restore_tree.outputs.stdout }}
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-turn-" + run.id + "/scripts/restore.py" }}
+        stdin: ${{ steps.prepare.outputs.intent_json }}
+    guard: ${{ inputs.intent.role != "reviewer" || !has(steps.candidate_result) || !has(steps.candidate_result.outputs) || !steps.candidate_result.outputs.admitted
+      }}
   - name: shape_result
     labels: {role: swamp}
     dependsOn:
@@ -854,6 +363,9 @@ jobs:
       condition:
         type: always
     - step: snapshot_before
+      condition:
+        type: always
+    - step: candidate
       condition:
         type: always
     - step: observe
@@ -874,12 +386,9 @@ jobs:
     - step: restore
       condition:
         type: always
-    - step: delete_snapshot_indexes
+    - step: candidate_result
       condition:
-        type: or
-        conditions:
-        - type: completed
-        - type: skipped
+        type: always
     task:
       type: behavior
       behaviorType: '@nckrtl/task-turn-data'
@@ -896,44 +405,18 @@ jobs:
         difference: '${{ has(steps.difference) && has(steps.difference.outputs) && has(steps.difference.outputs.stdout) ? steps.difference.outputs.stdout
           : "" }}'
         restored: '${{ has(steps.restore) && has(steps.restore.outputs) && has(steps.restore.outputs.stdout) ? steps.restore.outputs.stdout : "" }}'
-        failure: ${{ !has(steps.observe) || steps.observe.status != "succeeded" || !has(steps.receipt_read) || steps.receipt_read.status != "succeeded"
-          || (inputs.intent.role == "reviewer" && (!has(steps.restore) || steps.restore.status != "succeeded")) || (inputs.intent.role != "implementer"
-          && (!has(steps.difference) || steps.difference.status != "succeeded")) }}
-        failure_code: '${{ has(steps.prepare.outputs) ? steps.prepare.outputs.error_code : null }}'
-      behaviorName: ${{ "task-turn-shape_result" }}
-  - name: delete_local_artifacts
-    labels: {role: swamp}
-    guard: ${{ !has(steps.receipt_read) || steps.receipt_read.status != "succeeded" || (inputs.intent.role != "implementer" && (!has(steps.difference) || steps.difference.status != "succeeded")) }}
-    dependsOn:
-    - step: shape_result
-      condition:
-        type: or
-        conditions:
-        - type: completed
-        - type: skipped
-    task:
-      type: behavior
-      behaviorType: command/shell
-      methodName: execute
-      inputs:
-        run: 'rm -rf -- "$ORBIT_DIRECTORY"
-
-          '
-        env:
-          ORBIT_DIRECTORY: ${{ "/tmp/orbit-task-turn-local-" + run.id }}
-      behaviorName: task-turn-delete-local-artifacts
+        failure: ${{ !has(steps.candidate) || steps.candidate.status != "succeeded" || !has(steps.observe) || steps.observe.status != "succeeded" || !has(steps.receipt_read)
+          || steps.receipt_read.status != "succeeded" || (inputs.intent.role == "reviewer" && (!has(steps.restore) || steps.restore.status != "succeeded"))
+          || (inputs.intent.role != "implementer" && (!has(steps.difference) || steps.difference.status != "succeeded")) }}
+        failure_code: '${{ has(steps.prepare.outputs) && steps.prepare.outputs.error_code != null ? steps.prepare.outputs.error_code : (has(steps.candidate_result)
+          && has(steps.candidate_result.outputs) ? steps.candidate_result.outputs.error_code : null) }}'
+      behaviorName: '${{ "task-turn-shape_result" }}'
   - name: result
     labels: {role: swamp}
     dependsOn:
     - step: shape_result
       condition:
         type: succeeded
-    - step: delete_local_artifacts
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
     task:
       type: behavior
       behaviorType: command/shell
@@ -944,7 +427,7 @@ jobs:
           '
         env:
           ORBIT_RESULT: ${{ steps.shape_result.outputs.result_json }}
-      behaviorName: ${{ "task-turn-result" }}
+      behaviorName: '${{ "task-turn-result" }}'
   - name: outcome
     labels: {role: swamp}
     dependsOn:
@@ -962,57 +445,5 @@ jobs:
         env:
           ORBIT_RESULT: ${{ steps.shape_result.outputs.result_json }}
           ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/outcome.py" }}
-      behaviorName: ${{ "task-turn-outcome" }}
-  - name: delete_snapshot_indexes
-    labels: {role: swamp}
-    guard: ${{ !has(steps.snapshot_before_tree) || steps.snapshot_before_tree.status != "succeeded" || !has(steps.snapshot_after_tree) || steps.snapshot_after_tree.status
-      != "succeeded" }}
-    dependsOn:
-    - step: snapshot_before_tree
-      condition:
-        type: or
-        conditions:
-        - type: completed
-        - type: skipped
-    - step: snapshot_after_tree
-      condition:
-        type: or
-        conditions:
-        - type: completed
-        - type: skipped
-    - step: difference
-      condition:
-        type: or
-        conditions:
-        - type: completed
-        - type: skipped
-    - step: restore
-      condition:
-        type: or
-        conditions:
-        - type: completed
-        - type: skipped
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-turn-delete-snapshot-indexes-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "task-turn-delete-snapshot-indexes-" + string(inputs.node_id) }}
-        transport: *id001
-        hosts: *id002
-      inputs:
-        hosts: name:target
-        argv:
-        - timeout
-        - '60'
-        - rm
-        - -f
-        - ${{ "/tmp/orbit-task-turn-" + run.id + "/before.index" }}
-        - ${{ "/tmp/orbit-task-turn-" + run.id + "/after.index" }}
-        - ${{ "/tmp/orbit-task-turn-" + run.id + "/difference.numstat" }}
-        - ${{ "/tmp/orbit-task-turn-" + run.id + "/difference.patch" }}
-        timeoutSec: 60
-    writes: true
+      behaviorName: '${{ "task-turn-outcome" }}'
   labels: {role: swamp}
-queueTimeout: 60

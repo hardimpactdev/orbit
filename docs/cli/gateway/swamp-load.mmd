@@ -1,6 +1,5 @@
 sequenceDiagram
   %% Target design: swamp-load-git-checkout (Nick 2026-11-01), release-waits-for-swamp, single-swamp-node. docs/reference/gateway-recovery.md#load-swamp.
-  %% Tightened: flow-tighten 2026-11-02, rule 6 (checkout move and grants render are one load action on 209).
   %% status: reviewed
   %% command: gateway:release:deploy · Load Swamp
   %% kind: gateway.swamp_load
@@ -28,17 +27,23 @@ sequenceDiagram
   %%> - the release commit, for example `a1b2c3d`
   %%> Retry:
   %%> - when serve is restarting, the start waits up to 10 minutes instead of pausing the release
-  SW->>N: Move checkout, grants<br/>git checkout --detach a1b2c3d
+  SW->>N: Move checkout to commit<br/>git checkout --detach a1b2c3d
   %%> Requirements:
   %%> - the new commit descends from the current one (fast-forward only)
   %%> On the Node:
   %%> - fetches the commit into the serve checkout
   %%> - moves the checkout to it
-  %%> - writes `swamp/grants/orbit-gateway.yaml`: which workflows the Gateway may start, from `swamp/config/gateway-workflow-grants.json`
   %%> Why:
   %%> - Swamp's default mode reads `swamp/` from a Git checkout; no custom loader
-  %%> - one action on Node 209 with one failure handling, so the render is part of this step
-  alt Shipped script lists same
+  N->>N: Render serve's grants<br/>swamp/grants/*.yaml
+  %%> What it does:
+  %%> - writes which workflows the Gateway may start, from `swamp/config/gateway-workflow-grants.json`
+  %%> - writes serve's other grants, from `swamp/config/serve-grants.json`, as `swamp/grants/orbit-serve.yaml`
+  %%> Why a script:
+  %%> - serve's grants format can't hold the manifest's schedule producer marks, and no official behavior renders grants
+  %%> Not included:
+  %%> - the swamp role writes no grants; they follow the checkout
+  alt No new shipped file
     N->>SW: Reload workflows, grants<br/>swamp serve reload
     %%> What it does:
     %%> - `swamp serve reload`: serve picks up new and changed workflows and extensions
@@ -53,11 +58,13 @@ sequenceDiagram
     %%> Result:
     %%> - task #5150 succeeded
     %%> - returns the commit, the previous commit and the workflow count
-  else Shipped script lists changed
+  else A new shipped file
     N-->>SW: Restart needed<br/>changed manifests
     %%> Why:
     %%> - serve's reload keeps each extension's file list from its start (Lab #4282)
     %%> - so new shipped scripts reach workers only after a restart
+    %%> - a removed entry needs none: serve serves a listed file that is gone as missing
+    %%> - each restart resets serve's hourly bookkeeping GC (Lab #4287), so the release restarts only when it must
     %%> Temporary:
     %%> - remove this branch when Lab #4282 is fixed
     Note over SW: Serve drains, restarts<br/>--shutdown-drain-timeout 5m

@@ -1,6 +1,5 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R1 (record-only update starts no run), R2-R4, 5 (swamp role SSH identity), round 2 bugs (refuse with no server, server admin password by its own vault key, cleanup on pass or fail).
-  %% Tightened: flow-tighten 2026-11-02, rule 22 (one docker exec -i read; no copied scripts or cleanup).
   %% status: draft
   %% command: database:update
   %% kind: database.update
@@ -53,21 +52,33 @@ sequenceDiagram
     %%> - starts one Swamp run of `operation-database-connection-update` on serve (Node 209)
     %%> Inputs:
     %%> - the requested index 3, and the server's WireGuard address and port
-    %%> - the vault key name `database-update-intent-5122`, which holds the `AUTH` line and the command; the admin password itself never enters the intent
+    %%> - the vault key name `database-server-5-admin`; the admin password itself never enters the intent
     %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
     GW-->>CLI: 202 Accepted<br/>task #5122
     %%> What you get:
     %%> - the task number, at once
     %%> Next:
     %%> - the CLI follows the task with `operation:show`
-    SW->>N: Check the index fits<br/>docker exec -i · CONFIG GET
-    %%> What it does:
-    %%> - reads the live server's database count; the Gateway applies index 3 only when it is below that count
+    SW->>N: Copy the action scripts<br/>@swamp/ssh copy · /tmp/…-5122
     %%> How:
-    %%> - Swamp reaches Node 12 over SSH from 209 with `@swamp/ssh`, the `swamp` role's SSH identity; nothing is copied to the Node
-    %%> - one `docker exec -i … valkey-cli` with `AUTH` from `vault.get` as the first stdin line, then `CONFIG GET databases`
+    %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior
+    %%> - the SSH identity is the one the `swamp` role owns, at its one role-defined place
+    %%> What it does:
+    %%> - copies the shipped script into `/tmp/orbit-database-update-5122`
+    SW->>N: Check the index fits<br/>CONFIG GET databases
+    %%> What it does:
+    %%> - reads the live server's database count and checks that index 3 is below it
+    %%> How:
+    %%> - the step reads the admin password with `vault.get` and passes it on standard input
     %%> Not included:
     %%> - no write on the server; the index is a client setting
+    SW->>N: Remove the scripts<br/>always runs · rm -rf /tmp/…-5122
+    %%> When:
+    %%> - always, after the check, whether it passed or failed
+    %%> What it does:
+    %%> - removes `/tmp/orbit-database-update-5122`, so no scripts stay on Node 12
+    %%> If it fails:
+    %%> - the task result does not change; the directory holds no secrets
     alt index fits
       N-->>SW: 16 databases
       %%> Returns:

@@ -145,7 +145,8 @@ function lifecycle_project(Operation $op, string $projection, string $status): O
 it('captures configured Laravel material for an unpublished initial Route', function (): void {
     $route = $this->routes['pool'];
     $route->update(['status' => 'pending', 'sites_published' => false]);
-    $this->routes['pool']->update(['web_root' => 'public']);
+    // A whole .env needs a Route without a web root; an APP_URL line carries no private material.
+    $this->routes['pool']->update(['web_root' => null]);
     $instance = $this->instances['old'];
     $this->nodes['old']->roles()->where('role', 'app-prod')->delete();
     $this->nodes['old']->roles()->create(['role' => 'app-dev', 'status' => 'active']);
@@ -339,7 +340,7 @@ it('keeps a one Route withdrawal below 100 KB on a 126 site Node', function (): 
     expect(strlen(json_encode($capture['intent'], JSON_THROW_ON_ERROR)))->toBeLessThan(100000);
 });
 
-it('omits unused composing restoration and its private copies while standalone removal retains both', function (): void {
+it('omits unused composing restoration while standalone removal retains it, both without private copies', function (): void {
     $this->routes['pool']->update(['web_root' => 'public']);
     $instance = $this->instances['old'];
     $this->nodes['old']->roles()->where('role', 'app-prod')->delete();
@@ -362,8 +363,9 @@ it('omits unused composing restoration and its private copies while standalone r
     $standalone = app(NativeRouteLifecycleInput::class)->capture($this->routes['pool']->fresh(), [], removing: true);
 
     expect($standalone['intent']['route_mutations'])->toHaveKey('restore')
-        ->and($standalone['execution_secrets'])->not->toBeEmpty()
-        ->and(collect($socket->sent)->pluck('payload.key')->all())->each->toContain('-restore-')
+        // Removal writes APP_URL lines only, which carry no private material.
+        ->and($standalone['execution_secrets'])->toBe([])
+        ->and($socket->sent)->toBe([])
         ->and($composing['intent']['route_mutations']['forward'])->toBe($standalone['intent']['route_mutations']['forward'])
         ->and(array_map(static fn (array $leaf): array => Arr::except($leaf, 'version'), $composing['certificates']))
         ->toBe(array_map(static fn (array $leaf): array => Arr::except($leaf, 'version'), $standalone['certificates']));

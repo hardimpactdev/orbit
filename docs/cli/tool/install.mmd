@@ -1,5 +1,4 @@
 sequenceDiagram
-  %% Tightened: Decision 7 (2026-11-02), worker-side key verification before Node contact.
   %% Target design: ADR 0244 task, DECISIONS R1-R4 (process.stop shape), ADR 0242 signed apt sources, single-swamp-node.
   %% status: reviewed
   %% command: tool:install
@@ -44,12 +43,6 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  Note over SW: assets<br/>public command arguments
-  opt --repository given
-    Note over SW: Fetch the signing key<br/>bounded download on 209
-    Note over SW: Read the key fingerprint<br/>gpg show-keys on 209
-    Note over SW: Assert the key fingerprint<br/>stop before the Node
-  end
   opt Tool Manager not ready yet
     SW->>N: Set up the Tool Manager<br/>Linux first use · pinned version
     %%> When:
@@ -66,20 +59,23 @@ sequenceDiagram
     %%> - other Tool Managers such as `mise`; Orbit has five, fixed in code
   end
   opt --repository given
-    Note over SW: Dearmor the signing key<br/>binary key on 209
-    SW->>N: Prepare apt keyrings<br/>cfgmgmt directory
-    SW->>N: Publish the signing key<br/>cfgmgmt copy_file
+    SW->>N: Prepare apt keyrings<br/>native directory
+    SW->>N: Fetch the signing key<br/>staging file
+    SW->>N: Read the key fingerprint<br/>gpg --with-colons --show-keys
+    Note over SW: Assert the key fingerprint<br/>one admitted primary key
+    SW->>N: Publish the signing key<br/>verified keyring
     SW->>N: Pin repository packages<br/>only admitted packages
-    SW->>N: Add the signed apt source<br/>cfgmgmt file · deb822 source
+    SW->>N: Add the signed apt source<br/>key checked by fingerprint
     %%> When:
     %%> - only for `apt` with `--repository`
     %%> What it does:
-    %%> - the signing key was downloaded and checked on 209 before any Node contact
+    %%> - downloads the signing key and checks its fingerprint
     %%> - adds the apt source, so apt trusts only packages signed with that key
   end
   opt signed apt repository
     SW->>N: Refresh apt source<br/>bounded update of this source
   end
+  Note over SW: assets<br/>public command arguments
   SW->>N: Read manager version<br/>one manager command
   SW->>N: Read installed package<br/>one package query
   opt macOS Homebrew
@@ -91,7 +87,7 @@ sequenceDiagram
   %%> - compares it with the constraint; a version outside it stops the run here
   Note over SW: decide<br/>candidate and constraint
   opt Homebrew formula
-    SW->>N: Install Homebrew formula<br/>bounded brew argv
+    SW->>N: Install Homebrew formula<br/>native resource
   end
   SW->>N: Install the package<br/>apt-get install --no-remove
   %%> What it does:
@@ -105,13 +101,13 @@ sequenceDiagram
     SW->>N: Check apt package<br/>official package check
   end
   opt Homebrew formula
-    SW->>N: Check Homebrew formula<br/>bounded brew inventory
+    SW->>N: Check Homebrew formula<br/>official package check
   end
   SW->>N: Check the package<br/>native package check
   Note over SW: Decode package state<br/>typed package observation
   Note over SW: Assert package state<br/>native end check
   opt signing key staged
-    Note over SW: Remove the staged key<br/>local cleanup, also on failure
+    SW->>N: Remove the staged key<br/>cleanup on completion
   end
   alt install succeeds
     N-->>SW: ripgrep 14.1.0 installed

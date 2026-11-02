@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/Nodes/{NodeAgentSshExecutor,NodeAgentFootprint}.php
   - apps/gateway/{app/Infrastructure/AgentCommands/**,database/migrations/2027_01_02_000000_add_agent_failed_pin_to_nodes.php}
   - apps/gateway/app/{Http/Controllers/Api/AgentRealtimeController,Actions/Gateway/BootstrapGatewayAction}.php
-  - {apps/gateway/app/Http/Middleware/RequireNodeAgentSecret.php,swamp/workflows/workflow-operation-node-agent-rekey.yaml}
+  - {apps/gateway/app/Http/Middleware/RequireNodeAgentSecret.php,swamp/extensions/behaviors/operations/node-scripts/scripts/agent_key*.py}
   - apps/gateway/app/{Domain/Nodes/{NodeAgentRekey*,NodeConverge*},Actions/Nodes/StartNodeConvergeAction,Console/Commands/RekeyNodeAgentCommand}.php
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
 ---
@@ -417,11 +417,9 @@ php artisan orbit:node-agent-rekey <node-id> [--attempt=N]
 
 The same attempt number returns the same task; a higher number makes a new key again. The Node must be an active, managed Linux Node with stored SSH host keys. Rekey and `node:converge` share one lock per Node. The [flow chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/node/agent-rekey.mmd) shows the steps.
 
-At admission the Gateway makes 32 random bytes as 64 hex characters. It writes the key to one vault copy, `node-agent-rekey-<node>-<attempt>`, and records only its SHA-256 verifier in the task.
+The run reaches the Node over official SSH from 209 with the shipped `agent_key.py`; it calls no agent command. `Make a new agent key` keeps the old key as `secret.previous`, writes 32 random bytes as 64 hex characters with one rename, and prints only the SHA-256 verifier. `Restart the Node agent` restarts `orbit-agent.service`. `Check the Node agent` checks that the agent is active and the key matches the verifier, removes `secret.previous`, and is the terminal result. The Gateway stores the verifier only from that result; until then the old verifier stays valid.
 
-The run reaches the Node over official SSH from 209 and calls no agent command. `Write the new agent key` writes the vault copy to `/etc/orbit/agent/secret` with `@swamp/cfgmgmt/file`, `root:root`, mode `0600`. `Restart the Node agent` restarts `orbit-agent.service` with `@swamp/cfgmgmt/systemd`. `Check the Node agent` fails unless the agent is active again. `Check the new key` reads the file's SHA-256. `Prove the new key` asserts that it equals the recorded verifier, and is the terminal result.
-
-The Gateway stores the verifier only after that assert passes; until then the old verifier stays valid. When the task ends, the Gateway deletes the vault copy. A failed step has no rollback. Run the command again with a higher attempt number after you fix the cause.
+When the restart or the check fails, `Restore the old key` puts `secret.previous` back and restarts the agent, so it matches the verifier the Gateway still has. The key never leaves the Node, a task, a log or the vault.
 
 ## Gateway view
 

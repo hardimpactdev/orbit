@@ -174,6 +174,12 @@ it('captures the development permission union and retires only the previous web 
         ->and(array_column($workload['selected']['source_access']['sites'], 'relative_root'))->toBe(['docs/public'])
         ->and(array_column($workload['restore']['source_access']['sites'], 'relative_root'))->toBe(['public'])
         ->and($workload['prepare']['runtime'])->toBeNull();
+    // Each phase carries its grants as setfacl commands: the checkout deny comes first, the root grant last.
+    $argv = array_column($workload['selected']['acl'], 'argv');
+    expect($argv[0])->toContain('d:u:caddy:---')
+        ->and(end($argv))->toContain('u:caddy:r-X')
+        ->and(collect($argv)->flatten()->filter(fn ($part) => is_string($part) && str_ends_with($part, '/docs/public'))->isNotEmpty())->toBeTrue()
+        ->and($workload['selected']['links'])->toBe([]);
 });
 
 it('captures dedicated production pools for union, selected and restoration without installing a runtime', function (): void {

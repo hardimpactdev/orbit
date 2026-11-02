@@ -177,12 +177,17 @@ final readonly class NativeRouteMutationInput
         foreach ($routes as $route) {
             $certificates = [...$certificates, ...RouteExecutionProof::objects($route['intent']['certificates'])];
             foreach ($route['url_writes'] as $write) {
-                $field = 'route_material_'.count($secrets);
-                $private = array_intersect_key($write['input'], array_flip(['content', 'app_key', 'app_name']));
-                $public = array_diff_key($write['input'], $private);
-                $secrets[$field] = $this->steps->executionCopy('orbit-control-inputs', 'route-'.$captureId.'-'.$mode.'-'.$field, json_encode($private, JSON_THROW_ON_ERROR));
-                $writes[] = ['index' => count($writes), 'route_id' => $route['route_id'], 'node_id' => $write['node_id'],
-                    'instance_id' => $write['instance_id'], 'name' => $write['name'], 'input' => $public, 'secret_field' => $field];
+                // A whole .env goes to the vault as the file itself; an APP_URL line carries nothing private.
+                $public = array_diff_key($write['input'], array_flip(['content', 'app_key', 'app_name']));
+                $row = ['index' => count($writes), 'route_id' => $route['route_id'], 'node_id' => $write['node_id'],
+                    'instance_id' => $write['instance_id'], 'name' => $write['name'], 'input' => $public];
+                if ($write['name'] === 'instance.write-environment') {
+                    $field = 'route_material_'.count($secrets);
+                    $secrets[$field] = $this->steps->executionCopy('orbit-control-inputs', 'route-'.$captureId.'-'.$mode.'-'.$field,
+                        ValidatedData::string($write['input']['content']));
+                    $row['secret_field'] = $field;
+                }
+                $writes[] = $row;
             }
         }
         $certificates = array_values(array_unique($certificates, SORT_REGULAR));

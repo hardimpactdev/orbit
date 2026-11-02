@@ -13,13 +13,11 @@ The Incus provider child observes the exact VM before creating or starting it. A
 
 The workflow prepares the guest account, sudo, observer and network through official `@swamp/ssh`. It installs Node209's existing public key, starts OpenSSH and reconciles guest TCP22 rules for Node209's WireGuard address. A trusted provider observation supplies the guest's public host key. The workflow verifies the private WireGuard SSH target with that full pin before model and Pi actions. Plain task VMs run no Swamp worker and receive no worker token.
 
-The Gateway renders every WireGuard file the run writes, and none holds a private key. The guest makes its key once with one exec through the transport and prints only the public key. `@swamp/cfgmgmt/file` writes the guest's own peer file on the hub, `orbit-peers.d/<node id>.conf`, and `wg addconf` loads it. No other peer on the hub changes, so enrollments that overlap never drop each other's peers.
-
-Two more execs write the guest's `orbit.conf` and DNS marker; the tunnel start loads the key from its key file. Provider, peer, hub and runtime actions remain visible native steps. No step calls the Gateway to read intent or report progress.
+Guest WireGuard preparation returns a public peer key. The canonical hub action publishes that exact key for the admitted guest and preserves unrelated peers. The hub private key stays on the hub. Provider, peer, hub and runtime actions remain visible native steps. No step calls the Gateway to read intent or report progress.
 
 Model issue and Pi runtime preparation are child workflows in the same native root. Secrets resolve from vault descriptors at the consuming step. Pi preparation verifies the pinned artifact and probes the captured Pi URL on its actual WireGuard bind address before returning success. A failed provider, network, model or runtime step cannot produce a ready VM result.
 
-Native failure and cancellation branches revoke any attempted model issuance. They keep no network snapshot and restore no hub peer: a published guest peer stays for diagnosis, and the next hub convergence drops it. The provider VM remains available after failure. Runtime always removes its temporary artifact and script staging directories before returning readiness.
+Native failure and cancellation branches revoke any attempted model issuance, restore the same captured hub peer with the prepared key, and restore the guest network snapshot. The provider VM and snapshot remain available after failure. Successful enrollment removes the snapshot; runtime always removes its temporary artifact and script staging directories before returning readiness.
 
 The terminal projector records the public host pin through the same `RecordNodeSshHostKeyAction` used by `POST /api/v1/nodes/{node}/ssh-host-key`. A conflicting stored pin refuses publication. It then records the guest WireGuard key, observer identity, Process state and VM readiness from the terminal result. Failure retains the VM and its cleanup intent; provider absence alone never proves complete destruction.
 
@@ -39,7 +37,7 @@ Placed steps list labelled servers, select the exact VM, create only when absent
 
 ### Bootstrap and compensation
 
-Bootstrap uses209's approved SSH identity and the public host key captured before creation. Enrollment uses official SSH for public first access and private WireGuard access. After a failed or cancelled UpCloud enrollment, native compensation revokes model access and deletes the unready provider through its API. Recovery does not depend on guest SSH after its firewall has restricted TCP22. A failed compensation remains failed and retains Gateway credentials/cleanup intent. A failed provider prefix can discover its exact labelled VM and remove it without changing peer or hub state.
+Bootstrap uses209's approved SSH identity and the public host key captured before creation. Enrollment uses official SSH for public first access and private WireGuard access. After a failed or cancelled UpCloud enrollment, native compensation revokes model access, restores the captured hub peer and deletes the unready provider through its API. Recovery does not depend on guest SSH after its firewall has restricted TCP22. A failed compensation remains failed and retains Gateway credentials/cleanup intent. A failed provider prefix can discover its exact labelled VM and remove it without changing peer or hub state.
 
 UpCloud destruction uses the same model-revocation-before-provider-delete and canonical Node cleanup order as Incus. It skips Incus topology-volume actions. Success alone clears stored credentials and records; provider absence alone never proves complete cleanup. Destroy still refuses owned workspaces, Routes and approved work that has not been published.
 

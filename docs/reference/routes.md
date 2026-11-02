@@ -26,7 +26,7 @@ Caddy convergence starts `operation-route-caddy` after intent commits. Its nativ
 
 Route destroy and withdrawal use one native Swamp DAG. Admission captures all current and transition placements, marks desired withdrawal, and retains Route rows and targets. Swamp publishes fresh DNS, Caddy and PHP state on each admitted Node, restores remaining workload URLs and runtime configuration, then removes unused certificate scopes and LAN rules. Only the parent posts the terminal result. The Gateway deletes exactly the captured Route rows after successful destroy; withdrawal keeps them. Offline removal records retained Node cleanup as residue. Explicit provider-absent Nodes are excluded before account resolution while their Route inventory remains complete.
 
-Swamp calls the shared native `route-certificate-remove` child per admitted scope after Caddy withdrawal and workload URL restoration. Each child checks fresh Caddy references, inspects the result and records its own recovery state.
+Swamp calls the shared native `route-certificate-remove` child per admitted scope after Caddy withdrawal and workload URL restoration. Each child removes the scope's Caddy folder and the account copy with `cfgmgmt/directory` `ensure: absent`.
 
 Every composing workflow that forwards an environment execution copy declares `orbit-control-inputs`. This includes both Route mutation phases and the Cluster Router root and publication phases.
 
@@ -503,9 +503,9 @@ Until cleanup, the new domain uses staging certificates, so the Instance's live 
 
 Route and Cluster Router operations compose the native `route-certificate-publish` and `route-certificate-remove` children inside their parent run. There is no standalone certificate CLI, API or Operation kind. Admission records each scope, Node account, domain, version and public root hash.
 
-Node 209 stages the scripts and reaches each admitted Node through pinned official SSH. The Node retains its leaf private key and returns only public CSRs. The existing Gateway signing endpoint checks the numeric Operation and its run, then signs those requests and returns public certificate bundles. The CA private key stays only in the Gateway.
+Node 209 reaches each admitted Node through pinned official SSH and copies no script to it. Per leaf, `route-certificate-publish` makes the version folder, runs one `openssl req` on the Node, has 209's signer post the CSR to the Gateway, and installs the signed leaf with `cfgmgmt/file` and `cfgmgmt/link`. It then installs the account copy that development servers read and trusts the Orbit root. The Node keeps its leaf private key. The Gateway signing endpoint checks the numeric Operation and its run, then returns the public leaf and root. The CA private key stays only in the Gateway.
 
-Removal follows Caddy withdrawal and refuses a scope still referenced by fresh Caddy configuration. A certificate folder loader keeps a scope in use when its directory is inside that scope, is the scope itself, or contains the scope. Removal keeps both the account and Caddy copies on refusal. It removes only the admitted account’s scope. The parent Operation projects the complete native result; certificate children create no separate Operations.
+Removal follows Caddy withdrawal. It removes only the admitted scope; it does not read the Caddy configuration again. The parent Operation projects the complete native result; certificate children create no separate Operations.
 
 A `pending` replacement renders a site only after its certificate step completes. A `failed` replacement renders no site. Cleanup issues the live certificates, stores its `cleanup` step, rebuilds the workload and Router Caddy, and only then removes the staging certificates. So a failed cleanup never leaves a site that names a missing certificate.
 

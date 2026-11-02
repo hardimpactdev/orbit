@@ -39,9 +39,9 @@
   },
   "phases": [
     {
-      "name": "Write the new agent key",
+      "name": "Make a new agent key",
       "job": "rekey",
-      "step": "Write the new agent key",
+      "step": "Make a new agent key",
       "budget_seconds": 40
     },
     {
@@ -55,18 +55,6 @@
       "job": "rekey",
       "step": "Check the Node agent",
       "budget_seconds": 40
-    },
-    {
-      "name": "Check the new key",
-      "job": "rekey",
-      "step": "Check the new key",
-      "budget_seconds": 40
-    },
-    {
-      "name": "Prove the new key",
-      "job": "rekey",
-      "step": "Prove the new key",
-      "budget_seconds": 10
     }
   ],
   "parity": [

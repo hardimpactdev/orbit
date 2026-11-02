@@ -10,7 +10,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolIntentProjection;
 use App\Domain\Tools\ToolStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
-use App\Infrastructure\Swamp\NativeRunResult;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Tool;
@@ -65,14 +64,3 @@ it('rejects malformed typed native results without writing Tool state', function
 })->with([
     [['manager_version' => "3.0.0\nraw"]], [['installed_version' => str_repeat('a', 256)]], [['installed_version' => []]], [['outcome' => 'raw']],
 ]);
-
-it('records repository failure when worker key conversion fails before package work', function (): void {
-    $operation = app(StartToolOperationAction::class)->execute('install', $this->node->id, 'apt', 'jq', null);
-    $native = (new NativeRunResult)->fromRun(['status' => 'failed', 'jobs' => [['steps' => [
-        ['name' => 'Dearmor the signing key', 'status' => 'failed'],
-        ['name' => 'Assert package state', 'status' => 'failed'],
-    ]]]]);
-    app(ToolIntentProjection::class)->apply($operation, ['run_id' => $this->runId, 'status' => 'failed', 'started_at' => '2026-11-02T13:00:00Z', 'finished_at' => '2026-11-02T13:00:01Z', 'result' => $native]);
-    expect($operation->refresh()->error_code)->toBe('tool.repository_failed')
-        ->and(Tool::query()->sole()->status)->toBe(ToolStatus::Failed);
-});
