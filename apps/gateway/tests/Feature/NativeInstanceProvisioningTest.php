@@ -5,7 +5,8 @@ declare(strict_types=1);
 use App\Actions\Instances\StartDevelopmentInstanceCreateAction;
 use App\Data\Instances\CreateInstanceData;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
-use App\Domain\Instances\Environment\NativeInstanceEnvironmentMaterial;
+use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
+use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NativeDevelopmentInstanceInput;
 use App\Domain\Instances\NativeInstanceProvisioningIntent;
@@ -13,6 +14,7 @@ use App\Domain\Instances\NativeInstanceProvisioningSetup;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Projects\LifecycleStep;
+use App\Domain\Projects\ProjectEnvironmentTemplateRefresh;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Instance;
@@ -106,17 +108,6 @@ it('expands Gateway owned setup commands through the canonical supplier after va
         ->and($plan['setup']['steps'][0]['command_digest'])->toBe(hash('sha256', LifecycleStep::ImportCiCaches));
     $step->update(['command' => 'printf changed']);
     expect(fn () => app(NativeInstanceProvisioningSetup::class)->resolve($operation, $this->instance->id, '', 'setup_programs'))
-        ->toThrow(ResourceOperationException::class);
-});
-
-it('allows source Git reads before environment readiness without exposing unavailable environment material', function (): void {
-    $plan = app(NativeInstanceProvisioningIntent::class)->create($this->instance, $this->input);
-    $operation = new Operation(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $this->instance->id,
-        'node_id' => $this->node->id, 'input' => [...$this->input, 'direct_provisioning' => $plan]]);
-
-    expect(app(NativeInstanceEnvironmentMaterial::class)->resolve($operation, $this->instance->id, '', 'environment_material')->value)->toBeNull();
-    $this->node->update(['user' => 'changed']);
-    expect(fn () => app(NativeInstanceEnvironmentMaterial::class)->resolve($operation, $this->instance->id, '', 'environment_material'))
         ->toThrow(ResourceOperationException::class);
 });
 
@@ -215,14 +206,14 @@ it('captures checkout scope and admitted seed values in the one private setup li
 
 it('renders .env at admission from the Project template and pushes exactly that file at run start', function (): void {
     $this->project->update(['type' => 'monorepo', 'root' => 'apps/site/public', 'is_laravel' => true]);
-    app(App\Domain\Projects\ProjectEnvironmentTemplateRefresh::class)->recordRead($this->project, str_repeat('c', 40), null, "TEMPLATE=\"from template\"\nAPP_ENV=local\nGONE=1\n");
-    app(App\Domain\Projects\ProjectEnvironmentTemplateRefresh::class)->recordRead($this->project, str_repeat('d', 40), null, "TEMPLATE=\"from template\"\nAPP_ENV=local\n");
-    $environment = app(App\Domain\Instances\Environment\DevelopmentCreateEnvironment::class)->admit($this->instance->refresh(), $this->project->refresh());
-    $stored = app(App\Domain\Instances\Environment\InstanceEnvironmentStore::class)->values($this->instance);
+    app(ProjectEnvironmentTemplateRefresh::class)->recordRead($this->project, str_repeat('c', 40), null, "TEMPLATE=\"from template\"\nAPP_ENV=local\nGONE=1\n");
+    app(ProjectEnvironmentTemplateRefresh::class)->recordRead($this->project, str_repeat('d', 40), null, "TEMPLATE=\"from template\"\nAPP_ENV=local\n");
+    $environment = app(DevelopmentCreateEnvironment::class)->admit($this->instance->refresh(), $this->project->refresh());
+    $stored = app(InstanceEnvironmentStore::class)->values($this->instance);
     expect($environment)->toBe(['APP_DEBUG', 'APP_ENV', 'APP_KEY', 'APP_NAME', 'TEMPLATE'])
         ->and($stored['APP_ENV'])->toBe('local')->and($stored['APP_KEY'])->toStartWith('base64:');
-    $again = app(App\Domain\Instances\Environment\DevelopmentCreateEnvironment::class)->admit($this->instance, $this->project);
-    expect(app(App\Domain\Instances\Environment\InstanceEnvironmentStore::class)->values($this->instance)['APP_KEY'])->toBe($stored['APP_KEY'])
+    $again = app(DevelopmentCreateEnvironment::class)->admit($this->instance, $this->project);
+    expect(app(InstanceEnvironmentStore::class)->values($this->instance)['APP_KEY'])->toBe($stored['APP_KEY'])
         ->and($again)->toBe($environment);
 
     $plan = app(NativeInstanceProvisioningIntent::class)->create($this->instance->refresh(), $this->input);
@@ -239,13 +230,13 @@ it('renders .env at admission from the Project template and pushes exactly that 
     expect($socket->sent[1]['payload']['key'])->toBe('instance-create-environment-input-'.$operation->id)
         ->and($file['directory'])->toBe($this->instance->checkout_path.'/apps/site')
         ->and($file['checkout'])->toBe($this->instance->checkout_path)
-        ->and($file['content'])->toBe(app(App\Domain\Instances\Environment\DevelopmentCreateEnvironment::class)->content($this->instance))
+        ->and($file['content'])->toBe(app(DevelopmentCreateEnvironment::class)->content($this->instance))
         ->and($file['content'])->toContain('TEMPLATE="from template"')
         ->and(json_encode($public))->not->toContain($stored['APP_KEY'])
         ->and(json_encode($public))->not->toContain('from template');
 });
 
 it('serializes an empty stored environment and empty template as defaults only', function (): void {
-    $environment = app(App\Domain\Instances\Environment\DevelopmentCreateEnvironment::class)->admit($this->instance, $this->project);
+    $environment = app(DevelopmentCreateEnvironment::class)->admit($this->instance, $this->project);
     expect($environment)->toBe(['APP_DEBUG', 'APP_ENV', 'APP_NAME']);
 });

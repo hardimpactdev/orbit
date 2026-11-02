@@ -54,6 +54,9 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
+  Note over SW: Read the scripts<br/>instance-environment-assets
+  %%> What it does:
+  %%> - reads the shipped environment and runtime scripts on 209, to send them over SSH in argv
   SW->>N: Check for foreign keys<br/>@swamp/ssh · key names only
   %%> How:
   %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior
@@ -91,6 +94,12 @@ sequenceDiagram
     %%> Not included:
     %%> - development Instances: they only get the file
   end
+  Note over SW: Report the result<br/>error_code of the failed step
+  %%> What it does:
+  %%> - prints the public result on 209: whether each file changed and the refresh status, or the first step's `error_code`
+  Note over SW: Fail on an error<br/>assert · exit code 0
+  %%> What it does:
+  %%> - fails the run when the report holds an `error_code`, so the task fails with that code
   alt every file matches
     N-->>SW: files match, refreshed
     %%> Returns:

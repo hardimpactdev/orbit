@@ -1,0 +1,54 @@
+{
+  "kind": "instance.sync_environment",
+  "workflow": "operation-instance-environment",
+  "topology": "minimal",
+  "budget_seconds": 90,
+  "queue_timeout_seconds": 30,
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "projects",
+      "operation": false,
+      "bind": "project",
+      "body": {
+        "slug": "proof-env-sync",
+        "name": "Proof env sync",
+        "type": "node-package",
+        "root": ".",
+        "repository_url": "https://github.com/octocat/Hello-World.git",
+        "default_branch": "master"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "instances",
+      "bind": "instance",
+      "body": {
+        "project_id": "${project.id}",
+        "node_id": "${node.target}",
+        "name": "e-${proof.run}"
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "instances/${instance.id}/environment/PROOF_SECRET",
+      "operation": false,
+      "body": {"value": "proof-private-${proof.run}"}
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "instances/${instance.id}/environment/sync"
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {"name": "Read the scripts", "job": "environment", "step": "Read the scripts", "budget_seconds": 15},
+    {"name": "Check for foreign keys", "job": "environment", "step": "Check for foreign keys", "budget_seconds": 20},
+    {"name": "Write .env, .env.testing", "job": "environment", "step": "Write .env, .env.testing", "budget_seconds": 20},
+    {"name": "Check the written file", "job": "environment", "step": "Check the written file", "budget_seconds": 20},
+    {"name": "Report the result", "job": "environment", "step": "Report the result", "budget_seconds": 15}
+  ],
+  "parity": "swamp/proof/instance.sync_environment/parity.py"
+}

@@ -6,3 +6,4 @@ process.start
 process.stop
 process.update
 schedule.run
+instance.sync_environment

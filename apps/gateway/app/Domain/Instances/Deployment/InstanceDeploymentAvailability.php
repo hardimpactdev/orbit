@@ -51,9 +51,6 @@ final class InstanceDeploymentAvailability
             throw self::unavailable();
         }
         $required = [];
-        if (($intent['runtime_synchronous'] ?? false) !== true) {
-            $required[] = 'process.restart_instance';
-        }
         if (($intent['php'] ?? false) === true) {
             $required[] = 'node.prepare_php_packages';
         }

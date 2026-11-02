@@ -339,8 +339,6 @@ The `vp-dev` preset applies only to development Instance Processes. Process defi
 
 The systemd `User=` of a Node Process can be an account other than the managed user. Use it for a service that must not run as the managed user. The owner stays the Node. An Instance Process keeps the account derived from the Instance, because a chosen account would leave the production home and the development checkout. Docker rejects `user` because the image has its own user. The Gateway does not create the account. The Gateway checks the account with `getent passwd` over SSH before create and fails with `process.user_unavailable` when the account or its home is unavailable.
 
-Instance Process restart executes as member steps in one native parent. `process.restart_instance` captures only active, desired-running Processes with `restart_on_deploy` enabled. The captured list stays fixed when later inventory changes. The run creates no member Operation. Owning native parents can reuse the record capture and local action exports without admitting another root. Native member outcomes drive bounded record projections.
-
 `process.install_instance_definitions` captures owned definition copies and reuses the canonical private Process installer in the same root. Copies remain stopped. The Gateway capture action records definitions without converging a runtime.
 
 `schedule.install_instance_definitions` passes each captured public Schedule definition to the native Schedule-create workflow on Node209. Native `forEach` owns the member fan-out; each child run has distinct model identities and uses official cfgmgmt over pinned SSH. Timers remain disabled. Installation needs no command bytes, private-material callback or member Operation. The root terminal outcome applies to every captured member; failed convergence keeps applied files and marks the captured set failed so a normal request can converge it again.
@@ -352,8 +350,6 @@ The parent binds `source_installations` and `destination_installations` to their
 Protected Process values resolve only for their recorded Process target. Schedule commands use their owning Instance or Node ID as the secret reference, with the Schedule UUID retained in the admitted input. Resolution verifies both the actual owner relation and the recorded Node before reading command contents.
 
 Task VM runtime preparation composes the canonical Process installer within its native root. The Process belongs to the admitted VM Node and uses its fixed systemd `pi-server` definition. The private installation callback retains Process ownership and configuration checks.
-
-A successful `process.restart_instance` result contains `process_ids`, a bounded list of integers in Process ID order. The IDs come from the captured restart plan after every native member step succeeds. An empty selection returns an empty list. A failed member prevents successful completion. Callers map this list to the existing `restarted_process_ids` field.
 
 
 Leaf Process kinds use the direct native workflow only. Their completion projects bounded runtime status without keyed receipts or a Gateway readiness command. Instance composition uses native member steps in the owning run.
