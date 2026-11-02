@@ -2,7 +2,7 @@
 
 The Orbit CA private key lives only in the Gateway. A Node makes its own key and CSR with one `openssl req`; the key never leaves the Node.
 
-`scripts/sign.py` is the only shipped certificate script. It runs on 209 through `command/shell` and is the one step that calls the Gateway: one POST of one CSR to `/api/v1/direct-operations/{operation}/certificates/sign`, then the signed leaf and the Orbit root on stdout as PEM. A refusal fails the step without retry. `@nckrtl/certificate-script-assets.read` returns its path.
+`@nckrtl/certificate-sign` (`sign.ts`) is the one step that calls the Gateway. It runs on 209 and sends one POST of one CSR to `/api/v1/direct-operations/{operation}/certificates/sign`, trusting only the Orbit root. It returns the signed leaf and the Orbit root as PEM in `stdout`. A refusal fails the step without retry. No certificate script ships.
 
 Official steps do the rest:
 

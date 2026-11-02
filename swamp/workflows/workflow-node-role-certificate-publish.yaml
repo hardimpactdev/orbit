@@ -16,20 +16,10 @@ inputs:
 jobs:
 - name: certificate
   steps:
-    # The 209 signer's path; the certificate signer is the only shipped script.
-  - name: 'Read the scripts'
-    labels: {role: swamp}
-    dependsOn: []
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/certificate-script-assets'
-      behaviorName: certificate-script-assets
-      methodName: read
-      inputs: {}
     # A root-only folder for the pending key.
   - name: 'Make the key folder'
     labels: {role: swamp}
-    dependsOn: [{step: 'Read the scripts', condition: {type: succeeded}}]
+    dependsOn: []
     writes: true
     task:
       type: behavior
@@ -65,18 +55,15 @@ jobs:
     dependsOn: [{step: 'Make a CSR on the Node', condition: {type: succeeded}}]
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ ("role-cert-sign-" + inputs.ssh.name).split(".").join("-") }}'
-      methodName: execute
+      behaviorType: '@nckrtl/certificate-sign'
+      behaviorName: '${{ ("certificate-sign-" + string(inputs.leaf.node_id) + "-" + inputs.leaf.scope.split("/").join("-")).split(".").join("-") }}'
+      methodName: sign
       inputs:
-        run: "timeout 90 python3 -I \"$ORBIT_SIGN_SCRIPT\""
-        env:
-          ORBIT_SIGN_SCRIPT: '${{ steps["Read the scripts"].outputs.sign }}'
-          ORBIT_CERTIFICATE_OPERATION_ID: '${{ string(inputs.operation_id) }}'
-          ORBIT_CERTIFICATE_RUN_ID: '${{ inputs.parent_run_id }}'
-          ORBIT_CERTIFICATE_NODE_ID: '${{ string(inputs.leaf.node_id) }}'
-          ORBIT_CERTIFICATE_SCOPE: '${{ inputs.leaf.scope }}'
-          ORBIT_CERTIFICATE_REQUEST: '${{ steps["Make a CSR on the Node"].outputs.stdout }}'
+        operation_id: '${{ inputs.operation_id }}'
+        run_id: '${{ inputs.parent_run_id }}'
+        node_id: '${{ inputs.leaf.node_id }}'
+        scope: '${{ inputs.leaf.scope }}'
+        request: '${{ steps["Make a CSR on the Node"].outputs.stdout }}'
     # The fixed folder Caddy reads, root:caddy 0750.
   - name: 'Make the certificate folder'
     labels: {role: swamp}

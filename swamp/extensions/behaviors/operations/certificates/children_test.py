@@ -28,17 +28,16 @@ class CertificateChildrenTest(unittest.TestCase):
             self.assertEqual({"role": "swamp"}, step["labels"])
             if task["behaviorType"] == "@swamp/ssh":
                 self.assertEqual("exec", task["methodName"], step["name"])
-            elif task["behaviorType"] == "command/shell":
+            elif task["behaviorType"] == "@nckrtl/certificate-sign":
                 self.assertEqual("Sign the CSR", step["name"])
-                self.assertIn("$ORBIT_SIGN_SCRIPT", task["inputs"]["run"])
-            elif task["behaviorType"] != "@nckrtl/certificate-script-assets":
+                self.assertEqual("sign", task["methodName"])
+            else:
                 self.assertIn(task["behaviorType"], OFFICIAL, step["name"])
 
     def test_route_publish_installs_each_leaf_and_the_account_copy(self):
         self.assert_official(
             "route-certificate-publish",
             [
-                "Read the scripts",
                 "Read the account",
                 "Make the leaf folder",
                 "Make a CSR on the Node",
@@ -70,7 +69,6 @@ class CertificateChildrenTest(unittest.TestCase):
         self.assert_official(
             "node-role-certificate-publish",
             [
-                "Read the scripts",
                 "Make the key folder",
                 "Make a CSR on the Node",
                 "Sign the CSR",

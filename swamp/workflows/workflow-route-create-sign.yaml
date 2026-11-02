@@ -16,33 +16,18 @@ jobs:
 - name: create
   labels: {role: swamp}
   steps:
-    # The 209 signer's path; the certificate signer is the only shipped script.
-  - name: 'scripts'
+    # The one step that calls the Gateway: the signed leaf, then the Orbit root.
+  - name: 'sign'
     labels: {role: swamp}
     dependsOn: []
     task:
       type: behavior
-      behaviorType: '@nckrtl/certificate-script-assets'
-      behaviorName: certificate-script-assets
-      methodName: read
-      inputs: {}
-    # The one step that calls the Gateway: the signed leaf, then the Orbit root.
-  - name: 'sign'
-    labels: {role: swamp}
-    dependsOn:
-    - {step: 'scripts', condition: {type: always}}
-    guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ ("route-sign-" + string(inputs.leaf.node_id) + "-" + inputs.leaf.scope.split("/").join("-")).split(".").join("-") }}'
-      methodName: execute
+      behaviorType: '@nckrtl/certificate-sign'
+      behaviorName: '${{ ("certificate-sign-" + string(inputs.leaf.node_id) + "-" + inputs.leaf.scope.split("/").join("-")).split(".").join("-") }}'
+      methodName: sign
       inputs:
-        run: "timeout 90 python3 -I \"$ORBIT_SIGN_SCRIPT\""
-        env:
-          ORBIT_SIGN_SCRIPT: '${{ steps.scripts.outputs.sign }}'
-          ORBIT_CERTIFICATE_OPERATION_ID: '${{ string(inputs.operation_id) }}'
-          ORBIT_CERTIFICATE_RUN_ID: '${{ inputs.parent_run_id }}'
-          ORBIT_CERTIFICATE_NODE_ID: '${{ string(inputs.leaf.node_id) }}'
-          ORBIT_CERTIFICATE_SCOPE: '${{ inputs.leaf.scope }}'
-          ORBIT_CERTIFICATE_REQUEST: '${{ inputs.request }}'
+        operation_id: '${{ inputs.operation_id }}'
+        run_id: '${{ inputs.parent_run_id }}'
+        node_id: '${{ inputs.leaf.node_id }}'
+        scope: '${{ inputs.leaf.scope }}'
+        request: '${{ inputs.request }}'

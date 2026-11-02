@@ -1,10 +1,8 @@
 manifestVersion: 1
-name: '@nckrtl/certificate-scripts'
-version: 2026.11.02.1
+name: '@nckrtl/certificate-sign'
+version: 2026.11.02.2
 visibility: private
 license: MIT
-description: The 209 certificate signer; official Node steps own every certificate effect.
+description: The Gateway sign primitive call; official Node steps own every certificate effect.
 behaviors:
-- operations/certificates/script_assets.ts
-additionalFiles:
-- scripts/sign.py
+- operations/certificates/sign.ts

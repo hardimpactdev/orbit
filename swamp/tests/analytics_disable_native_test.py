@@ -30,7 +30,7 @@ class AnalyticsDisableNative(NativeTestCase):
             "*.ts"
         ):
             if path.name not in (
-                "script_assets.ts",
+                "sign.ts",
                 "input.ts",
                 "signing.ts",
                 "role-input.ts",
@@ -138,19 +138,6 @@ print('{"ready":true}')
                 checks[0]["task"]["inputs"]["current"] = (
                     "${{ inputs.intent.before.content }}"
                 )
-            elif name == "route-certificate-remove":
-                checks = [
-                    {
-                        "name": "canonical-input",
-                        "task": {
-                            "type": "behavior",
-                            "behaviorType": "@nckrtl/certificate-script-assets",
-                            "behaviorName": "canonical-removal",
-                            "methodName": "read",
-                            "inputs": {},
-                        },
-                    }
-                ]
             if checks:
                 workflow["jobs"][0]["steps"][0]["dependsOn"] = [
                     {"step": "canonical-input", "condition": {"type": "succeeded"}}

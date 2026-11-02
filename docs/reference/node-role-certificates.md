@@ -2,7 +2,7 @@
 title: "Native Node role certificates"
 description: "How the node-role-certificate-publish child issues a fixed Node role certificate."
 covers:
-  - swamp/extensions/behaviors/operations/certificates/scripts/sign.py
+  - swamp/extensions/behaviors/operations/certificates/sign.ts
 ---
 
 # Native Node role certificates
@@ -13,10 +13,9 @@ Every step runs on 209. Node work uses official `@swamp/cfgmgmt` behaviors or on
 
 | Step | What it does |
 | --- | --- |
-| Read the scripts | Resolves the 209 signer, the only shipped certificate script |
 | Make the key folder | `/var/lib/orbit/role-certificates/<scope>/<version>`, root 0700 |
 | Make a CSR on the Node | One `openssl req`: the key stays on the Node, the CSR goes to stdout |
-| Sign the CSR | The signer posts the CSR to the Gateway signing primitive and prints the leaf and the Orbit root. A refusal or failed call fails the step with `app-dev.certificate_sign_failed` and no retry |
+| Sign the CSR | `@nckrtl/certificate-sign` posts the CSR to the Gateway signing primitive and returns the leaf and the Orbit root as PEM. A refusal or failed call fails the step with `app-dev.certificate_sign_failed` and no retry |
 | Make the certificate folder | The fixed folder Caddy reads, such as `/etc/caddy/orbit-cert-current`, root:caddy 0750 |
 | Install the key | One `install` of the pending key as `<role>.key`, root:caddy 0640 |
 | Install the certificate, Install the Orbit root | `<role>.pem` and `root-ca.pem` by `cfgmgmt/file`, root:caddy 0640 |
