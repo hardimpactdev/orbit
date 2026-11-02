@@ -30,7 +30,7 @@ sequenceDiagram
   %%> - no other lifecycle change and no unfinished transfer holds Instance 42
   %%> Captures:
   %%> - the source: path, owner, origin, branch, linked worktrees
-  %%> - what Instance 42 owns: Processes, Schedules, Route, SQLite files
+  %%> - what Instance 42 owns: Processes, Schedules, Route, SQLite files, server databases
   %%> - the Project teardown steps
   %%> Result:
   %%> - Instance 42 is marked removing, with the captured set
@@ -104,7 +104,14 @@ sequenceDiagram
   %%> What it does:
   %%> - deletes the SQLite files that Instance 42 owns
   %%> Not included:
-  %%> - other databases; their records go with the Instance, nothing on the Database server changes
+  %%> - databases on a Database server; the next step drops them
+  SW->>N: Drop owned databases<br/>Database server · SQL
+  %%> What it does:
+  %%> - drops each database and user that Instance 42 owns on a Database server, one canonical server child per server
+  %%> How:
+  %%> - the server child reads each server's admitted password from the vault; the Gateway copies it at run start
+  %%> Not included:
+  %%> - registered external databases; their records go with the Instance, nothing on their host changes
   SW->>N: Withdraw the Route<br/>Caddy site, PHP pool, cert
   %%> What it does:
   %%> - removes the Caddy site of Instance 42 and reloads Caddy; no restart

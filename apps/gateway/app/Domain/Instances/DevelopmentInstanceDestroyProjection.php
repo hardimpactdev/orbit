@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Actions\Instances\ProjectDirectInstanceDestroyAction;
+use App\Domain\DatabaseServers\DatabaseDestroyOwnedProjection;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
@@ -30,10 +31,11 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
         unset($native['execution_secrets']);
         $detail = ValidatedData::object($input['direct_destroy']);
         $database = ValidatedData::object($detail['database']);
-        if (($database['servers'] ?? []) !== []) {
-            throw new ResourceOperationException('instance.destroy_unsupported', 'Managed server removal requires its complete native parent.');
-        }
-        $public = Arr::only($input, ['removal_id', 'node_id', 'instance_id', 'project_id', 'name', 'force', 'inventory_digest', 'repository', 'source_pending', 'protected_source_roots', 'members', 'direct_destroy']);
+        // Owned server databases drop through the canonical server child; its password copies are named after the database intent.
+        [$database['servers'], $serverCopies] = DatabaseDestroyOwnedProjection::servers(ValidatedData::integer($database['intent_id']),
+            $database['servers'] ?? [], ! $operation->status->terminal());
+        $detail['database'] = $database;
+        $public = [...Arr::only($input, ['removal_id', 'node_id', 'instance_id', 'project_id', 'name', 'force', 'inventory_digest', 'repository', 'source_pending', 'protected_source_roots', 'members']), 'direct_destroy' => $detail];
         $programs = ValidatedData::object(app(InstanceDestroyTeardownSecret::class)->resolve($operation, $operation->target_id, '', 'teardown')->value);
         $teardown = [];
         foreach (InstanceLifecycleInput::members($programs) as $member) {
@@ -51,7 +53,7 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
             : app(SwampCommandStep::class)->executionCopy($reference['vault'], $reference['key'], '{"github_token":null}');
 
         return ['intent' => [...$public, ...$native, 'source_capture' => $sourceCapture, 'teardown_steps' => $teardown],
-            'execution_secrets' => [...$secrets, 'git_read' => $git]];
+            'execution_secrets' => [...$secrets, ...$serverCopies, 'git_read' => $git]];
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -90,7 +92,7 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
         return match ($step) {
             'Remove the source', 'Check it is gone' => InstanceRemovalStep::SourceFinalization,
             'Withdraw the Route' => InstanceRemovalStep::RouteTargetClear,
-            'Stop, remove Processes', 'Run teardown steps', 'Remove SQLite files' => InstanceRemovalStep::RuntimeCleanup,
+            'Stop, remove Processes', 'Run teardown steps', 'Remove SQLite files', 'Drop owned databases' => InstanceRemovalStep::RuntimeCleanup,
             default => InstanceRemovalStep::SourcePreparation,
         };
     }

@@ -172,15 +172,23 @@ it('admits only the requested member without discovering or deleting sibling wor
         ->and(InstanceRemoval::query()->sole()->members()->count())->toBe(1);
 })->with([false, true]);
 
-it('refuses an unported managed removal before source reads or intent writes', function (): void {
+it('drops an owned server database through the server child, with its password copied by the database intent', function (): void {
     $server = DatabaseServer::query()->create(['slug' => 'dispatch-managed', 'node_id' => $this->node->id,
         'driver' => 'mysql', 'tag' => 'test', 'port' => 3306, 'root_password' => 'fixture-private-password', 'status' => 'active']);
-    DatabaseConnection::query()->create(['slug' => 'dispatch-managed', 'driver' => 'mysql',
+    DatabaseConnection::query()->create(['slug' => 'dispatch-managed', 'driver' => 'mysql', 'host' => '10.44.0.9', 'port' => 3306,
+        'database' => 'dispatch_managed', 'username' => 'dispatch_managed', 'password' => 'fixture-connection-password',
         'database_server_id' => $server->id, 'owner_instance_id' => $this->instance->id]);
-    $this->deleteJson($this->path, ['force' => true])->assertStatus(503)->assertJsonPath('error.code', 'operation.kind_unavailable');
-    expect(Operation::query()->count())->toBe(0);
-    expect($this->instance->refresh()->status)->toBe(InstanceState::Active);
-    expect(InstanceRemoval::query()->count())->toBe(0);
+    $id = $this->withHeader('Idempotency-Key', 'destroy-managed')->deleteJson($this->path, ['force' => true])->assertAccepted()->json('data.id');
+    $operation = Operation::query()->findOrFail($id);
+    $intentId = $operation->input['direct_destroy']['database']['intent_id'];
+    $run = collect($this->socket->sent)->firstWhere('type', 'workflow.run')['payload']['inputs'];
+    $key = 'database-destroy-owned-intent-'.$intentId.'-server-'.$server->id;
+
+    expect(collect($this->socket->sent)->where('type', 'vault.put')->pluck('payload.key')->all())->toContain($key)
+        ->and($run['execution_secrets']['server_'.$server->id])->toBe(['vault' => 'orbit-control-inputs', 'key' => $key])
+        ->and(array_column($run['intent']['direct_destroy']['database']['servers'], 'server_id'))->toBe([$server->id])
+        ->and(json_encode($run))->not->toContain('fixture-private-password')->not->toContain('fixture-connection-password')
+        ->and($this->instance->refresh()->status)->toBe(InstanceState::Removing);
 });
 
 it('refuses a second native root with a new key while the accepted removal is queued or running', function (): void {

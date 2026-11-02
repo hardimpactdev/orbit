@@ -22,7 +22,6 @@ use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Schedules\NativeSchedules;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\DatabaseConnection;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\InstanceTransfer;
@@ -74,7 +73,7 @@ final readonly class StartInstanceDestroyAction
     /** @return array<string, mixed> */
     public function snapshot(Instance $instance, bool $force): array
     {
-        if (! $instance->placedOnAppDev() || DatabaseConnection::query()->where('owner_instance_id', $instance->id)->whereNotNull('database_server_id')->exists()) {
+        if (! $instance->placedOnAppDev()) {
             throw new ResourceOperationException('operation.kind_unavailable', 'This removal placement has no native destroy DAG.', 503);
         }
         $instance->load($this->removalRelations());
