@@ -71,40 +71,9 @@ export function profileRead(stdout: string, intent: Record<string, unknown>) {
     };
 }
 
-/** Rename compares public facts only. Native SSH owns every read and effect. */
-export function sourceResult(
-    intent: Record<string, unknown>,
-    facts: Record<string, unknown>,
-) {
-    const checkout = z.string().parse(intent.checkout);
-    if (
-        text(facts.top) !== checkout ||
-        text(facts.common) !== `${checkout}/.git`
-    ) {
-        throw new Error("instance.registration_conflict");
-    }
-    const trees = text(facts.worktrees).split("\n").filter((s) =>
-        s.startsWith("worktree ")
-    );
-    if (trees.length !== 1 || trees[0] !== `worktree ${checkout}`) {
-        throw new Error("instance.registration_conflict");
-    }
-    // The read step masks embedded credentials; a masked origin is refused, as before.
-    if (
-        text(facts.origin).includes("REDACTED@") ||
-        repositoryIdentity(text(facts.origin)) !== intent.repository_identity
-    ) {
-        throw new Error("instance.source_identity_invalid");
-    }
-    const branch = text(facts.branch) || null;
-    if (intent.branch !== null && intent.branch !== branch) {
-        throw new Error("instance.branch_not_checked_out");
-    }
-    return { branch };
-}
 export const behavior = {
     type: "@nckrtl/instance-source-command",
-    version: "2026.11.02.3",
+    version: "2026.11.03.1",
     resources: {
         result: { schema: Output, lifetime: "infinite", garbageCollection: 10 },
     },
@@ -353,43 +322,6 @@ export const behavior = {
                 return {
                     dataHandles: [
                         await ctx.writeResource("result", "result", result),
-                    ],
-                };
-            },
-        },
-        result: {
-            description:
-                "Compare native public source observations and expose the terminal result",
-            arguments: z.object({
-                kind: z.literal("instance.rename"),
-                intent: ObjectInput,
-                facts: z.record(z.string(), z.unknown()),
-            }),
-            async execute(
-                args: {
-                    kind: string;
-                    intent: Record<string, unknown>;
-                    facts: Record<string, unknown>;
-                },
-                ctx: Context,
-            ) {
-                return {
-                    dataHandles: [
-                        await ctx.writeResource(
-                            "result",
-                            "result",
-                            (() => {
-                                const result = sourceResult(
-                                    args.intent,
-                                    args.facts,
-                                );
-                                return {
-                                    ...result,
-                                    stdout: JSON.stringify(result),
-                                    exitCode: 0,
-                                };
-                            })(),
-                        ),
                     ],
                 };
             },

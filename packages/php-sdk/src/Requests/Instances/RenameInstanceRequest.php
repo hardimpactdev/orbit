@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\Instances;
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\Operations\OperationResponse;
+use Orbit\Sdk\Responses\Instances\InstanceResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
 use Saloon\Traits\Body\HasJsonBody;
 
+/** Records the branch the Node agent reports checked out; the Gateway answers with the Instance at once. */
 final class RenameInstanceRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
@@ -22,23 +23,16 @@ final class RenameInstanceRequest extends GatewayRequest implements HasBody
         private readonly int $instanceId,
         private readonly ?string $branch = null,
         private readonly ?string $domain = null,
-        private readonly ?string $idempotencyKey = null,
     ) {}
-
-    /** @return array<string, string> */
-    protected function defaultHeaders(): array
-    {
-        return $this->idempotencyKey === null ? [] : ['Idempotency-Key' => $this->idempotencyKey];
-    }
 
     public function resolveEndpoint(): string
     {
         return "/api/v1/instances/{$this->instanceId}/rename";
     }
 
-    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): OperationResponse
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): InstanceResponse
     {
-        return OperationResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
+        return InstanceResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
     }
 
     /** @return array{branch?: string, domain?: string} */

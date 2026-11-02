@@ -4,39 +4,58 @@ declare(strict_types=1);
 
 namespace App\Actions\Instances;
 
-use App\Actions\Operations\StartOperationAction;
+use App\Data\Instances\InstanceData;
 use App\Data\Instances\RenameInstanceData;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
-use App\Domain\Operations\OperationIdempotency;
+use App\Domain\NodeFacts\NodeAgentLiveness;
+use App\Domain\NodeFacts\NodeAgentState;
+use App\Domain\NodeFacts\NodeFactKind;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
-use App\Models\Operation;
+use App\Models\NodeFact;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * Records the branch a development checkout already has checked out (R1: no task, no run). The Gateway checks the
+ * Node agent's latest `checkout` fact instead of reading the Node.
+ */
 final readonly class RenameInstanceAction
 {
-    public function __construct(
-        private StartOperationAction $operations,
-        private OperationIdempotency $idempotency,
-        private CheckoutRemovalBoundary $boundaries,
-    ) {}
+    public function __construct(private NodeAgentLiveness $liveness, private RecordEventBroadcaster $broadcaster) {}
 
-    public function execute(Instance $instance, RenameInstanceData $data, ?string $caller = null, ?string $requestId = null): Operation
+    public function execute(Instance $instance, RenameInstanceData $data): Instance
     {
-        if (($replay = $this->idempotency->replay('instance.rename')) !== null) {
-            return $replay;
-        }
         if ($data->domain !== null) {
             throw new ResourceOperationException('operation.kind_unavailable', 'Domain replacement requires the native Route publication parent.', 503);
         }
+        $branch = $data->branch ?? throw new ResourceOperationException('validation.failed', 'Provide --branch.', 422);
 
-        return DB::transaction(fn (): Operation => $this->admit($instance->refresh(), $data, $caller, $requestId));
+        [$result, $changed] = DB::transaction(function () use ($instance, $branch): array {
+            $locked = Instance::query()->lockForUpdate()->findOrFail($instance->id);
+            $this->admit($locked);
+            $this->verify($locked, $branch);
+            if ($branch === $locked->branch) {
+                // Recording the recorded branch again keeps its override.
+                return [$locked, false];
+            }
+            $locked->update(['branch' => $branch, 'branch_override' => $branch]);
+
+            return [$locked->refresh(), true];
+        });
+        if ($changed) {
+            $this->broadcaster->broadcast(RecordEventType::InstanceUpdated, $result->id,
+                InstanceData::fromModel($result->load(['project', 'node', 'routes.targets']))->toArray());
+        }
+
+        return $result;
     }
 
-    private function admit(Instance $instance, RenameInstanceData $data, ?string $caller, ?string $requestId): Operation
+    private function admit(Instance $instance): void
     {
         if (! $instance->placedOnAppDev() || $instance->source_layout !== InstanceSourceLayout::Checkout->value) {
             throw new ResourceOperationException('instance.rename_unsupported', 'Rename requires a development checkout Instance.', 409);
@@ -50,23 +69,34 @@ final readonly class RenameInstanceAction
         if ($instance->status !== InstanceState::Active) {
             throw new ResourceOperationException('instance.rename_inactive', 'Rename requires an active Instance.', 409);
         }
-        $node = $instance->node;
-        if ($node->user === 'root' || preg_match('/\A[a-z_][a-z0-9_-]{0,31}\z/D', $node->user) !== 1) {
-            throw new ResourceOperationException('instance.source_owner_invalid', 'Rename requires the configured Node account.', 409);
-        }
-        $root = $this->boundaries->instanceGroupingDirectory($instance)->parent();
-        if ($root === null) {
-            throw new ResourceOperationException('instance.checkout_path_unsafe', 'Rename requires its stored checkout boundary.', 409);
-        }
+    }
 
-        return $this->operations->execute('instance.rename', 'instance', $instance->id, $instance->node_id, [
-            'instance_id' => $instance->id, 'project_id' => $instance->project_id,
-            'branch' => $data->branch,
-            'checkout' => $instance->checkout_path, 'repository_identity' => $instance->project->repository_identity,
-            'repository' => $instance->project->repository_url, 'source_layout' => $instance->source_layout,
-            'prepare_id' => $instance->source_prepare_id, 'seed_repository' => $instance->seed_repository,
-            'user' => $node->user,
-            'source_root' => $root->value,
-        ], $caller, $requestId);
+    /**
+     * The agent's latest report must show the branch checked out in the Instance's own checkout. The agent reports a
+     * checkout within seconds of a change while it is online, so an online agent's fact is current; a silent agent's
+     * fact cannot be trusted.
+     */
+    private function verify(Instance $instance, string $branch): void
+    {
+        $agent = $this->liveness->for($instance->node);
+        $fact = NodeFact::query()->where('node_id', $instance->node_id)->where('kind', NodeFactKind::Checkout->value)
+            ->where('subject', $instance->checkout_path)->first();
+        if ($agent?->state !== NodeAgentState::Online || ! $fact instanceof NodeFact) {
+            throw new ResourceOperationException('instance.branch_not_checked_out',
+                "Orbit can't verify the checkout: the Node agent has not reported it recently. Try again when the agent reports.", 409);
+        }
+        $origin = $fact->data['origin'] ?? null;
+        try {
+            $identity = is_string($origin) && ! str_contains($origin, 'REDACTED@') ? GitRepositoryIdentity::derive($origin) : null;
+        } catch (\InvalidArgumentException) {
+            $identity = null;
+        }
+        if (($fact->data['top_level'] ?? null) !== $instance->checkout_path || $identity !== $instance->project->repository_identity) {
+            throw new ResourceOperationException('instance.branch_not_checked_out', 'The checkout no longer matches its recorded path and origin.', 409);
+        }
+        if (($fact->data['branch'] ?? null) !== $branch) {
+            throw new ResourceOperationException('instance.branch_not_checked_out',
+                "The checkout has not checked out {$branch}. Check it out, then run instance:rename again.", 409);
+        }
     }
 }

@@ -75,7 +75,7 @@ it('expires create at its captured budget while retaining F1 evidence and reques
 });
 
 it('gives a bound kind with no successful history thirty minutes instead of three hundred seconds', function (): void {
-    $operation = budgetOperation('instance.rename', ['input' => []]);
+    $operation = budgetOperation('instance.register', ['input' => []]);
     expect(OperationRunBudgets::seconds($operation))->toBe(1800);
     $this->travel(1799)->seconds();
     app(ExpireOperationAction::class)->execute($operation);
@@ -86,7 +86,7 @@ it('gives a bound kind with no successful history thirty minutes instead of thre
 });
 
 it('uses one and a half times the longest successful bound run in fourteen days rounded up to a minute', function (): void {
-    $operation = budgetOperation('instance.rename', ['input' => []]);
+    $operation = budgetOperation('instance.register', ['input' => []]);
     foreach ([[601, 1, 'succeeded', true], [300, 2, 'succeeded', true], [3600, 15, 'succeeded', true],
         [3600, 1, 'failed', true], [3600, 1, 'succeeded', false]] as [$duration, $days, $status, $bound]) {
         $history = $operation->replicate();
@@ -104,7 +104,7 @@ it('uses one and a half times the longest successful bound run in fourteen days 
 });
 
 it('caches a history budget for one observer tick and refreshes it in the next tick', function (): void {
-    $operation = budgetOperation('instance.rename', ['input' => []]);
+    $operation = budgetOperation('instance.register', ['input' => []]);
     OperationRunBudgets::duringTick(function () use ($operation): void {
         expect(OperationRunBudgets::seconds($operation))->toBe(1800);
         $history = $operation->replicate();
@@ -117,7 +117,7 @@ it('caches a history budget for one observer tick and refreshes it in the next t
 });
 
 it('gives every unlisted registered kind a thirty minute initial execution budget', function (): void {
-    $explicit = array_keys((new ReflectionClassConstant(OperationRunBudgets::class, 'SecondsByKind'))->getValue());
+    $explicit = array_keys(new ReflectionClassConstant(OperationRunBudgets::class, 'SecondsByKind')->getValue());
     $unlisted = array_diff(array_keys(app(DirectOperation::class)->definitions()), $explicit);
     expect($unlisted)->not->toBeEmpty();
     OperationRunBudgets::duringTick(function () use ($unlisted): void {
@@ -141,7 +141,7 @@ it('expires a no run admission at six hundred seconds regardless of its executio
     expect($expired->error_code)->toBe('operation.timed_out');
     expect($expired->state['native_timeout']['budget_seconds'])->toBe(600);
     expect($expired->lock_key)->not->toBeNull();
-})->with(['instance.rename', 'instance.create', 'tasks.provision']);
+})->with(['instance.register', 'instance.create', 'tasks.provision']);
 
 it('leaves Gateway-only jobs outside the native run deadline', function (string $kind, bool $started): void {
     $operation = budgetOperation($kind, ['status' => $started ? OperationStatus::Running : OperationStatus::Queued,
@@ -204,7 +204,7 @@ it('recovers overdue unbound and waiting roots without waiting for history or ov
     $this->travel(600)->seconds();
     $socket = new FakeSwampEventSocket;
 
-    (new SwampRunSubscriber($socket, new NullLogger))->recover();
+    new SwampRunSubscriber($socket, new NullLogger)->recover();
 
     expect($operation->fresh()->error_code)->toBe('operation.timed_out');
     expect($operation->fresh()->cancel_requested_at?->equalTo($requested))->toBeTrue();
@@ -232,7 +232,7 @@ it('retains target exclusion until exact native terminal history releases it wit
     $operation = budgetOperation('node.bootstrap_probe');
     $this->travel(1800)->seconds();
     $expired = app(ExpireOperationAction::class)->execute($operation);
-    $competing = ['kind' => 'instance.rename', 'target_type' => 'node', 'target_id' => $operation->target_id,
+    $competing = ['kind' => 'instance.register', 'target_type' => 'node', 'target_id' => $operation->target_id,
         'node_id' => $operation->node_id, 'status' => 'queued', 'sequence' => 1, 'input' => [], 'state' => [], 'lock_key' => $operation->lock_key];
     expect(fn () => Operation::query()->create($competing))->toThrow(UniqueConstraintViolationException::class);
     $history = new FakeRoutePublicationSocket;
@@ -358,7 +358,7 @@ it('reads the measured budget of each long native kind', function (string $kind,
 ]);
 
 it('budgets only registered direct-operation kinds', function (): void {
-    $kinds = array_keys((new ReflectionClassConstant(OperationRunBudgets::class, 'SecondsByKind'))->getValue());
+    $kinds = array_keys(new ReflectionClassConstant(OperationRunBudgets::class, 'SecondsByKind')->getValue());
 
     expect(array_diff($kinds, array_keys(app(DirectOperation::class)->definitions())))->toBe([]);
 });
@@ -412,10 +412,10 @@ it('settles a timed out unbound hold only after the exact native lookup proves a
     app()->instance(WebSocketClient::class, $history);
 
     if (in_array($outcome, ['mismatch', 'ambiguous'], true)) {
-        expect(fn () => (new RecoverUnboundSwampRun($operation->id))->handle(app(SwampCommandStep::class)))
+        expect(fn () => new RecoverUnboundSwampRun($operation->id)->handle(app(SwampCommandStep::class)))
             ->toThrow(ResourceOperationException::class);
     } else {
-        (new RecoverUnboundSwampRun($operation->id))->handle(app(SwampCommandStep::class));
+        new RecoverUnboundSwampRun($operation->id)->handle(app(SwampCommandStep::class));
     }
 
     $result = $operation->fresh();
@@ -481,7 +481,7 @@ it('projects queued or simultaneous terminal notices once after the deadline wit
     ]]]];
     app()->instance(WebSocketClient::class, $history);
 
-    (new ProjectSwampTerminal($operation->id, $operation->state['swamp_run_id'], 'succeeded'))->handle(app(SwampCommandStep::class));
+    new ProjectSwampTerminal($operation->id, $operation->state['swamp_run_id'], 'succeeded')->handle(app(SwampCommandStep::class));
 
     expect($operation->fresh()->status)->toBe(OperationStatus::Succeeded);
     expect($operation->fresh()->error_code)->toBeNull();

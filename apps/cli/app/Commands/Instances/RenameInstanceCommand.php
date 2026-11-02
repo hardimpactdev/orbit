@@ -4,23 +4,20 @@ declare(strict_types=1);
 
 namespace App\Commands\Instances;
 
-use App\Commands\Concerns\FollowsOperations;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\Instances\RenameInstanceRequest;
-use Orbit\Sdk\Responses\Operations\OperationResponse;
+use Orbit\Sdk\Responses\Instances\InstanceResponse;
 
 final class RenameInstanceCommand extends GatewayCommand
 {
-    use FollowsOperations;
-
     #[\Override]
     protected $signature = 'instance:rename
         {instance : Numeric Instance ID}
         {--branch= : Branch already checked out on the Node}
         {--domain= : New domain for the Instance Route}
-        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -44,16 +41,22 @@ final class RenameInstanceCommand extends GatewayCommand
         if ($connector === null) {
             return self::FAILURE;
         }
-        $profile = $this->activeGatewayProfile($repository);
-        if ($profile === null) {
+        $instance = $this->sendWithProgress($connector, new RenameInstanceRequest($id, $branch, $domain), InstanceResponse::class,
+            ['Record the branch', 'Recording the branch', 'Recorded the branch']);
+        if (! $instance instanceof InstanceResponse) {
             return self::FAILURE;
         }
-        $operation = $this->send($connector, new RenameInstanceRequest(
-            $id, $branch, $domain, $this->stringOption('idempotency-key'),
-        ), OperationResponse::class);
+        if ($this->option('json') === true) {
+            $this->writeJson($instance->toArray());
 
-        return $operation instanceof OperationResponse
-            ? $this->followOperation($connector, $profile, $operation, 'Rename Instance', 'Instance rename')
-            : self::FAILURE;
+            return self::SUCCESS;
+        }
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Instance: {$instance->name}", [
+            'ID' => $instance->id,
+            'Selected branch' => $instance->selectedBranch,
+            'Request ID' => $instance->requestId,
+        ]));
+
+        return self::SUCCESS;
     }
 }

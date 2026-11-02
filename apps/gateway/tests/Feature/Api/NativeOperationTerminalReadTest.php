@@ -113,7 +113,7 @@ it('does not settle a superseded run kind or Node binding from old history', fun
     $this->socket->onConnect = function () use ($field, $other): void {
         $this->operation->update(match ($field) {
             'run' => ['state' => ['swamp_run_id' => 'e58fe178-0374-4f5e-a934-b985d34b9538']],
-            'kind' => ['kind' => 'instance.rename'],
+            'kind' => ['kind' => 'instance.clone'],
             'node' => ['node_id' => $other->id],
         });
     };

@@ -136,4 +136,4 @@ it('sends API cancellation to each converted native family while retaining nativ
     app(CancelOperationAction::class)->execute($operation);
     Http::assertSentCount(1);
     expect($operation->refresh()->status->value)->toBe('running')->and($operation->cancel_requested_at)->not->toBeNull();
-})->with(['instance.clone', 'instance.register', 'instance.rename', 'instance.transfer']);
+})->with(['instance.clone', 'instance.register', 'instance.transfer']);

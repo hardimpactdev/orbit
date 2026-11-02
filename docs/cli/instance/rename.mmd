@@ -1,8 +1,8 @@
 sequenceDiagram
   %% Target design: docs/cli/instance.mdx#orbit-instancerename, ADR 0244, R1 record-only; read-only rule (Nick 2026-11-02): the Gateway checks the Node agent's checkout facts, like instance:register.
   %% Tightened: flow-tighten 2026-11-02, rule 5 (its own example: rename records the branch the Node agent reported, with no run).
-  %% Decided: Nick 2026-11-02, this chart is the ideal record-only flow; no interim port. The current implementation stays until the Node agent observer pass.
-  %% status: draft
+  %% Decided: Nick 2026-11-02, this chart is the ideal record-only flow. Implemented in the observer pass (agent 0.7.0, 2026-11-03).
+  %% status: reviewed
   %% command: instance:rename
   %% kind: instance.rename
   autonumber
@@ -17,14 +17,9 @@ sequenceDiagram
     %%> What it observes:
     %%> - each Git checkout under `<apps-root>/<project-slug>/<name>`, Instance 42's included
     %%> - its top level, origin, symbolic `HEAD` and commit
-    %%> Today:
-    %%> - the agent watches only task checkouts, at most 64 per Node; the observer pass adds every Instance checkout, the same facts `instance:register` uses
-    %%> Observer pass:
-    %%> - event-driven, with inotify or FSEvents, on `.git/HEAD`, `refs/heads`, `packed-refs` and each worktree `HEAD`
-    %%> - each Instance `.env`, key names only
-    %%> - a full resync every ~10 minutes and at agent start
-    %%> Until then:
-    %%> - `instance:rename` keeps its current implementation; there is no interim port of this chart
+    %%> How:
+    %%> - event-driven, with inotify or FSEvents, on `.git/HEAD`, `refs/heads`, `packed-refs`, `config` and each worktree `HEAD`
+    %%> - a full resync every 10 minutes and at agent start
     %%> Runs as:
     %%> - read-only; the Node agent never changes a Node
     A->>GW: Report observations<br/>with observed_at

@@ -163,13 +163,13 @@ git branch -m t3code/login-redirect
 orbit instance:rename <instance> --branch=t3code/login-redirect
 ```
 
-The API is `POST /api/v1/instances/{instance}/rename` with a nonempty `branch` string. The MCP tool is `instance-rename`. Admission returns an Operation; the CLI follows its native Swamp result. Only an active development checkout is eligible, not a linked worktree or production Instance. The Instance ID, name, path, layout, starting commit, and placement stay the same.
+The API is `POST /api/v1/instances/{instance}/rename` with a nonempty `branch` string. The MCP tool is `instance-rename`. Send `instance` and at least one of `branch` or `domain`. The Gateway answers at once with the Instance; there is no task to follow. Only an active development checkout is eligible, not a linked worktree or production Instance. The Instance ID, name, path, layout, starting commit, and placement stay the same.
 
-Swamp reads the checkout locally on its Node. Symbolic `HEAD` must already name the supplied branch, or the Operation fails with `instance.branch_not_checked_out`. Swamp checks source identity without contacting origin or changing Git refs. Dirty or unpublished source is allowed.
+The Gateway checks the [Node agent's report](/reference/node-agent#checkouts) of the checkout, which arrives within seconds of a change. Symbolic `HEAD` must already name the supplied branch, and the checkout's top level and origin must still match, or the request refuses with `instance.branch_not_checked_out`. While the agent is silent, the same code says the Gateway can't verify. Dirty or unpublished source is allowed.
 
 A changed branch becomes both `selected_branch` and `branch_override`. This pins even a `default` Instance to the explicit selection. Supplying the already recorded branch preserves the existing override. Removal, cloning, and Doctor then check the newly recorded branch; normal removal still requires clean, published source.
 
-A request containing `domain` returns `operation.kind_unavailable` before admission. Native Route replacement is not available through rename. A repeated idempotency key returns the same Operation. Another lifecycle owner returns `instance.lifecycle_busy`. [instance:rename](/cli/instance/rename) lists the inputs, output, and refusal codes.
+A request containing `domain` returns `operation.kind_unavailable`. Native Route replacement is not available through rename. Repeating a request is safe: an already recorded branch writes nothing. Another lifecycle owner returns `instance.lifecycle_busy`. [instance:rename](/cli/instance/rename) lists the inputs, output, and refusal codes.
 
 ## Register an existing checkout
 

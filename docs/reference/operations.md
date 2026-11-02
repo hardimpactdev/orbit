@@ -760,7 +760,7 @@ root-of-trust endpoints are the only Gateway HTTP primitives for new Swamp steps
 
 On Swamp, use the shared `directOperation` template with family-owned read, action and projection functions. The action may be a local Node step or a fixed Gateway primitive while that family migrates. Native DAGs, placement, behavior locks, cancellation and recover/resume own execution. Mutating external steps declare `writes: true`. No Gateway claims, heartbeats, child waits, receipts or local retry loop belong in the template.
 
-`instance.transfer_discard` uses only `operation-instance-lifecycle-direct`; it has no executor claim/run registration or polled discovery entry. The unconverted lifecycle kinds, including `instance.rename`, use their existing polled workflow. Rename has no dormant direct writer or binding-only canary. Its complete direct cutover must include branch and Route behavior, the writer change, and deletion of the polled dispatch and execution path.
+`instance.transfer_discard` uses only `operation-instance-lifecycle-direct`; it has no executor claim/run registration or polled discovery entry. `instance:rename` starts no Operation: the Gateway records the branch from the Node agent's checkout report.
 
 Prove each kind end to end on a dev or canary target. Its takeover PR changes the writer and deletes the replaced Gateway path and execution tests together. Rollback is a revert PR. Admitted Operations retain their writer. Scoped workflow grants and token custody require review before activation; extending one family's run grant to another workflow is not implicit.
 

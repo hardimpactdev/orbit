@@ -102,16 +102,14 @@ final class InstancesController extends Controller
         return response()->json(['data' => InstanceData::fromModel($action->execute($instance, null, autoDeploy: false))->toArray(), 'meta' => $this->meta($request)]);
     }
 
+    /** Records the branch the Node agent reports checked out; the answer is final, with no task to follow. */
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]
-    #[StartsOperation('instance.rename')]
     public function rename(RenameInstanceRequest $request, Instance $instance, RenameInstanceAction $action): JsonResponse
     {
-        $operation = $action->execute($instance, $request->payload(), $this->caller($request), $request->attributes->getString('orbit.request_id'));
-
         return response()->json([
-            'data' => OperationData::fromModel($operation)->toArray(),
+            'data' => InstanceData::fromModel($action->execute($instance, $request->payload())->load(['project', 'node', 'routes.targets']))->toArray(),
             'meta' => $this->meta($request),
-        ], 202);
+        ]);
     }
 
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]

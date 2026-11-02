@@ -78,7 +78,7 @@ A successful call returns the API's JSON document as text, usually `{"data": ...
 
 For a disabled extension, a direct `tools/call` returns `isError: true` and content containing `status: 409` and `error.code: extension.disabled`; HTTP 409 is reserved for the underlying API request, not the MCP transport. The same tool error is returned by `execute_tools` when a stale call names a tool that was filtered from the catalogue, and execution stops at that call. The server checks the generated tool's extension metadata before catalogue filtering can turn a stale direct call into a generic not-found error.
 
-`instance-rename` records an externally renamed development branch and can move the Instance's own Route, including a generated Route. Send `instance` and at least one of `branch` or `domain`. The Gateway checks the local checkout before changing its records; the tool never runs `git branch -m`. See [Instance rename](/cli/instance/rename).
+`instance-rename` records an externally renamed development branch and can move the Instance's own Route, including a generated Route. Send `instance` and at least one of `branch` or `domain`. The Gateway checks the Node agent's report of the checkout before changing its records and answers at once; the tool never runs `git branch -m`. See [Instance rename](/cli/instance/rename).
 
 `instance-update` accepts `shared_paths` for a production Instance. Supply the numeric `instance` and a directory list; `[]` disables sharing and `null` restores the default. The [shared paths contract](/reference/deployments#shared-paths) describes seeding, public storage, and replacing a hand-made link step.
 

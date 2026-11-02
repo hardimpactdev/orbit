@@ -12,7 +12,6 @@ use App\Domain\Instances\Environment\NativeInstanceEnvironmentProjection;
 use App\Domain\Instances\InstanceCloneProjection;
 use App\Domain\Instances\InstanceGitHubReadTokens;
 use App\Domain\Instances\InstanceRegisterResult;
-use App\Domain\Instances\InstanceRenameResult;
 use App\Domain\Instances\NativeInstanceTransferProjection;
 use App\Domain\Instances\StepLists\InstanceSetupProjection;
 
@@ -59,7 +58,6 @@ return [
         'terminal_result' => ['job' => 'destroy', 'step' => 'Check it is gone', 'native' => true,
             'captures' => ['withdrawal' => ['job' => 'destroy', 'step' => 'Withdraw the Route', 'field' => 'result']]],
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-git-(?:operation|credential)-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$'], DatabaseDestroyRun::OWNED_EXECUTION_COPY]],
-    'instance.rename' => ['workflow' => 'operation-instance-rename', 'workflow_inputs' => true, 'terminal_result' => ['job' => 'source', 'step' => 'result'], 'projection' => InstanceRenameResult::class],
     'instance.deploy' => [
         'workflow' => 'operation-instance-deploy-direct',
         // Development: the checkout's end check; the Vite+ runtime the steps ran under comes as one capture.

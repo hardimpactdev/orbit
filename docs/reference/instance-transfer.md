@@ -14,6 +14,8 @@ A transfer moves one active development Instance to another `app-dev` Node. It k
 orbit instance:transfer <instance> <node> [--name=NAME] [--sqlite-source-path=PATH] [--force] [--json]
 ```
 
+The `@nckrtl/instance-source-command` behavior serves only clone and transfer. `instance:rename` uses no workflow: the Gateway checks the Node agent's checkout report.
+
 The CLI calls `POST /api/v1/instances/{instance}/transfer` and follows the returned Operation. An `Idempotency-Key` reuses admission after a lost response.
 
 Both Nodes must be active Linux Nodes with an active `app-dev` role and an active Cluster. The source must be an active development Instance with one authoritative Route and no removal in progress. The destination must be a different Node that the Project permits. A stored absolute destination apps path is required. The run trusts the recorded source placement and reads no source facts before it stops Processes. Extraction refuses an occupied destination path.

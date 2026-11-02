@@ -1,11 +1,11 @@
 ---
 title: "orbit instance:rename"
 sidebarTitle: "instance:rename"
-description: "Record a Git branch that is already checked out. Swamp reads the checkout on its Node and the Gateway records the branch after success. Only an active development checkout is eligible. This command does not rename the Instance, move its directory, change its starting commit, or change Git HEAD."
+description: "Record a Git branch that is already checked out. The Gateway checks the Node agent's report of the checkout and records the branch at once, with no task. Only an active development checkout is eligible. This command does not rename the Instance, move its directory, change its starting commit, or change Git HEAD."
 ---
 
 ```bash
-orbit instance:rename <instance> --branch=BRANCH [--idempotency-key=KEY] [--json]
+orbit instance:rename <instance> --branch=BRANCH [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -16,11 +16,11 @@ orbit instance:rename <instance> --branch=BRANCH [--idempotency-key=KEY] [--json
 | --- | --- | --- |
 | `--branch=BRANCH` | unchanged | Record this local branch. Symbolic `HEAD` must already name it. |
 | `--domain=HOST` | unchanged | Currently returns `operation.kind_unavailable`; native Route replacement is not available through rename. |
-| `--json` | off | Return the final Operation JSON, or an admission error, without prompts or progress. |
+| `--json` | off | Return the recorded Instance JSON, or an error, without prompts or progress. |
 
 Supply a nonempty branch. The command needs no `--yes` or `--force`. In a terminal, an omitted Instance selector uses the shared Instance selection prompt; in noninteractive or JSON mode it returns `instance.id_invalid`.
 
-Rename the branch locally before recording it. Swamp checks the managed checkout's identity and the supplied branch locally, with no origin access. A dirty or unpublished branch can be recorded. Normal removal still requires clean, published source.
+Rename the branch locally before recording it. The [Node agent](/reference/node-agent#checkouts) reports the checkout within seconds of the change. The Gateway checks that report: the checkout's top level and origin, and the branch that symbolic `HEAD` names. It reads nothing on the Node and starts no task. A dirty or unpublished branch can be recorded. Normal removal still requires clean, published source.
 
 ```bash
 # In the Instance checkout:
@@ -28,17 +28,17 @@ git branch -m t3code/login-redirect
 orbit instance:rename 1 --branch=t3code/login-redirect
 ```
 
-A changed branch updates `selected_branch` and `branch_override`. Recording the already recorded branch preserves its existing override. A retry with the same idempotency key returns the same Operation, including when the caller lost the response. See [recorded branch behavior](/domains/applications#record-a-renamed-branch).
+A changed branch updates `selected_branch` and `branch_override`. Recording the already recorded branch writes nothing and preserves its existing override. The command is safe to repeat. See [recorded branch behavior](/domains/applications#record-a-renamed-branch).
+
+The Gateway trusts the report only while the Node agent is online. When the agent is silent, or has not reported the checkout, the command refuses with `instance.branch_not_checked_out` and says it can't verify. Try again when the agent reports.
 
 ## Human output
 
-The command follows the parent Operation and shows its final native result. `instance:show` reads the resulting Instance. Success exits with status `0`; a refusal or failure exits with status `1`.
+The command prints the Instance with its selected branch. Success exits with status `0`; a refusal exits with status `1`.
 
 ## JSON and API output
 
-The API is `POST /api/v1/instances/{instance}/rename` with `{"branch":"t3code/login-redirect"}`. The MCP tool is `instance-rename`, with `instance_id` and `branch`.
-
-Admission returns HTTP 202 with an `instance.rename` Operation. The CLI follows it and prints the final Operation in JSON mode. The final result includes the recorded branch. Admission failures use the shared API error shape; execution failures appear on the Operation with their stable error code.
+The API is `POST /api/v1/instances/{instance}/rename` with `{"branch":"t3code/login-redirect"}`. It answers HTTP 200 with the Instance. The MCP tool is `instance-rename`, with `instance` and `branch`. Refusals use the shared API error shape.
 
 ## How it works
 
@@ -54,8 +54,6 @@ Admission returns HTTP 202 with an `instance.rename` Operation. The CLI follows 
 | `instance.rename_unsupported` | The Instance is production or is not a development checkout, including linked worktrees. |
 | `instance.rename_inactive` | The development checkout is not active. |
 | `instance.lifecycle_busy` | Another lifecycle operation owns the Instance. |
-| `instance.source_identity_invalid` | Local inspection cannot establish the Project origin identity. |
-| `instance.source_invalid` | The checkout path, ownership, or layout does not match the admitted boundary. |
-| `instance.branch_not_checked_out` | The supplied branch is not the current symbolic `HEAD`, including detached `HEAD`. |
+| `instance.branch_not_checked_out` | The reported symbolic `HEAD` names another branch or is detached, the checkout's top level or origin differs from its record, or the Node agent has not reported it recently. |
 
 Authentication, access and missing-record errors retain the shared API error contract.
