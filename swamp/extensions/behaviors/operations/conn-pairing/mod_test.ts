@@ -16,12 +16,20 @@ Deno.test("private reply writes a pairing-specific native sensitive resource and
     await issue(args(directory), context);
     await issue(args(directory, "201", 8), context);
     assertEquals(writes.map((x) => x.name), ["pairing-7", "terminal", "pairing-8", "terminal"]);
+    assertEquals(writes[0], {
+        spec: "issued", name: "pairing-7",
+        data: { id: "link", credential, expiresAt: "2026-11-01T01:00:00Z" },
+    });
     for (const [index, id] of [[1, 7], [3, 8]]) {
         const terminal = JSON.stringify(writes[index].data);
         assertFalse(terminal.includes(credential));
         assertFalse(terminal.includes(admin));
-        assertEquals(JSON.parse((writes[index].data as { stdout: string }).stdout).credential_ref.key,
-            `nckrtl-conn-pairing-00000000-0000-4000-8000-000000000001-issue-issued-pairing-${id}-credential`);
+        assertEquals(JSON.parse((writes[index].data as { stdout: string }).stdout), {
+            backend: "issued", pairing_id: id, pairing_link_id: "link",
+            expires_at: "2026-11-01T01:00:00Z",
+            credential_ref: { vault: "orbit-control-inputs", key:
+                `nckrtl-conn-pairing-00000000-0000-4000-8000-000000000001-issue-issued-pairing-${id}-credential` },
+        });
     }
 }));
 for (const mode of ["401", "503", "malformed", "echo", "admin-echo"]) {
