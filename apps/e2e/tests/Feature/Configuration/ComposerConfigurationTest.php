@@ -454,9 +454,10 @@ it('sets up PHP 8.5 through the one pinned setup-php action in every PHP job of 
     expect($phpJobs)->toBe([
         'ci.yml:php', 'ci.yml:gateway-static', 'ci.yml:docs', 'ci.yml:project-check', 'ci.yml:api-reference', 'ci.yml:web',
         'dependency-audit.yml:audit', 'docs-site.yml:publish', 'orbit-cli-binary.yml:build',
+        'swamp-shape.yml:native-tests', 'swamp-shape.yml:test-shards',
     ])
-        ->and($directJobs)->toBe(['swamp-shape.yml:validate', 'swamp-shape.yml:native-tests', 'swamp-shape.yml:test-shards']);
-    // The shared action installs PHP and Composer only; it compiles no agent and installs no recipe PHP build.
+        ->and($directJobs)->toBe(['swamp-shape.yml:validate']);
+    // Hosted jobs install PHP; self-hosted jobs verify the managed recipe build without compiling or installing it.
     $actionRuns = implode("\n", array_column($action['runs']['steps'], 'run'));
     expect($setup['uses'])->toMatch('/^shivammathur\/setup-php@[0-9a-f]{40}$/')
         ->and($setup['with'])->toMatchArray([
@@ -466,7 +467,8 @@ it('sets up PHP 8.5 through the one pinned setup-php action in every PHP job of 
         ])
         // One needle per call: a negated toContain passes when any one of several needles is absent.
         ->and($actionRuns)->not->toContain('cargo')
-        ->and($actionRuns)->not->toContain('bin/php-build');
+        ->and($actionRuns)->not->toContain('bin/php-build install')
+        ->and($actionRuns)->toContain('bin/php-build verify --profile ci-runner');
 });
 
 it('runs the bin/php-build unit tests', function (): void {

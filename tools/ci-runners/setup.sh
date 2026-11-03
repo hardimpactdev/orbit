@@ -4,7 +4,7 @@
 # First add the ci-runner role through Orbit; it owns the host project, profile, network and firewall.
 # Run container operations on the host as a member of incus-admin with sudo. Every step is idempotent.
 #
-#   tools/ci-runners/setup.sh container NAME         # ci-beast-1, ci-shark-4, ci-sabre-3
+#   tools/ci-runners/setup.sh container NAME [AGENT SHA256] # optional source-built agent for rollout
 #   tools/ci-runners/setup.sh register NAME [TOKEN]  # ORBIT_RUNNER_TOKEN in the environment, or TOKEN
 #   tools/ci-runners/setup.sh verify NAME            # egress and loopback probes from inside the container
 #
@@ -42,8 +42,14 @@ in_ct() { incus exec "$1" --project "$PROJECT" -- "${@:2}"; }
 
 container() {
   local name=$1
-  # Compile this checkout's installer before changing the container.
-  (cd "$REPOSITORY/apps/agent" && cargo build --release --locked)
+  # Compile locally, or verify the source-built artifact supplied by the rollout host.
+  local source_agent=${2:-$REPOSITORY/apps/agent/target/release/orbit-agent}
+  if [ "$#" -gt 1 ]; then
+    [ "$#" -eq 3 ] && [[ "$3" =~ ^[0-9a-f]{64}$ ]] || { echo 'container NAME AGENT SHA256' >&2; return 2; }
+    printf '%s  %s\n' "$3" "$source_agent" | sha256sum -c - >/dev/null
+  else
+    (cd "$REPOSITORY/apps/agent" && cargo build --release --locked)
+  fi
   incus info "$name" --project "$PROJECT" >/dev/null 2>&1 || incus launch "$IMAGE" "$name" --project "$PROJECT" -c raw.apparmor="$APPARMOR"
   if [ "$(incus config get "$name" raw.apparmor --project "$PROJECT")" != "$APPARMOR" ]; then
     incus config set "$name" raw.apparmor="$APPARMOR" --project "$PROJECT"
@@ -57,7 +63,7 @@ container() {
   local tree=/root/orbit-php-build
   in_ct "$name" rm -rf "$tree"
   in_ct "$name" install -d -m 0700 "$tree/bin" "$tree/tools/ci-runners" "$tree/apps/gateway/resources/machine-software" "$tree/apps/agent/target/release"
-  incus file push "$REPOSITORY/apps/agent/target/release/orbit-agent" "$name$tree/apps/agent/target/release/orbit-agent" --project "$PROJECT"
+  incus file push "$source_agent" "$name$tree/apps/agent/target/release/orbit-agent" --project "$PROJECT"
   in_ct "$name" chmod 0755 "$tree/apps/agent/target/release/orbit-agent"
   incus file push "$REPOSITORY/bin/php-build" "$name$tree/bin/php-build" --project "$PROJECT"
   incus file push "$REPOSITORY/apps/gateway/resources/machine-software/recipe.json" \
@@ -88,6 +94,8 @@ apt-get update -qq
 apt-get install -y -qq --no-install-recommends --no-upgrade \
   git curl ca-certificates jq unzip zip rsync sqlite3 python3 python3-venv openssh-client socat netcat-openbsd bind9-dnsutils \
   acl attr wireguard-tools openssl sudo caddy tar gzip xz-utils zstd libkrb5-3 zlib1g gpgv >/dev/null
+# Project checks run cargo fmt; APT verifies these exact packages against signed repository checksums.
+apt-get install -y -qq --no-install-recommends --allow-downgrades cargo=1.93.1ubuntu1 rustfmt=1.93.1ubuntu1 >/dev/null
 # Jobs start their own PostgreSQL cluster as runner; never create or start a system cluster.
 apt-get install -y -qq --no-install-recommends --no-upgrade postgresql-common >/dev/null
 cluster_config=/etc/postgresql-common/createcluster.conf

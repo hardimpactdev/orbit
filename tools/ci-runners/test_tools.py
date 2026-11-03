@@ -50,6 +50,19 @@ cp "$TOOL_ROOT/$name.zip" "$2"
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual((binary / 'deno').read_text(), stale)
 
+    def test_rollout_agent_is_verified_before_any_container_change(self):
+        program = SOURCE.split('container() {', 1)[1].split('  incus info', 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = Path(directory) / 'orbit-agent'
+            artifact.write_bytes(b'synthetic-source-built-agent')
+            digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+            for checksum, allowed in [(digest, True), ('0' * 64, False), ('invalid', False)]:
+                result = subprocess.run(['bash', '-euo', 'pipefail', '-c',
+                    'REPOSITORY=/unused; container() {' + program + '\necho verified; }; container "$@"',
+                    'fixture', 'ci-fixture-1', str(artifact), checksum], capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode == 0, allowed, result.stderr)
+                self.assertEqual('verified' in result.stdout, allowed)
+
     def test_node_retirement_refuses_packages_outside_the_node_stack(self):
         program = SOURCE.split('# These dedicated containers retire', 1)[1].split('\n', 1)[1].split('# Install and verify recipe Node', 1)[0]
         with tempfile.TemporaryDirectory() as directory:
