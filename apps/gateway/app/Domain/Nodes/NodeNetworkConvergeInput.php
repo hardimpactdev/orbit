@@ -29,7 +29,7 @@ final readonly class NodeNetworkConvergeInput
 
             return ['mode' => 'hub', 'hub_id' => $node->id, 'apply' => $apply,
                 'observations' => [['public_key' => $node->wireguard_public_key, 'port' => $apply['port'], 'peers' => $peers, 'exact' => true]],
-                'endpoint_host' => null, 'probe_ip' => $peers === [] ? null : explode('/', $peers[0]['allowed_ips'][0])[0]];
+                'endpoint_host' => null, 'probe_ip' => null];
         }
         $apply = $this->capture($node, ! $node->roles()->exists());
         $peer = ValidatedData::object($apply['peer']);

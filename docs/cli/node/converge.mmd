@@ -48,7 +48,7 @@ sequenceDiagram
       SW->>N: Read the tunnel key
     end
     SW->>N: Probe the tunnel<br/>bounded check
-    %%> Skipped when the hub has no peers.
+    %%> Peer ICMP is best effort; the handshake decides. The hub skips ICMP.
     SW->>N: Read the handshake
     Note over SW: Check the handshake
   end

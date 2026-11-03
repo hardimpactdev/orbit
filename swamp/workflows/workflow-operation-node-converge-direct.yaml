@@ -323,6 +323,7 @@ jobs:
       inputs: {hosts: 'name:target', sudo: true, timeoutSec: 20, argv: [timeout, '15', wg, show, orbit, public-key]}
   - name: Probe the tunnel
     labels: {role: swamp}
+    allowFailure: true
     dependsOn: [{step: Apply recorded network, condition: {type: succeeded}}]
     guard: '${{ inputs.intent.network.probe_ip == null }}'
     task:
@@ -332,7 +333,7 @@ jobs:
     labels: {role: swamp}
     dependsOn:
     - {step: Apply recorded network, condition: {type: succeeded}}
-    - {step: Probe the tunnel, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: Probe the tunnel, condition: {type: always}}
     task:
       <<: *network_read
       inputs: {hosts: 'name:target', sudo: true, timeoutSec: 20, argv: [timeout, '15', wg, show, orbit, latest-handshakes]}
