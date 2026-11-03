@@ -6,10 +6,13 @@ use App\Actions\Operations\FailNativeOperationAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Data\Tasks\StartTaskAnalysisData;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Routes\RouteStatus;
+use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskAnalysisIntent;
@@ -24,10 +27,12 @@ use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
+use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
+use App\Models\Schedule;
 use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskWorkspaceLeaseRecord;
@@ -86,6 +91,20 @@ beforeEach(function (): void {
     app()->instance(AgentCommandRunner::class, Mockery::mock(AgentCommandRunner::class));
 
 });
+
+/** A routed Laravel workspace: the guest joins an active dev Cluster, whose TLD names the generated Route. */
+function taskProvisionRoutedProject(object $test): void
+{
+    $cluster = Cluster::query()->create(['name' => 'task-dev', 'tld' => 'test', 'state' => ClusterState::Active]);
+    $router = router_lan_node('task-router', '10.44.0.10', '10.20.0.10', $cluster);
+    $router->roles()->create(['role' => RoleName::Router, 'status' => LifecycleStatus::Active, 'cluster_id' => $cluster->id]);
+    $router->update(['architecture' => 'x86_64', 'platform' => 'linux', 'user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG']);
+    TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($test->host->id)], 'devClusterId' => $cluster->id,
+        'piArtifactPath' => '/private/pi', 'piArtifactSha256' => str_repeat('c', 64), 'piModels' => ['test-model']]);
+    $test->project->update(['type' => 'laravel-app', 'root' => 'public', 'task_workspace_routed' => true]);
+    $test->project->processDefinitions()->create(['name' => 'worker', 'environments' => ['development'],
+        'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/sleep', '300'], 'restart_policy' => 'never']]);
+}
 
 function taskProvisionVmReceipt(Operation $operation): array
 {
@@ -162,13 +181,57 @@ it('replays before group validation and starts no second native run', function (
         ->and(Instance::query()->count())->toBe(1)->and(collect($this->socket->sent)->where('type', 'workflow.run')->count())->toBe(1);
 });
 
-it('refuses unsupported publication before it captures any guest or workspace', function (): void {
-    $this->project->update(['task_workspace_routed' => true]);
-    expect(fn () => app(StartTaskProvisionAction::class)->execute($this->group, 'fixture', null))
-        ->toThrow(ResourceOperationException::class, 'Task workspace publication');
-    expect($this->vm->fresh()->node_id)->toBeNull()->and(Instance::query()->count())->toBe(0)
-        ->and(Operation::query()->count())->toBe(0)->and($this->group->fresh()->status->value)->toBe('todo');
+it('captures the workspace Route, Processes and disabled Schedules with the guest host key left for the run to bind', function (): void {
+    taskProvisionRoutedProject($this);
+    $this->project->scheduleDefinitions()->create(['name' => 'report', 'environments' => ['development'],
+        'spec' => ['calendar' => 'daily', 'command' => 'php artisan report', 'timeout_seconds' => 60]]);
+    $operation = app(StartTaskProvisionAction::class)->execute($this->group, 'fixture', null);
+    $instance = Instance::query()->sole();
+    $guest = $this->vm->fresh()->node_id;
+    $envelope = app(TaskProvisionProjection::class)->input($operation);
+    $intent = $envelope['intent'];
+    $unpinned = static function (mixed $value) use (&$unpinned): int {
+        if (! is_array($value)) {
+            return 0;
+        }
+
+        return (array_key_exists('host_keys', $value) && $value['host_keys'] === null ? 1 : 0) + array_sum(array_map($unpinned, $value));
+    };
+    expect($instance->task_workspace_routed)->toBeTrue()
+        ->and($operation->input['route_id'])->toBe($instance->routes()->sole()->id)
+        ->and($intent['route'])->toBeArray()
+        ->and($unpinned($intent['route']))->toBeGreaterThan(0)
+        ->and($intent['processes'])->toHaveCount(1)
+        ->and($intent['processes'][0]['intent']['ssh_execution']['target']['host_keys'])->toBeNull()
+        ->and($unpinned($envelope['execution_secrets']))->toBe(0)
+        ->and(Node::query()->findOrFail($guest)->ssh_host_key)->toBeNull()
+        ->and(Schedule::query()->sole()->desired_timer_state)->toBe(DesiredTimerState::Disabled)
+        ->and(app(DirectOperation::class)->definition('tasks.provision')['execution_copies'])->toContain(
+            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$']);
 });
+
+it('keeps a routed monorepo workspace without a Route, Process or Schedule', function (): void {
+    $this->project->update(['task_workspace_routed' => true]);
+    $operation = app(StartTaskProvisionAction::class)->execute($this->group, 'fixture', null);
+    $intent = app(TaskProvisionProjection::class)->input($operation)['intent'];
+    expect($operation->input['route_id'])->toBeNull()->and($intent['route'])->toBeNull()->and($intent['processes'])->toBe([])
+        ->and(Instance::query()->sole()->task_workspace_routed)->toBeFalse();
+});
+
+it('records the workspace Route and Processes from the end check receipt', function (string $outcome): void {
+    taskProvisionRoutedProject($this);
+    $operation = app(StartTaskProvisionAction::class)->execute($this->group, 'fixture', null);
+    $receipt = [...taskProvisionVmReceipt($operation), 'source' => ['branch' => 'task-'.$this->group->id, 'commit' => str_repeat('a', 40), 'php_version' => '8.5', 'laravel' => true],
+        'route' => $outcome, 'processes' => ['Create, start Processes-0='.$outcome],
+        ...($outcome === 'failed' ? ['error_code' => 'tasks.provision_failed', 'failed_step' => 'route'] : [])];
+    app(TaskProvisionProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => $outcome,
+        'started_at' => '2026-11-03T00:00:00.000Z', 'finished_at' => '2026-11-03T00:01:00.000Z',
+        'error_code' => $outcome === 'failed' ? 'operation.native_failed' : null, 'result' => $receipt]);
+    $route = Instance::query()->sole()->routes()->sole();
+    expect($route->status === RouteStatus::Active)->toBe($outcome === 'succeeded')
+        ->and($route->failed_step)->toBe($outcome === 'failed' ? 'native-create' : null)
+        ->and($this->group->fresh()->status->value)->toBe($outcome === 'succeeded' ? 'running' : 'failed');
+})->with(['succeeded', 'failed']);
 
 it('refuses a non-todo group without placement or a native run', function (string $status): void {
     $this->group->update(['status' => $status]);
