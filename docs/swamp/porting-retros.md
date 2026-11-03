@@ -570,6 +570,8 @@ When cleanup cannot scan a candidate release’s processes, it keeps the release
 
 F9 changes: canonical Process definition rows are captured transactionally at admission, while their native installation stays after activation and preserves their desired state. Release retention uses recorded deployment results rather than discovering unrecorded folders. Private user commands receive the rendered environment through native SSH stdin, run as the admitted app account, and receive empty stdin themselves. Their output, including Bash syntax errors, is suppressed before parsing, so a failure records the step and exit status without the legacy output tail. Operation progress replaces duplicate executor events in deployment history. The app-owned Vite+ cache is separate from the shared Node CLI.
 
+Source preparation failures now use `deployment.source_failed` in place of the legacy aggregate `deployment.prepare_failed`; the native failed step identifies the source action.
+
 When native submission is definitely refused, its admission history row closes without claiming Node effects. An uncertain submission keeps the row running. A successful current-link read overrides earlier swap evidence. With no read-back, a failure before activation keeps the recorded selection; the first clone has none.
 
 The chart retains separate operations exposed by pinned behaviors: credential file apply/removal, clone/checkout and Git reads, PHP file apply/test/systemd apply/reload/check, and selection/commit/service read-backs. The final native assertion consumes resource compliance; no custom report/fail wrapper combines them. Candidate resource improvements are recorded in `swamp-evaluation.md`.

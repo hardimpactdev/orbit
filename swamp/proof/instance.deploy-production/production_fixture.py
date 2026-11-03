@@ -160,6 +160,9 @@ def parity():
         assert peer('cat', HOME + '/node-version') == 'v24.22.1'
         assert peer('cat', HOME + '/pnpm-version') == '12.11.2'
         assert peer('stat', '-c', '%U', HOME + '/.local/share/vite-plus') == 'orbit-app-9002'
+        assert peer('stat', '-c', '%a %U %G', '/opt/orbit/vite-plus/bin/vp') == '755 root root'
+        manager_home = peer('getent', 'passwd', 'orbit').split(':')[5]
+        peer('cmp', '--silent', manager_home + '/.local/share/vite-plus/bin/vp', '/opt/orbit/vite-plus/bin/vp')
     if not success:
         assert operation['error_code'] == ('deployment.commit_not_on_branch' if case == 'off-branch' else 'deployment.step_failed')
     state = json.loads(php("echo json_encode(App\\Models\\Instance::findOrFail(9002)->only(['checkout_path','production_php_service','environment_owned_keys']));"))

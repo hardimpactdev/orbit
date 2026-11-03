@@ -193,6 +193,18 @@ it('keeps the earlier selection when a before step fails and names that step', f
         ->and(Process::query()->sole()->status)->not->toBe(LifecycleStatus::Active);
 });
 
+it('records Vite publication failures without changing the selected release', function (string $step): void {
+    $instance = production_native_deploy_target();
+    $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null)->fresh();
+    $result = project_production_terminal($operation, 'failed', [
+        $step => 'failed', 'Swap current' => 'skipped', 'Check the deployment' => 'skipped']);
+
+    expect($result->status)->toBe(OperationStatus::Failed)
+        ->and($result->error_code)->toBe('deployment.vp_store_failed')
+        ->and($result->result['failed_step'])->toBe($step)
+        ->and($instance->fresh()->checkout_path)->toBe($instance->production_home.'/releases/previous');
+})->with(['Read Vite manager home', 'Read Vite manager CLI', 'Publish public Vite CLI']);
+
 it('keeps the new selection when a Process restart fails after activation', function (): void {
     $instance = production_native_deploy_target();
     $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null)->fresh();

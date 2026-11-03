@@ -85,6 +85,11 @@ while a and a[0].startswith('-') and a[0]!='--':
     a=a[2:] if a[0] in ('-u','--user','-g') else a[1:]
 if a and a[0]=='--':a=a[1:]
 if a and os.path.basename(a[0])=='timeout':a=a[2:]
+if a[:2]==['getent','passwd']:
+    print(a[2]+':x:1000:1000::'+MANAGER+':/bin/bash');sys.exit(0)
+a=[part.replace('/opt/orbit/vite-plus/bin/vp',PUBLIC_VP) for part in a]
+if a and a[0]=='install':
+    a[a.index('-o')+1]=str(os.getuid());a[a.index('-g')+1]=str(os.getgid())
 if a and os.path.basename(a[0])=='find' and a[1]=='/proc':
     if os.path.exists(FAIL) and open(FAIL).read()=='find':sys.exit(1)
     from pathlib import Path
@@ -106,10 +111,11 @@ if a and (os.path.basename(a[0]) in ('systemctl','docker','setfacl') or '/usr/bi
     if os.path.basename(a[0])=='systemctl' and a[1]=='is-enabled':print('enabled')
     sys.exit(1 if os.path.exists(FAIL) and open(FAIL).read() in a else 0)
 sys.exit(subprocess.call(a))
-""".replace('CALLS', repr(str(self.calls_file))).replace('FAIL', repr(str(self.repo / 'fail'))),
+""".replace('CALLS', repr(str(self.calls_file))).replace('FAIL', repr(str(self.repo / 'fail'))).replace('MANAGER', repr(str(self.node / 'manager'))).replace('PUBLIC_VP', repr(str(self.node / 'public/bin/vp'))),
             'systemctl': "import json,sys\nif sys.argv[1]=='show': print('LoadState=loaded\\nActiveState=inactive\\nUnitFileState=disabled' if '.timer' in sys.argv[2] else 'LoadState=loaded\\nActiveState=active\\nUnitFileState=enabled')\nelse:\n    with open(" + repr(str(self.calls_file)) + ",'a') as f:f.write(json.dumps(['systemctl',*sys.argv[1:]])+'\\n')\n",
             'chown': 'pass\n',
             'chgrp': 'pass\n',
+            'find': "import subprocess,sys\nif sys.argv[1:3]==['/opt','.']:print('/opt/orbit/vite-plus/bin/vp')\nelse:sys.exit(subprocess.call(['/usr/bin/find',*sys.argv[1:]]))\n",
         }
         for name, source in scripts.items():
             tool = tools / name
@@ -319,6 +325,45 @@ sys.exit(subprocess.call(a))
         self.assertEqual(self.deploy(), 'succeeded', json.dumps(self.status)[:3000])
         self.assertEqual((self.home / 'storage/app/kept.txt').read_text(), 'from the release\n')
         self.assertEqual((self.home / 'storage/app/new.txt').read_text(), 'new\n')
+
+    def test_publishes_only_the_manager_cli_and_uses_the_app_owned_vite_cache(self):
+        manager = self.node / 'manager/.local/share/vite-plus/bin/vp'
+        manager.parent.mkdir(parents=True)
+        manager.write_text('#!' + sys.executable + '\n' + '''import json,os,sys
+with open(CALLS,'a') as f:f.write(json.dumps(['vp',os.environ.get('VP_HOME'),*sys.argv[1:]])+'\\n')
+if '--version' in sys.argv:print('vp 0.3.3')
+elif 'list' in sys.argv:print('{"node":[{"version":"24.22.0"}],"package_managers":{"npm":[{"version":"11.12.0"}]}}')
+'''.replace('CALLS', repr(str(self.calls_file))))
+        manager.chmod(0o755)
+        private = manager.parent.parent / 'private.json'
+        private.write_text(self.sentinel)
+        for name, value in {
+            'package.json': {'devDependencies': {'vite-plus': '0.3.3'}, 'packageManager': 'npm@11.12.0', 'engines': {'node': '24.22.0'}},
+            'package-lock.json': {'packages': {'node_modules/vite-plus': {'version': '0.3.3'}}},
+        }.items():
+            (self.origin / name).write_text(json.dumps(value))
+        self.git(self.origin, 'add', '.')
+        self.git(self.origin, 'commit', '--quiet', '-m', 'Vite project')
+        self.inputs['intent']['deployment']['needs_vp'] = True
+
+        self.assertEqual(self.deploy(), 'succeeded', json.dumps(self.status)[:3000])
+        public = self.node / 'public/bin/vp'
+        self.assertEqual(public.read_bytes(), manager.read_bytes())
+        self.assertEqual(public.stat().st_mode & 0o777, 0o755)
+        self.assertFalse((public.parent.parent / 'private.json').exists())
+        self.assertEqual(self.status['Publish public Vite CLI'], 'succeeded')
+        invocations = [row for row in self.calls() if row[0] == 'vp']
+        self.assertEqual(len(invocations), 3)
+        self.assertTrue(all(row[1] == str(self.home / '.local/share/vite-plus') for row in invocations))
+        self.assertEqual(invocations[0][2:], ['--version'])
+        self.assertTrue(all(row[2:4] == ['-C', str(self.node)] for row in invocations[1:]))
+
+    def test_a_vite_command_without_a_vite_dependency_needs_no_manager(self):
+        self.inputs['intent']['deployment']['needs_vp'] = True
+        self.assertEqual(self.deploy(), 'succeeded', json.dumps(self.status)[:3000])
+        self.assertEqual(self.status['Read Vite manager CLI'], 'skipped')
+        self.assertEqual(self.status['Publish public Vite CLI'], 'skipped')
+        self.assertEqual(self.status['dev-vp-manager-ready'], 'succeeded')
 
 if __name__ == "__main__":
     import unittest

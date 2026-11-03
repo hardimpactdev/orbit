@@ -157,7 +157,9 @@ Deploy-step and branch changes need an access grant to the Instance's Node. The 
 
 ### Vite store prerequisite
 
-Before a JavaScript step (`npm-build`, or a command using `vp`, Node, npm/npx, pnpm, Yarn, Bun, Vite, or Corepack), the deploy prepares the [Project environment in the vp store](/reference/tools#project-environments-in-the-vite-store) when the Project declares `vite-plus`. It runs the shared Vite+ steps that a development deploy and `instance:clone` also run. Swamp reads the new release's requirements through sudo and validates them. Swamp installs the pinned runtime in the production account’s private Vite+ cache before the application command. The shared Node manager supplies the CLI; application commands use the private cache.
+Before a JavaScript step (`npm-build`, or a command using `vp`, Node, npm/npx, pnpm, Yarn, Bun, Vite, or Corepack), the deploy prepares the [Project environment in the vp store](/reference/tools#project-environments-in-the-vite-store) when the Project declares `vite-plus`. It runs the shared Vite+ steps that a development deploy and `instance:clone` also run. Swamp reads the new release's requirements through sudo and validates them. Swamp installs the pinned runtime in the production account’s private Vite+ cache before the application command.
+
+The shared Node manager supplies its standalone CLI. Swamp publishes only that executable to `/opt/orbit/vite-plus/bin/vp`, with mode `0755` and root ownership. A comparison skips an unchanged copy. It copies no manager credentials or private data. Application commands use the private cache.
 
 It records desired versions before installing missing content and verifies the result before allowing the step to start. It does not run package install scripts as the store owner.
 
@@ -204,17 +206,18 @@ One native run on Node 209 then runs the [chart](/cli/instance/deploy)'s steps o
 
 | Step | What it does | Error code |
 | --- | --- | --- |
-| `Write the release credential`, `Prepare the release`, `Remove the release credential`, `Link the release`, `Read the release commit` | Clones the repository into the new release and checks out the frozen commit or branch head. Seeds and links the shared paths and each `.env` | `deployment.source_failed` |
-| `Read the first-parent chain`, `Check the commit is on the branch` | A pinned commit only: checks that it is on the branch's first-parent chain | `deployment.commit_not_on_branch` |
+| `Write release credential`, `Prepare the release`, `Remove release credential`, `Read the release commit`, `Prepare shared paths`, `Link the release` | Clones the repository into the new release and checks out the frozen commit or branch head. Seeds and links the shared paths and each `.env` | `deployment.source_failed` |
+| `Read first-parent chain`, `Check the branch commit` | A pinned commit only: checks that it is on the branch's first-parent chain | `deployment.commit_not_on_branch` |
 | `Read the key names`, `Check for foreign keys`, `Write .env` | Refuses keys of `<home>/.env` that Orbit does not manage, then writes the rendered `.env` from the vault | `env.sync_unconfirmed`, `env.sync_would_drop_keys` |
-| `dev-vp-*` | The shared [Vite+ steps](#vite-store-prerequisite), when a step needs Vite+ | `deployment.vp_requirements_invalid`, `deployment.vp_store_failed` |
-| `Write the deploy steps`, `Run before steps` | Each `before_activation` step in order; a failed step skips the rest | `deployment.step_failed` |
+| `dev-vp-*`, `Read Vite manager home`, `Read Vite manager CLI`, `Publish public Vite CLI`, `Prepare Vite cache` | The shared [Vite+ steps](#vite-store-prerequisite), when a step needs Vite+ | `deployment.vp_requirements_invalid`, `deployment.vp_store_failed` |
+| `Run before steps` | Each `before_activation` step in order; a failed step skips the rest | `deployment.step_failed` |
 | `Grant Caddy access`, `Activate release`, `Swap current` | Grants Caddy access to each served web root, writes `current.next`, and renames it over `current` in one atomic rename | `deployment.selection_invalid` |
-| `Refresh PHP cache` | Reloads the dedicated PHP-FPM service gracefully, for an Instance that serves PHP | `deployment.php_runtime_unconfirmed` |
-| `Install Process definitions`, `Restart Processes` | Installs the captured Process definitions in the `process.create` shape, then reloads or restarts each running Process with `restart_on_deploy` | `process.install_failed`, `process.restart_failed` |
-| `Run after steps`, `Remove the deploy steps` | Each `after_activation` step in order, then the step files go | `deployment.step_failed` |
+| `Prepare PHP directories`, `Read local PHP tuning`, `Write PHP configuration`, `Write default PHP tuning`, `Test PHP configuration`, `Start PHP runtime`, `Check PHP runtime`, `Refresh PHP cache` | Prepares and verifies the dedicated PHP-FPM service on its first deploy, then reloads it gracefully | `deployment.php_runtime_unconfirmed` |
+| `Install Processes`, `Restart Processes` | Installs the captured Process definitions in the `process.create` shape, then reloads or restarts each running Process with `restart_on_deploy` | `process.install_failed`, `process.restart_failed` |
+| `Run after steps` | Each `after_activation` step in order, over private SSH stdin | `deployment.step_failed` |
+| `Read Schedule group`, `Render Schedules`, `Write Schedule services`, `Install Schedule timers`, `Read Schedule timers`, `Check Schedule timers` | Converges captured Node timers and checks their desired state | `schedule.install_failed` |
 | `Find releases in use`, `Clean up releases` | Removes each release outside the kept three, as [Retained releases](#retained-releases) describes; best effort | none: a failed cleanup is a warning |
-| `Read current back`, `Check the deployment` | Reads `current` back and checks that it selects the new release | `deployment.selection_invalid` |
+| `Read current back`, `Read deployed commit`, `Check Process state`, `Read container state`, `Check the deployment` | Checks the selected release, commit and Process state | `deployment.selection_invalid`, `process.restart_failed` |
 
 A development default runs its own steps in the same workflow; [Native development deployment](#native-development-deployment) lists them.
 
@@ -260,7 +263,7 @@ Each Process restart is one native step: `systemctl reload-or-restart` for a sys
 
 Deployment environment synchronization only writes files. It does not run the explicit env-sync runtime refresh or restart Processes before activation. Explicit [production env-sync](/reference/environment-variables#synchronize) refreshes PHP and uses the same Process restart action afterward, reporting restarted Process IDs in its Operation result.
 
-Orbit skips PHP refresh for an Instance that does not serve PHP. A deploy reloads the pool; it does not converge the pool's configuration or PHP packages, which the clone and Route kinds own.
+Orbit skips PHP work for an Instance that does not serve PHP. The first deploy prepares its dedicated pool and verifies it before the Gateway records the runtime identity. Later deploys reload the verified pool. Node PHP packages remain part of the Node recipe.
 
 To opt out, set `restart_on_deploy: false` in a Process create or update request, or pass `--no-restart-on-deploy` to [`process:create` or `process:update`](/cli/process). This setting applies to production deployments, rollbacks, and a successful explicit production env-sync runtime refresh. For Horizon managed as an Instance Process, keep the default and remove a hand-made `php artisan horizon:terminate` after-activation step with `instance:deploy-step:destroy`. Orbit now restarts that Process before after-activation steps. The normal runtime stop behavior applies.
 

@@ -104,11 +104,16 @@ sequenceDiagram
     Note over SW: dev-vp-links<br/>typed data
     SW->>N: dev-vp-read-workspace<br/>ssh exec argv
     Note over SW: dev-vp-requirements<br/>typed data
+    SW->>N: Read Vite manager home<br/>ssh exec argv
+    SW->>N: Read Vite manager CLI<br/>cfgmgmt/file check
     SW->>N: dev-vp-manager<br/> run
     Note over SW: dev-vp-manager-ready<br/>native assert
     SW->>N: Prepare Vite cache<br/>cfgmgmt/directory apply
     %%> What it does:
     %%> - gives the production account its own cache; the Node manager still supplies the shared CLI
+    SW->>N: Publish public Vite CLI<br/>ssh exec argv
+    %%> What it does:
+    %%> - publishes only the managed standalone binary; compare skips an unchanged copy, and no private manager data is copied
     SW->>N: dev-vp-cli<br/>ssh exec argv
     Note over SW: dev-vp-cli-ready<br/>typed data
     SW->>N: dev-vp-install<br/>ssh exec argv
