@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
+use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -160,6 +161,7 @@ it('reserves the derived Route of a web-serving Project and creates it in the sa
     $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('public-root');
     $this->node->update(['tld' => 'test']);
     $this->project->update(['type' => 'laravel-app', 'root' => 'public', 'php_version' => '8.4', 'is_laravel' => true, 'source_facts_captured_at' => now()]);
+    $this->project->environmentTemplate()->updateOrCreate([], ['entries' => [['key' => 'APP_URL', 'value' => 'https://native-create.test', 'removed' => false]], 'source_path' => '.env.example', 'source_commit' => str_repeat('a', 40), 'source_blob' => str_repeat('b', 40), 'checked_head' => str_repeat('a', 40)]);
     $this->withHeader('Idempotency-Key', 'native-create-web-'.$status);
     $this->postJson('/api/v1/instances', $this->payload)->assertAccepted();
 
@@ -169,6 +171,8 @@ it('reserves the derived Route of a web-serving Project and creates it in the sa
     $intent = $start['payload']['inputs']['intent'];
     expect($route->domain)->toBe('proof.native-create.test')
         ->and($operation->input['route_id'])->toBe($route->id)
+        ->and(app(InstanceEnvironmentStore::class)->values(Instance::query()->sole())['APP_URL'])->toBe('https://{{instance.domain}}')
+        ->and(app(DevelopmentCreateEnvironment::class)->content(Instance::query()->sole()))->toContain('APP_URL="https://proof.native-create.test"')
         ->and($operation->input['run_budget_seconds'])->toBe(270)
         ->and(json_encode($intent['route']['caddy']))->toContain('proof.native-create.test')
         ->and(json_encode($intent['route']['php_files'], JSON_UNESCAPED_SLASHES))->toContain('chdir = /srv/apps/native-create/proof')
