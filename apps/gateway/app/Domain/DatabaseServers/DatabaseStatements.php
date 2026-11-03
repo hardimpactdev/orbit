@@ -267,6 +267,20 @@ final readonly class DatabaseStatements
     }
 
     /**
+     * The copy of one MySQL database into another inside the server's container: the root login from the first stdin
+     * line, `mysqldump --single-transaction` piped into `mysql` (ADR 0191). The dump drops and recreates each table.
+     *
+     * @return list<string>
+     */
+    public static function copy(string $container, string $source, string $target): array
+    {
+        return ['docker', 'exec', '-i', $container, 'bash', '-c',
+            'set -eo pipefail; IFS= read -r MYSQL_PWD && export MYSQL_PWD && mysqldump --protocol=TCP --host=127.0.0.1 --user=root '
+            .'--single-transaction --routines --triggers --no-tablespaces "$1" | mysql --protocol=TCP --host=127.0.0.1 --user=root "$2"',
+            'bash', $source, $target];
+    }
+
+    /**
      * One `docker exec -i` login that reads the password from the first stdin line inside the container, then runs the
      * rest of stdin (Q-DBAUTH): no login file and no password in argv. Stdin is the vault value plus the statements.
      *

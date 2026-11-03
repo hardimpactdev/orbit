@@ -70,7 +70,7 @@ Before the write, the run creates that group when the Node lacks it and gives it
 
 With `sqlite_source_path`, the Gateway attaches a new SQLite connection at `<home>/database.sqlite` under `DB`. The rendered `.env` names it.
 
-Swamp copies a consistent snapshot through the SQLite backup API and checks its digest. Development [`instance:create`](/cli/instance/create) runs the same three steps to copy the default Instance's SQLite database. It installs the file once as the account's, with mode `0600`. Swamp removes the snapshot files on every Node, also after a failure.
+Swamp copies a consistent snapshot through the SQLite backup API and checks its digest. Development [`instance:create`](/cli/instance/create) runs the same three steps to copy the default Instance's SQLite database; a MySQL default database is copied with `mysqldump` instead. It installs the file once as the account's, with mode `0600`. Swamp removes the snapshot files on every Node, also after a failure.
 
 ### Processes and Schedules
 
