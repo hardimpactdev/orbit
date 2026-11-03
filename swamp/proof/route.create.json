@@ -13,7 +13,7 @@
       "body": {
         "slug": "proof-route-${proof.run}",
         "name": "Proof route",
-        "type": "monorepo",
+        "type": "node-package",
         "root": "public",
         "repository_url": "https://github.com/laravel/laravel.git",
         "default_branch": "13.x"
@@ -74,5 +74,6 @@
       "budget_seconds": 30
     }
   ],
-  "parity": "swamp/proof/route.create/parity.py"
+  "parity": "swamp/proof/route.create/parity.py",
+  "clean": true
 }
