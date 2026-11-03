@@ -9,7 +9,6 @@ route.public_verify
 route.withdraw
 route.workload_verify
 schedule.install_instance_definitions
-tasks.analyze
 tasks.maintenance
 tasks.maintenance_finish
 tasks.park

@@ -12,10 +12,7 @@ inputs:
     node_id:
       type: integer
       minimum: 1
-    kind:
-      type: string
-      enum:
-      - tasks.analyze
+    kind: {type: string, enum: [tasks.analyze]}
     intent:
       type: object
     execution_secrets:
@@ -387,22 +384,6 @@ jobs:
         conditions:
         - type: succeeded
         - type: skipped
-  - name: result
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "task-repository-result" }}'
-      methodName: execute
-      inputs:
-        run: |
-          printf '%s\n' "$ORBIT_RESULT"
-        env:
-          ORBIT_RESULT: ${{ steps.shape.outputs.result_json }}
-    dependsOn:
-    - step: shape
-      condition:
-        type: succeeded
   - name: cleanup-index
     labels: {role: swamp}
     allowFailure: true
@@ -449,6 +430,6 @@ jobs:
       message: The repository analyze was refused or failed.
       severity: high
     dependsOn:
-    - step: result
+    - step: shape
       condition:
         type: succeeded

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Swamp\SwampCommandStep;
@@ -69,11 +70,11 @@ it('admits one native analysis from the public provision pin with no PHP executi
     expect(count($this->socket->sent))->toBe(1);
 });
 
-it('retains native success and closed failure evidence without judging it or changing the board', function (bool $failed): void {
+it('retains native success and closed failure evidence without judging it or changing the board', function (bool $failed, bool $producerFailed): void {
     [$group] = native_analysis_group();
     $id = $this->postJson('/api/v1/task-groups/'.$group->id.'/analyze', analysis_operation_input($group), ['Idempotency-Key' => 'native-analysis'])->assertAccepted()->json('data.id');
     $result = $failed ? ['schema' => 1, 'error' => ['code' => 'tasks.analysis_report_too_large', 'required_bytes' => 216325]]
-        : ['outcome' => 'ready', 'artifact' => ['content' => 'native evidence', 'bytes' => 15], 'provenance' => ['native' => true]];
+        : ['outcome' => 'ready', 'artifact' => ['content' => str_repeat('native evidence', 400), 'bytes' => 6000], 'provenance' => ['native' => true]];
     $native = $failed ? [...$result, 'error_code' => $result['error']['code']] : $result;
     $body = ['run_id' => $this->run, 'status' => $failed ? 'failed' : 'succeeded', 'started_at' => '2026-10-31T08:00:00.000Z', 'finished_at' => '2026-10-31T08:01:00.000Z', 'result' => $native, 'error_code' => $failed ? $result['error']['code'] : null];
     config(['swamp.read_token' => 'native-reader', 'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/dev/null']);
@@ -81,15 +82,20 @@ it('retains native success and closed failure evidence without judging it or cha
         'id' => $this->run, 'workflowName' => 'operation-task-analyze', 'status' => $body['status'],
         'inputs' => ['operation_id' => $id, 'node_id' => $group->taskable->node_id, 'kind' => 'tasks.analyze'],
         'startedAt' => $body['started_at'], 'completedAt' => $body['finished_at'],
-        'jobs' => [['name' => 'analysis', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => json_encode($native, JSON_THROW_ON_ERROR)]]]]],
+        'jobs' => [['name' => 'analysis', 'steps' => [
+            ['name' => 'shape', 'status' => $producerFailed ? 'failed' : 'succeeded', 'outputs' => $producerFailed ? [] : ['result_json' => json_encode($native, JSON_THROW_ON_ERROR)]],
+            ['name' => 'outcome', 'status' => $producerFailed ? 'skipped' : $body['status']],
+        ]]],
     ]]]];
     $projection = app(SwampCommandStep::class);
     $operation = Operation::findOrFail($id);
-    $projection->projectTerminal($operation, ['id' => $this->run, 'status' => $body['status']], ['job' => 'analysis', 'step' => 'result']);
-    $projection->projectTerminal($operation, ['id' => $this->run, 'status' => $body['status']], ['job' => 'analysis', 'step' => 'result']);
-    $this->getJson('/api/v1/operations/'.$id)->assertOk()->assertJsonPath('data.result', $result);
+    $selector = app(DirectOperation::class)->definition('tasks.analyze')['terminal_result'];
+    $projection->projectTerminal($operation, ['id' => $this->run, 'status' => $body['status']], $selector);
+    $projection->projectTerminal($operation, ['id' => $this->run, 'status' => $body['status']], $selector);
+    $this->getJson('/api/v1/operations/'.$id)->assertOk()->assertJsonPath('data.result', $producerFailed ? [] : $result)
+        ->assertJsonPath('data.error_code', $producerFailed ? 'operation.native_failed' : $body['error_code']);
     expect($group->fresh()->status->value)->toBe('running')->and(count($this->socket->sent))->toBe(2);
-})->with([false, true]);
+})->with([[false, false], [true, false], [true, true]]);
 
 it('refuses a missing pin or substituted starting commit before dispatch', function (bool $missing): void {
     [$group] = native_analysis_group();

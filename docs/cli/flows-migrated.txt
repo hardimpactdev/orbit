@@ -64,3 +64,4 @@ tasks.dependency_merge
 task_vm.hub_converge
 instance.rollback
 node.role_add
+tasks.analyze

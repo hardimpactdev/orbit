@@ -260,7 +260,7 @@ The fixed read-only analysis operation follows [ADR 0229](/decisions/0229-let-an
 
 `POST /api/v1/task-groups/{group}/analyze` starts the native `operation-task-analyze` workflow with target `task_group`. It requires `Idempotency-Key` and accepts exactly `{subtask, plan, plan_sha256, base, head, tree}`. The complete JSON request is at most 48 KiB. Unknown fields refuse. There is no caller-selected command, environment, executable, report path or model.
 
-The Gateway admits the open group, its current child, owned VM and immutable provision base. Swamp runs the fixed repository analyzer through official SSH from a worker on Node 209. Analysis changes no board or child state, starts no Pi turn, creates no check candidate and pushes nothing. Follow or cancel it through the existing [operation routes](/reference/operations#read-an-operation).
+The Gateway admits the open group, its current child, owned VM and immutable provision base. Swamp runs the fixed repository analyzer through official SSH from a worker on Node 209. Analysis changes no board or child state, starts no Pi turn, creates no check candidate and pushes nothing. The Gateway captures the complete report from the output-shaping step in the same terminal history read; no shell step prints it again. Native `assert` still checks the analysis outcome. Follow or cancel it through the existing [operation routes](/reference/operations#read-an-operation).
 
 ##### Complete typed plan
 

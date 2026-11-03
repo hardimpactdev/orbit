@@ -172,7 +172,8 @@ else:shutil.copyfile(src,dst/src.name if dst.is_dir() else dst)
         return {step["name"]: step for step in history["jobs"][0]["steps"]}
 
     def result(self, run):
-        return json.loads(self.steps(run)["result"]["outputs"]["stdout"])
+        steps = self.steps(run)
+        return json.loads(steps["shape"]["outputs"]["result_json"] if self.inputs["kind"] == "tasks.analyze" else steps["result"]["outputs"]["stdout"])
 
     def analysis_intent(self):
         head = self.git("rev-parse", "HEAD")
@@ -297,6 +298,7 @@ else:shutil.copyfile(src,dst/src.name if dst.is_dir() else dst)
         self.workflow("analyze")
         run = self.run_workflow()
         self.assertEqual(run["status"], "succeeded")
+        self.assertNotIn("result", self.steps(run))
         result = self.result(run)
         self.assertEqual(result["outcome"], "ready")
         provenance = result["provenance"]
@@ -366,7 +368,7 @@ else:shutil.copyfile(src,dst/src.name if dst.is_dir() else dst)
         steps = self.steps(run)
         self.assertEqual(steps["execute"]["outputs"]["stdout"], "")
         self.assertEqual(
-            json.loads(steps["result"]["outputs"]["stdout"]),
+            json.loads(steps["shape"]["outputs"]["result_json"]),
             {"error_code": "tasks.analysis_report_invalid"},
         )
 
@@ -378,7 +380,7 @@ else:shutil.copyfile(src,dst/src.name if dst.is_dir() else dst)
         run = self.run_workflow(success=False)
         steps = self.steps(run)
         self.assertEqual(
-            json.loads(steps["result"]["outputs"]["stdout"]),
+            json.loads(steps["shape"]["outputs"]["result_json"]),
             {"error_code": "tasks.analysis_stale"},
         )
         self.assertEqual(steps["execute"]["status"], "skipped")
@@ -395,12 +397,13 @@ else:shutil.copyfile(src,dst/src.name if dst.is_dir() else dst)
         self.assertEqual(run["status"], "failed")
         history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
         steps = {step["name"]: step for step in history["jobs"][0]["steps"]}
-        # The Gateway reads only the result step; the analyzer stdout stays on Node 209.
-        result = steps["result"]
+        # The Gateway captures the producer output; private analyzer bytes stay off history.
+        result = steps["shape"]
+        self.assertNotIn("result", steps)
         self.assertNotIn("synthetic-private-report-value", json.dumps(result))
         self.assertEqual(steps["outcome"]["status"], "failed")
         self.assertEqual(
-            json.loads(result["outputs"]["stdout"]),
+            json.loads(result["outputs"]["result_json"]),
             {"error_code": "tasks.analysis_report_invalid"},
         )
 

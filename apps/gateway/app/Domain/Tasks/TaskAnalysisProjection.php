@@ -19,7 +19,13 @@ final readonly class TaskAnalysisProjection implements DirectOperationProjection
 
     public function apply(Operation $operation, array $data): Operation
     {
-        $result = ValidatedData::object($data['result'] ?? []);
+        $native = ValidatedData::object($data['result'] ?? []);
+        $result = isset($native['analysis'])
+            ? ValidatedData::object(json_decode(ValidatedData::string($native['analysis']), true, flags: JSON_THROW_ON_ERROR))
+            : [];
+        if (in_array($data['status'] ?? null, ['failed', 'interrupted'], true) && isset($result['error_code'])) {
+            $data['error_code'] = $result['error_code'];
+        }
         if (isset($result['error'])) {
             unset($result['error_code']);
         }

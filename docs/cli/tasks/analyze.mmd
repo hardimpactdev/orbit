@@ -1,0 +1,106 @@
+sequenceDiagram
+  %% Target design: fixed repository analysis, docs/reference/tasks.md#analyze-an-external-groups-repository; flow-tighten rule 14. Official SSH argv operations remain separate; native assert is the end check.
+  %% status: migrated
+  %% command: tasks:analyze
+  %% kind: tasks.analyze
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Task VM<br/>reached over ssh
+  CLI->>GW: tasks:analyze 42<br/>--subtask=7 --plan=plan.json
+  %%> Command:
+  %%> - `orbit tasks:analyze 42 --subtask=7 --plan=plan.json --plan-sha256=DIGEST --base=BASE --head=HEAD --tree=TREE --idempotency-key=analysis-1`
+  %%> - syntax: `<group> --subtask=ID --plan=FILE --plan-sha256=DIGEST --base=BASE --head=HEAD --tree=TREE --idempotency-key=KEY [--json]`
+  Note over GW: Admit the analysis<br/>owned workspace · fixed base
+  %%> Requirements:
+  %%> - group 42 is external and open; child 7 is current and open
+  %%> - your Node has an access grant to the workspace Node
+  %%> - the typed plan and its digest match the immutable provision base
+  GW->>SW: Start one run<br/>operation-task-analyze
+  %%> Inputs:
+  %%> - the admitted plan, exact commits and tree, and pinned SSH identity
+  GW-->>CLI: 202 Accepted<br/>Operation recorded
+  %%> Result:
+  %%> - the CLI follows the Operation while Swamp runs the analyzer
+  Note over SW: prepare
+  %%> What it does:
+  %%> - Build the fixed analyzer argv, stdin and private output paths from the admitted plan.
+  Note over SW: output-local
+  %%> What it does:
+  %%> - Create the private output download directory on Node 209.
+  SW->>N: inspect
+  %%> What it does:
+  %%> - Read the owned checkout path through the pinned SSH target.
+  SW->>N: entrypoint
+  %%> What it does:
+  %%> - Read the fixed analyzer entrypoint metadata; no caller executable is accepted.
+  SW->>N: snapshot-before-index
+  %%> What it does:
+  %%> - Read HEAD into a separate index; keep the real Git index unchanged.
+  SW->>N: snapshot-before-add
+  %%> What it does:
+  %%> - Include the whole workspace in the separate index.
+  SW->>N: snapshot-before-tree
+  %%> What it does:
+  %%> - Read the exact candidate tree, including untracked files.
+  SW->>N: snapshot-before-head
+  %%> What it does:
+  %%> - Read the candidate HEAD.
+  Note over SW: gate
+  %%> What it does:
+  %%> - Refuse an unavailable analyzer or a candidate that differs from the admitted head and tree.
+  SW->>N: execute
+  %%> What it does:
+  %%> - Run the fixed analyzer with its bounded input; keep stdout and stderr in private files.
+  SW->>N: output-copy
+  %%> What it does:
+  %%> - Download private analyzer output with official SSH copy.
+  SW->>N: snapshot-after-index
+  %%> What it does:
+  %%> - Read HEAD into the separate index after execution.
+  SW->>N: snapshot-after-add
+  %%> What it does:
+  %%> - Include the whole workspace after execution.
+  SW->>N: snapshot-after-tree
+  %%> What it does:
+  %%> - Read the resulting tree to detect analyzer changes.
+  SW->>N: snapshot-after-head
+  %%> What it does:
+  %%> - Read the resulting HEAD.
+  Note over SW: shape
+  %%> What it does:
+  %%> - Read, validate and redact the downloaded report, retain its full bounded bytes, and remove the private download.
+  SW->>N: cleanup-index
+  %%> What it does:
+  %%> - Remove the private index and remote output directory on success or failure.
+  Note over SW: cleanup-local
+  %%> What it does:
+  %%> - Remove the private worker output directory on success or failure.
+  Note over SW: outcome
+  %%> What it does:
+  %%> - Native assert fails the run when the producer records a failed analysis outcome.
+  alt analysis completed
+    SW-->>GW: Native terminal result<br/>full report from shape
+    %%> Result:
+    %%> - the Gateway captures the producer's report from the same native history read
+    %%> - no reporting shell step copies or prints the report
+    Note over GW: Retain exact evidence<br/>artifact · provenance
+    %%> Result:
+    %%> - the full bounded report stays unchanged; analysis does not change the board
+  else analysis refused or failed
+    SW--xGW: Native failed result<br/>failed step · error code
+    %%> Result:
+    %%> - the Gateway retains the closed failure evidence and the analyzer's public error code
+    %%> Retry:
+    %%> - inspect the failed Operation before admitting a fresh analysis
+  end
+  loop until terminal
+    CLI->>GW: operation:show<br/>Operation number
+    %%> Returns:
+    %%> - the Operation status and complete terminal evidence
+  end
