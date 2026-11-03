@@ -2231,6 +2231,8 @@ Deno.test("literal child choices scan both alternatives and reject unresolved ta
     ["workflows/start.yaml", child("start")],
   ]);
   assertEquals(workflowCoverage(analyze(sources, inventory)).clean, 3);
+  sources.set("workflows/parent.yaml", parent('${{ inputs.network != null && inputs.network.mode == "peer" ? "start" : "create" }}'));
+  assertEquals(workflowCoverage(analyze(sources, inventory)).clean, 3);
   for (const name of ["create", "start"]) {
     const unsafe = new Map(sources);
     unsafe.set(`workflows/${name}.yaml`, child(name, "orbit-agent command cli.install"));
