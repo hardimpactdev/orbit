@@ -305,6 +305,8 @@ def release_github():
     """github.com resolves publicly again, for the topology's own downloads such as Caddy."""
     hosts = Path('/etc/hosts')
     hosts.write_text('\n'.join(line for line in hosts.read_text().splitlines() if not line.startswith(LISTEN + ' ')) + '\n')
+    # The nested Nodes resolve through the proof network's dnsmasq, which caches this file's names.
+    subprocess.run(['pkill', '-HUP', 'dnsmasq'], check=False)
 
 
 def parity():
