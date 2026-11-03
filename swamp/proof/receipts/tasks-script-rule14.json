@@ -1,0 +1,17 @@
+{
+  "kind": "tasks.script",
+  "rule": 14,
+  "topology": "minimal",
+  "topology_version": 14,
+  "source_commit": "f195719312b48f76aed5086a5899649c531a0e70",
+  "receipt": "/home/nckrtl/swamp-execution/evidence/proof/tasks.script/20261103T023838Z-minimal.json",
+  "proof_pass": true,
+  "operation_seconds": 16.56,
+  "run_seconds": 19.2,
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "swamp_run_id": "1df2c4af-16c5-462a-aade-d03ebfc21491",
+  "reporting_steps_removed": 1,
+  "scripts_deleted": 0,
+  "limits": "One synthetic repository script over real SSH: literal arguments, public result and unchanged checkout. Native fixtures cover nonzero exits, redaction, refusal and resume. No production repository or scale."
+}

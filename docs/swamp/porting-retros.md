@@ -535,3 +535,12 @@ The Gateway captures `shape.result_json` directly from its producer in the exist
 Minimal@14 proof `tasks.analyze/20261103T014946Z-minimal.json` passed on `ed78065766` in 16.93 seconds (one sample, 20.0 seconds fixture wall time), with a 120-second budget and 30-second queue timeout. The synthetic analyzer's exact report digest and provenance match, the checkout and real index stay unchanged, and temporary output is removed. Four native cases cover report retention, private-output rejection and stale admission; nine Gateway cases cover success, closed failure, absent producer output and a 6,000-byte artifact. No production repository, data or scale was exercised.
 
 The workflow drops from 20 to 19 steps. Separate SSH argv steps for each snapshot and the official copy remain visible; no wrapper behavior combines them. The new command chart replaces its pending entry and accounts for 106 of the 126 net added Orbit lines. Production code drops by 13 lines. Swamp drops by five lines: behaviors zero, workflows minus 19, scripts zero, tests plus three, and proof fixtures plus 11. No shipped script or named gap is added.
+
+
+## Rule 14: tasks.script captures its producer output
+
+The Gateway captures the bounded public script result from `shape.result_json` in its terminal history read. The workflow drops its shell result printer and keeps the native outcome assertion. A nonzero script exit remains a successful Operation completion; unavailable executables and failed producer output keep their native failure codes. A 5,200-byte Gateway fixture checks that native summary truncation cannot shorten the public result.
+
+Minimal@14 proof `tasks.script/20261103T023838Z-minimal.json` passed on `f195719312` in 16.56 seconds (one sample, 19.2 seconds fixture wall time), with a 120-second budget and 30-second queue timeout. Literal arguments arrive unchanged, the real Git index and checkout stay unchanged, and private output is removed. The native suite passes eight cases for the script and analysis workflows, including redaction, nonzero exits, refusal and resume after later cleanup failure. The Gateway passes 21 cases. No production repository or scale was exercised.
+
+The script workflow drops from 19 to 18 steps. Its new chart leaves the pending list and keeps each official SSH argv visible. Production code drops by 13 lines; the new chart accounts for most of the documentation growth. No shipped script or named gap is added.
