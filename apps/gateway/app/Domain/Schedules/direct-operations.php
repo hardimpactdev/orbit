@@ -12,5 +12,5 @@ return [
     // Record-only (R1): the Gateway removes the trigger on serve; the declared workflow never starts.
     'schedule.disable' => ['workflow' => 'operation-schedule-control', 'workflow_inputs' => true, 'terminal_result' => ['job' => 'schedule', 'step' => 'result'], 'projection' => ScheduleControlProjection::class],
     'schedule.run' => ['workflow' => 'task-command-run', 'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^schedule-run-operation-[1-9][0-9]*$']], 'workflow_inputs' => true, 'terminal_result' => ['job' => 'run', 'step' => 'Run the command', 'native' => true], 'projection' => ScheduleControlProjection::class],
-    'schedule.destroy' => ['workflow' => 'operation-schedule-destroy', 'workflow_inputs' => true, 'terminal_result' => ['job' => 'schedule', 'step' => 'result'], 'projection' => ScheduleControlProjection::class],
+    'schedule.destroy' => ['workflow' => 'operation-schedule-destroy', 'workflow_inputs' => true, 'terminal_result' => ['job' => 'schedule', 'step' => 'Check the removal', 'native' => true], 'projection' => ScheduleControlProjection::class],
 ];

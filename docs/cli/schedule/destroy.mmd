@@ -32,6 +32,41 @@ sequenceDiagram
   %%> - there is no Node work, so no run starts (R1)
   %%> Not refused:
   %%> - a running fire no longer blocks destroy; `schedule.run_active` is gone
+  opt retained Node timer copy
+    GW->>SW: Start one run<br/>operation-schedule-destroy
+    opt standalone removal
+      SW->>N: idle
+      %%> What it does:
+      %%> - one bounded SSH argv checks the service state; an active service refuses removal before mutation
+    end
+    SW->>N: stop_timer
+    %%> What it does:
+    %%> - official systemd stops and disables the timer
+    opt Instance cascade
+      SW->>N: stop_service
+      %%> What it does:
+      %%> - official systemd stops the running service; standalone removal skips this step
+    end
+    SW->>N: remove_files
+    %%> What it does:
+    %%> - official file resources remove four managed paths in parallel
+    SW->>N: reload
+    %%> What it does:
+    %%> - one bounded SSH argv reloads systemd after file removal
+    SW->>N: check_files
+    %%> What it does:
+    %%> - official file checks confirm all four paths are absent, in parallel with the timer check
+    SW->>N: check_timer
+    %%> What it does:
+    %%> - official systemd checks the timer is stopped and disabled
+    Note over SW: Check the removal
+    %%> What it does:
+    %%> - native assert requires absent files and a compliant, unloaded timer
+    SW-->>GW: Native completion<br/>removal check passed
+    Note over GW: Delete the timer copy
+    %%> Result:
+    %%> - delete only after success; failure keeps the copy recorded as removing
+  end
   GW->>SW: Remove the trigger<br/>workflow.trigger.remove
   %%> What it does:
   %%> - removes the cron trigger of `schedule-7f3c…` from serve (Node 209); serve starts no new fire

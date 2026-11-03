@@ -226,6 +226,27 @@ it('exposes admitted removal input and deletes the Schedule only on native succe
     Event::assertDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::ScheduleDeleted && $event->id === $this->schedule->id);
 });
 
+it('projects native timer removal once and keeps failed copies recorded', function (string $status): void {
+    $this->operation->update(['kind' => 'schedule.destroy']);
+    $this->schedule->update(['status' => 'removing']);
+    config(['swamp.read_token' => 'native-reader']);
+    $history = ['id' => $this->runId, 'workflowName' => 'operation-schedule-destroy', 'status' => $status,
+        'inputs' => ['operation_id' => $this->operation->id, 'node_id' => $this->node->id, 'kind' => 'schedule.destroy'],
+        'startedAt' => now()->toISOString(), 'completedAt' => now()->toISOString(),
+        'jobs' => [['name' => 'schedule', 'steps' => [
+            ['name' => 'check_timer', 'status' => 'succeeded', 'outputs' => ['status' => 'compliant']],
+            ['name' => 'Check the removal', 'status' => $status],
+        ]]]];
+    $this->socket->reply = static fn (array $message): array => [['type' => 'workflow.history.get', 'id' => $message['id'], 'payload' => ['data' => $history]]];
+    $selector = app(DirectOperation::class)->definition('schedule.destroy')['terminal_result'];
+    app(SwampCommandStep::class)->projectTerminal($this->operation, ['id' => $this->runId, 'status' => $status], $selector);
+    app(SwampCommandStep::class)->projectTerminal($this->operation, ['id' => $this->runId, 'status' => $status], $selector);
+    expect($this->operation->fresh()->status->value)->toBe($status)
+        ->and($this->operation->fresh()->result)->toBe($status === 'succeeded' ? ['ready' => true] : ['error_code' => 'operation.native_failed'])
+        ->and($this->schedule->fresh() === null)->toBe($status === 'succeeded')
+        ->and(array_column($this->socket->sent, 'type'))->toBe(['workflow.history.get']);
+})->with(['succeeded', 'failed']);
+
 it('admits destroy with full public SSH input without invoking the PHP runtime', function (): void {
     config(['operation_executor.worker_node_ids' => [$this->node->id]]);
     app()->instance(ScheduleRuntimeAccountResolver::class, new FakeScheduleRuntimeAccountResolver);
