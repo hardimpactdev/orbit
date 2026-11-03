@@ -45,7 +45,7 @@ return ['node.add' => [
     'workflow' => 'operation-node-remove', 'projection' => NodeRemovalProjection::class,
     'workflow_inputs' => true,
     'terminal_result' => ['job' => 'remove', 'step' => 'Confirm Node removal', 'native' => true],
-], ...(require __DIR__.'/bootstrap-direct-operations.php'), 'node.network_converge' => [
+], 'node.network_converge' => [
     'workflow' => 'operation-node-network-converge',
     'projection' => NodeNetworkProjection::class,
     'workflow_inputs' => true,
