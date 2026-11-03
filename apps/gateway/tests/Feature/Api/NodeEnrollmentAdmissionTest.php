@@ -75,6 +75,25 @@ function nativeMacEnrollment(object $test): Operation
     return $operation;
 }
 
+it('admits enrollment through the public endpoint and replays its Operation receipt', function (): void {
+    $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.209'])
+        ->withHeader('Idempotency-Key', 'native-node-enrollment');
+    $body = ['name' => 'http-native-mac', 'public_ssh_host' => '192.0.2.42',
+        'platform' => 'macos', 'user' => 'mac', 'orbit_user' => 'mac',
+        'wireguard_ip' => '10.44.0.42', 'host_key_fingerprint' => $this->fingerprint];
+
+    $response = $this->postJson('/api/v1/nodes', $body)->assertAccepted()
+        ->assertJsonPath('data.kind', 'node.add')
+        ->assertJsonPath('data.target_type', 'node');
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+
+    expect($operation->input['intent']['platform'])->toBe('macos')
+        ->and(Node::query()->findOrFail($operation->target_id)->status->value)->toBe('provisioning');
+    $this->postJson('/api/v1/nodes', $body)->assertAccepted()
+        ->assertJsonPath('data.id', $operation->id);
+    expect(Operation::query()->where('kind', 'node.add')->count())->toBe(1);
+});
+
 it('admits one Mac run with vault names and leaves its observed identity unset until the native result', function (): void {
     $operation = nativeMacEnrollment($this);
     $input = app(DirectOperation::class)->workflowInputs($operation);
