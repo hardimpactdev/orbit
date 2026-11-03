@@ -82,7 +82,7 @@ final readonly class SignDirectCertificatesAction
             throw new ResourceOperationException('operation.finished', 'This intent no longer permits certificate signing.', 409);
         }
         $paths = match ($operation->kind) {
-            'route.create', 'route.destroy', 'route.withdraw', 'instance.clone' => $restoring
+            'route.create', 'route.destroy', 'instance.clone' => $restoring
                 ? ['route_lifecycle.route_mutations.restore.certificates']
                 : ['route_lifecycle.preparation.certificates', 'route_lifecycle.route_mutations.forward.certificates'],
             'instance.register', 'instance.create' => $restoring ? [] : ['route_lifecycle.preparation.certificates', 'route_lifecycle.route_mutations.forward.certificates'],
@@ -91,7 +91,7 @@ final readonly class SignDirectCertificatesAction
             // route.update and route.target_set never restore; they sign only their plan's leaves.
             'route.update' => $restoring ? [] : ['route_update.plan.leaves'],
             'route.target_set' => $restoring ? [] : ['route_target.plan.leaves'],
-            'route.converge', 'cluster.router_set', 'cluster.router_unset' => ['certificates'],
+            'cluster.router_set', 'cluster.router_unset' => ['certificates'],
             'analytics.enable', 'analytics.disable' => ['tracking.certificates'],
             'metrics.enable' => ['certificates.leaves'],
             'node.role_add', 'node.role_converge' => ['_role.certificates.leaves'],
