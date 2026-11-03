@@ -39,7 +39,7 @@ Disable withdraws `metrics.orbit` first, so nobody reaches Grafana while it goes
 
 The role runs its containers and units itself. They create no `Process` records, and their packages create no `Tool` records.
 
-Native Node role convergence checks the container image, mounts, port mappings and restart policy through official `docker_container` checks. Matching containers stay running. Grafana file changes cause replacement; Prometheus configuration is copied onto its existing bind-mounted inode and loaded with SIGHUP. Observed container state stays in the execution vault. The pinned behavior cannot accept the public environment list in this workflow; `swamp-evaluation.md` records that check limitation.
+Native Node role convergence checks the container image, mounts, port mappings and restart policy through official `docker_container` checks. Matching containers stay running. Grafana file changes cause replacement; Prometheus configuration is copied onto its existing bind-mounted inode and loaded with SIGHUP. Observed container state stays in the execution vault. Exporter firewall rules run sequentially within each Node to bound dispatch memory; different Nodes still run in parallel. The pinned behavior cannot accept the public environment list in this workflow; `swamp-evaluation.md` records that check limitation.
 
 Native `node:role:add <node> metrics` uses the same public container specification. It pulls images with cfgmgmt, starts each container with one Docker argv, and checks it with `docker_container check`. The cfgmgmt file behavior reads Grafana's password from the vault and writes it at mode `0600`. The host's `orbit-grafana` system account uses the container's UID and GID, `472`.
 

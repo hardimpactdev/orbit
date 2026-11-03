@@ -228,6 +228,18 @@ class MetricsExporterNative(NativeTestCase):
     def steps(self, state):
         return [c["step"] for c in state["calls"]]
 
+    def test_firewall_rules_on_one_node_do_not_overlap_dispatches(self):
+        started = json.loads(self.cli(
+            "workflow", "run", "metrics-exporter-allows", "--input", json.dumps({
+                "operation_id": 12, "node_id": 9, "kind": "metrics.exporter_enable", "intent": self.intent,
+            })).stdout)
+        history = json.loads(self.cli("workflow", "history", "get", started["id"]).stdout)
+        rules = sorted((step for job in history["jobs"] for step in job["steps"]
+                        if step["name"].startswith("rule-")), key=lambda step: step["startedAt"])
+        self.assertEqual(len(rules), 2)
+        self.assertLessEqual(rules[0]["completedAt"], rules[1]["startedAt"],
+                             "rule dispatches on one Node must bound worker memory")
+
     def test_enable_installs_allows_checks_then_reloads_without_restart(self):
         history, state = self.run_exporter()
         self.assertEqual(history["status"], "succeeded")

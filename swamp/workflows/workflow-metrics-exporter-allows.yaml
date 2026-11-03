@@ -13,6 +13,7 @@ jobs:
 - name: allows
   steps:
   - name: rule
+    concurrency: 1
     labels: {role: swamp}
     writes: true
     forEach: {item: rule, in: '${{ inputs.intent.service.rules }}'}
