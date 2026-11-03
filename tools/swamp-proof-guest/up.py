@@ -132,11 +132,12 @@ def prepare(node, network):
          'sh', bootstrap])
     # Unmanaged SSH allowance and an active backend: the state an enrolled Node has.
     run(['incus', 'exec', node['key'], '--', 'sh', '-c', 'ufw allow 22/tcp comment proof-ssh && ufw --force enable'])
-    # The fleet's member trust: every Node takes any traffic from the private network, so 209 reaches Node ports.
-    # The proof network stands in for the orbit WireGuard interface; the guest NIC name varies, so no interface (version 9).
+    # The fleet's member trust, exactly as the Gateway's firewall catalog renders it, so doctor finds no drift (version 15).
+    run(['incus', 'exec', node['key'], '--', 'ufw', 'allow', 'in', 'on', 'orbit', 'to', node['address'], 'comment', 'orbit:wireguard-members'])
+    # The proof network has no `orbit` interface (the guest NIC name varies), so an unmanaged rule lets 209 reach Node ports.
     run(['incus', 'exec', node['key'], '--', 'ufw', 'allow', 'from',
          str(ipaddress.ip_network(f'{network["gateway"]}/{network["prefix"]}', strict=False)),
-         'to', node['address'], 'comment', 'orbit:wireguard-members'])
+         'to', node['address'], 'comment', 'proof-network'])
     if 'app-dev' in node.get('roles', []):
         # The web runtime app-dev role convergence leaves: an Orbit-managed Caddyfile, the hibernation log
         # directory its sites name, and active PHP-FPM masters for the shared pools (version 7, for Route kinds).
