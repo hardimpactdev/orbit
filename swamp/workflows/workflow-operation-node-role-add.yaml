@@ -1182,6 +1182,7 @@ jobs:
     role: swamp
   steps:
   - name: Check exporter endpoints
+    concurrency: 1
     labels:
       role: swamp
     forEach:

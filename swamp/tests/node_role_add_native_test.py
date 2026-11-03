@@ -153,3 +153,25 @@ if 'install' in sys.argv:
         statuses = {step['name']: step['status'] for job in history['jobs'] for step in job['steps']}
         self.assertEqual(statuses['Check the role'], 'succeeded')
         self.assertNotIn('Install the Node agent', statuses)
+
+    def test_exporter_checks_from_one_metrics_node_do_not_overlap(self):
+        path = self.repo / 'workflows/workflow-operation-node-role-add.yaml'
+        workflow = yaml.safe_load(path.read_text())
+        job = next(job for job in workflow['jobs']
+                   if any(step['name'] == 'Check exporter endpoints' for step in job['steps']))
+        job.pop('dependsOn', None)
+        workflow['jobs'] = [job]
+        path.write_text(yaml.safe_dump(workflow, sort_keys=False))
+        curl = self.repo / 'tools/curl'
+        curl.write_text('#!' + sys.executable + '\nimport time; time.sleep(0.1)\n')
+        curl.chmod(0o700)
+        self.intent['prometheus'] = {'checks': [
+            {'node_id': 701, 'index': index, 'ssh': self.intent['ssh'], 'url': 'http://fixture/' + str(index)}
+            for index in range(2)
+        ]}
+        history = self.run_role()
+        checks = sorted((step for job in history['jobs'] for step in job['steps']),
+                        key=lambda step: step['startedAt'])
+        self.assertEqual(len(checks), 2)
+        self.assertLessEqual(checks[0]['completedAt'], checks[1]['startedAt'],
+                             'health checks from one Metrics Node must bound worker memory')
