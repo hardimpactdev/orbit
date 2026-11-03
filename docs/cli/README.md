@@ -49,6 +49,10 @@ These rules come from the October and November 2026 decisions and from Nick's ch
 
 **Leftovers are removed.** A kind for machinery that Orbit has removed gets no chart, for example per-Node workers, one-off migrations, or duplicated work. Report them as "remove", with the reason.
 
+**The main path uses only the required parameters.** Draw the command first as it runs with its required arguments alone; that is the happy path. Each optional parameter gets its own `opt --flag` block, labelled with the flag, holding only the steps that flag adds. The main call line shows no optional flags. Never use an `alt no --flag … else --flag` branch: it makes an opt-in path look like the default. Example: `instance:register --project=7` checks and records; `opt --setup` runs the setup steps, `opt --domain` creates the Route. The Swamp workflow follows the same shape: a step that exists only for an optional input is conditional on it.
+
+**A chart is caller-agnostic.** The caller is the CLI, MCP or API. A specific client that calls the command, such as Conn, is not drawn in its chart; that client's own steps belong in its own flow.
+
 **Prefer the gentle action.** Reload over restart. Wait briefly for a busy lock within the time budget. Clean up harmless leftovers on a best-effort basis.
 
 ### Decided by Nick
