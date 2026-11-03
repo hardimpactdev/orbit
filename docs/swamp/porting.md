@@ -175,7 +175,7 @@ Put each test where its project's CI runs it.
 
 Native tests use `swamp/tests/_support/native_harness.ts`. `nativeRepo()` gives a disposable repo that runs the pinned runtime, and `fakeBinary()` writes a fake tool. A test that handles a secret sets `repo.secrets`, so the harness scans native history for it. Python native tests are being ported to Deno; add no new ones.
 
-A test that starts real containers runs only where `ORBIT_DISPOSABLE_DOCKER=1`, inside a proof VM, and never on a shared host such as beast. In Python it calls `require_disposable_docker` first. It removes its containers with `docker rm --force --volumes` (#2358) in `addCleanup` or `finally`. That cleanup still runs when `timeout` sends SIGTERM.
+A test that starts real containers sets `ignore: Deno.env.get("ORBIT_DISPOSABLE_DOCKER") !== "1"`, so it runs only inside a proof VM and never on a shared host such as beast. It removes its containers with `docker rm --force --volumes` (#2358) in a `finally`. A killed run can skip that `finally`, which is why the test runs only on a host that is destroyed afterwards.
 
 ## Check all seven boundary decisions
 
