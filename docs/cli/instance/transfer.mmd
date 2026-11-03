@@ -17,9 +17,9 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant S as Node 12<br/>source · over ssh
   participant D as Node 15<br/>destination · ssh
-  CLI->>GW: instance:transfer 42 15<br/>--sqlite-source-path=… --force
+  CLI->>GW: instance:transfer 42 15
   %%> Command:
-  %%> - `orbit instance:transfer 42 15 --sqlite-source-path=/fast/apps/acme/feature/database/database.sqlite --force`
+  %%> - `orbit instance:transfer 42 15`
   %%> - syntax: `<instance> <node> [--name=NAME] [--sqlite-source-path=PATH] [--force] [--idempotency-key=KEY] [--json]`
   %%> What it does:
   %%> - moves development Instance 42 from Node 12 to Node 15; the Instance id and Project stay
@@ -28,7 +28,25 @@ sequenceDiagram
   %%> - without a terminal, or with `--json`, `--force` is required
   %%> Options:
   %%> - `--name`: another Instance name on Node 15
-  %%> - `--sqlite-source-path`: also copy this SQLite file; without it, no database file moves
+  %%> - `--sqlite-source-path`: currently refused with `operation.kind_unavailable`; no database file moves
+  Note over CLI: Confirm the downtime
+  %%> What it does:
+  %%> - asks for default-No consent naming the source, destination and old-placement deletion
+  opt --force
+    Note over CLI: Skip the downtime prompt
+    %%> What it changes:
+    %%> - supplies consent for downtime and old-placement deletion without the default-No prompt
+  end
+  opt --name
+    Note over GW: Set destination name
+    %%> What it changes:
+    %%> - uses the supplied name for the destination path and generated domain instead of keeping the Instance name
+  end
+  opt --sqlite-source-path
+    GW--xCLI: SQLite copy unavailable<br/>operation.kind_unavailable
+    %%> Result:
+    %%> - refuses before reservation or any run; the steps below do not run
+  end
   Note over GW: Preflight, render .env<br/>Instance 42 · task #5133
   %%> Requirements:
   %%> - your Node has access grants to Node 12 and Node 15

@@ -14,9 +14,9 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as app-dev Node<br/>reached over ssh
-  CLI->>GW: instance:destroy 42<br/>Instance id · --yes --force
+  CLI->>GW: instance:destroy 42
   %%> Command:
-  %%> - `orbit instance:destroy 42 --yes`
+  %%> - `orbit instance:destroy 42`
   %%> - syntax: `<instance> [--yes] [--force] [--idempotency-key=KEY] [--json]`
   %%> Input:
   %%> - the Instance's id, as `instance:list` shows it
@@ -26,6 +26,21 @@ sequenceDiagram
   %%> With `--force`:
   %%> - also deletes dirty or unpublished source, and a checkout with its linked worktrees
   %%> - it never waives the source identity checks, and it is not consent
+  Note over CLI: Confirm removal
+  %%> What it does:
+  %%> - asks for default-No consent before sending the removal request
+  opt --yes
+    Note over CLI: Skip the removal prompt
+    %%> What it changes:
+    %%> - supplies consent without the default-No prompt; required for noninteractive or JSON calls
+  end
+  opt --force
+    Note over GW: Skip pushed-source checks
+    %%> What it changes:
+    %%> - skips token minting and the git credential and pushed-work steps below
+    %%> - permits dirty or unpublished source and linked worktrees, after source identity checks
+    %%> - supplies no removal consent; the prompt or `--yes` is still required
+  end
   Note over GW: Validate, capture the set<br/>Instance 42 · task #5132
   %%> Requirements:
   %%> - your Node has an access grant to Node 12, which runs Instance 42
@@ -46,7 +61,7 @@ sequenceDiagram
   %%> - no new fire starts against a checkout that is being removed
   %%> Running fire:
   %%> - a fire that already started runs to its end, within its own timeout, and is still recorded
-  opt not forced, private repo
+  opt private repository
     GW->>SW: Push the token<br/>vault: github-token
     %%> Why:
     %%> - a normal removal checks that the work is pushed, which needs a fetch from origin
@@ -68,25 +83,23 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  opt not forced
-    SW->>N: Write the git credential<br/>@swamp/cfgmgmt/file · 0600
-    %%> What it does:
-    %%> - writes the vault token as a 0600 credential file, so the token never enters argv
-    SW->>N: Check work is pushed<br/>@swamp/ssh exec · git fetch
-    %%> What it does:
-    %%> - for each checkout, fetches origin with that credential file, then compares with `git status --porcelain` and `git branch -r --contains HEAD`
-    %%> Refuses:
-    %%> - dirty source
-    %%> - a `HEAD` that no origin branch or tag contains
-    %%> - linked worktrees on the checkout
-    %%> Result of a refusal:
-    %%> - the run stops here and nothing changes
-    %%> Why first:
-    %%> - a fact that can change after admission, and every later step depends on it
-    SW->>N: Remove the git credential<br/>@swamp/cfgmgmt/file absent
-    %%> When:
-    %%> - always after the check, also when it refused
-  end
+  SW->>N: Write the git credential<br/>@swamp/cfgmgmt/file · 0600
+  %%> What it does:
+  %%> - writes the vault token as a 0600 credential file, so the token never enters argv
+  SW->>N: Check work is pushed<br/>@swamp/ssh exec · git fetch
+  %%> What it does:
+  %%> - for each checkout, fetches origin with that credential file, then compares with `git status --porcelain` and `git branch -r --contains HEAD`
+  %%> Refuses:
+  %%> - dirty source
+  %%> - a `HEAD` that no origin branch or tag contains
+  %%> - linked worktrees on the checkout
+  %%> Result of a refusal:
+  %%> - the run stops here and nothing changes
+  %%> Why first:
+  %%> - a fact that can change after admission, and every later step depends on it
+  SW->>N: Remove the git credential<br/>@swamp/cfgmgmt/file absent
+  %%> When:
+  %%> - always after the check, also when it refused
   SW->>N: Withdraw the Route<br/>@swamp/cfgmgmt/file absent
   %%> What it does:
   %%> - removes the Caddy site of Instance 42, its PHP pool and its certificate, then reloads Caddy; no restart

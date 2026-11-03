@@ -15,26 +15,33 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant C as Node 12<br/>candidate · ssh
   participant N as Node 14<br/>app-prod · ssh
-  CLI->>GW: instance:clone 42 14 shop<br/>--preview-name=shop.com …
+  CLI->>GW: instance:clone 42 14 shop
   %%> Command:
-  %%> - `orbit instance:clone 42 14 shop --preview-name=shop.com --sqlite-source-path=/srv/orbit/apps/acme/default/database/database.sqlite`
+  %%> - `orbit instance:clone 42 14 shop --preview-name=shop.com`
   %%> - syntax: `<candidate> <node> <name> --preview-name=NAME [--branch=BRANCH] [--sqlite-source-path=PATH] [--idempotency-key=KEY]`
   %%> What it does:
   %%> - clones development Instance 42 on Node 12 into a new production Instance `shop` on Node 14
+  %%> Required input:
+  %%> - `--preview-name=NAME` is mandatory even though the signature declares an option
   %%> Options:
   %%> - `--preview-name`: combined with Node 14's TLD, such as `shop.com.prod.orbit`
   %%> - `--branch`: another branch; the default is the candidate's branch
   %%> - `--sqlite-source-path`: seed the production SQLite file from this file on the candidate
+  opt --branch
+    Note over GW: Select another branch<br/>override candidate branch
+    %%> What it changes:
+    %%> - validates and fetches the supplied repository branch instead of inheriting the candidate branch
+  end
   Note over GW: Validate, reserve 43<br/>render .env · task #5152
   %%> Requirements:
   %%> - your Node has access grants to Node 12 and Node 14
   %%> - Node 14 is active, has the `app-prod` role and a TLD
-  %%> - Instance 42 is active with a recorded source; the branch exists in the repository
+  %%> - Instance 42 is active with a recorded source and no attached server database; the branch exists in the repository
   %%> - Project 7 has no production Instance on Node 14 yet, and the preview domain is free
   %%> Plans:
   %%> - the account `orbit-app-7` and its home `/home/orbit-app-7`
   %%> - the Project's production Process and Schedule definitions
-  %%> - the preview Route, and a database clone for each attached database or the chosen SQLite file
+  %%> - the preview Route for a web Project; no database is copied by default
   %%> Renders .env:
   %%> - from the stored values of Instance 42, without `DB_*` and WebSocket credentials
   %%> - with the new database keys, such as `DB_DATABASE=/home/orbit-app-7/database.sqlite`
@@ -79,17 +86,15 @@ sequenceDiagram
   %%> - creates the `orbit-env` group when the Node lacks it, and gives it traverse on the home with one `setfacl` argv, as Caddy has on a release
   %%> - writes the rendered `.env` from `vault.get env-5152` with `@swamp/cfgmgmt/file`, mode `0640`, group `orbit-env`, so the Node agent can report its key names
   %%> - installs and checks the pinned Vite+ runtime; a Project without one skips this
-  opt SQLite chosen or a database attached
+  opt --sqlite-source-path
     SW->>C: Snapshot the database<br/>SQLite export · dump
     %%> What it does:
     %%> - SQLite: makes a consistent copy of the chosen file on Node 12
-    %%> - MySQL or PostgreSQL: dumps the candidate's database on its Database server
     %%> Why here:
     %%> - this was the kind `database.clone`; it is now a step of the clone
     SW->>N: Install the database<br/>home/database.sqlite · restore
     %%> What it does:
     %%> - SQLite: installs the copy as `/home/orbit-app-7/database.sqlite`
-    %%> - MySQL or PostgreSQL: restores the dump into the new database and user on the Database server
   end
   SW->>N: Add Processes, Schedules<br/>@swamp/cfgmgmt/systemd · forEach
   %%> What it does:
@@ -97,27 +102,29 @@ sequenceDiagram
   %%> - installs the per-minute Laravel scheduler as a timer on Node 14
   %%> Other Schedules:
   %%> - become native Swamp schedules; the Gateway publishes them after success
-  SW->>N: Make a CSR on the Node<br/>openssl req · key stays on Node
-  %%> What it does:
-  %%> - makes a key and a certificate request for `shop.com.prod.orbit` on Node 14
-  SW->>GW: Sign the CSR<br/>operation:direct:certificate-sign
-  %%> Why:
-  %%> - the one allowed step→Gateway call; the Orbit CA key stays in the Gateway
-  GW-->>SW: Signed certificate<br/>Orbit CA key stays in Gateway
-  %%> Returns:
-  %%> - the certificate for the preview domain
-  SW->>N: Publish preview Route<br/>@swamp/cfgmgmt/file · reload
-  %%> What it does:
-  %%> - installs the certificate and adds the Caddy site for `shop.com.prod.orbit` on Node 14
-  %%> - same-Node work: Caddy on Node 14 serves the Instance home
-  %%> - reloads Caddy; other sites keep serving
-  %%> No DNS step:
-  %%> - `shop.com.prod.orbit` is inside Node 14's TLD, and private DNS answers the whole TLD
+  opt web Project needs a preview Route
+    SW->>N: Make a CSR on the Node<br/>openssl req · key stays on Node
+    %%> What it does:
+    %%> - makes a key and a certificate request for `shop.com.prod.orbit` on Node 14
+    SW->>GW: Sign the CSR<br/>operation:direct:certificate-sign
+    %%> Why:
+    %%> - the one allowed step→Gateway call; the Orbit CA key stays in the Gateway
+    GW-->>SW: Signed certificate<br/>Orbit CA key stays in Gateway
+    %%> Returns:
+    %%> - the certificate for the preview domain
+    SW->>N: Publish preview Route<br/>@swamp/cfgmgmt/file · reload
+    %%> What it does:
+    %%> - installs the certificate and adds the Caddy site for `shop.com.prod.orbit` on Node 14
+    %%> - same-Node work: Caddy on Node 14 serves the Instance home
+    %%> - reloads Caddy; other sites keep serving
+    %%> No DNS step:
+    %%> - `shop.com.prod.orbit` is inside Node 14's TLD, and private DNS answers the whole TLD
+  end
   SW->>N: Check the clone<br/>@swamp/cfgmgmt check · curl
   %%> What it does:
   %%> - checks the checked-out commit and the `.env` file
   %%> - probes the preview site over TLS
-  opt a database snapshot was made
+  opt --sqlite-source-path
     SW->>C: Remove the snapshot<br/>always runs · best effort
     %%> What it does:
     %%> - removes the snapshot and transfer files on Node 12, 209 and Node 14
@@ -142,7 +149,7 @@ sequenceDiagram
     Note over GW: Record result<br/>Instance 43 active · no release
     %%> Result:
     %%> - Instance 43 active, with its preview Route, Processes and Schedules
-    %%> - the database connection is registered and attached under `DB`
+    %%> - with `--sqlite-source-path`, the SQLite copy is registered and attached under `DB`
     %%> - task #5152 succeeds
     %%> Next:
     %%> - review the warnings with `env:update`, add deploy steps, then `instance:deploy 43`

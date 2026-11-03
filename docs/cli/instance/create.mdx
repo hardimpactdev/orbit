@@ -22,6 +22,8 @@ orbit instance:create <project> <node> <name> [--idempotency-key=KEY] [options]
 | `--branch=BRANCH` | see [branch selection](/domains/applications#create-a-development-instance) | Explicit source branch. |
 | `--database-server=SLUG` | none | Create the Instance's database on this [Database server](/reference/database-servers) before the setup steps run. Only for an Instance that this create makes; an Instance that finished setup returns `instance.database_server_existing`. See [database on a server](/domains/applications#database-on-a-server). Needs access to the Gateway too. |
 
+The current native create accepts non-web Projects without Route or database provisioning. It returns `operation.kind_unavailable` for `--domain`, `--database-server`, or a web-serving Project before starting a run. It writes no `.env.testing` on this path; that file belongs to owned MySQL or PostgreSQL database provisioning.
+
 Development placement and branch selection follow the requested name.
 
 | Creation input | Managed placement | Selected branch |

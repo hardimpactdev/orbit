@@ -13,7 +13,7 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Instance Node<br/>Node 12 over ssh
-  CLI->>GW: instance:deploy 42<br/>--commit=SHA
+  CLI->>GW: instance:deploy 42
   %%> Command:
   %%> - `orbit instance:deploy 42`
   %%> - syntax: `<instance> [--commit=SHA] [--idempotency-key=KEY] [--json]`
@@ -66,9 +66,11 @@ sequenceDiagram
     SW->>N: Remove fetch credential<br/>ssh exec argv
     SW->>N: Check tracked changes<br/>ssh exec argv
     SW->>N: Resolve the commit<br/>ssh exec argv
-    SW->>N: Count commits after it<br/>ssh exec argv
-    SW->>N: Read the branch ancestor<br/>ssh exec argv
-    Note over SW: Check it is on the branch<br/>native assert
+    opt --commit
+      SW->>N: Count commits after it<br/>ssh exec argv
+      SW->>N: Read the branch ancestor<br/>ssh exec argv
+      Note over SW: Check it is on the branch<br/>native assert
+    end
     SW->>N: Read the local branch<br/>ssh exec argv
     SW->>N: Check the local branch<br/>ssh exec argv
     SW->>N: List untracked entries<br/>ssh exec argv
@@ -83,8 +85,10 @@ sequenceDiagram
     SW->>N: Prepare the release<br/>ssh exec argv
     SW->>N: Remove release credential<br/>cfgmgmt/file apply
     SW->>N: Read the release commit<br/>ssh exec argv
-    SW->>N: Read first-parent chain<br/>ssh exec argv
-    Note over SW: Check the branch commit<br/>native assert
+    opt --commit
+      SW->>N: Read first-parent chain<br/>ssh exec argv
+      Note over SW: Check the branch commit<br/>native assert
+    end
     SW->>N: Prepare shared paths<br/>ssh exec argv
     %%> What it does:
     %%> - seeds only empty persistent directories and links the admitted shared paths after the branch check
