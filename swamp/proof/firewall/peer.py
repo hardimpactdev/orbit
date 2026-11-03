@@ -21,9 +21,11 @@ def reaches(source, port):
 
 
 subprocess.run(['ip', 'address', 'replace', '10.231.0.3/24', 'dev', 'oeproof'], check=True, timeout=30)
+removed = sys.argv[1:2] == ['--removed']
+arguments = sys.argv[2:] if removed else sys.argv[1:]
 facts = {'peer reaches 7298 through WireGuard trust': reaches('10.231.0.3', 7298),
-         'peer is denied 7297': not reaches('10.231.0.3', 7297),
+         'peer access after removal' if removed else 'peer is denied 7297': reaches('10.231.0.3', 7297) == removed,
          'allowed source reaches 7297': reaches('10.231.0.1', 7297)}
 print(facts)
 assert all(facts.values()), facts
-sys.exit(subprocess.run([sys.executable, '-I', os.path.join(os.path.dirname(__file__), 'check.py'), *sys.argv[1:]], check=False).returncode)
+sys.exit(subprocess.run([sys.executable, '-I', os.path.join(os.path.dirname(__file__), 'check.py'), *arguments], check=False).returncode)
