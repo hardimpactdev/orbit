@@ -1,0 +1,47 @@
+{
+  "kind": "schedule.create",
+  "workflow": "operation-schedule-create",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 180,
+  "queue_timeout_seconds": 30,
+  "before_gateway": [
+    [
+      "sh",
+      "-c",
+      "cd apps/gateway && php ../../swamp/proof/schedule.create/prepare-timer.php \"$1\" \"$2\"",
+      "sh",
+      "${node.target}",
+      "${proof.run}"
+    ]
+  ],
+  "request": {
+    "method": "GET",
+    "path": "operations/${secret.operation}",
+    "body": {}
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "files",
+      "job": "schedule",
+      "step": "files-service",
+      "budget_seconds": 30
+    },
+    {
+      "name": "timer",
+      "job": "schedule",
+      "step": "timer",
+      "budget_seconds": 30
+    },
+    {
+      "name": "check",
+      "job": "schedule",
+      "step": "Check the installation",
+      "budget_seconds": 10
+    }
+  ],
+  "parity": "swamp/proof/schedule.create/parity-timer.py"
+}

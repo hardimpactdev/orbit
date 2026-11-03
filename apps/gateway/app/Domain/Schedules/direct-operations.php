@@ -7,7 +7,7 @@ use App\Domain\Schedules\ScheduleInstanceOperation;
 
 return [
     'schedule.install_instance_definitions' => ['workflow' => 'operation-schedule-install-instance-definitions', 'workflow_inputs' => true, 'terminal_result' => ['job' => 'instance', 'step' => 'Check the members', 'native' => true], 'projection' => ScheduleInstanceOperation::class],
-    'schedule.create' => ['workflow' => 'operation-schedule-create', 'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^schedule-command-[0-9a-f-]{36}$']], 'workflow_inputs' => true, 'terminal_result' => ['job' => 'schedule', 'step' => 'result'], 'projection' => ScheduleControlProjection::class],
+    'schedule.create' => ['workflow' => 'operation-schedule-create', 'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^schedule-command-[0-9a-f-]{36}$']], 'workflow_inputs' => true, 'terminal_result' => ['job' => 'schedule', 'step' => 'Check the installation', 'native' => true], 'projection' => ScheduleControlProjection::class],
     'schedule.enable' => ['workflow' => 'operation-schedule-control', 'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^schedule-command-[0-9a-f-]{36}$']], 'workflow_inputs' => true, 'terminal_result' => ['job' => 'schedule', 'step' => 'result'], 'projection' => ScheduleControlProjection::class],
     // Record-only (R1): the Gateway removes the trigger on serve; the declared workflow never starts.
     'schedule.disable' => ['workflow' => 'operation-schedule-control', 'workflow_inputs' => true, 'terminal_result' => ['job' => 'schedule', 'step' => 'result'], 'projection' => ScheduleControlProjection::class],

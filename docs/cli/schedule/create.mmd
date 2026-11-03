@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 native Swamp schedules, one Swamp workflow per Schedule (Nick 2026-11-02), nothing installed on Nodes; R1-R3.
+  %% Target design: ADR 0244 native Swamp schedules, one Swamp workflow per Schedule (Nick 2026-11-02), retained production Node timers use official resources; R1-R3 and rule 14.
   %% status: migrated
   %% command: schedule:create
   %% kind: schedule.create
@@ -44,78 +44,111 @@ sequenceDiagram
   %%> Exception:
   %%> - production's per-minute schedulers (`laravel-scheduler`, `powersync-health`) keep their systemd timer on the Node until the serve load and outage test passes (ADR 0244)
   %%> - all other Node and Instance Schedules are native Swamp schedules on 209
-  GW->>SW: Store the command<br/>vault: schedule-command-7f3c…
-  %%> What it does:
-  %%> - pushes the command line to a Swamp vault key on 209 (R3)
-  %%> Why:
-  %%> - the command is operator input; it never goes into workflow files, run inputs or step output
-  GW->>SW: Create the workflow<br/>workflow.create schedule-7f3c…
-  %%> What it does:
-  %%> - creates one small Swamp workflow for this Schedule on serve (Node 209), then writes its content with `workflow.edit`
-  %%> - its one step calls the shared `task-command-run` as a nested workflow
-  %%> - nothing is installed on Node 12; there is no Node work, so no run starts (R1)
-  %%> Fixed inside:
-  %%> - the full intent: Schedule 7f3c…, Node 12's address and SSH host keys, the user, the working directory, the shell and the timeout
-  %%> - the command's vault key name, never the command itself
-  %%> Stored:
-  %%> - in serve's `workflows/` directory beside the checked-in workflows; a release load keeps it
-  %%> - the Gateway's Schedule record stays the source; an identical create writes it again
-  opt not created disabled
-    GW->>SW: Set its trigger<br/>workflow.trigger.set
+  alt a retained production timer copy
+    GW->>SW: Start timer installation<br/>operation-schedule-create
+    %%> Inputs:
+    %%> - the captured public Schedule intent for the Node timer exception
+    Note over SW: units
     %%> What it does:
-    %%> - sets the cron trigger of `schedule-7f3c…` on serve
-    %%> When:
-    %%> - skipped with `--no-start`; `schedule:enable` sets it later
-  end
-  alt Swamp confirms
-    SW-->>GW: workflow and trigger set<br/>next fire 03:00
-    %%> Returns:
-    %%> - the workflow exists and its trigger is active, with its next fire time
-    GW-->>CLI: Schedule created<br/>active · next fire 03:00
-    %%> Result:
-    %%> - Schedule 7f3c… becomes active, only after Swamp confirms
-    %%> - with `--no-start`: active and disabled, with no trigger
-    %%> - task #5140 is recorded as succeeded at once (R1)
-    %%> What you get:
-    %%> - the Schedule and its next fire, at once; there is nothing to follow
-  else Swamp refuses or is down
-    SW--xGW: no confirmation<br/>refused or unreachable
-    %%> When:
-    %%> - Swamp refuses the calendar, or serve on 209 does not answer
-    Note over GW: Mark the Schedule failed<br/>rerun the same create
-    %%> Result:
-    %%> - Schedule 7f3c… stays recorded, marked failed, with its error code
-    %%> - the vault key and a created workflow without a trigger may stay; they start nothing
-    %%> Retry:
-    %%> - run the same command again; an identical create writes the workflow and its trigger again
-    GW--xCLI: create failed<br/>schedule.calendar_invalid or 503
-    %%> Returns:
-    %%> - `schedule.calendar_invalid` (422) for a refused calendar
-    %%> - `swamp.schedule_publish_unavailable` (503) when serve does not answer
-  end
-  loop each calendar fire
-    Note over SW: Start a root run<br/>schedule-7f3c…
+    %%> - render the public service and timer units without command bytes
+    SW->>N: files
     %%> What it does:
-    %%> - serve fires the trigger and starts one root run of `schedule-7f3c…` on 209
-    %%> - its step runs `task-command-run` with the fixed intent, within the Schedule's timeout
-    %%> Timing:
-    %%> - serve runs up to 4 scheduled runs at once; a fire can start late when all are busy
-    %%> - a Schedule never overlaps itself; a fire due while the last one runs waits
-    SW->>N: Run the command<br/>@swamp/ssh, as the Schedule's user
-    %%> How:
-    %%> - checks the user and the working directory on Node 12
-    %%> - reads the command with `vault.get` and sends it on stdin
-    %%> Runs as:
-    %%> - the Schedule's user, in its working directory, with its shell
-    N-->>SW: exit code, output
-    %%> Returns:
-    %%> - the exit code; the output stays in the Swamp step
-    SW-->>GW: Run started, finished<br/>commit feed
-    %%> How the Gateway learns it:
-    %%> - its shared run reader sees the root run start and end; Swamp never calls the Gateway
-    Note over GW: Record the fire<br/>task #5141 · trigger: schedule
+    %%> - apply both unit files through official file resources
+    SW->>N: reload
+    %%> What it does:
+    %%> - reload systemd after the unit files are written
+    SW->>N: timer
+    %%> What it does:
+    %%> - apply the captured enabled and running state through official systemd
+    SW->>N: remove_obsolete
+    %%> What it does:
+    %%> - remove the obsolete script and completion files through official file resources
+    SW->>N: check_files
+    %%> What it does:
+    %%> - check both unit files and the absence of the two obsolete files
+    SW->>N: check_timer
+    %%> What it does:
+    %%> - check the captured timer state through official systemd
+    Note over SW: Check the installation
+    %%> What it does:
+    %%> - native assert requires every resource check to be compliant
+    SW-->>GW: Native completion<br/>resource checks passed
     %%> Result:
-    %%> - each fire becomes a task, with trigger `schedule`, recorded when it starts
-    %%> - when it ends, the task gets the nested result, such as `schedule.target_unavailable` or `schedule.run_failed`
-    %%> - `last_run_at` and `last_run_status` of Schedule 7f3c… are set when it ends
+    %%> - the Gateway records readiness from the same terminal history read
+  else a native cron Schedule
+    GW->>SW: Store the command<br/>vault: schedule-command-7f3c…
+    %%> What it does:
+    %%> - pushes the command line to a Swamp vault key on 209 (R3)
+    %%> Why:
+    %%> - the command is operator input; it never goes into workflow files, run inputs or step output
+    GW->>SW: Create the workflow<br/>workflow.create schedule-7f3c…
+    %%> What it does:
+    %%> - creates one small Swamp workflow for this Schedule on serve (Node 209), then writes its content with `workflow.edit`
+    %%> - its one step calls the shared `task-command-run` as a nested workflow
+    %%> - nothing is installed on Node 12; there is no Node work, so no run starts (R1)
+    %%> Fixed inside:
+    %%> - the full intent: Schedule 7f3c…, Node 12's address and SSH host keys, the user, the working directory, the shell and the timeout
+    %%> - the command's vault key name, never the command itself
+    %%> Stored:
+    %%> - in serve's `workflows/` directory beside the checked-in workflows; a release load keeps it
+    %%> - the Gateway's Schedule record stays the source; an identical create writes it again
+    opt not created disabled
+      GW->>SW: Set its trigger<br/>workflow.trigger.set
+      %%> What it does:
+      %%> - sets the cron trigger of `schedule-7f3c…` on serve
+      %%> When:
+      %%> - skipped with `--no-start`; `schedule:enable` sets it later
+    end
+    alt Swamp confirms
+      SW-->>GW: workflow and trigger set<br/>next fire 03:00
+      %%> Returns:
+      %%> - the workflow exists and its trigger is active, with its next fire time
+      GW-->>CLI: Schedule created<br/>active · next fire 03:00
+      %%> Result:
+      %%> - Schedule 7f3c… becomes active, only after Swamp confirms
+      %%> - with `--no-start`: active and disabled, with no trigger
+      %%> - task #5140 is recorded as succeeded at once (R1)
+      %%> What you get:
+      %%> - the Schedule and its next fire, at once; there is nothing to follow
+    else Swamp refuses or is down
+      SW--xGW: no confirmation<br/>refused or unreachable
+      %%> When:
+      %%> - Swamp refuses the calendar, or serve on 209 does not answer
+      Note over GW: Mark the Schedule failed<br/>rerun the same create
+      %%> Result:
+      %%> - Schedule 7f3c… stays recorded, marked failed, with its error code
+      %%> - the vault key and a created workflow without a trigger may stay; they start nothing
+      %%> Retry:
+      %%> - run the same command again; an identical create writes the workflow and its trigger again
+      GW--xCLI: create failed<br/>schedule.calendar_invalid or 503
+      %%> Returns:
+      %%> - `schedule.calendar_invalid` (422) for a refused calendar
+      %%> - `swamp.schedule_publish_unavailable` (503) when serve does not answer
+    end
+    loop each calendar fire
+      Note over SW: Start a root run<br/>schedule-7f3c…
+      %%> What it does:
+      %%> - serve fires the trigger and starts one root run of `schedule-7f3c…` on 209
+      %%> - its step runs `task-command-run` with the fixed intent, within the Schedule's timeout
+      %%> Timing:
+      %%> - serve runs up to 4 scheduled runs at once; a fire can start late when all are busy
+      %%> - a Schedule never overlaps itself; a fire due while the last one runs waits
+      SW->>N: Run the command<br/>@swamp/ssh, as the Schedule's user
+      %%> How:
+      %%> - checks the user and the working directory on Node 12
+      %%> - reads the command with `vault.get` and sends it on stdin
+      %%> Runs as:
+      %%> - the Schedule's user, in its working directory, with its shell
+      N-->>SW: exit code, output
+      %%> Returns:
+      %%> - the exit code; the output stays in the Swamp step
+      SW-->>GW: Run started, finished<br/>commit feed
+      %%> How the Gateway learns it:
+      %%> - its shared run reader sees the root run start and end; Swamp never calls the Gateway
+      Note over GW: Record the fire<br/>task #5141 · trigger: schedule
+      %%> Result:
+      %%> - each fire becomes a task, with trigger `schedule`, recorded when it starts
+      %%> - when it ends, the task gets the nested result, such as `schedule.target_unavailable` or `schedule.run_failed`
+      %%> - `last_run_at` and `last_run_status` of Schedule 7f3c… are set when it ends
+    end
   end

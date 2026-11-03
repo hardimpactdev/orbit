@@ -40,6 +40,28 @@ beforeEach(function (): void {
     config(['swamp.run_token' => 'shared.scoped.fixture']);
 });
 
+it('projects timer creation from its native end check without a result printer', function (bool $compliant): void {
+    $this->operation->update(['kind' => 'schedule.create']);
+    $status = $compliant ? 'succeeded' : 'failed';
+    $history = ['id' => $this->runId, 'workflowName' => 'operation-schedule-create', 'status' => $status,
+        'inputs' => ['operation_id' => $this->operation->id, 'node_id' => $this->node->id, 'kind' => 'schedule.create'],
+        'startedAt' => now()->toISOString(), 'completedAt' => now()->toISOString(),
+        'jobs' => [['name' => 'schedule', 'steps' => [
+            ['name' => 'check_timer', 'status' => 'succeeded', 'outputs' => ['status' => $compliant ? 'compliant' : 'non_compliant']],
+            ['name' => 'Check the installation', 'status' => $status],
+        ]]]];
+    $this->socket->reply = static fn (array $message): array => [['type' => 'workflow.history.get', 'id' => $message['id'], 'payload' => ['data' => $history]]];
+    config(['swamp.read_token' => 'native-reader']);
+    $selector = app(DirectOperation::class)->definition('schedule.create')['terminal_result'];
+
+    app(SwampCommandStep::class)->projectTerminal($this->operation, ['id' => $this->runId, 'status' => $status], $selector);
+    app(SwampCommandStep::class)->projectTerminal($this->operation, ['id' => $this->runId, 'status' => $status], $selector);
+
+    expect($this->operation->fresh()->status->value)->toBe($status)
+        ->and($this->operation->fresh()->result)->toBe($compliant ? ['ready' => true] : ['error_code' => 'operation.native_failed'])
+        ->and(array_column($this->socket->sent, 'type'))->toBe(['workflow.history.get']);
+})->with([true, false]);
+
 it('exposes only admitted safe input through the shared endpoint and declares no relay', function (): void {
     $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()
         ->assertJsonPath('data.input.intent.schedule', ['id' => $this->schedule->id])

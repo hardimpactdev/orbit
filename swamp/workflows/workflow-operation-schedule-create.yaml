@@ -35,6 +35,7 @@ jobs:
           inputs: {schedule: '${{ inputs.intent.schedule }}'}
       - name: files
         labels: {role: swamp}
+        writes: true
         dependsOn: [{step: units, condition: {type: succeeded}}]
         forEach: {item: unit, in: '${{ ["service", "timer"] }}'}
         task:
@@ -57,6 +58,7 @@ jobs:
           inputs: {}
       - name: reload
         labels: {role: swamp}
+        writes: true
         dependsOn: [{step: files, condition: {type: succeeded}}]
         task:
           type: behavior
@@ -73,13 +75,14 @@ jobs:
           inputs: {}
       - name: timer
         labels: {role: swamp}
+        writes: true
         dependsOn: [{step: reload, condition: {type: succeeded}}]
         task:
           type: behavior
           behaviorType: '@swamp/cfgmgmt/systemd'
           behaviorName: '${{ ("schedule-timer-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
           methodName: apply
-          globalArgs:
+          globalArgs: &timer_args
             nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
             nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
             nodePort: ${{ inputs.intent.ssh_execution.target.port }}
@@ -91,6 +94,7 @@ jobs:
           inputs: {}
       - name: remove_obsolete
         labels: {role: swamp}
+        writes: true
         dependsOn: [{step: timer, condition: {type: succeeded}}]
         forEach: {item: suffix, in: '${{ [".sh", ".complete"] }}'}
         task:
@@ -107,14 +111,44 @@ jobs:
             path: ${{ "/etc/orbit/schedules/" + inputs.intent.schedule.id + self.suffix }}
             ensure: absent
           inputs: {}
-      - name: result
+      - name: check_files
+        labels: {role: swamp}
+        dependsOn: [{step: remove_obsolete, condition: {type: succeeded}}]
+        forEach: {item: part, in: '${{ ["service", "timer", "script", "complete"] }}'}
+        task:
+          type: behavior
+          behaviorType: '@swamp/cfgmgmt/file'
+          behaviorName: '${{ ("schedule-file-check-" + string(inputs.intent.ssh_execution.target.host) + "-" + self.part).split(".").join("-") }}'
+          methodName: check
+          globalArgs:
+            nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+            nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+            nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+            nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+            become: true
+            path: '${{ self.part in ["service", "timer"] ? "/etc/systemd/system/orbit-schedule-" + inputs.intent.schedule.id + "." + self.part : "/etc/orbit/schedules/" + inputs.intent.schedule.id + (self.part == "script" ? ".sh" : ".complete") }}'
+            ensure: '${{ self.part in ["service", "timer"] ? "present" : "absent" }}'
+            content: '${{ self.part in ["service", "timer"] ? steps.units.outputs[self.part] : "" }}'
+            owner: root
+            group: root
+            mode: "0644"
+          inputs: {}
+      - name: check_timer
         labels: {role: swamp}
         dependsOn: [{step: remove_obsolete, condition: {type: succeeded}}]
         task:
           type: behavior
-          behaviorType: command/shell
-          behaviorName: '${{ "schedule-result" }}'
-          methodName: execute
-          inputs:
-            run: |
-              printf '%s\n' '{"ready":true}'
+          behaviorType: '@swamp/cfgmgmt/systemd'
+          behaviorName: '${{ ("schedule-timer-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+          methodName: check
+          globalArgs: *timer_args
+          inputs: {}
+      - name: Check the installation
+        labels: {role: swamp}
+        dependsOn: [{step: check_files, condition: {type: succeeded}}, {step: check_timer, condition: {type: succeeded}}]
+        task:
+          type: assert
+          expr: 'steps.filter(name, name.startsWith("check_files-")).size() == 4 && steps.filter(name, name.startsWith("check_files-")).all(name, steps[name].outputs.status == "compliant") && steps.check_timer.outputs.status == "compliant"'
+          message: The Schedule files and timer must match the captured state.
+          severity: high
+queueTimeout: 30
