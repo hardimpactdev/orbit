@@ -132,6 +132,8 @@ The watch list's `environments` names the `.env` of each Instance on the Node. F
 
 The agent never sends a value, and the Gateway stores no other field. Orbit writes a managed `.env` as mode 0640 with group `orbit-env`. The agent's unit holds that group, so it can read those files and no others.
 
+[`env:import`](/cli/env/import) reads private file values through an official Swamp SSH run and a one-shot vault key. The retired `instance.read-environment` command is unavailable.
+
 A production `.env` lives in its account's 0710 home: the unit binds each production home back read-only, and Orbit gives `orbit-env` traverse on it with an ACL (`g:orbit-env:--x`), as it gives Caddy traverse on a release. [`env:sync`](/cli/env/sync) checks these names at admission. A production Instance cloned after the agent's last converge is observed once the next converge binds its home. A hand-made 0600 `.env` reports `keys` as null: Orbit has not observed its keys. `agent.configure` creates the `orbit-env` system group before it writes the unit, because a unit that names a missing group does not start. Agents before 0.11.0 send no `env_keys` facts.
 
 ### Checkouts
