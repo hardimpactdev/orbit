@@ -41,7 +41,7 @@ function budgetOperation(string $kind = 'instance.create', array $attributes = [
 }
 
 beforeEach(function (): void {
-    app()->instance(DirectOperation::class, new DirectOperation([new class implements DirectOperationContribution
+    app()->instance(DirectOperation::class, new DirectOperation([...app()->tagged(DirectOperationContribution::class), new class implements DirectOperationContribution
     {
         public function definitions(): array
         {
