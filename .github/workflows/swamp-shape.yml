@@ -60,8 +60,16 @@ jobs:
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         run: |
           python3 -m venv "$RUNNER_TEMP/shape-tools"
-          "$RUNNER_TEMP/shape-tools/bin/pip" install --disable-pip-version-check ruff==0.17.0 shellcheck-py==0.11.0.1 shfmt-py==4.2.0
+          "$RUNNER_TEMP/shape-tools/bin/pip" install --disable-pip-version-check ruff==0.17.0 shellcheck-py==0.11.0.1 shfmt-py==4.2.0 ansible-lint==26.10.1 -r ansible/requirements.txt
           echo "$RUNNER_TEMP/shape-tools/bin" >> "$GITHUB_PATH"
+      - name: Check Ansible phases
+        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
+        env:
+          ANSIBLE_COLLECTIONS_PATH: ${{ runner.temp }}/ansible-collections
+        run: |
+          ansible-galaxy collection install -r ansible/requirements.yml -p "$ANSIBLE_COLLECTIONS_PATH"
+          ansible-lint ansible/operation-node-role-add.yml
+          python3 -I tests/ansible_inputs_test.py
       - name: Check shape regression fixtures
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         run: |

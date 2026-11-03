@@ -1,0 +1,506 @@
+---
+- name: Role resources on the Node
+  hosts: role_node
+  tags:
+    - prerequisites
+  become: true
+  vars:
+    rt: "{{ intent.runtime }}"
+  handlers:
+    - name: Reload units
+      ansible.builtin.systemd:
+        daemon_reload: true
+  tasks:
+    - name: Install Caddy
+      when: intent.caddy_package is not none
+      block:
+        - name: Download Caddy
+          ansible.builtin.get_url:
+            url: "{{ intent.caddy_package.url }}"
+            dest: "{{ intent.caddy_package.path }}"
+            checksum: sha256:{{ intent.caddy_package.sha256 }}
+            mode: "0644"
+        - name: Read the Caddy version
+          ansible.builtin.command: dpkg-query -W -f=${Version} caddy
+          register: caddy
+          changed_when: false
+          failed_when: false
+        - name: Install Caddy below the floor
+          when: caddy.rc != 0 or caddy.stdout is version(intent.caddy_package.minimum_version, '<')
+          ansible.builtin.apt:
+            deb: "{{ intent.caddy_package.path }}"
+    - name: Read installed packages
+      ansible.builtin.package_facts:
+    - name: Install prerequisites
+      vars:
+        docker_ce: "{{ 'docker-ce' in ansible_facts.packages }}"
+      ansible.builtin.apt:
+        name: "{{ intent.packages | reject('equalto', 'docker.io' if docker_ce else '') | list }}"
+        update_cache: true
+        cache_valid_time: 3600
+      environment:
+        NEEDRESTART_MODE: l
+    - name: Create role folders
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop: "{{ intent.directories }}"
+      loop_control:
+        label: "{{ item.path }}"
+    - name: Install Bun
+      when: intent.bun is not none
+      block:
+        - name: Download Bun
+          ansible.builtin.get_url:
+            url: "{{ intent.bun.url }}"
+            dest: "{{ intent.bun.path }}"
+            checksum: "{{ intent.bun.checksum }}"
+            mode: "0644"
+        - name: Make the release folder
+          ansible.builtin.file:
+            path: "{{ intent.bun.dest }}"
+            state: directory
+            mode: "0755"
+        - name: Extract Bun
+          ansible.builtin.unarchive:
+            src: "{{ intent.bun.path }}"
+            dest: "{{ intent.bun.dest }}"
+            remote_src: true
+            creates: "{{ intent.bun.binary }}"
+        - name: Publish Bun
+          ansible.builtin.file:
+            src: "{{ item.src }}"
+            dest: "{{ item.dest }}"
+            state: link
+            force: true
+          loop:
+            - src: "{{ intent.bun.binary }}"
+              dest: /opt/orbit/bun/bin/bun
+            - src: /opt/orbit/bun/bin/bun
+              dest: /usr/local/bin/bun
+    - name: Download PHP packages
+      ansible.builtin.get_url:
+        url: "{{ item.url }}"
+        dest: "{{ item.path }}"
+        checksum: sha256:{{ item.sha256 }}
+        mode: "0644"
+      loop: "{{ intent.php_packages }}"
+      loop_control:
+        label: "{{ item.name }}"
+    - name: Read installed packages again
+      ansible.builtin.package_facts:
+    - name: Find missing PHP packages
+      ansible.builtin.set_fact:
+        php_missing: "{{ (php_missing if index > 0 else []) + ([item.path] if item.version not in ansible_facts.packages[item.name] | default([]) | map(attribute='version')
+          else []) }}"
+      loop: "{{ intent.php_packages }}"
+      loop_control:
+        index_var: index
+        label: "{{ item.name }}"
+    - name: Install missing PHP packages
+      when: php_missing | default([]) | length > 0
+      ansible.builtin.command:
+        argv: "{{ ['apt-get', '--no-remove', '--no-upgrade', 'install', '--yes', '--no-install-recommends', '-o', 'Dpkg::Options::=--force-confold'] + php_missing
+          }}"
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+        NEEDRESTART_MODE: l
+      changed_when: true
+- name: Role resources on the Node
+  hosts: role_node
+  tags:
+    - node
+  become: true
+  vars:
+    rt: "{{ intent.runtime }}"
+  handlers:
+    - name: Reload units
+      ansible.builtin.systemd:
+        daemon_reload: true
+  tasks:
+    - name: Configure PHP-FPM
+      ansible.builtin.include_tasks: tasks/php.yml
+      loop: "{{ intent.php }}"
+      loop_control:
+        loop_var: php
+        label: "{{ php.version }}"
+    - name: Write role files
+      ansible.builtin.copy:
+        dest: "{{ item.path }}"
+        content: "{{ item.content }}"
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop: "{{ intent.files }}"
+      loop_control:
+        label: "{{ item.path }}"
+      notify: Reload units
+    - name: Create runtime groups
+      ansible.builtin.group:
+        name: "{{ item.name }}"
+        gid: "{{ item.gid }}"
+        system: true
+      loop: "{{ rt.groups }}"
+    - name: Create runtime users
+      ansible.builtin.user:
+        name: "{{ item.name }}"
+        uid: "{{ item.uid }}"
+        group: "{{ item.gid }}"
+        shell: /usr/sbin/nologin
+        system: true
+        create_home: false
+      loop: "{{ rt.users }}"
+    - name: Create runtime folders
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop: "{{ rt.directories }}"
+      loop_control:
+        label: "{{ item.path }}"
+    - name: Prepare Reverb
+      when: rt.websocket is not none
+      ansible.builtin.import_tasks: tasks/websocket.yml
+    - name: Write runtime files
+      ansible.builtin.copy:
+        dest: "{{ item.path }}"
+        content: "{{ item.content }}"
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop: "{{ rt.files }}"
+      loop_control:
+        label: "{{ item.path }}"
+      when:
+        - item.ensure | default('present') == 'present'
+        - kind != 'node.role_converge' or item.path != '/etc/orbit/metrics/prometheus.yml'
+      register: runtime_files
+      notify: Reload units
+    - name: Remove retired runtime files
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ rt.files }}"
+      loop_control:
+        label: "{{ item.path }}"
+      when: item.ensure | default('present') == 'absent'
+    - name: Write private files
+      ansible.builtin.copy:
+        dest: "{{ item.path }}"
+        content: "{{ secrets[item.secret] }}"
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "0600"
+      loop: "{{ rt.secret_files }}"
+      loop_control:
+        label: "{{ item.path }}"
+      register: private_files
+      no_log: true
+    - name: Write runtime units
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/{{ item.name }}
+        content: "{{ item.unit }}"
+        mode: "0644"
+      loop: "{{ rt.units }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: runtime_units
+      notify: Reload units
+    - name: Reload units before services start
+      ansible.builtin.meta: flush_handlers
+    - name: Start role services
+      ansible.builtin.systemd:
+        name: "{{ item.name }}"
+        state: >-
+          {{ 'restarted' if rt.websocket is not none and
+             (reverb_checkout is changed or reverb_link is changed or
+              private_files is changed or runtime_units is changed) else 'started' }}
+        enabled: true
+      loop: "{{ intent.services + rt.units }}"
+      loop_control:
+        label: "{{ item.name }}"
+    - name: Apply Gateway DNS policy
+      when: rt.gateway_dns is not none
+      block:
+        - name: Write Gateway DNS unit
+          ansible.builtin.copy:
+            dest: /etc/systemd/system/orbit-gateway-dns.service
+            content: "{{ rt.gateway_dns.unit }}"
+            owner: root
+            group: root
+            mode: "0644"
+          register: dns_unit
+        - name: Start Gateway DNS policy
+          ansible.builtin.systemd:
+            name: orbit-gateway-dns.service
+            enabled: true
+            state: "{{ 'restarted' if dns_unit is changed else 'started' }}"
+            daemon_reload: "{{ dns_unit is changed }}"
+    - name: Apply CI host resources
+      when: rt.ci_host
+      ansible.builtin.import_tasks: tasks/ci.yml
+    - name: Run Metrics
+      when: rt.metrics is not none
+      vars:
+        config_changed: "{{ runtime_files is changed or private_files is changed }}"
+      block:
+        - name: Pull Metrics images
+          community.docker.docker_image_pull:
+            name: "{{ item.image }}"
+          loop: "{{ rt.metrics.plan.services }}"
+          loop_control:
+            label: "{{ item.name }}"
+        - name: Read Metrics volumes
+          ansible.builtin.command: docker volume inspect {{ item.volume_args | last }}
+          loop: "{{ rt.metrics.plan.services }}"
+          loop_control:
+            label: "{{ item.name }}"
+          register: volumes
+          changed_when: false
+          failed_when: false
+        - name: Create Metrics volumes
+          changed_when: true
+          ansible.builtin.command:
+            argv: "{{ item.item.volume_args }}"
+          loop: "{{ volumes.results | rejectattr('rc', 'equalto', 0) | list }}"
+          loop_control:
+            label: "{{ item.item.name }}"
+        - name: Read Metrics containers
+          community.docker.docker_container_info:
+            name: "{{ item.name }}"
+          loop: "{{ rt.metrics.plan.services }}"
+          loop_control:
+            label: "{{ item.name }}"
+          register: containers
+        - name: Replace Metrics containers
+          when: not item.exists or not item.container.State.Running or item.container.Config.Image != item.item.image or (item.item.name ==
+            'orbit-metrics-grafana' and config_changed)
+          ansible.builtin.shell: docker rm --force {{ item.item.name }} >/dev/null 2>&1; {{ item.item.argv | map('quote') | join(' ') }}
+          loop: "{{ containers.results }}"
+          loop_control:
+            label: "{{ item.item.name }}"
+          register: replaced
+          changed_when: true
+        - name: Wait for runtime endpoints
+          ansible.builtin.uri:
+            url: "{{ item.url }}"
+            status_code: "{{ [200] if item.require_success else range(100, 600) | list }}"
+          loop: "{{ rt.probes }}"
+          loop_control:
+            label: "{{ item.url }}"
+          register: probe
+          until: probe is succeeded
+          retries: 60
+          delay: 1
+        - name: Set the Grafana password
+          changed_when: true
+          when: replaced is changed or private_files is changed
+          ansible.builtin.command:
+            argv:
+              - docker
+              - exec
+              - -i
+              - orbit-metrics-grafana
+              - grafana
+              - cli
+              - --homepath
+              - /usr/share/grafana
+              - admin
+              - reset-admin-password
+              - --password-from-stdin
+            stdin: "{{ secrets.metrics_password }}"
+          no_log: true
+    - name: Wait for Reverb
+      when: rt.websocket is not none
+      ansible.builtin.uri:
+        url: "{{ rt.websocket.health_url }}"
+        status_code: "{{ range(100, 600) | list }}"
+      register: reverb_health
+      until: reverb_health is succeeded
+      retries: 60
+      delay: 1
+- name: ClickHouse configuration
+  hosts: clickhouse_node
+  tags:
+    - node
+  become: true
+  tasks:
+    - name: Create ClickHouse folders
+      ansible.builtin.file:
+        path: /etc/orbit/analytics/clickhouse/{{ item }}
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - ""
+        - config.d
+        - users.d
+    - name: Write ClickHouse configuration
+      ansible.builtin.copy:
+        dest: /etc/orbit/analytics/clickhouse/{{ item.key }}
+        content: "{{ item.value }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: "{{ plans.clickhouse | dict2items }}"
+- name: Role publications
+  hosts: publication_nodes
+  tags:
+    - publication
+  become: true
+  handlers:
+    - name: Reload Caddy
+      ansible.builtin.systemd:
+        name: caddy
+        state: reloaded
+  tasks:
+    - name: Publish PHP pools
+      ansible.builtin.include_tasks: tasks/php-publication.yml
+      loop: "{{ publications | rejectattr('after.php', 'none') | list }}"
+      loop_control:
+        loop_var: publication
+        label: "{{ publication.node_id }}"
+    - name: Write the Caddyfile
+      ansible.builtin.copy:
+        dest: /etc/caddy/Caddyfile
+        content: "{{ item.after.caddy.content }}"
+        owner: root
+        group: caddy
+        mode: "0640"
+        validate: caddy validate --config %s --adapter caddyfile
+      loop: "{{ publications | rejectattr('after.caddy', 'none') | list }}"
+      loop_control:
+        label: "{{ item.after.caddy.version }}"
+      notify: Reload Caddy
+    - name: Publish private DNS
+      ansible.builtin.include_tasks: tasks/dns-publication.yml
+      loop: "{{ publications | rejectattr('after.dns', 'none') | list }}"
+      loop_control:
+        loop_var: publication
+        label: "{{ publication.node_id }}"
+- name: Role firewall
+  hosts: role_node
+  tags:
+    - firewall
+  become: true
+  tasks:
+    - name: Open role ports and close retired ones
+      ansible.builtin.command:
+        argv: "{{ item }}"
+      loop: "{{ intent.firewall.desired + intent.firewall.remove }}"
+      loop_control:
+        label: "{{ item | join(' ') }}"
+      register: ufw
+      changed_when: ufw.stdout is not search('Skipping|non-existent')
+- name: Node exporters
+  hosts: exporter_nodes
+  tags:
+    - exporters
+  become: true
+  vars:
+    exporter: "{{ exporters | first }}"
+  tasks:
+    - name: Require one exporter per Node
+      ansible.builtin.assert:
+        that: exporters | length == 1
+        quiet: true
+    - name: Add the exporter
+      ansible.builtin.import_tasks: tasks/exporter.yml
+  handlers:
+    - name: Reload exporter Caddy
+      ansible.builtin.systemd:
+        name: caddy
+        state: reloaded
+- name: Prometheus
+  hosts: prometheus_node
+  tags:
+    - prometheus
+  become: true
+  vars:
+    prom: "{{ intent.prometheus }}"
+  tasks:
+    - name: Validate the Prometheus config
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - -i
+          - orbit-metrics-prometheus
+          - /bin/promtool
+          - check
+          - config
+          - /dev/stdin
+        stdin: "{{ prom.configuration }}"
+      changed_when: false
+    - name: Publish the Prometheus config
+      ansible.builtin.copy:
+        dest: /etc/orbit/metrics/prometheus.yml
+        content: "{{ prom.configuration }}"
+        owner: root
+        group: root
+        mode: "0644"
+      register: published
+      notify: Reload Prometheus
+    - name: Reload Prometheus before checking
+      ansible.builtin.meta: flush_handlers
+    - name: Check Prometheus and every exporter endpoint
+      ansible.builtin.uri:
+        url: "{{ item }}"
+      loop: "{{ ['http://127.0.0.1:9090/-/ready'] + prom.checks | map(attribute='url') | list }}"
+      register: endpoint
+      until: endpoint is succeeded
+      retries: 60
+      delay: 1
+  handlers:
+    - name: Reload Prometheus
+      changed_when: true
+      when: published is changed
+      ansible.builtin.command: docker kill --signal HUP orbit-metrics-prometheus
+- name: Check the role
+  hosts: role_node
+  tags:
+    - check
+  become: true
+  tasks:
+    - name: Read services
+      ansible.builtin.service_facts:
+    - name: Read Bun
+      when: intent.bun is not none
+      ansible.builtin.command: /usr/local/bin/bun --version
+      register: bun
+      changed_when: false
+    - name: Read installed packages
+      ansible.builtin.package_facts:
+    - name: Check the role
+      ansible.builtin.assert:
+        that:
+          - (intent.services + rt.units) | map(attribute='name') | map('extract', ansible_facts.services) | map(attribute='state') | difference(['running']) |
+            length == 0
+          - intent.bun is none or bun.stdout | trim == intent.bun.version
+    - name: Check PHP package versions
+      ansible.builtin.assert:
+        that: item.version in ansible_facts.packages[item.name] | default([]) | map(attribute='version')
+        quiet: true
+      loop: "{{ intent.php_packages }}"
+      loop_control:
+        label: "{{ item.name }}"
+    - name: Check prerequisites
+      ansible.builtin.assert:
+        that: item in ansible_facts.packages or (item == 'docker.io' and 'docker-ce' in ansible_facts.packages)
+        quiet: true
+      loop: "{{ intent.packages }}"
+    - name: Check role files and folders
+      ansible.builtin.import_tasks: tasks/check-files.yml
+    - name: Check runtime endpoints
+      ansible.builtin.uri:
+        url: "{{ item.url }}"
+        status_code: "{{ [200] if item.require_success else range(100, 600) | list }}"
+      loop: "{{ rt.probes }}"
+  vars:
+    rt: "{{ intent.runtime }}"

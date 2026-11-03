@@ -5,7 +5,7 @@ import subprocess
 import sys
 
 operation = json.load(open(os.environ['PROOF_OPERATION_FILE']))
-target, role = sys.argv[1:]
+target, role = sys.argv[1:3]
 
 
 def run(*argv):
@@ -71,3 +71,11 @@ elif role == 'ci-runner':
     check(run('incus', 'project', 'get', 'orbit-ci', 'restricted').stdout.strip() == 'true', 'CI is restricted')
     check(run('incus', 'network', 'get', 'orbitci0', 'security.acls').stdout.strip() == 'orbit-ci-egress', 'CI egress ACL applies')
 print('parity: node.role_add ' + role)
+
+if 'no-drift' in sys.argv[3:]:
+    import re
+    outputs = json.load(open(os.environ['PROOF_OUTPUTS']))
+    recaps = re.findall(r'changed=(\d+)', json.dumps(outputs))
+    check(bool(recaps), 'Ansible phase recaps were retained')
+    check(all(value == '0' for value in recaps), 'the second run changed no Node state: ' + ','.join(recaps))
+    print('parity: all Ansible phases changed=0')

@@ -1,0 +1,61 @@
+---
+- name: Read role file metadata
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+    checksum_algorithm: sha256
+  loop: "{{ intent.files + intent.runtime.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+  register: role_files
+
+- name: Check role files
+  ansible.builtin.assert:
+    that:
+      - >-
+        (item.item.ensure | default('present') == 'absent' and not item.stat.exists)
+        or (item.item.ensure | default('present') == 'present' and item.stat.exists
+        and item.stat.checksum == item.item.content | hash('sha256')
+        and item.stat.mode == item.item.mode
+        and item.stat.pw_name == item.item.owner and item.stat.gr_name == item.item.group)
+    quiet: true
+  loop: "{{ role_files.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+  when: kind != 'node.role_converge' or item.item.path != '/etc/orbit/metrics/prometheus.yml'
+
+- name: Read role folder metadata
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  loop: "{{ intent.directories + intent.runtime.directories }}"
+  register: role_folders
+
+- name: Check role folders
+  ansible.builtin.assert:
+    that:
+      - item.stat.isdir
+      - item.stat.pw_name == item.item.owner
+      - item.stat.gr_name == item.item.group
+      - item.stat.mode == item.item.mode
+    quiet: true
+  loop: "{{ role_folders.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+
+- name: Read private file metadata
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+    checksum_algorithm: sha256
+  loop: "{{ intent.runtime.secret_files }}"
+  register: role_private
+  no_log: true
+
+- name: Check private files
+  ansible.builtin.assert:
+    that:
+      - item.stat.checksum == secrets[item.item.secret] | hash('sha256')
+      - item.stat.mode == '0600'
+      - item.stat.pw_name == item.item.owner
+      - item.stat.gr_name == item.item.group
+    quiet: true
+  loop: "{{ role_private.results }}"
+  no_log: true

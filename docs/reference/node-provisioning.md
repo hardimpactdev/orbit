@@ -773,3 +773,9 @@ After checking its admitted publication participant, the parent uses `NodeRolePu
 Matching Reverb inputs skip its restart, while an inactive service starts. Matching Metrics containers keep running. Prometheus configuration is validated, copied onto the existing bind-mounted file and reloaded with SIGHUP. Analytics convergence repairs role-owned configuration and checks its existing Process; it creates no Process and runs no database migration.
 
 Official resource checks and the native role assertion determine completion. The Gateway marks the same assignment active on success or failed at the native step on failure. Finished changes remain for the next convergence. Cancellation goes to the bound Swamp run, and only its terminal event settles the Operation.
+
+### Role Ansible phases
+
+`node:role:add` and its role-converge run use one Swamp step per Ansible phase: prerequisites, Node resources, publications, firewall, exporters, Prometheus and check. Each phase applies the admitted state and is safe to run from the start. Tool Manager setup, certificate signing, Analytics initialization and Swamp bootstrap keep their native steps. Ansible runs only on the Swamp Node; targets need SSH and Python.
+
+The `swamp` role installs a pinned Ansible environment under `/opt/orbit/ansible`. The `@nckrtl/ansible-input` behavior delivers the playbooks and writes the whole intent to a private run folder. The input builder writes inventory, variables and pinned `known_hosts` there. Separate guarded steps write vault values to mode `0600` files. The builder consumes and removes those files. A completed-run cleanup removes the folder after success or failure. No credential enters the run inputs or command arguments.

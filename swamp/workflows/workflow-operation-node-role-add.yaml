@@ -1,939 +1,424 @@
 id: 00fd4b62-f72a-4795-9924-a48704608c88
 name: operation-node-role-add
-description: Apply or converge the captured role-owned resources from Node 209. Node convergence owns the observer and CLI.
-vaults:
-- orbit-control-inputs
+description: Apply role state in idempotent Ansible phases; keep signing, bootstrap and initialization native.
+vaults: [orbit-control-inputs]
 queueTimeout: 30
 inputs:
   type: object
   properties:
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
-    kind: {type: string, enum: [node.role_add, node.role_converge]}
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind:
+      type: string
+      enum: [node.role_add, node.role_converge]
     parent_run_id: {type: string}
-    intent:
-      type: object
+    intent: {type: object}
     execution_secrets:
       type: object
       additionalProperties:
         type: object
         properties:
-          vault: {type: string, enum: [orbit-control-inputs]}
-          key:
+          vault:
             type: string
-            pattern: ^(node-role-operation-[1-9][0-9]*-[a-z-]+|process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*)$
-        required:
-        - vault
-        - key
+            enum: [orbit-control-inputs]
+          key: {type: string, pattern: '^(node-role-operation-[1-9][0-9]*-[a-z-]+|process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*)$'}
+        required: [vault, key]
         additionalProperties: false
-  required:
-  - operation_id
-  - node_id
-  - kind
-  - intent
-  - execution_secrets
+  required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
+- name: intent
+  labels: {role: swamp}
+  steps:
+  - name: Write the intent
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ansible-input
+      methodName: write
+      inputs: {intent: '${{ inputs.intent }}', path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'}
+- name: private-metrics_password
+  labels: {role: swamp}
+  steps:
+  - name: Write the private input
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ansible-role-private-metrics-password
+      methodName: execute
+      inputs:
+        run: 'umask 077
+
+          python3 -c ''import os,pathlib; pathlib.Path(os.environ["ORBIT_FILE"]).write_text(os.environ["ORBIT_VALUE"])'' '
+        env: {ORBIT_FILE: '${{ "/tmp/orbit-ansible-" + run.id + "/secret-metrics_password" }}', ORBIT_VALUE: '${{ vault.get("orbit-control-inputs",
+            inputs.execution_secrets.metrics_password.key) }}'}
+    guard: ${{ !has(inputs.execution_secrets.metrics_password) }}
+  dependsOn:
+  - job: intent
+    condition: {type: succeeded}
+- name: private-websocket_environment
+  labels: {role: swamp}
+  steps:
+  - name: Write WebSocket input
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ansible-role-private-websocket-environment
+      methodName: execute
+      inputs:
+        run: 'umask 077
+
+          python3 -c ''import os,pathlib; pathlib.Path(os.environ["ORBIT_FILE"]).write_text(os.environ["ORBIT_VALUE"])'' '
+        env: {ORBIT_FILE: '${{ "/tmp/orbit-ansible-" + run.id + "/secret-websocket_environment" }}', ORBIT_VALUE: '${{ vault.get("orbit-control-inputs",
+            inputs.execution_secrets.websocket_environment.key) }}'}
+    guard: ${{ !has(inputs.execution_secrets.websocket_environment) }}
+  dependsOn:
+  - job: private-metrics_password
+    condition: {type: succeeded}
+- name: private-analytics_environment
+  labels: {role: swamp}
+  steps:
+  - name: Write Analytics input
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ansible-role-private-analytics-environment
+      methodName: execute
+      inputs:
+        run: 'umask 077
+
+          python3 -c ''import os,pathlib; pathlib.Path(os.environ["ORBIT_FILE"]).write_text(os.environ["ORBIT_VALUE"])'' '
+        env: {ORBIT_FILE: '${{ "/tmp/orbit-ansible-" + run.id + "/secret-analytics_environment" }}', ORBIT_VALUE: '${{ vault.get("orbit-control-inputs",
+            inputs.execution_secrets.analytics_environment.key) }}'}
+    guard: ${{ !has(inputs.execution_secrets.analytics_environment) }}
+  dependsOn:
+  - job: private-websocket_environment
+    condition: {type: succeeded}
+- name: input
+  labels: {role: swamp}
+  steps:
+  - name: Write the playbook input
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ansible-role-input
+      methodName: execute
+      inputs:
+        run: timeout 30 python3 "$ORBIT_ANSIBLE/build_vars.py" "$ORBIT_RUN" "$ORBIT_KIND"
+        env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}', ORBIT_ANSIBLE: '${{ steps["Write the intent"].outputs.assets }}', ORBIT_KIND: '${{
+            inputs.kind }}'}
+  dependsOn:
+  - job: private-analytics_environment
+    condition: {type: succeeded}
 - name: phase_0
-  labels:
-    role: swamp
+  labels: {role: swamp}
   steps:
   - name: Read the OS release
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-platform-"+string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "role-add-platform-"+string(inputs.node_id)
-          }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'},
-        hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target',
-        argv: [cat, /etc/os-release], timeoutSec: 20}}
+    labels: {role: swamp}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "role-add-platform-"+string(inputs.node_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "role-add-platform-"+string(inputs.node_id) }}
+        transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{
+            inputs.intent.ssh.identity_file }}'}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
+      inputs:
+        hosts: name:target
+        argv: [cat, /etc/os-release]
+        timeoutSec: 20
+  dependsOn:
+  - job: input
+    condition: {type: succeeded}
 - name: phase_1
-  labels:
-    role: swamp
+  labels: {role: swamp}
   steps:
   - name: Require supported Ubuntu
-    labels:
-      role: swamp
-    task: {type: assert, expr: 'steps["Read the OS release"].outputs.stdout.split("\n").exists(line,line in ["ID=ubuntu","ID=\"ubuntu\""]) && inputs.intent.releases.exists(r,steps["Read
-        the OS release"].outputs.stdout.split("\n").exists(line,line == "VERSION_CODENAME="+r || line == "VERSION_CODENAME=\""+r+"\""))', severity: high, message: The role requires an
-        admitted Ubuntu release.}
+    labels: {role: swamp}
+    task: {type: assert, expr: 'steps["Read the OS release"].outputs.stdout.split("\n").exists(line,line in ["ID=ubuntu","ID=\"ubuntu\""]) &&
+        inputs.intent.releases.exists(r,steps["Read the OS release"].outputs.stdout.split("\n").exists(line,line == "VERSION_CODENAME="+r || line
+        == "VERSION_CODENAME=\""+r+"\""))', severity: high, message: The role requires an admitted Ubuntu release.}
   dependsOn:
-  - {job: phase_0, condition: {type: succeeded}}
-- name: phase_2
-  labels:
-    role: swamp
+  - job: phase_0
+    condition: {type: succeeded}
+- name: ansible
+  labels: {role: swamp}
   steps:
-  - name: Install Caddy
-    labels:
-      role: swamp
-    guard: ${{ inputs.intent.caddy_package == null }}
+  - name: Install Python venv
+    labels: {role: swamp}
     writes: true
-    task: {type: workflow, workflowIdOrName: node-caddy-package, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: {
-          ssh: '${{ inputs.intent.ssh }}', package: '${{ inputs.intent.caddy_package }}'}}}
-  dependsOn:
-  - {job: phase_1, condition: {type: succeeded}}
-- name: docker_provider
-  labels:
-    role: swamp
-  dependsOn:
-  - {job: phase_2, condition: {type: succeeded}}
-  steps:
-  - name: Inspect Docker CE
-    concurrency: 1
-    labels:
-      role: swamp
-    forEach:
-      item: probe
-      in: '${{ "docker.io" in inputs.intent.packages ? [0] : [] }}'
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/apt', behaviorName: '${{ "role-add-docker-provider-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: check, globalArgs: {
-        nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file
-          }}', become: true, packages: [docker-ce, docker-ce-cli, containerd.io], ensure: present}, inputs: {}}
-- name: phase_3
-  labels:
-    role: swamp
-  steps:
-  - name: Refresh package lists
-    labels:
-      role: swamp
+    guard: ${{ inputs.intent.runtime.swamp == null }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "ansible-bootstrap-0-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "ansible-bootstrap-0-" + string(inputs.node_id) }}
+        transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{
+            inputs.intent.ssh.identity_file }}'}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '900', apt-get, -o, 'DPkg::Lock::Timeout=300', install, --yes, python3-venv]
+        timeoutSec: 905
+  - name: Create Ansible venv
+    labels: {role: swamp}
     writes: true
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/apt', behaviorName: '${{ "role-add-packages-"+string(inputs.node_id) }}', methodName: refresh, globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host
-          }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true},
-      inputs: {}}
-    guard: ${{ inputs.intent.packages.filter(p,p != "docker.io" || !("docker.io" in inputs.intent.packages && steps["Inspect Docker CE-0"].outputs.status == "compliant")).size() == 0
-      }}
-  dependsOn:
-  - {job: docker_provider, condition: {type: succeeded}}
-- name: phase_4
-  labels:
-    role: swamp
-  steps:
-  - name: Install prerequisites
-    labels:
-      role: swamp
+    guard: ${{ inputs.intent.runtime.swamp == null }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "ansible-bootstrap-1-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "ansible-bootstrap-1-" + string(inputs.node_id) }}
+        transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{
+            inputs.intent.ssh.identity_file }}'}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '60', python3, -m, venv, /opt/orbit/ansible/venv]
+        timeoutSec: 905
+    dependsOn:
+    - step: Install Python venv
+      condition: {type: succeeded}
+  - name: Write Ansible pin
+    labels: {role: swamp}
     writes: true
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-prerequisites-"+string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "role-add-prerequisites-"+string(inputs.node_id)
-          }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'},
-        hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target',
-        sudo: true, timeoutSec: 605, argv: '${{ ["timeout","600","env","DEBIAN_FRONTEND=noninteractive","NEEDRESTART_MODE=l","apt-get","-o","DPkg::Lock::Timeout=60","--no-remove","--no-upgrade","install","-y"]
-          + inputs.intent.packages.filter(p,p != "docker.io" || !("docker.io" in inputs.intent.packages && steps["Inspect Docker CE-0"].outputs.status == "compliant")) }}'}}
-    guard: ${{ inputs.intent.packages.filter(p,p != "docker.io" || !("docker.io" in inputs.intent.packages && steps["Inspect Docker CE-0"].outputs.status == "compliant")).size() == 0
-      }}
-  dependsOn:
-  - {job: phase_3, condition: {type: succeeded}}
-- name: phase_5
-  labels:
-    role: swamp
-  steps:
-  - name: Create role folders
-    concurrency: 1
-    labels:
-      role: swamp
+    guard: ${{ inputs.intent.runtime.swamp == null }}
+    dependsOn:
+    - step: Create Ansible venv
+      condition: {type: succeeded}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "ansible-pins-requirements-txt-"+string(inputs.node_id) }}
+      methodName: apply
+      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port
+          }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true, path: /opt/orbit/ansible/requirements.txt, content: '${{
+          steps["Write the intent"].outputs.requirements }}', owner: root, group: root, mode: '0644', ensure: present}
+      inputs: {}
+  - name: Write collection pins
+    labels: {role: swamp}
     writes: true
-    forEach:
-      item: directory
-      in: ${{ inputs.intent.directories }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/directory', behaviorName: '${{ "role-add-folder-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: apply, globalArgs: {
-        nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file
-          }}', become: true, path: '${{ self.directory.path }}', owner: '${{ self.directory.owner }}', group: '${{ self.directory.group }}', mode: '${{ self.directory.mode }}', ensure: present},
-      inputs: {}}
-  dependsOn:
-  - {job: phase_4, condition: {type: succeeded}}
-- name: phase_6
-  labels:
-    role: swamp
-  steps:
-  - name: Download Bun
-    concurrency: 1
-    labels:
-      role: swamp
+    guard: ${{ inputs.intent.runtime.swamp == null }}
+    dependsOn:
+    - step: Write Ansible pin
+      condition: {type: succeeded}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "ansible-pins-requirements-yml-"+string(inputs.node_id) }}
+      methodName: apply
+      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port
+          }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true, path: /opt/orbit/ansible/requirements.yml, content: '${{
+          steps["Write the intent"].outputs.collections }}', owner: root, group: root, mode: '0644', ensure: present}
+      inputs: {}
+  - name: Install Ansible
+    labels: {role: swamp}
     writes: true
-    forEach:
-      item: bun
-      in: '${{ inputs.intent.bun == null ? [] : [inputs.intent.bun] }}'
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/fetch', behaviorName: '${{ "role-add-bun-fetch-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: apply, globalArgs: {
-        nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file
-          }}', become: true, url: '${{ self.bun.url }}', path: '${{ self.bun.path }}', checksum: '${{ self.bun.checksum }}', owner: root, group: root, mode: '0644'}, inputs: {}}
-  dependsOn:
-  - {job: phase_5, condition: {type: succeeded}}
-- name: phase_7
-  labels:
-    role: swamp
-  steps:
-  - name: Extract Bun
-    concurrency: 1
-    labels:
-      role: swamp
+    guard: ${{ inputs.intent.runtime.swamp == null }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "ansible-bootstrap-2-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "ansible-bootstrap-2-" + string(inputs.node_id) }}
+        transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{
+            inputs.intent.ssh.identity_file }}'}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '900', /opt/orbit/ansible/venv/bin/pip, install, --disable-pip-version-check, -r, /opt/orbit/ansible/requirements.txt]
+        timeoutSec: 905
+    dependsOn:
+    - step: Write collection pins
+      condition: {type: succeeded}
+  - name: Install collections
+    labels: {role: swamp}
     writes: true
-    forEach:
-      item: bun
-      in: '${{ inputs.intent.bun == null ? [] : [inputs.intent.bun] }}'
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/archive', behaviorName: '${{ "role-add-bun-archive-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: apply,
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
-          inputs.intent.ssh.identity_file }}', become: true, source: '${{ self.bun.path }}', dest: '${{ self.bun.dest }}', format: zip, creates: '${{ self.bun.binary }}'}, inputs: {}}
+    guard: ${{ inputs.intent.runtime.swamp == null }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "ansible-bootstrap-3-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "ansible-bootstrap-3-" + string(inputs.node_id) }}
+        transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{
+            inputs.intent.ssh.identity_file }}'}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: [timeout, '900', /opt/orbit/ansible/venv/bin/ansible-galaxy, collection, install, -r, /opt/orbit/ansible/requirements.yml, -p, /opt/orbit/ansible/collections]
+        timeoutSec: 905
+    dependsOn:
+    - step: Install Ansible
+      condition: {type: succeeded}
   dependsOn:
-  - {job: phase_6, condition: {type: succeeded}}
-- name: phase_8
-  labels:
-    role: swamp
+  - job: phase_1
+    condition: {type: succeeded}
+- name: prerequisites
+  labels: {role: swamp}
   steps:
-  - name: Publish Bun
-    concurrency: 1
-    labels:
-      role: swamp
+  - name: Apply role prerequisites
+    labels: {role: swamp}
     writes: true
-    forEach:
-      item: bun
-      in: '${{ inputs.intent.bun == null ? [] : [inputs.intent.bun] }}'
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/link', behaviorName: '${{ "role-add-bun-link-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: apply, globalArgs: {
-        nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file
-          }}', become: true, path: /opt/orbit/bun/bin/bun, target: '${{ self.bun.binary }}', ensure: present}, inputs: {}}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ansible-role-prerequisites
+      methodName: execute
+      inputs:
+        run: timeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags prerequisites
+          "$ORBIT_ANSIBLE/operation-node-role-add.yml"
+        env: &id001 {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}', ORBIT_ANSIBLE: '${{ steps["Write the intent"].outputs.assets }}', ANSIBLE_CONFIG: '${{
+            steps["Write the intent"].outputs.assets + "/ansible.cfg" }}', ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s
+            -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}',
+          ANSIBLE_FORCE_COLOR: '0'}
   dependsOn:
-  - {job: phase_7, condition: {type: succeeded}}
-- name: phase_9
-  labels:
-    role: swamp
-  steps:
-  - name: Publish the Bun command
-    concurrency: 1
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: bun
-      in: '${{ inputs.intent.bun == null ? [] : [inputs.intent.bun] }}'
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/link', behaviorName: '${{ "role-add-bun-launcher-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: apply, globalArgs: {
-        nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file
-          }}', become: true, path: /usr/local/bin/bun, target: /opt/orbit/bun/bin/bun, ensure: present}, inputs: {}}
-  dependsOn:
-  - {job: phase_8, condition: {type: succeeded}}
-- name: phase_10
-  labels:
-    role: swamp
-  steps:
-  - name: Check Bun version
-    concurrency: 1
-    labels:
-      role: swamp
-    forEach:
-      item: bun
-      in: '${{ inputs.intent.bun == null ? [] : [inputs.intent.bun] }}'
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-bun-version-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {
-        name: '${{ "role-add-bun-version-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port
-            }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys
-                }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: [timeout, '60', /usr/local/bin/bun, --version], timeoutSec: 905}}
-  dependsOn:
-  - {job: phase_9, condition: {type: succeeded}}
-- name: phase_11
-  labels:
-    role: swamp
-  steps:
-  - name: Download PHP packages
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: package
-      in: ${{ inputs.intent.php_packages }}
-    concurrency: 1
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/fetch', behaviorName: '${{ "role-add-php-download-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: apply,
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
-          inputs.intent.ssh.identity_file }}', become: true, url: '${{ self.package.url }}', path: '${{ self.package.path }}', checksum: '${{ "sha256:" + self.package.sha256 }}', owner: root,
-        group: root, mode: '0644'}, inputs: {}}
-  dependsOn:
-  - {job: phase_10, condition: {type: succeeded}}
-- name: phase_12
-  labels:
-    role: swamp
-  steps:
-  - name: Install PHP packages
-    labels:
-      role: swamp
-    writes: true
-    guard: ${{ inputs.intent.php_packages.size() == 0 }}
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-php-install-"+string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "role-add-php-install-"+string(inputs.node_id)
-          }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'},
-        hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target',
-        sudo: true, argv: '${{ ["timeout","900","env","DEBIAN_FRONTEND=noninteractive","NEEDRESTART_MODE=l","apt-get","--no-remove","--no-upgrade","install","--yes","--no-install-recommends","-o","Dpkg::Options::=--force-confold"]
-          + inputs.intent.php_packages.map(p,p.path) }}', timeoutSec: 910}}
-  dependsOn:
-  - {job: phase_11, condition: {type: succeeded}}
+  - job: ansible
+    condition: {type: succeeded}
 - name: phase_13
-  labels:
-    role: swamp
+  labels: {role: swamp}
   steps:
   - name: Set up Tool Managers
-    labels:
-      role: swamp
+    labels: {role: swamp}
     writes: true
-    forEach:
-      item: manager
-      in: ${{ inputs.intent.managers }}
+    forEach: {item: manager, in: '${{ inputs.intent.managers }}'}
     concurrency: 1
-    task: {type: workflow, workflowIdOrName: operation-tool-manager-setup, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', intent: '${{ self.manager
-          }}', ssh: '${{ inputs.intent.ssh }}', report: false, converge: true}}
+    task:
+      type: workflow
+      workflowIdOrName: operation-tool-manager-setup
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', intent: '${{ self.manager }}', ssh: '${{ inputs.intent.ssh
+          }}', report: false, converge: true}
   dependsOn:
-  - {job: phase_12, condition: {type: succeeded}}
-- name: phase_14
-  labels:
-    role: swamp
+  - job: prerequisites
+    condition: {type: succeeded}
+- name: node
+  labels: {role: swamp}
   steps:
-  - name: Configure PHP-FPM
-    concurrency: 1
-    labels:
-      role: swamp
+  - name: Apply the role on the Node
+    labels: {role: swamp}
     writes: true
-    forEach:
-      item: php
-      in: ${{ inputs.intent.php }}
-    task: {type: workflow, workflowIdOrName: node-php-runtime, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: {
-          ssh: '${{ inputs.intent.ssh }}', php: '${{ self.php }}'}}}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ansible-role-node
+      methodName: execute
+      inputs:
+        run: timeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags node "$ORBIT_ANSIBLE/operation-node-role-add.yml"
+        env: *id001
   dependsOn:
-  - {job: phase_13, condition: {type: succeeded}}
-- name: phase_15
-  labels:
-    role: swamp
-  steps:
-  - name: Write role files
-    concurrency: 1
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: file
-      in: ${{ inputs.intent.files }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ "role-add-file-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: apply, globalArgs: {
-        nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file
-          }}', become: true, path: '${{ self.file.path }}', content: '${{ self.file.content }}', owner: '${{ self.file.owner }}', group: '${{ self.file.group }}', mode: '${{ self.file.mode
-          }}', ensure: present}, inputs: {}}
-  dependsOn:
-  - {job: phase_14, condition: {type: succeeded}}
-- name: phase_16
-  labels:
-    role: swamp
-  steps:
-  - name: Reload role units
-    labels:
-      role: swamp
-    writes: true
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-daemon-reload-"+string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "role-add-daemon-reload-"+string(inputs.node_id)
-          }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'},
-        hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target',
-        sudo: true, argv: [timeout, '60', systemctl, daemon-reload], timeoutSec: 70}}
-  dependsOn:
-  - {job: phase_15, condition: {type: succeeded}}
-- name: phase_17
-  labels:
-    role: swamp
-  steps:
-  - name: Start role services
-    concurrency: 1
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: service
-      in: ${{ inputs.intent.services }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ "role-add-service-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: apply, globalArgs: {
-        nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file
-          }}', become: true, service: '${{ self.service.name }}', ensure: running, enabled: true}, inputs: {}}
-  dependsOn:
-  - {job: phase_16, condition: {type: succeeded}}
-- name: phase_18
-  labels:
-    role: swamp
-  steps:
-  - name: Create runtime groups
-    concurrency: 1
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: group
-      in: ${{ inputs.intent.runtime.groups }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/group', behaviorName: '${{ "role-add-runtime-group-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: apply,
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
-          inputs.intent.ssh.identity_file }}', become: true, groupname: '${{ self.group.name }}', gid: '${{ self.group.gid }}', system: true, ensure: present}, inputs: {}}
-  dependsOn:
-  - {job: phase_17, condition: {type: succeeded}}
-- name: phase_19
-  labels:
-    role: swamp
-  steps:
-  - name: Create runtime users
-    concurrency: 1
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: user
-      in: ${{ inputs.intent.runtime.users }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/user', behaviorName: '${{ "role-add-runtime-user-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: apply, globalArgs: {
-        nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file
-          }}', become: true, username: '${{ self.user.name }}', uid: '${{ self.user.uid }}', gid: '${{ self.user.gid }}', shell: /usr/sbin/nologin, system: true, ensure: present}, inputs: {}}
-  dependsOn:
-  - {job: phase_18, condition: {type: succeeded}}
-- name: phase_20
-  labels:
-    role: swamp
-  steps:
-  - name: Create runtime folders
-    concurrency: 1
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: directory
-      in: ${{ inputs.intent.runtime.directories }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/directory', behaviorName: '${{ "role-add-runtime-folder-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: apply,
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
-          inputs.intent.ssh.identity_file }}', become: true, path: '${{ self.directory.path }}', owner: '${{ self.directory.owner }}', group: '${{ self.directory.group }}', mode: '${{
-          self.directory.mode }}', ensure: present}, inputs: {}}
-  dependsOn:
-  - {job: phase_19, condition: {type: succeeded}}
-- name: phase_21
-  labels:
-    role: swamp
-  steps:
-  - name: Check out Reverb
-    concurrency: 1
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: web
-      in: '${{ inputs.intent.runtime.websocket == null ? [] : [inputs.intent.runtime.websocket] }}'
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/git', behaviorName: '${{ "role-add-reverb-checkout-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: apply,
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
-          inputs.intent.ssh.identity_file }}', become: true, repo: '${{ self.web.repository }}', revision: '${{ self.web.ref }}', ensure: present, path: '${{ self.web.release }}', owner: '${{
-          self.web.user }}'}, inputs: {}}
-  dependsOn:
-  - {job: phase_20, condition: {type: succeeded}}
-- name: phase_22
-  labels:
-    role: swamp
-  steps:
-  - name: Install Reverb packages
-    concurrency: 1
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: web
-      in: '${{ inputs.intent.runtime.websocket == null ? [] : [inputs.intent.runtime.websocket] }}'
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-reverb-composer-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {
-        name: '${{ "role-add-reverb-composer-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port
-            }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys
-                }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["timeout","300","sudo","-n","-H","-u",self.web.user,"--","env","COMPOSER_ALLOW_SUPERUSER=1","composer","install","--no-dev","--optimize-autoloader","--no-interaction","--no-progress","--working-dir="+self.web.release]
-          }}', timeoutSec: 905}}
-  dependsOn:
-  - {job: phase_21, condition: {type: succeeded}}
-- name: phase_23
-  labels:
-    role: swamp
-  steps:
-  - name: Write runtime files
-    concurrency: 1
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: file
-      in: ${{ inputs.intent.runtime.files.filter(f, inputs.kind != "node.role_converge" || f.path != "/etc/orbit/metrics/prometheus.yml") }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ "role-add-runtime-file-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: apply, globalArgs: {
-        nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file
-          }}', become: true, path: '${{ self.file.path }}', content: '${{ self.file.content }}', owner: '${{ self.file.owner }}', group: '${{ self.file.group }}', mode: '${{ self.file.mode
-          }}', ensure: '${{ "ensure" in self.file ? self.file.ensure : "present" }}'}, inputs: {}}
-  dependsOn:
-  - {job: phase_22, condition: {type: succeeded}}
-- name: phase_24
-  labels:
-    role: swamp
-  steps:
-  - name: Write private files
-    concurrency: 1
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: file
-      in: ${{ inputs.intent.runtime.secret_files }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ "role-add-private-file-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: apply, globalArgs: {
-        nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file
-          }}', become: true, path: '${{ self.file.path }}', content: '${{ vault.get(''orbit-control-inputs'',inputs.execution_secrets[self.file.secret].key) }}', owner: '${{ self.file.owner
-          }}', group: '${{ self.file.group }}', mode: '0600', ensure: present}, inputs: {}}
-  dependsOn:
-  - {job: phase_23, condition: {type: succeeded}}
-- name: phase_25
-  labels:
-    role: swamp
-  steps:
-  - name: Publish the Reverb release
-    concurrency: 1
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: web
-      in: '${{ inputs.intent.runtime.websocket == null ? [] : [inputs.intent.runtime.websocket] }}'
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/link', behaviorName: '${{ "role-add-reverb-link-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: apply, globalArgs: {
-        nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file
-          }}', become: true, path: '${{ self.web.path }}', target: '${{ self.web.release }}', owner: '${{ self.web.user }}', ensure: present}, inputs: {}}
-  dependsOn:
-  - {job: phase_24, condition: {type: succeeded}}
-- name: phase_26
-  labels:
-    role: swamp
-  steps:
-  - name: Apply Gateway DNS policy
-    concurrency: 1
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: dns
-      in: '${{ inputs.intent.runtime.gateway_dns == null ? [] : [inputs.intent.runtime.gateway_dns] }}'
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ "role-add-gateway-dns-unit-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: apply,
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
-          inputs.intent.ssh.identity_file }}', become: true, service: orbit-gateway-dns.service, unitFile: '${{ self.dns.unit }}', enabled: true}, inputs: {}}
-  dependsOn:
-  - {job: phase_25, condition: {type: succeeded}}
-- name: phase_27
-  labels:
-    role: swamp
-  steps:
-  - name: Start Gateway DNS policy
-    concurrency: 1
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: dns
-      in: '${{ inputs.intent.runtime.gateway_dns == null ? [] : [inputs.intent.runtime.gateway_dns] }}'
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-gateway-dns-start-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {
-        name: '${{ "role-add-gateway-dns-start-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port
-            }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys
-                }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: [timeout, '60', systemctl, start, orbit-gateway-dns.service], timeoutSec: 905}}
-  dependsOn:
-  - {job: phase_26, condition: {type: succeeded}}
-- name: phase_28
-  labels:
-    role: swamp
-  steps:
-  - name: Check Gateway DNS policy
-    concurrency: 1
-    labels:
-      role: swamp
-    forEach:
-      item: dns
-      in: '${{ inputs.intent.runtime.gateway_dns == null ? [] : [inputs.intent.runtime.gateway_dns] }}'
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ "role-add-gateway-dns-check-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: check,
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
-          inputs.intent.ssh.identity_file }}', become: true, service: orbit-gateway-dns.service, unitFile: '${{ self.dns.unit }}', enabled: true}, inputs: {}}
-  dependsOn:
-  - {job: phase_27, condition: {type: succeeded}}
-- name: phase_29
-  labels:
-    role: swamp
-  steps:
-  - name: Apply runtime units
-    concurrency: 1
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: unit
-      in: ${{ inputs.intent.runtime.units }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ "role-add-runtime-unit-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: apply,
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
-          inputs.intent.ssh.identity_file }}', become: true, service: '${{ self.unit.name }}', unitFile: '${{ self.unit.unit }}', enabled: true}, inputs: {}}
-  dependsOn:
-  - {job: phase_28, condition: {type: succeeded}}
-- name: phase_30
-  labels:
-    role: swamp
-  steps:
-  - name: Restart Reverb
-    labels:
-      role: swamp
-    writes: true
-    guard: ${{ inputs.intent.runtime.websocket == null || (inputs.kind == "node.role_converge" && steps["Publish the Reverb release-0"].outputs.changes.size() == 0 && steps["Write private
-      files-0"].outputs.changes.size() == 0 && steps["Apply runtime units-0"].outputs.changes.size() == 0 && steps["Check out Reverb-0"].outputs.changes.size() == 0) }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ "role-add-reverb-restart-"+string(inputs.node_id) }}', methodName: restart, globalArgs: {nodeHost: '${{
-          inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file
-          }}', become: true, service: orbit-websocket.service, ensure: running, enabled: true}, inputs: {}}
-  dependsOn:
-  - {job: phase_29, condition: {type: succeeded}}
-- name: reverb_start
-  labels:
-    role: swamp
-  dependsOn:
-  - {job: phase_30, condition: {type: succeeded}}
-  steps:
-  - name: Start Reverb
-    labels:
-      role: swamp
-    writes: true
-    guard: ${{ inputs.intent.runtime.websocket == null }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ "role-native-reverb-start-"+string(inputs.node_id) }}', methodName: apply, globalArgs: {nodeHost: '${{
-          inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file
-          }}', become: true, service: orbit-websocket.service, ensure: running, enabled: true}, inputs: {}}
-- name: phase_32
-  labels:
-    role: swamp
-  steps:
-  - name: Pull Metrics images
-    concurrency: 1
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: service
-      in: '${{ inputs.intent.runtime.metrics == null ? [] : inputs.intent.runtime.metrics.plan.services }}'
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/docker_image', behaviorName: '${{ "role-add-metrics-image-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: apply,
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
-          inputs.intent.ssh.identity_file }}', become: true, image: '${{ self.service.image }}', ensure: present}, inputs: {}}
-  dependsOn:
-  - {job: reverb_start, condition: {type: succeeded}}
-- name: metrics_inspect
-  labels:
-    role: swamp
-  dependsOn:
-  - {job: phase_32, condition: {type: succeeded}}
-  steps:
-  - name: Inspect Metrics containers
-    concurrency: 1
-    guard: ${{ inputs.kind != "node.role_converge" }}
-    labels:
-      role: swamp
-    forEach:
-      item: service
-      in: '${{ inputs.intent.runtime.metrics == null ? [] : inputs.intent.runtime.metrics.plan.services }}'
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/docker_container', behaviorName: '${{ "role-converge-metrics-inspect-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: check,
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
-          inputs.intent.ssh.identity_file }}', become: true, name: '${{ self.service.name }}', image: '${{ self.service.image }}', ensure: running, volumes: '${{ self.service.check.volumes
-          }}', restart: '${{ self.service.check.restart }}', ports: '${{ self.service.check.ports }}'}, inputs: {}}
-    dataOutputOverrides:
-    - specName: state
-      vaultName: orbit-control-inputs
-- name: phase_33
-  labels:
-    role: swamp
-  steps:
-  - name: Create Metrics volumes
-    concurrency: 1
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: service
-      in: '${{ inputs.intent.runtime.metrics == null ? [] : inputs.intent.runtime.metrics.plan.services }}'
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-metrics-volume-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {
-        name: '${{ "role-add-metrics-volume-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port
-            }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys
-                }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["timeout","60"]+self.service.volume_args }}', timeoutSec: 905}}
-  dependsOn:
-  - {job: metrics_inspect, condition: {type: succeeded}}
-- name: phase_34
-  labels:
-    role: swamp
-  steps:
-  - name: Remove Metrics containers
-    concurrency: 1
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: service
-      in: '${{ inputs.intent.runtime.metrics == null ? [] : inputs.intent.runtime.metrics.plan.services }}'
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/docker_container', behaviorName: '${{ "role-add-metrics-remove-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: apply,
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
-          inputs.intent.ssh.identity_file }}', become: true, name: '${{ self.service.name }}', image: '${{ self.service.image }}', ensure: absent}, inputs: {}}
-    dataOutputOverrides:
-    - specName: state
-      vaultName: orbit-control-inputs
-    guard: ${{ inputs.kind == "node.role_converge" && steps["Inspect Metrics containers-"+string(self._index)].outputs.status == "compliant" && (self.service.name != "orbit-metrics-grafana"
-      || (steps.filter(k,k.startsWith("Write runtime files-") || k.startsWith("Write private files-")).all(k,steps[k].outputs.changes.size() == 0))) }}
-  dependsOn:
-  - {job: phase_33, condition: {type: succeeded}}
-- name: phase_35
-  labels:
-    role: swamp
-  steps:
-  - name: Start Metrics containers
-    concurrency: 1
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: service
-      in: '${{ inputs.intent.runtime.metrics == null ? [] : inputs.intent.runtime.metrics.plan.services }}'
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-metrics-run-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {
-        name: '${{ "role-add-metrics-run-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port
-            }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys
-                }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ self.service.argv }}', timeoutSec: 905}}
-    guard: ${{ inputs.kind == "node.role_converge" && steps["Inspect Metrics containers-"+string(self._index)].outputs.status == "compliant" && (self.service.name != "orbit-metrics-grafana"
-      || (steps.filter(k,k.startsWith("Write runtime files-") || k.startsWith("Write private files-")).all(k,steps[k].outputs.changes.size() == 0))) }}
-  dependsOn:
-  - {job: phase_34, condition: {type: succeeded}}
-- name: phase_36
-  labels:
-    role: swamp
-  steps:
-  - name: Check Metrics containers
-    concurrency: 1
-    labels:
-      role: swamp
-    forEach:
-      item: service
-      in: '${{ inputs.intent.runtime.metrics == null ? [] : inputs.intent.runtime.metrics.plan.services }}'
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/docker_container', behaviorName: '${{ "role-add-metrics-check-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: check,
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
-          inputs.intent.ssh.identity_file }}', become: true, name: '${{ self.service.name }}', image: '${{ self.service.image }}', ensure: running, volumes: '${{ self.service.check.volumes
-          }}', restart: '${{ self.service.check.restart }}', ports: '${{ self.service.check.ports }}'}, inputs: {}}
-    dataOutputOverrides:
-    - specName: state
-      vaultName: orbit-control-inputs
-  dependsOn:
-  - {job: phase_35, condition: {type: succeeded}}
-- name: phase_37
-  labels:
-    role: swamp
-  steps:
-  - name: Start Incus
-    labels:
-      role: swamp
-    writes: true
-    guard: ${{ !inputs.intent.runtime.ci_host }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ "role-add-incus-service-"+string(inputs.node_id) }}', methodName: apply, globalArgs: {nodeHost: '${{
-          inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file
-          }}', become: true, service: incus.service, ensure: running}, inputs: {}}
-  dependsOn:
-  - {job: phase_36, condition: {type: succeeded}}
-- name: phase_38
-  labels:
-    role: swamp
-  steps:
-  - name: Plan CI resources
-    labels:
-      role: swamp
-    guard: ${{ !inputs.intent.runtime.ci_host }}
-    task: {type: behavior, behaviorType: '@nckrtl/node-role-resources', behaviorName: '${{ "role-add-ci-plan-"+string(inputs.node_id) }}', methodName: ci_host, inputs: {}}
-  dependsOn:
-  - {job: phase_37, condition: {type: succeeded}}
-- name: phase_39
-  labels:
-    role: swamp
-  steps:
-  - name: Read CI resources
-    concurrency: 1
-    labels:
-      role: swamp
-    forEach:
-      item: resource
-      in: '${{ inputs.intent.runtime.ci_host ? steps["Plan CI resources"].outputs.resources : [] }}'
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-ci-read-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {name: '${{
-          "role-add-ci-read-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port
-            }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys
-                }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ self.resource.read }}', timeoutSec: 905}}
-  dependsOn:
-  - {job: phase_38, condition: {type: succeeded}}
-- name: phase_40
-  labels:
-    role: swamp
-  steps:
-  - name: Create CI resources
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: resource
-      in: '${{ inputs.intent.runtime.ci_host ? steps["Plan CI resources"].outputs.resources : [] }}'
-    concurrency: 1
-    guard: ${{ steps["Read CI resources-"+string(self._index)].outputs.stdout.contains(self.resource.marker) }}
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-ci-create-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {name: '${{
-          "role-add-ci-create-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port
-            }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys
-                }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ self.resource.create }}', timeoutSec: 905}}
-  dependsOn:
-  - {job: phase_39, condition: {type: succeeded}}
-- name: phase_41
-  labels:
-    role: swamp
-  steps:
-  - name: Configure CI resources
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: resource
-      in: '${{ inputs.intent.runtime.ci_host ? steps["Plan CI resources"].outputs.commands : [] }}'
-    concurrency: 1
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-ci-configure-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {
-        name: '${{ "role-add-ci-configure-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port
-            }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys
-                }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ self.resource.argv }}', timeoutSec: 905, stdin: '${{ self.resource.stdin }}'}}
-  dependsOn:
-  - {job: phase_40, condition: {type: succeeded}}
-- name: phase_42
-  labels:
-    role: swamp
-  steps:
-  - name: Check CI resources
-    concurrency: 1
-    labels:
-      role: swamp
-    forEach:
-      item: resource
-      in: '${{ inputs.intent.runtime.ci_host ? steps["Plan CI resources"].outputs.checks : [] }}'
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-ci-check-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {name: '${{
-          "role-add-ci-check-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port
-            }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys
-                }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ self.resource.argv }}', timeoutSec: 905}}
-  dependsOn:
-  - {job: phase_41, condition: {type: succeeded}}
-- name: phase_43
-  labels:
-    role: swamp
-  steps:
-  - name: Prepare ClickHouse files
-    labels:
-      role: swamp
-    guard: ${{ inputs.intent.runtime.analytics == null }}
-    task: {type: behavior, behaviorType: '@nckrtl/node-role-resources', behaviorName: '${{ "role-add-clickhouse-plan-"+string(inputs.node_id) }}', methodName: clickhouse, inputs: {}}
-  dependsOn:
-  - {job: phase_42, condition: {type: succeeded}}
-- name: phase_44
-  labels:
-    role: swamp
-  steps:
-  - name: Create ClickHouse folders
-    concurrency: 1
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: directory
-      in: '${{ inputs.intent.runtime.analytics == null ? [] : steps["Prepare ClickHouse files"].outputs.directories }}'
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/directory', behaviorName: '${{ "role-add-clickhouse-directory-"+string(inputs.intent.runtime.analytics == null ? inputs.node_id
-        : inputs.intent.runtime.analytics.clickhouse_node_id)+"-"+string(self._index) }}', methodName: apply, globalArgs: {nodeHost: '${{ (inputs.intent.runtime.analytics == null ? inputs.intent.ssh
-          : inputs.intent.runtime.analytics.clickhouse_ssh).target.host }}', nodeUser: '${{ (inputs.intent.runtime.analytics == null ? inputs.intent.ssh : inputs.intent.runtime.analytics.clickhouse_ssh).target.user
-          }}', nodePort: '${{ (inputs.intent.runtime.analytics == null ? inputs.intent.ssh : inputs.intent.runtime.analytics.clickhouse_ssh).target.port }}', nodeIdentityFile: '${{ (inputs.intent.runtime.analytics
-          == null ? inputs.intent.ssh : inputs.intent.runtime.analytics.clickhouse_ssh).identity_file }}', become: true, path: '${{ self.directory }}', owner: root, group: root, mode: '0755',
-        ensure: present}, inputs: {}}
-  dependsOn:
-  - {job: phase_43, condition: {type: succeeded}}
-- name: phase_45
-  labels:
-    role: swamp
-  steps:
-  - name: Write ClickHouse config
-    concurrency: 1
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: file
-      in: '${{ inputs.intent.runtime.analytics == null ? [] : steps["Prepare ClickHouse files"].outputs.files }}'
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ "role-add-clickhouse-file-"+string(inputs.intent.runtime.analytics == null ? inputs.node_id : inputs.intent.runtime.analytics.clickhouse_node_id)+"-"+string(self._index)
-        }}', methodName: apply, globalArgs: {nodeHost: '${{ (inputs.intent.runtime.analytics == null ? inputs.intent.ssh : inputs.intent.runtime.analytics.clickhouse_ssh).target.host
-          }}', nodeUser: '${{ (inputs.intent.runtime.analytics == null ? inputs.intent.ssh : inputs.intent.runtime.analytics.clickhouse_ssh).target.user }}', nodePort: '${{ (inputs.intent.runtime.analytics
-          == null ? inputs.intent.ssh : inputs.intent.runtime.analytics.clickhouse_ssh).target.port }}', nodeIdentityFile: '${{ (inputs.intent.runtime.analytics == null ? inputs.intent.ssh
-          : inputs.intent.runtime.analytics.clickhouse_ssh).identity_file }}', become: true, path: '${{ self.file.path }}', content: '${{ self.file.content }}', owner: root, group: root,
-        mode: '0644', ensure: present}, inputs: {}}
-  dependsOn:
-  - {job: phase_44, condition: {type: succeeded}}
+  - job: phase_13
+    condition: {type: succeeded}
 - name: phase_46
-  labels:
-    role: swamp
+  labels: {role: swamp}
   steps:
   - name: Pull the Analytics image
     concurrency: 1
     guard: ${{ inputs.kind == "node.role_converge" }}
-    labels:
-      role: swamp
+    labels: {role: swamp}
     writes: true
-    forEach:
-      item: analytics
-      in: '${{ inputs.kind == "node.role_converge" ? [] : inputs.intent.runtime.analytics == null ? [] : [inputs.intent.runtime.analytics] }}'
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/docker_image', behaviorName: '${{ "role-add-analytics-image-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: apply,
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
-          inputs.intent.ssh.identity_file }}', become: true, image: '${{ self.analytics.intent.installation.definition.image }}', ensure: present}, inputs: {}}
+    forEach: {item: analytics, in: '${{ inputs.kind == "node.role_converge" ? [] : inputs.intent.runtime.analytics == null ? [] : [inputs.intent.runtime.analytics]
+        }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/docker_image'
+      behaviorName: ${{ "role-add-analytics-image-"+string(inputs.node_id) + "-"+string(self._index) }}
+      methodName: apply
+      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port
+          }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true, image: '${{ self.analytics.intent.installation.definition.image
+          }}', ensure: present}
+      inputs: {}
   dependsOn:
-  - {job: phase_45, condition: {type: succeeded}}
+  - job: node
+    condition: {type: succeeded}
 - name: phase_47
-  labels:
-    role: swamp
+  labels: {role: swamp}
   steps:
   - name: Prepare Analytics storage
     guard: ${{ inputs.kind == "node.role_converge" }}
-    labels:
-      role: swamp
+    labels: {role: swamp}
     writes: true
-    forEach:
-      item: initialization
-      in: '${{ inputs.kind == "node.role_converge" ? [] : inputs.intent.runtime.analytics == null ? [] : inputs.intent.runtime.analytics.initialize }}'
+    forEach: {item: initialization, in: '${{ inputs.kind == "node.role_converge" ? [] : inputs.intent.runtime.analytics == null ? [] : inputs.intent.runtime.analytics.initialize
+        }}'}
     concurrency: 1
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-analytics-initialize-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {
-        name: '${{ "role-add-analytics-initialize-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{
-            inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {
-              hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ self.initialization.argv }}', timeoutSec: 905}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "role-add-analytics-initialize-"+string(inputs.node_id)+"-"+string(self._index) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "role-add-analytics-initialize-"+string(inputs.node_id)+"-"+string(self._index) }}
+        transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{
+            inputs.intent.ssh.identity_file }}'}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
+      inputs: {hosts: 'name:target', sudo: true, argv: '${{ self.initialization.argv }}', timeoutSec: 905}
   dependsOn:
-  - {job: phase_46, condition: {type: succeeded}}
+  - job: phase_46
+    condition: {type: succeeded}
 - name: phase_48
-  labels:
-    role: swamp
+  labels: {role: swamp}
   steps:
   - name: Apply Analytics runtime
     guard: ${{ inputs.kind == "node.role_converge" }}
-    labels:
-      role: swamp
+    labels: {role: swamp}
     writes: true
-    forEach:
-      item: analytics
-      in: '${{ inputs.kind == "node.role_converge" ? [] : inputs.intent.runtime.analytics == null ? [] : [inputs.intent.runtime.analytics] }}'
-    task: {type: workflow, workflowIdOrName: operation-process-create, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: process.create, intent: '${{
-          self.analytics.intent }}', execution_secrets: {environment: '${{ inputs.intent.runtime.analytics == null ? {} : inputs.execution_secrets["analytics_environment"] }}'}}}
+    forEach: {item: analytics, in: '${{ inputs.kind == "node.role_converge" ? [] : inputs.intent.runtime.analytics == null ? [] : [inputs.intent.runtime.analytics]
+        }}'}
+    task:
+      type: workflow
+      workflowIdOrName: operation-process-create
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: process.create
+        intent: ${{ self.analytics.intent }}
+        execution_secrets: {environment: '${{ inputs.intent.runtime.analytics == null ? {} : inputs.execution_secrets["analytics_environment"]
+            }}'}
   dependsOn:
-  - {job: phase_47, condition: {type: succeeded}}
-- name: phase_49
-  labels:
-    role: swamp
-  steps:
-  - name: Wait for runtime endpoints
-    concurrency: 1
-    labels:
-      role: swamp
-    forEach:
-      item: probe
-      in: ${{ inputs.intent.runtime.probes }}
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-runtime-ready-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {
-        name: '${{ "role-add-runtime-ready-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port
-            }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys
-                }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["timeout","60","curl","--max-time","5","--retry","59","--retry-delay","1","--retry-connrefused","--silent","--show-error","--output","/dev/null"]
-          + (self.probe.require_success ? ["--fail"] : []) + [self.probe.url] }}', timeoutSec: 905}}
-  dependsOn:
-  - {job: phase_48, condition: {type: succeeded}}
-- name: phase_50
-  labels:
-    role: swamp
-  steps:
-  - name: Set the Grafana password
-    labels:
-      role: swamp
-    writes: true
-    guard: ${{ inputs.intent.runtime.metrics == null }}
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-grafana-password-"+string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "role-add-grafana-password-"+string(inputs.node_id)
-          }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'},
-        hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target',
-        sudo: true, argv: [timeout, '60', docker, exec, -i, orbit-metrics-grafana, grafana, cli, --homepath, /usr/share/grafana, admin, reset-admin-password, --password-from-stdin],
-        stdin: '${{ vault.get(''orbit-control-inputs'',inputs.execution_secrets[''metrics_password''].key) }}', timeoutSec: 70}}
-  dependsOn:
-  - {job: phase_49, condition: {type: succeeded}}
+  - job: phase_47
+    condition: {type: succeeded}
 - name: swamp_runtime_job
   dependsOn:
-  - {job: phase_50, condition: {type: succeeded}}
+  - {job: phase_48, condition: {type: succeeded}}
   steps:
     # The recipe's pinned release, by checksum, at a path of its own version: no process runs from it yet.
   - name: Install Swamp
@@ -1182,569 +667,203 @@ jobs:
   labels:
     role: swamp
 - name: phase_51
-  labels:
-    role: swamp
+  labels: {role: swamp}
   steps:
   - name: Sign role certificates
-    labels:
-      role: swamp
+    labels: {role: swamp}
     writes: true
-    forEach:
-      item: leaf
-      in: ${{ inputs.intent.certificates.leaves }}
-    task: {type: workflow, workflowIdOrName: node-role-certificate-publish, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind
-          }}', parent_run_id: '${{ has(inputs.parent_run_id) && inputs.parent_run_id != "" ? inputs.parent_run_id : run.id }}', leaf: '${{ self.leaf }}', ssh: {name: '${{ "role-add-certificate-"+string(self.leaf.node_id)+"-"+self.leaf.scope }}', transport: {kind: ssh,
-            user: '${{ inputs.intent.certificates.connections.filter(c,c.node_id == self.leaf.node_id)[0].ssh.target.user }}', port: '${{ inputs.intent.certificates.connections.filter(c,c.node_id
-              == self.leaf.node_id)[0].ssh.target.port }}', identityFile: '${{ inputs.intent.certificates.connections.filter(c,c.node_id == self.leaf.node_id)[0].ssh.identity_file }}'},
-          hosts: [{name: target, address: '${{ inputs.intent.certificates.connections.filter(c,c.node_id == self.leaf.node_id)[0].ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.certificates.connections.filter(c,c.node_id
-                  == self.leaf.node_id)[0].ssh.target.host_keys }}'}}]}}}
+    forEach: {item: leaf, in: '${{ inputs.intent.certificates.leaves }}'}
+    task:
+      type: workflow
+      workflowIdOrName: node-role-certificate-publish
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        parent_run_id: '${{ has(inputs.parent_run_id) && inputs.parent_run_id != "" ? inputs.parent_run_id : run.id }}'
+        leaf: ${{ self.leaf }}
+        ssh:
+          name: ${{ "role-add-certificate-"+string(self.leaf.node_id)+"-"+self.leaf.scope }}
+          transport: {kind: ssh, user: '${{ inputs.intent.certificates.connections.filter(c,c.node_id == self.leaf.node_id)[0].ssh.target.user
+              }}', port: '${{ inputs.intent.certificates.connections.filter(c,c.node_id == self.leaf.node_id)[0].ssh.target.port }}', identityFile: '${{
+              inputs.intent.certificates.connections.filter(c,c.node_id == self.leaf.node_id)[0].ssh.identity_file }}'}
+          hosts:
+          - name: target
+            address: ${{ inputs.intent.certificates.connections.filter(c,c.node_id == self.leaf.node_id)[0].ssh.target.host }}
+            transport: {hostKeys: '${{ inputs.intent.certificates.connections.filter(c,c.node_id == self.leaf.node_id)[0].ssh.target.host_keys
+                }}'}
   dependsOn:
-  - {job: Check Swamp runtime_job, condition: {type: succeeded}}
-- name: phase_52
-  labels:
-    role: swamp
+  - job: Check Swamp runtime_job
+    condition: {type: succeeded}
+- name: publication
+  labels: {role: swamp}
   steps:
-  - name: Publish PHP pools
-    labels:
-      role: swamp
+  - name: Publish role sites
+    labels: {role: swamp}
     writes: true
-    forEach:
-      item: publication
-      in: ${{ inputs.intent.publications.filter(p,p.after.php != null) }}
-    task: {type: workflow, workflowIdOrName: operation-route-php-delta, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind
-          }}', intent: {node_id: '${{ self.publication.node_id }}', user: '${{ self.publication.connection.nodeUser }}', control_node_id: 209, host_keys: '${{ self.publication.host_keys
-            }}', connection: '${{ self.publication.connection }}', before: '${{ self.publication.before.php }}', after: '${{ self.publication.after.php }}', direction: forward}, execution_secrets: {}}}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ansible-role-publication
+      methodName: execute
+      inputs:
+        run: timeout 180 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags publication
+          "$ORBIT_ANSIBLE/operation-node-role-add.yml"
+        env: *id001
   dependsOn:
-  - {job: phase_51, condition: {type: succeeded}}
-- name: phase_53
-  labels:
-    role: swamp
+  - job: phase_51
+    condition: {type: succeeded}
+- name: firewall
+  labels: {role: swamp}
   steps:
-  - name: Publish Caddy sites
-    labels:
-      role: swamp
+  - name: Open the firewall
+    labels: {role: swamp}
     writes: true
-    forEach:
-      item: publication
-      in: ${{ inputs.intent.publications.filter(p,p.after.caddy != null) }}
-    task: {type: workflow, workflowIdOrName: operation-route-caddy, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}',
-        intent: {caddy_publication: {node_id: '${{ self.publication.node_id }}', user: '${{ self.publication.connection.nodeUser }}', control_node_id: 209, host_keys: '${{ self.publication.host_keys
-              }}', connection: '${{ self.publication.connection }}', caddy: '${{ self.publication.after.caddy }}'}}, execution_secrets: {}}}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ansible-role-firewall
+      methodName: execute
+      inputs:
+        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags firewall
+          "$ORBIT_ANSIBLE/operation-node-role-add.yml"
+        env: *id001
   dependsOn:
-  - {job: phase_52, condition: {type: succeeded}}
-- name: phase_54
-  labels:
-    role: swamp
-  steps:
-  - name: Open role ports
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: argv
-      in: ${{ inputs.intent.firewall.desired }}
-    concurrency: 1
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-open-ports-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {name: '${{
-          "role-add-open-ports-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port
-            }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys
-                }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ self.argv }}', timeoutSec: 905}}
-  dependsOn:
-  - {job: phase_53, condition: {type: succeeded}}
-- name: phase_55
-  labels:
-    role: swamp
-  steps:
-  - name: Close retired ports
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: argv
-      in: ${{ inputs.intent.firewall.remove }}
-    concurrency: 1
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-close-ports-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {
-        name: '${{ "role-add-close-ports-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port
-            }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys
-                }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ self.argv }}', timeoutSec: 905}}
-  dependsOn:
-  - {job: phase_54, condition: {type: succeeded}}
-- name: phase_56
-  labels:
-    role: swamp
-  steps:
-  - name: Publish private DNS
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: publication
-      in: ${{ inputs.intent.publications.filter(p,p.after.dns != null) }}
-    task: {type: workflow, workflowIdOrName: route-dns-publish, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: {
-          node_id: '${{ self.publication.node_id }}', connection: '${{ self.publication.connection }}', host_keys: '${{ self.publication.host_keys }}', before: '${{ self.publication.before.dns
-            }}', after: '${{ self.publication.after.dns }}', alternatives: []}, execution_secrets: {}}}
-  dependsOn:
-  - {job: phase_55, condition: {type: succeeded}}
-- name: phase_57
-  labels:
-    role: swamp
+  - job: publication
+    condition: {type: succeeded}
+- name: exporters
+  labels: {role: swamp}
   steps:
   - name: Add the exporters
-    labels:
-      role: swamp
+    labels: {role: swamp}
     writes: true
-    forEach:
-      item: exporter
-      in: ${{ inputs.intent.exporters }}
-    task: {type: workflow, workflowIdOrName: metrics-exporter-node, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ self.exporter.exporter_node_id }}', kind: '${{
-          inputs.kind }}', intent: '${{ self.exporter }}'}}
-    concurrency: 1
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ansible-role-exporters
+      methodName: execute
+      inputs:
+        run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags exporters
+          "$ORBIT_ANSIBLE/operation-node-role-add.yml"
+        env: *id001
+    guard: ${{ inputs.intent.exporters.size() == 0 }}
   dependsOn:
-  - {job: phase_56, condition: {type: succeeded}}
-- name: phase_58
-  labels:
-    role: swamp
+  - job: firewall
+    condition: {type: succeeded}
+- name: prometheus
+  labels: {role: swamp}
   steps:
-  - name: Allow Metrics scrapes
-    labels:
-      role: swamp
+  - name: Publish Prometheus
+    labels: {role: swamp}
     writes: true
-    forEach:
-      item: exporter
-      in: ${{ inputs.intent.exporters }}
-    task: {type: workflow, workflowIdOrName: metrics-exporter-allows, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ self.exporter.exporter_node_id }}', kind: '${{
-          inputs.kind }}', intent: '${{ self.exporter }}'}}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ansible-role-prometheus
+      methodName: execute
+      inputs:
+        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags prometheus
+          "$ORBIT_ANSIBLE/operation-node-role-add.yml"
+        env: *id001
+    guard: ${{ inputs.intent.prometheus == null }}
   dependsOn:
-  - {job: phase_57, condition: {type: succeeded}}
-- name: phase_59
-  labels:
-    role: swamp
-  steps:
-  - name: Check exporter endpoints
-    concurrency: 1
-    labels:
-      role: swamp
-    forEach:
-      item: metrics
-      in: '${{ inputs.intent.prometheus == null ? [] : inputs.intent.prometheus.checks }}'
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("role-add-exporter-health-"+string(self.metrics.node_id)+"-"+string(self.metrics.index)).split(".").join("-")
-        }}', methodName: exec, globalArgs: {name: '${{ ("role-add-exporter-health-"+string(self.metrics.node_id)+"-"+string(self.metrics.index)).split(".").join("-") }}', transport: {
-          kind: ssh, user: '${{ self.metrics.ssh.target.user }}', port: '${{ self.metrics.ssh.target.port }}', identityFile: '${{ self.metrics.ssh.identity_file }}'}, hosts: [{name: target,
-            address: '${{ self.metrics.ssh.target.host }}', transport: {hostKeys: '${{ self.metrics.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{
-          ["timeout","60","curl","--max-time","5","--retry","59","--retry-delay","1","--retry-connrefused","--fail","--silent","--show-error","--output","/dev/null",self.metrics.url]
-          }}', timeoutSec: 905}}
-  dependsOn:
-  - {job: phase_58, condition: {type: succeeded}}
-- name: phase_60
-  labels:
-    role: swamp
-  steps:
-  - name: Stage Prometheus config
-    concurrency: 1
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: metrics
-      in: '${{ inputs.intent.prometheus == null ? [] : [inputs.intent.prometheus] }}'
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ "role-add-prometheus-candidate-"+string(self.metrics.node_id) }}', methodName: apply, globalArgs: {
-        nodeHost: '${{ self.metrics.ssh.target.host }}', nodeUser: '${{ self.metrics.ssh.target.user }}', nodePort: '${{ self.metrics.ssh.target.port }}', nodeIdentityFile: '${{ self.metrics.ssh.identity_file
-          }}', become: true, path: '${{ self.metrics.candidate }}', content: '${{ self.metrics.configuration }}', owner: root, group: root, mode: '0644', ensure: present}, inputs: {}}
-  dependsOn:
-  - {job: phase_59, condition: {type: succeeded}}
-- name: phase_61
-  labels:
-    role: swamp
-  steps:
-  - name: Validate Prometheus config
-    concurrency: 1
-    labels:
-      role: swamp
-    forEach:
-      item: metrics
-      in: '${{ inputs.intent.prometheus == null ? [] : [inputs.intent.prometheus] }}'
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-prometheus-validate-"+string(self.metrics.node_id) }}', methodName: exec, globalArgs: {name: '${{
-          "role-add-prometheus-validate-"+string(self.metrics.node_id) }}', transport: {kind: ssh, user: '${{ self.metrics.ssh.target.user }}', port: '${{ self.metrics.ssh.target.port
-            }}', identityFile: '${{ self.metrics.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ self.metrics.ssh.target.host }}', transport: {hostKeys: '${{ self.metrics.ssh.target.host_keys
-                }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: [timeout, '60', docker, exec, -i, orbit-metrics-prometheus, /bin/promtool, check, config, /dev/stdin], timeoutSec: 905,
-        stdin: '${{ self.metrics.configuration }}'}}
-  dependsOn:
-  - {job: phase_60, condition: {type: succeeded}}
-- name: phase_62
-  labels:
-    role: swamp
-  steps:
-  - name: Publish Prometheus config
-    concurrency: 1
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: metrics
-      in: '${{ inputs.intent.prometheus == null ? [] : [inputs.intent.prometheus] }}'
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-prometheus-publish-"+string(self.metrics.node_id) }}', methodName: exec, globalArgs: {name: '${{ "role-add-prometheus-publish-"+string(self.metrics.node_id)
-          }}', transport: {kind: ssh, user: '${{ self.metrics.ssh.target.user }}', port: '${{ self.metrics.ssh.target.port }}', identityFile: '${{ self.metrics.ssh.identity_file }}'},
-        hosts: [{name: target, address: '${{ self.metrics.ssh.target.host }}', transport: {hostKeys: '${{ self.metrics.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', sudo: true,
-        argv: '${{ ["timeout","60","cp","--",self.metrics.candidate,"/etc/orbit/metrics/prometheus.yml"] }}', timeoutSec: 905}}
-  dependsOn:
-  - {job: phase_61, condition: {type: succeeded}}
-- name: phase_63
-  labels:
-    role: swamp
-  steps:
-  - name: Reload Prometheus
-    concurrency: 1
-    labels:
-      role: swamp
-    writes: true
-    forEach:
-      item: metrics
-      in: '${{ inputs.intent.prometheus == null ? [] : [inputs.intent.prometheus] }}'
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-prometheus-reload-"+string(self.metrics.node_id) }}', methodName: exec, globalArgs: {name: '${{ "role-add-prometheus-reload-"+string(self.metrics.node_id)
-          }}', transport: {kind: ssh, user: '${{ self.metrics.ssh.target.user }}', port: '${{ self.metrics.ssh.target.port }}', identityFile: '${{ self.metrics.ssh.identity_file }}'},
-        hosts: [{name: target, address: '${{ self.metrics.ssh.target.host }}', transport: {hostKeys: '${{ self.metrics.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', sudo: true,
-        argv: [timeout, '60', docker, kill, --signal, HUP, orbit-metrics-prometheus], timeoutSec: 905}}
-  dependsOn:
-  - {job: phase_62, condition: {type: succeeded}}
-- name: phase_64
-  labels:
-    role: swamp
-  steps:
-  - name: Check Prometheus
-    concurrency: 1
-    labels:
-      role: swamp
-    forEach:
-      item: metrics
-      in: '${{ inputs.intent.prometheus == null ? [] : [inputs.intent.prometheus] }}'
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-prometheus-health-"+string(self.metrics.node_id) }}', methodName: exec, globalArgs: {name: '${{ "role-add-prometheus-health-"+string(self.metrics.node_id)
-          }}', transport: {kind: ssh, user: '${{ self.metrics.ssh.target.user }}', port: '${{ self.metrics.ssh.target.port }}', identityFile: '${{ self.metrics.ssh.identity_file }}'},
-        hosts: [{name: target, address: '${{ self.metrics.ssh.target.host }}', transport: {hostKeys: '${{ self.metrics.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', sudo: true,
-        argv: [timeout, '60', curl, --max-time, '5', --retry, '59', --retry-delay, '1', --retry-connrefused, --fail, --silent, --show-error, --output, /dev/null, 'http://127.0.0.1:9090/-/ready'],
-        timeoutSec: 905}}
-  dependsOn:
-  - {job: phase_63, condition: {type: succeeded}}
-- name: phase_65
-  labels:
-    role: swamp
-  steps:
-  - name: Check role services
-    concurrency: 1
-    labels:
-      role: swamp
-    forEach:
-      item: service
-      in: ${{ inputs.intent.services }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ "role-add-service-check-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: check,
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
-          inputs.intent.ssh.identity_file }}', become: true, service: '${{ self.service.name }}', ensure: running, enabled: true}, inputs: {}}
-  dependsOn:
-  - {job: phase_64, condition: {type: succeeded}}
-- name: phase_66
-  labels:
-    role: swamp
-  steps:
-  - name: Check runtime units
-    concurrency: 1
-    labels:
-      role: swamp
-    forEach:
-      item: unit
-      in: ${{ inputs.intent.runtime.units }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ "role-add-runtime-unit-check-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: check,
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
-          inputs.intent.ssh.identity_file }}', become: true, service: '${{ self.unit.name }}', enabled: true, ensure: running}, inputs: {}}
-  dependsOn:
-  - {job: phase_65, condition: {type: succeeded}}
-- name: phase_67
-  labels:
-    role: swamp
-  steps:
-  - name: Check Incus
-    labels:
-      role: swamp
-    guard: ${{ !inputs.intent.runtime.ci_host }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ "role-add-incus-service-check-"+string(inputs.node_id) }}', methodName: check, globalArgs: {nodeHost: '${{
-          inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file
-          }}', become: true, service: incus.service, ensure: running}, inputs: {}}
-  dependsOn:
-  - {job: phase_66, condition: {type: succeeded}}
-- name: phase_68
-  labels:
-    role: swamp
-  steps:
-  - name: Check runtime groups
-    concurrency: 1
-    labels:
-      role: swamp
-    forEach:
-      item: group
-      in: ${{ inputs.intent.runtime.groups }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/group', behaviorName: '${{ "role-add-runtime-group-check-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: check,
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
-          inputs.intent.ssh.identity_file }}', become: true, groupname: '${{ self.group.name }}', gid: '${{ self.group.gid }}', ensure: present}, inputs: {}}
-  dependsOn:
-  - {job: phase_67, condition: {type: succeeded}}
-- name: phase_69
-  labels:
-    role: swamp
-  steps:
-  - name: Check runtime users
-    concurrency: 1
-    labels:
-      role: swamp
-    forEach:
-      item: user
-      in: ${{ inputs.intent.runtime.users }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/user', behaviorName: '${{ "role-add-runtime-user-check-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: check,
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
-          inputs.intent.ssh.identity_file }}', become: true, username: '${{ self.user.name }}', uid: '${{ self.user.uid }}', gid: '${{ self.user.gid }}', shell: /usr/sbin/nologin, ensure: present},
-      inputs: {}}
-  dependsOn:
-  - {job: phase_68, condition: {type: succeeded}}
-- name: phase_70
-  labels:
-    role: swamp
-  steps:
-  - name: Check prerequisites
-    labels:
-      role: swamp
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/apt', behaviorName: '${{ "role-add-packages-check-"+string(inputs.node_id) }}', methodName: check, globalArgs: {nodeHost: '${{
-          inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file
-          }}', become: true, packages: '${{ inputs.intent.packages.filter(p,p != "docker.io" || !("docker.io" in inputs.intent.packages && steps["Inspect Docker CE-0"].outputs.status
-          == "compliant")) + (("docker.io" in inputs.intent.packages && steps["Inspect Docker CE-0"].outputs.status == "compliant") ? ["docker-ce","docker-ce-cli","containerd.io"] :
-          []) }}', ensure: present}, inputs: {}}
-  dependsOn:
-  - {job: phase_69, condition: {type: succeeded}}
-- name: phase_71
-  labels:
-    role: swamp
-  steps:
-  - name: Check role folders
-    concurrency: 1
-    labels:
-      role: swamp
-    forEach:
-      item: directory
-      in: ${{ inputs.intent.directories }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/directory', behaviorName: '${{ "role-add-folder-check-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: check,
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
-          inputs.intent.ssh.identity_file }}', become: true, path: '${{ self.directory.path }}', owner: '${{ self.directory.owner }}', group: '${{ self.directory.group }}', mode: '${{
-          self.directory.mode }}', ensure: present}, inputs: {}}
-  dependsOn:
-  - {job: phase_70, condition: {type: succeeded}}
-- name: phase_72
-  labels:
-    role: swamp
-  steps:
-  - name: Check role files
-    concurrency: 1
-    labels:
-      role: swamp
-    forEach:
-      item: file
-      in: ${{ inputs.intent.files }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ "role-add-file-check-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: check, globalArgs: {
-        nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file
-          }}', become: true, path: '${{ self.file.path }}', content: '${{ self.file.content }}', owner: '${{ self.file.owner }}', group: '${{ self.file.group }}', mode: '${{ self.file.mode
-          }}', ensure: present}, inputs: {}}
-  dependsOn:
-  - {job: phase_71, condition: {type: succeeded}}
-- name: phase_73
-  labels:
-    role: swamp
-  steps:
-  - name: Check runtime folders
-    concurrency: 1
-    labels:
-      role: swamp
-    forEach:
-      item: directory
-      in: ${{ inputs.intent.runtime.directories }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/directory', behaviorName: '${{ "role-add-runtime-folder-check-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: check,
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
-          inputs.intent.ssh.identity_file }}', become: true, path: '${{ self.directory.path }}', owner: '${{ self.directory.owner }}', group: '${{ self.directory.group }}', mode: '${{
-          self.directory.mode }}', ensure: present}, inputs: {}}
-  dependsOn:
-  - {job: phase_72, condition: {type: succeeded}}
-- name: phase_74
-  labels:
-    role: swamp
-  steps:
-  - name: Check runtime files
-    concurrency: 1
-    labels:
-      role: swamp
-    forEach:
-      item: file
-      in: ${{ inputs.intent.runtime.files }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ "role-add-runtime-file-check-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: check,
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
-          inputs.intent.ssh.identity_file }}', become: true, path: '${{ self.file.path }}', content: '${{ self.file.content }}', owner: '${{ self.file.owner }}', group: '${{ self.file.group
-          }}', mode: '${{ self.file.mode }}', ensure: '${{ "ensure" in self.file ? self.file.ensure : "present" }}'}, inputs: {}}
-  dependsOn:
-  - {job: phase_73, condition: {type: succeeded}}
-- name: phase_75
-  labels:
-    role: swamp
-  steps:
-  - name: Check private files
-    concurrency: 1
-    labels:
-      role: swamp
-    forEach:
-      item: file
-      in: ${{ inputs.intent.runtime.secret_files }}
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ "role-add-private-file-check-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: check,
-      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
-          inputs.intent.ssh.identity_file }}', become: true, path: '${{ self.file.path }}', content: '${{ vault.get(''orbit-control-inputs'',inputs.execution_secrets[self.file.secret].key)
-          }}', owner: '${{ self.file.owner }}', group: '${{ self.file.group }}', mode: '0600', ensure: present}, inputs: {}}
-  dependsOn:
-  - {job: phase_74, condition: {type: succeeded}}
-- name: phase_76
-  labels:
-    role: swamp
-  steps:
-  - name: Check PHP package versions
-    labels:
-      role: swamp
-    guard: ${{ inputs.intent.php_packages.size() == 0 }}
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-php-versions-"+string(inputs.node_id) }}', methodName: exec, globalArgs: {name: '${{ "role-add-php-versions-"+string(inputs.node_id)
-          }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'},
-        hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target',
-        argv: '${{ ["timeout","60","dpkg-query","--show","--showformat=${Package}\t${Version}\n"] + inputs.intent.php_packages.map(p,p.name) }}', timeoutSec: 70}}
-  dependsOn:
-  - {job: phase_75, condition: {type: succeeded}}
+  - job: exporters
+    condition: {type: succeeded}
 - name: role
-  labels:
-    role: swamp
+  labels: {role: swamp}
   steps:
   - name: Check the role
-    labels:
-      role: swamp
-    task: {type: assert, expr: 'inputs.intent.services.size() == steps.filter(k, k.startsWith("Check role services-") && steps[k].status == "succeeded").size() && inputs.intent.services.all(service,
-        data.latest("role-add-service-check-"+string(inputs.node_id)+"-"+string(service.index), inputs.intent.ssh.target.host).attributes.status == "compliant") && (inputs.intent.bun
-        == null || steps["Check Bun version-0"].outputs.stdout.trim() == inputs.intent.bun.version) && steps.filter(k,k.startsWith("Check Gateway DNS policy-")).all(k,steps[k].outputs.status
-        == "compliant") && (!inputs.intent.runtime.ci_host || steps["Check Incus"].outputs.status == "compliant") && (!inputs.intent.runtime.ci_host || steps["Plan CI resources"].outputs.checks.all(c,steps["Check
-        CI resources-"+string(c.index)].outputs.stdout.trim() == c.expected)) && steps.filter(k,k.startsWith("Check runtime groups-") || k.startsWith("Check runtime users-") || k.startsWith("Check
-        runtime units-") || k.startsWith("Check Metrics containers-")).all(k,steps[k].outputs.status == "compliant") && steps["Check prerequisites"].outputs.status == "compliant" &&
-        steps.filter(k,k.startsWith("Check role folders-") || k.startsWith("Check role files-") || k.startsWith("Check runtime folders-") || k.startsWith("Check runtime files-") || k.startsWith("Check
-        private files-")).all(k,steps[k].outputs.status == "compliant") && (inputs.intent.php_packages.size() == 0 || inputs.intent.php_packages.all(p,steps["Check PHP package versions"].outputs.stdout.split("\n").exists(line,line
-        == p.name+"\t"+p.version)))', severity: high, message: Every role service must match its admitted state.}
+    labels: {role: swamp}
+    writes: false
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ansible-role-role
+      methodName: execute
+      inputs:
+        run: timeout 60 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags check "$ORBIT_ANSIBLE/operation-node-role-add.yml"
+        env: *id001
   dependsOn:
-  - {job: phase_76, condition: {type: succeeded}}
+  - job: prometheus
+    condition: {type: succeeded}
 - name: cleanup
+  labels: {role: swamp}
   dependsOn:
-  - {job: phase_0, condition: {type: completed}}
-  - {job: phase_1, condition: {type: completed}}
-  - {job: phase_2, condition: {type: completed}}
-  - {job: phase_3, condition: {type: completed}}
-  - {job: phase_4, condition: {type: completed}}
-  - {job: phase_5, condition: {type: completed}}
-  - {job: phase_6, condition: {type: completed}}
-  - {job: phase_7, condition: {type: completed}}
-  - {job: phase_8, condition: {type: completed}}
-  - {job: phase_9, condition: {type: completed}}
-  - {job: phase_10, condition: {type: completed}}
-  - {job: phase_11, condition: {type: completed}}
-  - {job: phase_12, condition: {type: completed}}
-  - {job: phase_13, condition: {type: completed}}
-  - {job: phase_14, condition: {type: completed}}
-  - {job: phase_15, condition: {type: completed}}
-  - {job: phase_16, condition: {type: completed}}
-  - {job: phase_17, condition: {type: completed}}
-  - {job: phase_18, condition: {type: completed}}
-  - {job: phase_19, condition: {type: completed}}
-  - {job: phase_20, condition: {type: completed}}
-  - {job: phase_21, condition: {type: completed}}
-  - {job: phase_22, condition: {type: completed}}
-  - {job: phase_23, condition: {type: completed}}
-  - {job: phase_24, condition: {type: completed}}
-  - {job: phase_25, condition: {type: completed}}
-  - {job: phase_26, condition: {type: completed}}
-  - {job: phase_27, condition: {type: completed}}
-  - {job: phase_28, condition: {type: completed}}
-  - {job: phase_29, condition: {type: completed}}
-  - {job: phase_30, condition: {type: completed}}
-  - {job: reverb_start, condition: {type: completed}}
-  - {job: reverb_start, condition: {type: completed}}
-  - {job: phase_32, condition: {type: completed}}
-  - {job: metrics_inspect, condition: {type: completed}}
-  - {job: phase_33, condition: {type: completed}}
-  - {job: phase_34, condition: {type: completed}}
-  - {job: phase_35, condition: {type: completed}}
-  - {job: phase_36, condition: {type: completed}}
-  - {job: phase_37, condition: {type: completed}}
-  - {job: phase_38, condition: {type: completed}}
-  - {job: phase_39, condition: {type: completed}}
-  - {job: phase_40, condition: {type: completed}}
-  - {job: phase_41, condition: {type: completed}}
-  - {job: phase_42, condition: {type: completed}}
-  - {job: phase_43, condition: {type: completed}}
-  - {job: phase_44, condition: {type: completed}}
-  - {job: phase_45, condition: {type: completed}}
-  - {job: phase_46, condition: {type: completed}}
-  - {job: phase_47, condition: {type: completed}}
-  - {job: phase_48, condition: {type: completed}}
-  - {job: phase_49, condition: {type: completed}}
-  - {job: phase_50, condition: {type: completed}}
-  - {job: swamp_runtime_job, condition: {type: completed}}
-  - {job: swamp_workers_job, condition: {type: completed}}
-  - {job: swamp_check_job, condition: {type: completed}}
-  - {job: Check Swamp runtime_job, condition: {type: completed}}
-  - {job: phase_51, condition: {type: completed}}
-  - {job: phase_52, condition: {type: completed}}
-  - {job: phase_53, condition: {type: completed}}
-  - {job: phase_54, condition: {type: completed}}
-  - {job: phase_55, condition: {type: completed}}
-  - {job: phase_56, condition: {type: completed}}
-  - {job: phase_57, condition: {type: completed}}
-  - {job: phase_58, condition: {type: completed}}
-  - {job: phase_59, condition: {type: completed}}
-  - {job: phase_60, condition: {type: completed}}
-  - {job: phase_61, condition: {type: completed}}
-  - {job: phase_62, condition: {type: completed}}
-  - {job: phase_63, condition: {type: completed}}
-  - {job: phase_64, condition: {type: completed}}
-  - {job: phase_65, condition: {type: completed}}
-  - {job: phase_66, condition: {type: completed}}
-  - {job: phase_67, condition: {type: completed}}
-  - {job: phase_68, condition: {type: completed}}
-  - {job: phase_69, condition: {type: completed}}
-  - {job: phase_70, condition: {type: completed}}
-  - {job: phase_71, condition: {type: completed}}
-  - {job: phase_72, condition: {type: completed}}
-  - {job: phase_73, condition: {type: completed}}
-  - {job: phase_74, condition: {type: completed}}
-  - {job: phase_75, condition: {type: completed}}
-  - {job: phase_76, condition: {type: completed}}
-  - {job: role, condition: {type: completed}}
+  - job: intent
+    condition: {type: completed}
+  - job: private-metrics_password
+    condition: {type: completed}
+  - job: private-websocket_environment
+    condition: {type: completed}
+  - job: private-analytics_environment
+    condition: {type: completed}
+  - job: input
+    condition: {type: completed}
+  - job: phase_0
+    condition: {type: completed}
+  - job: phase_1
+    condition: {type: completed}
+  - job: ansible
+    condition: {type: completed}
+  - job: prerequisites
+    condition: {type: completed}
+  - job: phase_13
+    condition: {type: completed}
+  - job: node
+    condition: {type: completed}
+  - job: phase_46
+    condition: {type: completed}
+  - job: phase_47
+    condition: {type: completed}
+  - job: phase_48
+    condition: {type: completed}
+  - job: swamp_runtime_job
+    condition: {type: completed}
+  - job: swamp_workers_job
+    condition: {type: completed}
+  - job: swamp_check_job
+    condition: {type: completed}
+  - job: Check Swamp runtime_job
+    condition: {type: completed}
+  - job: phase_51
+    condition: {type: completed}
+  - job: publication
+    condition: {type: completed}
+  - job: firewall
+    condition: {type: completed}
+  - job: exporters
+    condition: {type: completed}
+  - job: prometheus
+    condition: {type: completed}
+  - job: role
+    condition: {type: completed}
   steps:
-  - name: Remove Prometheus staging
-    concurrency: 1
-    labels:
-      role: swamp
+  - name: Remove the playbook input
+    labels: {role: swamp}
     writes: true
-    allowFailure: true
-    forEach:
-      item: metrics
-      in: '${{ inputs.intent.prometheus == null ? [] : [inputs.intent.prometheus] }}'
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/file', behaviorName: '${{ "role-add-prometheus-candidate-cleanup-"+string(self.metrics.node_id) }}', methodName: apply, globalArgs: {
-        nodeHost: '${{ self.metrics.ssh.target.host }}', nodeUser: '${{ self.metrics.ssh.target.user }}', nodePort: '${{ self.metrics.ssh.target.port }}', nodeIdentityFile: '${{ self.metrics.ssh.identity_file
-          }}', become: true, path: '${{ self.metrics.candidate }}', ensure: absent}, inputs: {}}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ansible-role-cleanup
+      methodName: execute
+      inputs:
+        run: timeout 30 rm -rf -- "$ORBIT_RUN"
+        env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}
   - name: Remove init containers
     concurrency: 1
     guard: ${{ inputs.kind == "node.role_converge" }}
-    labels:
-      role: swamp
+    labels: {role: swamp}
     writes: true
     allowFailure: true
-    forEach:
-      item: initialization
-      in: '${{ inputs.intent.runtime.analytics == null ? [] : inputs.intent.runtime.analytics.initialize }}'
+    forEach: {item: initialization, in: '${{ inputs.intent.runtime.analytics == null ? [] : inputs.intent.runtime.analytics.initialize }}'}
     dataOutputOverrides:
-    - specName: state
-      vaultName: orbit-control-inputs
-    task: {type: behavior, behaviorType: '@swamp/cfgmgmt/docker_container', behaviorName: '${{ "role-add-analytics-init-cleanup-"+string(inputs.node_id) + "-"+string(self._index) }}',
-      methodName: apply, globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port
-          }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true, name: '${{ self.initialization.name }}', image: '${{ self.initialization.image }}', ensure: absent},
-      inputs: {}}
+    - {specName: state, vaultName: orbit-control-inputs}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/docker_container'
+      behaviorName: ${{ "role-add-analytics-init-cleanup-"+string(inputs.node_id) + "-"+string(self._index) }}
+      methodName: apply
+      globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port
+          }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true, name: '${{ self.initialization.name }}', image: '${{
+          self.initialization.image }}', ensure: absent}
+      inputs: {}
