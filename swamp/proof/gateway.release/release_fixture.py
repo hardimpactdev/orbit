@@ -93,6 +93,8 @@ def layout(gateway_node):
     staged = orbit('git', '-C', str(SOURCE), 'rev-parse', 'HEAD')
     current = staged[:12]
     shared = HOME / 'shared'
+    # The Gateway's private runtime directory, which the scheduler's document cleanup gate needs.
+    command(['install', '-d', '-m', '0755', '-o', 'orbit', '-g', 'orbit', '/run/orbit'])
     for path in [shared, HOME / 'releases', HOME / 'web/releases']:
         path.mkdir(parents=True, exist_ok=True)
         os.chown(path, account.pw_uid, account.pw_gid)
