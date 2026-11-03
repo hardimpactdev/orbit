@@ -50,19 +50,26 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the caller follows the task with `operation:show`
-  SW->>GH: Read the manifest SHAs<br/>Git tree · one request
+  SW->>GH: Read the manifest SHAs<br/>head commit · Git tree
   %%> What it does:
-  %%> - reads the default branch head and its tree through the GitHub App, with the token from `vault.get`
-  %%> - picks the blob SHAs of `composer.json`, `composer.lock`, `package.json`, workspace `package.json` files and the JavaScript lockfile of each policy path
-  %%> Short-circuit:
-  %%> - SHAs equal to the last inspection: the next step is skipped by its `guard`
+  %%> - one `command/shell` step with `curl` on Node 209; the token from `vault.get` is only in its environment
+  %%> - reads the head commit of the default branch, then the Git tree of exactly that commit, into this run's directory
   %%> Why no clone:
-  %%> - one tree request per opted-in Project each hour is cheap; a clone is not
+  %%> - two small requests per opted-in Project each hour are cheap; a clone is not
+  Note over SW: Select the changed sources<br/>policy paths · blob SHAs
+  %%> What it does:
+  %%> - picks the blob SHAs of `composer.json`, `composer.lock`, `package.json`, workspace `package.json` files and the JavaScript lockfile of each policy path
+  %%> - compares them with the last inspection
+  %%> Short-circuit:
+  %%> - SHAs equal to the last inspection: the next steps are skipped by their `guard`, and the run directory is removed
   opt a manifest SHA changed
     SW->>GH: Read the changed files<br/>blobs by SHA · no clone
     %%> What it does:
-    %%> - reads again only the sources whose SHAs changed, by blob SHA, so they match the tree just read; other sources keep their stored packages
-    %%> - lists the installed packages and their versions from the lockfiles
+    %%> - one `command/shell` step with `curl`; reads the files of the changed sources only, by blob SHA, so they match the tree just read
+    Note over SW: List the packages<br/>lockfiles · run directory
+    %%> What it does:
+    %%> - lists the installed packages and their versions from the lockfiles; other sources keep their stored packages
+    %%> - removes the run directory
     %%> Result:
     %%> - the new package list, in the step's output
   end

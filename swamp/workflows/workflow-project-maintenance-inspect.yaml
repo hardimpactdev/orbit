@@ -12,13 +12,16 @@ inputs:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, enum: [209]}
     kind: {type: string, const: project.detect}
-    # The admitted Project, the last stored inspection and whether the registry check is due: daily, or when the caller asked to open a group.
+    # The admitted Project, the last stored inspection, and whether the registry check is due: daily, or at once
+    # when the caller asked to open a group.
     intent:
       type: object
       additionalProperties: false
-      required: [project, previous, check_due]
+      required: [project, repository, previous, check_due]
       properties:
         project: {type: object}
+        # owner/name of the GitHub repository, for the REST API paths.
+        repository: {type: string, pattern: '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'}
         previous:
           type: object
           additionalProperties: false
@@ -30,9 +33,10 @@ inputs:
     execution_secrets:
       type: object
       additionalProperties: false
-      required: [github_token]
+      required: [github_authorization]
       properties:
-        github_token:
+        # The whole `Authorization: Bearer` header of a contents-read token for this repository.
+        github_authorization:
           type: object
           additionalProperties: false
           required: [vault, key]
@@ -46,23 +50,73 @@ jobs:
 - name: inspect
   labels: {role: swamp}
   steps:
-    # One branch read and one Git tree request; only the blob SHAs of manifests and lockfiles are kept.
+    # The head commit, then the Git tree of exactly that commit. The token stays in the environment; the answers
+    # land in this run's directory on Node 209, and the next step reads them.
   - name: 'Read the manifest SHAs'
     labels: {role: swamp}
     task:
       type: behavior
-      behaviorType: '@nckrtl/project-maintenance-inspect'
-      behaviorName: ${{ "project-maintenance-inspect-" + string(inputs.intent.project.id) }}
-      methodName: manifests
+      behaviorType: command/shell
+      behaviorName: ${{ "project-maintenance-read-" + string(inputs.intent.project.id) }}
+      methodName: execute
       inputs:
-        project: ${{ inputs.intent.project }}
-        previous: ${{ inputs.intent.previous.manifests }}
-        token: ${{ inputs.execution_secrets.github_token }}
-    # Only sources whose manifest SHAs changed are read again, by blob SHA, so they match the tree just read.
-  - name: 'Read the changed files'
+        run: |
+          set -eu
+          base=$(dirname "$ORBIT_FILES"); mkdir -p "$ORBIT_FILES"
+          # Directories that a failed run left behind.
+          find "$base" -mindepth 1 -maxdepth 1 -mmin +120 -exec rm -rf {} +
+          # The vault value is the whole Authorization header. It reaches curl on stdin, never in its arguments.
+          api() { printf '%s\n' "$ORBIT_AUTHORIZATION" | curl -fsS --max-time 60 -H @- -H "X-GitHub-Api-Version: 2022-11-28" -H "Accept: $1" "https://api.github.com/repos/$ORBIT_REPOSITORY/$2"; }
+          commit=$(api application/vnd.github.sha "commits/$ORBIT_BRANCH")
+          api application/vnd.github+json "git/trees/$commit?recursive=1" > "$ORBIT_FILES/tree.json"
+          printf '%s' "$commit"
+        env:
+          ORBIT_AUTHORIZATION: ${{ vault.get(inputs.execution_secrets.github_authorization.vault, inputs.execution_secrets.github_authorization.key) }}
+          ORBIT_REPOSITORY: ${{ inputs.intent.repository }}
+          ORBIT_BRANCH: ${{ inputs.intent.project.default_branch }}
+          ORBIT_FILES: ${{ "/home/orbit/.cache/orbit-inspect/" + run.id }}
+    # Policy paths decide which blobs count; sources whose SHAs equal the last inspection keep their packages.
+  - name: 'Select the changed sources'
     labels: {role: swamp}
     dependsOn: [{step: 'Read the manifest SHAs', condition: {type: succeeded}}]
-    guard: '${{ size(steps["Read the manifest SHAs"].outputs.changed) == 0 }}'
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/project-maintenance-inspect'
+      behaviorName: ${{ "project-maintenance-inspect-" + string(inputs.intent.project.id) }}
+      methodName: select
+      inputs:
+        project: ${{ inputs.intent.project }}
+        commit: ${{ steps["Read the manifest SHAs"].outputs.stdout }}
+        root: ${{ "/home/orbit/.cache/orbit-inspect/" + run.id }}
+        previous: ${{ inputs.intent.previous.manifests }}
+    # Only the files of changed sources, by blob SHA, so they match the tree just read; no clone.
+  - name: 'Read the changed files'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Select the changed sources', condition: {type: succeeded}}]
+    guard: '${{ size(steps["Select the changed sources"].outputs.changed) == 0 }}'
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "project-maintenance-read-" + string(inputs.intent.project.id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          printf '%s\n' "$ORBIT_FETCH" | while read -r sha path; do
+            [ -n "$sha" ] || continue
+            mkdir -p "$ORBIT_FILES/source/$(dirname "$path")"
+            printf '%s\n' "$ORBIT_AUTHORIZATION" | curl -fsS --max-time 60 -H @- -H "X-GitHub-Api-Version: 2022-11-28" \
+              -H "Accept: application/vnd.github.raw+json" -o "$ORBIT_FILES/source/$path" "https://api.github.com/repos/$ORBIT_REPOSITORY/git/blobs/$sha"
+          done
+        env:
+          ORBIT_AUTHORIZATION: ${{ vault.get(inputs.execution_secrets.github_authorization.vault, inputs.execution_secrets.github_authorization.key) }}
+          ORBIT_REPOSITORY: ${{ inputs.intent.repository }}
+          ORBIT_FETCH: ${{ steps["Select the changed sources"].outputs.fetch }}
+          ORBIT_FILES: ${{ "/home/orbit/.cache/orbit-inspect/" + run.id }}
+    # The lockfiles become the installed package list; the run directory goes when the step ends.
+  - name: 'List the packages'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Read the changed files', condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@nckrtl/project-maintenance-inspect'
@@ -70,27 +124,26 @@ jobs:
       methodName: packages
       inputs:
         project: ${{ inputs.intent.project }}
-        manifests: ${{ steps["Read the manifest SHAs"].outputs.manifests }}
-        changed: ${{ steps["Read the manifest SHAs"].outputs.changed }}
+        root: ${{ "/home/orbit/.cache/orbit-inspect/" + run.id }}
+        changed: ${{ steps["Select the changed sources"].outputs.changed }}
         previous: ${{ inputs.intent.previous.sources }}
-        token: ${{ inputs.execution_secrets.github_token }}
     # Daily, or when the package list changed: answers are cached per package across Projects for a day. Each
     # Project's run uses its own instances, so runs of many Projects never wait on one lock.
   - name: 'Check latest, advisories'
     labels: {role: swamp}
-    # A skipped step also satisfies `or`, so the manifest read must have succeeded too.
-    dependsOn: [{step: 'Read the manifest SHAs', condition: {type: succeeded}}, {step: 'Read the changed files', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: '${{ !inputs.intent.check_due && size(steps["Read the manifest SHAs"].outputs.changed) == 0 }}'
+    # A skipped step also satisfies `or`, so the selection must have succeeded too.
+    dependsOn: [{step: 'Select the changed sources', condition: {type: succeeded}}, {step: 'List the packages', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    guard: '${{ !inputs.intent.check_due && size(steps["Select the changed sources"].outputs.changed) == 0 }}'
     task:
       type: behavior
       behaviorType: '@nckrtl/project-maintenance-inspect'
       behaviorName: ${{ "project-maintenance-registry-" + string(inputs.intent.project.id) }}
       methodName: registries
       inputs:
-        sources: '${{ "Read the changed files" in steps && "outputs" in steps["Read the changed files"] && "sources" in steps["Read the changed files"].outputs ? steps["Read the changed files"].outputs.sources : inputs.intent.previous.sources }}'
+        sources: '${{ "List the packages" in steps && "outputs" in steps["List the packages"] && "sources" in steps["List the packages"].outputs ? steps["List the packages"].outputs.sources : inputs.intent.previous.sources }}'
   - name: 'Find the updates'
     labels: {role: swamp}
-    dependsOn: [{step: 'Read the manifest SHAs', condition: {type: succeeded}}, {step: 'Check latest, advisories', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Select the changed sources', condition: {type: succeeded}}, {step: 'Check latest, advisories', condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@nckrtl/project-maintenance-inspect'
@@ -98,5 +151,5 @@ jobs:
       methodName: updates
       inputs:
         project: ${{ inputs.intent.project }}
-        commit: ${{ steps["Read the manifest SHAs"].outputs.commit }}
-        sources: '${{ "Read the changed files" in steps && "outputs" in steps["Read the changed files"] && "sources" in steps["Read the changed files"].outputs ? steps["Read the changed files"].outputs.sources : inputs.intent.previous.sources }}'
+        commit: ${{ steps["Select the changed sources"].outputs.commit }}
+        sources: '${{ "List the packages" in steps && "outputs" in steps["List the packages"] && "sources" in steps["List the packages"].outputs ? steps["List the packages"].outputs.sources : inputs.intent.previous.sources }}'

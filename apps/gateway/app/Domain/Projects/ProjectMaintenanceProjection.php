@@ -43,10 +43,15 @@ final readonly class ProjectMaintenanceProjection implements DirectOperationProj
             $inspection = ProjectInspection::query()->where('project_id', $operation->target_id)->first();
             $checked = $inspection?->registry_checked_at;
 
-            return ['intent' => ['project' => $operation->input['project'],
+            $repository = GitHubRepository::fromOrigin(ValidatedData::string(ValidatedData::object($operation->input['project'])['repository'] ?? null))
+                ?? throw new ResourceOperationException('project.maintenance_unavailable', 'The admitted repository is unavailable.', 422);
+
+            return ['intent' => ['project' => $operation->input['project'], 'repository' => $repository->owner.'/'.$repository->name,
                 'previous' => ['manifests' => (object) ($inspection->manifests ?? []), 'sources' => $inspection->sources ?? []],
                 'check_due' => ($operation->input['open'] ?? false) === true || $checked === null || $checked->addDay()->isPast()],
-                'execution_secrets' => ['github_token' => $this->tokenCopy($operation, ['contents' => 'read'])]];
+                // The copy is the whole request header, so curl reads it from stdin and no command line names a token.
+                'execution_secrets' => ['github_authorization' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'project-dependency-read-'.$operation->id,
+                    'Authorization: Bearer '.$this->token($operation, ['contents' => 'read'])->reveal())]];
         }
         $copies = [];
         if ($operation->kind === 'project.observe') {
@@ -73,15 +78,6 @@ final readonly class ProjectMaintenanceProjection implements DirectOperationProj
         }
 
         return app(HttpGitHubApi::class)->scopedRepositoryToken($credentials, GitHubTokenGrant::from(['repository' => $repository->owner.'/'.$repository->name, 'permissions' => $permissions]));
-    }
-
-    /**
-     * @param  array<string, string>  $permissions
-     * @return array{vault: string, key: string}
-     */
-    private function tokenCopy(Operation $operation, array $permissions): array
-    {
-        return app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'project-dependency-read-'.$operation->id, $this->token($operation, $permissions)->reveal());
     }
 
     public function apply(Operation $operation, array $data): Operation

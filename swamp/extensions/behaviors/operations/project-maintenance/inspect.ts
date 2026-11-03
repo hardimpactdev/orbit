@@ -1,9 +1,9 @@
 import { z } from "npm:zod@4.4.3";
-import { dirname, join, normalize } from "node:path";
+import { join } from "node:path";
 import { configuredProject, Snapshot } from "./metadata.ts";
 import { inventory } from "../../_lib/dependency_inventory.ts";
 import { sources } from "../../_lib/dependency_results.ts";
-import { repositoryIdentity, sourceKey } from "../../_lib/dependency_results_schema.ts";
+import { sourceKey } from "../../_lib/dependency_results_schema.ts";
 import { batchReceipt, FindingsSchema } from "../../_lib/project_schedule.ts";
 import { sha256 } from "../../_lib/repository_analysis.ts";
 import {
@@ -26,23 +26,11 @@ import {
 type Context = {
   queryData(predicate: string): Promise<unknown[]>;
   writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
-  vaultService: { get(vault: string, key: string, consumer: string): Promise<string> };
 };
 const Public = z.record(z.string(), z.unknown());
 const Commit = z.string().regex(/^[a-f0-9]{40}$/);
-// The vault and key names of the admitted read token; the step resolves the value, so it is never an input.
-const Token = z.object({ vault: z.literal("orbit-control-inputs"), key: z.string().regex(/^project-dependency-read-[1-9][0-9]*$/) }).strict();
-type TokenRef = z.infer<typeof Token>;
-const reveal = (ctx: Context, token: TokenRef) => ctx.vaultService.get(token.vault, token.key, "project-maintenance-inspect");
-
-/** One GitHub App read through the REST API with the admitted read-only token; no clone, no Git config. */
-async function github(token: string, repository: string, path: string): Promise<unknown> {
-  const response = await fetch(`https://api.github.com/repos/${repository.replace(/^github\.com\//, "")}/${path}`, {
-    headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json", "x-github-api-version": "2022-11-28" },
-  });
-  if (!response.ok) throw new Error(`project.scan_failed: GitHub ${response.status}`);
-  return await response.json();
-}
+// This run's directory on Node 209: the shell steps write GitHub's answers there, these methods read them.
+const Root = z.string().regex(/^\/home\/orbit\/\.cache\/orbit-inspect\/[0-9a-f-]{36}$/);
 
 const factName = async (ecosystem: string, name: string) => `registry-${ecosystem}-${(await sha256(name)).slice(0, 40)}`;
 
@@ -73,60 +61,41 @@ export const behavior = {
     facts: { schema: RegistryFactsSchema, lifetime: "infinite", garbageCollection: 1 },
   },
   methods: {
-    manifests: {
-      description: "Read the default branch head and the blob SHAs of its manifests and lockfiles in one Git tree",
-      arguments: z.object({ project: Snapshot, previous: ManifestsSchema, token: Token }).strict(),
-      async execute(args: { project: z.infer<typeof Snapshot>; previous: z.infer<typeof ManifestsSchema>; token: TokenRef }, ctx: Context) {
+    select: {
+      description: "Pick each policy source's manifest and lockfile blob SHAs from the tree just read, and the sources that changed",
+      arguments: z.object({ project: Snapshot, commit: Commit, root: Root, previous: ManifestsSchema }).strict(),
+      async execute(args: { project: z.infer<typeof Snapshot>; commit: string; root: string; previous: z.infer<typeof ManifestsSchema> }, ctx: Context) {
         const project = await configuredProject(args.project, ctx);
-        const repository = repositoryIdentity(project.repository);
-        const token = await reveal(ctx, args.token);
-        const branch = z.object({ commit: z.object({ sha: Commit }) })
-          .parse(await github(token, repository, `branches/${encodeURIComponent(project.defaultBranch)}`));
-        const tree = z.object({ truncated: z.boolean(), tree: z.array(z.object({ path: z.string(), type: z.string(), sha: z.string() })) })
-          .parse(await github(token, repository, `git/trees/${branch.commit.sha}?recursive=1`));
+        const tree = z.object({ sha: z.string(), truncated: z.boolean(), tree: z.array(z.object({ path: z.string(), type: z.string(), sha: z.string() })) })
+          .parse(JSON.parse(await Deno.readTextFile(join(args.root, "tree.json"))));
         if (tree.truncated) throw new Error("project.scan_failed: the Git tree is too large to read in one request");
         const current = manifests(project, tree.tree.filter((e) => e.type === "blob").map((e) => TreeEntrySchema.parse({ path: e.path, sha: e.sha })));
-        return { dataHandles: [await ctx.writeResource("public", "manifests", {
-          commit: branch.commit.sha, manifests: current, changed: changedSources(current, args.previous),
-        })] };
+        const changed = changedSources(current, args.previous);
+        // The next step reads only these blobs; without a change no step needs the directory.
+        const fetch = changed.flatMap((key) => Object.entries(current[key] ?? {}).map(([path, sha]) => `${sha} ${path}`));
+        await Deno.remove(changed.length ? join(args.root, "tree.json") : args.root, { recursive: true });
+        return { dataHandles: [await ctx.writeResource("public", "manifests", { commit: args.commit, manifests: current, changed, fetch: fetch.join("\n") })] };
       },
     },
     packages: {
-      description: "Read the changed sources' files by blob SHA and list their installed packages; keep unchanged sources",
-      arguments: z.object({
-        project: Snapshot,
-        manifests: ManifestsSchema,
-        changed: z.array(z.string()),
-        previous: z.array(SourcePackagesSchema),
-        token: Token,
-      }).strict(),
-      async execute(args: { project: z.infer<typeof Snapshot>; manifests: z.infer<typeof ManifestsSchema>; changed: string[]; previous: SourcePackages[]; token: TokenRef }, ctx: Context) {
+      description: "List the installed packages of the changed sources from the files just read; keep unchanged sources",
+      arguments: z.object({ project: Snapshot, root: Root, changed: z.array(z.string()), previous: z.array(SourcePackagesSchema) }).strict(),
+      async execute(args: { project: z.infer<typeof Snapshot>; root: string; changed: string[]; previous: SourcePackages[] }, ctx: Context) {
         const project = await configuredProject(args.project, ctx);
-        const repository = repositoryIdentity(project.repository);
-        const token = await reveal(ctx, args.token);
         const result: SourcePackages[] = [];
-        for (const source of sources(project)) {
-          const keyed = sourceKey(source);
-          const kept = args.previous.find((row) => sourceKey(row.source) === keyed);
-          if (!args.changed.includes(keyed) && kept !== undefined) {
-            result.push(kept);
-            continue;
-          }
-          const root = await Deno.makeTempDir({ prefix: "orbit-inspect-" });
-          try {
-            for (const [path, sha] of Object.entries(args.manifests[keyed] ?? {})) {
-              const target = normalize(join(root, path));
-              if (!target.startsWith(`${root}/`)) throw new Error("project.scan_failed: manifest path escapes the source");
-              const blob = z.object({ encoding: z.literal("base64"), content: z.string() })
-                .parse(await github(token, repository, `git/blobs/${sha}`));
-              await Deno.mkdir(dirname(target), { recursive: true });
-              await Deno.writeFile(target, Uint8Array.from(atob(blob.content.replace(/\s/g, "")), (c) => c.charCodeAt(0)));
+        try {
+          const files = join(args.root, "source");
+          for (const source of sources(project)) {
+            const kept = args.previous.find((row) => sourceKey(row.source) === sourceKey(source));
+            if (!args.changed.includes(sourceKey(source)) && kept !== undefined) {
+              result.push(kept);
+              continue;
             }
-            const manifest = JSON.parse(await Deno.readTextFile(join(root, source.path, source.ecosystem === "composer" ? "composer.json" : "package.json")));
-            result.push(SourcePackagesSchema.parse({ source, packages: await inventory(root, source), declared: declared(source, manifest) }));
-          } finally {
-            await Deno.remove(root, { recursive: true });
+            const manifest = JSON.parse(await Deno.readTextFile(join(files, source.path, source.ecosystem === "composer" ? "composer.json" : "package.json")));
+            result.push(SourcePackagesSchema.parse({ source, packages: await inventory(files, source), declared: declared(source, manifest) }));
           }
+        } finally {
+          await Deno.remove(args.root, { recursive: true });
         }
         return { dataHandles: [await ctx.writeResource("public", "packages", { sources: result })] };
       },

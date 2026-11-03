@@ -36,14 +36,15 @@ final readonly class ProjectMaintenanceIntent
             if (! $project->maintenance) {
                 throw new ResourceOperationException('project.maintenance_disabled', 'Dependency maintenance is off for this Project; turn it on with project:maintenance:enable.', 409);
             }
-            $groups = Task::topLevel()->where('project_id', $project->id)->orderBy('id')->get([
+            $groups = $kind === 'project.detect' ? [] : Task::topLevel()->where('project_id', $project->id)->orderBy('id')->get([
                 'id', 'project_id', 'status', 'orchestration', 'brief', 'pr_url', 'watched_pr_url', 'watched_pr_state', 'taskable_id', 'maintenance',
             ])->toArray();
 
             return $this->start->execute($kind, 'project', $project->id, 209, [
                 'project' => ['id' => $project->id, 'repository' => $project->repository_url,
                     'default_branch' => $project->default_branch, 'check' => $project->task_check],
-                'groups' => $groups, 'admitted_at' => now()->toIso8601ZuluString(), ...($kind === 'project.detect' ? ['open' => $open] : []),
+                // An inspection reads no group; the Gateway checks open work from its own records when it admits one.
+                ...($kind === 'project.detect' ? ['open' => $open] : ['groups' => $groups]), 'admitted_at' => now()->toIso8601ZuluString(),
             ], 'project-maintenance', $requestId);
         });
     }

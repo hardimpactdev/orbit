@@ -248,6 +248,10 @@ Maintenance is opt-in per Project and off by default. [`project:maintenance:enab
 
 A Project with maintenance on also needs a policy module under `swamp/extensions/behaviors/projects/<slug>/mod.ts`: its Composer and JavaScript paths, release-age policy and exceptions. A run for a Project without one fails with `project.maintenance_not_configured`. Orbit's own policy covers `apps/gateway`.
 
+### Inspection
+
+An inspection reads GitHub with `curl` on Node 209, with a GitHub App token that may only read contents. The Gateway stores the token's whole `Authorization` header as the run's vault copy, and the step passes it to `curl` on standard input.
+
 ## Remove a Project
 
 `project:destroy` removes a Project that has no Instances and no Routes. It deletes the Project's process and Schedule definitions, setup and teardown steps, Node exclusions, and update records.

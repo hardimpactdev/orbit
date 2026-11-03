@@ -12,8 +12,8 @@ return [
     // project:maintenance:inspect: the update steps run only when something changed or the check is due.
     'project.detect' => ['workflow' => 'project-maintenance-inspect', 'workflow_inputs' => true,
         'terminal_result' => ['job' => 'inspect', 'step' => 'Find the updates', 'alternatives' => ['Read the manifest SHAs'], 'native' => true, 'captures' => [
-            'manifests' => ['job' => 'inspect', 'step' => 'Read the manifest SHAs'],
-            'sources' => ['job' => 'inspect', 'step' => 'Read the changed files', 'field' => 'sources'],
+            'manifests' => ['job' => 'inspect', 'step' => 'Select the changed sources'],
+            'sources' => ['job' => 'inspect', 'step' => 'List the packages', 'field' => 'sources'],
             'registries' => ['job' => 'inspect', 'step' => 'Check latest, advisories', 'field' => 'checked_at'],
             'updates' => ['job' => 'inspect', 'step' => 'Find the updates'],
         ]], 'projection' => ProjectMaintenanceProjection::class,

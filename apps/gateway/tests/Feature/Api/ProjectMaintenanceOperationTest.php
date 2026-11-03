@@ -234,9 +234,11 @@ describe('project:maintenance:inspect', function (): void {
         expect($start['workflowIdOrName'])->toBe('project-maintenance-inspect')
             ->and($start['inputs']['intent']['previous'])->toBe(['manifests' => $this->manifests, 'sources' => $this->sources])
             ->and($start['inputs']['intent']['check_due'])->toBe($due)
-            ->and(array_keys($start['inputs']['execution_secrets']))->toBe(['github_token'])
+            ->and(array_keys($start['inputs']['execution_secrets']))->toBe(['github_authorization'])
             ->and(json_encode($start))->not->toContain('private-read-sentinel')
             ->and(Operation::findOrFail($id)->input['open'])->toBe($open)
+            ->and($start['inputs']['intent']['repository'])->toBe('nckrtl/launch')
+            ->and(Operation::findOrFail($id)->input)->not->toHaveKey('groups')
             ->and(json_encode(Operation::findOrFail($id)->input))->not->toContain('composer.lock');
     })->with(['inspect only' => [false, false], 'open the group' => [true, true]]);
 
