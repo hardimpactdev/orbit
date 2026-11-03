@@ -100,7 +100,9 @@ def serve():
                 else:
                     scheme, _, credential = self.headers.get('Authorization', '').partition(' ')
                     assert scheme.lower() in ('token', 'bearer') and credential == data['token']
-                    if path.path == '/installation/token':
+                    if path.path == '/installation/repositories':
+                        self.respond({'total_count': 1, 'repositories': [{'full_name': 'hardimpactdev/orbit'}]})
+                    elif path.path == '/installation/token':
                         data['revoked'] += 1
                         DATA.write_text(json.dumps(data))
                         self.respond(None, 204)
