@@ -47,7 +47,7 @@ sequenceDiagram
   %%> - pushes the token and the rendered `.env` into Swamp's vault
   %%> Result:
   %%> - the run reads both with `vault.get`; no step calls the Gateway back
-  GW->>SW: Start run, full intent<br/>operation-instance-deploy
+  GW->>SW: Start run, full intent<br/>operation-instance-deploy-direct
   %%> What it does:
   %%> - starts one run on Swamp serve (Node 209); every step runs there
   %%> Inputs:
@@ -60,60 +60,80 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task until it ends
-  SW->>N: Prepare the release<br/>file 0600 cred · git fetch
+  SW->>N: Prepare the release<br/>file 0600 cred · git clone
   %%> How:
   %%> - Swamp reaches Node 12 over `@swamp/ssh` from 209; nothing is copied to the Node
-  %%> - `@swamp/cfgmgmt/file` writes the vault token as a 0600 credential file; git reads it, so the token never enters argv
-  %%> - shared paths and `.env` links with `@swamp/cfgmgmt/link`
+  %%> - `@swamp/cfgmgmt/file` writes the vault token as a 0600 credential file; git reads it, so the token never enters argv; the file goes after the clone
+  %%> - each other action is one argv; shared paths and `.env` links with `@swamp/cfgmgmt/link`
   %%> What it does:
-  %%> - fetches the branch into a new folder under `releases/` and checks out exactly the frozen commit
+  %%> - clones the repository into a new folder under `releases/` and checks out exactly the frozen commit, or the branch head
   %%> - refuses a commit that is not on the branch's first-parent chain (`deployment.commit_not_on_branch`)
-  %%> - links the shared paths, the public storage link and each `.env` link
+  %%> - seeds and links the shared paths, the public storage link and each `.env` link
   %%> Runs as:
   %%> - `orbit-app-7`, through sudo
   SW->>N: Write .env<br/>@swamp/cfgmgmt/file · 0600
   %%> What it does:
+  %%> - reads the key names of `/home/orbit-app-7/.env` and refuses keys Orbit does not manage (`env.sync_would_drop_keys`)
   %%> - writes the rendered `.env` from the vault into `/home/orbit-app-7/.env`, atomically
   %%> Not included:
   %%> - restarts nothing; the running release keeps serving
+  opt a deploy step needs Vite+
+    SW->>N: Prepare Vite+<br/>store · vp env install
+    %%> What it does:
+    %%> - reads the new release's `package.json`, lock files and Node pins, as `orbit-app-7`
+    %%> - installs the pinned Node and package manager into the Vite+ store, then verifies them
+    %%> Shared with:
+    %%> - the same steps a development deploy and `instance:clone` run
+    %%> Fails with:
+    %%> - `deployment.vp_requirements_invalid` or `deployment.vp_store_failed`; the old release stays selected
+  end
   SW->>N: Run before steps<br/>@swamp/ssh exec · in order
   %%> What it does:
-  %%> - runs each `before_activation` deploy step in order, from the new release, as `orbit-app-7`
+  %%> - writes each deploy step from the vault as a 0600 file of `orbit-app-7`
+  %%> - runs each `before_activation` deploy step in order, from the new release, as `orbit-app-7`, under `vp env exec` when it needs Vite+
   %%> - for example `composer install`, `php artisan migrate --force`
   %%> Limits:
   %%> - each step has its own timeout; a required step that fails stops the run
-  SW->>N: Activate release<br/>@swamp/cfgmgmt/link · current
+  %%> - the run history keeps no step output
+  SW->>N: Activate release<br/>@swamp/cfgmgmt/link · current.next
   %%> What it does:
-  %%> - checks each served web root and its `.env` links in the new release
-  %%> - replaces the `current` link with one atomic rename
+  %%> - grants Caddy access to each served web root in the new release
+  %%> - writes `current.next`, owned by `orbit-app-7`, pointing at the new release
+  SW->>N: Swap current<br/>ssh exec · mv -fT
+  %%> What it does:
+  %%> - renames `current.next` over `current` with one atomic rename, so `current` always exists
   %%> Why:
   %%> - Caddy resolves `current` per request, so new requests use the new release at once
   opt Instance serves PHP
-    SW->>N: Refresh PHP cache<br/>@swamp/cfgmgmt/systemd reload
+    SW->>N: Refresh PHP cache<br/>ssh exec · systemctl reload
     %%> What it does:
-    %%> - converges the dedicated PHP-FPM pool of Instance 42 from the frozen PHP runtime
-    %%> - reloads it gracefully, so running requests finish; then resets OPcache and waits for it
-    %%> When a restart is needed:
-    %%> - only when the pool's runtime itself changed, such as the PHP version
+    %%> - reloads the dedicated PHP-FPM service of Instance 42 gracefully, so running requests finish
+    %%> - the new workers resolve `current` again and start with an empty OPcache
   end
-  SW->>N: Restart Processes<br/>@swamp/cfgmgmt/systemd · forEach
+  SW->>N: Restart Processes<br/>@swamp/ssh exec · forEach
   %%> What it does:
   %%> - installs the frozen Process definitions and the `laravel-scheduler` timer, in the `process.create` shape; other Schedules are native Swamp schedules and install nothing here
   %%> - for each running Process with `restart_on_deploy`: reload when the Process allows it, else restart
   %%> - for example Horizon: `php artisan horizon:terminate`, so jobs finish first
   %%> Not included:
   %%> - Processes without `restart_on_deploy`, and stopped Processes, stay as they are
-  SW->>N: After steps, cleanup<br/>@swamp/ssh exec · keep 3
+  SW->>N: After steps<br/>@swamp/ssh exec · in order
   %%> What it does:
   %%> - runs each `after_activation` deploy step in order, as `orbit-app-7`
-  %%> - then removes old releases; the home keeps at most 3
+  %%> - then removes the deploy step files
+  SW->>N: Clean up releases<br/>@swamp/ssh exec · keep 3
+  %%> What it does:
+  %%> - removes the releases the home no longer keeps; the home keeps at most 3
   %%> Cleanup:
   %%> - best effort; a failed cleanup is a warning, not a failed deploy
   %%> - a release that a running process still uses stays
-  SW->>N: Check the deployment<br/>@swamp/cfgmgmt check
+  SW->>N: Read current back<br/>ssh exec · readlink
   %%> What it does:
-  %%> - reads `current` back and checks it selects the new release and commit
-  %%> - checks that each restarted Process is active
+  %%> - reads the live `current` link on Node 12
+  Note over SW: Check the deployment<br/>native assert
+  %%> What it does:
+  %%> - checks the link read back selects the new release
+  %%> - each restarted Process was checked by its own restart
   alt all required steps pass
     N-->>SW: release, commit
     %%> Returns:
