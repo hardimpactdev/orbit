@@ -10,6 +10,9 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
   GW->>SW: Admit the recipe<br/>full non-secret intent
+  %%> Input:
+  %%> - the target Node and required API field `automatic: true`; the serving recipe is used by default
+  %%> - optional `recipe` and `build_id` must match the serving recipe and a passed build, or the run is refused
   %%> What it does:
   %%> - signed package policy remains the named recipe.py gap; files and role runtime use native resources
   opt admitted recipe part

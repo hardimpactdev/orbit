@@ -14,12 +14,14 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Node 21<br/>analytics role
-  CLI->>GW: analytics:update 3.2.1<br/>Plausible version
+  CLI->>GW: analytics:update
   %%> Command:
-  %%> - `orbit analytics:update 3.2.1`
+  %%> - `orbit analytics:update`
   %%> - syntax: `[version] [--json]`
   %%> Input:
   %%> - the Plausible Community Edition version as three numbers; the image tag is `v` plus the version
+  %%> - the optional version argument supplies the version directly, for example `orbit analytics:update 3.2.1`
+  %%> - `--json` returns machine-readable output
   %%> - in a terminal the CLI asks for a missing version; with `--json` it refuses (`analytics.version_invalid`)
   %%> What it does:
   %%> - changes the `analytics` role's version setting and converges the role
