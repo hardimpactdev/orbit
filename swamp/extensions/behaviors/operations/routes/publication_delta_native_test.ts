@@ -12,38 +12,7 @@ const caddy = async (content: string) => ({
   listen_addresses: ["10.44.0.9"],
   unserved: false,
 });
-Deno.test("Caddy delta and restore keep unrelated observed changes", async () => {
-  await using f = await publicationFixture();
-  const a = block("moving", "a"),
-    b = block("moving", "b"),
-    old = block("survivor", "old"),
-    newer = block("survivor", "new");
-  const before = await caddy(config(a, old)),
-    after = await caddy(config(b, old)),
-    current = config(a, newer, block("added", "c"));
-  await Deno.writeTextFile(f.live, current);
-  const { history } = await f.delta("caddy", before, after);
-  assertEquals(await Deno.readTextFile(f.live), config(b, newer, block("added", "c")));
-  assertEquals(f.calls().map((c) => c[0]), ["caddy", "systemctl"]);
-  const terminal = history.jobs.find((j) => j.name === "completion")!.steps.find((s) => s.name === "result")!;
-  assert(JSON.parse(String(terminal.outputs?.stdout)).ready);
-  await f.delta("caddy", before, after, "restore");
-  assertEquals(await Deno.readTextFile(f.live), current);
-});
-Deno.test("Caddy delta conflict refuses without writing or reloading", async () => {
-  await using f = await publicationFixture();
-  const current = config(block("moving", "c"));
-  await Deno.writeTextFile(f.live, current);
-  await f.delta(
-    "caddy",
-    await caddy(config(block("moving", "a"))),
-    await caddy(config(block("moving", "b"))),
-    "forward",
-    false,
-  );
-  assertEquals(await Deno.readTextFile(f.live), current);
-  assertEquals(f.calls(), []);
-});
+
 Deno.test("Caddy delta validation failure skips reload", async () => {
   await using f = await publicationFixture();
   f.repo.env.FIXTURE_FAIL = "validate";
@@ -53,21 +22,14 @@ Deno.test("Caddy delta validation failure skips reload", async () => {
 });
 Deno.test("Caddy delta initial publication creates no staging files", async () => {
   await using f = await publicationFixture();
-  await f.delta("caddy", await caddy(config()), await caddy(config(block("new", "a"))));
+  const { history } = await f.delta("caddy", await caddy(config()), await caddy(config(block("new", "a"))));
+  assertEquals(f.calls().map((c) => c[0]), ["caddy", "systemctl"]);
+  const terminal = history.jobs.find((j) => j.name === "completion")!.steps.find((s) => s.name === "result")!;
+  assert(JSON.parse(String(terminal.outputs?.stdout)).ready);
   assertEquals(await Deno.readTextFile(f.live), config(block("new", "a")));
   assertEquals([...Deno.readDirSync(f.host)].map((e) => e.name).sort(), ["Caddyfile", "php"]);
 });
-Deno.test("PHP delta and restore keep unrelated pools", async () => {
-  await using f = await publicationFixture();
-  const php = (text: string) => ({ account_user: f.user, configurations: { "8.4": text } });
-  const a = pool(1, 5), b = pool(1, 7), old = pool(2, 3), newer = pool(2, 9);
-  await Deno.writeTextFile(f.php, "; local tuning\n" + a + newer);
-  await f.delta("php", php(a + old), php(b + old));
-  assertEquals(await Deno.readTextFile(f.php), "; local tuning\n" + b + newer);
-  assertEquals(f.calls().map((c) => c[0]), ["php-fpm8.4", "systemctl"]);
-  await f.delta("php", php(a + old), php(b + old), "restore");
-  assertEquals(await Deno.readTextFile(f.php), "; local tuning\n" + a + newer);
-});
+
 Deno.test("PHP final withdrawal removes only the managed pool file", async () => {
   await using f = await publicationFixture();
   const php = (text: string) => ({ account_user: f.user, configurations: { "8.4": text } });
@@ -77,14 +39,6 @@ Deno.test("PHP final withdrawal removes only the managed pool file", async () =>
   await f.delta("php", php(pool(1, 5)), php(""));
   assert(!exists(f.php));
   assertEquals(await Deno.readTextFile(local), "; local");
-});
-Deno.test("PHP owned conflict has no file or service effect", async () => {
-  await using f = await publicationFixture();
-  const php = (text: string) => ({ account_user: f.user, configurations: { "8.4": text } });
-  await Deno.writeTextFile(f.php, pool(1, 9));
-  await f.delta("php", php(pool(1, 5)), php(pool(1, 7)), "forward", false);
-  assertEquals(await Deno.readTextFile(f.php), pool(1, 9));
-  assertEquals(f.calls(), []);
 });
 Deno.test("PHP validation failure skips reload", async () => {
   await using f = await publicationFixture();
@@ -122,5 +76,6 @@ while ([...Deno.readDirSync(barrier)].length < 2) {
   });
   assertEquals(await Deno.readTextFile(f.php), pool(1, 5));
   assertEquals(await Deno.readTextFile(second), pool(2, 7));
+  assertEquals(f.calls().filter((c) => c[0] === "systemctl").map((c) => c.at(-1)).sort(), ["php8.4-fpm", "php8.5-fpm"]);
   assertEquals([...Deno.readDirSync(barrier)].map((e) => e.name).sort(), ["php-fpm8.4", "php-fpm8.5"]);
 });

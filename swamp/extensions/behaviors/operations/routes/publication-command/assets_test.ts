@@ -118,6 +118,14 @@ Deno.test("Caddy metadata preserves the canonical connection without encoding or
     });
     assertEquals(result.caddy.content, after.content);
     assertEquals(result.connection, placement.connection);
+    const restored = await composeCaddy({
+        ...placement,
+        direction: "restore",
+        before,
+        after,
+        current: result.caddy.content,
+    });
+    assertEquals(restored.caddy.content, before.content);
     assertEquals(
         mergeCaddy(after.content, before.content, after.content),
         before.content,
@@ -206,6 +214,18 @@ Deno.test("PHP metadata resolves canonical account placeholders from the Node ob
         }),
     });
     assertEquals(withdrawn.files[0].ensure, "absent");
+    const restored = composePhp({
+        ...placement,
+        direction: "restore",
+        before,
+        after,
+        account,
+        current: JSON.stringify({ "8.4": result.files[0].content }),
+    });
+    assertEquals(restored.files[0], {
+        ...result.files[0],
+        content: pool(1, 5).replaceAll("/__ORBIT_NODE_HOME__", "/home/orbit"),
+    });
 });
 Deno.test("PHP account and version-move policy are checked before any file operation", () => {
     const before = php(pool(1, 5)), after = php(pool(1, 7));

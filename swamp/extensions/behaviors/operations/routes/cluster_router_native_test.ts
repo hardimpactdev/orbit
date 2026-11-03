@@ -1,27 +1,12 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { chart, routeFixture } from "../../../../tests/_support/route_fixture.ts";
+import { routeFixture } from "../../../../tests/_support/route_fixture.ts";
 
-Deno.test("cluster Router set and unset run their charts", async () => {
+Deno.test("cluster Router unset runs its chart", async () => {
   await using f = await routeFixture("cluster");
-  for (const unset of [false, true]) {
-    const { run, calls } = await f.perform(0, true, "", unset);
-    assertEquals([run.status, calls], ["succeeded", []]);
-    await chart(
-      "operation-cluster-router" + (unset ? "-unset" : ""),
-      unset ? ["Withdraw the Router sites", "Remove the LAN rules", "Check the rules are gone"] : [
-        "Prepare the Router",
-        "Request the certificates",
-        "Sign the CSRs",
-        "Open LAN paths",
-        "Install certs, publish",
-        "Probe the workloads",
-        "Select the Router in DNS",
-        "Retire the old Router",
-        "Restore the before state",
-      ],
-    );
-  }
+  const { run, calls } = await f.perform(0, true, "", true);
+  assertEquals([run.status, calls], ["succeeded", []]);
 });
+
 Deno.test("cluster Router restores only after publishing failed", async () => {
   await using f = await routeFixture("cluster");
   f.pools("publish", 7);

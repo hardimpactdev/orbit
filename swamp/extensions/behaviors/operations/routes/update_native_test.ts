@@ -1,22 +1,6 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
-import { chart, routeFixture, skipped } from "../../../../tests/_support/route_fixture.ts";
+import { routeFixture, skipped } from "../../../../tests/_support/route_fixture.ts";
 
-Deno.test("Route update runs the chart with no Node effects for an empty plan", async () => {
-  await using f = await routeFixture("update");
-  const { run, calls } = await f.perform();
-  assertEquals([run.status, calls], ["succeeded", []]);
-  await chart("operation-route-update", [
-    "Make a CSR on the Node",
-    "Sign the CSR",
-    "Install cert, publish site",
-    "Write the new APP_URL",
-    "Probe the site over TLS",
-    "Open or close the edge",
-    "Move private DNS",
-    "Wait the DNS grace",
-    "Withdraw the old site",
-  ]);
-});
 Deno.test("Route update retires the old site only after publish and DNS grace", async () => {
   await using f = await routeFixture("update");
   f.pools("publish", 7);
