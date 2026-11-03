@@ -8,7 +8,7 @@ Deno.test("LAN tuple addition leaves other Routes and legacy tags alone", async 
   assertEquals(f.readState().tuples, [f.tuple]);
   assertEquals(f.readState().legacy, legacy);
   assert(!f.calls().some((c) => c.slice(0, 2).join(" ") === "--force delete"));
-  assertEquals(JSON.parse(String(history.jobs[0].steps.at(-1)!.outputs?.stdout)), { ready: true });
+  assertEquals(JSON.parse(String(history.jobs[0].steps.at(-1)!.outputs?.result_json)), { ready: true });
 });
 Deno.test("last LAN Route withdraws the official tuple without numbered deletion", async () => {
   await using f = await firewallFixture();
@@ -47,7 +47,7 @@ Deno.test("multiple LAN tuples use distinct native items", async () => {
 });
 Deno.test("LAN apply child reports ready", async () => {
   await using f = await firewallFixture();
-  const { run } = await f.lan({ child: true });
+  const { run } = await f.lan();
   assertEquals(run.status, "succeeded");
   assertEquals(f.readState().tuples, [f.tuple]);
 });

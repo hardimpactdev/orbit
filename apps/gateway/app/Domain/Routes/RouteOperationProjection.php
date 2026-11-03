@@ -18,8 +18,6 @@ final readonly class RouteOperationProjection implements DirectOperationProjecti
 {
     public const array Kinds = ['route.workload_verify', 'route.public_verify'];
 
-    public const array LocalKinds = ['route.lan_remove'];
-
     public function __construct(private DirectOperation $direct) {}
 
     public function native(Operation $operation): bool

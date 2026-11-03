@@ -17,6 +17,6 @@ The one-time migration that removed the old `orbit:route-<id>-lan` and `orbit:ro
 
 Route creation and target changes use the shared tuple child. They do not add Route-commented rules. Retained offline residue cleanup removes only its captured Route's exact comment; it cannot create or replace old allowances.
 
-`route.lan_remove` admits the full desired tuple plan after its Route's host catalogs are withdrawn. `operation-route-lan-remove` composes the same child and emits one public JSON object at the fixed `withdrawal/remove-lan` terminal selector. A successful result is `{"ready": true}`; the shared reader owns projection. It needs no private material or agent action.
+Route parents pass the captured desired tuple plan directly to `route-lan-apply` after withdrawing the Route's host catalogs. The child verifies the final tuples before its parent continues. LAN withdrawal starts no separate Operation and needs no private material or agent action.
 
 The destination audit and Caddy regression results are recorded in `/home/nckrtl/swamp-execution/evidence/route-lan-destination-audit-20261031.md`.

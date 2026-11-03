@@ -28,7 +28,7 @@ final readonly class RouteOfflineSelection
                 $step = match ($child['kind']) {
                     'route.caddy_converge' => 'caddy', 'certificate.remove' => 'certificates',
                     'instance.sync_environment', 'route.shared_php_withdraw', 'instance.prepare_php_runtime' => 'php',
-                    'route.lan_remove', 'route.public_firewall' => 'firewall', default => null,
+                    'route.public_firewall' => 'firewall', default => null,
                 };
                 if ($step !== null) {
                     $nodeId = ValidatedData::integer($child['node_id']);

@@ -6,13 +6,11 @@ namespace App\Actions\Routes;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Routes\NativeCaddyPublicationInput;
-use App\Domain\Routes\NativeRouteLanInput;
 use App\Domain\Routes\RouteNodeEffectCommand;
 use App\Domain\Routes\RouteOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Models\Route;
 use App\Support\ValidatedData;
 
 /** Captures validated Route input; the native workflow owns execution. */
@@ -24,21 +22,11 @@ final readonly class StartRouteNodeOperationAction
     public function execute(string $kind, Node $node, array $input, ?Operation $parent = null): Operation
     {
         $fields = $kind === 'route.workload_verify' ? ['route_id', 'instance_id'] : ['route_id'];
-        if (! in_array($kind, [...RouteOperationProjection::Kinds, ...RouteOperationProjection::LocalKinds], true) || $node->platform !== 'linux'
+        if (! in_array($kind, RouteOperationProjection::Kinds, true) || $node->platform !== 'linux'
             || array_diff(array_keys($input), $fields) !== [] || array_diff($fields, array_keys($input)) !== []) {
             throw new ResourceOperationException('operation.execution_forbidden', 'A stored Route effect on its Linux Node is required.', 422);
         }
         $draft = new Operation(['kind' => $kind, 'node_id' => $node->id, 'input' => $input]);
-        if ($kind === 'route.lan_remove') {
-            $this->plans->assertLanRemoval($draft);
-            if (! is_string($node->lan_ip) || filter_var($node->lan_ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
-                throw new ResourceOperationException('route.lan_removal_invalid', 'The workload Node needs its stored LAN IPv4 destination.', 422);
-            }
-
-            return $this->operations->execute($kind, 'route_effect', ValidatedData::integer($input['route_id']), $node->id,
-                [...$input, 'lan_removal' => ['route_id' => $input['route_id'], 'node_id' => $node->id, 'rules' => app(NativeRouteLanInput::class)->withdrawal($node, Route::query()->findOrFail(ValidatedData::integer($input['route_id'])))]],
-                $parent === null ? 'operator' : $parent->triggered_by, $parent?->request_id);
-        }
         $plan = $this->plans->networkVerification($draft);
 
         return $this->operations->execute($kind, 'route_effect', ValidatedData::integer($input['route_id']), $node->id,

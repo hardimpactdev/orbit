@@ -19,19 +19,6 @@ final readonly class RouteNodeEffectCommand
 {
     public function __construct(private IngressSiteRepository $sites, private PublicProcessRouteFirewall $processFirewall) {}
 
-    public function assertLanRemoval(Operation $operation): void
-    {
-        if ($operation->kind !== 'route.lan_remove' || $operation->node_id === null) {
-            throw new ResourceOperationException('operation.execution_forbidden', 'A recorded Route LAN withdrawal is required.', 422);
-        }
-        $node = Node::query()->findOrFail($operation->node_id);
-        $route = Route::query()->with('targets.instance')->findOrFail(ValidatedData::integer($operation->input['route_id']));
-        if ($route->sites_published || (! $route->targets->contains(static fn ($target): bool => $target->instance->node_id === $node->id)
-            && $route->node_id !== $node->id && $route->generation_basis_node_id !== $node->id)) {
-            throw new ResourceOperationException('operation.execution_forbidden', 'Withdraw stored Route site intent before cleaning its recorded workload Node.', 422);
-        }
-    }
-
     /**
      * Network checks capture only the admitted protocol and endpoint.
      *

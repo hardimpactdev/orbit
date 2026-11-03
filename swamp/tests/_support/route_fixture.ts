@@ -314,14 +314,14 @@ if (args[0] === "status") {
 } else throw new Error("unexpected UFW argv: "+args);
 `,
   );
-  for (const name of ["operation-route-lan-remove", "route-lan-apply", "route-ingress-apply"]) {
+  for (const name of ["route-lan-apply", "route-ingress-apply"]) {
     await f.copyWorkflow(name, [["/usr/sbin/ufw", ufw]]);
   }
   const tuple = { port: 443, protocol: "tcp", source: "192.168.6.2" };
   const initialize = (tuples: unknown[] = [], legacy: string[] = [], extra = {}) =>
     Deno.writeTextFile(state, JSON.stringify({ tuples, legacy, ...extra }));
   const readState = () => JSON.parse(Deno.readTextFileSync(state));
-  const lanIntent = (options: { ensure?: string; rules?: unknown[]; child?: boolean; pins?: string[] } = {}) => {
+  const lanIntent = (options: { ensure?: string; rules?: unknown[]; pins?: string[] } = {}) => {
     const rule = {
       node_id: 9,
       rules: options.rules ?? [{ ...tuple, ensure: options.ensure ?? "present", model_name: "r1" }],
@@ -330,27 +330,27 @@ if (args[0] === "status") {
       control_node_id: 209,
       connection: f.connection,
       host_keys: options.pins ?? [LOCAL_PIN],
-      ...(options.child ? { rule } : { ...rule, route_id: 47 }),
+      rule,
     };
   };
   const lan = (options: Parameters<typeof lanIntent>[0] & { success?: boolean } = {}) =>
     run(
       repo,
-      options.child ? "route-lan-apply" : "operation-route-lan-remove",
+      "route-lan-apply",
       lanIntent(options),
-      "route.lan_remove",
+      "route.destroy",
       options.success ?? true,
     );
   const refused = () =>
     repo.cli([
       "workflow",
       "run",
-      "operation-route-lan-remove",
+      "route-lan-apply",
       "--input",
       JSON.stringify({
         operation_id: 1,
         node_id: 9,
-        kind: "route.lan_remove",
+        kind: "route.destroy",
         execution_secrets: {},
         intent: lanIntent({ pins: [] }),
       }),

@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Routes\StartRouteNodeOperationAction;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\DirectOperation;
 use App\Domain\Routes\NativeCaddyPublicationInput;
-use App\Domain\Routes\NativeRouteLanRemovalProjection;
 use App\Domain\Routes\RouteOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
@@ -121,55 +119,5 @@ it('refuses a workload without a published WireGuard endpoint before recording i
     $this->instance->node->update(['wireguard_ip' => null]);
     config(['swamp.direct_writers' => ['route.workload_verify' => 'direct']]);
     expect(fn () => app(StartRouteNodeOperationAction::class)->execute('route.workload_verify', $this->router, $this->input))->toThrow(ResourceOperationException::class);
-    expect(Operation::query()->count())->toBe(0)->and($this->agents->calls)->toBe([]);
-});
-
-it('admits LAN removal directly only for its withdrawn Route and records no Gateway effect', function (): void {
-    $this->route->update(['status' => 'retiring', 'sites_published' => false]);
-    $operation = app(StartRouteNodeOperationAction::class)->execute('route.lan_remove', $this->instance->node, ['route_id' => $this->route->id]);
-    $intent = ['route_id' => $this->route->id, 'node_id' => $this->instance->node_id, 'rules' => [['port' => 443, 'protocol' => 'tcp', 'source' => '192.168.6.9', 'ensure' => 'absent', 'model_name' => '94980c57a7e648b2']]];
-    expect($operation->input['lan_removal'])->toBe($intent)
-        ->and($operation->worker)->toBeNull()->and($operation->lock_key)->toBeNull()->and($this->agents->calls)->toBe([]);
-    $inputs = $this->socket->sent[0]['payload']['inputs'];
-    expect($inputs['intent'])->toBe([...$intent, ...app(NativeCaddyPublicationInput::class)->connectionForNode($this->instance->node)])->and($inputs['operation_id'])->toBe($operation->id)
-        ->and($inputs['node_id'])->toBe($this->instance->node_id)->and($inputs['kind'])->toBe('route.lan_remove')
-        ->and(json_encode($inputs['execution_secrets'], JSON_THROW_ON_ERROR))->toBe('{}')
-        ->and(app(DirectOperation::class)->definition('route.lan_remove')['terminal_result'])->toBe(['job' => 'withdrawal', 'step' => 'remove-lan']);
-    $projected = app(NativeRouteLanRemovalProjection::class)->apply($operation, ['run_id' => $this->runId,
-        'status' => 'succeeded', 'result' => ['ready' => true, 'stderr' => 'private-diagnostic'],
-        'started_at' => '2026-10-31T03:00:00.000Z', 'finished_at' => '2026-10-31T03:00:01.000Z']);
-    expect($projected->result)->toBe(['ready' => true])->and($projected->status->value)->toBe('succeeded')
-        ->and($this->agents->calls)->toBe([]);
-});
-
-it('refuses LAN removal on a foreign Node or a Route still publishing sites', function (): void {
-    $this->route->update(['sites_published' => true]);
-    expect(fn () => app(StartRouteNodeOperationAction::class)->execute('route.lan_remove', $this->instance->node, ['route_id' => $this->route->id]))
-        ->toThrow(ResourceOperationException::class);
-    $this->route->update(['status' => 'retiring', 'sites_published' => false]);
-    expect(fn () => app(StartRouteNodeOperationAction::class)->execute('route.lan_remove', $this->router, ['route_id' => $this->route->id]))
-        ->toThrow(ResourceOperationException::class);
-    expect(Operation::query()->count())->toBe(0)->and($this->agents->calls)->toBe([]);
-});
-
-it('keeps the admission snapshot through dispatch and projects terminal output without a callback', function (): void {
-    $this->route->update(['status' => 'retiring', 'sites_published' => false]);
-    $operation = app(StartRouteNodeOperationAction::class)->execute('route.lan_remove', $this->instance->node, ['route_id' => $this->route->id]);
-    $this->route->update(['status' => 'active']);
-    $this->instance->node->update(['lan_ip' => '192.168.6.99']);
-    $projection = app(NativeRouteLanRemovalProjection::class);
-    expect($projection->input($operation)['intent']['rules'])->toBe([['port' => 443, 'protocol' => 'tcp', 'source' => '192.168.6.9', 'ensure' => 'absent', 'model_name' => '94980c57a7e648b2']]);
-    $projected = $projection->apply($operation, ['run_id' => $this->runId, 'status' => 'failed',
-        'result' => ['error_code' => 'firewall.withdrawal_failed'], 'error_code' => 'firewall.withdrawal_failed',
-        'started_at' => '2026-10-31T03:00:00Z', 'finished_at' => '2026-10-31T03:00:01Z']);
-    expect($projected->status->value)->toBe('failed')->and($projected->error_code)->toBe('firewall.withdrawal_failed')
-        ->and($this->agents->calls)->toBe([]);
-});
-
-it('refuses LAN removal without a stored destination before recording intent', function (): void {
-    $this->route->update(['status' => 'retiring', 'sites_published' => false]);
-    $this->instance->node->update(['lan_ip' => null]);
-    expect(fn () => app(StartRouteNodeOperationAction::class)->execute('route.lan_remove', $this->instance->node->fresh(), ['route_id' => $this->route->id]))
-        ->toThrow(ResourceOperationException::class);
     expect(Operation::query()->count())->toBe(0)->and($this->agents->calls)->toBe([]);
 });
