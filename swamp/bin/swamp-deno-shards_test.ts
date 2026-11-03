@@ -68,7 +68,7 @@ Deno.test("Operations shards cover every module once and preserve failure", asyn
     assertEquals(command.env[key], "${{ matrix." + value + " }}");
   }
   await temporary(async root => {
-    const files = root + "/extensions/behaviors/operations", groups = [".", "database", "process-commands"];
+    const files = root + "/extensions/behaviors/operations", groups = ["", "database", "process-commands"];
     let identifier = 0;
     for (const path of groups) for (let index = 0; index < 9; index++) {
       await write(`${files}/${path}/${String(index).padStart(2, "0")}_test.ts`, `Deno.test("module ${identifier}", () => console.log("COVERED_FILE_${identifier}"));\n`);

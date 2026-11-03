@@ -39,7 +39,7 @@ class CiJavascriptTest(unittest.TestCase):
 
     def smoke_check(self, actual):
         source = (ROOT / 'tools/ci-runners/setup.sh').read_text()
-        source = source[source.index('# Verify the launcher'):source.index('if [ ! -x /home/runner/actions-runner/config.sh ]')]
+        source = source[source.index('# Verify the launcher'):source.index('# Jobs use the managed tools')]
         source = source.replace('/root/orbit-php-build', str(ROOT))
         with tempfile.TemporaryDirectory() as directory:
             work = Path(directory)

@@ -8,11 +8,17 @@ runs:
   using: composite
   steps:
     - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+      if: runner.environment != 'self-hosted'
       with:
         php-version: '8.5'
-        extensions: bcmath, curl, dom, intl, mbstring, pcntl, pdo_sqlite, zip
+        extensions: bcmath, curl, dom, intl, mbstring, pcntl, pdo_mysql, pdo_pgsql, pdo_sqlite, zip
         coverage: ${{ inputs.coverage }}
         tools: composer:2.10.3
+    - name: Verify the managed runner PHP build
+      if: runner.environment == 'self-hosted'
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: python3 bin/php-build verify --profile ci-runner
     # Each lock graph can seed another graph's immutable package downloads.
     - name: Locate Composer download cache
       id: composer-cache

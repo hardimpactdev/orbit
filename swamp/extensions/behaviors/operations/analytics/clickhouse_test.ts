@@ -1,6 +1,7 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { configureClickhouse } from "./clickhouse.ts";
 import { clickhouseFiles } from "./clickhouse_files.ts";
+import { rootFixtureCommand } from "../_lib/root-command_fixture_test.ts";
 import type { SystemCommand } from "../processes-schedules/system.ts";
 
 async function fixture(
@@ -11,26 +12,10 @@ async function fixture(
 ) {
   const root = await Deno.makeTempDir({ prefix: "analytics-clickhouse-" });
   const execute: SystemCommand = async (program, args, stdin) => {
-    const child = new Deno.Command(program, {
-      args: args.map((arg) =>
-        arg === "/etc" || arg.startsWith("/etc/") ? `${root}${arg}` : arg
-      ),
-      stdin: stdin === undefined ? "null" : "piped",
-      stdout: "piped",
-      stderr: "null",
-    }).spawn();
-    if (stdin !== undefined) {
-      const writer = child.stdin.getWriter();
-      await writer.write(new TextEncoder().encode(stdin));
-      await writer.close();
-    }
-    const result = await child.output();
-    return {
-      code: result.code,
-      stdout: args.includes("/usr/bin/mktemp")
-        ? new TextDecoder().decode(result.stdout).replace(root, "")
-        : new TextDecoder().decode(result.stdout),
-    };
+    const result = await rootFixtureCommand(program, args.map((arg) =>
+      arg === "/etc" || arg.startsWith("/etc/") ? `${root}${arg}` : arg
+    ), stdin);
+    return { ...result, stdout: args.includes("/usr/bin/mktemp") ? result.stdout.replace(root, "") : result.stdout };
   };
   const path = (name: string) =>
     `${root}/etc/orbit/analytics/clickhouse/${name}`;
@@ -66,7 +51,7 @@ Deno.test("native ClickHouse publication preserves upstream bytes and repeats wi
       ).join("");
       assertEquals(hash, hashes[index]);
       const stat = await Deno.stat(path(name));
-      assertEquals(stat.uid, 0);
+      assertEquals(stat.uid, Deno.uid());
       assertEquals(stat.mode! & 0o7777, 0o644);
       inodes.push(stat.ino);
     }

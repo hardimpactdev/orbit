@@ -4,7 +4,7 @@
 # First add the ci-runner role through Orbit; it owns the host project, profile, network and firewall.
 # Run container operations on the host as a member of incus-admin with sudo. Every step is idempotent.
 #
-#   tools/ci-runners/setup.sh container NAME         # ci-beast-1, ci-shark-4, ci-sabre-3
+#   tools/ci-runners/setup.sh container NAME [AGENT SHA256] # optional source-built agent for rollout
 #   tools/ci-runners/setup.sh register NAME [TOKEN]  # ORBIT_RUNNER_TOKEN in the environment, or TOKEN
 #   tools/ci-runners/setup.sh verify NAME            # egress and loopback probes from inside the container
 #
@@ -23,6 +23,10 @@ PROJECT=orbit-ci
 IMAGE=images:ubuntu/26.04
 RUNNER_VERSION=2.338.0
 RUNNER_SHA256=af4b794c1bc41d73d40535e3fe092a39f9679cd8d965954c2aca25a05ca41d32
+DENO_VERSION=2.9.8
+DENO_SHA256=e890975bc2549807bbcc0b584ffafda72cc7c93349dd99c80483dd784f6c4609
+BUN_VERSION=1.4.2
+BUN_SHA256=36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913
 COMPOSER_VERSION=2.10.3
 COMPOSER_SHA256=7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6
 REPO_URL=https://github.com/hardimpactdev
@@ -38,8 +42,14 @@ in_ct() { incus exec "$1" --project "$PROJECT" -- "${@:2}"; }
 
 container() {
   local name=$1
-  # Compile this checkout's installer before changing the container.
-  (cd "$REPOSITORY/apps/agent" && cargo build --release --locked)
+  # Compile locally, or verify the source-built artifact supplied by the rollout host.
+  local source_agent=${2:-$REPOSITORY/apps/agent/target/release/orbit-agent}
+  if [ "$#" -gt 1 ]; then
+    [ "$#" -eq 3 ] && [[ "$3" =~ ^[0-9a-f]{64}$ ]] || { echo 'container NAME AGENT SHA256' >&2; return 2; }
+    printf '%s  %s\n' "$3" "$source_agent" | sha256sum -c - >/dev/null
+  else
+    (cd "$REPOSITORY/apps/agent" && cargo build --release --locked)
+  fi
   incus info "$name" --project "$PROJECT" >/dev/null 2>&1 || incus launch "$IMAGE" "$name" --project "$PROJECT" -c raw.apparmor="$APPARMOR"
   if [ "$(incus config get "$name" raw.apparmor --project "$PROJECT")" != "$APPARMOR" ]; then
     incus config set "$name" raw.apparmor="$APPARMOR" --project "$PROJECT"
@@ -53,7 +63,7 @@ container() {
   local tree=/root/orbit-php-build
   in_ct "$name" rm -rf "$tree"
   in_ct "$name" install -d -m 0700 "$tree/bin" "$tree/tools/ci-runners" "$tree/apps/gateway/resources/machine-software" "$tree/apps/agent/target/release"
-  incus file push "$REPOSITORY/apps/agent/target/release/orbit-agent" "$name$tree/apps/agent/target/release/orbit-agent" --project "$PROJECT"
+  incus file push "$source_agent" "$name$tree/apps/agent/target/release/orbit-agent" --project "$PROJECT"
   in_ct "$name" chmod 0755 "$tree/apps/agent/target/release/orbit-agent"
   incus file push "$REPOSITORY/bin/php-build" "$name$tree/bin/php-build" --project "$PROJECT"
   incus file push "$REPOSITORY/apps/gateway/resources/machine-software/recipe.json" \
@@ -66,7 +76,8 @@ container() {
   in_ct "$name" chown -R root:root "$tree"
 
   in_ct "$name" env RUNNER_VERSION="$RUNNER_VERSION" RUNNER_SHA256="$RUNNER_SHA256" \
-    COMPOSER_VERSION="$COMPOSER_VERSION" COMPOSER_SHA256="$COMPOSER_SHA256" bash -euo pipefail <<'SH'
+    COMPOSER_VERSION="$COMPOSER_VERSION" COMPOSER_SHA256="$COMPOSER_SHA256" \
+    DENO_VERSION="$DENO_VERSION" DENO_SHA256="$DENO_SHA256" BUN_VERSION="$BUN_VERSION" BUN_SHA256="$BUN_SHA256" bash -euo pipefail <<'SH'
 export DEBIAN_FRONTEND=noninteractive
 caddy_key=/usr/share/keyrings/caddy-stable-archive-keyring.gpg
 if [ ! -s "$caddy_key" ]; then
@@ -81,8 +92,10 @@ apt-get update -qq
 # actions/cache puts the compression method in the cache version: without zstd, every zstd entry from Sabre and
 # hosted runners misses.
 apt-get install -y -qq --no-install-recommends --no-upgrade \
-  git curl ca-certificates jq unzip zip rsync sqlite3 python3 openssh-client socat netcat-openbsd bind9-dnsutils \
+  git curl ca-certificates jq unzip zip rsync sqlite3 python3 python3-venv openssh-client socat netcat-openbsd bind9-dnsutils \
   acl attr wireguard-tools openssl sudo caddy tar gzip xz-utils zstd libkrb5-3 zlib1g gpgv >/dev/null
+# Project checks run cargo fmt; APT verifies these exact packages against signed repository checksums.
+apt-get install -y -qq --no-install-recommends --allow-downgrades cargo=1.93.1ubuntu1 rustfmt=1.93.1ubuntu1 >/dev/null
 # Jobs start their own PostgreSQL cluster as runner; never create or start a system cluster.
 apt-get install -y -qq --no-install-recommends --no-upgrade postgresql-common >/dev/null
 cluster_config=/etc/postgresql-common/createcluster.conf
@@ -113,7 +126,17 @@ id runner >/dev/null 2>&1 || useradd -m -U -s /bin/bash runner
 rm -f /etc/sudoers.d/runner /etc/sudoers.d/90-incus
 install -d -o runner -g runner /home/runner/work
 
-# Install and verify recipe Node, then retire duplicate APT ownership with a dependency check.
+# These dedicated containers retire the distro Node stack before installing the recipe tools.
+# Refuse a removal that reaches outside that stack; never autoremove unrelated packages.
+if dpkg-query -W -f='${db:Status-Status}' nodejs 2>/dev/null | grep -qx installed; then
+  mapfile -t retired_node < <(LC_ALL=C apt-get --simulate remove -- nodejs | awk '$1 == "Remv" {print $2}')
+  [ "${#retired_node[@]}" -gt 0 ]
+  for package in "${retired_node[@]}"; do
+    [[ "$package" =~ ^(nodejs|node-[a-z0-9+-]+|libnode[0-9]+)$ ]] || { echo "Refuse Node removal: $package" >&2; exit 1; }
+  done
+  apt-get remove --yes -- "${retired_node[@]}" >/dev/null
+fi
+# Install and verify recipe Node, then retire its old source and provider files.
 python3 /root/orbit-php-build/tools/ci-runners/javascript.py
 # Verify the launcher from a directory that runner can traverse, against the recipe.
 expected_node_version=$(python3 -c 'import json,sys; print("v" + json.load(open(sys.argv[1]))["tools"]["node"]["version"])' /root/orbit-php-build/apps/gateway/resources/machine-software/recipe.json)
@@ -123,6 +146,26 @@ if [ "$actual_node_version" != "$expected_node_version" ]; then
   exit 1
 fi
 printf '%s\n' "$actual_node_version"
+
+# Jobs use the managed tools without sudo or per-job toolchain installs.
+if [ "$(deno --version 2>/dev/null | head -n 1)" != "deno $DENO_VERSION (stable, release, x86_64-unknown-linux-gnu)" ]; then
+  tool_archive=$(mktemp)
+  tool_directory=$(mktemp -d)
+  curl -fsSLo "$tool_archive" "https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip"
+  echo "${DENO_SHA256}  $tool_archive" | sha256sum -c - >/dev/null
+  unzip -q "$tool_archive" -d "$tool_directory"
+  install -m 0755 "$tool_directory/deno" /usr/local/bin/deno
+  rm -rf "$tool_archive" "$tool_directory"
+fi
+if [ "$(bun --version 2>/dev/null)" != "$BUN_VERSION" ]; then
+  tool_archive=$(mktemp)
+  tool_directory=$(mktemp -d)
+  curl -fsSLo "$tool_archive" "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-x64.zip"
+  echo "${BUN_SHA256}  $tool_archive" | sha256sum -c - >/dev/null
+  unzip -q "$tool_archive" -d "$tool_directory"
+  install -m 0755 "$tool_directory/bun-linux-x64/bun" /usr/local/bin/bun
+  rm -rf "$tool_archive" "$tool_directory"
+fi
 
 if [ ! -x /home/runner/actions-runner/config.sh ]; then
   curl -fsSLo /tmp/runner.tgz "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz"

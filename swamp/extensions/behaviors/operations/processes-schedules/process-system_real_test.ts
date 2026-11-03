@@ -1,8 +1,9 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.14";
 import { processSystem } from "./process-system.ts";
-import { type SystemCommand, systemCommand } from "./system.ts";
+import { type SystemCommand } from "./system.ts";
+import { rootFixtureCommand as systemCommand } from "../_lib/root-command_fixture_test.ts";
 
-Deno.test("real sudo pipe publishes root0600 environment and public candidate atomically without stdout", async () => {
+Deno.test("real file pipe with fake root metadata publishes private environment and public candidate atomically without stdout", async () => {
   // Only fixed paths in this disposable local tree reach the filesystem.
   const root = await Deno.makeTempDir({ prefix: "orbit-process-pipe-" });
   const caller = { uid: Deno.uid()!, gid: Deno.gid()! };
