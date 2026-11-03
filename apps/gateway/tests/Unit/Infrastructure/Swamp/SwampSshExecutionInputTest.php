@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\PendingSshHostKey;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 
@@ -33,3 +34,18 @@ it('refuses an incomplete target instead of selecting an unpinned connection', f
     expect(fn () => (new SwampSshExecutionInput)->forNode($node))->toThrow(ResourceOperationException::class,
         'Official SSH requires the stored target address, user and host key.');
 })->with(['user', 'wireguard_ip', 'ssh_host_key_type', 'ssh_host_key']);
+
+it('leaves only a pending guest unpinned, and only inside its capture', function (): void {
+    $guest = new Node(['user' => 'orbit', 'wireguard_ip' => '10.44.0.208']);
+    $guest->id = 88;
+    $pinned = new Node(['user' => 'app', 'wireguard_ip' => '10.44.0.9', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'target-public-key']);
+    $pinned->id = 9;
+
+    $captured = app(PendingSshHostKey::class)->during(88, fn (): array => [
+        (new SwampSshExecutionInput)->forNode($guest)['target']['host_keys'],
+        (new SwampSshExecutionInput)->forNode($pinned)['target']['host_keys'],
+    ]);
+
+    expect($captured)->toBe([null, ['ssh-ed25519 target-public-key']])
+        ->and(fn () => (new SwampSshExecutionInput)->forNode($guest))->toThrow(ResourceOperationException::class);
+});

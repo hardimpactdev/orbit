@@ -1,6 +1,6 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { provision } from "../../../../tests/_support/task_repository_provision.ts";
-import { exists, type Json, text, write, yamlWrite } from "../../../../tests/_support/task_repository.ts";
+import { exists, hostKey, type Json, text, write, yamlWrite } from "../../../../tests/_support/task_repository.ts";
 import { walk } from "jsr:@std/fs@1.0.21/walk";
 
 Deno.test("proof club token reaches a private file through SSH stdin and stays out of history", async () => {
@@ -237,4 +237,42 @@ Deno.test("official extension loader resolves the shared environment import", as
   });
   const { history } = await t.run("test-environment-import", {});
   assert((history as Json).jobs[0].steps[0].outputs.valid);
+});
+
+Deno.test("the workspace Route and Processes run as children with the guest host key bound", async () => {
+  await using t = await provision();
+  const unpinned = { control_node_id: 209, identity_file: "/dev/null", target: { name: "target", host: "10.44.0.20", host_keys: null } };
+  const other = { name: "router", host: "10.44.0.10", host_keys: ["ssh-ed25519 ROUTER"] };
+  Object.assign(t.inputs.intent, {
+    route: { nodes: { "20": { host_keys: null }, "11": other }, ssh_execution: unpinned },
+    processes: [{ id: 70, intent: { ssh_execution: unpinned } }],
+  });
+  for (const name of ["operation-route-create", "operation-process-create"]) {
+    await yamlWrite(`${t.repo.dir}/workflows/workflow-${name}.yaml`, {
+      id: crypto.randomUUID(), name, inputs: { type: "object", additionalProperties: true },
+      jobs: [{ name: "child", steps: [{ name: "result", task: { type: "behavior", behaviorType: "@nckrtl/test-vm-receipt",
+        behaviorName: `${name}-fixture`, methodName: "read",
+        inputs: { receipt: "${{ inputs.intent }}", operation_id: "${{ inputs.operation_id }}", kind: "${{ inputs.kind }}", execution_secrets: "${{ inputs.execution_secrets }}" } } }] }],
+    });
+  }
+  const { history, steps, result } = await t.execute();
+  assertEquals(history.status, "succeeded");
+  const route = steps["Route the workspace"].outputs.result;
+  assertEquals(route.nodes["20"].host_keys, [hostKey]);
+  assertEquals(route.nodes["11"], other);
+  assertEquals(route.ssh_execution.target.host_keys, [hostKey]);
+  assertEquals(route.root_kind, "route.create");
+  assertEquals(steps["Create, start Processes-0"].outputs.result.ssh_execution.target.host_keys, [hostKey]);
+  assertEquals([result.route, result.processes], ["succeeded", ["Create, start Processes-0=succeeded"]]);
+  assert(!("error_code" in result));
+});
+Deno.test("a failed workspace Process fails the run with its step in the receipt", async () => {
+  await using t = await provision();
+  t.inputs.intent.processes = [{ id: 70, intent: { ssh_execution: { target: { host_keys: null } } } }];
+  await t.repo.stubWorkflow("operation-process-create", "exit 3");
+  const { history, steps, result } = await t.execute(false);
+  assertEquals(history.status, "failed");
+  assertEquals(steps["Route the workspace"].status, "skipped");
+  assertEquals([result.error_code, result.failed_step], ["tasks.provision_failed", "processes"]);
+  assertEquals(steps["Accept the workspace"].status, "failed");
 });

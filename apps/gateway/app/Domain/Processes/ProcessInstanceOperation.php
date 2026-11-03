@@ -82,14 +82,16 @@ final readonly class ProcessInstanceOperation implements DirectOperationProjecti
         return $result;
     }
 
-    /** An in-memory member view; never saved, admitted or dispatched as another Operation.
+    /** An in-memory member view; never saved, admitted or dispatched as another Operation. A parent that does not
+     * run on the member's Node, such as tasks.provision on the task VM host, names the Instance's Node.
+     *
      * @param  array<string,mixed>  $member
      */
-    public static function member(Operation $parent, array $member): Operation
+    public static function member(Operation $parent, array $member, ?int $nodeId = null): Operation
     {
         $view = new Operation;
         $view->forceFill(['id' => $parent->id, 'status' => $parent->status, 'kind' => 'process.create',
-            'target_type' => 'process', 'target_id' => $member['id'], 'node_id' => $parent->node_id, 'input' => $member['input']]);
+            'target_type' => 'process', 'target_id' => $member['id'], 'node_id' => $nodeId ?? $parent->node_id, 'input' => $member['input']]);
 
         return $view;
     }

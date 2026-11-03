@@ -45,6 +45,9 @@ export async function provision() {
       eligible: true,
       proof_club: null,
       git_authorization: null,
+      route: null,
+      route_secrets: {},
+      processes: [],
       ssh_identity: {
         control_node_id: 209,
         identity_file: "/dev/null",
