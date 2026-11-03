@@ -630,3 +630,13 @@ The [receipt index](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof
 Nine Gateway cases pass with 65 assertions. Two native cases pass in 7.835 seconds for empty and two-member plans and a failed child. Native refusal skips the final check. The empty-set regression failed until the end check moved to a dependent job.
 
 Source adds 205 net Orbit lines, including a new chart of 44 lines, 69 lines of proof fixtures and 56 lines of native tests. Production adds two net lines for the separate job, queue timeout and bounded fan-out. Custom behavior code stays unchanged. No shipped script is deleted and no new script gap is named. The receipt index and this retro add evidence.
+
+## 2026-11-03: retained Schedule creation checks native resources
+
+The retained Node timer helper drops its reporting shell. Official file checks verify both units and the absence of obsolete files; systemd checks the captured timer state. A native assertion requires all checks to be compliant, because a check method can complete while recording drift. Mutating steps declare `writes: true`. The Gateway reads the end check in its existing history request and records the same public readiness. The chart keeps the retained timer exception beside the native cron path.
+
+The [receipt index](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/receipts/schedule-create-timer-rule14.json) records source `b0df4e0ce6`, minimal@16 and native run `07e53a0f-388b-423f-ae66-7baa104f4cd4`. The Operation took 8.36 seconds and the fixture took 11.5 seconds (one sample; budget 180 seconds; queue timeout 30 seconds). Real file and systemd resources proved root ownership, mode 0644, a disabled and inactive timer, and absence of obsolete files. The fixture supplies captured intent at production admission. It does not exercise agent account lookup, enabled fires, command credentials or a production clone.
+
+The first native operation and parity passed, but the receipt phase named `files-0` instead of the scalar iteration `files-service`. After correcting only the fixture, a fresh run passed. Two native cases pass in 10.203 seconds for compliant resources and file or timer drift. Gateway tests pass 27 cases with 207 assertions across creation and its definition parent.
+
+Source adds 257 net Orbit lines. Charts and references add 35, proof fixtures add 104 and native tests add 62. Production adds 34 lines for the separate official checks and native assertion; custom behavior code stays unchanged. Swamp adds 200 net lines, including fixtures and tests. No shipped script is deleted and no new script gap is named. The receipt index and this retro add evidence.
