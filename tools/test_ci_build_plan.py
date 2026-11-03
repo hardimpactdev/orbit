@@ -63,6 +63,12 @@ class BuildPlanTest(unittest.TestCase):
         self.assertFalse(plan.select(['apps/gateway/app/Thing.php'])['agent'])
         self.assertFalse(plan.select(['.github/workflows/ci.yml'])['agent'])
 
+    def test_gateway_grant_renderer_changes_require_native_serve_validation(self):
+        for path in ('apps/gateway/app/Infrastructure/GatewayReleases/SwampGrantRenderer.php',
+                     'apps/gateway/app/Support/ValidatedData.php', 'apps/gateway/bin/render-swamp-grants'):
+            with self.subTest(path=path):
+                self.assertIn('swamp', self.selected([path]))
+
     def test_swamp_only_skips_gateway_builds_and_release_on_prs(self):
         paths = ['swamp/extensions/example.ts', 'swamp/bin/effect.php', 'swamp/composer.json']
         self.assertEqual({'swamp'}, self.selected(paths))

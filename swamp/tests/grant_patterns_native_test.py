@@ -23,8 +23,7 @@ class GrantPatternsNative(unittest.TestCase):
         temp = tempfile.TemporaryDirectory(prefix='grant-policy-test-')
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
-        for name in ('config/gateway-workflow-grants.json', 'config/serve-grants.json',
-                     'extensions/behaviors/operations/fleet-recipe/scripts/swamp_workers.py'):
+        for name in ('config/gateway-workflow-grants.json', 'config/serve-grants.json'):
             destination = self.root / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / name, destination)

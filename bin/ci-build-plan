@@ -17,6 +17,9 @@ def select(paths, main=False):
     for path in paths:
         if path.startswith('apps/gateway/'):
             jobs['gateway-static'] = True
+        if path in ('apps/gateway/app/Infrastructure/GatewayReleases/SwampGrantRenderer.php',
+                    'apps/gateway/app/Support/ValidatedData.php', 'apps/gateway/bin/render-swamp-grants'):
+            jobs['swamp'] = True
         if path.startswith('swamp/'):
             jobs['swamp'] = True
             if path == 'swamp/config/gateway-workflow-grants.json':

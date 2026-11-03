@@ -22,17 +22,17 @@ runtime = load_module('swamp_validation', ROOT / 'bin/validate-swamp-workflows.p
 
 def render_grants(root, destination):
     """Use the release renderer, including raw serve conditions, without publishing live grants."""
-    renderer = load_module('release_grants', root / 'extensions/behaviors/operations/fleet-recipe/scripts/swamp_workers.py')
-    inputs = {root / renderer.GRANTS_MANIFEST, root / renderer.SERVE_GRANTS}
+    inputs = {root / 'config/gateway-workflow-grants.json', root / 'config/serve-grants.json'}
     discovered = set((root / 'config').glob('*grants*.json'))
     if discovered != inputs:
         raise ValueError(f'Grant inputs need complete release-renderer coverage: {sorted(str(p) for p in discovered ^ inputs)}')
-    files = {renderer.GRANTS_FILE: renderer.grants(root), renderer.SERVE_GRANTS_FILE: renderer.serve_grants(root)}
+    renderer = ROOT.parent / 'apps/gateway/bin/render-swamp-grants'
+    files = json.loads(subprocess.run(['php', str(renderer), str(root)], capture_output=True, text=True, check=True, timeout=30).stdout)
     count = 0
     for name, content in files.items():
         path = destination / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(content)
+        path.write_text(content)
         count += len(json.loads(content)['grants'])
     return len(files), count
 

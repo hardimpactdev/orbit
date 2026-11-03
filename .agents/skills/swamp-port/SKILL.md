@@ -53,7 +53,7 @@ Use the official swamp skill to create or edit the workflow. Apply the Orbit [wo
 
 Review against the [checklist](../../../docs/swamp/porting.md#pr-and-review-checklist), current chart and flow-tighten. Missing budgets, required receipts, explained growth or reasons for legacy phase changes fail review. Read the change report before calling a reason missing. Keep source conformance, CI, served-source uptake and live evidence separate. Report PASS or deviations as `file:line`, broken rule and native replacement, with reviewed SHA and skill version.
 
-Use the official workflow references to check guard, dependency and output semantics before alleging a silent skip. On pinned e459, missing intent fields fail CEL evaluation (#2369). An added intent field needs its Gateway release live before the Swamp load; pre-release runs are re-admitted, not resumed. Check the whole workflow's `queueTimeout` (L17-PR-2363-02). When captures become sparse, inspect every guard that used the full form (#2383). Main is not `deno fmt` clean; do not block on unrelated formatting (#2332).
+Use the official workflow references to check guard, dependency and output semantics before alleging a silent skip. On pinned e459, missing intent fields fail CEL evaluation (#2369). An added intent field needs its Gateway release live before the Swamp load; pre-release runs are re-admitted, not resumed. Remove a checkout script mode only after the served workflow stops calling it: release load moves checkout before workflow reload. Check the whole workflow's `queueTimeout` (L17-PR-2363-02). When captures become sparse, inspect every guard that used the full form (#2383). Main is not `deno fmt` clean; do not block on unrelated formatting (#2332).
 
 ## Improve this skill
 

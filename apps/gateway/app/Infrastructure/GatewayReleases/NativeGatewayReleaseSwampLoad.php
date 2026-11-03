@@ -6,9 +6,12 @@ namespace App\Infrastructure\GatewayReleases;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\GatewayReleases\GatewayReleaseException;
+use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayReleaseSwampLoad;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
+use App\Models\Node;
 use App\Models\Operation;
 use Closure;
 use Illuminate\Support\Facades\Http;
@@ -67,8 +70,14 @@ final readonly class NativeGatewayReleaseSwampLoad implements GatewayReleaseSwam
 
     public function load(string $sha): array
     {
+        $release = GatewayReleaseLayout::fromConfig()->releasePath(substr($sha, 0, 12));
+        if (! is_file($release.'/REVISION') || trim((string) file_get_contents($release.'/REVISION')) !== $sha) {
+            throw new GatewayReleaseException('swamp', 'gateway.release_swamp_load_failed', 'Swamp grants require the prepared release commit.', sha: $sha);
+        }
+        $input = ['sha' => $sha, 'grants' => (new SwampGrantRenderer)->render($release.'/swamp'),
+            'ssh' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail(self::SwampNode))];
         $served = ($this->instance)();
-        $first = $this->run($sha);
+        $first = $this->run($sha, $input);
         $restart = $first->result['restart'] ?? null;
         if (! is_array($restart)) {
             return ['outcome' => 'loaded', 'operation_id' => $first->id];
@@ -78,7 +87,7 @@ final readonly class NativeGatewayReleaseSwampLoad implements GatewayReleaseSwam
         $instance = $this->awaitNewInstance($sha, $served);
         $restart = [...$restart, 'operation_id' => $first->id, 'instance' => $instance,
             'waited_seconds' => (int) round((($this->clock)() - $restarted) / 1_000_000_000)];
-        $second = $this->run($sha);
+        $second = $this->run($sha, $input);
 
         return ['outcome' => 'loaded', 'operation_id' => $second->id, 'restart' => $restart];
     }
@@ -97,10 +106,11 @@ final readonly class NativeGatewayReleaseSwampLoad implements GatewayReleaseSwam
         return $current;
     }
 
-    private function run(string $sha): Operation
+    /** @param array<string, mixed> $input */
+    private function run(string $sha, array $input): Operation
     {
         try {
-            $operation = $this->operations->execute('gateway.swamp_load', 'node', self::SwampNode, self::SwampNode, ['sha' => $sha], 'gateway-release', null);
+            $operation = $this->operations->execute('gateway.swamp_load', 'node', self::SwampNode, self::SwampNode, $input, 'gateway-release', null);
         } catch (ResourceOperationException $exception) {
             throw new GatewayReleaseException('swamp', 'gateway.release_swamp_load_failed', "Swamp did not start the load of {$sha}: {$exception->errorCode}.", previous: $exception, sha: $sha);
         }

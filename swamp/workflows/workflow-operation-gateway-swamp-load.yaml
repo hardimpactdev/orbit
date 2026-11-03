@@ -13,6 +13,8 @@ inputs:
       type: object
       properties:
         sha: {type: string, pattern: '^[a-f0-9]{40}$'}
+        grants: {type: object, additionalProperties: {type: string}}
+        ssh: {type: object}
       required: [sha]
       additionalProperties: false
     execution_secrets: {type: object, additionalProperties: false}

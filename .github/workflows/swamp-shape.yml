@@ -114,6 +114,11 @@ jobs:
           SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_API_KEY || '' }}
           SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_SIGNIN_TOKEN || '' }}
         run: python3 bin/validate-swamp-workflows.py --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/workflow-validation.json"
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
+        with:
+          php-version: "8.5"
+          coverage: none
       - name: Validate release grants with pinned serve check-config
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         env:

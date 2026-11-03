@@ -20,12 +20,13 @@ sequenceDiagram
   %%> Not included:
   %%> - no CLI command of its own; the release runner is the only caller
   %%> - `gateway:release:rollback` skips this step, so a rollback works while Swamp is down
+  Note over GW: Render target grants<br/>freeze grants and SSH target
   GW->>SW: Start load run<br/>operation-gateway-swamp-load
   %%> What it does:
   %%> - records task #5150 with the release commit
   %%> - starts one Swamp run on serve, placed on the `swamp` role
   %%> Inputs:
-  %%> - the release commit, for example `a1b2c3d`
+  %%> - the release commit, for example `a1b2c3d`, its rendered grants and the admitted SSH target
   %%> Retry:
   %%> - when serve is restarting, the start waits up to 10 minutes instead of pausing the release
   SW->>N: Move checkout, grants<br/>git checkout --detach a1b2c3d

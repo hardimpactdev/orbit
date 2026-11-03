@@ -14,7 +14,7 @@ final readonly class GatewaySwampLoadProjection implements DirectOperationProjec
 {
     public function input(Operation $operation): array
     {
-        return ['intent' => ['sha' => $operation->input['sha']], 'execution_secrets' => []];
+        return ['intent' => array_intersect_key($operation->input, array_flip(['sha', 'grants', 'ssh'])), 'execution_secrets' => []];
     }
 
     public function apply(Operation $operation, array $data): Operation

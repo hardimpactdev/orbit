@@ -1,0 +1,16 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use App\Infrastructure\GatewayReleases\SwampGrantRenderer;
+
+// CI uses the production renderer without booting Laravel or loading deployment credentials.
+require dirname(__DIR__).'/app/Support/ValidatedData.php';
+require dirname(__DIR__).'/app/Infrastructure/GatewayReleases/SwampGrantRenderer.php';
+
+if ($argc !== 2) {
+    fwrite(STDERR, "Usage: render-swamp-grants <swamp-repository>\n");
+    exit(1);
+}
+echo json_encode((new SwampGrantRenderer)->render($argv[1]), JSON_THROW_ON_ERROR)."\n";
