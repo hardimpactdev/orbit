@@ -319,6 +319,8 @@ it('refuses the canonical proof Project before placement when its sandbox creden
         'repository_url' => 'https://github.com/example/proof.git', 'default_branch' => 'main', 'task_workspace_routed' => false]);
     $this->group->update(['project_id' => $proof->id]);
     config(['swamp.proof_club_api_key' => '']);
+    // Project changes publish the proof reaper before the admission under test.
+    $this->socket->sent = [];
 
     expect(fn () => app(StartTaskProvisionAction::class)->execute($this->group->fresh(), 'fixture', null))
         ->toThrow(ResourceOperationException::class, 'Gateway-held sandbox club credential');
