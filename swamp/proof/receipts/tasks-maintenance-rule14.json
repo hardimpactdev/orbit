@@ -1,0 +1,17 @@
+{
+  "kind": "tasks.maintenance",
+  "rule": 14,
+  "topology": "minimal",
+  "topology_version": 16,
+  "source_commit": "7a787170ab7e6fd3a669f96c1d956b9ca21b2e9c",
+  "receipt": "/home/nckrtl/swamp-execution/evidence/proof/tasks.maintenance/20261103T051432Z-minimal.json",
+  "proof_pass": true,
+  "operation_seconds": 26.62,
+  "run_seconds": 30.7,
+  "budget_seconds": 180,
+  "queue_timeout_seconds": 30,
+  "swamp_run_id": "43edabf4-42cb-4bd7-a982-c772db17a7eb",
+  "reporting_steps_removed": 2,
+  "scripts_deleted": 0,
+  "limits": "One routine Composer path with a real local path package, real SSH and Git. The admitted identities, HEAD and index remain unchanged. Tasks is disabled after root admission so the real downstream guard refuses a handoff; this proves the maintenance root only. Local native tests cover exact Composer/JS solves, range restoration, changed Git evidence and failure. No private repository, GitHub write, model provider, production clone or full maintenance chain. Empty Composer locks emit no JSON audit and are outside this live fixture."
+}
