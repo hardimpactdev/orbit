@@ -2,7 +2,6 @@
 title: "Applications"
 description: "How a Project becomes an Instance on a Node: create or adopt a development checkout, provision its endpoint, clone to production, move, and remove."
 covers:
-  - apps/gateway/database/migrations/2027_01_13_150000_allow_unrouted_registered_instances.php
   - apps/gateway/app/Actions/Instances/{StartDevelopmentInstanceCreateAction,CopyInstanceDependenciesAction,RegisterInstanceAction,RenameInstanceAction,ListInstancesAction,ShowInstanceAction}.php
   - apps/gateway/app/Domain/Instances/{DatabaseClone,DependencyCopy}/**
   - apps/gateway/app/Domain/Instances/{InstanceState,InstanceSourceLayout,InstanceDestinationGuard,ComposerSourceClassifier,Development*,InstanceLifecycle*,RegistrationLifecycleExecution,InstanceDatabaseIntent,InstanceRegisterResult}.php

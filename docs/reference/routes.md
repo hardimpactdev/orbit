@@ -135,7 +135,7 @@ The workflow, `operation-route-create`, has the seven steps of the [route:create
 
 Every Node change is an official `@swamp/cfgmgmt` behavior or one `@swamp/ssh exec` command. A failed step leaves the Route `pending` with its `failed_step` and `error_code`. There is no rollback.
 
-An in-place registered Laravel Instance can be active without a Route. If registration reserves a Route, that Route must become authoritative before the Instance activates. Other Laravel activation and Route ownership constraints still apply.
+A Laravel Instance registered in place can be active without a Route. If registration reserves a Route, that Route must become authoritative before the Instance activates. Other Laravel activation and Route ownership constraints still apply.
 
 [Registration](/cli/instance/register) with `--domain` runs `operation-route-create` inside its native run. Certificate signing stays bound to the registration parent. The Route preserves the checkout's `.env` and changes only application URL lines when needed. An identical registration retry reuses its reserved Route; another owner's domain is refused.
 
