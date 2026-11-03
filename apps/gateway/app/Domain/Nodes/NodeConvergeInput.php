@@ -266,7 +266,7 @@ final readonly class NodeConvergeInput
 
         return ['schema_version' => 1, 'node_id' => $node->id, 'agent_sha256' => $this->delivery->pin($node),
             'force_artifacts' => $force, 'first_visit' => $firstVisit, 'artifacts' => $plan,
-            'payloads' => $payloads, 'network' => $network, 'refusal' => $refusal,
+            'payloads' => $payloads, 'network' => $network, 'network_mode' => $network['mode'] ?? 'peer', 'refusal' => $refusal,
             'secret_hash' => ['$secret' => 'node.agent_secret_hash', 'id' => $node->id]];
     }
 

@@ -47,13 +47,20 @@ afterEach(function (): void {
 
 it('captures one digest and checks the live network even when that digest matches', function (): void {
     $input = app(NodeConvergeInput::class)->captureNative($this->node, false, false);
-    expect(array_column($input['artifacts'], 'name'))->toBe(['network'])
+    expect($input['network_mode'])->toBe('peer')
+        ->and(array_column($input['artifacts'], 'name'))->toBe(['network'])
         ->and($input['network'])->toMatchArray(['mode' => 'peer', 'hub_id' => $this->hub->id, 'required' => true])
         ->and($input['network']['observations'][1]['peers'][0]['public_key'])->toBe($this->peerKey);
     NodeFootprint::query()->create(['node_id' => $this->node->id, 'artifacts' => ['network' => $input['artifacts'][0]['digest']]]);
     expect(app(NodeConvergeInput::class)->captureNative($this->node, false, false)['network']['required'])->toBeFalse();
     $this->node->update(['wireguard_endpoint_override' => '192.0.2.99:51999']);
     expect(app(NodeConvergeInput::class)->captureNative($this->node->fresh(), false, false)['network']['required'])->toBeTrue();
+});
+
+it('captures a safe child selection when no VPN hub exists', function (): void {
+    $this->hub->roles()->delete();
+    $input = app(NodeConvergeInput::class)->captureNative($this->node, false, false);
+    expect($input['network'])->toBeNull()->and($input['network_mode'])->toBe('peer');
 });
 
 it('changes the network digest when a recorded private namespace changes', function (): void {
@@ -68,6 +75,7 @@ it('changes the network digest when a recorded private namespace changes', funct
 
 it('captures the VPN hub complete peer list instead of a peer bootstrap', function (): void {
     $input = app(NodeNetworkConvergeInput::class)->converge($this->hub);
+    expect(app(NodeConvergeInput::class)->captureNative($this->hub, false, false)['network_mode'])->toBe('hub');
     expect($input['mode'])->toBe('hub')->and($input['apply']['peer_keys'])->toBe([$this->peerKey])
         ->and($input['observations'][0]['exact'])->toBeTrue()
         ->and($input['observations'][0]['peers'][0]['allowed_ips'])->toBe([$this->node->wireguard_ip.'/32']);

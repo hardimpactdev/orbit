@@ -312,7 +312,7 @@ jobs:
     guard: '${{ inputs.intent.network == null || !("Decide the network change" in steps) || !steps["Decide the network change"].outputs.changed }}'
     task:
       type: workflow
-      workflowIdOrName: '${{ inputs.intent.network != null && inputs.intent.network.mode == "hub" ? "node-network-hub" : "node-network-peer" }}'
+      workflowIdOrName: '${{ inputs.intent.network_mode == "hub" ? "node-network-hub" : "node-network-peer" }}'
       inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent.network != null ? inputs.intent.network.apply : {} }}', execution_secrets: {}}
   - name: Read the tunnel key
     labels: {role: swamp}

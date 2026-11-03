@@ -1811,7 +1811,7 @@ export function analyzeYaml(
         if (task.type === "workflow") {
           // Both destinations are statically known; inspect each child's full graph.
           const choices = typeof task.workflowIdOrName === "string"
-            ? /^\$\{\{\s*(?:(?:inputs|self)\.[\w.]+\s*!=\s*null\s*&&\s*)?(?:inputs|self)\.[\w.]+\s*(?:==|!=)\s*"[^"\\]*"\s*\?\s*"([\w.-]+)"\s*:\s*"([\w.-]+)"\s*\}\}$/.exec(task.workflowIdOrName)
+            ? /^\$\{\{\s*(?:inputs|self)\.[\w.]+\s*(?:==|!=)\s*"[^"\\]*"\s*\?\s*"([\w.-]+)"\s*:\s*"([\w.-]+)"\s*\}\}$/.exec(task.workflowIdOrName)
             : null;
           if (
             typeof task.workflowIdOrName === "string" &&
