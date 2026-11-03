@@ -19,16 +19,14 @@ sequenceDiagram
   %%> Command:
   %%> - `orbit cluster:router:set 3 7`
   %%> - syntax: `<cluster> <node> [--idempotency-key=KEY] [--json]`
+  %%> Options:
+  %%> - `--idempotency-key`: reuses the same Operation admission for a retry with the same key
+  %%> - `--json`: waits for the terminal Operation and renders it as JSON
   %%> Input:
   %%> - the Cluster ID and the Node ID of an active member
   %%> What it does:
   %%> - makes Node 7 the Cluster Router: members on the LAN reach Cluster Routes through it, over HTTPS, and ask it for DNS
   %%> - replaces the current Router, Node 5, without a gap
-  opt --idempotency-key
-    Note over GW: Reuse admission key
-    %%> What it does:
-    %%> - reuses the same Operation admission for a retry with the same key
-  end
   Note over GW: Validate, record candidate<br/>task #5160 · Cluster lock
   %%> Requirements:
   %%> - your Node has an access grant to Node 7
@@ -132,9 +130,4 @@ sequenceDiagram
     GW-->>CLI: status + result
     %%> Returns:
     %%> - the current status, and the result once the task has ended
-  end
-  opt --json
-    Note over CLI: Return JSON
-    %%> Result:
-    %%> - waits for the terminal Operation and renders it as JSON
   end

@@ -19,23 +19,15 @@ sequenceDiagram
   %%> Command:
   %%> - `orbit cluster:router:unset 3`
   %%> - syntax: `<cluster> [--force] [--idempotency-key=KEY] [--json]`
+  %%> Options:
+  %%> - `--idempotency-key`: reuses the same Operation admission for a retry with the same key
+  %%> - `--json`: waits for the terminal Operation and renders it as JSON
   %%> Confirmation:
   %%> - without `--force`, the CLI asks first; the default is No
   %%> - without a terminal, or with `--json`, `--force` is required
   Note over CLI: Inspect Cluster, confirm
   %%> What it does:
   %%> - reads Cluster 3 and asks for confirmation; the default is No
-  opt --force
-    Note over CLI: Skip confirmation
-    %%> What it changes:
-    %%> - skips the prompt; the Cluster read still runs
-    %%> - required without a terminal or with `--json`
-  end
-  opt --idempotency-key
-    Note over GW: Reuse admission key
-    %%> What it does:
-    %%> - reuses the same Operation admission for a retry with the same key
-  end
   Note over GW: Validate, plan the cleanup<br/>task #5161 · Cluster lock
   %%> Requirements:
   %%> - your Node has an access grant to Node 7
@@ -118,9 +110,4 @@ sequenceDiagram
     %%> Returns:
     %%> - the current status, and the result once the task has ended
   end
-  end
-  opt --json
-    Note over CLI: Return JSON
-    %%> Result:
-    %%> - waits for the terminal Operation and renders it as JSON; requires `--force`
   end
