@@ -110,9 +110,7 @@ A projection that implements `DirectOperationTimeout` records its documented fai
 
 For an unbound timed-out admission, the existing exact lookup by Operation identity releases the hold only when Serve proves there is no matching run. A matching run binds without reopening the timeout; ambiguity or an unavailable lookup keeps the hold. A valid native terminal with `completedAt` at or before the deadline wins in the shared history read, even when its projection arrives late, so it causes no timeout or timeout alert.
 
-This is the Gateway's budget result, not proof that the native run or its descendants stopped. Cancellation still requires the native operator path; shared run credentials gain no admin authority. Native Serve ceilings, step queue limits and phase command limits remain separate controls. Deadline checks run on the existing observer pass. Uncertain-start lookup, terminal history and scheduled-result history run on the existing operations queue so they cannot block deadline reception.
-
-When Serve cannot be read for a terminal history read, because the connection fails, Serve rate-limits it or no reply comes, the read retries every 30 seconds until the kind's run deadline. A run that ended while Serve was busy therefore settles soon after Serve answers, not only at the deadline. A history that does not match the bound run is never retried. Bound Operation reads arbitrate native terminal history before expiry; unbound admission expiry needs no native read.
+This is the Gateway's budget result, not proof that the native run or its descendants stopped. Cancellation still requires the native operator path; shared run credentials gain no admin authority. Native Serve ceilings, step queue limits and phase command limits remain separate controls. Deadline checks run on the existing observer pass. Uncertain-start lookup, terminal history and scheduled-result history run on the existing operations queue so they cannot block deadline reception. Bound Operation reads arbitrate native terminal history before expiry; unbound admission expiry needs no native read.
 
 ## Native failure detail and live steps
 

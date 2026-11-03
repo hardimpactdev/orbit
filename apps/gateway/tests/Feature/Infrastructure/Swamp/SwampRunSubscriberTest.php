@@ -544,25 +544,6 @@ it('ignores the old subscription after a binding notice replaces its run', funct
     expect(array_column($socket->sent, 'type'))->toBe(['run.attach', 'run.attach']);
 });
 
-it('retries the terminal projection while Serve cannot be read, before the run deadline', function (): void {
-    config(['swamp.read_token' => 'synthetic-native-read-token', 'swamp.ca_path' => '/public/ca.pem']);
-    $operation = nativeSubscriberOperation();
-    $history = new FakeRoutePublicationSocket;
-    // Serve refuses the read, as under its rate limit: the connection fails before any reply.
-    $history->onConnect = static function (): void {
-        throw new WebSocketException('429');
-    };
-    app()->instance(WebSocketClient::class, $history);
-    $job = new ProjectSwampTerminal($operation->id, $operation->state['swamp_run_id'], 'succeeded')->withFakeQueueInteractions();
-
-    $job->handle(app(SwampCommandStep::class));
-
-    $job->assertReleased(ProjectSwampTerminal::RetrySeconds);
-    $job->assertNotFailed();
-    expect($operation->fresh()->status)->toBe(OperationStatus::Running)
-        ->and($operation->fresh()->status)->toBe(OperationStatus::Running);
-});
-
 it('preserves a terminal Operation when an older event arrives', function (): void {
     $operation = nativeSubscriberOperation();
     $operation->update(['status' => OperationStatus::Cancelled, 'result' => ['prior' => true], 'finished_at' => '2026-10-31T14:00:01Z']);
@@ -719,15 +700,13 @@ it('allows explicit recovery after a queued terminal history read fails', functi
     $request = $socket->sent[0];
     $socket->push(nativeSubscriberAttached($request), nativeSubscriberFrame($request, $operation));
     $subscriber->pass();
-    $job = Bus::dispatched(ProjectSwampTerminal::class)->first()->withFakeQueueInteractions();
+    $job = Bus::dispatched(ProjectSwampTerminal::class)->first();
     $history = new FakeRoutePublicationSocket;
     $history->onConnect = static function (): void {
         throw new RuntimeException('History unavailable.');
     };
     app()->instance(WebSocketClient::class, $history);
-    // An unreadable Serve retries the queued read; explicit recovery stays available beside it.
-    $job->handle(app(SwampCommandStep::class));
-    $job->assertReleased(ProjectSwampTerminal::RetrySeconds);
+    expect(fn () => $job->handle(app(SwampCommandStep::class)))->toThrow(ResourceOperationException::class);
 
     $subscriber->close();
     $subscriber->recover();
