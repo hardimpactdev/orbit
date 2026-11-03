@@ -219,6 +219,19 @@ export class NativeRepo {
     return { stdout, stderr, code: result.code };
   }
 
+  /** Start a CLI command without waiting for it, such as a run that a test cancels. */
+  async spawn(args: string[]) {
+    if (!this.realCertificateSigning) await this.useFixtureSigner();
+    return new Deno.Command(await swampBinary(), {
+      args: [...args, "--json"],
+      cwd: this.dir,
+      env: isolatedEnv(this.env),
+      clearEnv: true,
+      stdout: "piped",
+      stderr: "piped",
+    }).spawn();
+  }
+
   /** Run a workflow and return its run record and step statuses by name. */
   async runWorkflow(name: string, inputs: unknown, options: { success?: boolean } = {}) {
     const run = JSON.parse(
