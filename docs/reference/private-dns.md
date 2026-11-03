@@ -39,7 +39,9 @@ Swamp's fleet maintenance workflow reads the plan each minute and admits that pe
 
 The Gateway starts each `fleet.peer_dns` intent directly in Swamp. Its native workflow runs on Node 209 and reaches the peer over SSH.
 
-The run keeps the `PostUp` hook and writes the DNS marker; both steps change nothing when the files already match. One guarded command then sets the server, routing domains and `default-route no` on `orbit`, unless the live link already holds them. The run ends by resolving `gateway.orbit`, which must answer through `orbit`, and `example.com`, which must not. A succeeded Operation records the applied server and domains. A policy change waits at most one minute plus queue and traversal time. Host drift with an unchanged policy is not detected by a schedule; doctor reports it, and a reconcile repairs it. Record changes do not block on fleet SSH.
+The run keeps the `PostUp` hook and writes the DNS marker; both steps change nothing when the files already match. One guarded command then sets the server, routing domains and `default-route no` on `orbit`, unless the live link already holds them.
+
+The run ends by resolving `gateway.orbit`, the private name the Gateway puts in the intent, which must answer through `orbit`, and `example.com`, which must not. A succeeded Operation records the applied server and domains. A policy change waits at most one minute plus queue and traversal time. Host drift with an unchanged policy is not detected by a schedule; doctor reports it, and a reconcile repairs it. Record changes do not block on fleet SSH.
 
 Peer DNS reconciliation is serialized by the native behavior on each target Node. It holds no Gateway target lock. The agent uses a shared WireGuard peer lock for inspection and the existing exclusive peer lock for repair, including against native peer convergence.
 
