@@ -11,9 +11,9 @@
       "operation": false,
       "bind": "project",
       "body": {
-        "slug": "proof-route",
+        "slug": "proof-route-${proof.run}",
         "name": "Proof route",
-        "type": "laravel-app",
+        "type": "monorepo",
         "root": "public",
         "repository_url": "https://github.com/laravel/laravel.git",
         "default_branch": "13.x"
@@ -27,6 +27,14 @@
         "project_id": "${project.id}",
         "node_id": "${node.target}",
         "name": "r-${proof.run}"
+      }
+    },
+    {
+      "method": "PATCH",
+      "path": "projects/${project.id}",
+      "operation": false,
+      "body": {
+        "type": "laravel-app"
       }
     }
   ],
