@@ -81,7 +81,7 @@ jobs:
         argv: '${{ ["/usr/bin/timeout", "150", "/bin/sh", "-c", "c=\"$1\"; shift; for p; do GIT_TERMINAL_PROMPT=0 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null /usr/bin/git -c core.hooksPath=/dev/null
           -c core.fsmonitor=false -c credential.helper= -c \"credential.helper=store --file=$c\" -c http.followRedirects=false -c url.https://github.com/.insteadOf=git@github.com: -c
           url.https://github.com/.insteadOf=ssh://git@github.com/ -C \"$p\" fetch --quiet --no-tags origin || { echo instance.remove_refused >&2; exit 3; }; [ -z \"$(/usr/bin/git -c
-          core.hooksPath=/dev/null -c core.fsmonitor=false -C \"$p\" status --porcelain)\" ] && [ -n \"$(/usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C \"$p\" branch
+          core.hooksPath=/dev/null -c core.fsmonitor=false -C \"$p\" status --porcelain -- . \":!.env\" \":!*/.env\" \":!.env.testing\" \":!*/.env.testing\")\" ] && [ -n \"$(/usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C \"$p\" branch
           -r --contains HEAD)\" ] || { echo \"instance.remove_refused: $p has work that is not pushed\" >&2; exit 3; }; done", "sh"] + ["/tmp/orbit-git-credential-" + run.id] + inputs.intent.push_check_paths
           }}'
   - name: Remove the git credential
