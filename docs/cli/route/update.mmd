@@ -79,7 +79,7 @@ sequenceDiagram
   %%> - web root: points the site at the new directory, after the web-root access step for a development target
   %%> - validates the whole Caddyfile, then reloads Caddy; never a restart (rule 7)
   %%> Refuses:
-  %%> - a validation error; the old Caddyfile stays in place
+  %%> - a validation error stops the reload; the written candidate stays for convergence
   opt --domain
     opt Laravel target
       SW->>N: Write the new APP_URL<br/>@swamp/cfgmgmt/line
@@ -90,9 +90,9 @@ sequenceDiagram
       %%> - Composer, Artisan, deploy or restart commands
     end
   end
-  SW->>N: Probe the site over TLS<br/>openssl s_client · SNI domain
+  SW->>N: Probe the site over TLS<br/>@swamp/ssh exec · SNI domain
   %%> What it does:
-  %%> - connects from 209 to the workload, or the Router, on port 443 with the new domain as SNI
+  %%> - runs one pinned SSH argv on 209, connecting to the workload or Router on port 443 with the new domain as SNI
   %%> - requires a chain the Orbit root trusts
   %%> Why:
   %%> - nothing moves to the new state before the site serves

@@ -1,17 +1,23 @@
 """route.update, domain change, on the target: the Caddyfile serves only the new domain, its leaf verifies against
 the Orbit root, the temporary leaf is gone, and the new domain answers TLS."""
 
+import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 run = os.environ["PROOF_RUN"]
 old, new = "r-" + run + ".proof.test", "u-" + run + ".proof.test"
 ROOT = "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"
+operation = json.loads(Path(os.environ["PROOF_OPERATION_FILE"]).read_text())
+assert operation["kind"] == "route.update" and operation["status"] == "succeeded", operation["status"]
+assert operation["result"]["ready"] is True, operation["result"]
+assert operation["input"]["route_update"]["plan"]["probe_ssh"]["control_node_id"] == 209
 
 
 def target(*argv):
-    return subprocess.run(["incus", "exec", os.environ["PROOF_TARGET"], "--", *argv], capture_output=True, text=True, check=False)
+    return subprocess.run(["incus", "exec", os.environ["PROOF_TARGET"], "--", *argv], capture_output=True, text=True, check=False, timeout=30)
 
 
 def check(condition, message):

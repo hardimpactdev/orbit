@@ -18,7 +18,7 @@ A Route is a domain that reaches an Instance or a Node service. This page explai
 
 The Gateway validates Route changes and records intent as an Operation. Each available kind runs one native Swamp DAG, with Node effects as placed steps. The Gateway keeps Route state, ownership checks, read APIs and minimal result projection. Kinds whose native conversion is incomplete return `operation.kind_unavailable`; there is no polled fallback. Certificate signing runs in Swamp on the control worker.
 
-Route creation uses official cfgmgmt resources and pinned SSH argv commands. Its TLS probe runs on 209 over its captured SSH connection, verifies the hostname and Orbit CA, and ignores the application HTTP status. A failed Caddy validation stops the reload and leaves the candidate for convergence; there is no rollback.
+Route creation and updates use official cfgmgmt resources and pinned SSH argv commands. Their TLS probes run on 209 over the captured SSH connection, verify the hostname and Orbit CA, and ignore the application HTTP status. A failed Caddy validation stops the reload and leaves the candidate for convergence; there is no rollback.
 
 Domain, publication and web-root updates use the Route admission action. The Gateway renders every file the run writes: each Node's whole Caddyfile, PHP pools, `APP_URL` lines and certificate leaves.
 

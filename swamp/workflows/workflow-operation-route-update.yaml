@@ -99,14 +99,24 @@ jobs:
     forEach: {item: probe, in: '${{ inputs.intent.probes }}'}
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ ("route-update-probe-" + string(self.probe.node_id)).split(".").join("-") }}'
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "route-update-probe-209-" + string(self.probe.node_id) }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ "route-update-probe-209-" + string(self.probe.node_id) }}'
+        transport:
+          kind: ssh
+          user: '${{ inputs.intent.probe_ssh.target.user }}'
+          port: '${{ inputs.intent.probe_ssh.target.port }}'
+          identityFile: '${{ inputs.intent.probe_ssh.identity_file }}'
+        hosts:
+        - name: control
+          address: '${{ inputs.intent.probe_ssh.target.host }}'
+          transport: {hostKeys: '${{ inputs.intent.probe_ssh.target.host_keys }}'}
       inputs:
-        run: "timeout 20 openssl s_client -connect \"$ORBIT_PROBE_ADDRESS:443\" -servername \"$ORBIT_PROBE_DOMAIN\" -verify_hostname \"$ORBIT_PROBE_DOMAIN\" -verify_return_error -CAfile /usr/local/share/ca-certificates/orbit-managed-root-ca.crt </dev/null"
-        env:
-          ORBIT_PROBE_ADDRESS: '${{ self.probe.address }}'
-          ORBIT_PROBE_DOMAIN: '${{ self.probe.domain }}'
+        hosts: name:control
+        argv: '${{ ["timeout", "20", "openssl", "s_client", "-no_ign_eof", "-connect", self.probe.address + ":443", "-servername", self.probe.domain, "-verify_hostname", self.probe.domain, "-verify_return_error", "-CAfile", "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"] }}'
+        timeoutSec: 30
     # Publication change: the Ingress site, then its public ports (route-create-ingress).
   - name: 'Open or close the edge'
     labels: {role: swamp}
