@@ -37,6 +37,7 @@ export const NodeNetworkInputV1 = z.object({
     public_key: PublicKey,
     domains: Domains,
     dns_hook: z.string().startsWith("PostUp = resolvectl dns %i "),
+    probe: z.string().regex(/^[a-z0-9][a-z0-9.-]*$/),
   }).strict(),
 }).strict();
 export type NodeNetworkInputV1 = z.infer<typeof NodeNetworkInputV1>;

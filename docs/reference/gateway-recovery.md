@@ -977,7 +977,9 @@ The rollout is off until you set `ORBIT_FLEET_ROLLOUT=true` in the Gateway's env
 
 ### Execution
 
-Swamp's fleet maintenance workflow reads the current Gateway plan each minute and admits one fleet-wide `fleet.rollout` Operation. The Gateway validates the serving release and captures the participants and their pinned release assets. The Operation belongs to Node 209, because its steps run there and record the result on it. A run that fails before it visits any Node settles the Operation as failed and leaves the rollout and its Nodes pending, so the next admission retries them. Swamp owns order, maintenance windows and publication. The release command and runtime handoff do not install or start a fleet service or timer.
+Swamp's fleet maintenance workflow reads the current Gateway plan each minute and admits one fleet-wide `fleet.rollout` Operation. The same workflow admits [peer DNS](/reference/private-dns#resolver-selection) for one changed peer at a time. The Gateway validates the serving release and captures the participants and their pinned release assets.
+
+The Operation belongs to Node 209, because its steps run there and record the result on it. A run that fails before it visits any Node settles the Operation as failed and leaves the rollout and its Nodes pending, so the next admission retries them. Swamp owns order, maintenance windows and publication. The release command and runtime handoff do not install or start a fleet service or timer.
 
 During this conversion's deployment, stop and disable `orbit-fleet-converge.timer` and remove its service and timer files. Swamp's maintenance workflow owns further visits and catch-ups.
 

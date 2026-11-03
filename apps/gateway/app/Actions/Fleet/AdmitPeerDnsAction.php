@@ -29,7 +29,7 @@ final readonly class AdmitPeerDnsAction
             'intent' => ['ssh' => app(SwampSshExecutionInput::class)->forNode($node),
                 'server' => $server, 'dns_server' => $server, 'public_key' => $node->wireguard_public_key,
                 'domains' => $this->policy->domains($node),
-                'dns_hook' => NodeNetworkConvergeInput::dnsHook($server, $this->policy->domains($node))],
+                'dns_hook' => NodeNetworkConvergeInput::dnsHook($server, $this->policy->domains($node)), 'probe' => PeerDnsPolicy::PRIVATE_PROBE],
         ], $triggeredBy, $requestId);
     }
 }

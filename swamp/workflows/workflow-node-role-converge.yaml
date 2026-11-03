@@ -177,7 +177,8 @@ jobs:
         kind: fleet.peer_dns
         intent: '${{ inputs.intent.footprint.network == null ? {} : {"ssh": inputs.intent.ssh, "server": inputs.intent.footprint.network.peer_dns.dns_server,
           "dns_server": inputs.intent.footprint.network.peer_dns.dns_server, "public_key": inputs.intent.footprint.network.peer_dns.public_key,
-          "domains": inputs.intent.footprint.network.peer_dns.domains} }}'
+          "domains": inputs.intent.footprint.network.peer_dns.domains, "dns_hook": inputs.intent.footprint.network.peer_dns.dns_hook,
+          "probe": inputs.intent.footprint.network.peer_dns.probe} }}'
         execution_secrets: {}
     # The Node agent keeps its key; the role only proceeds when the key matches the recorded verifier.
   - name: 'Check the agent key'

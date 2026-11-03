@@ -19,6 +19,7 @@ const input: NodeNetworkInputV1 = {
     public_key: btoa("a".repeat(32)),
     domains: ["orbit", "test"],
     dns_hook: "PostUp = resolvectl dns %i 10.44.0.1; resolvectl domain %i \\~orbit \\~test",
+    probe: "gateway.orbit",
   },
 };
 

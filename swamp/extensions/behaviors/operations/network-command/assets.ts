@@ -116,7 +116,7 @@ export function dnsResult(
 }
 export const behavior = {
     type: "@nckrtl/network-command",
-    version: "2026.11.02.1",
+    version: "2026.11.03.1",
     resources: {
         key: {
             schema: z.object({ public_key: PublicKey }).strict(),
@@ -180,19 +180,6 @@ export const behavior = {
                 "decision",
                 dnsDecision(args.stdout, args.policy, args.require_uplink),
             ),
-        },
-        dnsResult: {
-            description:
-                "Compare final native resolver output against the admitted policy",
-            arguments: z.object({ stdout: z.string(), policy: Policy })
-                .strict(),
-            execute: async (
-                args: { stdout: string; policy: z.infer<typeof Policy> },
-                ctx: Context,
-            ) => await save(ctx, "result", {
-                stdout: JSON.stringify(dnsResult(args.stdout, args.policy)),
-                exitCode: 0,
-            }),
         },
         networkResult: {
             description:

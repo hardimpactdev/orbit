@@ -20,6 +20,9 @@ final readonly class PeerDnsPolicy
 
     public function __construct(private VpnSettings $settings) {}
 
+    /** A private name every managed peer resolves through the `orbit` link; peer DNS ends by resolving it. */
+    public const PRIVATE_PROBE = 'gateway.orbit';
+
     public function manages(Node $node): bool
     {
         return $node->platform === 'linux'

@@ -165,7 +165,7 @@ Deno.test("catch-up visits retain five-minute spacing", async () => {
   assertEquals(f.writes("/api/v1/fleet/rollout").length, 1);
 });
 
-Deno.test("unchanged peer DNS admits exactly 24 hourly Operations across a full day", async () => {
+Deno.test("unchanged peer DNS admits once across a full day", async () => {
   const f = new MaintenanceFixture();
   for (let minute = 0; minute < 1440; minute++) {
     await f.tick(new Date(Date.UTC(2026, 9, 30, 0, minute)).toISOString());
@@ -173,10 +173,10 @@ Deno.test("unchanged peer DNS admits exactly 24 hourly Operations across a full 
       if (typeof value.id === "number") f.statuses.set(value.id, "succeeded");
     }
   }
-  assertEquals(f.writes("/api/v1/fleet/nodes/2/peer-dns").length, 24);
+  assertEquals(f.writes("/api/v1/fleet/nodes/2/peer-dns").length, 1);
 });
 
-Deno.test("a changed policy admits in the same hour, but waits for active work", async () => {
+Deno.test("a changed policy admits again, but waits for active work", async () => {
   const f = new MaintenanceFixture();
   const path = "/api/v1/fleet/nodes/2/peer-dns";
   await f.tick();
@@ -191,7 +191,7 @@ Deno.test("a changed policy admits in the same hour, but waits for active work",
   assertEquals(f.writes(path).length, 2);
 });
 
-Deno.test("a lost peer DNS admission is replayed across hourly and policy changes", async () => {
+Deno.test("a lost peer DNS admission is replayed across policy changes", async () => {
   const f = new MaintenanceFixture();
   const path = "/api/v1/fleet/nodes/2/peer-dns";
   f.loseAdmission = true;
@@ -206,12 +206,15 @@ Deno.test("a lost peer DNS admission is replayed across hourly and policy change
   assertEquals(f.writes(path).length, 3);
 });
 
-Deno.test("failed hourly work retries with a fresh key; success does not", async () => {
+Deno.test("a failed peer DNS policy waits; a changed policy admits with a fresh key", async () => {
   const f = new MaintenanceFixture();
   const path = "/api/v1/fleet/nodes/2/peer-dns";
   await f.tick();
   f.statuses.set(f.resources.get("dns-2")!.id as number, "failed");
   await f.tick("2026-10-28T02:01:00Z");
+  assertEquals(f.writes(path).length, 1);
+  f.dnsDigest = "b".repeat(64);
+  await f.tick("2026-10-28T02:02:00Z");
   const writes = f.writes(path);
   assertEquals(writes.length, 2);
   assertEquals(writes[0].key === writes[1].key, false);

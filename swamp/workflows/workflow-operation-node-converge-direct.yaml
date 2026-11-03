@@ -112,7 +112,7 @@ jobs:
         kind: fleet.peer_dns
         intent: '${{ inputs.intent.network == null ? {} : {"ssh": inputs.intent.ssh, "server": inputs.intent.network.peer_dns.dns_server,
           "dns_server": inputs.intent.network.peer_dns.dns_server, "public_key": inputs.intent.network.peer_dns.public_key, "domains": inputs.intent.network.peer_dns.domains,
-          "dns_hook": inputs.intent.network.peer_dns.dns_hook}
+          "dns_hook": inputs.intent.network.peer_dns.dns_hook, "probe": inputs.intent.network.peer_dns.probe}
           }}'
         execution_secrets: {}
     # Each role part runs beside the others; the Gateway reads each part's outcome from its step.

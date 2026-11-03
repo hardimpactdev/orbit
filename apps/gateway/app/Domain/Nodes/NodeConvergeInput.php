@@ -200,14 +200,14 @@ final readonly class NodeConvergeInput
     /**
      * The peer DNS policy node.converge hands the native peer-DNS workflow, with the wg-quick hook it writes.
      *
-     * @return array{dns_server:string,public_key:?string,domains:list<string>,dns_hook:string}
+     * @return array{dns_server:string,public_key:?string,domains:list<string>,dns_hook:string,probe:string}
      */
     public function peerDns(Node $node, string $server): array
     {
         $domains = app(PeerDnsPolicy::class)->domains($node);
 
         return ['dns_server' => $server, 'public_key' => $node->wireguard_public_key, 'domains' => $domains,
-            'dns_hook' => NodeNetworkConvergeInput::dnsHook($server, $domains)];
+            'dns_hook' => NodeNetworkConvergeInput::dnsHook($server, $domains), 'probe' => PeerDnsPolicy::PRIVATE_PROBE];
     }
 
     /** @return array<string,mixed> */

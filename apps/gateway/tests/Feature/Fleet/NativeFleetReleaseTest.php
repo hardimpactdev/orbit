@@ -25,7 +25,7 @@ beforeEach(function (): void {
     $this->dev = FleetFixtures::node('native-fleet-dev', [RoleName::AppDev]);
     $this->prod = FleetFixtures::node('native-fleet-prod', [RoleName::AppProd]);
     $this->swamp = Node::query()->forceCreate(['id' => 209, 'name' => 'swamp', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
-        'public_ssh_host' => '192.0.2.209', 'wireguard_ip' => '10.44.0.209', 'user' => 'orbit']);
+        'public_ssh_host' => '192.0.2.209', 'wireguard_ip' => '10.45.0.209', 'user' => 'orbit']);
     $this->agents = new FakeAgentCommandRunner;
     app()->instance(AgentCommandRunner::class, $this->agents);
     $this->run = 'a075eb23-7ac4-4487-80d1-57a038a92676';

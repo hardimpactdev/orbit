@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Fleet\PeerDnsTargetsAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
@@ -46,8 +47,7 @@ function fleetPeerDnsNodes($test): array
 /** @return array<string, mixed> */
 function fleetDnsProof(): array
 {
-    return ['state' => "orbit\n10.44.0.1\norbit", 'hooks' => 'PostUp = resolvectl dns %i 10.44.0.1; resolvectl domain %i \\~orbit',
-        'dns' => 'Link 2 (orbit): 10.44.0.1', 'domains' => 'Link 2 (orbit): ~orbit', 'default_route' => 'Link 2 (orbit): no', 'uplink' => true];
+    return ['steps' => [['name' => 'Check resolution', 'status' => 'succeeded']]];
 }
 
 beforeEach(function (): void {
@@ -134,6 +134,24 @@ it('changes the peer DNS digest only when the effective admitted policy changes'
     expect(Operation::query()->count())->toBe(0);
 });
 
+it('plans only peers whose policy differs from their last applied run, one at a time', function (): void {
+    [, $node, $services] = fleetPeerDnsNodes($this);
+    NodeRole::query()->create(['node_id' => $services->id, 'role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    $plan = fn (): array => array_column($this->getJson('/api/v1/fleet/peer-dns/plan')->assertOk()->json('data'), 'node_id');
+    expect(array_column(app(PeerDnsTargetsAction::class)->execute(), 'node_id'))->toBe([$node->id, $services->id])
+        ->and($plan())->toBe([$node->id]);
+
+    $id = $this->withHeader('Idempotency-Key', 'peer-dns-applied')->postJson('/api/v1/fleet/nodes/'.$node->id.'/peer-dns')->assertAccepted()->json('data.id');
+    expect($plan())->toBe([$node->id]);
+    Operation::query()->findOrFail($id)->forceFill(['status' => OperationStatus::Failed])->save();
+    expect($plan())->toBe([$node->id]);
+
+    Operation::query()->findOrFail($id)->forceFill(['status' => OperationStatus::Succeeded])->save();
+    expect($plan())->toBe([$services->id]);
+    $node->update(['tld' => 'project.test']);
+    expect($plan())->toBe([$node->id]);
+});
+
 it('permits maintenance plan reads over an existing directed access edge', function (): void {
     [, $node] = fleetPeerDnsNodes($this);
 
@@ -162,7 +180,7 @@ it('accepts the exact bound native policy without an execution receipt and repla
     foreach (range(1, 2) as $_) {
         $this->postJson($path, fleetDnsProjection($this))->assertOk()->assertJsonPath('data.status', 'succeeded');
     }
-    expect($operation->fresh()->result)->toBe(fleetDnsProof());
+    expect($operation->fresh()->result)->toBe(['server' => '10.44.0.1', 'domains' => $operation->input['intent']['domains']]);
     expect($operation->fresh()->worker)->toBeNull();
     expect($operation->fresh()->attempts)->toBe(0);
     expect($operation->fresh()->state)->not->toHaveKey('executor_runs');

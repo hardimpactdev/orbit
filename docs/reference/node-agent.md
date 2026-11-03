@@ -612,7 +612,7 @@ The agent converge writes these files on a Linux Node:
 
 Standalone `node:converge` uses official `@swamp/cfgmgmt` behaviors over SSH from 209; it calls no agent command. `Install the Node agent` downloads the pinned release with `fetch` and checks its SHA-256; a binary that matches the pin is left alone. `Configure the Node agent` writes the configuration and certificate with `file`. `Start the Node agent` writes the unit the Gateway rendered with `systemd`, then enables and starts it, and `Restart the Node agent` restarts it. That part only runs when its digest changed, or with `--force`.
 
-The converge intent carries the Node's roles, the agent key verifier and the footprint check list. For a peer DNS Node it also carries the policy and the wg-quick `dns_hook` line that the shared peer-DNS workflow writes.
+The converge intent carries the Node's roles, the agent key verifier and the footprint check list. For a peer DNS Node it also carries the policy, the wg-quick `dns_hook` line that the shared peer-DNS workflow writes, and the private name its end check resolves.
 
 The `ai-router` part on the collector Node has no step: it only versions that Node by its agent pin, the ai-router extension runs the collector itself, and the part counts as applied with the agent. Its Route residue part re-applies the Router LAN rules the Node's sites need. It migrates no rules: every Node finished the one-time LAN migration. A fleet recipe reuses the same steps from its own intent. The `caddy-package` footprint part carries the same SHA-256 package pin for `node:converge` and fleet recipes, which both install it through the shared `node-caddy-package` workflow.
 

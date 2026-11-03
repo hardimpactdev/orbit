@@ -19,7 +19,7 @@ export function fleet(
 ) {
   return {
     type: "@nckrtl/operation-fleet",
-    version: "2026.10.31.1",
+    version: "2026.11.03.1",
     globalArguments: Globals,
     resources: {
       maintenance: {

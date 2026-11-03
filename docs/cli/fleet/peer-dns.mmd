@@ -1,6 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS and R1-R4, agent-observer-swamp-acts, single-swamp-node. docs/reference/private-dns.md#resolver-selection.
-  %% Tightened: flow-tighten 2026-11-02, rules 6, 20, 22 (persist and set the policy in one step; the read's match acts as a guard).
+  %% Tightened: flow-tighten 2026-11-02, rules 6, 20, 22 (the live policy's match guards the set; the end check resolves names).
+  %% Ported 2026-11-03: the tunnel runs as wg-quick, so the PostUp hook and marker persist the policy, not a networkd drop-in.
   %% status: draft
   %% command: none · routing domains change
   %% kind: fleet.peer_dns
@@ -13,55 +14,41 @@ sequenceDiagram
   participant N as Target Node<br/>reached over ssh
   Note over GW: Domains changed<br/>task #5163 · peer Node 12
   %%> When:
-  %%> - the private routing domains or the selected DNS server change, for example a Node with a new TLD joins or the `vpn` role moves
-  %%> - the Gateway admits one task per peer, one peer at a time
-  %%> - the Node agent reports a different DNS policy on Node 12 than the Gateway wants
+  %%> - Node 12's policy differs from the one its last successful run applied, for example a Node with a new TLD joins or the `vpn` role moves
+  %%> - the Gateway plan names one changed peer at a time; Swamp's minute maintenance admits it once per policy
   %%> Not included:
-  %%> - no command; no per-minute Swamp poll; drift comes from the Node agent's reports
-  %%> - a full re-apply of Node 12's footprint is `node.converge`, which uses the same DNS steps
+  %%> - no hourly re-run; host drift with an unchanged policy waits for doctor and a reconcile
+  %%> - a full re-apply of Node 12's footprint is `node.converge`, which runs this workflow as a child
   %%> Requirements:
   %%> - Node 12 is an active managed Linux peer with roles; the `vpn` Node and the Gateway stay out
-  %%> - no other network change runs on Node 12; the Gateway holds one lock per Node
   %%> Result:
-  %%> - task #5163 recorded with the domains and the DNS server for Node 12
+  %%> - task #5163 recorded with the domains, the DNS server and the private name to resolve
   GW->>SW: Start run, full intent<br/>operation-fleet-peer-dns
   %%> What it does:
   %%> - starts one Swamp run on serve (Node 209)
   %%> Inputs:
-  %%> - the routing domains, such as `~orbit`, and the DNS server's WireGuard address
+  %%> - the routing domains, such as `~orbit`, the DNS server's WireGuard address and the wg-quick hook line
+  %%> - the private name to resolve, `gateway.orbit`
   %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
-  SW->>N: Read the DNS policy<br/>wg show · resolvectl
-  %%> How:
-  %%> - Swamp reaches the Node over SSH from 209, with `@swamp/ssh`
-  %%> What it does:
-  %%> - one read command prints the public key, resolver servers, `orbit` domains and default route, the DNS marker and the hook line
-  Note over SW: Decide the DNS change<br/>typed check
-  %%> What it does:
-  %%> - compares the read with the admitted policy; a match skips the DNS writes below
-  %%> - refuses a live key that is not the prepared one
   SW->>N: Keep the DNS hook<br/>@swamp/cfgmgmt/line
+  %%> How:
+  %%> - Swamp reaches Node 12 over SSH from 209
   %%> What it does:
   %%> - keeps the Gateway-rendered `PostUp = resolvectl …` line in `orbit.conf`, so the policy returns when the tunnel starts
-  %%> - leaves every other line of the file as it is
+  %%> - leaves every other line as it is; changes nothing when the line matches
   SW->>N: Write the DNS marker<br/>@swamp/cfgmgmt/file · 0600
   %%> What it does:
-  %%> - records the link, server and domains in `/etc/wireguard/orbit.dns-link`
-  SW->>N: Set the DNS policy<br/>resolvectl dns · domain · route
+  %%> - records the link, server and domains in `/etc/wireguard/orbit.dns-link`; changes nothing when it matches
+  SW->>N: Set the DNS policy<br/>@swamp/cfgmgmt/exec · notIf match
   %%> What it does:
   %%> - one command sets the server and routing domains on `orbit` with `default-route no`; only Orbit names go to VPN DNS
-  opt policy was on another link
-    SW->>N: Clear the old link<br/>dns · domains · networkctl
-    %%> When:
-    %%> - only when an earlier release put the policy on another link
-    %%> What it does:
-    %%> - one command clears the old server and domains there, gives the uplink its default route back and reconfigures it
-  end
-  SW->>N: Read the DNS policy again<br/>wg show · resolvectl
+  %%> When it matches:
+  %%> - the `notIf` guard reads the live `orbit` link; when it already holds the policy, the command does not run
+  SW->>N: Check resolution<br/>resolvectl query
   %%> What it does:
-  %%> - the same read as before, for the end check
-  Note over SW: Check the DNS policy<br/>typed check
-  %%> What it does:
-  %%> - requires the admitted policy on `orbit` and a usable uplink
+  %%> - resolves `gateway.orbit`, which must answer through `orbit`, and `example.com`, which must not
+  %%> Why:
+  %%> - the policy only counts as applied when Node 12 resolves both
   alt both names resolve
     N-->>SW: private + public ok
     %%> Returns:
@@ -71,18 +58,18 @@ sequenceDiagram
     %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
     Note over GW: Record the DNS policy<br/>Node 12 · task succeeded
     %%> Result:
-    %%> - Node 12's peer DNS digest is recorded; task #5163 succeeds
-    %%> - the Gateway admits the next peer
+    %%> - task #5163 succeeds and records the applied server and domains
+    %%> - the plan names the next changed peer
   else setting or checking fails
     N--xSW: exit ≠ 0 or no answer
     %%> When:
-    %%> - `resolvectl` refuses, SSH fails, or a name does not resolve
+    %%> - a write or `resolvectl` refuses, SSH fails, or a name does not resolve where it should
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
     %%> - which step failed and its error code
     Note over GW: Mark the peer failed<br/>stop · rerun after a fix
     %%> Result:
-    %%> - Node 12's peer DNS is marked failed; task #5163 fails; later peers wait
+    %%> - task #5163 fails; the plan keeps naming Node 12, so later peers wait
     %%> Retry:
-    %%> - safe: the first step skips a policy that already matches; it is a new task
+    %%> - safe: `orbit:peer-dns-reconcile` admits a new task, and matching steps change nothing
   end

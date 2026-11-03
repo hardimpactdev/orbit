@@ -126,31 +126,11 @@ function steps() {
 }
 const KEY_STEP = 'steps["Check the key"]';
 const DECISION = 'steps["Decide the DNS change"]';
-const policy = (network: boolean) =>
-    network
-        ? expr(
-            '{"server":inputs.intent.peer.dns_server,"dns_server":inputs.intent.peer.dns_server,"domains":inputs.intent.peer.domains,"public_key":' + KEY_STEP + '.outputs.public_key}',
-        )
-        : expr(
-            '{"server":inputs.intent.server,"dns_server":inputs.intent.dns_server,"domains":inputs.intent.domains,"public_key":inputs.intent.public_key}',
-        );
-function dnsActions(s: ReturnType<typeof steps>, network: boolean) {
-    const p = policy(network),
-        server = network
-            ? "inputs.intent.peer.dns_server"
-            : "inputs.intent.server";
-    const domains = network
-        ? "inputs.intent.peer.domains"
-        : "inputs.intent.domains";
-    s.read("Read the DNS policy", ["sh", "-c", INSPECT]);
-    s.typed("Decide the DNS change", "decideDns", {
-        stdout: expr('steps["Read the DNS policy"].outputs.stdout'),
-        policy: p,
-        require_uplink: network
-            ? expr("inputs.intent.peer.operator_dns == null")
-            : true,
-    });
-    const guard = expr("!" + DECISION + ".outputs.changed");
+const POLICY = expr(
+    '{"server":inputs.intent.peer.dns_server,"dns_server":inputs.intent.peer.dns_server,"domains":inputs.intent.peer.domains,"public_key":' + KEY_STEP + '.outputs.public_key}',
+);
+/** The hook brings the policy back when the tunnel starts; the marker names the link, server and domains. Both are idempotent. */
+function persistDns(s: ReturnType<typeof steps>, server: string, domains: string, guard?: string) {
     s.cfg("Keep the DNS hook", "line", s.peerName("network-dns-hook"), "inputs.intent.ssh", {
         path: CONF,
         regexp: "^PostUp\\s*=\\s*resolvectl dns %i ",
@@ -166,6 +146,44 @@ function dnsActions(s: ReturnType<typeof steps>, network: boolean) {
         group: "root",
         mode: "0600",
     }, guard);
+}
+/** One `orbit` link setting, trimmed: `Link 7 (orbit): no` reads `no`. */
+const live = (setting: string) => "\"$(resolvectl " + setting + " orbit | cut -d: -f2- | xargs)\"";
+/** Private names resolve on `orbit` and public names elsewhere; prints nothing, fails with one stderr line. */
+const RESOLVE = [
+    'p=$(resolvectl query --cache=no "$1") || { echo "dns.private_unresolved: $1" >&2; exit 3; }',
+    'case "$p" in *"-- link: orbit"*) ;; *) echo "dns.private_not_on_orbit: $1" >&2; exit 3;; esac',
+    'q=$(resolvectl query --cache=no "$2") || { echo "dns.public_unresolved: $2" >&2; exit 4; }',
+    'case "$q" in *"-- link: orbit"*) echo "dns.public_on_orbit: $2" >&2; exit 4;; esac',
+].join("\n");
+/** fleet.peer_dns: persist, set the live policy unless it already matches, then resolve both names. */
+function peerDnsActions(s: ReturnType<typeof steps>) {
+    const server = "inputs.intent.server", domains = "inputs.intent.domains";
+    persistDns(s, server, domains);
+    const wanted = domains + '.map(d,"~"+d).join(" ")';
+    // The match is the guard: notIf skips the command when the live policy already equals the admitted one.
+    s.cfg("Set the DNS policy", "exec", s.peerName("network-dns-policy"), "inputs.intent.ssh", {
+        // Each routing domain is quoted: unquoted, the shell expands `~orbit` to the orbit user's home directory.
+        command: expr('"resolvectl dns orbit " + ' + server + ' + " && resolvectl domain orbit " + ' + domains + '.map(d,"\'~"+d+"\'").join(" ") + " && resolvectl default-route orbit no"'),
+        notIf: expr(
+            JSON.stringify("test " + live("dns") + " = ") + " + " + server + " + " + JSON.stringify(" && test " + live("domain") + " = '") + " + " + wanted +
+                " + " + JSON.stringify("' && test " + live("default-route") + " = no"),
+        ),
+    });
+    // The Gateway names the private probe; example.com is reserved and always public (RFC 2606).
+    s.read("Check resolution", expr('["timeout","20","sh","-c",' + JSON.stringify(RESOLVE) + ',"sh",inputs.intent.probe,"example.com"]'));
+}
+/** node.network_converge: read, decide, then persist and set only when the policy changed. */
+function dnsActions(s: ReturnType<typeof steps>) {
+    const server = "inputs.intent.peer.dns_server", domains = "inputs.intent.peer.domains";
+    s.read("Read the DNS policy", ["sh", "-c", INSPECT]);
+    s.typed("Decide the DNS change", "decideDns", {
+        stdout: expr('steps["Read the DNS policy"].outputs.stdout'),
+        policy: POLICY,
+        require_uplink: expr("inputs.intent.peer.operator_dns == null"),
+    });
+    const guard = expr("!" + DECISION + ".outputs.changed");
+    persistDns(s, server, domains, guard);
     // One command sets the whole policy on the tunnel link: server, routing domains, no default route.
     s.execStep(
         "Set the DNS policy",
@@ -232,17 +250,17 @@ export function workflow(network: boolean) {
         s.execStep("Load the peer", ["timeout", "30", "bash", "-c", SYNCCONF, "bash", KEY, PEERS]);
         s.execStep("Trust WireGuard peers", expr("inputs.intent.trust_argv"));
     }
-    dnsActions(s, network);
-    s.typed(network ? "Check the network" : "Check the DNS policy", network ? "networkResult" : "dnsResult", {
-        stdout: expr('steps["Read the DNS policy again"].outputs.stdout'),
-        policy: policy(network),
-        ...(network
-            ? {
-                retained: expr("inputs.intent.peer.retain"),
-                require_uplink: expr("inputs.intent.peer.operator_dns == null"),
-            }
-            : {}),
-    });
+    if (network) {
+        dnsActions(s);
+        s.typed("Check the network", "networkResult", {
+            stdout: expr('steps["Read the DNS policy again"].outputs.stdout'),
+            policy: POLICY,
+            retained: expr("inputs.intent.peer.retain"),
+            require_uplink: expr("inputs.intent.peer.operator_dns == null"),
+        });
+    } else {
+        peerDnsActions(s);
+    }
     return {
         id: network
             ? "3c0eb942-9c7f-438d-8d4c-7c739642c155"
@@ -253,6 +271,7 @@ export function workflow(network: boolean) {
         description:
             "Pinned official SSH from209; full public input and typed terminal output.",
         vaults: [],
+        ...(network ? {} : { queueTimeout: 60 }),
         labels: { role: "swamp" },
         inputs: {
             type: "object",

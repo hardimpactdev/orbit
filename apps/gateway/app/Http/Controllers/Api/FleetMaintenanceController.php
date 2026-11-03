@@ -93,7 +93,8 @@ final class FleetMaintenanceController extends Controller
 
     public function peerDnsPlan(FleetMaintenanceRequest $request, PeerDnsTargetsAction $action): JsonResponse
     {
-        return response()->json(['data' => $action->execute(),
+        // One peer at a time: the first changed peer stays first until its run succeeds, so later peers wait.
+        return response()->json(['data' => array_slice($action->execute(), 0, 1),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]]);
     }
 }

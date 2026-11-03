@@ -73,9 +73,11 @@ export async function maintenance(
       const observed = await request("GET", `/api/v1/operations/${intent.id}`);
       if (observed === null) return;
       const status = Status.parse(observed).status;
+      // A generation runs once: a failed one waits for an operator rerun after a fix, or a new generation.
       if (
         !Terminal.has(status) ||
-        (!retry && status === "succeeded" && intent.generation === generation)
+        (!retry && intent.generation === generation &&
+          (status === "succeeded" || generation !== undefined))
       ) return;
       intent = null;
     }
@@ -132,9 +134,8 @@ export async function maintenance(
         `/api/v1/fleet/nodes/${target.node_id}/peer-dns`,
         {},
         false,
-        `${target.configuration_digest}:${
-          Math.floor(at.getTime() / 3_600_000)
-        }`,
+        // One admission per policy: the Gateway plans a peer only while its policy differs from the last applied one.
+        target.configuration_digest,
       );
     }
   });

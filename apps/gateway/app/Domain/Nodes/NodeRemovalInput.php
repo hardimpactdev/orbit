@@ -88,7 +88,7 @@ final readonly class NodeRemovalInput
                     $peers[] = ['ssh' => $ssh->forNode($member), 'dns_server' => $policy->server($member),
                         'public_key' => $member->wireguard_public_key, 'domains' => $afterDomains,
                         'server' => $policy->server($member),
-                        'dns_hook' => NodeNetworkConvergeInput::dnsHook($policy->server($member), $afterDomains)];
+                        'dns_hook' => NodeNetworkConvergeInput::dnsHook($policy->server($member), $afterDomains), 'probe' => PeerDnsPolicy::PRIVATE_PROBE];
                 }
             }
         }
