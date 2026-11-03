@@ -30,10 +30,6 @@
   },
   "before_gateway": [
     [
-      "runuser",
-      "-u",
-      "orbit",
-      "--",
       "env",
       "-C",
       "apps/gateway",
