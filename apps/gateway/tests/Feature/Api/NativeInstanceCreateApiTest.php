@@ -99,7 +99,7 @@ it('refuses immutable placement changes on retry', function (): void {
 it('reserves the derived Route of a web-serving Project and creates it in the same run', function (string $status): void {
     $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('public-root');
     $this->node->update(['tld' => 'test']);
-    $this->project->update(['type' => 'laravel-app', 'root' => 'public']);
+    $this->project->update(['type' => 'laravel-app', 'root' => 'public', 'php_version' => '8.4', 'is_laravel' => true, 'source_facts_captured_at' => now()]);
     $this->withHeader('Idempotency-Key', 'native-create-web-'.$status);
     $this->postJson('/api/v1/instances', $this->payload)->assertAccepted();
 
@@ -110,6 +110,11 @@ it('reserves the derived Route of a web-serving Project and creates it in the sa
     expect($route->domain)->toBe('proof.native-create.test')
         ->and($operation->input['route_id'])->toBe($route->id)
         ->and($operation->input['run_budget_seconds'])->toBe(270)
+        ->and(json_encode($intent['route']['caddy']))->toContain('proof.native-create.test')
+        ->and(json_encode($intent['route']['php_files'], JSON_UNESCAPED_SLASHES))->toContain('chdir = /srv/apps/native-create/proof')
+        ->and(json_encode($intent['route']['probes']))->toContain('proof.native-create.test')
+        ->and($intent['route']['awake'])->toBe([['node_id' => $this->node->id, 'instance_id' => $operation->target_id,
+            'path' => '/dev/shm/orbit/hibernation/app-instance-'.$operation->target_id.'.awake']])
         ->and($intent['route'])->toBe($operation->input['route_create'])
         ->and($intent['route_secrets'])->toBe($operation->input['execution_secrets']);
 

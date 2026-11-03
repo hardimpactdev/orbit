@@ -41,6 +41,8 @@ sequenceDiagram
   SW->>N: Create the Route<br/>child operation-route-create
   %%> When:
   %%> - only for a web-serving Project
+  %%> Why it marks the Instance awake:
+  %%> - so the first request reaches the app, not the wake page
   alt all steps pass in budget
     N-->>SW: Site answers<br/>Processes running
     SW-->>GW: Run succeeded<br/>terminal event · finish-result
