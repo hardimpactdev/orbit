@@ -8,6 +8,7 @@ use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Route;
 use App\Support\ValidatedData;
+use Illuminate\Support\Arr;
 
 /**
  * The operation-route-target-set inputs (flow-tighten rule 22). It takes route:create's lists (NativeRouteCreatePlan)
@@ -60,10 +61,20 @@ final readonly class NativeRouteTargetPlan
         $stage['trust'] = ValidatedData::integerList($plan['trust']);
         $stage['lan'] = $rows('lan');
 
-        $others = array_values(array_diff(array_map($nodeOf, $rows('caddy')), [$routerId]));
+        // Staging replaces retained workloads' certificates too, even when their final file was unchanged.
+        $finalCaddy = array_column($rows('caddy'), 'content', 'node_id');
+        foreach ($newNodeIds as $nodeId) {
+            $render = Arr::array($lifecycle, 'renders.'.$nodeId);
+            $finalCaddy[$nodeId] = ValidatedData::string($render['caddy']);
+        }
+        $caddy = [];
+        foreach ($finalCaddy as $nodeId => $content) {
+            $caddy[] = ['node_id' => $nodeId, 'content' => $content];
+        }
+        $others = array_values(array_diff(array_map($nodeOf, $caddy), [$routerId]));
         $retire = $empty;
         foreach (self::SiteLists as $list) {
-            $retire[$list] = $list === 'caddy' ? $mine($rows('caddy'), $others) : ($list === 'acl' || $list === 'links' ? [] : array_values(array_filter($rows($list),
+            $retire[$list] = $list === 'caddy' ? $mine($caddy, $others) : ($list === 'acl' || $list === 'links' ? [] : array_values(array_filter($rows($list),
                 static fn (array $row): bool => ! in_array(ValidatedData::integer($row['node_id']), $newNodeIds, true))));
         }
         $router = $empty;

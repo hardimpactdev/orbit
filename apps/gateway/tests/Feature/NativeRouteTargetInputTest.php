@@ -92,6 +92,18 @@ it('splits the change into staged, Router and retire Caddyfiles without changing
         ->and(Operation::query()->count())->toBe(0);
 });
 
+it('restores the final Caddyfile of a retained workload before removing its staged certificate', function (): void {
+    $proposal = ['mode' => 'targets', 'targets' => [$this->instances['old']->id, $this->instances['new']->id], 'dispositions' => []];
+    $plan = app(NativeRouteTargetInput::class)->capture($this->routes['pool']->fresh(), $proposal)['intent']['plan'];
+    $old = $this->nodes['old']->id;
+
+    expect(target_input_caddy($plan['stage'], $old))->toContain('app-instance-'.$this->instances['old']->id.'-hostname-change')
+        ->and(target_input_caddy($plan['retire'], $old))->toBeString()->toContain('pool.target.test', 'app-instance-'.$this->instances['old']->id.'/current/')
+        ->not->toContain('-hostname-change')
+        ->and($plan['retire']['site_nodes'])->toContain($old)
+        ->and($this->routes['pool']->targets()->pluck('instance_id')->all())->toBe([$this->instances['old']->id]);
+});
+
 it('freezes environment values in execution copies with the proposed and original domains', function (): void {
     foreach ($this->instances as $instance) {
         $instance->update(['source_is_laravel' => true]);
