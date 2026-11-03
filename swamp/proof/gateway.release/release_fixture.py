@@ -93,6 +93,8 @@ def layout(gateway_node):
     staged = orbit('git', '-C', str(SOURCE), 'rev-parse', 'HEAD')
     current = staged[:12]
     shared = HOME / 'shared'
+    # The Gateway account is in the caddy group, as on a Gateway: it reads the Orbit root CA beside Caddy's certificates.
+    command(['usermod', '-aG', 'caddy', 'orbit'])
     # The document cleanup runtime, as the Gateway's Documents start hook prepares it: a root /run/orbit, and the
     # Gateway account's private directory and lock in it. The scheduler and the PHP-FPM handoff both check it.
     command(['install', '-d', '-m', '0755', '-o', 'root', '-g', 'root', '/run/orbit'])
