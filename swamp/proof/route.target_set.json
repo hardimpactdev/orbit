@@ -34,10 +34,20 @@
     {
       "method": "POST",
       "path": "routes",
+      "bind": "old_route",
+      "body": {
+        "instance_id": "${old.id}",
+        "domain": "o-${proof.run}.proof.test"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "routes",
       "bind": "route",
       "body": {
         "instance_id": "${old.id}",
-        "domain": "t-${proof.run}.proof.test"
+        "domain": "t-${proof.run}.proof.test",
+        "web_root": "public"
       }
     },
     {
@@ -57,8 +67,7 @@
       "bind": "candidate_route",
       "body": {
         "instance_id": "${new.id}",
-        "domain": "c-${proof.run}.proof.test",
-        "web_root": "public"
+        "domain": "c-${proof.run}.proof.test"
       }
     },
     {
