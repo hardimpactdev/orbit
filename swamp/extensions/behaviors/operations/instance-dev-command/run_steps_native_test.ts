@@ -1,6 +1,14 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { runStepsFixture, WORKFLOW } from "./native_fixture_test.ts";
-import { exists } from "../documents/cleanup_fixture_test.ts";
+
+const exists = (path: string) => {
+  try {
+    return Boolean(Deno.lstatSync(path));
+  } catch (e) {
+    if (e instanceof Deno.errors.NotFound) return false;
+    throw e;
+  }
+};
 Deno.test("runs each command in order in the checkout", async () => {
   await using f = await runStepsFixture();
   await f.repo.cli(["workflow", "validate", WORKFLOW]);
