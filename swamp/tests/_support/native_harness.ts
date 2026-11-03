@@ -65,6 +65,14 @@ export async function swampBinary(): Promise<string> {
   return binary;
 }
 
+/** One step of a tracked workflow, by step name. */
+export function trackedStep(workflow: string, name: string) {
+  const value = parse(Deno.readTextFileSync(`${ROOT}/workflows/workflow-${workflow}.yaml`)) as Workflow;
+  const step = value.jobs.flatMap((job) => job.steps).find((step) => step.name === name);
+  if (!step) throw new Error(`${workflow} has no step ${name}`);
+  return step as { name: string; task: { inputs: Record<string, unknown> } };
+}
+
 const isolatedEnv = (extra: Record<string, string>) => {
   const env = Deno.env.toObject();
   for (
