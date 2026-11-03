@@ -31,6 +31,8 @@ Deno.test("workflow queue bounds have measured per-kind budgets", async () => {
       "task-command-run": 300,
       "swamp-credential-monitor": 120,
       "operation-gateway-swamp-load": 120,
+      "operation-gateway-release": 120,
+      "gateway-release-activate": 120,
       "swamp-datastore-watch": 120,
     };
     if (workflow.name in budgets) assertEquals(workflow.queueTimeout, budgets[workflow.name]);
