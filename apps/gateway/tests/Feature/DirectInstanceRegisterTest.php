@@ -283,7 +283,8 @@ it('refuses application facts for a different requested root', function (): void
     expect(Instance::query()->count())->toBe(1);
 });
 
-it('returns the Instance with HTTP 201 and no Operation for plain registration', function (): void {
+it('returns the Instance with HTTP 201 and no Operation for plain registration', function (string $type): void {
+    $this->project->update(['type' => $type, 'root' => $type === 'laravel-app' ? 'public' : '.']);
     register_report($this->node, '/srv/apps/register-proof/native');
     $gateway = $this->markAsGateway(Node::query()->create(['name' => 'register-gateway', 'status' => 'active',
         'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1']));
@@ -293,7 +294,7 @@ it('returns the Instance with HTTP 201 and no Operation for plain registration',
     $this->postJson('/api/v1/instances/register', ['source_path' => '/srv/apps/register-proof/native', 'project_id' => $this->project->id])
         ->assertCreated()->assertJsonPath('data.status', 'active')->assertJsonPath('data.name', 'native');
     expect(Operation::query()->count())->toBe(1);
-});
+})->with(['node-package', 'laravel-app']);
 
 it('refuses a domain owned by another Instance before reserving a registration', function (): void {
     $this->project->update(['type' => 'laravel-app', 'root' => 'public']);
