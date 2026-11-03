@@ -196,7 +196,7 @@ The agreed rendering of a command is its expected output under `apps/cli/tests/E
 | --- | --- | --- |
 | Table | `node:list` | [default.human.txt](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/nodes/node-list/default.human.txt) |
 | Detail tree | `node:show` | [default.human.txt](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/nodes/node-show/default.human.txt) |
-| Progress tree | `node:add` | [created.human.txt](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/nodes/node-add/created.human.txt) |
+| Native enrollment progress | `node:add` | [created.human.txt](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/nodes/node-add/created.human.txt) |
 | Failure after progress | `node:add` | [tld-required.human.txt](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/nodes/node-add/tld-required.human.txt) |
 | JSON result | `node:list` | [default.json](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/nodes/node-list/default.json) |
 | JSON failure envelope | `node:add` | [tld-required.json](https://github.com/hardimpactdev/orbit/blob/main/apps/cli/tests/Expected/nodes/node-add/tld-required.json) |

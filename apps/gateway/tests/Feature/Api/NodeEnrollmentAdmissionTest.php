@@ -13,6 +13,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -20,6 +21,8 @@ use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
+use Orbit\Sdk\Requests\Nodes\AddNodeRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\Fleet\FleetFixtures;
 
@@ -90,7 +93,7 @@ it('admits enrollment through the public endpoint and replays its Operation rece
     expect($operation->input['intent']['platform'])->toBe('macos')
         ->and(Node::query()->findOrFail($operation->target_id)->status->value)->toBe('provisioning');
     $this->postJson('/api/v1/nodes', $body)->assertAccepted()
-        ->assertJsonPath('data.id', $operation->id);
+        ->assertJsonPath('data.id', $operation->id)->assertJsonMissingPath('data.input.intent');
     expect(Operation::query()->where('kind', 'node.add')->count())->toBe(1);
 });
 
@@ -263,4 +266,66 @@ it('refuses enrollment of a Node with Instances before changing its serving scop
     expect($node->fresh()->tld)->toBe('before.test')
         ->and($node->fresh()->status->value)->toBe('active')
         ->and($route->fresh()->domain)->toBe('enrollment-tld.before.test');
+});
+
+it('records public native enrollment and its terminal receipt for client replay', function (string $platform, string $fixture): void {
+    $this->travelTo(new DateTimeImmutable('2026-11-03T06:00:00+00:00'));
+    $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.209'])
+        ->withHeader('X-Orbit-Request-Id', fixture_request_id());
+    if ($platform === 'linux') {
+        FleetFixtures::node('vpn', [RoleName::Vpn])->update(['wireguard_ip' => '10.44.0.10',
+            'wireguard_public_key' => base64_encode(str_repeat('w', 32))]);
+    }
+    $body = ['name' => $platform === 'linux' ? 'app-dev' : 'mini', 'platform' => $platform,
+        'public_ssh_host' => '192.0.2.42', 'wireguard_ip' => '10.44.0.42',
+        'user' => $platform === 'linux' ? 'root' : 'mini',
+        'orbit_user' => $platform === 'linux' ? 'orbit' : 'mini', 'host_key_fingerprint' => $this->fingerprint];
+    if ($platform === 'linux') {
+        $cluster = Cluster::query()->create(['name' => 'development']);
+        $body += ['roles' => ['app-dev'], 'tld' => 'app-dev.test', 'cluster_id' => $cluster->id];
+    }
+    $response = $this->postJson('/api/v1/nodes', $body)->assertAccepted()
+        ->assertJsonPath('data.kind', 'node.add')->assertJsonMissingPath('data.input.intent')
+        ->assertJsonMissingPath('data.input.execution_secrets');
+    record_fixture($response, 'nodes/node-add/'.$fixture, AddNodeRequest::class, 'POST /api/v1/nodes');
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => '4b700960-be72-4d01-b5ab-8e897a40b138']])->save();
+    $observed = ['probed' => true, 'architecture' => $platform === 'linux' ? 'x86_64' : 'arm64',
+        'host_type' => 'ssh-ed25519', 'public_key' => $this->key, 'host_key_fingerprint' => $this->fingerprint];
+    app(NativeNodeEnrollmentProjection::class)->apply($operation, [
+        'run_id' => $operation->state['swamp_run_id'], 'started_at' => now()->toAtomString(), 'finished_at' => now()->toAtomString(),
+        'status' => 'succeeded', 'result' => ['steps' => [
+            'Check the Node' => ['status' => 'succeeded'],
+            'Bind the Node identity' => ['status' => 'succeeded', 'stdout' => json_encode($observed, JSON_THROW_ON_ERROR)],
+            'Read WireGuard public key-0' => ['status' => 'succeeded', 'stdout' => base64_encode(str_repeat('n', 32))],
+            'Converge each role-0' => ['status' => 'succeeded'],
+        ]]]);
+    record_fixture($this->getJson('/api/v1/operations/'.$operation->id)->assertOk()
+        ->assertJsonPath('data.status', 'succeeded')->assertJsonPath('data.result.enrolled', true),
+        'nodes/node-add/'.$fixture.'-completed', ShowOperationRequest::class, 'GET /api/v1/operations/{operation}');
+})->with([['linux', 'created'], ['macos', 'macos-enrolled']]);
+
+it('freezes Linux bootstrap and managed accounts without contacting the machine', function (array $accounts, string $bootstrap, string $managed): void {
+    FleetFixtures::node('vpn', [RoleName::Vpn])->update(['wireguard_public_key' => base64_encode(str_repeat('w', 32))]);
+    $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.209']);
+    $response = $this->postJson('/api/v1/nodes', $accounts + ['name' => 'identities',
+        'public_ssh_host' => '192.0.2.42', 'host_key_fingerprint' => $this->fingerprint])->assertAccepted();
+    $intent = Operation::query()->findOrFail($response->json('data.id'))->input['intent'];
+    expect($intent['bootstrap']['user'])->toBe($bootstrap)
+        ->and($intent['managed_user'])->toBe($managed)
+        ->and($intent['bootstrap']['fingerprint'])->toBe($this->fingerprint)
+        ->and($intent['expected_architecture'])->toBeNull();
+})->with([[[], 'root', 'orbit'], [['user' => 'deployer', 'orbit_user' => 'managed'], 'deployer', 'managed']]);
+
+it('reuses an existing Linux public host and identity while admitting convergence', function (): void {
+    FleetFixtures::node('vpn', [RoleName::Vpn])->update(['wireguard_public_key' => base64_encode(str_repeat('w', 32))]);
+    $node = FleetFixtures::node('existing');
+    $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.209']);
+    $response = $this->postJson('/api/v1/nodes', ['name' => 'existing', 'user' => 'root'])->assertAccepted();
+    $intent = Operation::query()->findOrFail($response->json('data.id'))->input['intent'];
+    expect($intent['bootstrap']['host'])->toBe($node->public_ssh_host)
+        ->and($intent['bootstrap']['fingerprint'])->toBe($node->ssh_host_fingerprint)
+        ->and($intent['bootstrap']['user'])->toBe('root')
+        ->and($intent['managed_user'])->toBe($node->user)
+        ->and($node->fresh()->status->value)->toBe('active');
 });

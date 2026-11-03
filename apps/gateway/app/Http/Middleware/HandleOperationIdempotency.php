@@ -63,7 +63,7 @@ final readonly class HandleOperationIdempotency
             $operation = $this->idempotency->replay($this->idempotency->kind);
 
             return $operation === null ? $next($request) : response()->json([
-                'data' => ($operation->kind === 'tasks.cancel'
+                'data' => (in_array($operation->kind, ['tasks.cancel', 'node.add'], true)
                     ? OperationData::summary($operation, $operation->callerNodeId() === null ? null : Node::query()->find($operation->callerNodeId())?->name)
                     : OperationData::fromModel($operation, $operation->callerNodeId() === null ? null : Node::query()->find($operation->callerNodeId())?->name))->toArray(),
                 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],

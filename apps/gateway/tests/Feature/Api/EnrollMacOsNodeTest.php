@@ -16,7 +16,6 @@ use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use Orbit\Sdk\Requests\Nodes\AddNodeRequest;
-use Orbit\Sdk\Requests\Nodes\RemoveNodeRequest;
 use Tests\Support\FakeMacAdmissionAgentRunner;
 use Tests\Support\FakeNodeAgentRuntime;
 
@@ -93,37 +92,6 @@ beforeEach(function (): void {
     $this->markAsGateway($operator);
     $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.1']);
     $this->withHeader('X-Orbit-Request-Id', fixture_request_id());
-});
-
-it('records an enrolled mac and its removal', function (): void {
-    $created = $this->postJson('/api/v1/nodes', [
-        'name' => 'mini',
-        'public_ssh_host' => '192.0.2.40',
-        'platform' => 'macos',
-        'user' => 'mini',
-        'orbit_user' => 'mini',
-        'wireguard_ip' => '10.44.0.40',
-        'host_key_fingerprint' => 'SHA256:'.str_repeat('M', 43),
-    ])->assertCreated()
-        ->assertJsonPath('data.id', 2)
-        ->assertJsonPath('data.platform', 'macos')
-        ->assertJsonPath('data.architecture', 'arm64')
-        ->assertJsonPath('data.user', 'mini')
-        ->assertJsonPath('data.roles', [])
-        ->assertJsonPath('data.status', 'active')
-        ->assertJsonPath('data.ssh_host_fingerprint', 'SHA256:'.str_repeat('M', 43));
-
-    record_fixture($created, 'nodes/node-add/macos-enrolled', AddNodeRequest::class, 'POST /api/v1/nodes');
-
-    Node::query()->findOrFail(2)->update(['wireguard_public_key' => 'MINI_KEY']);
-
-    $removed = $this->deleteJson('/api/v1/nodes/2', ['offline' => false])->assertOk()
-        ->assertJsonPath('data.removed', true)
-        ->assertJsonPath('data.wireguard_peer_removed', true)
-        ->assertJsonPath('data.retained_on_node', ['user', 'package-managers', 'host-wireguard'])
-        ->assertJsonPath('data.follow_up', null);
-
-    record_fixture($removed, 'nodes/node-remove/macos-removed', RemoveNodeRequest::class, 'DELETE /api/v1/nodes/{node}');
 });
 
 it('rejects mac enrollment that omits the account, mixes accounts, or requests a role', function (): void {

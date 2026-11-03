@@ -62,6 +62,8 @@ Operation start and list responses can omit `steps`. The web app accepts those r
 
 TaskGroup responses include `current_recipe`, which defaults to `false`. When it is `true`, VM provisioning waits for the current machine recipe instead of using a recent promoted image. [Image fallback](/reference/compute-drivers#image-fallback) defines that choice.
 
+The New Node form requires the approved SSH host-key fingerprint. It submits enrollment once, follows the returned Operation, and loads the Node after that Operation succeeds. A failed Operation leaves the form and its error available for correction.
+
 ## Open the app
 
 Open `https://gateway.orbit` from a machine on the Orbit WireGuard network. The browser must trust the Orbit root certificate, which `orbit gateway:trust` installs. The Gateway identifies the browser by its WireGuard address, so there is no login. Pages on other origins cannot call the API, as [Browser access to the Gateway](/reference/browser-access) describes.

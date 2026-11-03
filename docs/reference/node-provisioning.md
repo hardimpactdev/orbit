@@ -55,7 +55,7 @@ Doctor reports `node.worker_failed` for a failed unit. The Node exporter exposes
 
 After review and fleet agent update, prove each selected Node before announcing it ready. VPN and usexit remain outside the current worker rollout. The canary verifies root-owned agent configuration against the expected Node ID and user, hostname, effective user and `sudo -n`. Record its native run ID and worker instance identity before announcing that Node live. Removing a Node from the rollout and converging disables the unit without waiting on its own worker; credentials and cache remain for recovery. macOS launchd is deferred until implemented and proven.
 
-Unused Gateway-local bootstrap and standalone PHP-package writer scaffolds are removed. `node:add` keeps its existing `operation.kind_unavailable` refusal until its native parent is complete.
+Unused Gateway-local bootstrap and standalone PHP-package writer scaffolds are removed. `node:add` admits its native enrollment Operation through the public API.
 
 Standalone `node.macos_inspect` runs on 209 with the admitted SSH host keys and an execution-copy bootstrap key. It reads only platform, architecture and interface addresses, then uses a native assert. It checks or installs no agent, account, package or runtime on the Mac.
 
@@ -78,10 +78,7 @@ Official cfgmgmt resources own file, package, account and service changes. A sin
 
 The Gateway records the observed SSH identity, architecture, WireGuard public key and observer-secret hash from that run. A successful first VPN hub also supplies the public key used by later peer admission. Private WireGuard keys stay in Node key files. Before hub peer synchronization, SSH commands compose the existing key and the public peer plan into a protected configuration on that hub. The workflow verifies that the hub public key is unchanged afterward. Certificate signing stays at the existing Gateway signer boundary.
 
-A [task VM](/reference/compute-drivers#task-vms) skips this step. |
-| 10 | Configure the [Node agent observer](/reference/node-agent) with its Node identity and secret, at step `agent`. |
-
-For a `node.network_converge` child of `node.add`, the Swamp network transport records the verified bootstrap host key for the Node’s WireGuard address before checking private SSH. This replaces a stale pin when an address is reused, while fingerprint mismatches refuse before either pin changes. The scanner derives the fingerprint from the returned public key bytes. A successful `node.network_rollback` removes the WireGuard pin and preserves other host entries. The private `agent.status` check is read-only and resumable after a lost response; peer publication keeps its original keyed receipt.
+The enrollment workflow records the verified bootstrap host key for the WireGuard address before checking private SSH. This replaces a stale pin when an address is reused. Fingerprint mismatches refuse before either pin changes. The scanner derives the fingerprint from the returned public key bytes.
 
 `node.bootstrap` creates a missing managed account, adds its SSH key, and validates passwordless sudo before publishing the rule. It preserves existing home and directory modes and refuses linked access paths.
 

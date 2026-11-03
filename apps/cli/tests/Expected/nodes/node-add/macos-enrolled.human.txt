@@ -2,9 +2,17 @@ Adding Node...
 
 ┌  Add Node
 │
-├  ● Added Node
+├  ● Node enrollment recorded
 │
-└  Added Node.
+└  Node enrollment Operation recorded.
 
-Node [mini] is active.
+Node enrollment running...
+
+┌  Add Node
+│
+├  ● Node enrollment complete
+│
+└  Node enrollment succeeded.
+
+Operation: 1
 Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

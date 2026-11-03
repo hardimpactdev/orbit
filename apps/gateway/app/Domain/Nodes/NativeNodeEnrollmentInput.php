@@ -88,7 +88,7 @@ final readonly class NativeNodeEnrollmentInput
                 'architecture' => $candidate['architecture'] ?? 'x86_64',
                 'ssh_host_key_type' => self::AlgorithmMark, 'ssh_host_key' => self::KeyMark,
                 'wireguard_public_key' => $node->wireguard_public_key ?? '@ORBIT_ENROLLMENT_WIREGUARD_PUBLIC_KEY@',
-                ...($request->settingsProvided ? ['settings' => $request->settings?->toArray()] : [])])->saveQuietly();
+                ...($request->settingsProvided ? ['settings' => app(NodeSettingsNormalizer::class)->storedOver($node->settings, $request->settings)] : [])])->saveQuietly();
             $base = app(NodeBootstrapCommandFactory::class)->input($node, $node->user, $spec['roleless_operator'] === true);
             $intent['packages'] = $base['packages'];
             $intent['sudo'] = ['path' => '/etc/sudoers.d/orbit-'.$node->user,

@@ -16,8 +16,10 @@ use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Operation;
 use Illuminate\Support\Str;
 use Tests\Support\FakeRoutePublicationSocket;
+use Tests\Support\NativeNodeEnrollmentFixtures;
 
 function fake_storage_preparer(): NodeStorageRootPreparer
 {
@@ -71,7 +73,8 @@ describe('node storage settings', function (): void {
         $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
     });
 
-    it('provisions typed raw settings and returns them without substituting defaults', function (): void {
+    it('admits typed raw settings and returns them without substituting defaults', function (): void {
+        $this->beforeApplicationDestroyed(NativeNodeEnrollmentFixtures::bind());
         $requestId = (string) Str::uuid();
 
         $this
@@ -88,18 +91,19 @@ describe('node storage settings', function (): void {
                     'apps' => ['path' => '/srv/orbit/apps'],
                 ],
             ])
-            ->assertCreated()
-            ->assertJsonPath('data.settings.apps.path', '/srv/orbit/apps');
+            ->assertAccepted()
+            ->assertJsonPath('data.kind', 'node.add');
 
         $node = Node::query()->where('name', 'app-dev')->sole();
 
-        expect($node->settings)
+        expect(Operation::query()->where('kind', 'node.add')->sole()->input['_node_enrollment']['settings'])
             ->toBe([
                 'apps' => ['path' => '/srv/orbit/apps'],
             ]);
     });
 
-    it('provisions without settings as SQL null and a null response member', function (): void {
+    it('admits unset settings as SQL null without materializing defaults', function (): void {
+        $this->beforeApplicationDestroyed(NativeNodeEnrollmentFixtures::bind());
         $this
             ->postJson('/api/v1/nodes', [
                 'name' => 'app-dev',
@@ -110,8 +114,8 @@ describe('node storage settings', function (): void {
                 'roles' => ['app-dev'],
                 'host_key_fingerprint' => 'SHA256:'.str_repeat('A', 43),
             ])
-            ->assertCreated()
-            ->assertJsonPath('data.settings', null);
+            ->assertAccepted()
+            ->assertJsonPath('data.kind', 'node.add');
 
         expect(Node::query()->where('name', 'app-dev')->sole()->settings)->toBeNull();
     });

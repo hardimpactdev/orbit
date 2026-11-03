@@ -95,24 +95,6 @@ describe('node response fixtures', function (): void {
         Carbon::setTestNow();
     });
 
-    it('records a created node', function (): void {
-        $cluster = Cluster::query()->create(['name' => 'development']);
-        $response = $this->postJson('/api/v1/nodes', [
-            'name' => 'app-dev',
-            'public_ssh_host' => '94.237.40.75',
-            'platform' => 'linux',
-            'architecture' => 'x86_64',
-            'tld' => 'app-dev.test',
-            'roles' => ['app-dev'],
-            'cluster_id' => $cluster->id,
-            'wireguard_ip' => '10.44.0.3',
-            'lan_ip' => '10.0.0.3',
-            'host_key_fingerprint' => 'SHA256:4dxvKOYfyTcqJHYoxamTSu9bYYI5KE3xYWQPCAmeUTo',
-        ])->assertCreated();
-
-        record_fixture($response, 'nodes/node-add/created', AddNodeRequest::class, 'POST /api/v1/nodes');
-    });
-
     it('records a role removal that fails at a named step', function (): void {
         app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
         {

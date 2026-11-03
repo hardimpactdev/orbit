@@ -10,6 +10,7 @@ use App\Domain\Nodes\NativeNodeEnrollmentInput;
 use App\Domain\Nodes\NodeEnrollmentPolicy;
 use App\Domain\Nodes\NodeProvisioningLock;
 use App\Domain\Nodes\NodeProvisioningLockException;
+use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStore;
@@ -85,7 +86,7 @@ final readonly class AdmitNodeEnrollmentOperationAction
                 '_node_enrollment' => ['existed' => $existed, 'prior_state' => $prior, 'candidate' => $candidate,
                     'role_snapshots' => $native['role_snapshots'], 'certificates' => $leaves,
                     'agent_secret_hash' => $native['agent_secret_hash'],
-                    'settings_provided' => $data->settingsProvided, 'settings' => $data->settings?->toArray()]]]);
+                    'settings_provided' => $data->settingsProvided, 'settings' => app(NodeSettingsNormalizer::class)->storedOver($node->settings, $data->settings)]]]);
         }
 
         return $operation;

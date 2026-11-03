@@ -32,6 +32,9 @@ final readonly class NodeEnrollmentPolicy
             || ($mac && $node->exists && $data->platformProvided && $data->platform !== 'macos')) {
             throw $this->refuse('node.platform_unsupported', 'The Node platform cannot be changed by enrollment.');
         }
+        if (! $mac && (! $node->exists || $node->architecture === null) && MachineArchitecture::normalize($data->architecture) === 'arm64') {
+            throw $this->refuse('node.architecture_unsupported', 'Linux Nodes require x86_64.');
+        }
         $managed = $data->orbitUser ?? ($node->exists ? $node->user : 'orbit');
         $bootstrap = $data->user ?? ($node->exists ? $node->user : 'root');
         foreach ([$managed, $bootstrap] as $user) {
@@ -67,8 +70,8 @@ final readonly class NodeEnrollmentPolicy
         }
         $tld = $data->tldProvided || $data->tld !== null ? $data->tld : ($node->exists ? $node->tld : null);
         $appDev = in_array(RoleName::AppDev, $data->roles, true) || ($node->exists && $node->roles()->where('role', RoleName::AppDev)->exists());
-        if ($tld === null && $appDev && ! ($cluster?->state === ClusterState::Active && $cluster->tld !== null)) {
-            throw $this->refuse('node.tld_required', 'An app-dev Node requires a Node TLD or an active Cluster TLD.');
+        if (! $mac && $tld === null && $appDev && ! ($cluster?->state === ClusterState::Active && $cluster->tld !== null)) {
+            throw $this->refuse('node.tld_required', "An app-dev TLD is required for node [{$node->name}].");
         }
         if ($tld !== null) {
             $tld = NodeTld::normalize($tld);
@@ -88,23 +91,23 @@ final readonly class NodeEnrollmentPolicy
         $address = $data->wireguardIp ?? ($node->exists ? $node->wireguard_ip : null);
         if ($mac) {
             if ($data->user === null || $data->orbitUser === null) {
-                throw $this->refuse('node.macos_account_required', 'Mac enrollment requires the existing account in user and orbit_user.');
+                throw $this->refuse('node.macos_account_required', 'macOS enrollment requires the existing account in user and orbit_user.');
             }
             if ($data->user !== $data->orbitUser) {
-                throw $this->refuse('node.macos_account_mismatch', 'Mac enrollment requires the same existing account.');
+                throw $this->refuse('node.macos_account_mismatch', 'macOS enrollment requires user and orbit_user to name the same account.');
             }
             if ($data->roles !== [] || ($node->exists && $node->roles()->exists())) {
-                throw $this->refuse('node.platform_unsupported', 'Mac Nodes cannot own service roles.');
+                throw $this->refuse('node.platform_unsupported', 'Node platform [macos] does not support service roles.');
             }
             if ($data->settingsProvided || ($data->tldProvided && $tld !== ($node->exists ? $node->tld : null))
                 || ($data->clusterProvided && $data->clusterId !== ($node->exists ? $node->cluster_id : null))
                 || ($data->lanIpProvided && $lan !== ($node->exists ? $node->lan_ip : null))
                 || ($data->wireguardEndpointOverride !== null && $data->wireguardEndpointOverride !== ($node->exists ? $node->wireguard_endpoint_override : null))
                 || ($data->dnsServerOverride !== null && $data->dnsServerOverride !== ($node->exists ? $node->dns_server_override : null))) {
-                throw $this->refuse('node.platform_unsupported', 'Mac enrollment preserves Cluster, DNS, tunnel and storage settings.');
+                throw $this->refuse('node.platform_unsupported', 'macOS enrollment does not change Cluster, DNS, tunnel, or storage settings.');
             }
             if ($address === null || $address === '' || ($node->exists && $node->wireguard_ip !== null && $address !== $node->wireguard_ip)) {
-                throw $this->refuse('node.wireguard_required', 'Mac enrollment requires its existing WireGuard address.', 409);
+                throw new ResourceOperationException('node.wireguard_required', 'macOS enrollment requires a WireGuard address that is already on the machine.', 409, details: ['step' => 'identity']);
             }
         }
         $address = $this->addresses->forProvisioning($address, $node->exists ? $node : null);

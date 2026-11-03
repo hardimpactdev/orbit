@@ -11,6 +11,8 @@ covers:
 
 # Web verification
 
+The New Node form check includes its approved host-key fingerprint and the enrollment Operation. Browser tests follow completion before opening the Node. Phone and desktop captures check that the added field remains readable within the scrollable form.
+
 For the task group panel, open `/tasks/12` and inspect `[data-testid=task-swamp-runs]` on phone and desktop. The demo has a running workflow with succeeded, running, and pending steps. Expand Step output and Run log, check text wrapping, and confirm the panel starts above task properties. Browser tests cover stale, unavailable, empty, failed, and recovered reads. [Swamp run output](/reference/tasks#swamp-run-output) owns the live contract.
 
 This page is for an agent that changes the Orbit web app, and for the reviewer who judges that change. `bin/web-verify` runs `apps/web` in demo mode and drives it with Playwright. It needs no Gateway. The installed iPhone layout is on the [web app](/reference/web-app) page.

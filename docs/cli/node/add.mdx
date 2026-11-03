@@ -44,7 +44,7 @@ orbit node:add beast --role=app-dev --role=database
 
 For macOS, use `node:add` with `--platform=macos` and set `--user` and `--orbit-user` to the same existing account. The machine must already join WireGuard and accept the Gateway's SSH key. No role is required. A role request fails with `node.platform_unsupported` before SSH. This path also enrolls an existing roleless peer whose SSH identity is not pinned, and it can correct that peer's platform and architecture from the machine. See [macOS Nodes](/reference/node-provisioning#macos-nodes).
 
-A Node with Instances cannot be enrolled again, including for a TLD change. The request returns an Operation at once. Swamp applies the baseline, tunnel, observer and role resources from 209, then checks the Node. A failed run retains completed work. An existing Node keeps its earlier recorded identity until the full check passes.
+A Node with Instances cannot be enrolled again, including for a TLD change. The API returns an Operation with HTTP 202. The CLI follows that Operation; `--json` returns its terminal record. Swamp applies the baseline, tunnel, observer and role resources from 209, then checks the Node. A failed run retains completed work. An existing Node keeps its earlier recorded identity until the full check passes.
 
 ## How it works
 

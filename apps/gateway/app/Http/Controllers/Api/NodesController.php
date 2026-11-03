@@ -99,7 +99,7 @@ final class NodesController extends Controller
     public function store(ProvisionNodeRequest $request, ProvisionNodeAction $action): JsonResponse
     {
         return response()->json([
-            'data' => OperationData::fromModel($action->start($request->payload(),
+            'data' => OperationData::summary($action->start($request->payload(),
                 $request->attributes->getString('orbit.request_id')))->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ], 202);
