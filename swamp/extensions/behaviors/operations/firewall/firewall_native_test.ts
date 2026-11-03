@@ -1,64 +1,52 @@
+/** operation-firewall-direct against a ufw double behind official SSH; never contacts a Node. */
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { nativeRepo, ROOT } from "../../../../tests/_support/native_harness.ts";
-import { scriptPath, ufwDouble } from "./native_fixture.ts";
-async function fixture() {
+import type { Row } from "./plan.ts";
+import { Trust, Trust6 } from "./native_fixture.ts";
+
+const double = new URL("./native_fixture.ts", import.meta.url).href;
+const tool = new URL("../../../../tests/_support/fake_tool.ts", import.meta.url).href;
+
+async function fixture(rows: Row[] = [Trust, Trust6], active = true) {
   const repo = await nativeRepo();
   await repo.copyBehaviors("operations/firewall");
   await repo.pull("@swamp/ssh");
-  const source = parse(
-    await Deno.readTextFile(
-      `${ROOT}/workflows/workflow-operation-firewall-direct.yaml`,
-    ),
-  ) as { jobs: { steps: { labels: unknown }[] }[] };
-  for (const step of source.jobs[0].steps) {
-    assertEquals(step.labels, { role: "swamp" });
-  }
+  const tracked = parse(await Deno.readTextFile(`${ROOT}/workflows/workflow-operation-firewall-direct.yaml`)) as {
+    jobs: { steps: { labels: unknown }[] }[];
+  };
+  for (const step of tracked.jobs[0].steps) assertEquals(step.labels, { role: "swamp" });
   const state = `${repo.dir}/state.json`;
-  await Deno.writeTextFile(state, JSON.stringify({ rows: [], active: true }));
-  const program = String.raw`import json,sys,shlex,os
-from pathlib import Path
-SCRIPT_PATH=` + JSON.stringify(scriptPath) + "\n" + ufwDouble + String.raw`
-args=json.load(sys.stdin)
-if any(x in args for x in ['-O','-N','-MNf','-M']):raise SystemExit(0)
-command=args[-1]
-if '__swamp_sudo_ok__' in command:
- print('__swamp_sudo_ok__')
- command=shlex.split(command)[-1].split('exec </dev/null; ',1)[-1]
-args=shlex.split(command);index=len(args)-1-args[::-1].index('-c')
-namespace={'__name__':'native_fixture'};exec(args[index+1],namespace)
-state=Path(os.environ['FIREWALL_STATE']);saved=json.loads(state.read_text());ufw=Ufw(saved['rows']);ufw.active=saved['active'];namespace['ufw']=ufw
-try:print(json.dumps(namespace['converge'](json.loads(args[index+2]))))
-except RuntimeError as error:
- print(json.dumps({'error_code':str(error)}));raise SystemExit(1)
-finally:state.write_text(json.dumps({'rows':ufw.rows,'active':ufw.active}))
-`;
+  await Deno.writeTextFile(state, JSON.stringify({ rows, active, fail: false }));
   const ssh = await repo.fakeBinary(
     "ssh",
-    `const child=new Deno.Command('python3',{args:['-I','-c',${
-      JSON.stringify(program)
-    }],stdin:'piped',stdout:'piped',stderr:'piped'}).spawn();const writer=child.stdin.getWriter();await writer.write(new TextEncoder().encode(JSON.stringify(Deno.args)));await writer.close();const result=await child.output();await Deno.stdout.write(result.stdout);await Deno.stderr.write(result.stderr);Deno.exit(result.code);`,
+    `import { UfwDouble } from ${JSON.stringify(double)};
+import { logCall, shellSplit } from ${JSON.stringify(tool)};
+if (Deno.args.some((arg) => ["-O", "-N", "-MNf", "-M"].includes(arg))) Deno.exit(0);
+let command = Deno.args.at(-1);
+if (command.includes("__swamp_sudo_ok__")) {
+  console.log("__swamp_sudo_ok__");
+  command = shellSplit(command).at(-1).split("exec </dev/null; ").at(-1);
+}
+let argv = shellSplit(command);
+if (argv.slice(0, 3).join(" ") === "sudo -n --") argv = argv.slice(3);
+logCall(${JSON.stringify(`${repo.dir}/calls.jsonl`)}, argv);
+const saved = JSON.parse(Deno.readTextFileSync(${JSON.stringify(state)}));
+const ufw = Object.assign(new UfwDouble(saved.rows), { active: saved.active, fail: saved.fail });
+if (argv.join(" ") === "timeout 30 /usr/sbin/ufw status numbered") console.log(ufw.status());
+else {
+  try { ufw.apply(argv); } catch (error) { console.error("ERROR: " + error.message); Deno.exit(1); }
+  Deno.writeTextFileSync(${JSON.stringify(state)}, JSON.stringify({ ...saved, rows: ufw.rows }));
+}
+`,
   );
-  repo.env.FIREWALL_STATE = state;
   await repo.workflow("operation-firewall-direct", (flow) => {
-    for (const job of flow.jobs) {
-      for (const step of job.steps) {
-        const task = step.task as {
-          behaviorType?: string;
-          globalArgs: Record<string, unknown>;
-        };
-        if (task.behaviorType === "@swamp/ssh") {
-          task.globalArgs.sshBinary = ssh;
-        }
-      }
+    for (const step of flow.jobs.flatMap((job) => job.steps)) {
+      const task = step.task as { behaviorType?: string; globalArgs: Record<string, unknown> };
+      if (task.behaviorType === "@swamp/ssh") task.globalArgs.sshBinary = ssh;
     }
   });
-  const run = async (
-    kind: string,
-    rule: Record<string, unknown>,
-    ensure = "present",
-    success = true,
-  ) => {
+  const run = async (kind: string, rule: Record<string, unknown>, ensure = "present", success = true) => {
     const intent = {
       ssh: {
         identity_file: "/fixture/key",
@@ -66,99 +54,57 @@ finally:state.write_text(json.dumps({'rows':ufw.rows,'active':ufw.active}))
           host: "10.44.0.9",
           user: "orbit",
           port: 22,
-          host_keys: [
-            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB",
-          ],
+          host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEB"],
         },
       },
       rule: { node_id: 9, comment: "orbit db", ...rule },
       ensure,
     };
-    const { history } = await repo.runWorkflow(
+    const { steps, history } = await repo.runWorkflow(
       "operation-firewall-direct",
-      {
-        operation_id: 17,
-        node_id: 9,
-        kind,
-        intent,
-        execution_secrets: {},
-      },
+      { operation_id: 17, node_id: 9, kind, intent, execution_secrets: {} },
       { success },
     );
-    const steps = Object.fromEntries(
-      history.jobs[0].steps.map((s) => [s.name, s]),
-    ) as unknown as Record<
-      string,
-      { status: string; outputs: { stdout: string; exitCode: number } }
-    >;
-    return { steps, terminal: JSON.parse(steps.apply.outputs.stdout) };
+    const check = history.jobs[0].steps.find((step) => step.name === "Check the rules");
+    return { steps, terminal: check?.outputs ? JSON.parse(check.outputs.stdout as string) : null };
   };
-  return {
-    repo,
-    state,
-    run,
-    async [Symbol.asyncDispose]() {
-      await repo[Symbol.asyncDispose]();
-    },
-  };
+  const rowsNow = async () => JSON.parse(await Deno.readTextFile(state)).rows as Row[];
+  const writeState = (value: Record<string, unknown>) => Deno.writeTextFile(state, JSON.stringify(value));
+  return { repo, run, rowsNow, writeState, [Symbol.asyncDispose]: () => repo[Symbol.asyncDispose]() };
 }
-Deno.test("allow deny order and remove through the native root", async () => {
+
+const deny = { action: "deny", port: "5432", protocol: "tcp", source: "any" };
+const allow = { action: "allow", port: "5432", protocol: "tcp", source: "192.0.2.10" };
+
+Deno.test("allow, deny, narrow-first order and remove through the native root", async () => {
   await using f = await fixture();
   await f.repo.cli(["workflow", "validate", "operation-firewall-direct"]);
-  const deny = {
-      action: "deny",
-      port: "5432",
-      protocol: "tcp",
-      source: "any",
-    },
-    allow = {
-      action: "allow",
-      port: "5432",
-      protocol: "tcp",
-      source: "192.0.2.10",
-    };
-  assertEquals((await f.run("firewall.deny", deny)).terminal, {
-    backend: "active",
-  });
+  assertEquals((await f.run("firewall.deny", deny)).terminal, { backend: "active" });
   const { steps, terminal } = await f.run("firewall.allow", allow);
-  assertEquals([terminal, steps.accepted.status], [
-    { backend: "active" },
-    "succeeded",
+  assertEquals([terminal, steps.accepted], [{ backend: "active" }, "succeeded"]);
+  assertEquals((await f.rowsNow()).slice(0, 2).map((r) => [r.to, r.action, r.source]), [
+    ["5432/tcp", "allow", "192.0.2.10"],
+    ["5432/tcp", "deny", "Anywhere"],
   ]);
-  const rows = JSON.parse(await Deno.readTextFile(f.state)).rows;
-  assertEquals(
-    rows.slice(0, 2).map((
-      r: { to: string; action: string; source: string },
-    ) => [r.to, r.action, r.source]),
-    [["5432/tcp", "allow", "192.0.2.10"], ["5432/tcp", "deny", "Anywhere"]],
-  );
-  assertEquals(
-    (await f.run("firewall.remove", { ...allow, retain: false }, "absent"))
-      .terminal,
-    { backend: "absent" },
-  );
-  assert(
-    !JSON.parse(await Deno.readTextFile(f.state)).rows.some((
-      r: { source: string },
-    ) => r.source === "192.0.2.10"),
-  );
+  const again = await f.run("firewall.allow", allow);
+  assertEquals(again.steps["Change the rules-0"], "skipped");
+  assertEquals((await f.run("firewall.remove", { ...allow, retain: false }, "absent")).terminal, { backend: "absent" });
+  assert(!(await f.rowsNow()).some((r) => r.source === "192.0.2.10"));
 });
-Deno.test("refusal is the terminal output and fails the run", async () => {
-  await using f = await fixture();
-  await Deno.writeTextFile(
-    f.state,
-    JSON.stringify({ rows: [], active: false }),
-  );
-  const { steps, terminal } = await f.run(
-    "firewall.allow",
-    { action: "allow", port: "25", protocol: "any", source: "any" },
-    "present",
-    false,
-  );
-  assertEquals([steps.apply.status, steps.apply.outputs.exitCode], [
-    "succeeded",
-    1,
-  ]);
+
+Deno.test("an inactive firewall is the terminal refusal and changes nothing", async () => {
+  await using f = await fixture([], false);
+  const { steps, terminal } = await f.run("firewall.allow", { ...allow, protocol: "any", source: "any" }, "present", false);
   assertEquals(terminal, { error_code: "firewall.backend_inactive" });
-  assertEquals(steps.accepted.status, "failed");
+  assertEquals([steps["Change the rules-0"], steps.accepted], ["skipped", "failed"]);
+  assertEquals(await f.rowsNow(), []);
+});
+
+Deno.test("a ufw failure fails the run with the check's verdict", async () => {
+  await using f = await fixture();
+  await f.writeState({ rows: [Trust, Trust6], active: true, fail: true });
+  const { steps, terminal } = await f.run("firewall.allow", allow, "present", false);
+  assertEquals(steps["Change the rules-0"], "failed");
+  assertEquals(terminal, { error_code: "firewall.verify_failed" });
+  assertEquals(steps.accepted, "failed");
 });

@@ -131,7 +131,7 @@ orbit firewall:allow 25 --node=7                                      # everyone
 orbit firewall:deny 25 --node=7 --from=203.0.113.9                    # except this host
 ```
 
-Each write inserts its lines at the computed position with `ufw insert`, one line per protocol and address family, and the check step verifies the order as well as the lines. A removal leaves the other lines in order.
+Swamp reads `ufw status numbered` over SSH. A typed step on Node 209 plans the ufw commands, one line per protocol and address family, with each insert position counted as the rows will be. Each command then runs as one `ufw` argument list over SSH, one at a time; no script reaches the Node. A second read and the check step verify the order as well as the lines. If another writer changes UFW between the read and the insert, the check fails and a rerun repairs the order. A removal leaves the other lines in order.
 
 ### Change rules without an exposure window
 

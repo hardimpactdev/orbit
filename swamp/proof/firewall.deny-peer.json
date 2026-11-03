@@ -8,15 +8,27 @@
   },
   "phases": [
     {
-      "name": "assets",
+      "name": "Read the rules",
       "job": "firewall",
-      "step": "assets",
+      "step": "Read the rules",
       "budget_seconds": 60
     },
     {
-      "name": "apply",
+      "name": "Plan the changes",
       "job": "firewall",
-      "step": "apply",
+      "step": "Plan the changes",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Read the result",
+      "job": "firewall",
+      "step": "Read the result",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Check the rules",
+      "job": "firewall",
+      "step": "Check the rules",
       "budget_seconds": 60
     },
     {

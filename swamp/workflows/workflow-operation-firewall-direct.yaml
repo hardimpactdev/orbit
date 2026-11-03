@@ -1,6 +1,6 @@
 id: 4093f46d-9dd2-4e67-a151-dd5bb9addb0c
 name: operation-firewall-direct
-description: Converge one admitted firewall rule from Node 209 with one shipped script over official SSH.
+description: Converge one admitted firewall rule from Node 209; each ufw change is one argv over official SSH.
 vaults: []
 queueTimeout: 30
 inputs:
@@ -16,25 +16,15 @@ inputs:
 jobs:
 - name: firewall
   steps:
-  - name: assets
+  - name: Read the rules
     labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/firewall-assets'
-      behaviorName: '${{ "firewall-assets" }}'
-      methodName: read
-      inputs: {intent: '${{ inputs.intent }}'}
-  - name: apply
-    labels: {role: swamp}
-    writes: true
-    dependsOn: [{step: assets, condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("firewall-apply-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}'
+      behaviorName: '${{ ("firewall-read-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ ("firewall-apply-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}'
+        name: '${{ ("firewall-read-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ inputs.intent.ssh.target.user }}'
@@ -45,9 +35,78 @@ jobs:
       inputs:
         hosts: 'name:target'
         sudo: true
-        argv: [timeout, '60', python3, -I, -c, '${{ steps.assets.outputs.script }}', '${{ steps.assets.outputs.input }}']
-        okExitCodes: [0, 1]
+        argv: [timeout, '30', /usr/sbin/ufw, status, numbered]
+  - name: Plan the changes
+    labels: {role: swamp}
+    dependsOn: [{step: Read the rules, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/firewall-plan'
+      behaviorName: '${{ "firewall-plan" }}'
+      methodName: plan
+      inputs: {intent: '${{ inputs.intent }}', stdout: '${{ steps["Read the rules"].outputs.stdout }}'}
+    # One ufw argv per planned change, in order; numbered inserts count the rows as they will be.
+  - name: Change the rules
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Plan the changes, condition: {type: succeeded}}]
+    forEach: {item: change, in: '${{ [0, 1, 2, 3, 4, 5, 6, 7] }}'}
+    concurrency: 1
+    guard: '${{ self.change >= size(steps["Plan the changes"].outputs.commands) }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("firewall-change-" + string(inputs.intent.ssh.target.host) + "-" + string(self.change)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ ("firewall-change-" + string(inputs.intent.ssh.target.host) + "-" + string(self.change)).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: '${{ inputs.intent.ssh.target.user }}'
+          port: '${{ inputs.intent.ssh.target.port }}'
+          identityFile: '${{ inputs.intent.ssh.identity_file }}'
+          hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'
+        hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]
+      inputs:
+        hosts: 'name:target'
+        sudo: true
+        argv: '${{ steps["Plan the changes"].outputs.commands[self.change] }}'
+  - name: Read the result
+    labels: {role: swamp}
+    dependsOn:
+    - {step: Plan the changes, condition: {type: succeeded}}
+    - {step: Change the rules, condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("firewall-reread-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ ("firewall-reread-" + string(inputs.intent.ssh.target.host)).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: '${{ inputs.intent.ssh.target.user }}'
+          port: '${{ inputs.intent.ssh.target.port }}'
+          identityFile: '${{ inputs.intent.ssh.identity_file }}'
+          hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'
+        hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]
+      inputs:
+        hosts: 'name:target'
+        sudo: true
+        argv: [timeout, '30', /usr/sbin/ufw, status, numbered]
+  - name: Check the rules
+    labels: {role: swamp}
+    dependsOn: [{step: Read the result, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/firewall-plan'
+      behaviorName: '${{ "firewall-check" }}'
+      methodName: check
+      inputs:
+        intent: '${{ inputs.intent }}'
+        stdout: '${{ steps["Read the result"].outputs.stdout }}'
+        refusal: '${{ steps["Plan the changes"].outputs.stdout }}'
   - name: accepted
     labels: {role: swamp}
-    dependsOn: [{step: apply, condition: {type: succeeded}}]
-    task: {type: assert, expr: steps.apply.outputs.exitCode == 0, severity: high, message: The firewall rule did not converge.}
+    dependsOn: [{step: Check the rules, condition: {type: succeeded}}]
+    task: {type: assert, expr: 'steps["Check the rules"].outputs.ok', severity: high, message: The firewall rule did not converge.}

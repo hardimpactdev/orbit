@@ -1,10 +1,8 @@
 manifestVersion: 1
 name: "@nckrtl/firewall-inspection"
-version: 2026.11.02.1
+version: 2026.11.03.1
 visibility: private
 license: MIT
-description: Shipped firewall rule script; transport is official SSH.
+description: Plans and checks one firewall rule from ufw's numbered status; each change is one ufw argv over official SSH.
 behaviors:
-  - operations/firewall/assets.ts
-additionalFiles:
-  - scripts/firewall.py
+  - operations/firewall/plan.ts

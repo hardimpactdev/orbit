@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, ADR 0241 allowlists, DECISIONS R1-R4 + 5 (process.stop shape, shared SSH identity). Same shape as firewall.allow.
+  %% Tightened: flow-tighten 2026-11-03, rule 22 (no script: one ufw argv per change over @swamp/ssh exec; a typed step plans positions, Lab #4334).
   %% status: reviewed
   %% command: firewall:remove
   %% kind: firewall.remove
@@ -46,16 +47,26 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>N: Remove the ufw lines<br/>@swamp/cfgmgmt/firewall apply
+  SW->>N: Read the rules<br/>ufw status · @swamp/ssh exec
   %%> How:
-  %%> - Swamp reaches Node 7 over SSH from 209, with the official `@swamp/cfgmgmt/firewall` behavior
+  %%> - Swamp reaches Node 7 over SSH from 209 with the official `@swamp/ssh` behavior
+  %%> - refuses an inactive firewall (`firewall.backend_inactive`) before any change
+  Note over SW: Plan the changes<br/>typed step on 209
   %%> What it does:
-  %%> - removes each line that belongs to this rule alone
-  %%> - a line that is already gone is skipped
-  %%> - for an allowlist rule, it also removes the rule's ordered block of lines
-  SW->>N: Check the end state<br/>@swamp/cfgmgmt/firewall check
+  %%> - turns ufw's numbered rows into the ufw commands this rule needs, in order
+  %%> - an insert position counts the rows as they will be after the earlier commands
+  %%> Why typed, not cfgmgmt:
+  %%> - `@swamp/cfgmgmt/firewall` cannot insert at a position (Lab #4334) or name a port range
+  SW->>N: Change the rules<br/>one ufw argv · @swamp/ssh exec
   %%> What it does:
-  %%> - reads ufw back: removed lines are gone, and kept lines are still there
+  %%> - deletes each line that belongs to this rule alone; a line that is already gone is skipped
+  %%> - a line that a role also needs (`retain`) stays
+  %%> - runs the planned commands one at a time; nothing is copied to the Node
+  SW->>N: Read the result<br/>ufw status · @swamp/ssh exec
+  Note over SW: Check the rules<br/>typed step on 209
+  %%> What it does:
+  %%> - checks every removed line is gone, and retained lines are still there
+  %%> - prints the public result; a line that ufw changed in between fails the check, and a rerun repairs it
   %%> Why:
   %%> - the rule only counts as removed when ufw shows it
   alt end state is right

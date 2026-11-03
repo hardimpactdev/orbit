@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, ADR 0241 allowlists, DECISIONS R1-R4 + 5 (process.stop shape, shared SSH identity).
-  %% Tightened: flow-tighten 2026-11-02, rule 22 (firewall.py is the one named gap: cfgmgmt firewall has no insert position).
+  %% Tightened: flow-tighten 2026-11-03, rule 22 (no script: one ufw argv per change over @swamp/ssh exec; a typed step plans positions, Lab #4334).
   %% status: reviewed
   %% command: firewall:allow
   %% kind: firewall.allow
@@ -50,24 +50,31 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>N: Add the ufw rule<br/>firewall.py · @swamp/ssh exec
+  SW->>N: Read the rules<br/>ufw status · @swamp/ssh exec
   %%> How:
-  %%> - Swamp reaches Node 7 over SSH from 209
-  %%> - `firewall.py` is sent as one `python3 -I -c` argument; nothing is copied to the Node
-  %%> Why a script:
-  %%> - the one named gap: `@swamp/cfgmgmt/firewall` cannot insert a rule at a position, and ufw stops at the first match
+  %%> - Swamp reaches Node 7 over SSH from 209 with the official `@swamp/ssh` behavior
+  %%> - refuses an inactive firewall (`firewall.backend_inactive`) before any change
+  Note over SW: Plan the changes<br/>typed step on 209
   %%> What it does:
-  %%> - adds one ufw allow line per port and protocol, commented with its label
+  %%> - turns ufw's numbered rows into the ufw commands this rule needs, in order
+  %%> - an insert position counts the rows as they will be after the earlier commands
   %%> Order:
   %%> - narrower rules go above broader ones, allow or deny, so an exception such as one IP wins over a rule for anywhere
   %%> - ufw stops at the first match, so Orbit sets this order on every change
   %%> - all operator rules sit above Orbit's own broad rules, such as WireGuard peer trust, so a deny on a port also applies to WireGuard peers
-  %%> - an existing identical line is left as it is
-  %%> - reads ufw back after the insert and exits non-zero when the order is wrong
-  SW->>N: Check the rule is live<br/>@swamp/cfgmgmt/firewall check
+  %%> Why typed, not cfgmgmt:
+  %%> - `@swamp/cfgmgmt/firewall` cannot insert at a position (Lab #4334) or name a port range
+  SW->>N: Change the rules<br/>one ufw argv · @swamp/ssh exec
   %%> What it does:
-  %%> - reads ufw back and checks every expected line is present
-  %%> - the order (narrower above broader) is read back by `firewall.py` in the step before
+  %%> - adds one ufw allow line per port, protocol and family, commented with its label
+  %%> - inserts each line at the position the plan names; an existing identical, well-placed line is left as it is
+  %%> - moves a line that sits in the wrong place: deletes it, then inserts it again
+  %%> - runs the planned commands one at a time; nothing is copied to the Node
+  SW->>N: Read the result<br/>ufw status · @swamp/ssh exec
+  Note over SW: Check the rules<br/>typed step on 209
+  %%> What it does:
+  %%> - checks every expected line is present, in narrow-first order
+  %%> - prints the public result; a line that ufw changed in between fails the check, and a rerun repairs it
   %%> Why:
   %%> - the rule only counts as active when ufw shows it
   alt every line is present
