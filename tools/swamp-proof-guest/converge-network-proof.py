@@ -28,6 +28,13 @@ elif mode == 'drift':
     on('peer', 'wg', 'set', 'orbit', 'peer', hub, 'allowed-ips', '10.77.0.0/24')
     on('target', 'wg', 'set', 'orbit', 'peer', peer, 'remove')
 elif mode == 'hub':
+    # This fixture records an already-bootstrapped VPN hub. Seed the same loopback backend bind its
+    # bootstrap writes; Ubuntu's stock dnsmasq instead collides with systemd-resolved on port 53.
+    backend = subprocess.run(['runuser', '-u', 'orbit', '--', 'env', '-C', 'apps/gateway', 'php', '-r',
+        'require "vendor/autoload.php"; echo \App\Infrastructure\AppDev\VpnDnsmasqBackendListen::apply("# Managed by Orbit.\\n");'],
+        capture_output=True, text=True, check=True).stdout
+    subprocess.run(['incus', 'exec', 'target', '--', 'tee', '/etc/dnsmasq.d/orbit-vpn.conf'],
+                   input=backend, capture_output=True, text=True, check=True)
     # One recorded offline peer and one unrecorded live/file residue, beside the real connected peer.
     key = subprocess.run(['sh', '-c', 'wg genkey | wg pubkey'], capture_output=True, text=True, check=True).stdout.strip()
     fixture({'wireguard_keys': {sys.argv[2]: key}})
