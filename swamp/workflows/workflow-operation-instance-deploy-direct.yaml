@@ -236,7 +236,7 @@ jobs:
     - step: Resolve the commit
       condition:
         type: succeeded
-    guard: ${{ inputs.intent.deployment.variant != "development" }}
+    guard: ${{ inputs.intent.deployment.variant != "development" || inputs.intent.commit == null }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -272,7 +272,7 @@ jobs:
     - step: Count commits after it
       condition:
         type: succeeded
-    guard: ${{ inputs.intent.deployment.variant != "development" }}
+    guard: ${{ inputs.intent.deployment.variant != "development" || inputs.intent.commit == null }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -306,7 +306,7 @@ jobs:
     - step: Read the branch ancestor
       condition:
         type: succeeded
-    guard: ${{ inputs.intent.deployment.variant != "development" }}
+    guard: ${{ inputs.intent.deployment.variant != "development" || inputs.intent.commit == null }}
     task:
       type: assert
       severity: high
@@ -316,9 +316,28 @@ jobs:
     labels:
       role: swamp
     dependsOn:
-    - step: Check it is on the branch
+    - step: Resolve the commit
       condition:
         type: succeeded
+    # Without a pinned commit the branch membership checks are skipped.
+    - step: Count commits after it
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: Read the branch ancestor
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: Check it is on the branch
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
     guard: ${{ inputs.intent.deployment.variant != "development" }}
     task:
       type: behavior

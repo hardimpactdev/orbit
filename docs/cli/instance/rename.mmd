@@ -29,7 +29,7 @@ sequenceDiagram
     %%> Result:
     %%> - the Gateway always has a recent picture of the checkouts on each app-dev Node
   end
-  CLI->>GW: instance:rename 42<br/>--branch=t3code/login-redirect
+  CLI->>GW: instance:rename 42
   %%> Command:
   %%> - `orbit instance:rename 42 --branch=t3code/login-redirect`
   %%> - syntax: `instance:rename <instance> --branch=BRANCH [--json]`
@@ -38,34 +38,44 @@ sequenceDiagram
   %%> Not included:
   %%> - it does not rename the Instance, move its directory or change Git `HEAD`
   %%> - `--domain` returns `operation.kind_unavailable`
-  Note over GW: Check against the facts<br/>HEAD · identity · observed_at
-  %%> Requirements:
-  %%> - Instance 42 is an active development checkout on Node 12
-  %%> - your Node has an access grant to Node 12
-  %%> - the branch is a valid local branch name
-  %%> Checks in the agent's latest report:
-  %%> - symbolic `HEAD` of Instance 42's checkout names `t3code/login-redirect`
-  %%> - the checkout still matches its recorded top level and origin
-  %%> - the report is fresh enough to trust
-  %%> Not needed:
-  %%> - no Swamp run and no SSH: the fact is already recorded (R1)
-  alt HEAD names the branch
-    Note over GW: Record the branch<br/>selected_branch · override
+  Note over CLI: Require a rename field
+  %%> Result:
+  %%> - with neither `--branch` nor `--domain`, returns `validation.failed`; no request is sent
+  opt --domain
+    GW--xCLI: Domain rename unavailable<br/>operation.kind_unavailable
     %%> Result:
-    %%> - `selected_branch` and `branch_override` of Instance 42 become `t3code/login-redirect`
-    %%> - recording the already recorded branch keeps its existing override
-    %%> - a dirty or unpublished branch can be recorded
-    GW-->>CLI: Branch recorded<br/>Instance 42 · t3code/login-red…
-    %%> What you get:
-    %%> - the final result at once; there is nothing to follow
-  else other branch, detached or stale
-    GW--xCLI: Refused or can't verify<br/>instance.branch_not_checked_out
-    %%> When:
-    %%> - symbolic `HEAD` names another branch or is detached
-    %%> - or the checkout no longer matches its recorded identity
-    %%> - or the latest report is too old: the refusal says it can't verify
-    %%> Result:
-    %%> - Instance 42 keeps its recorded branch; nothing is recorded
-    %%> Retry:
-    %%> - check out the branch, wait for the next agent report, then run `instance:rename` again
+    %%> - refuses before changing any field, also when `--branch` is supplied
+  end
+  opt --branch
+    Note over GW: Check against the facts<br/>HEAD · identity · observed_at
+    %%> Requirements:
+    %%> - Instance 42 is an active development checkout on Node 12
+    %%> - your Node has an access grant to Node 12
+    %%> - the branch is a valid local branch name
+    %%> Checks in the agent's latest report:
+    %%> - symbolic `HEAD` of Instance 42's checkout names `t3code/login-redirect`
+    %%> - the checkout still matches its recorded top level and origin
+    %%> - the report is fresh enough to trust
+    %%> Not needed:
+    %%> - no Swamp run and no SSH: the fact is already recorded (R1)
+    alt HEAD names the branch
+      Note over GW: Record the branch<br/>selected_branch · override
+      %%> Result:
+      %%> - `selected_branch` and `branch_override` of Instance 42 become `t3code/login-redirect`
+      %%> - recording the already recorded branch keeps its existing override
+      %%> - a dirty or unpublished branch can be recorded
+      GW-->>CLI: Branch recorded<br/>Instance 42 · t3code/login-red…
+      %%> What you get:
+      %%> - the final result at once; there is nothing to follow
+    else other branch, detached or stale
+      GW--xCLI: Refused or can't verify<br/>instance.branch_not_checked_out
+      %%> When:
+      %%> - symbolic `HEAD` names another branch or is detached
+      %%> - or the checkout no longer matches its recorded identity
+      %%> - or the latest report is too old: the refusal says it can't verify
+      %%> Result:
+      %%> - Instance 42 keeps its recorded branch; nothing is recorded
+      %%> Retry:
+      %%> - check out the branch, wait for the next agent report, then run `instance:rename` again
+    end
   end

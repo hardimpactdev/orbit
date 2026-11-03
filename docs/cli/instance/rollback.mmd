@@ -13,7 +13,7 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as app-prod Node<br/>Node 12 over ssh
-  CLI->>GW: instance:rollback 42<br/>--release=20261030T101500Z
+  CLI->>GW: instance:rollback 42
   %%> Command:
   %%> - `orbit instance:rollback 42 --release=20261030T101500Z`
   %%> - syntax: `<instance> --release=NAME [--idempotency-key=KEY] [--json]`
@@ -21,6 +21,8 @@ sequenceDiagram
   %%> - the Instance, and one retained release name from `instance:release:list 42`
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
+  %%> Required input:
+  %%> - `--release=NAME` is mandatory; omission returns `deployment.release_required` before admission
   Note over GW: Check release, admit<br/>Instance 42 locked · task #5151
   %%> Requirements:
   %%> - your Node has an access grant to Node 12

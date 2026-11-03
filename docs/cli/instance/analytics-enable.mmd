@@ -15,9 +15,9 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant N as Node 12<br/>serves the host
   participant P as Plausible<br/>analytics.orbit
-  CLI->>GW: instance:analytics:enable<br/>42 --host=HOST (repeatable)
+  CLI->>GW: instance:analytics:enable<br/>42
   %%> Command:
-  %%> - `orbit instance:analytics:enable 42 --host=stats.shop.example.com`
+  %%> - `orbit instance:analytics:enable 42`
   %%> - syntax: `<instance> [--host=HOST]... [--json]`
   %%> Input:
   %%> - the Instance ID
@@ -25,6 +25,12 @@ sequenceDiagram
   %%> What it does:
   %%> - creates or updates the Instance's Plausible site, and publishes the tracking hosts
   %%> - sets the exact host set: hosts you leave out are removed
+  opt --host
+    Note over GW: Replace the default host<br/>up to ten explicit hosts
+    %%> What it changes:
+    %%> - uses the supplied exact host set instead of `analytics.<instance domain>`
+    %%> - removes existing tracking hosts omitted from that set
+  end
   Note over GW: Validate, plan the hosts<br/>task #5126 · Instance lock
   %%> Requirements:
   %%> - your Node has an access grant to Node 12
@@ -86,15 +92,15 @@ sequenceDiagram
   %%> What it does:
   %%> - checks the host answers with a valid certificate and serves the script
   opt host outside the TLD
-  Note over SW: Publish private DNS<br/>Node 1 over @swamp/ssh
-  %%> When:
-  %%> - only for a tracking host outside the Cluster or Node TLD; private DNS answers the whole TLD, so a host inside it needs no record
-  %%> What it does:
-  %%> - publishes the hosts' private DNS records, waits the 31-second grace, then withdraws old placements
-  %%> Not included:
-  %%> - the public CNAME; `instance:analytics:show` names the record to create
-  %%> How:
-  %%> - over SSH from 209 to the VPN Node (Node 1), with the `swamp` role's key
+    Note over SW: Publish private DNS<br/>Node 1 over @swamp/ssh
+    %%> When:
+    %%> - only for a tracking host outside the Cluster or Node TLD; private DNS answers the whole TLD, so a host inside it needs no record
+    %%> What it does:
+    %%> - publishes the hosts' private DNS records, waits the 31-second grace, then withdraws old placements
+    %%> Not included:
+    %%> - the public CNAME; `instance:analytics:show` names the record to create
+    %%> How:
+    %%> - over SSH from 209 to the VPN Node (Node 1), with the `swamp` role's key
   end
   alt every step passes
     SW-->>GW: Run succeeded<br/>terminal event

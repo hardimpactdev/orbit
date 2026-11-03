@@ -13,7 +13,7 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as app-dev Node<br/>reached over ssh
-  CLI->>GW: instance:setup 42<br/>--idempotency-key=KEY
+  CLI->>GW: instance:setup 42
   %%> Command:
   %%> - `orbit instance:setup 42`
   %%> - syntax: `instance:setup <instance> [--idempotency-key=KEY] [--json]`

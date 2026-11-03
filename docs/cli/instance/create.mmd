@@ -14,28 +14,47 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as app-dev Node<br/>reached over ssh
-  CLI->>GW: instance:create 7 12 blog<br/>--branch=… --domain=…
+  CLI->>GW: instance:create 7 12 blog
   %%> Command:
-  %%> - `orbit instance:create 7 12 blog --branch=feature/blog`
+  %%> - `orbit instance:create 7 12 blog`
   %%> - syntax: `<project> <node> <name> [--branch=BRANCH] [--domain=HOST] [--root=PATH] [--database-server=SLUG]`
   %%> Input:
   %%> - Project, app-dev Node and Instance name
   %%> - optional: branch, domain, Database server for the Instance's database
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
+  opt --branch
+    Note over GW: Override source branch
+    %%> What it changes:
+    %%> - selects the supplied branch instead of deriving it from the Instance name and Project default
+  end
+  opt --root
+    Note over GW: Override application root
+    %%> What it changes:
+    %%> - validates and records the relative root instead of using the Project root
+  end
+  opt --domain
+    GW--xCLI: Route create unavailable<br/>operation.kind_unavailable
+    %%> Result:
+    %%> - native create refuses an explicit domain before starting a run
+  end
+  opt --database-server
+    GW--xCLI: Database unavailable<br/>operation.kind_unavailable
+    %%> Result:
+    %%> - native create currently refuses database provisioning before starting a run
+    %%> - the owned-database path would render and write `.env.testing` for MySQL or PostgreSQL; it is unavailable here
+    %%> - no `.env.testing` is rendered or written on the main path
+  end
   Note over GW: Validate, render .env<br/>Instance 42 reserved, task #5121
   %%> Requirements:
   %%> - your Node has an access grant to Node 12
   %%> - the Node has the `app-dev` role
+  %%> - native create currently accepts only a non-web Project without Route or database provisioning
   %%> - the Project may be placed on this Node (not excluded)
   %%> - the Instance name and path are free
   %%> Renders .env:
   %%> - from the Project's stored env template, with its placeholders
   %%> - filled with Instance values: `APP_URL`, a new `APP_KEY`, database keys
-  %%> Renders .env.testing:
-  %%> - only when Instance 42 owns a database on a MySQL or PostgreSQL server
-  %%> - the same `.env` with `APP_ENV=testing` and the test database credentials
-  %%> - SQLite: none; `phpunit.xml` (`:memory:`) decides
   %%> Result:
   %%> - Instance 42 recorded as reserved, with its rendered environment
   %%> - task #5121 recorded with the full intent
@@ -47,7 +66,7 @@ sequenceDiagram
   %%> - `.env` can hold secrets, which travel only through the vault
   %%> What it does:
   %%> - mints a read token for this one repository, valid 1 hour
-  %%> - pushes the token, the rendered `.env` and any `.env.testing` into Swamp's vault
+  %%> - pushes the token and the rendered `.env` into Swamp's vault
   %%> Result:
   %%> - the run reads both from the vault; no step calls the Gateway back (decision 1)
   GW->>SW: Start run, full intent<br/>operation-instance-create · 60 s
@@ -76,27 +95,13 @@ sequenceDiagram
   %%> - a guard skips the clone when the checkout already exists
   %%> Runs as:
   %%> - the Node's own user, not root
-  SW->>N: Prepare the web root<br/>setfacl · @swamp/cfgmgmt/file
-  %%> What it does:
-  %%> - grants Caddy read access to the web root, and passage through the directories above it
-  %%> - denies Caddy the rest of the checkout and its Git directory
-  %%> - converges the shared PHP-FPM pool for Instance 42
-  %%> How:
-  %%> - one `setfacl` per directory as `@swamp/ssh exec` argv (no official ACL behavior)
-  %%> - the pool file with `@swamp/cfgmgmt/file`, then a PHP-FPM reload with `@swamp/cfgmgmt/systemd`
-  %%> - runs beside the next step; both need only the checkout
-  %%> Why here:
-  %%> - a one-time Instance setup; every Route of Instance 42 then serves without touching the checkout
-  %%> Runs as:
-  %%> - the Node's managed user; root only above every checkout
   SW->>N: Write .env<br/>cfgmgmt/file · 0640 orbit-env
   %%> What it does:
   %%> - creates the `orbit-env` group when the Node lacks it, with `@swamp/cfgmgmt/group`
   %%> - writes the rendered `.env` from `vault.get env-5121` into the checkout as root, owned by the Node user with group `orbit-env`, mode 0640, so the Node agent can report its key names
-  %%> - with an owned MySQL or PostgreSQL database, also writes `.env.testing` in the same `file` step, replacing its content; a Git-tracked `.env.testing` stays untouched
   %%> - selects the Node's Vite+ store for this Project (`VP_HOME`), so `vp` works in the setup steps
   %%> Not included:
-  %%> - renders nothing; the Gateway already rendered `.env` and `.env.testing`
+  %%> - renders nothing; the Gateway already rendered `.env`
   %%> - installs no dependencies; `composer install` and `vp install` are setup steps
   %%> - starts no Process; that happens after the setup steps
   SW->>N: Run Project setup steps<br/>@swamp/ssh exec · in order
@@ -130,9 +135,9 @@ sequenceDiagram
     %%> Not returned:
     %%> - nothing about `.env`; the Gateway rendered and stored it before the run
     SW-->>GW: Run succeeded<br/>terminal event · finish-result
-  %%> How the Gateway learns it:
-  %%> - its shared run reader sees the terminal event and reads the run's outputs
-  %%> - Swamp never calls the Gateway; the Gateway reads
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event and reads the run's outputs
+    %%> - Swamp never calls the Gateway; the Gateway reads
     Note over GW: Record result<br/>commit · Instance 42 → active
     %%> Result:
     %%> - the commit is recorded
@@ -140,27 +145,27 @@ sequenceDiagram
     %%> - task #5121 succeeds
   else a step fails or 60 s ends
     N--xSW: exit ≠ 0 or timeout
-  %%> When:
-  %%> - a step exits with an error, or the 60 s budget runs out
-  %%> Effect:
-  %%> - the run stops at that step
+    %%> When:
+    %%> - a step exits with an error, or the 60 s budget runs out
+    %%> Effect:
+    %%> - the run stops at that step
     SW--xGW: Run failed<br/>failed_step, error_code
-  %%> The Gateway reads:
-  %%> - which step failed
-  %%> - its error code
+    %%> The Gateway reads:
+    %%> - which step failed
+    %%> - its error code
     Note over GW: Keep Instance, mark failed<br/>task → failed · retry is new task
-  %%> Result:
-  %%> - Instance 42 stays, marked failed, so you can see what happened
-  %%> - task #5121 fails
-  %%> Retry:
-  %%> - a retry is a new task; the Gateway never re-runs work by itself
+    %%> Result:
+    %%> - Instance 42 stays, marked failed, so you can see what happened
+    %%> - task #5121 fails
+    %%> Retry:
+    %%> - a retry is a new task; the Gateway never re-runs work by itself
   end
   loop every 2 s until terminal
     CLI->>GW: operation:show #5121
-  %%> What it does:
-  %%> - asks for the task's status every 2 seconds until it has ended
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
     GW-->>CLI: status + result
-  %%> Returns:
-  %%> - the current status
-  %%> - the result, once the task has ended
+    %%> Returns:
+    %%> - the current status
+    %%> - the result, once the task has ended
   end
