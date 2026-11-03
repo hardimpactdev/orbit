@@ -93,11 +93,18 @@ async function fixture() {
     },
   };
 }
-for (const mode of ["", "initialization", "health", "restore", "install", "partial-remove", "unchanged", "rerun"]) {
+for (const mode of ["", "initialization", "restore", "install", "partial-remove", "unchanged", "rerun"]) {
   Deno.test(`analytics update native Process children: ${mode || "success"}`, async () => {
     await using f = await fixture();
     if (mode === "unchanged") f.write({ ...f.read(), spec: "b".repeat(64) });
-    if (mode === "rerun") await f.run("health");
+    if (mode === "rerun") {
+      const failed = await f.run("health");
+      assert(failed.result.rolled_back);
+      assertEquals(failed.state.spec, "a".repeat(64));
+      assertEquals(failed.state.state, "running");
+      assert(failed.state.calls.includes("create:a"));
+      assert(failed.state.calls.includes("create:b"));
+    }
     const success = ["", "rerun"].includes(mode);
     const { result, state } = await f.run(mode === "unchanged" ? "health" : mode === "rerun" ? "" : mode, success);
     if (success) {
@@ -115,13 +122,9 @@ for (const mode of ["", "initialization", "health", "restore", "install", "parti
     } else {
       assert(result.rolled_back);
       assertEquals(state.spec, (mode === "unchanged" ? "b" : "a").repeat(64));
-      if (["health", "partial-remove", "unchanged"].includes(mode)) assertEquals(state.state, "running");
+      if (["partial-remove", "unchanged"].includes(mode)) assertEquals(state.state, "running");
       if (["initialization", "unchanged"].includes(mode)) assertFalse(state.calls.includes("remove"));
       if (mode === "unchanged") assertFalse(state.calls.includes("createdb"));
-      if (mode === "health") {
-        assert(state.calls.includes("create:a"));
-        assert(state.calls.includes("create:b"));
-      }
     }
   });
 }
