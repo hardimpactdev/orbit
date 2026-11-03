@@ -18,6 +18,8 @@ A Project stores two ordered lists of named commands: setup steps and teardown s
 
 [Registration](/cli/instance/register) runs this list only with `--setup`, followed by its development Processes. It uses the same frozen list digest and command checks. Setup runs with a private umask, so a command that creates `.env` does not expose it to other accounts. An empty list with no Processes or other Node work starts no run.
 
+With `--domain`, registration publishes the prepared checkout's Route after setup and Process creation. The Instance stays reserved until the Route answers over TLS.
+
 Native create passes stored environment values as a JSON object, including `{}` when the Instance has no stored configuration. Environment capture can seed the template and reach setup without requiring a previous environment import.
 
 Native create expands Gateway-owned setup commands such as `@orbit/ci-caches` through the same supplier as explicit setup. Each command runs as one `@swamp/ssh exec` step, `bash -eu -c <command>` in the checkout as the account, and keeps its exit code and stderr for failure diagnosis. Command stdout is discarded on the Node.
