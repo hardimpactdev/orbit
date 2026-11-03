@@ -3,6 +3,7 @@ sequenceDiagram
   %% status: reviewed
   %% command: node:role:remove
   %% kind: node.role_remove
+  %% Rule 23: 2026-11-03 required-only main path.
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -14,8 +15,17 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
   participant P as Fleet Nodes<br/>hub · DNS
-  CLI->>GW: node:role:remove<br/>12 · --force
-  %%> Input: the Node and explicit removal consent. Role removal also takes a role and optional purge consent.
+  CLI->>GW: node:role:remove 12<br/>app-dev
+  %%> Command:
+  %%> - `orbit node:role:remove 12 app-dev`
+  %%> - syntax: `<node> <role> [--force] [--purge-data] [--offline] [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the Node, by id or name, and the role
+  %%> Optional flags:
+  %%> - `--purge-data` asks for role-owned data removal; it feeds `opt role data to remove`
+  %%> - `--force` confirms the removal; it is required without a terminal and with `--json`
+  %%> - `--offline` removes the role from a Node Orbit cannot reach; the run skips the steps on that Node
+  %%> - `--idempotency-key=KEY` reuses a key to retry the start
   Note over GW: Admit removal intent<br/>mark the record removing
   %%> Requirements: no attached resources or active role operation; the Gateway, VPN and Swamp guards apply.
   %%> Builds: pinned SSH targets, complete publication changes and exact managed resource paths.
@@ -69,8 +79,9 @@ sequenceDiagram
     SW->>N: Remove role certificates
     %%> Uses: `@swamp/ssh exec`. Each admitted resource has its own stable behavior name.
   end
-  opt purge or Gateway DNS cleanup applies
+  opt role data to remove
     SW->>N: Remove role data
+    %%> When: the Gateway plans data commands for `--purge-data`, or for a Gateway DNS cleanup when the `gateway` role leaves.
     %%> Uses: guarded official exec; Incus refuses a nonempty project. Delete project, network and ACL in order.
   end
   opt admitted resources exist

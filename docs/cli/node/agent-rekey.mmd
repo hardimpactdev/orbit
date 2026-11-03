@@ -3,6 +3,7 @@ sequenceDiagram
   %% status: draft
   %% command: orbit:node-agent-rekey
   %% kind: node.agent_rekey
+  %% Rule 23: 2026-11-03 required-only main path.
   autonumber
   %% lane OP icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -12,13 +13,14 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
-  OP->>GW: orbit:node-agent-rekey 12<br/>--attempt=1
+  OP->>GW: orbit:node-agent-rekey 12<br/>Node id
   %%> Command:
-  %%> - `php artisan orbit:node-agent-rekey 12 --attempt=1`
+  %%> - `php artisan orbit:node-agent-rekey 12`
   %%> - syntax: `<node> [--attempt=N]`
   %%> Input:
   %%> - the Node id
-  %%> - `--attempt` numbers the request; the same number returns the same task, a higher number asks for a new key again
+  %%> Optional flags:
+  %%> - `--attempt=N` (default 1) numbers the request; it adds no steps; the same number returns the same task, a higher number asks for a new key again
   %%> When:
   %%> - the Gateway refuses the Node agent's reports because its key is missing or doesn't match the recorded verifier
   %%> - `node:converge` failed because the Node agent's key doesn't match
