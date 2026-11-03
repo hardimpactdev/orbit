@@ -15,7 +15,7 @@ orbit database:user:create <slug> --username=USER [--read-only] [--replication] 
 
 | Option | Meaning |
 | --- | --- |
-| `--username=USER` | Username. A 1-32 character identifier. |
+| `--username=USER` | Required. A 1-32 character identifier. |
 | `--read-only` | Grant read-only access. Without either grant flag, MySQL users get all database privileges and PostgreSQL users get data-write grants. |
 | `--replication` | PostgreSQL only: `LOGIN REPLICATION` with read-only grants on current and future public tables owned by the managed owner. Requires `wal_level=logical`. Can be combined with `--read-only`. |
 

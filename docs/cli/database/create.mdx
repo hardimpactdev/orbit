@@ -25,7 +25,7 @@ orbit database:create <slug> --server=SERVER --pattern=PATTERN ... --allow=RULE 
 | `--path=PATH` | Unix absolute sqlite path of at most 1024 characters. |
 | `--username=USER` | Username. Required for mysql and pgsql. Optional for redis; omit it when the server has none. |
 | `--password=SECRET` | Password. Required for mysql and pgsql. Optional for redis. |
-| `--server=SERVER` | Server slug. Creates a MySQL or PostgreSQL database and owner, or a Valkey ACL user, on that server. Excludes every other option except `--instance`, `--locale` and `--test-processes` on PostgreSQL, and `--pattern`, `--allow`, and `--database` on a Valkey server. |
+| `--server=SERVER` | Server slug. Creates a MySQL or PostgreSQL database and owner, or a Valkey ACL user, on that server. Excludes every other option except `--instance` and `--test-processes` on MySQL or PostgreSQL, `--locale` on PostgreSQL, and `--pattern`, `--allow`, and `--database` on a Valkey server. |
 | `--locale=LOCALE` | With a PostgreSQL `--server`: builtin `C.UTF-8` or `C`. Omission inherits the image default. |
 | `--instance=INSTANCE` | Numeric Instance ID. With `--server` on a MySQL or PostgreSQL server, attaches the new database to the Instance under prefix `DB`, creates its test database, and makes the Instance its owner. |
 | `--test-processes=N` | MySQL or PostgreSQL with `--server` and `--instance` only. Creates 1–32 parallel worker databases; default 8. See [test databases](/reference/database-connections#test-databases) for Laravel settings. |

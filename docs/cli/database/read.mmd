@@ -21,7 +21,7 @@ sequenceDiagram
   %%> Same kind:
   %%> - `database:tables`, `database:schema` and `database:describe` send a fixed catalog read through the same flow
   %%> Not included:
-  %%> - write SQL; with `--write` the statement takes the `database.write` flow
+  %%> - write permission belongs to the `opt --write` block in the write chart; that flow also applies to SELECT with --write
   Note over GW: Validate, record the read<br/>connection shop · task #5170
   %%> Requirements:
   %%> - your Node has an access grant to Node 12, which runs Database server app-mysql
