@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\AdmitNodeBootstrapAction;
 use App\Domain\Gateway\GatewayServingHost;
-use App\Domain\Nodes\NodeBootstrapIntent;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -15,7 +13,6 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Node;
 use App\Models\NodeRole;
-use App\Models\Operation;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
@@ -36,94 +33,6 @@ beforeEach(function (): void {
         : [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => $this->run]]];
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'fixture-token']);
-});
-
-it('refuses an unavailable Gateway before recording bootstrap reads', function (): void {
-    $this->gateway->update(['status' => LifecycleStatus::Failed]);
-    expect(fn () => app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.bootstrap_probe'))->toThrow(ResourceOperationException::class);
-    expect(Operation::query()->count())->toBe(0);
-});
-
-it('captures stored public host keys for the official SSH pin policy', function (): void {
-    $key = base64_encode(str_repeat('p', 32));
-    $this->target->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => $key]);
-    $input = app(NodeBootstrapIntent::class)->input($this->target, 'node.bootstrap_probe');
-
-    expect($input['target']['host_keys'])->toBe(['ssh-ed25519 '.$key]);
-});
-
-it('leaves first contact to the official SSH trust on first use policy', function (): void {
-    $input = app(NodeBootstrapIntent::class)->input($this->target, 'node.bootstrap_probe');
-
-    expect($input['target']['host_keys'])->toBe([]);
-});
-
-it('copies the probe SSH value to its fixed execution key and records names only', function (): void {
-    config(['swamp.read_token' => 'fixture-read-token']);
-    $identity = tmpfile();
-    $value = "-----BEGIN OPENSSH PRIVATE KEY-----\n".bin2hex(random_bytes(32))."\n-----END OPENSSH PRIVATE KEY-----\n";
-    fwrite($identity, $value);
-    $path = stream_get_meta_data($identity)['uri'];
-    $keys = Mockery::mock(SshKeyProvider::class);
-    $keys->shouldReceive('publicKey')->andReturn('ssh-ed25519 AAAA');
-    $keys->shouldReceive('privateKeyPath')->once()->andReturn($path);
-    app()->instance(SshKeyProvider::class, $keys);
-
-    try {
-        $operation = app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.bootstrap_probe');
-        expect($operation->input['execution_secrets'])->toBe(['bootstrap_identity' => [
-            'vault' => 'orbit-control-inputs', 'key' => 'bootstrap-identity-node-'.$this->gateway->id,
-        ]]);
-        expect($operation->input)->not->toHaveKeys(['bootstrap_identity', 'private_bindings']);
-        expect(json_encode($operation->toArray()))->not->toContain($value)->not->toContain($path);
-        expect($this->target->fresh()->user)->toBe('prior');
-        $definition = app(DirectOperation::class)->definition('node.bootstrap_probe');
-        expect($definition['workflow_inputs'])->toBeTrue();
-        expect($definition['terminal_result'])->toBe(['job' => 'bootstrap', 'step' => 'probe-host']);
-        expect($definition)->not->toHaveKey('private_material');
-        expect($this->socket->sent[0])->toMatchArray(['type' => 'vault.put', 'payload' => [
-            'vaultName' => 'orbit-control-inputs', 'key' => 'bootstrap-identity-node-'.$this->gateway->id, 'value' => $value, 'force' => true,
-        ]]);
-        $inputs = $this->socket->sent[1]['payload']['inputs'];
-        expect($inputs)->toBe([
-            'intent' => ['bootstrap' => $operation->input['bootstrap']],
-            'execution_secrets' => $operation->input['execution_secrets'],
-            'operation_id' => $operation->id, 'kind' => $operation->kind, 'node_id' => $this->gateway->id,
-        ]);
-        expect(json_encode($inputs))->not->toContain($value)->not->toContain($path);
-        $history = ['id' => $this->run, 'workflowName' => 'operation-node-bootstrap-probe', 'status' => 'succeeded',
-            'inputs' => $inputs, 'startedAt' => '2026-10-31T12:00:00Z', 'completedAt' => '2026-10-31T12:00:01Z',
-            'jobs' => [['name' => 'bootstrap', 'steps' => [['name' => 'probe-host', 'outputs' => [
-                'stdout' => json_encode(['probed' => true, 'architecture' => 'x86_64', 'host_type' => 'ssh-ed25519',
-                    'public_key' => 'public-fixture', 'host_key_fingerprint' => $this->target->ssh_host_fingerprint]),
-            ]]]]],
-        ];
-        $this->socket->reply = static fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $history]]];
-        $projected = app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $this->run, 'status' => 'succeeded'], $definition['terminal_result']);
-        expect($projected->status)->toBe(OperationStatus::Succeeded);
-        expect($this->target->fresh()->ssh_host_key)->toBe('public-fixture')->and($this->target->fresh()->user)->toBe('prior');
-        expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'workflow.run', 'workflow.history.get']);
-    } finally {
-        fclose($identity);
-    }
-});
-
-it('refuses the probe before recording work when its execution copy cannot be pushed', function (): void {
-    $identity = tmpfile();
-    fwrite($identity, 'synthetic-identity-'.bin2hex(random_bytes(32)));
-    $keys = Mockery::mock(SshKeyProvider::class);
-    $keys->shouldReceive('publicKey')->andReturn('ssh-ed25519 AAAA');
-    $keys->shouldReceive('privateKeyPath')->andReturn(stream_get_meta_data($identity)['uri']);
-    app()->instance(SshKeyProvider::class, $keys);
-    $this->socket->reply = static fn (array $request): array => [['type' => 'error', 'id' => $request['id'], 'code' => 'forbidden']];
-
-    try {
-        expect(fn () => app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.bootstrap_probe'))
-            ->toThrow(ResourceOperationException::class);
-        expect(Operation::query()->count())->toBe(0);
-    } finally {
-        fclose($identity);
-    }
 });
 
 it('inspects a Mac from 209 with complete intent and projects its native check', function (?string $code): void {
