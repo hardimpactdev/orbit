@@ -19,12 +19,10 @@ Deno.test("failed write skips receipts; workspace resume rebuilds; summary resum
   // The recorded item is missing; an unrecorded marker copy must stay untouched.
   inputs.intent.ledger = [
     { ...inputs.intent.ledger[0], source: "database-user:1" },
-    { ...inputs.intent.ledger[0], source: "gone", cipher_id: "orphan" },
-    { ...inputs.intent.ledger[0], source: "also-gone", cipher_id: "second-orphan" },
   ];
   await f.put();
   f.write({ ...f.read(), fail_write: true, fail_command: "logout", ciphers: [
-    cipher("copy", "database-user:1"), cipher("orphan", "gone"), cipher("second-orphan", "also-gone"),
+    cipher("copy", "database-user:1"),
   ] });
   await repo.cli(["workflow", "validate", "operation-vault-sync"]);
   const first = await f.run(false);
@@ -35,7 +33,7 @@ Deno.test("failed write skips receipts; workspace resume rebuilds; summary resum
   assertEquals(first.steps["remove-cache"].status, "succeeded");
   assert(first.state.commands.some((row: string[]) => row[0] === "logout"));
   assertFalse(JSON.stringify(first.state.commands).includes(f.secrets[2]));
-  assertEquals(first.state.deletes, ["orphan", "second-orphan"]);
+  assertEquals(first.state.deletes, []);
   assertEquals(first.state.ciphers.map((row: { id: string }) => row.id), ["copy"]);
 
   // Rebuild the removed workspace, then fail only the summary input so the

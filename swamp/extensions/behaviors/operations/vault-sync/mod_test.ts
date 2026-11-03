@@ -157,3 +157,11 @@ Deno.test("a changed fingerprint updates the recorded cipher and preserves its i
     assertEquals(plan.writes.map((row) => row.cipher_id), ["published"]);
     assertEquals(resultSync(plan, [{ source: "database-user:7", cipher_id: "published", revision: "new", fingerprint: "new" }]).data.cipher_ids, ["published"]);
 });
+
+Deno.test("orphan deletion selects every recorded item and preserves unrecorded copies", () => {
+    const plan = planSync({ ...intent, wanted: [], ledger: [
+        ...intent.ledger, { ...intent.ledger[0], source: "database-user:8", cipher_id: "second" },
+    ] }, [cipher("published"), cipher("second", "database-user:8"), cipher("copy")]);
+    assertEquals(plan.writes, []);
+    assertEquals(plan.deletes.map((row) => row.id), ["published", "second"]);
+});
