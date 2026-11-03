@@ -15,6 +15,7 @@ use Spatie\LaravelData\Optional;
 #[MapOutputName(SnakeCaseMapper::class)]
 final class OperationData extends Data
 {
+    /** @param list<OperationStepData>|Optional $steps */
     public function __construct(
         public int $id,
         public string $kind,
@@ -44,7 +45,6 @@ final class OperationData extends Data
         public ?array $error = null,
         public ?string $currentStepStartedAt = null,
         public ?string $currentStepObservedAt = null,
-        /** @var list<array{name:string,job:string,status:string,started_at:?string,finished_at:?string}>|Optional */
         public array|Optional $steps = new Optional,
     ) {}
 
@@ -59,7 +59,7 @@ final class OperationData extends Data
         return $data;
     }
 
-    /** @return list<array{name:string,job:string,status:string,started_at:?string,finished_at:?string}> */
+    /** @return list<OperationStepData> */
     private static function recordedSteps(Operation $operation): array
     {
         $progress = $operation->state['native_progress'] ?? [];
@@ -69,9 +69,9 @@ final class OperationData extends Data
             if (! is_array($row) || ! is_string($row['name'] ?? null) || ! is_string($row['job'] ?? null) || ! is_string($row['status'] ?? null)) {
                 continue;
             }
-            $steps[] = ['name' => $row['name'], 'job' => $row['job'], 'status' => $row['status'],
-                'started_at' => is_string($row['started_at'] ?? null) ? $row['started_at'] : null,
-                'finished_at' => is_string($row['finished_at'] ?? null) ? $row['finished_at'] : null];
+            $steps[] = new OperationStepData($row['name'], $row['job'], $row['status'],
+                is_string($row['started_at'] ?? null) ? $row['started_at'] : null,
+                is_string($row['finished_at'] ?? null) ? $row['finished_at'] : null);
         }
 
         return $steps;

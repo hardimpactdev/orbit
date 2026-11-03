@@ -1289,7 +1289,7 @@ def prop_schema(p):
     elif t == 'mixed':
         sch = {}
     elif t == 'array':
-        m = DOC_LIST.match(doc)
+        m = DOC_LIST.match(doc.removesuffix('|Optional'))
         if m and m.group(1) in gdata:
             sch = {'type': 'array', 'items': ref(m.group(1))}
         elif m and m.group(1) in SCALARS:

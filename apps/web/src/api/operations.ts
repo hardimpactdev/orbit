@@ -1,9 +1,10 @@
 import type { components } from "./schema";
 import { api, get } from "./client";
 
-/** The parent intent and native result returned by `operation:show`. */
-export type Operation = Omit<Required<components["schemas"]["Operation"]>, "result"> & {
+/** The Operation summary; started and listed records may omit observed steps. */
+export type Operation = Omit<Required<components["schemas"]["Operation"]>, "result" | "steps"> & {
     result: Record<string, unknown> | null;
+    steps?: components["schemas"]["Operation"]["steps"];
 };
 
 export const TERMINAL: readonly string[] = ["succeeded", "failed", "cancelled", "interrupted"];

@@ -88,3 +88,8 @@ it('publishes accepted Operation responses for Metrics role and exporter writes'
     'enable exporter' => ['/api/v1/metrics/exporters/{node}', 'put'],
     'disable exporter' => ['/api/v1/metrics/exporters/{node}', 'delete'],
 ]);
+
+it('publishes the typed native Operation step summaries', function (): void {
+    expect(openapi_schema_properties('Operation')['steps']['items']['$ref'])->toBe('#/components/schemas/OperationStep');
+    expect(openapi_schema_property_names('OperationStep'))->toBe(['name', 'job', 'status', 'started_at', 'finished_at']);
+});
