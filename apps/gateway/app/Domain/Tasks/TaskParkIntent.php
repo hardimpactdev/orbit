@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\LifecycleStatus;
@@ -34,12 +35,25 @@ final readonly class TaskParkIntent
             || TaskWorkspaceLeaseRecord::query()->where('instance_id', $group->taskable_id)->whereIn('status', ['held', 'queued'])->exists()) {
             throw new ResourceOperationException('tasks.park_refused', 'Review parking requires an idle external group with an open published PR and no assistance or workspace owner.', 409);
         }
-        $workspace = TaskWorkerOperation::requireWorkspace($group);
+        $workspace = self::requireWorkspace($group);
         if ($workspace->task_workspace_owner_id !== $group->id || $workspace->project_id !== $group->project_id) {
             throw new ResourceOperationException('tasks.park_refused', 'The workspace is not owned by this group and Project.', 409);
         }
 
         return $vm;
+    }
+
+    /** The group's task VM workspace on the VM's own Node. */
+    private static function requireWorkspace(Task $group): Instance
+    {
+        $instance = $group->taskable;
+        $vm = TaskVm::forGroup($group);
+        if (! $instance instanceof Instance || ! $vm instanceof TaskVm || $vm->node_id !== $instance->node_id
+            || ! in_array($instance->status, [InstanceState::SourceResolved, InstanceState::Active], true)) {
+            throw new ResourceOperationException('tasks.no_workspace', 'The group has no task VM workspace.', 409);
+        }
+
+        return $instance;
     }
 
     /** @return array<string,mixed> */

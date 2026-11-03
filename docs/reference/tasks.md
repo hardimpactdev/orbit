@@ -136,29 +136,6 @@ Success leaves the group `running` and its workspace `source_resolved`. The task
 
 `image` is `{ recipe_identity, fingerprint, build_id, fallback }`, copied from the VM row. `fallback` is `true` when the VM started from the host's last promoted image instead of the current recipe's; `recipe_identity` then names that older recipe. A `task_vm.provision` result carries the same `image`.
 
-##### Optional Swamp worker
-
-The worker API accepts a `worker` object for an existing workspace. Native provision does not accept caller-supplied worker credentials.
-
-| Field | Contract |
-| --- | --- |
-| `worker.orchestrator_url` | Required `wss://` URL without user information, query, or fragment; the VM must reach it for WebSocket control and HTTPS data |
-| `worker.enrollment_token` | Required secret in Swamp's `name.secret` format; the orchestrator mints a short-lived, single-machine token for this group |
-| `worker.server_token` | Optional secret in Swamp's `name.secret` format for token-authenticated serve; mint it for a `worker:` principal, with the enrollment's short lifetime |
-| `worker.labels` | Optional object of scheduling labels; use `group=<group id>` for discovery, and target the enrollment-bound worker name for group isolation. Keys and values contain only letters, digits, dots, underscores, and hyphens |
-
-Orbit starts `swamp worker connect` as the VM's `orbit` account only after the workspace and its Route are ready. The worker uses that checkout as its working directory. The [base image](/reference/compute-drivers#swamp-worker) supplies the pinned binary and Orbit CA. The orchestrator owns token minting, expiry, revocation, and step placement. Token-authenticated Swamp serve requires both enrollment and a server token: the server token authenticates the WebSocket upgrade, and enrollment authenticates the worker handshake. Use a per-group `worker:` principal with no control-plane grants. The driver revokes both credentials when the group ends.
-
-The Gateway stages both credentials together, encrypted in its cache outside operation records for at most 30 minutes while startup waits. `cache:clear` drops staged tokens. Invalid staged payloads are treated as missing without reporting their contents; an operation without a server-authentication setting starts with enrollment alone. If the token expires during capacity or setup waits, provision continues without a worker. The driver mints a fresh token and starts the worker with `tasks.worker` afterwards. A dedicated worker operation fails with `tasks.worker_enrollment_expired` without ending the group. Operation input keeps only the public worker settings and an opaque startup reference.
-
-API output, Activity, logs, queue jobs, operation steps, and results never contain either secret. Idempotency fingerprints exclude both secrets. Replays with newly minted credentials return the same operation and do not replace its staged credentials; use a new key for a new worker start.
-
-Systemd loads each secret from a mode-0600 startup file under `/run` into its runtime credential directory before starting the worker. Orbit then removes the startup file and the Gateway's staged copy. The runtime credentials at `%d/enrollment` and, when supplied, `%d/server` stay readable to the `orbit` account, including code running in the VM, while the service runs. Their scope is one group. Swamp uses them for reconnection; systemd removes them when the service stops. No token is written to the image, checkout, unit text, command arguments, or persistent VM disk.
-
-The service reconnects across socket interruptions but does not restart after a process exit or VM reboot. Parking stays allowed and stops the worker with the VM. Use [start a group worker](#start-a-group-worker) with a fresh token after parking or process failure. Successful startup means systemd executed the process; it does not prove enrollment. The orchestrator confirms enrollment through Swamp before dispatching work.
-
-Orbit stops the worker and its children before ending its group or removing its workspace, ahead of head preservation, Project teardown, or VM deletion. If the agent cannot confirm stop and the provider reports the VM running, Orbit powers it off and marks it parked. Cancellation ends that unreachable group and retains its workspace for cleanup. If power-off also fails, group ending returns `tasks.worker_stop_failed`; a deletion attempt still proceeds. VM deletion takes priority over unpublished work when the worker cannot be stopped. Cancelled or failed startup removes its staged credential.
-
 ##### Public provision identity
 
 `analysis_base` is null when the pin is unavailable, otherwise exactly `{base, instance_id, repository, branch}`. `base` is a full lowercase 40- or 64-hex Git commit object ID. `instance_id` is a positive integer equal to result `instance_id`; `repository` is the recorded Project repository identity and `branch` is the recorded workspace branch, both nonempty strings.
@@ -193,8 +170,6 @@ For example, this successful result names a starting commit on a divergent works
 
 The CLI follows the operation with the shared operation display. It accepts `--idempotency-key=KEY` and `--json`. The PHP SDK request accepts `idempotencyKey`, and the generated MCP tool `tasks-provision` accepts `Idempotency-Key`. A replay returns the same operation before claim validation and claims no second VM; see [Retry a start with a key](/reference/operations#retry-a-start-with-a-key).
 
-The MCP tool `tasks-worker` takes the enrollment token as an argument, so it reaches the caller transcript. Gateway redaction does not remove it from that transcript.
-
 To stop a waiting provision, use `tasks:cancel`. Cancellation first requests cancellation of an existing native group Operation and refuses while that Operation remains active. A fresh keyed request then admits one `tasks.cancel` Operation. Its admission and keyed replays return the [compact Operation summary](/reference/operations#the-record), including recorded step metadata. The teardown plan stays in the Gateway and the native run; it is not copied into each cancellation reply.
 
 Its native ending DAG checks provider state, withdraws the workspace’s exclusive Route and Caddy publications, runs captured teardown commands only while the VM runs, then composes the canonical TaskVM destroy child. The child prints no result: once the run succeeds, the Gateway records the VM cleanup from the intent it captured at admission. Each teardown command runs like a setup command: one official `@swamp/ssh exec` argument list in the checkout. Its output stays out of native history; the teardown run keeps a redacted tail of at most 4 KiB per command.
@@ -204,12 +179,6 @@ A stopped VM skips guest teardown. The exact group, Project and VM must own the 
 The Gateway retains the owned workspace and VM records until the terminal result confirms complete cleanup. Approved unpublished work must be preserved before admission. Failed, interrupted or timed-out cleanup retains the records for recovery; it does not mark the group cancelled. Its captured VM cleanup [fails like a standalone destroy](/reference/compute-drivers#destroy-a-task-vm): the guest Node becomes `failed`, and another cancel claims it again after [native settlement](/reference/operations#native-run-budgets). A group without a workspace requires no guest effect. Reusing the key returns the same Operation.
 
 A completed group with an owned residual VM or workspace uses this same cleanup and stays `completed`; a completed group with neither returns `tasks.not_cancellable`. A VM without a group uses `task_vm.destroy`.
-
-#### Start a group worker
-
-`POST /api/v1/task-groups/{group}/worker` starts keyed operation `tasks.worker`. Send `{ worker: { orchestrator_url, enrollment_token, labels } }`, with a required `Idempotency-Key`. The group must be external and open with a ready workspace and its own task VM.
-
-The operation holds the group target, resumes a parked VM through the normal wake path, then starts or replaces the worker under the workspace lease. It preserves the group, checkout, and task state. A fresh key and token replace the previous worker; replaying a key returns its original operation without restarting anything. An expired staged credential fails before a resume or any new VM allocation. Worker startup never allocates another VM.
 
 Plain Task VMs have no Swamp worker. Native provision supplies the Pi runtime and public Node metadata; Tasks work runs from Node 209 over official SSH.
 

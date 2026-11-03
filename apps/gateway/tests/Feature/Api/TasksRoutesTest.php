@@ -116,7 +116,6 @@ it('exposes the tasks routes with stable methods', function (): void {
         'tasks:check' => ['api/v1/task-groups/{group}/check', ['POST']],
         'tasks:turn' => ['api/v1/task-groups/{group}/turn', ['POST']],
         'tasks:provision' => ['api/v1/task-groups/{group}/provision', ['POST']],
-        'tasks:worker' => ['api/v1/task-groups/{group}/worker', ['POST']],
         'tasks:cancel' => ['api/v1/task-groups/{group}/cancel', ['POST']],
         'tasks:complete' => ['api/v1/task-groups/{group}/complete', ['POST']],
     ]);
@@ -1213,4 +1212,21 @@ it('returns the stored redacted 16 KiB check tail on show and list', function ()
             ->not->toContain('ssss')->not->toContain('Early line')
             ->and(strlen($output))->toBeLessThanOrEqual(16 * 1024);
     }
+});
+
+it('starts no guest worker: the worker route is gone and provision takes no worker block', function (): void {
+    tasks_gateway();
+    enable_tasks();
+    $group = $this->postJson('/api/v1/task-groups', [
+        'project_id' => tasks_app('no-worker')->id,
+        'title' => 'No worker',
+        'brief' => 'Swamp reaches task VMs over SSH.',
+    ])->assertCreated()->json('data');
+
+    $this->withHeader('Idempotency-Key', 'no-worker')->postJson("/api/v1/task-groups/{$group['id']}/worker", [
+        'worker' => ['orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => 'group-1.'.str_repeat('a', 32)],
+    ])->assertNotFound();
+    $this->postJson("/api/v1/task-groups/{$group['id']}/provision", [
+        'worker' => ['orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => 'group-1.'.str_repeat('a', 32)],
+    ])->assertUnprocessable();
 });

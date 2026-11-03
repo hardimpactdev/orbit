@@ -39,8 +39,6 @@ final readonly class OperationKinds
 
     public const string TasksTurn = 'tasks.turn';
 
-    public const string TasksWorker = 'tasks.worker';
-
     public const string TasksPark = 'tasks.park';
 
     /** The target type of every kind that changes an Instance, so they hold the same target. */

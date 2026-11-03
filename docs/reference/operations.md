@@ -213,7 +213,6 @@ Use the kind and target type to start or find the work of a command.
 | `orbit:peer-dns-reconcile` | `fleet.peer_dns` | `peer_dns` | Peer Node |
 | `tasks:park` | `tasks.park` | `task_group` | Gateway |
 | `tasks:provision` | `tasks.provision` | `task_group` | Gateway |
-| `POST /api/v1/task-groups/{group}/worker` | `tasks.worker` | `task_group` | Gateway |
 | `tasks:check` | `tasks.check` | `task_group` | Gateway |
 | `POST task-groups/{group}/script` | `tasks.script` | `task_group` | Gateway |
 | `tasks:analyze` | `tasks.analyze` | `task_group` | Gateway |
@@ -364,7 +363,7 @@ Each active run has a deadline of 1,600 seconds; time between waiting reads does
 
 A step can ask the runner to wait with a positive delay in seconds. The operation and its current step become `waiting`. The job ends and releases its attempt lease, while the operation keeps its target. Another start on that target still answers `409 operation.target_busy`.
 
-`tasks.provision` waits for VM capacity and readiness. Keyed `tasks.worker` waits for an existing VM to resume, then starts a worker with fresh enrollment under the workspace lease. `tasks.check` waits for VM resume, workspace ownership, and its detached check. Under the [handoff policy](/reference/tasks#check-an-external-group), it also waits for its handoff push and hosted CI. `tasks.turn` waits for a parked VM, a workspace lease, and the Pi turn to end. `tasks.publish` waits for VM resume and its queued push. Deploy and rollback keep their current execution.
+`tasks.provision` waits for VM capacity and readiness. `tasks.check` waits for VM resume, workspace ownership, and its detached check. Under the [handoff policy](/reference/tasks#check-an-external-group), it also waits for its handoff push and hosted CI. `tasks.turn` waits for a parked VM, a workspace lease, and the Pi turn to end. `tasks.publish` waits for VM resume and its queued push. Deploy and rollback keep their current execution.
 
 A delayed job first claims the operation with one conditional update from `waiting` to `running`, then calls the current step’s read hook. It does not start that work again. The read either finishes the step and continues the operation, or asks to wait again. Duplicate delayed jobs cannot read the step together, and an early job cannot read before the next read is due. A read that finds work still running consumes no recovery attempt. A wait has no time limit of its own. The orchestrator owns time budgets and cancels work that takes too long.
 
