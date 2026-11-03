@@ -416,9 +416,7 @@ def realtime(ids):
         run(['git', '-C', str(install), 'checkout', '-q', '--detach', plan['ref']], user=ACCOUNT)
         run(['composer', 'install', '--no-interaction', '--no-progress', '--prefer-dist', '--no-dev', '--optimize-autoloader'],
             user=ACCOUNT, cwd=install, timeout=900)
-        # The pinned server also refuses to start without a notification token, which no Gateway path renders yet;
-        # a fresh one lets it boot (reported to the orchestrator 2026-11-02).
-        private(install / '.env', plan['environment'] + 'REVERB_NOTIFICATION_TOKEN=' + secrets.token_hex(32) + '\n')
+        private(install / '.env', plan['environment'])
         run(['chown', f'{ACCOUNT}:{ACCOUNT}', str(install / '.env')])
         Path('/etc/systemd/system/orbit-websocket.service').write_text(plan['unit'])
         run(['systemctl', 'daemon-reload'])

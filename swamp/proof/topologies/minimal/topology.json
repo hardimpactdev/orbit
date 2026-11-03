@@ -1,6 +1,6 @@
 {
   "name": "minimal",
-  "version": 15,
+  "version": 16,
   "gateway": "task-vm",
   "websocket": true,
   "network": {
