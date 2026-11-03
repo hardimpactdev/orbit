@@ -1,0 +1,17 @@
+{
+  "kind": "schedule.install_instance_definitions",
+  "rule": 14,
+  "topology": "minimal",
+  "topology_version": 16,
+  "source_commit": "a10320918f7c381cf8a52d6b54ca7cc5e859406e",
+  "receipt": "/home/nckrtl/swamp-execution/evidence/proof/schedule.install_instance_definitions/20261103T053719Z-minimal.json",
+  "proof_pass": true,
+  "operation_seconds": 14.42,
+  "run_seconds": 17.6,
+  "budget_seconds": 180,
+  "queue_timeout_seconds": 30,
+  "swamp_run_id": "a28dc1cb-42b3-4166-8563-2741737fb894",
+  "reporting_steps_removed": 1,
+  "scripts_deleted": 0,
+  "limits": "Two captured definition copies on one real proof Node; official cfgmgmt writes the service/timer pairs and parity checks root:root 0644, disabled and inactive. The fixture supplies public captured intent at the production StartOperationAction boundary. It does not exercise frozen agent account lookup, full production clone, enabled timer fires, command credentials or production scale. Local native tests cover empty/two-member plans and a failed child. The shared schedule.create reporting step remains queued for conversion."
+}
