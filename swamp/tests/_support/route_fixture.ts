@@ -387,7 +387,7 @@ const fail = Deno.env.get("FIXTURE_FAIL");
 if (["caddy","php-fpm8.4","dnsmasq"].includes(name) && fail === "validate") Deno.exit(1);
 if (name === "systemctl" && fail === "reload") Deno.exit(1);
 if (name === "systemctl" && Deno.args[0] === "reload" && Deno.env.get("FIXTURE_CADDY_DRIFT")) {
-  Deno.writeTextFileSync(Deno.env.get("FIXTURE_CADDY_DRIFT")!, "# unexpected drift", { append: true });
+  Deno.writeTextFileSync(Deno.env.get("FIXTURE_CADDY_DRIFT"), "# unexpected drift", { append: true });
 }
 if (name === "systemctl" && Deno.args.join(" ") === "restart dnsmasq" && fail === "backend") {
   try { Deno.statSync(audit+".failed"); } catch {Deno.writeTextFileSync(audit+".failed","failed once");Deno.exit(1);}
