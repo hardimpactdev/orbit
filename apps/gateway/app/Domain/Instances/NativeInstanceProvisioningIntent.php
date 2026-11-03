@@ -65,7 +65,6 @@ final readonly class NativeInstanceProvisioningIntent
             'network' => true, 'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https']))],
             'setup' => ['instance_id' => $instance->id, 'list' => 'setup',
                 ...app(StartInstanceStepListAction::class)->appStepAdmission($instance, LifecyclePhase::Setup)],
-            'route' => $input['route_create'] ?? null,
             'already_active' => $instance->status === InstanceState::Active && ! $instance->first_setup_pending,
             'retained_source' => in_array($instance->status, [InstanceState::Active, InstanceState::SourceResolved], true) && is_string($instance->starting_commit)
                 ? ['commit' => $instance->starting_commit] : null];

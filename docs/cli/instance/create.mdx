@@ -29,7 +29,7 @@ Create runs these steps on the Node, in order:
 3. With `--database-server`, create the database owner, the database, and the test database. An owned MySQL or PostgreSQL database also gets `.env.testing`. Native create does not run this step yet: `--database-server` returns `operation.kind_unavailable` before a run starts.
 4. Run the Project setup steps, such as `composer install`, `vp install`, and `php artisan migrate`.
 5. Create and start the Processes from the Project's development Process definitions.
-6. For a web-serving Project, create its Route the way [`route:create`](/cli/route/create) does, mark the Instance awake, and probe the site over TLS. The awake marker lets the first request reach the application instead of the wake page; a standalone `route:create` does not set it.
+6. For a web-serving Project, create its Route the way [`route:create`](/cli/route/create) does, and probe the site over TLS. When this run starts every Process of the Instance, including those a failed earlier run started, it also marks the Instance awake, so the first request reaches the application instead of the wake page. A standalone `route:create` does not set the marker.
 
 The run has 60 seconds, plus the setup step timeouts, 30 seconds for the Processes, and 180 seconds for the Route.
 

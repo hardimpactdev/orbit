@@ -133,23 +133,31 @@ final readonly class StartDevelopmentInstanceCreateAction
             // before the environment and the Processes are captured, because its domain changes both.
             // An already active Instance runs no phase, so it reserves no Route either.
             $alreadyActive = $instance->status === InstanceState::Active && ! $instance->first_setup_pending;
+            $route = null;
             if (! $alreadyActive) {
                 // Admitted Project facts; the Route site and the Process units render from them before the run.
                 $instance->update(['selected_php_version' => $project->php_version, 'source_is_laravel' => $project->is_laravel === true]);
+                if ($instance->requiresRoute()) {
+                    $route = app(CreateRouteAction::class)->ensureForInstance($instance, $data->domain);
+                    $input = [...$input, 'route_id' => $route->id, 'route_domain' => $route->domain];
+                }
             }
-            if ($instance->requiresRoute() && ! $alreadyActive) {
-                $route = app(CreateRouteAction::class)->ensureForInstance($instance, $data->domain);
-                $input = [...$input, 'route_id' => $route->id, 'route_domain' => $route->domain,
-                    ...app(NativeRouteAdmission::class)->capture('route.create', $route, ['mode' => 'converge'], $node->id, preserveEnvironment: true, preparedWorkloads: true)];
-            }
-            $input['direct_provisioning'] = app(NativeInstanceProvisioningIntent::class)->create($instance, $input);
+            $provisioning = app(NativeInstanceProvisioningIntent::class)->create($instance, $input);
             // An already active Instance runs no phase, so admission records no environment or Process for it.
             $input['environment_keys'] = $input['members'] = [];
-            if ($input['direct_provisioning']['already_active'] !== true) {
+            if ($provisioning['already_active'] !== true) {
                 app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment($instance);
                 $input['environment_keys'] = app(DevelopmentCreateEnvironment::class)->admit($instance, $project);
-                $input['members'] = app(ProcessInstanceOperation::class)->capture($instance, 'process.install_instance_definitions')['members'];
+                // A rerun after a failed create checks the Processes its first run already started.
+                $input['members'] = app(ProcessInstanceOperation::class)->capture($instance, 'process.install_instance_definitions', includeActive: true)['members'];
             }
+            if ($route !== null) {
+                // The Route publishes the Instance awake only when this run starts every one of its Processes.
+                $input = [...$input, ...app(NativeRouteAdmission::class)->capture('route.create', $route, ['mode' => 'converge'], $node->id,
+                    preserveEnvironment: true, preparedWorkloads: true,
+                    wakePreparedWorkloads: ! $instance->processes()->whereNotIn('id', array_column($input['members'], 'id'))->exists())];
+            }
+            $input['direct_provisioning'] = [...$provisioning, 'route' => $input['route_create'] ?? null];
             // F8: 60 s for the create phases, the admitted setup timeouts (the setup phase runs within 540 s),
             // 30 s for the Process phase, and 180 s for the Route child: CSR, signing, install, publication and its TLS probe (117 s measured cold).
             $input['run_budget_seconds'] = 60 + min(LifecycleStep::MaxTotalTimeoutSeconds, array_sum(array_map(

@@ -42,7 +42,7 @@ sequenceDiagram
   %%> When:
   %%> - only for a web-serving Project
   %%> Why it marks the Instance awake:
-  %%> - so the first request reaches the app, not the wake page
+  %%> - so the first request reaches the app, not the wake page; only when this run starts every Process
   alt all steps pass in budget
     N-->>SW: Site answers<br/>Processes running
     SW-->>GW: Run succeeded<br/>terminal event · finish-result

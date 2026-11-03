@@ -131,6 +131,34 @@ it('reserves the derived Route of a web-serving Project and creates it in the sa
         ->and($route->error_code)->toBe($status === 'succeeded' ? null : 'instance.create_route_failed');
 })->with(['succeeded', 'failed']);
 
+it('marks a web Instance awake only when the run starts every one of its Processes', function (bool $covered): void {
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('public-root');
+    $this->node->update(['tld' => 'test']);
+    $this->project->update(['type' => 'laravel-app', 'root' => 'public', 'php_version' => '8.4', 'is_laravel' => true, 'source_facts_captured_at' => now()]);
+    $this->project->processDefinitions()->create(['name' => 'dev-server', 'environments' => ['development'],
+        'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/sleep', '300'], 'restart_policy' => 'never']]);
+    $this->withHeader('Idempotency-Key', 'native-create-wake-first');
+    $this->postJson('/api/v1/instances', $this->payload)->assertAccepted();
+    $instance = Instance::query()->sole();
+    expect(Operation::query()->sole()->input['route_create']['awake'])->toHaveCount(1);
+
+    // The first run failed after starting its Process; the rerun checks that active Process again.
+    Process::query()->update(['status' => 'active']);
+    if (! $covered) {
+        $instance->processes()->create(['name' => 'hand-made',
+            'runtime' => 'systemd', 'runtime_config' => ['command' => ['/usr/bin/sleep', '300']], 'restart_policy' => 'never',
+            'desired_state' => 'running', 'status' => 'active']);
+    }
+    $instance->update(['failed_step' => 'route', 'error_code' => 'instance.create_route_failed']);
+    Operation::query()->update(['status' => 'failed']);
+    $this->withHeader('Idempotency-Key', 'native-create-wake-rerun');
+    $this->postJson('/api/v1/instances', $this->payload)->assertAccepted();
+
+    $rerun = Operation::query()->latest('id')->first();
+    expect(array_column($rerun->input['members'], 'id'))->toContain(Process::query()->where('name', 'dev-server')->sole()->id)
+        ->and($rerun->input['route_create']['awake'])->toHaveCount($covered ? 1 : 0);
+})->with(['every Process is covered' => true, 'a Process is not covered' => false]);
+
 it('reserves no Route for an already active web-serving Instance, which runs no phase', function (): void {
     $this->node->update(['tld' => 'test']);
     $this->project->update(['type' => 'laravel-app', 'root' => 'public']);
