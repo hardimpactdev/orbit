@@ -112,10 +112,10 @@ def status(name):
     return json.loads(run(['incus', 'query', f'/1.0/instances/{name}/state']))['status']
 
 
-def evidence(name):
+def evidence(name, state):
     """What a failed nested Node shows: its status and the end of its console."""
     console = subprocess.run(['incus', 'console', name, '--show-log'], capture_output=True, text=True, check=False).stdout
-    return f'status {status(name)}; console tail:\n' + '\n'.join(console.strip().splitlines()[-20:])
+    return f'status {state}; console tail:\n' + '\n'.join(console.strip().splitlines()[-20:])
 
 
 def prepare(node, network):
@@ -129,15 +129,16 @@ def prepare(node, network):
     deadline = time.monotonic() + 900
     while subprocess.run(['incus', 'exec', node['key'], '--', 'true'], capture_output=True, check=False).returncode:
         # A Node that stopped while booting never answers; say so now instead of at the deadline.
-        if status(node['key']) != 'Running' or time.monotonic() > deadline:
-            raise RuntimeError(f'{node["key"]} agent did not start: {evidence(node["key"])}')
+        state = status(node['key'])
+        if state in ('Stopped', 'Error') or time.monotonic() > deadline:
+            raise RuntimeError(f'{node["key"]} agent did not start: {evidence(node["key"], state)}')
         time.sleep(2)
     # Exit 2 is "done with recoverable errors": the template guest has no Incus datasource.
     waited = subprocess.run(['incus', 'exec', node['key'], '--', 'cloud-init', 'status', '--wait'],
                             capture_output=True, text=True, timeout=600, check=False)
     if waited.returncode not in (0, 2):
         raise RuntimeError(f'{node["key"]} cloud-init did not finish (exit {waited.returncode}: {(waited.stdout + waited.stderr).strip()[-500:]}); '
-                           + evidence(node['key']))
+                           + evidence(node['key'], status(node['key'])))
     run(['incus', 'file', 'push', str(SOURCE / 'apps/e2e/resources/guest/prepare-node.sh'), f'{node["key"]}/root/prepare-node.sh'])
     run(['incus', 'exec', node['key'], '--', 'bash', '/root/prepare-node.sh', 'configure-runtime'])
     public = IDENTITY.with_suffix('.pub').read_text().split()
