@@ -124,6 +124,18 @@ def setup(node, run, case):
     print(json.dumps({'secrets': {'key': key, 'commit': side if case == 'off-branch' else head}}))
 
 
+def cleanup():
+    hosts = Path('/etc/hosts')
+    hosts.write_text('\n'.join(line for line in hosts.read_text().splitlines() if line != '10.231.0.3 github.com api.github.com') + '\n')
+    peer('sed', '-i', r'/^10\.231\.0\.3 github\.com$/d', '/etc/hosts')
+    if (STATE / 'pid').exists():
+        try:
+            os.kill(int((STATE / 'pid').read_text()), signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        (STATE / 'pid').unlink()
+
+
 def parity():
     data = json.loads(DATA.read_text())
     operation = json.loads(Path(os.environ['PROOF_OPERATION_FILE']).read_text())
@@ -184,5 +196,10 @@ if __name__ == '__main__':
         github.serve()
     elif sys.argv[1] == 'setup':
         setup(*sys.argv[2:])
+    elif sys.argv[1] == 'cleanup':
+        cleanup()
     else:
-        parity()
+        try:
+            parity()
+        finally:
+            cleanup()
