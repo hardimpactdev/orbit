@@ -124,7 +124,8 @@ enum NodeFactKind: string
                 'rules.*.in_interface' => ['nullable', 'string', 'max:64'],
                 'rules.*.out_interface' => ['nullable', 'string', 'max:64'],
                 'rules.*.family' => ['sometimes', 'string', 'in:v4,v6'],
-                'rules.*.comment' => ['sometimes', 'string', 'max:1024'],
+                // A rule without a comment arrives as "", which the request turns into null.
+                'rules.*.comment' => ['sometimes', 'nullable', 'string', 'max:1024'],
                 'rules.*.app' => ['sometimes', 'boolean'],
             ],
         };

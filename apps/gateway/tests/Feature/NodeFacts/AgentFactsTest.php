@@ -103,7 +103,7 @@ describe('agent facts and liveness', function (): void {
         $rule = ['action' => 'allow', 'protocol' => 'tcp', 'port' => '22', 'destination' => '0.0.0.0/0', 'source_port' => 'any', 'source' => '0.0.0.0/0',
             'direction' => 'in', 'in_interface' => null, 'out_interface' => null, 'family' => 'v4', 'comment' => 'orbit ssh', 'app' => false];
         $this->postJson('/api/v1/agent/facts', ['kind' => 'ufw', 'observed_at' => '2026-11-02T18:00:00Z',
-            'data' => ['installed' => true, 'enabled' => true, 'rules' => [$rule, ['unreadable' => true]]]])->assertNoContent();
+            'data' => ['installed' => true, 'enabled' => true, 'rules' => [$rule, [...$rule, 'comment' => ''], ['unreadable' => true]]]])->assertNoContent();
         $this->postJson('/api/v1/agent/facts', ['kind' => 'units', 'observed_at' => '2026-11-02T18:00:00Z', 'data' => ['docker' => 'absent',
             'units' => [['name' => 'caddy.service', 'runtime' => 'systemd', 'state' => 'activating', 'load' => 'loaded', 'sub' => 'auto-restart']],
             'awake' => ['/dev/shm/orbit/hibernation/instance-4']]])->assertNoContent();
