@@ -11,4 +11,3 @@ route.workload_verify
 schedule.install_instance_definitions
 tasks.maintenance
 tasks.maintenance_finish
-tasks.park

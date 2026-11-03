@@ -1,6 +1,6 @@
 id: 9c42bead-f036-4bf8-a1ef-e883129af28f
 name: operation-task-park
-description: Task VM park from209; terminal stdout is projected by the shared subscriber.
+description: Park the admitted Task VM; the shared subscriber reads native provider completion.
 vaults:
 - orbit-control-inputs
 inputs:
@@ -12,10 +12,7 @@ inputs:
     node_id:
       type: integer
       minimum: 1
-    kind:
-      type: string
-      enum:
-      - tasks.park
+    kind: {type: string, enum: [tasks.park]}
     intent:
       type: object
     execution_secrets:
@@ -67,37 +64,4 @@ jobs:
     - step: eligible
       condition:
         type: succeeded
-  - name: result
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "vm-terminal" }}'
-      methodName: execute
-      inputs:
-        run: '/usr/bin/python3 -B - <<''PYTHON''
-
-          import json
-
-          import os
-
-
-          value={key:int(os.environ[''ORBIT_''+key.upper()]) for key in [''task_vm_id'',
-          ''group_id'', ''instance_id'', ''project_id'']}
-
-          value.update(parked=True,stop_confirmed=True)
-
-          print(json.dumps(value))
-
-          PYTHON
-
-          '
-        env:
-          ORBIT_TASK_VM_ID: ${{ string(inputs.intent.task_vm_id) }}
-          ORBIT_GROUP_ID: ${{ string(inputs.intent.group_id) }}
-          ORBIT_INSTANCE_ID: ${{ string(inputs.intent.instance_id) }}
-          ORBIT_PROJECT_ID: ${{ string(inputs.intent.project_id) }}
-    dependsOn:
-    - step: provider
-      condition:
-        type: succeeded
+queueTimeout: 30

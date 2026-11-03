@@ -1,0 +1,16 @@
+{
+  "kind": "tasks.park",
+  "workflow": "operation-task-park",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 180,
+  "queue_timeout_seconds": 30,
+  "before_gateway": [["python3", "-I", "swamp/proof/tasks.park/prepare.py", "${node.target}", "${proof.run}"]],
+  "request": {"method": "POST", "path": "task-groups/${secret.group}/park", "body": {}},
+  "expect": {"status": "succeeded"},
+  "phases": [
+    {"name": "eligible", "job": "park", "step": "eligible", "budget_seconds": 10},
+    {"name": "provider", "job": "park", "step": "provider", "budget_seconds": 150}
+  ],
+  "parity": "swamp/proof/tasks.park/parity.py"
+}

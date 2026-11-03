@@ -20,6 +20,7 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\VmObservation;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\TaskVms\UpCloudApi;
 use App\Models\Instance;
 use App\Models\Node;
@@ -55,7 +56,7 @@ beforeEach(function (): void {
     config(['swamp.run_token' => 'fixture.fake', 'dependency_detection.services_node_id' => $node->id, 'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/ca.pem']);
     $this->vm->update(['name' => 'tvm-'.$this->vm->id]);
     $this->run = '3fc3ad54-423a-4b4b-8187-99514098426b';
-    $socket = new FakeRoutePublicationSocket;
+    $socket = $this->socket = new FakeRoutePublicationSocket;
     $socket->reply = fn (array $message): array => $message['type'] === 'vault.put' ? [['type' => 'vault.put', 'id' => $message['id'], 'payload' => ['data' => ['vaultName' => $message['payload']['vaultName'], 'secretKey' => $message['payload']['key'], 'vaultType' => 'local_encryption']]]] : [['type' => 'event', 'id' => $message['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-task-park', 'runId' => $this->run]]];
     app()->instance(WebSocketClient::class, $socket);
     $this->url = '/api/v1/task-groups/'.$this->group->id.'/park';
@@ -63,8 +64,7 @@ beforeEach(function (): void {
 
 function parkResult(int $operationId, string $status = 'succeeded', ?array $result = null): TestResponse
 {
-    $result ??= ['group_id' => test()->group->id, 'task_vm_id' => test()->vm->id, 'instance_id' => test()->group->taskable_id,
-        'project_id' => test()->group->project_id, 'parked' => true, 'stop_confirmed' => true];
+    $result ??= ['steps' => ['provider' => ['status' => 'succeeded']], 'summary' => ['status' => 'succeeded']];
 
     return test()->postJson('/api/v1/direct-operations/'.$operationId.'/result', ['run_id' => test()->run, 'status' => $status,
         'started_at' => '2026-10-31T00:00:00.000Z', 'finished_at' => $status === 'running' ? null : '2026-10-31T00:00:01.000Z',
@@ -89,6 +89,30 @@ it('admits one exact Node root and projects stopped proof without PHP execution'
         expect(app(OperationKinds::class)->definition($kind))->toBeNull();
     }
 });
+
+it('records admitted IDs only from native provider completion in one history read', function (string $status): void {
+    $id = $this->withHeader('Idempotency-Key', 'review.native')->postJson($this->url)->assertAccepted()->json('data.id');
+    $operation = Operation::findOrFail($id);
+    config(['swamp.read_token' => 'native-reader']);
+    $history = ['id' => $this->run, 'workflowName' => 'operation-task-park', 'status' => $status,
+        'inputs' => ['operation_id' => $id, 'node_id' => $operation->node_id, 'kind' => 'tasks.park'],
+        'startedAt' => '2026-10-31T00:00:00.000Z', 'completedAt' => '2026-10-31T00:00:01.000Z',
+        'jobs' => [['name' => 'park', 'steps' => [['name' => 'provider', 'status' => $status]]]]];
+    $this->socket->reply = static fn (array $message): array => [['type' => 'workflow.history.get', 'id' => $message['id'], 'payload' => ['data' => $history]]];
+    $selector = app(DirectOperation::class)->definition('tasks.park')['terminal_result'];
+
+    app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $this->run, 'status' => $status], $selector);
+    app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $this->run, 'status' => $status], $selector);
+
+    expect($operation->fresh()->status->value)->toBe($status);
+    expect($operation->fresh()->result)->toBe($status === 'succeeded'
+        ? ['group_id' => $this->group->id, 'project_id' => $this->group->project_id, 'instance_id' => $this->group->taskable_id,
+            'task_vm_id' => $this->vm->id, 'parked' => true, 'stop_confirmed' => true]
+        : (in_array($status, ['failed', 'interrupted'], true) ? ['error_code' => 'operation.native_failed'] : []));
+    expect($this->vm->fresh()->state)->toBe($status === 'succeeded' ? TaskVmState::Parked : TaskVmState::Ready)
+        ->and($this->vm->fresh()->stop_confirmed_at !== null)->toBe($status === 'succeeded');
+    expect(array_column($this->socket->sent, 'type'))->toBe(['workflow.run', 'workflow.history.get']);
+})->with(['succeeded', 'failed', 'interrupted', 'cancelled']);
 
 it('keeps a cancelled park ready without stop proof or topology changes', function (): void {
     $this->vm->update(['topology_run' => 'preserved-topology-run']);

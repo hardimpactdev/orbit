@@ -178,6 +178,33 @@ export const behavior={type:"@fixture/destroy",version:"2026.11.01.1",resources:
             ]["stdout"]
         )
 
+    def test_park_uses_provider_completion_without_a_printer(self):
+        self.inputs["kind"] = "tasks.park"
+        self.inputs["intent"]["eligible"] = True
+        self.inputs["intent"]["provider_input"]["fixture_running"] = False
+        self.workflow("park")
+        run = self.run_workflow()
+        self.assertEqual(run["status"], "succeeded")
+        history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
+        steps = {step["name"]: step for step in history["jobs"][0]["steps"]}
+        self.assertEqual(steps["provider"]["status"], "succeeded")
+        self.assertNotIn("result", steps)
+
+    def test_failed_park_provider_keeps_the_native_run_failed(self):
+        self.inputs["kind"] = "tasks.park"
+        self.inputs["intent"]["eligible"] = True
+        self.workflow("park")
+        child_path = self.repo / "workflows/workflow-task-vm-provider-power-fixture.yaml"
+        child = yaml.safe_load(child_path.read_text())
+        child["jobs"][0]["steps"][0]["task"] = {"type": "assert", "expr": "false"}
+        child_path.write_text(yaml.safe_dump(child))
+        run = self.run_workflow(success=False)
+        self.assertEqual(run["status"], "failed")
+        history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
+        steps = {step["name"]: step for step in history["jobs"][0]["steps"]}
+        self.assertEqual(steps["provider"]["status"], "failed")
+        self.assertNotIn("result", steps)
+
     def test_empty_workspace_requires_no_guest_or_child_effect(self):
         self.inputs["intent"].update(
             instance_id=None, task_vm_id=None, ssh_execution=None

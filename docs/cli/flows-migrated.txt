@@ -73,3 +73,4 @@ analytics.disable
 tasks.turn
 instance.clone
 instance.deploy
+tasks.park

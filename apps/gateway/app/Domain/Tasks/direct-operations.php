@@ -32,6 +32,6 @@ return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'pro
             'workflow' => 'operation-task-park',
             'projection' => TaskParkProjection::class,
             'workflow_inputs' => true,
-            'terminal_result' => ['job' => 'park', 'step' => 'result'],
+            'terminal_result' => ['job' => 'park', 'step' => 'provider', 'native' => true],
             'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-upcloud-token$']],
         ]];
