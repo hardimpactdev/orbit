@@ -48,7 +48,7 @@ for (
       : failure.name === "Probe write access"
       ? "vault.collection_read_only"
       : "vault.login_failed";
-    assertEquals(code, expected);
+    assertEquals(code, expected, JSON.stringify({ step: failure.name, error: failure.error }));
     if (expected === "vault.items_published") assert(!state.commands.some((row: string[]) => row[0] === "create"));
   });
 }

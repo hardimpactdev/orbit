@@ -1,7 +1,7 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { expandGlob } from "jsr:@std/fs@1.0.20/expand-glob";
 import { parse } from "jsr:@std/yaml@1.0.12";
-import { ROOT } from "../tests/_support/native_harness.ts";
+import { ROOT } from "./_support/native_harness.ts";
 
 Deno.test("Gateway-started full-intent workflows accept execution_secrets", async () => {
   const names = new Set<string>();

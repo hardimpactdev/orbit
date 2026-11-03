@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
-import { placed, workflow } from "../tests/_support/heavy_workflows.ts";
+import { placed, workflow } from "./_support/heavy_workflows.ts";
 
 Deno.test("heavy methods and native coordinators select workers", () => {
   for (const name of placed) {

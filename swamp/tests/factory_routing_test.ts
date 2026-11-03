@@ -1,15 +1,15 @@
 import { copy } from "jsr:@std/fs@1.0.20/copy";
-import { pullExtension, swampBinary } from "../../tests/_support/native_harness.ts";
+import { pullExtension, swampBinary } from "./_support/native_harness.ts";
 // Routing regressions for the orbit-groups factory: the real factory, driver and
 // Gateway client, run by swamp in a throwaway copy of this repo against a fake
 // Gateway. Every case runs as its own group, and one driver tick steps them all.
 // Needs the swamp CLI; it takes a minute or two. Run: ~/.swamp/deno/deno test --allow-all tests/
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.19";
-import { type Scenario, startFakeGateway } from "../../tests/_support/fake_gateway.ts";
-import { analysisFixture } from "../../tests/_support/analysis_fixture.ts";
-import { canonical, planConsentNote, sha256 } from "./_lib/repository_analysis.ts";
+import { type Scenario, startFakeGateway } from "./_support/fake_gateway.ts";
+import { analysisFixture } from "./_support/analysis_fixture.ts";
+import { canonical, planConsentNote, sha256 } from "../extensions/behaviors/_lib/repository_analysis.ts";
 
-const REPO = new URL("../../", import.meta.url).pathname;
+const REPO = new URL("../", import.meta.url).pathname;
 
 const SCENARIOS: Record<number, Scenario & { approve?: string[]; end: (s: Seen) => boolean }> = {
   101: { firstReview: "changes_requested", end: (s) => s.stage === "completed" },
@@ -382,7 +382,7 @@ Deno.test({
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
-    const fixture = async (name: string) => JSON.parse(await Deno.readTextFile(new URL(`../../tests/fixtures/repository-analysis-public/${name}.json`, import.meta.url))).body.data.result;
+    const fixture = async (name: string) => JSON.parse(await Deno.readTextFile(new URL(`./fixtures/repository-analysis-public/${name}.json`, import.meta.url))).body.data.result;
     const pinned = await fixture("tasks-provision-pinned");
     const overflow = await fixture("tasks-analyze-failure-overflow");
     const missing = await fixture("tasks-analyze-failure-unavailable");
