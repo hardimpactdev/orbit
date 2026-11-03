@@ -17,13 +17,16 @@ use App\Domain\Instances\Environment\InstanceEnvironmentSynchronizer;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use Closure;
@@ -50,6 +53,28 @@ final readonly class Orb220DeploymentApiFixture
                 'kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
             ]]];
         app()->instance(WebSocketClient::class, $socket);
+    }
+
+    /** Project the public history from the native terminal, without a Gateway executor. */
+    public function nativeTerminal(bool $failure = false): void
+    {
+        $operation = Operation::query()->sole();
+        $rollback = $operation->kind === 'instance.rollback';
+        $name = $rollback ? 'operation-instance-rollback' : 'operation-instance-deploy-direct';
+        $runId = $operation->state['swamp_run_id'];
+        $steps = $failure ? [['name' => 'Prepare the release-0', 'status' => 'failed']]
+            : [['name' => 'Activate release-0', 'status' => 'succeeded'], ['name' => 'Swap current', 'status' => 'succeeded'],
+                ['name' => $rollback ? 'Check the selection' : 'Check the deployment', 'status' => 'succeeded']];
+        $history = ['id' => $runId, 'workflowName' => $name, 'status' => $failure ? 'failed' : 'succeeded',
+            'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
+            'startedAt' => now()->toIso8601String(), 'completedAt' => now()->toIso8601String(),
+            'jobs' => [['name' => $rollback ? 'rollback' : 'deploy', 'steps' => $steps]]];
+        $socket = new FakeRoutePublicationSocket;
+        $socket->reply = fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $history]]];
+        app()->instance(WebSocketClient::class, $socket);
+        config(['swamp.read_token' => 'fixture.deployment-read']);
+        app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $runId, 'status' => $history['status']],
+            app(DirectOperation::class)->definition($operation->kind)['terminal_result']);
     }
 
     /** @param list<array{name: string, phase: string, command: string, timeout_seconds: int}>|null $steps */

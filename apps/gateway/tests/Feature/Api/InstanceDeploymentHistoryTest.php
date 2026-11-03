@@ -2,13 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Domain\Operations\DirectOperation;
-use App\Infrastructure\AgentView\WebSocketClient;
-use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\InstanceDeployment;
-use App\Models\Operation;
 use Illuminate\Support\Str;
-use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\Orb220DeploymentApiFixture;
 
 beforeEach(function (): void {
@@ -18,28 +13,6 @@ beforeEach(function (): void {
     $this->rollbackUrl = "/api/v1/instances/{$this->fixture->instance->id}/rollback";
     enable_operation_queue();
 });
-
-/** Project the public history from the native terminal, without a Gateway executor. */
-function history_native_terminal(bool $failure = false): void
-{
-    $operation = Operation::query()->sole();
-    $rollback = $operation->kind === 'instance.rollback';
-    $name = $rollback ? 'operation-instance-rollback' : 'operation-instance-deploy-direct';
-    $runId = $operation->state['swamp_run_id'];
-    $steps = $failure ? [['name' => 'Prepare the release-0', 'status' => 'failed']]
-        : [['name' => 'Activate release-0', 'status' => 'succeeded'], ['name' => 'Swap current', 'status' => 'succeeded'],
-            ['name' => $rollback ? 'Check the selection' : 'Check the deployment', 'status' => 'succeeded']];
-    $history = ['id' => $runId, 'workflowName' => $name, 'status' => $failure ? 'failed' : 'succeeded',
-        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
-        'startedAt' => now()->toIso8601String(), 'completedAt' => now()->toIso8601String(),
-        'jobs' => [['name' => $rollback ? 'rollback' : 'deploy', 'steps' => $steps]]];
-    $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $history]]];
-    app()->instance(WebSocketClient::class, $socket);
-    config(['swamp.read_token' => 'fixture.deployment-read']);
-    app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $runId, 'status' => $history['status']],
-        app(DirectOperation::class)->definition($operation->kind)['terminal_result']);
-}
 
 it('records a deployment row on deploy and lists it newest first with its phases and log', function (): void {
     $requestId = (string) Str::uuid();
@@ -52,7 +25,7 @@ it('records a deployment row on deploy and lists it newest first with its phases
             'HTTP_X_ORBIT_REQUEST_ID' => $requestId,
         ], content: '{}');
     $response->assertAccepted();
-    history_native_terminal();
+    $this->fixture->nativeTerminal();
 
     $deployment = InstanceDeployment::query()->sole();
 
@@ -95,7 +68,7 @@ it('records a failed deployment with its failed step and error code', function (
             'HTTP_ACCEPT' => 'application/json',
         ], content: '{}');
     $response->assertAccepted();
-    history_native_terminal(true);
+    $this->fixture->nativeTerminal(true);
 
     $deployment = InstanceDeployment::query()->sole();
 
@@ -112,7 +85,7 @@ it('records a rollback as its own deployment row', function (): void {
             'HTTP_ACCEPT' => 'application/json',
         ], content: '{"release":"initial"}')
         ->assertAccepted();
-    history_native_terminal();
+    $this->fixture->nativeTerminal();
 
     $deployment = InstanceDeployment::query()->sole();
 

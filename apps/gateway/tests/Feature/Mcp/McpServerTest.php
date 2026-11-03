@@ -227,6 +227,7 @@ describe('POST /mcp', function (): void {
     it('replays operation starts through the generated Idempotency-Key header argument', function (string $tool, array $input): void {
         enable_operation_queue();
         $fixture = Orb220DeploymentApiFixture::create();
+        $fixture->nativeStart();
         $this->withServerVariables(['REMOTE_ADDR' => $fixture->caller->wireguard_ip]);
         $arguments = ['instance' => $fixture->instance->id, 'Idempotency-Key' => 'mcp.stage.c1', ...$input];
 
@@ -236,7 +237,7 @@ describe('POST /mcp', function (): void {
         expect($second['operation']['id'])->toBe($first['operation']['id']);
         $this->assertDatabaseHas('operations', ['id' => $first['operation']['id'], 'idempotency_key' => 'mcp.stage.c1']);
         $this->assertDatabaseCount('operations', 1);
-        $this->assertDatabaseCount('jobs', 1);
+        $this->assertDatabaseCount('jobs', 0);
     })->with(['deploy' => ['instance-deploy', []], 'rollback' => ['instance-rollback', ['release' => 'initial']]]);
 
     it('replays a WebSocket app tool through its generated header argument', function (): void {
@@ -316,24 +317,25 @@ describe('POST /mcp', function (): void {
     it('starts a deploy at once and lets the agent poll it with operation-show', function (string $endpoint): void {
         enable_operation_queue();
         $fixture = Orb220DeploymentApiFixture::create();
+        $fixture->nativeStart();
         $this->withServerVariables(['REMOTE_ADDR' => $fixture->caller->wireguard_ip]);
 
         $started = mcp_tool($this, $endpoint, 'instance-deploy', ['instance' => $fixture->instance->id]);
 
         expect(array_keys($started))->toBe(['operation', 'poll', 'meta'])
-            ->and($started['operation']['status'])->toBe('queued')
+            ->and($started['operation']['status'])->toBe('running')
             ->and($started['operation']['kind'])->toBe('instance.deploy')
             ->and($started['poll'])->toBe(['tool' => 'operation-show', 'after_seconds' => 2])
             ->and($fixture->deployment->invocations)->toBe(0);
 
-        run_operation_jobs();
+        $fixture->nativeTerminal();
         $shown = mcp_tool($this, $endpoint, 'operation-show', ['operation' => $started['operation']['id'], 'after_sequence' => $started['operation']['sequence']]);
         $listed = mcp_tool($this, $endpoint, 'operation-list', ['status' => 'succeeded']);
 
         expect($shown['data']['status'])->toBe('succeeded')
             ->and($shown['data']['poll_after_seconds'])->toBeNull()
-            ->and($shown['data']['result']['selected_release'])->toBe('fresh')
-            ->and(array_column($shown['data']['steps'], 'name'))->toContain('source_preparation', 'cleanup')
+            ->and($shown['data']['result']['selected_release'])->toBe($shown['data']['result']['release'])
+            ->and($shown['data']['steps'])->toBe([])
             ->and(array_column($listed['data'], 'id'))->toBe([$started['operation']['id']]);
     })->with(['/mcp', '/mcp/search']);
 
