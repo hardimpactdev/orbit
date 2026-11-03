@@ -210,7 +210,11 @@ final readonly class NativeRouteCreatePlan
      */
     private function sharedPools(array &$plan, int $nodeId, array $php): void
     {
-        foreach (is_array($php['configurations'] ?? null) ? $php['configurations'] : [] as $version => $content) {
+        $configurations = $php['configurations'] ?? null;
+        if (! $configurations instanceof \stdClass) {
+            throw new \LogicException('Shared PHP capture requires a configuration object.');
+        }
+        foreach (ValidatedData::stringMap(get_object_vars($configurations)) as $version => $content) {
             $version = (string) $version;
             $plan['php_files'][] = ['node_id' => $nodeId, 'path' => '/etc/php/'.$version.'/fpm/pool.d/orbit-scopes.conf', 'content' => ValidatedData::string($content), 'owner' => 'root'];
             $plan['php_tests'][] = ['node_id' => $nodeId, 'argv' => ['/usr/sbin/php-fpm'.$version, '-t']];

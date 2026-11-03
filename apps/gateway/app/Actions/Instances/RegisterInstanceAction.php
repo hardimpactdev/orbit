@@ -134,7 +134,7 @@ final readonly class RegisterInstanceAction
 
                 return $instance->refresh();
             }
-            $routeInput = $route === null ? [] : app(NativeRouteAdmission::class)->capture('route.create', $route, ['mode' => 'converge'], $caller->id, preserveEnvironment: true);
+            $routeInput = $route === null ? [] : app(NativeRouteAdmission::class)->capture('route.create', $route, ['mode' => 'converge'], $caller->id, preserveEnvironment: true, preparedWorkloads: true);
 
             return $this->operations->execute('instance.register', 'instance', $instance->id, $caller->id, [
                 'instance_id' => $instance->id, 'project_id' => $project->id, 'node_id' => $caller->id,

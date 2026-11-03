@@ -248,7 +248,12 @@ it('reserves a Route for a Laravel registration without replacing its user envir
 
     expect($operation->input['route_id'])->toBeInt()->and($operation->input['route_create']['env_files'])->toBe([])
         ->and(Route::query()->findOrFail($operation->input['route_id'])->domain)->toBe('native.register-proof.test');
-    expect(Instance::query()->where('name', 'native')->sole()->source_is_laravel)->toBeTrue();
+    $instance = Instance::query()->where('name', 'native')->sole();
+    expect($instance->source_is_laravel)->toBeTrue()->and($instance->status->value)->toBe('reserved');
+    expect($operation->input['route_create']['caddy'])->toHaveCount(1)
+        ->and($operation->input['route_create']['caddy'][0]['content'])->toContain('native.register-proof.test')
+        ->and($operation->input['route_create']['php_files'][0]['content'])->toContain('/srv/apps/register-proof/native')
+        ->and(array_column($operation->input['route_create']['probes'], 'domain'))->toContain('native.register-proof.test');
 });
 
 it('records setup with no steps or Processes without an empty run', function (): void {

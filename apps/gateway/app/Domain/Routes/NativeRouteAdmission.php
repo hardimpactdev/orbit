@@ -16,12 +16,12 @@ final readonly class NativeRouteAdmission
     /** @param array<string,mixed> $input
      * @return array<string,mixed>
      */
-    public function capture(string $kind, Route $route, array $input, int $rootNodeId, bool $preserveEnvironment = false): array
+    public function capture(string $kind, Route $route, array $input, int $rootNodeId, bool $preserveEnvironment = false, bool $preparedWorkloads = false): array
     {
         $capture = match ($kind) {
             'route.update' => app(NativeRouteUpdateInput::class)->capture($route, $input),
             'route.target_set' => app(NativeRouteTargetInput::class)->capture($route, $input),
-            'route.create' => app(NativeRouteLifecycleInput::class)->capture($route, $input, preserveEnvironment: $preserveEnvironment),
+            'route.create' => app(NativeRouteLifecycleInput::class)->capture($route, $input, preserveEnvironment: $preserveEnvironment, preparedWorkloads: $preparedWorkloads),
             default => throw new ResourceOperationException('operation.kind_unavailable', 'This Route kind has no standalone capture.', 409),
         };
 
