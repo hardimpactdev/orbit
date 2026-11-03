@@ -1,10 +1,10 @@
 import { assert, assertEquals, assertFalse, assertMatch } from "jsr:@std/assert@1.0.19";
 import { expandGlob } from "jsr:@std/fs@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
-import { ROOT } from "../tests/_support/native_harness.ts";
-import { command, type Json } from "../tests/_support/platform_fixture.ts";
+import { ROOT, command } from "./gate-test-support.ts";
+type Definition = { id: string; name: string; globalArguments: unknown; methods: unknown; queueTimeout: number };
 
-const yaml = (path: string) => parse(Deno.readTextFileSync(path)) as Json;
+const yaml = (path: string) => parse(Deno.readTextFileSync(path)) as Definition;
 Deno.test("model IDs are unique and project definitions contain public metadata", async () => {
   const ids = new Set(), projects = [];
   for await (const path of expandGlob(`${ROOT}/models/**/*.yaml`)) {

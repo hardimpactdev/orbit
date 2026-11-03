@@ -1,6 +1,34 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
+import { parse } from "jsr:@std/yaml@1.0.12";
 import { fromFileUrl, dirname } from "jsr:@std/path@1.1.4";
 export const root = fromFileUrl(new URL("../", import.meta.url));
+export type Task = {
+  type?: string;
+  behaviorType?: string;
+  behaviorName?: string;
+  methodName?: string;
+  globalArgs?: Record<string, unknown>;
+  inputs?: Record<string, unknown>;
+  workflowIdOrName?: string;
+};
+export type Step = { name: string; task: Task; labels?: unknown; writes?: unknown; [key: string]: unknown };
+export type Flow = {
+  id?: string;
+  name?: string;
+  inputs?: unknown;
+  labels?: unknown;
+  jobs: { name: string; dependsOn?: unknown; labels?: unknown; steps: Step[] }[];
+};
+export const ROOT = root.replace(/\/$/, "");
+/** Inspect a tracked workflow without starting the Swamp runtime. */
+export function trackedStep(workflow: string, name: string) {
+  const value = parse(Deno.readTextFileSync(`${ROOT}/workflows/workflow-${workflow}.yaml`)) as {
+    jobs: { steps: { name: string; task: { inputs: Record<string, unknown> } }[] }[];
+  };
+  const step = value.jobs.flatMap((job) => job.steps).find((step) => step.name === name);
+  if (!step) throw new Error(`${workflow} has no step ${name}`);
+  return step;
+}
 export const script = (name: string) => root + "bin/" + name;
 export async function run(command: string, args: string[], options: {cwd?: string; env?: Record<string, string>; input?: string; signal?: AbortSignal} = {}) {
   const child = new Deno.Command(command, { args, cwd: options.cwd, env: options.env, signal: options.signal, stdin: options.input === undefined ? "null" : "piped", stdout: "piped", stderr: "piped" }).spawn();
@@ -12,6 +40,11 @@ export async function run(command: string, args: string[], options: {cwd?: strin
   }
   const result = await output;
   return { code: result.code, stdout: new TextDecoder().decode(result.stdout), stderr: new TextDecoder().decode(result.stderr) };
+}
+export async function command(argv: string[], cwd?: string, env?: Record<string, string>, success = true) {
+  const result = await run(argv[0], argv.slice(1), { cwd, env });
+  assertEquals(result.code === 0, success, result.stdout + result.stderr);
+  return result;
 }
 export async function temporary(body: (path: string) => Promise<void>) {
   const path = await Deno.makeTempDir({prefix: "shape-fixture-"});

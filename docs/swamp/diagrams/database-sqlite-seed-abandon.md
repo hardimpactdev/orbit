@@ -127,7 +127,7 @@ PLAN F9 rebuilds a kind from its legacy sequence when a supported caller needs i
 | Behavior | In `database-server-commands/sqlite_assets.ts`: the abandon kind in the `Kind` enum, the abandon branch, its entry in the `absent` backend list, and the `target_cleanup` action that only abandon used (export and seed keep `source_cleanup`) |
 | Child workflow | The abandon kind and the `target_cleanup` action in `workflow-database-sqlite-action.yaml` |
 | Script | `scripts/sqlite_target_cleanup.py` and its line in `database-server-commands/manifest.yaml` |
-| Tests | The abandon cases in `PrepareSqliteIntentActionTest.php`, the `database.sqlite_seed_abandon` dataset entries in `InstanceSqliteSeedIntentTest.php` and `DatabaseSqliteProjectionTest.php`, and the abandon runs in `sqlite_native_test.py` |
+| Tests | The abandon cases in `PrepareSqliteIntentActionTest.php`, the `database.sqlite_seed_abandon` dataset entries in `InstanceSqliteSeedIntentTest.php` and `DatabaseSqliteProjectionTest.php` |
 
 `PrepareSqliteIntentAction::seed` has no product caller either, so `database.sqlite_seed` is canary-only as well. #2341 kept it; it is still registered on main.
 

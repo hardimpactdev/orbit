@@ -1,7 +1,7 @@
 import { assert, assertEquals, assertNotEquals } from "jsr:@std/assert@1.0.19";
 import { exists } from "jsr:@std/fs@1.0.19/exists";
 import { parse } from "jsr:@std/yaml@1.0.12";
-import { ROOT } from "../../../tests/_support/native_harness.ts";
+import { ROOT } from "../../../bin/gate-test-support.ts";
 
 type Scope = {
   name?: string; id?: string; target?: unknown; labels?: unknown;

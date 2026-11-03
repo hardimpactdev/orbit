@@ -1,6 +1,6 @@
 /** Task VM workflow commands run directly against local fakes: the Incus start wait, known_hosts edits and the Pi probes. */
 import { assert, assertEquals, assertNotEquals } from "jsr:@std/assert@1.0.19";
-import { ROOT, trackedStep } from "../../../../tests/_support/native_harness.ts";
+import { ROOT, trackedStep } from "../../../../bin/gate-test-support.ts";
 
 const decoder = new TextDecoder();
 async function run(argv: string[], options: { env?: Record<string, string>; stdin?: string } = {}) {

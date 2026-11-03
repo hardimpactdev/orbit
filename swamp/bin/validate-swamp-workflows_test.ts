@@ -2,10 +2,9 @@ import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.
 import { run, script } from "./gate-test-support.ts";
 const source = await Deno.readTextFile(new URL("../../.github/workflows/swamp-shape.yml", import.meta.url));
 const validate = source.split("  validate:")[1].split("  tests:")[0];
-Deno.test("validation keeps its read-only credentials while native CI is paused", () => {
+Deno.test("validation receives only its registry-read credentials", () => {
   for (const key of ["API_KEY", "SIGNIN_TOKEN"]) {
     assertStringIncludes(validate, "secrets.SWAMP_" + key);
-    assert(!validate.includes("secrets.SWAMP_NATIVE_" + key));
   }
   assert(!source.includes("  native-tests:"));
   assert(!source.includes("  native-plan:"));
@@ -22,9 +21,9 @@ Deno.test("required validation only receives event-scoped credentials", () => {
   assertStringIncludes(validate, "github.event_name == 'pull_request'");
   assertStringIncludes(validate, "github.ref == 'refs/heads/main'");
 });
-Deno.test("native serve grant validation remains required", async () => {
+Deno.test("serve grant validation and coverage regressions remain required", async () => {
   for (const required of ["python3 bin/check-grant-patterns.py --cache", "grant-validation.json"]) assertStringIncludes(validate, required);
-  assert((await Deno.stat(new URL("../extensions/behaviors/operations/workflow_grant_patterns_native_test.ts", import.meta.url))).isFile);
+  assert((await Deno.stat(new URL("../extensions/behaviors/operations/workflow_grant_patterns_test.ts", import.meta.url))).isFile);
   assert(!source.includes("check-grant-patterns.ts"));
   assert(!validate.includes("continue-on-error"));
   const ci = await Deno.readTextFile(new URL("../../.github/workflows/ci.yml", import.meta.url));

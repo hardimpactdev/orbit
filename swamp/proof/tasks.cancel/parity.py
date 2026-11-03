@@ -1,7 +1,7 @@
 """tasks.cancel of a group without a workspace: one run, no guest or provider step, a complete cleanup receipt.
 
 The minimal topology has no task VM host, so this proves admission, the five chart steps on serve and the
-projection. The push, Route, teardown and destroy steps are proven by ending_native_test.py.
+projection. This receipt does not prove the push, Route, teardown or destroy paths.
 """
 import json
 import os
