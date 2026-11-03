@@ -131,6 +131,13 @@ final readonly class GatewayReleaseRecorder
         return $record;
     }
 
+    /** Whether a `gateway.release` Swamp run owns a running record; the release unit waits for it. */
+    public function swampRunActive(): bool
+    {
+        return $this->hasRecords() && GatewayRelease::query()->where('outcome', GatewayRelease::Running)->get()
+            ->contains(static fn (GatewayRelease $record): bool => $record->swampRunActive());
+    }
+
     private function hasRecords(): bool
     {
         try {
@@ -157,7 +164,7 @@ final readonly class GatewayReleaseRecorder
             ->get();
 
         foreach ($records as $record) {
-            if ($record->awaitingPublication()) {
+            if ($record->awaitingPublication() || $record->swampRunActive()) {
                 continue;
             }
             if ($record->outcome === GatewayRelease::Queued) {

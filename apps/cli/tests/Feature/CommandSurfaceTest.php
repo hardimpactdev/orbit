@@ -685,7 +685,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'gateway:release:auto:enable' => [[], ['json' => false]],
         'gateway:release:auto:resume' => [[], ['json' => false]],
         'gateway:release:auto:status' => [[], ['json' => false]],
-        'gateway:release:deploy' => [['commit'], ['json' => false]],
+        'gateway:release:deploy' => [['commit'], ['swamp' => false, 'json' => false]],
         'gateway:release:list' => [[], ['json' => false]],
         'gateway:release:rollback' => [['release'], ['yes' => false, 'json' => false]],
         'gateway:release:show' => [['release'], ['json' => false]],

@@ -16,6 +16,7 @@ database_server.create
 database_server.destroy
 database_user.create
 fleet.peer_dns
+gateway.release
 instance.clone
 instance.deploy
 instance.destroy

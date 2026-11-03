@@ -414,6 +414,32 @@ After the operator procedure succeeds, retire the root manifest and its declarat
 
 Omitting `unrelated_processes` preserves the original conservative behavior. This is no wildcard, name-based exemption, or replacement for Process identity. An ordinary Process whose identity cannot be proved needs operator repair or a separately reviewed procedure.
 
+### Release as a Swamp run
+
+`orbit gateway:release:deploy <sha> --swamp` runs a manual release as one Swamp workflow instead of the release unit. The release unit stays the default and runs every automatic release. The [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/release-deploy.mmd) shows the flow.
+
+The Gateway admits the run. It needs the full commit, no other queued or running release and no staged hold. It verifies the commit's agent pin, as [Deploy a release](#deploy-a-release) does, and selects its [web build](#web-build) from an [accepted CI run](#accepted-ci-runs). It starts a running record and records the `gateway.release` Operation under `phases.run`. At the run's start it puts one GitHub token, with contents and Actions read on the release repository, in the execution vault.
+
+The `operation-gateway-release` workflow runs on the swamp role's workers on Node 209 and reaches the Gateway Node over SSH:
+
+| Step | What it does |
+| --- | --- |
+| Build the release | Fetches the commit, refuses a downgrade with `gateway.release_downgrade`, and builds and seals the release. Prints the grants the new code renders. |
+| Install the web build | Downloads the artifact, checks its digest, and extracts it with safe names only into `web/releases/<id>`. |
+| Snapshot the database | Writes `backups/pre-<id>-<time>-<hex>.sqlite` with `VACUUM INTO`. The newest three stay, and the one a pause names. |
+| Migrate | Runs `artisan migrate --force --isolated` from the new release. |
+| Load Swamp on Node 209 | Runs the [load workflow](#load-swamp) as a child, with the grants from the build. |
+| Hand over the release | Runs `gateway-release-activate` as a child, from the definition the load installed. |
+| Record the release | Prints the commit, the previous release and the snapshot path. |
+
+The build adds the worktree, links the shared env and storage, installs the Composer dependencies, writes the agent manifest, and seals the release with `REVISION` and a cached configuration. It reuses a sealed release of the same commit.
+
+The child drains Horizon and switches the link. It runs `gateway:release:handoff --phase=serve` and verifies `/up` and the status version. It then runs `gateway:release:handoff --phase=schedule`, switches the web build and prunes old releases.
+
+The run's end ends the record through the same recorder as the release unit. A succeeded run is `verified`, with `phases.verify.version` set, so the [fleet rollout](#fleet-rollout) follows. A step before Migrate fails the record, and nothing changed. Migrate or a later step pauses automatic releases with reason `migration_failure` and names the snapshot. A forward release never switches back.
+
+While the run is active, the release unit refuses with `gateway.release_in_progress`, and settling dead records skips its record.
+
 ### Execution identity
 
 Run `sudo -u orbit php <prepared-release>/apps/gateway/artisan gateway:release:stage <full-SHA>` from the reviewed prepared release, using shared configuration and stable release-layout paths. Stage, deploy, finalize and abandon refuse root, a different execution account, or mismatched ownership/configuration before opening release locks or writing shared state. The old stable artisan entry point cannot execute new tooling. Keep automatic releases disabled; normal deploy does not acquire this maintenance hold. The first rollout needs operator-controlled bootstrap and independent disposable-environment verification.

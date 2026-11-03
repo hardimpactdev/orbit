@@ -1,0 +1,322 @@
+id: 1e788227-08e7-4c2a-b926-94a77a0edafa
+name: operation-gateway-release
+description: Build, migrate and load one Gateway release on the Gateway Node, then hand over to it from the new commit's own definition.
+# Chart: docs/cli/gateway/release-deploy.mmd. The legacy runner's sequence (docs/reference/gateway-recovery.md#deploy-a-release):
+# prepare, guard, configuration, snapshot, migrate, swamp, then the promoter in the child run.
+queueTimeout: 120
+vaults: [orbit-control-inputs]
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: gateway.release}
+    intent:
+      type: object
+      properties:
+        sha: {type: string, pattern: '^[a-f0-9]{40}$'}
+        id: {type: string, pattern: '^[a-f0-9]{12}$'}
+        force: {type: boolean}
+        previous: {type: string, pattern: '^[a-f0-9]{12}$'}
+        repository: {type: string, pattern: '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'}
+        manifest: {type: string, minLength: 2}
+        web:
+          type: object
+          properties:
+            artifact_id: {type: integer, minimum: 1}
+            size: {type: integer, minimum: 1}
+            digest: {type: string, pattern: '^sha256:[a-f0-9]{64}$'}
+          required: [artifact_id, size, digest]
+          additionalProperties: false
+        horizon_unit: {type: string, pattern: '^$|^[A-Za-z0-9@_.-]+\.service$'}
+        horizon_drain_seconds: {type: integer, minimum: 1, maximum: 3600}
+        keep: {type: integer, minimum: 2, maximum: 20}
+        ssh: {type: object}
+        swamp_ssh: {type: object}
+      required: [sha, id, force, previous, repository, manifest, web, horizon_unit, horizon_drain_seconds, keep, ssh, swamp_ssh]
+      additionalProperties: false
+    # Names only: one scoped GitHub token (contents and actions read) the Gateway minted at run start.
+    execution_secrets:
+      type: object
+      properties:
+        github_token:
+          type: object
+          properties:
+            vault: {type: string, enum: [orbit-control-inputs]}
+            key: {type: string, pattern: '^gateway-release-[1-9][0-9]*$'}
+          required: [vault, key]
+          additionalProperties: false
+      required: [github_token]
+      additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+- name: release
+  labels: {role: swamp}
+  steps:
+    # One script, as the agent's prepare, finish and forward check: resolve and fetch the commit, add the worktree,
+    # link shared env and storage, install dependencies, write the agent manifest, seal it with REVISION and a cached
+    # configuration. A sealed release of the same commit is reused. Prints the release's rendered Swamp grants.
+  - name: Build the release
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-build-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: &ssh
+        name: '${{ "gateway-release-ssh-" + string(inputs.node_id) }}'
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh.target.user }}
+          port: ${{ inputs.intent.ssh.target.port }}
+          identityFile: ${{ inputs.intent.ssh.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
+      inputs:
+        hosts: name:target
+        timeoutSec: 2460
+        stdin: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
+        argv:
+        - /usr/bin/timeout
+        - '2400'
+        - /bin/bash
+        - -c
+        - |
+          set -euo pipefail
+          sha=$1 force=$2 manifest=$3
+          id=${sha:0:12} base=/home/orbit
+          repo=$base/shared/orbit.git release=$base/releases/$id app=$base/releases/$id/apps/gateway
+          fail() { echo "$1: $2" >&2; exit 1; }
+          current=$(readlink "$base/orbit") && current=${current#releases/} || fail gateway.release_not_adopted "$base/orbit is no release link"
+          current_sha=$(cat "$base/releases/$current/REVISION") || fail gateway.release_current_incomplete "release $current has no REVISION"
+          # The GitHub token arrives on stdin and reaches git only in its environment, never in argv.
+          basic=$(printf 'x-access-token:%s' "$(cat)" | base64 -w0)
+          if [ "$(cat "$release/REVISION" 2>/dev/null || true)" != "$sha" ]; then
+            [ "$current" != "$id" ] || fail gateway.release_current_incomplete "the current release $id is not sealed"
+            if ! git -C "$repo" cat-file -e "$sha^{commit}" 2>/dev/null; then
+              GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraHeader \
+                GIT_CONFIG_VALUE_0="Authorization: Basic $basic" \
+                timeout 300 git -C "$repo" fetch --quiet --no-tags origin "$sha" || fail gateway.release_fetch_failed "git fetch of $sha failed"
+              git -C "$repo" cat-file -e "$sha^{commit}" || fail gateway.release_commit_unknown "$sha is not in origin"
+            fi
+            if [ "$force" != true ] && [ "$sha" != "$current_sha" ]; then
+              git -C "$repo" merge-base --is-ancestor "$current_sha" "$sha" || fail gateway.release_downgrade "$sha does not descend from the current $current_sha"
+            fi
+            database=$(php8.5 -r '$c = require $argv[1]; echo $c["database"]["connections"]["sqlite"]["database"];' "$base/releases/$current/apps/gateway/bootstrap/cache/config.php")
+            need=$(( $(stat -c %s "$database") + 1073741824 ))
+            [ "$(df --output=avail -B1 "$base" | tail -1)" -ge "$need" ] || fail gateway.release_disk_low "less than $need bytes free on $base"
+            install -d -m 0710 -g caddy "$base/releases"
+            if [ -e "$release" ]; then chmod -R u+w "$release"; rm -rf "$release"; fi
+            git -C "$repo" worktree prune
+            git -C "$repo" worktree add --quiet --detach --force "$release" "$sha" || fail gateway.release_worktree_failed "git worktree add failed"
+            chmod 0700 "$app/bootstrap/cache"
+            for dir in app/private app/public framework/cache/data framework/sessions framework/views logs; do
+              install -d -m 0750 "$base/shared/gateway-storage/$dir"
+            done
+            ln -s "$base/shared/gateway.env" "$app/.env"
+            git -C "$release" ls-files -z -- apps/gateway/storage | xargs -0 -r git -C "$release" update-index --skip-worktree --
+            rm -rf "$app/storage"
+            grep -qxF /apps/gateway/storage "$repo/info/exclude" 2>/dev/null || { install -d -m 0755 "$repo/info"; echo /apps/gateway/storage >> "$repo/info/exclude"; }
+            ln -s "$base/shared/gateway-storage" "$app/storage"
+            for project in apps/cli apps/gateway; do
+              timeout 900 composer --working-dir="$release/$project" install --no-dev --prefer-dist --no-interaction --no-progress --quiet \
+                || fail gateway.release_dependencies_failed "composer install failed in $project"
+              timeout 120 composer --working-dir="$release/$project" check-platform-reqs --no-dev --no-interaction --quiet \
+                || fail gateway.release_dependencies_failed "platform requirements failed in $project"
+            done
+            install -d -m 0755 "$release/apps/agent/delivery"
+            printf '%s' "$manifest" > "$release/apps/agent/delivery/manifest.json"
+            chmod 0444 "$release/apps/agent/delivery/manifest.json"
+            # Caddy reaches the application through the group; the env file stays private.
+            chgrp caddy "$release" "$release/apps" "$app" && chmod 0710 "$release" "$release/apps" "$app"
+            chmod 0600 "$base/shared/gateway.env"
+            find "$release" -path "$app/bootstrap/cache" -prune -o -path "$release/apps/cli/storage" -prune -o \
+              \( -type f -o -type d \) ! -type l -exec chmod a-w {} +
+            chmod u+w "$release"
+            printf '%s\n' "$sha" > "$release/.REVISION.next" && chmod 0644 "$release/.REVISION.next" && mv "$release/.REVISION.next" "$release/REVISION"
+            candidate="$app/bootstrap/cache/config.next-$RANDOM$RANDOM.php"
+            if ! APP_CONFIG_CACHE=$candidate ORBIT_AGENT_DELIVERY=$release/apps/agent/delivery/manifest.json \
+                timeout 120 php8.5 "$app/artisan" config:cache --no-interaction --quiet; then
+              rm -f "$candidate" "$release/REVISION"
+              fail gateway.release_configuration_failed "config:cache failed"
+            fi
+            chmod 0600 "$candidate" && mv "$candidate" "$app/bootstrap/cache/config.php"
+            chmod u-w "$release"
+          fi
+          # The new code renders its own grants; the load step splits the two files at the separator line.
+          php8.5 -r 'require $argv[1]."/vendor/autoload.php"; $g = (new App\Infrastructure\GatewayReleases\SwampGrantRenderer)->render($argv[2]);
+            echo $g["grants/orbit-gateway.yaml"], "---\n", $g["grants/orbit-serve.yaml"];' "$app" "$release/swamp"
+        - bash
+        - ${{ inputs.intent.sha }}
+        - ${{ string(inputs.intent.force) }}
+        - ${{ inputs.intent.manifest }}
+    # The web build of the commit from its CI artifact, as the agent's install: checked against the artifact digest,
+    # extracted with safe names only, published by one rename. Nothing serves it before the web switch.
+  - name: Install the web build
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Build the release, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-web-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        timeoutSec: 960
+        stdin: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
+        argv:
+        - /usr/bin/timeout
+        - '900'
+        - /bin/bash
+        - -c
+        - |
+          set -euo pipefail
+          id=$1 repository=$2 artifact=$3 size=$4 digest=${5#sha256:}
+          web=/home/orbit/web/releases
+          fail() { echo "$1: $2" >&2; exit 1; }
+          [ ! -f "$web/$id/index.html" ] || exit 0
+          [ "$size" -le 134217728 ] || fail gateway.release_web_build_invalid "artifact of $size bytes is above 128 MiB"
+          work=$(mktemp -d) && trap 'rm -rf "$work"' EXIT
+          umask 077
+          { printf 'Authorization: Bearer '; cat; printf '\n'; } > "$work/header"
+          # curl sends the custom header only to api.github.com, not to the storage host it redirects to.
+          curl -fsSL --max-time 600 -H @"$work/header" -o "$work/web.zip" \
+            "https://api.github.com/repos/$repository/actions/artifacts/$artifact/zip" || fail gateway.release_web_build_unavailable "artifact $artifact download failed"
+          [ "$(sha256sum "$work/web.zip" | cut -d' ' -f1)" = "$digest" ] || fail gateway.release_web_build_invalid "artifact $artifact does not match its digest"
+          install -d -m 0750 -g caddy "$web"
+          partial="$web/.$id.partial" && rm -rf "$partial"
+          python3 -I -c '
+          import os, stat, sys, zipfile
+          archive, target = sys.argv[1], sys.argv[2]
+          with zipfile.ZipFile(archive) as z:
+              entries = z.infolist()
+              if len(entries) > 20000 or sum(e.file_size for e in entries) > 536870912:
+                  sys.exit("too many entries or bytes")
+              names = set()
+              for e in entries:
+                  name = e.filename
+                  mode = (e.external_attr >> 16) & 0o170000
+                  if (name.startswith("/") or "\\" in name or any(p in ("", ".", "..") for p in name.rstrip("/").split("/"))
+                          or name in names or e.flag_bits & 1 or mode not in (0, stat.S_IFREG, stat.S_IFDIR)):
+                      sys.exit("unsafe entry " + repr(name))
+                  names.add(name)
+              z.extractall(target)
+          if not os.path.isfile(os.path.join(target, "index.html")):
+              sys.exit("no index.html")
+          ' "$work/web.zip" "$partial" || { rm -rf "$partial"; fail gateway.release_web_build_invalid "artifact $artifact is no valid web build"; }
+          chgrp -R caddy "$partial"
+          find "$partial" -type d -exec chmod 0750 {} + && find "$partial" -type f -exec chmod 0640 {} +
+          mv -T "$partial" "$web/$id"
+        - bash
+        - ${{ inputs.intent.id }}
+        - ${{ inputs.intent.repository }}
+        - ${{ string(inputs.intent.web.artifact_id) }}
+        - ${{ string(inputs.intent.web.size) }}
+        - ${{ inputs.intent.web.digest }}
+    # VACUUM INTO a private copy before any migration; the newest three stay, and the one a pause names.
+  - name: Snapshot the database
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Install the web build, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-snapshot-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        timeoutSec: 960
+        argv:
+        - /usr/bin/timeout
+        - '900'
+        - /bin/bash
+        - -c
+        - |
+          set -euo pipefail
+          id=$1 app=/home/orbit/releases/$1/apps/gateway backups=/home/orbit/.orbit/backups
+          umask 077 && install -d -m 0700 "$backups"
+          path="$backups/pre-$id-$(date -u +%Y%m%dT%H%M%SZ)-$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n').sqlite"
+          php8.5 -r '$c = require $argv[1]; $db = new PDO("sqlite:".$c["database"]["connections"]["sqlite"]["database"], null, null,
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); $db->exec("VACUUM INTO ".$db->quote($argv[2]));' \
+            "$app/bootstrap/cache/config.php" "$path.partial" || { rm -f "$path.partial"; echo "gateway.release_snapshot_failed: VACUUM INTO failed" >&2; exit 1; }
+          sync "$path.partial" && mv "$path.partial" "$path"
+          paused=$(jq -r '.snapshot // empty' /home/orbit/.orbit/gateway-release.paused 2>/dev/null || true)
+          ls -1t "$backups"/pre-*.sqlite | tail -n +4 | grep -vxF -- "${paused:-/}" | xargs -r rm -f --
+          printf '%s\n' "$path"
+        - bash
+        - ${{ inputs.intent.id }}
+    # Always runs, as the legacy runner; from here a failure pauses automatic releases with the old release live.
+  - name: Migrate
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Snapshot the database, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-migrate-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        timeoutSec: 960
+        argv: [/usr/bin/timeout, '900', /bin/sh, -c, 'cd "/home/orbit/releases/$1/apps/gateway" && exec php8.5 artisan migrate --force --isolated --no-interaction', sh, '${{ inputs.intent.id }}']
+  - name: Load Swamp on Node 209
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Migrate, condition: {type: succeeded}}]
+    task:
+      type: workflow
+      workflowIdOrName: operation-gateway-swamp-load
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: 209
+        kind: gateway.swamp_load
+        intent:
+          sha: ${{ inputs.intent.sha }}
+          grants:
+            grants/orbit-gateway.yaml: '${{ steps["Build the release"].outputs.stdout.split("---\n")[0] }}'
+            grants/orbit-serve.yaml: '${{ steps["Build the release"].outputs.stdout.split("---\n")[1] }}'
+          ssh: ${{ inputs.intent.swamp_ssh }}
+        execution_secrets: {}
+    # Serve now holds the new commit's definitions, so the switch and handoff run from the release they install.
+  - name: Hand over the release
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Load Swamp on Node 209, condition: {type: succeeded}}]
+    task:
+      type: workflow
+      workflowIdOrName: gateway-release-activate
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: gateway.release
+        intent:
+          sha: ${{ inputs.intent.sha }}
+          id: ${{ inputs.intent.id }}
+          previous: ${{ inputs.intent.previous }}
+          horizon_unit: ${{ inputs.intent.horizon_unit }}
+          horizon_drain_seconds: ${{ inputs.intent.horizon_drain_seconds }}
+          keep: ${{ inputs.intent.keep }}
+          ssh: ${{ inputs.intent.ssh }}
+  - name: Record the release
+    labels: {role: swamp}
+    dependsOn: [{step: Hand over the release, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "gateway-release-record-" + string(inputs.node_id) }}'
+      methodName: execute
+      inputs:
+        env:
+          RELEASE_SHA: ${{ inputs.intent.sha }}
+          PREVIOUS: ${{ inputs.intent.previous }}
+          SNAPSHOT: ${{ steps["Snapshot the database"].outputs.stdout.trim() }}
+        run: |
+          jq -cn --arg sha "$RELEASE_SHA" --arg previous "$PREVIOUS" --arg snapshot "$SNAPSHOT" '{sha: $sha, previous: $previous, snapshot: $snapshot}'
