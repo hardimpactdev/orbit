@@ -6,6 +6,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketException;
 use App\Infrastructure\Swamp\SwampVaultExecutionCopy;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Tests\Support\FakeRoutePublicationSocket;
 
@@ -36,6 +37,35 @@ it('pushes changed values in one authenticated native vault frame and returns on
     expect($this->socket->sent)->toHaveCount(2);
     expect(Cache::get('swamp:execution-copy:'.hash('sha256', "wss://swamp.orbit\0orbit-control-inputs\0".$key)))
         ->toBe(hash('sha256', $value.'changed'));
+});
+
+it('pushes every copy of one transaction over one connection and closes it after the dispatch', function (): void {
+    $this->socket->keepConnected = true;
+
+    DB::transaction(function (): void {
+        $this->copies->synchronize('orbit-control-inputs', 'shared-one', 'first');
+        $this->copies->synchronize('orbit-control-inputs', 'shared-two', 'second');
+        expect($this->socket->connections)->toBe([]);
+    });
+
+    expect($this->socket->connections)->toHaveCount(1)->and($this->socket->sent)->toHaveCount(2)
+        ->and(array_column(array_column($this->socket->sent, 'payload'), 'key'))->toBe(['shared-one', 'shared-two'])
+        ->and($this->socket->closed)->toBeTrue();
+});
+
+it('opens a new connection after a request on the shared one fails', function (): void {
+    $this->socket->keepConnected = true;
+    $reply = $this->socket->reply;
+    $this->socket->reply = static fn (array $request): array => $request['payload']['key'] === 'shared-bad'
+        ? [['type' => 'error', 'id' => $request['id'], 'error' => ['code' => 'vault_put_failed']]] : $reply($request);
+
+    expect(fn () => DB::transaction(function (): void {
+        $this->copies->synchronize('orbit-control-inputs', 'shared-bad', 'first');
+        $this->copies->synchronize('orbit-control-inputs', 'shared-good', 'second');
+    }))->toThrow(ResourceOperationException::class);
+    $this->copies->synchronize('orbit-control-inputs', 'shared-good', 'second');
+
+    expect($this->socket->connections)->toHaveCount(2);
 });
 
 it('does not mark a refused or mismatched copy synchronized and drops secret-bearing diagnostics', function (string $failure): void {

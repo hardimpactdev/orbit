@@ -407,6 +407,9 @@ When the installed binary already matches, it changes nothing, so concurrent mis
 
 ## How it connects
 
+The Gateway's WebSocket client tries a handshake refused with `429` again after the server's `Retry-After`, within the caller's connect timeout ([Swamp command steps](/reference/swamp-command-steps)).
+
+
 The agent connects to the Gateway at `https://gateway.orbit` and to Reverb at `wss://reverb.orbit`. It never uses system DNS. It connects to the Gateway's WireGuard address from its configuration, `gateway_address`, and to the Reverb address from the realtime response. It verifies each certificate for the hostname against the Orbit root certificate in `ca.pem`.
 
 1. The agent calls `GET /api/v1/agent/realtime` and reads the Reverb connection from the response.

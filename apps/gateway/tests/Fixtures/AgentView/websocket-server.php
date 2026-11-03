@@ -119,6 +119,15 @@ function handshake($client, string $mode): bool
         return false;
     }
 
+    // Serve's per-client rate limit: the first handshake is refused with a `Retry-After`.
+    static $limited = 0;
+    if (($mode === 'rate-limited' && $limited++ === 0) || $mode === 'rate-limited-long') {
+        $after = $mode === 'rate-limited' ? 1 : 30;
+        fwrite($client, "HTTP/1.1 429 Too Many Requests\r\nRetry-After: {$after}\r\nContent-Length: 0\r\n\r\n");
+
+        return false;
+    }
+
     if ($mode === 'bad-accept') {
         $accept = base64_encode('wrong');
     }
@@ -128,7 +137,7 @@ function handshake($client, string $mode): bool
     return $mode !== 'bad-accept';
 }
 
-$connections = in_array($mode, ['pusher', 'native-terminal'], true) ? 2 : 1;
+$connections = in_array($mode, ['pusher', 'native-terminal', 'rate-limited'], true) ? 2 : 1;
 
 for ($connection = 1; $connection <= $connections; $connection++) {
     $client = @stream_socket_accept($server, 30);

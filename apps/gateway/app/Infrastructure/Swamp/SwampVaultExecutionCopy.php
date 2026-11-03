@@ -58,15 +58,18 @@ final readonly class SwampVaultExecutionCopy
         $id = bin2hex(random_bytes(16));
         $phase = 'connect';
         $remoteCode = null;
+        $dispatch = app(SwampDispatch::class);
+        $shared = false;
+        $socket = $this->socket;
         try {
-            $this->socket->connect($endpoint, 15);
+            [$socket, $shared] = $dispatch->socket($endpoint, 15, $this->socket);
             $phase = 'send';
-            $this->socket->send(['type' => 'vault.put', 'id' => $id,
+            $socket->send(['type' => 'vault.put', 'id' => $id,
                 'payload' => ['vaultName' => $vault, 'key' => $key, 'value' => $value, 'force' => true]]);
             $phase = 'receive';
             $deadline = microtime(true) + 30;
-            while ($this->socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {
-                foreach ($this->socket->receive(min(1.0, $remaining)) as $message) {
+            while ($socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {
+                foreach ($socket->receive(min(1.0, $remaining)) as $message) {
                     if (($message['id'] ?? null) !== $id) {
                         continue;
                     }
@@ -93,13 +96,18 @@ final readonly class SwampVaultExecutionCopy
             }
             throw $this->unavailable();
         } catch (Throwable $exception) {
+            if ($shared) {
+                $dispatch->release();
+            }
             Log::warning('Swamp execution copy unavailable', ['vault' => $vault, 'key' => $key, 'vault_request_id' => $id,
                 'phase' => $phase, 'remote_code' => $remoteCode, 'exception_type' => $exception::class,
                 'http_status' => $phase === 'connect' && $exception instanceof WebSocketException
                     && $exception->getCode() >= 400 && $exception->getCode() <= 599 ? $exception->getCode() : null]);
             throw $this->unavailable();
         } finally {
-            $this->socket->close();
+            if (! $shared) {
+                $socket->close();
+            }
         }
     }
 

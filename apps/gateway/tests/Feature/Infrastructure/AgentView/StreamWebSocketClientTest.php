@@ -80,6 +80,41 @@ describe(StreamWebSocketClient::class, function (): void {
         'wrong accept key' => ['bad-accept', 'unexpected WebSocket accept key', 0],
     ]);
 
+    it('connects after a 429 once the server\'s Retry-After has passed', function (): void {
+        $server = ScriptedWebSocketServer::start('rate-limited');
+        $waits = [];
+
+        try {
+            $client = new StreamWebSocketClient(sleep: static function (float $seconds) use (&$waits): void {
+                $waits[] = $seconds;
+                usleep((int) ($seconds * 1_000_000));
+            });
+            $client->connect($server->endpoint(), 5.0);
+
+            expect($client->isConnected())->toBeTrue()->and($waits)->toBe([1.0]);
+        } finally {
+            $server->stop();
+        }
+    });
+
+    it('gives up on a 429 whose Retry-After outlasts the connect timeout, without waiting', function (): void {
+        $server = ScriptedWebSocketServer::start('rate-limited-long');
+        $waits = [];
+
+        try {
+            $client = new StreamWebSocketClient(sleep: static function (float $seconds) use (&$waits): void {
+                $waits[] = $seconds;
+            });
+
+            expect(fn () => $client->connect($server->endpoint(), 5.0))->toThrow(function (WebSocketException $exception): void {
+                expect($exception->getCode())->toBe(429)->and($exception->retryAfterSeconds)->toBe(30);
+            })
+                ->and($waits)->toBe([])->and($client->isConnected())->toBeFalse();
+        } finally {
+            $server->stop();
+        }
+    });
+
     it('returns whole JSON messages and drops oversized, malformed, and binary ones', function (): void {
         $server = ScriptedWebSocketServer::start('frames');
 

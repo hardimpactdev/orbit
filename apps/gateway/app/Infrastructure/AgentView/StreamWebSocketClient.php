@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace App\Infrastructure\AgentView;
 
 use App\Support\ValidatedData;
+use Closure;
 
 /**
  * A dependency-free RFC 6455 client on PHP streams, for the agent view subscriber.
  *
- * `connect()` blocks for at most its timeout. After the handshake the stream is non-blocking, and
+ * `connect()` blocks for at most its timeout. A handshake answered `429 Too Many Requests` is tried again after the
+ * server's `Retry-After`, or after a doubling backoff from half a second, while the timeout leaves room; serve
+ * rate-limits connections per client. After the handshake the stream is non-blocking, and
  * `receive()` waits with `stream_select()`, so an idle subscriber sleeps in the kernel. A message
  * larger than `MaxMessageBytes` is dropped, and a frame that claims more than `MaxFrameBytes`
  * closes the connection, so one misbehaving peer cannot grow the process without limit.
@@ -49,10 +52,22 @@ final class StreamWebSocketClient implements WebSocketClient
     /** Whether the peer ended the connection, so frames still buffered are read without a reply. */
     private bool $peerGone = false;
 
+    /** At most this many handshakes per `connect()` when the server answers 429. */
+    private const int RateLimitedAttempts = 4;
+
+    /** @var Closure(float): void */
+    private readonly Closure $sleep;
+
+    /** @param (Closure(float): void)|null $sleep */
     public function __construct(
         private readonly int $maxMessageBytes = self::MaxMessageBytes,
         private readonly int $maxFrameBytes = self::MaxFrameBytes,
-    ) {}
+        ?Closure $sleep = null,
+    ) {
+        $this->sleep = $sleep ?? static function (float $seconds): void {
+            usleep((int) round($seconds * 1_000_000));
+        };
+    }
 
     public static function forSwamp(): self
     {
@@ -61,6 +76,26 @@ final class StreamWebSocketClient implements WebSocketClient
 
     #[\Override]
     public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
+    {
+        $deadline = microtime(true) + $timeoutSeconds;
+        $backoff = 0.5;
+        for ($attempt = 1; ; $attempt++) {
+            try {
+                $this->connectOnce($endpoint, max(0.5, $deadline - microtime(true)));
+
+                return;
+            } catch (WebSocketException $exception) {
+                $wait = $exception->retryAfterSeconds ?? $backoff;
+                if ($exception->getCode() !== 429 || $attempt >= self::RateLimitedAttempts || microtime(true) + $wait >= $deadline) {
+                    throw $exception;
+                }
+                ($this->sleep)($wait);
+                $backoff *= 2;
+            }
+        }
+    }
+
+    private function connectOnce(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
     {
         $this->close();
         $context = stream_context_create(['ssl' => [
@@ -285,7 +320,8 @@ final class StreamWebSocketClient implements WebSocketClient
 
         if (! str_starts_with($response, 'HTTP/1.1 101')) {
             $status = preg_match('/\AHTTP\/1\.[01] ([0-9]{3})\b/', $response, $matches) === 1 ? (int) $matches[1] : 0;
-            throw new WebSocketException('Reverb refused the WebSocket handshake.', $status);
+            $retryAfter = preg_match('/^Retry-After:\s*([0-9]{1,5})\s*$/mi', $response, $matches) === 1 ? (int) $matches[1] : null;
+            throw new WebSocketException('Reverb refused the WebSocket handshake.', $status, retryAfterSeconds: $retryAfter);
         }
 
         $expected = base64_encode(sha1($key.self::HANDSHAKE_GUID, binary: true));

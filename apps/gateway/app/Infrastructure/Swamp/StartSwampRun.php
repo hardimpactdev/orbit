@@ -163,16 +163,19 @@ final readonly class StartSwampRun
         $id = bin2hex(random_bytes(16));
         $stage = 'connect';
         $started = ($this->clock)();
+        $dispatch = app(SwampDispatch::class);
+        $shared = false;
+        $socket = $this->socket;
         try {
-            $this->socket->connect($endpoint, 15);
+            [$socket, $shared] = $dispatch->socket($endpoint, 15, $this->socket);
             $stage = 'send';
-            $this->socket->send(['type' => 'workflow.run', 'id' => $id, 'payload' => $payload]);
+            $socket->send(['type' => 'workflow.run', 'id' => $id, 'payload' => $payload]);
             $stage = 'receive';
             // Observed pre-dispatch setup took 32.7s and 55.3s; worker dispatch follows started.
             $deadline = ($this->clock)() + self::ConfirmationSeconds;
-            while ($this->socket->isConnected() && ($remaining = $deadline - ($this->clock)()) > 0) {
+            while ($socket->isConnected() && ($remaining = $deadline - ($this->clock)()) > 0) {
                 $confirmed = null;
-                foreach ($this->socket->receive(min(0.2, $remaining)) as $message) {
+                foreach ($socket->receive(min(0.2, $remaining)) as $message) {
                     if (($message['id'] ?? null) !== $id) {
                         continue;
                     }
@@ -208,6 +211,9 @@ final readonly class StartSwampRun
             }
             throw $this->uncertain();
         } catch (Throwable $exception) {
+            if ($shared) {
+                $dispatch->release();
+            }
             $inputs = $payload['inputs'] ?? null;
             Log::warning('Swamp direct start response unavailable', ['operation_id' => is_array($inputs) ? ($inputs['operation_id'] ?? null) : null,
                 'workflow' => $payload['workflowIdOrName'], 'request_id' => $id, 'stage' => $stage,
@@ -220,7 +226,9 @@ final readonly class StartSwampRun
                 ? new ResourceOperationException('swamp.start_unavailable', 'The native workflow start could not connect.', 503)
                 : $this->uncertain();
         } finally {
-            $this->socket->close();
+            if (! $shared) {
+                $socket->close();
+            }
         }
     }
 

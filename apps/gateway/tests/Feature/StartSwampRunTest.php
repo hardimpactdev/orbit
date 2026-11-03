@@ -88,9 +88,10 @@ function vaultAwareSocket(bool $vaultAccepts = true): FakeRoutePublicationSocket
     return $socket;
 }
 
-it('pushes execution copies after the admission commits and before its run starts', function (): void {
+it('pushes execution copies after the admission commits and before its run starts, over one connection', function (): void {
     $node = Node::query()->create(['name' => 'copy-start', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active']);
     $socket = vaultAwareSocket();
+    $socket->keepConnected = true;
 
     $operation = DB::transaction(function () use ($node, $socket): Operation {
         $operation = app(StartOperationAction::class)->execute('test.start', 'node', $node->id, $node->id, [], null, null);
@@ -101,7 +102,8 @@ it('pushes execution copies after the admission commits and before its run start
         return $operation;
     });
 
-    expect(array_column($socket->sent, 'type'))->toBe(['vault.put', 'workflow.run']);
+    expect(array_column($socket->sent, 'type'))->toBe(['vault.put', 'workflow.run'])
+        ->and($socket->connections)->toHaveCount(1)->and($socket->closed)->toBeTrue();
     expect($operation->fresh())->status->toBe(OperationStatus::Running)->error_code->toBeNull();
 });
 
@@ -574,7 +576,7 @@ it('accepts a root after measured pre-dispatch setup delays without waiting for 
         return $time;
     };
 
-    (new StartSwampRun($socket, $clock))->start($operation);
+    new StartSwampRun($socket, $clock)->start($operation);
 
     expect($operation->fresh())->status->toBe(OperationStatus::Running)->error_code->toBeNull()->finished_at->toBeNull();
     expect($operation->fresh()->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676');
@@ -598,7 +600,7 @@ it('retains the target hold when the bounded confirmation wait expires', functio
         return $time;
     };
 
-    expect(fn () => (new StartSwampRun($socket, $clock))->start($operation))->toThrow(ResourceOperationException::class, 'A native run may exist');
+    expect(fn () => new StartSwampRun($socket, $clock)->start($operation))->toThrow(ResourceOperationException::class, 'A native run may exist');
 
     expect($operation->fresh())->status->toBe(OperationStatus::Running)->error_code->toBe('swamp.start_uncertain')->finished_at->toBeNull();
     expect($operation->fresh()->lock_key)->toBe('native-start-confirmation-fixture');

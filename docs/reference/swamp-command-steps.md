@@ -14,6 +14,10 @@ Use `App\Infrastructure\Swamp\SwampCommandStep` for execution-copy references an
 
 Call `executionCopy(string $vault, string $key, string $value): array{vault:string,key:string}` when the source value changes. The value is a sensitive parameter. The helper sends one native `vault.put` request over the authenticated TLS WebSocket and retains only a synchronization digest. The value is in `payload.value`, never process arguments. It accepts only a matching vault/key acknowledgement from a `local_encryption` vault before recording synchronization. Pass the returned descriptor in `execution_secrets`; never pass a secret value in workflow inputs.
 
+Serve rate-limits requests and WebSocket handshakes per client and answers `429` with `Retry-After`. The Gateway opens one connection per admission instead of one per request: the copies and run starts that one transaction admits share a single WebSocket, because serve matches each reply to its request by `id`. A request that fails on it closes that connection, and the next request opens a new one.
+
+Every Gateway WebSocket client also tries a refused `429` handshake again after the server's `Retry-After`, or after a doubling backoff from half a second when serve names none. It tries at most four times and only while the caller's connect timeout leaves room, so a copy or start waits up to 15 seconds instead of failing at once.
+
 Map each named variable with one whole native expression under `task.inputs.env`:
 
 ```yaml
