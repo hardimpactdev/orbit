@@ -621,7 +621,7 @@ A separate hostname for each service replaces ADR 0231, which published a Proces
 
 Removal clears the site publication flag and sets the Route `retiring`. Then it runs these steps in order: remove DNS records, withdraw the Caddy sites, converge PHP-FPM on the Node of each development target, remove the certificates, remove firewall rules, and delete the record. A failure keeps the Route `failed` with `failed_step` and `error_code`. Repeat the same command to retry. The retry runs every step again from the start, and clears the failure once the failed step passes.
 
-Removal releases the domain at once. The Node's shared runtime and Caddy service stay.
+Removal releases the domain at once. The Node's shared runtime and Caddy service stay. `operation-route-removal` runs only for `route.destroy`; a withdrawal that keeps the Route has no kind of its own. Instance destroy and Route update withdraw sites inside their own runs.
 
 A targeted Route can be removed only when none of its Instances is active and the Route is not `active`. It runs the same steps, so a `pending` Route that already published its sites leaves nothing live on its Nodes. A task workspace whose source resolved is an example. The Caddy and firewall steps include every target Node.
 

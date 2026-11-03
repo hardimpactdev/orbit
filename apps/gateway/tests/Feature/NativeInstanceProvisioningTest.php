@@ -11,6 +11,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NativeDevelopmentInstanceInput;
 use App\Domain\Instances\NativeInstanceProvisioningIntent;
 use App\Domain\Instances\NativeInstanceProvisioningSetup;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Projects\LifecycleStep;
@@ -69,19 +70,16 @@ it('retains resolved source identity for an explicit retry after native setup fa
         ->and($plan['already_active'])->toBeFalse();
 });
 
-it('refuses a database before reservation and admits every Project type', function (bool $database, string $type): void {
+it('admits every Project type on an app-dev Node', function (string $type): void {
     $this->project->update(['type' => $type]);
-    $assert = fn () => app(NativeInstanceProvisioningIntent::class)->assertCreateSupported($this->project->refresh(), $this->node, $database);
 
-    $database ? expect($assert)->toThrow(ResourceOperationException::class, 'native publication')
-        : expect($assert)->not->toThrow(ResourceOperationException::class);
-})->with([[true, 'node-package'], [false, 'node-package'], [false, 'laravel-app'], [false, 'symfony-app']]);
-
+    expect(fn () => app(NativeInstanceProvisioningIntent::class)->assertCreateSupported($this->node))->not->toThrow(ResourceOperationException::class);
+})->with(['node-package', 'laravel-app', 'symfony-app']);
 it('refuses a task VM Node, whose workspace comes from tasks:provision', function (): void {
     TaskVm::query()->create(['name' => 'create-task-vm', 'provider' => 'incus', 'state' => 'provisioning',
         'node_id' => $this->node->id, 'host_node_id' => $this->node->id, 'wireguard_ip' => '10.44.9.9']);
 
-    expect(fn () => app(NativeInstanceProvisioningIntent::class)->assertCreateSupported($this->project, $this->node, false))
+    expect(fn () => app(NativeInstanceProvisioningIntent::class)->assertCreateSupported($this->node))
         ->toThrow(ResourceOperationException::class, 'tasks:provision');
 });
 
@@ -133,15 +131,17 @@ it('freezes development clone placement without inspecting either Node', functio
 it('admits development Process definitions, which create starts after its setup steps', function (): void {
     $this->project->processDefinitions()->create(['name' => 'worker', 'environments' => ['development'], 'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/sleep', '300'], 'restart_policy' => 'never']]);
 
-    expect(fn () => app(NativeInstanceProvisioningIntent::class)->assertCreateSupported($this->project, $this->node, false))->not->toThrow(ResourceOperationException::class);
+    expect(fn () => app(NativeInstanceProvisioningIntent::class)->assertCreateSupported($this->node))->not->toThrow(ResourceOperationException::class);
 });
 
-it('refuses an unavailable create before reserving a new Instance', function (): void {
+it('refuses an unknown Database server without keeping a new Instance', function (): void {
+    $this->node->update(['settings' => ['apps' => ['path' => '/srv/apps']]]);
+    $this->node->roles()->firstOrCreate(['role' => RoleName::AppDev], ['status' => 'active']);
     $before = Instance::query()->count();
 
     expect(fn () => app(StartDevelopmentInstanceCreateAction::class)->execute(
         new CreateInstanceData($this->project->id, $this->node->id, 'unavailable', null, null, null, 'unported-server'), 'test', null,
-    ))->toThrow(ResourceOperationException::class, 'native publication');
+    ))->toThrow(ResourceOperationException::class, 'Database server [unported-server] does not exist.');
     expect(Instance::query()->count())->toBe($before);
 });
 

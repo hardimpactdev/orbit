@@ -158,7 +158,7 @@ Both also create the parallel test pool `<name>_test_test_1` through `<name>_tes
 
 Creation checks every name before mutation. Failure keeps its reserved intent for a convergent retry; destruction drops only the recorded pool and leaves unrecorded names alone. The count is fixed at creation; create a new connection to change it.
 
-`database:create --instance` needs an existing Instance, so it comes after that Instance's setup steps. To have the database before setup runs, for MySQL pass the server to [`instance:create --database-server`](/domains/applications#database-on-a-server) instead.
+`database:create --instance` needs an existing Instance, so it comes after that Instance's setup steps. To have the database before setup runs, pass the server to [`instance:create --database-server`](/domains/applications#database-on-a-server) instead; create runs the same `operation-database-create` child.
 
 PostgreSQL database creation accepts `--locale=C.UTF-8` or `--locale=C`. Both use PostgreSQL 18's builtin locale provider, `TEMPLATE template0` and UTF8 encoding. Omitting the option inherits the image default. The connection records the selected locale; it cannot be changed after creation. MySQL, Valkey and external registration refuse this option.
 

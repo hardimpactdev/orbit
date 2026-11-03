@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Instances;
 
+use App\Actions\DatabaseConnections\CreateServerDatabaseAction;
 use App\Actions\Operations\StartOperationAction;
 use App\Actions\Projects\CaptureProjectSourceFactsAction;
 use App\Actions\Routes\CreateRouteAction;
@@ -16,6 +17,7 @@ use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NativeInstanceProvisioningIntent;
+use App\Domain\Instances\OwnedDatabaseSlug;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
@@ -84,11 +86,16 @@ final readonly class StartDevelopmentInstanceCreateAction
 
             if ($instance instanceof Instance) {
                 $this->assertRetry($instance, $node, $root, $data->branch);
+                if ($data->databaseServer !== null && $instance->status === InstanceState::Active && ! $instance->first_setup_pending
+                    && ! DatabaseConnection::query()->where('owner_instance_id', $instance->id)
+                        ->whereHas('server', static fn ($query) => $query->where('slug', $data->databaseServer))->exists()) {
+                    throw new ResourceOperationException('instance.database_server_existing',
+                        "Instance [{$instance->name}] finished its first setup. Create its database with `orbit database:create --server={$data->databaseServer} --instance={$instance->id}`, then run `orbit instance:setup {$instance->id}`.", 409);
+                }
             }
             $clone = $instance instanceof Instance && ! $instance->first_setup_pending
                 ? null : $this->databases->plan($project, $name);
-            // A SQLite copy of the default database runs in this create; a MySQL copy is not native yet.
-            app(NativeInstanceProvisioningIntent::class)->assertCreateSupported($project, $node, $data->databaseServer !== null || $clone?->server !== null);
+            app(NativeInstanceProvisioningIntent::class)->assertCreateSupported($node);
             $sourceRoot = $this->nodeSettings->fromStored($node->settings)?->appsPath();
             if (! is_string($sourceRoot) || StoragePath::tryParse($sourceRoot) === null) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'Native creation requires an explicit apps.path.', 503);
@@ -151,13 +158,16 @@ final readonly class StartDevelopmentInstanceCreateAction
             $provisioning = app(NativeInstanceProvisioningIntent::class)->create($instance, $input);
             // An already active Instance runs no phase, so admission records no environment or Process for it.
             $input['environment_keys'] = $input['members'] = [];
-            $database = $copy = null;
+            $database = $copy = $server = null;
             if ($provisioning['already_active'] !== true) {
-                // The copy is attached under DB before .env renders, so .env already names it.
-                $copy = $clone === null ? null : $this->sqliteCopy($instance, $node, $clone);
+                // The Instance's own database is attached under DB before .env renders, so .env already names it: a
+                // database on --database-server or on the default Instance's MySQL server, else a copy of its SQLite file.
+                $serverSlug = $data->databaseServer ?? $clone?->server?->slug;
+                $server = $serverSlug === null ? null : $this->serverDatabase($instance, $serverSlug, $clone);
+                $copy = $server === null && $clone !== null ? $this->sqliteCopy($instance, $node, $clone) : null;
                 $database = $copy['intent'] ?? null;
                 app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment($instance);
-                $input['environment_keys'] = app(DevelopmentCreateEnvironment::class)->admit($instance, $project, $copy['connection'] ?? null);
+                $input['environment_keys'] = app(DevelopmentCreateEnvironment::class)->admit($instance, $project, $copy['connection'] ?? $server['connection'] ?? null);
                 // A rerun after a failed create checks the Processes its first run already started.
                 $input['members'] = app(ProcessInstanceOperation::class)->capture($instance, 'process.install_instance_definitions', includeActive: true)['members'];
             }
@@ -167,16 +177,36 @@ final readonly class StartDevelopmentInstanceCreateAction
                     preserveEnvironment: true, preparedWorkloads: true,
                     wakePreparedWorkloads: ! $instance->processes()->whereNotIn('id', array_column($input['members'], 'id'))->exists())];
             }
-            $input['direct_provisioning'] = [...$provisioning, 'route' => $input['route_create'] ?? null, 'database' => $database];
+            $input['direct_provisioning'] = [...$provisioning, 'route' => $input['route_create'] ?? null, 'database' => $database,
+                'server_database' => $server['input'] ?? null];
             // F8: 60 s for the create phases, the admitted setup timeouts (the setup phase runs within 540 s),
             // 30 s for the Process phase, 180 s for the Route child (CSR, signing, install, publication and its TLS probe; 117 s measured cold),
-            // and 180 s for the database copy (its snapshot and install timeouts).
+            // and 180 s for the database copy or the owned server database (its create, owner check and fill).
             $input['run_budget_seconds'] = 60 + min(LifecycleStep::MaxTotalTimeoutSeconds, array_sum(array_map(
                 static fn (LifecycleStep $step): int => $step->timeoutSeconds, app(ProjectLifecycleStepStore::class)->ordered($project, LifecyclePhase::Setup)))) + 30
-                + (isset($input['route_create']) ? 180 : 0) + ($database === null ? 0 : 180);
+                + (isset($input['route_create']) ? 180 : 0) + ($database === null && $server === null ? 0 : 180);
 
             return $this->operations->execute('instance.create', 'instance', $instance->id, $node->id, $input, $caller, $requestId);
         });
+    }
+
+    /**
+     * The owner, database and test databases on a Database server, recorded as `database:create --instance` records
+     * them and created by the run's `operation-database-create` child. A MySQL source on that server is the default
+     * Instance's database, which the run then copies in (ADR 0191).
+     *
+     * @return array{connection:DatabaseConnection,input:array<string,mixed>}
+     */
+    private function serverDatabase(Instance $instance, string $serverSlug, ?InstanceDatabaseClonePlan $clone): array
+    {
+        $prepared = app(CreateServerDatabaseAction::class)->prepareForInstance($serverSlug, $instance);
+        $connection = DatabaseConnection::query()->findOrFail(ValidatedData::integer($prepared->input['connection_id']));
+        DatabaseConnectionTarget::query()->updateOrCreate(['instance_id' => $instance->id, 'prefix' => 'DB'],
+            ['database_connection_id' => $connection->id, 'network' => 'wireguard']);
+        $source = $clone?->server !== null && $clone->server->id === $connection->database_server_id ? $clone->connection->database : null;
+
+        return ['connection' => $connection, 'input' => ['intent_id' => ValidatedData::integer($prepared->input['intent_id']),
+            'connection_id' => $connection->id, 'server_id' => $prepared->targetId, 'node_id' => $prepared->nodeId, 'source' => $source]];
     }
 
     /**
@@ -189,8 +219,7 @@ final readonly class StartDevelopmentInstanceCreateAction
     {
         $relative = ValidatedData::string($clone->relativePath);
         $target = rtrim($instance->checkout_path, '/').'/'.$relative;
-        $slug = $instance->project->slug.'-'.$instance->name;
-        $slug = strlen($slug) <= 63 ? $slug : rtrim(substr($slug, 0, 54), '-').'-'.substr(sha1($slug), 0, 8);
+        $slug = OwnedDatabaseSlug::for($instance);
         $connection = DatabaseConnection::query()->firstOrCreate(['slug' => $slug],
             ['driver' => DatabaseDriver::Sqlite->value, 'node_id' => $instance->node_id, 'owner_instance_id' => $instance->id, 'path' => $target]);
         if ($connection->owner_instance_id !== $instance->id || $connection->path !== $target) {

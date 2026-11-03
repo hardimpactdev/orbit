@@ -1,4 +1,3 @@
 node.worker_known_hosts
 process.install_instance_definitions
-route.withdraw
 tasks.maintenance_finish

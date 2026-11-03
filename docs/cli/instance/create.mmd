@@ -36,6 +36,8 @@ sequenceDiagram
   %%> - only when the default Instance has a SQLite database under DB; the copy lands before setup migrates it
   opt --database-server
     SW->>N: Create owner and databases<br/>child operation-database-create
+    %%> When:
+    %%> - also without the option, when the default Instance's database is MySQL on a server; its dump is then copied in
   end
   SW->>N: Run Project setup steps<br/>@swamp/ssh exec · in order
   SW->>N: Create, start Processes<br/>child operation-process-create

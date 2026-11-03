@@ -60,11 +60,25 @@ final readonly class DevelopmentCreateEnvironment
     {
         $instance->loadMissing(['node', 'project']);
 
-        return $this->renderer->render(new InstanceEnvironmentContext(
+        return $this->renderer->render($this->context($instance), $this->store->values($instance));
+    }
+
+    private function context(Instance $instance): InstanceEnvironmentContext
+    {
+        return new InstanceEnvironmentContext(
             instanceId: $instance->id, projectId: $instance->project_id, nodeId: $instance->node_id, environment: 'development',
             path: $this->directory($instance), executionUser: $instance->node->user, laravel: $instance->project->is_laravel === true,
             routeId: null, routeDomain: $this->domain($instance), nodeStatus: $instance->node->status->value, node: $instance->node,
-        ), $this->store->values($instance));
+        );
+    }
+
+    /** `.env.testing` for an owned SQL database with a test database, rendered as `env:sync` renders it; else null. */
+    public function testing(Instance $instance): ?string
+    {
+        $instance->loadMissing(['node', 'project']);
+        $plan = app(InstanceTestEnvironment::class)->plan($instance->id, $this->store->values($instance));
+
+        return $plan === null ? null : $this->renderer->render($this->context($instance), $plan->values);
     }
 
     /** The domain of the Instance's own Route, which the create reserved before admission. */

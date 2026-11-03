@@ -93,13 +93,6 @@ it('keeps rows and associations when a native withdrawal fails, with the failed 
         ->and($operation->fresh()->status)->toBe(OperationStatus::Failed);
 });
 
-it('projects withdrawal without deleting the owning Route', function (): void {
-    $operation = app(NativeRouteRemovalAdmission::class)->start('route.withdraw', $this->route);
-    app(NativeRouteRemovalProjection::class)->apply($operation, ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-31T08:00:00.000Z', 'finished_at' => '2026-10-31T08:00:01.000Z', 'result' => ['ready' => true]]);
-    expect($this->route->fresh()->status)->toBe(RouteStatus::Retiring)
-        ->and($this->route->targets()->count())->toBe(1);
-});
-
 it('keeps complete immutable inputs on the coordinator and denies a foreign participant callback', function (): void {
     $operation = app(NativeRouteRemovalAdmission::class)->start('route.destroy', $this->route, true);
     expect($operation->node_id)->toBe($this->control->id);

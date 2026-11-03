@@ -40,8 +40,8 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
         ["prepare", phases.prepare === "succeeded"],
         ["source", phases.fetch !== "failed" && commit !== null],
         ["environment", phases.environment === "succeeded"],
-        // Only a create that copies the default Instance's database runs the database phase.
-        ["database", intent.database == null || phases.database === "succeeded"],
+        // Only a create that copies the default database or owns a server database runs the database phase.
+        ["database", (intent.database == null && intent.server_database == null) || phases.database === "succeeded"],
         ["setup", failedSetup < 0],
         [
             "processes",

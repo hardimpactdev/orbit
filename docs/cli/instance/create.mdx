@@ -26,8 +26,8 @@ Create runs these steps on the Node, in order:
 
 1. Clone the repository and check out the branch. The Gateway mints a read token for this one repository, valid one hour.
 2. Write `.env`. The Gateway renders it from the Project's env template with `APP_URL`, a new `APP_KEY`, and the database keys. The file has mode 0640 and group `orbit-env`, so the Node agent can report its key names.
-3. When the Project's `default` Instance has a SQLite database under `DB`, copy it to the same path in the new checkout. The copy is the Instance's own `<project>-<instance>` connection, and `.env` already names it.
-4. With `--database-server`, create the database owner, the database, and the test database. An owned MySQL or PostgreSQL database also gets `.env.testing`. Native create does not run this step yet: `--database-server` returns `operation.kind_unavailable` before a run starts.
+3. When the Project's `default` Instance has a SQLite database under `DB`, and no `--database-server` is given, copy it to the same path in the new checkout. The copy is the Instance's own `<project>-<instance>` connection, and `.env` already names it.
+4. With `--database-server`, or when the `default` Instance's database is MySQL on a Database server, create the Instance's owner, database and test database there, as [`database:create --instance`](/reference/database-servers#create-a-database-on-a-server) does. A MySQL `default` database is then copied in. `.env.testing` names the test database.
 5. Run the Project setup steps, such as `composer install`, `vp install`, and `php artisan migrate`.
 6. Create and start the Processes from the Project's development Process definitions.
 7. For a web-serving Project, create its Route the way [`route:create`](/cli/route/create) does, and probe the site over TLS. When this run starts every Process of the Instance, including those a failed earlier run started, it also marks the Instance awake, so the first request reaches the application instead of the wake page. A standalone `route:create` does not set the marker.
