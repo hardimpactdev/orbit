@@ -1,0 +1,44 @@
+{
+  "kind": "node.worker_known_hosts",
+  "workflow": "operation-node-worker-known-hosts",
+  "topology": "minimal",
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "before_gateway": [
+    [
+      "runuser",
+      "-u",
+      "orbit",
+      "--",
+      "install",
+      "-m",
+      "0644",
+      "/dev/null",
+      "/home/orbit/.ssh/known_hosts"
+    ],
+    [
+      "runuser",
+      "-u",
+      "orbit",
+      "--",
+      "php",
+      "swamp/proof/node.worker_known_hosts/prepare.php"
+    ]
+  ],
+  "request": {
+    "method": "GET",
+    "path": "operations/${fixture.operation}"
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Write known hosts",
+      "job": "known_hosts",
+      "step": "Write known hosts",
+      "budget_seconds": 15
+    }
+  ],
+  "parity": "swamp/proof/node.worker_known_hosts/parity.py"
+}

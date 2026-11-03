@@ -1,0 +1,26 @@
+{
+  "kind": "node.worker_known_hosts",
+  "source_commit": "f8c5f67893fdc8c8976da2444cb7bb12427d4db7",
+  "topology": "minimal",
+  "topology_version": 16,
+  "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.worker_known_hosts/20261103T174948Z-minimal.json",
+  "proof_pass": true,
+  "operation_id": 4,
+  "swamp_run_id": "51113625-08d0-4a59-8fb2-1a6e61a0de5f",
+  "operation_seconds": 2.5,
+  "run_seconds": 4.9,
+  "write_seconds": 0.946,
+  "budget_seconds": 1800,
+  "write_budget_seconds": 15,
+  "samples": 1,
+  "p95_seconds": 2.5,
+  "parity": "parity: exact recorded public pins, digest, mode 0600 and worker ownership",
+  "scripts_deleted": 0,
+  "limits": "Disposable topology; four recorded public host pins. No production source uptake or concurrent-publication claim. Workflow and Gateway publication source unchanged after merging main.",
+  "cleanup": {
+    "task_vm_id": 512,
+    "cancel_operation_id": 9583,
+    "destroyed": true,
+    "destroyed_at": "2026-11-03T17:51:52Z"
+  }
+}
