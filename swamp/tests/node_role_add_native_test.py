@@ -175,3 +175,26 @@ if 'install' in sys.argv:
         self.assertEqual(len(checks), 2)
         self.assertLessEqual(checks[0]['completedAt'], checks[1]['startedAt'],
                              'health checks from one Metrics Node must bound worker memory')
+
+    def test_runtime_file_checks_on_one_node_do_not_overlap(self):
+        path = self.repo / 'workflows/workflow-operation-node-role-add.yaml'
+        workflow = yaml.safe_load(path.read_text())
+        job = next(job for job in workflow['jobs']
+                   if any(step['name'] == 'Check runtime files' for step in job['steps']))
+        job.pop('dependsOn', None)
+        workflow['jobs'] = [job]
+        path.write_text(yaml.safe_dump(workflow, sort_keys=False))
+        for index in range(2):
+            file = self.host / ('runtime-' + str(index))
+            file.write_text('managed runtime\n')
+            self.intent['runtime']['files'].append({
+                'path': str(file), 'content': file.read_text(), 'owner': pwd.getpwuid(os.getuid()).pw_name,
+                'group': grp.getgrgid(os.getgid()).gr_name, 'mode': '0644',
+            })
+        history = self.run_role()
+        checks = sorted((step for job in history['jobs'] for step in job['steps']),
+                        key=lambda step: step['startedAt'])
+        self.assertEqual(len(checks), 2)
+        self.assertTrue(all(step['status'] == 'succeeded' for step in checks))
+        self.assertLessEqual(checks[0]['completedAt'], checks[1]['startedAt'],
+                             'runtime resource dispatches on one Node must bound worker memory')

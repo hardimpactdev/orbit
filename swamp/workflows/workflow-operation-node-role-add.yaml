@@ -80,6 +80,7 @@ jobs:
   - {job: phase_2, condition: {type: succeeded}}
   steps:
   - name: Inspect Docker CE
+    concurrency: 1
     labels:
       role: swamp
     forEach:
@@ -125,6 +126,7 @@ jobs:
     role: swamp
   steps:
   - name: Create role folders
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -142,6 +144,7 @@ jobs:
     role: swamp
   steps:
   - name: Download Bun
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -158,6 +161,7 @@ jobs:
     role: swamp
   steps:
   - name: Extract Bun
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -174,6 +178,7 @@ jobs:
     role: swamp
   steps:
   - name: Publish Bun
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -190,6 +195,7 @@ jobs:
     role: swamp
   steps:
   - name: Publish the Bun command
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -206,6 +212,7 @@ jobs:
     role: swamp
   steps:
   - name: Check Bun version
+    concurrency: 1
     labels:
       role: swamp
     forEach:
@@ -272,6 +279,7 @@ jobs:
     role: swamp
   steps:
   - name: Configure PHP-FPM
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -287,6 +295,7 @@ jobs:
     role: swamp
   steps:
   - name: Write role files
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -318,6 +327,7 @@ jobs:
     role: swamp
   steps:
   - name: Start role services
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -334,6 +344,7 @@ jobs:
     role: swamp
   steps:
   - name: Create runtime groups
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -350,6 +361,7 @@ jobs:
     role: swamp
   steps:
   - name: Create runtime users
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -366,6 +378,7 @@ jobs:
     role: swamp
   steps:
   - name: Create runtime folders
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -383,6 +396,7 @@ jobs:
     role: swamp
   steps:
   - name: Check out Reverb
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -400,6 +414,7 @@ jobs:
     role: swamp
   steps:
   - name: Install Reverb packages
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -418,6 +433,7 @@ jobs:
     role: swamp
   steps:
   - name: Write runtime files
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -435,6 +451,7 @@ jobs:
     role: swamp
   steps:
   - name: Write private files
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -452,6 +469,7 @@ jobs:
     role: swamp
   steps:
   - name: Publish the Reverb release
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -468,6 +486,7 @@ jobs:
     role: swamp
   steps:
   - name: Apply Gateway DNS policy
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -484,6 +503,7 @@ jobs:
     role: swamp
   steps:
   - name: Start Gateway DNS policy
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -501,6 +521,7 @@ jobs:
     role: swamp
   steps:
   - name: Check Gateway DNS policy
+    concurrency: 1
     labels:
       role: swamp
     forEach:
@@ -516,6 +537,7 @@ jobs:
     role: swamp
   steps:
   - name: Apply runtime units
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -574,6 +596,7 @@ jobs:
     role: swamp
   steps:
   - name: Pull Metrics images
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -592,6 +615,7 @@ jobs:
   - {job: phase_32, condition: {type: succeeded}}
   steps:
   - name: Inspect Metrics containers
+    concurrency: 1
     guard: ${{ inputs.kind != "node.role_converge" }}
     labels:
       role: swamp
@@ -610,6 +634,7 @@ jobs:
     role: swamp
   steps:
   - name: Create Metrics volumes
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -627,6 +652,7 @@ jobs:
     role: swamp
   steps:
   - name: Remove Metrics containers
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -648,6 +674,7 @@ jobs:
     role: swamp
   steps:
   - name: Start Metrics containers
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -667,6 +694,7 @@ jobs:
     role: swamp
   steps:
   - name: Check Metrics containers
+    concurrency: 1
     labels:
       role: swamp
     forEach:
@@ -711,6 +739,7 @@ jobs:
     role: swamp
   steps:
   - name: Read CI resources
+    concurrency: 1
     labels:
       role: swamp
     forEach:
@@ -764,6 +793,7 @@ jobs:
     role: swamp
   steps:
   - name: Check CI resources
+    concurrency: 1
     labels:
       role: swamp
     forEach:
@@ -791,6 +821,7 @@ jobs:
     role: swamp
   steps:
   - name: Create ClickHouse folders
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -810,6 +841,7 @@ jobs:
     role: swamp
   steps:
   - name: Write ClickHouse config
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -829,6 +861,7 @@ jobs:
     role: swamp
   steps:
   - name: Pull the Analytics image
+    concurrency: 1
     guard: ${{ inputs.kind == "node.role_converge" }}
     labels:
       role: swamp
@@ -881,6 +914,7 @@ jobs:
     role: swamp
   steps:
   - name: Wait for runtime endpoints
+    concurrency: 1
     labels:
       role: swamp
     forEach:
@@ -958,6 +992,7 @@ jobs:
   - {job: swamp_runtime_job, condition: {type: succeeded}}
   steps:
   - name: Start ${{ self.worker }}
+    concurrency: 1
     writes: true
     labels:
       role: swamp
@@ -1002,6 +1037,7 @@ jobs:
           : inputs.intent.runtime.swamp).ssh_execution.identity_file }}', become: true, service: orbit-swamp-worker@.service, unitFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
           : inputs.intent.runtime.swamp).units.worker }}'}, inputs: {}}
   - name: Check ${{ self.worker }}
+    concurrency: 1
     labels:
       role: swamp
     guard: ${{ inputs.intent.runtime.swamp == null }}
@@ -1201,6 +1237,7 @@ jobs:
     role: swamp
   steps:
   - name: Stage Prometheus config
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -1217,6 +1254,7 @@ jobs:
     role: swamp
   steps:
   - name: Validate Prometheus config
+    concurrency: 1
     labels:
       role: swamp
     forEach:
@@ -1234,6 +1272,7 @@ jobs:
     role: swamp
   steps:
   - name: Publish Prometheus config
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -1251,6 +1290,7 @@ jobs:
     role: swamp
   steps:
   - name: Reload Prometheus
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -1268,6 +1308,7 @@ jobs:
     role: swamp
   steps:
   - name: Check Prometheus
+    concurrency: 1
     labels:
       role: swamp
     forEach:
@@ -1285,6 +1326,7 @@ jobs:
     role: swamp
   steps:
   - name: Check role services
+    concurrency: 1
     labels:
       role: swamp
     forEach:
@@ -1300,6 +1342,7 @@ jobs:
     role: swamp
   steps:
   - name: Check runtime units
+    concurrency: 1
     labels:
       role: swamp
     forEach:
@@ -1328,6 +1371,7 @@ jobs:
     role: swamp
   steps:
   - name: Check runtime groups
+    concurrency: 1
     labels:
       role: swamp
     forEach:
@@ -1343,6 +1387,7 @@ jobs:
     role: swamp
   steps:
   - name: Check runtime users
+    concurrency: 1
     labels:
       role: swamp
     forEach:
@@ -1373,6 +1418,7 @@ jobs:
     role: swamp
   steps:
   - name: Check role folders
+    concurrency: 1
     labels:
       role: swamp
     forEach:
@@ -1389,6 +1435,7 @@ jobs:
     role: swamp
   steps:
   - name: Check role files
+    concurrency: 1
     labels:
       role: swamp
     forEach:
@@ -1405,6 +1452,7 @@ jobs:
     role: swamp
   steps:
   - name: Check runtime folders
+    concurrency: 1
     labels:
       role: swamp
     forEach:
@@ -1421,6 +1469,7 @@ jobs:
     role: swamp
   steps:
   - name: Check runtime files
+    concurrency: 1
     labels:
       role: swamp
     forEach:
@@ -1437,6 +1486,7 @@ jobs:
     role: swamp
   steps:
   - name: Check private files
+    concurrency: 1
     labels:
       role: swamp
     forEach:
@@ -1568,6 +1618,7 @@ jobs:
   - {job: role, condition: {type: completed}}
   steps:
   - name: Remove Prometheus staging
+    concurrency: 1
     labels:
       role: swamp
     writes: true
@@ -1579,6 +1630,7 @@ jobs:
         nodeHost: '${{ self.metrics.ssh.target.host }}', nodeUser: '${{ self.metrics.ssh.target.user }}', nodePort: '${{ self.metrics.ssh.target.port }}', nodeIdentityFile: '${{ self.metrics.ssh.identity_file
           }}', become: true, path: '${{ self.metrics.candidate }}', ensure: absent}, inputs: {}}
   - name: Remove init containers
+    concurrency: 1
     guard: ${{ inputs.kind == "node.role_converge" }}
     labels:
       role: swamp
