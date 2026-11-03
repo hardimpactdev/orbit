@@ -18,8 +18,6 @@ Queuing release...
 │
 ├  ○ Publish web app
 │
-├  ○ Run smoke tests
-│
 └  Operation failed.
 
 Another Gateway release step is running. Wait for it to finish.

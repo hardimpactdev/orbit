@@ -21,7 +21,6 @@ use App\Console\Commands\RollbackGatewayReleaseCommand;
 use App\Console\Commands\RunGatewayReleaseCommand;
 use App\Console\Commands\SettleGatewayReleaseCommand;
 use App\Console\Commands\ShowGatewayReleaseCommand;
-use App\Console\Commands\SmokeGatewayReleaseCommand;
 use App\Console\Commands\StageGatewayReleaseCommand;
 use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Gateway\GatewayServingHost;
@@ -34,7 +33,6 @@ use App\Domain\GatewayReleases\GatewayReleaseExecutionOwner;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayReleaseObserver;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
-use App\Domain\GatewayReleases\GatewayReleaseSmoke;
 use App\Domain\GatewayReleases\GatewayReleaseSwampLoad;
 use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
 use App\Domain\GatewayReleases\GatewayReleaseUnitStarter;
@@ -82,7 +80,6 @@ use App\Infrastructure\GatewayReleases\LocalGatewayReleaseRuntime;
 use App\Infrastructure\GatewayReleases\NativeGatewayReleaseExecutionOwner;
 use App\Infrastructure\GatewayReleases\NativeGatewayReleaseSwampLoad;
 use App\Infrastructure\GatewayReleases\NativeGatewayReleaseUnitConverger;
-use App\Infrastructure\GatewayReleases\ScriptGatewayReleaseSmoke;
 use App\Infrastructure\GatewayReleases\SqliteGatewayReleaseDatabase;
 use App\Infrastructure\GatewayReleases\SystemdGatewayReleaseDrain;
 use App\Infrastructure\GatewayReleases\SystemdGatewayReleaseUnitStarter;
@@ -114,18 +111,6 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 webRoot: rtrim(Config::string('orbit.gateway_web'), '/'),
             ),
         );
-        $this->app->bind(
-            ScriptGatewayReleaseSmoke::class,
-            static fn (Application $app): ScriptGatewayReleaseSmoke => new ScriptGatewayReleaseSmoke(
-                layout: $app->make(GatewayReleaseLayout::class),
-                processes: $app->make(ProcessRunner::class),
-                origin: rtrim(Config::string('orbit.gateway_verify_origin'), '/'),
-                webRoot: rtrim(Config::string('orbit.gateway_web'), '/'),
-                timeoutSeconds: Config::integer('orbit.gateway_release_smoke_timeout'),
-                writeCheckProject: Config::string('orbit.gateway_release_smoke_project'),
-            ),
-        );
-        $this->app->bind(GatewayReleaseSmoke::class, ScriptGatewayReleaseSmoke::class);
         $this->app->bind(
             GatewayReleaseDatabase::class,
             static fn (Application $app): SqliteGatewayReleaseDatabase => new SqliteGatewayReleaseDatabase(
@@ -264,7 +249,6 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
             runtime: $runtime ?? $app->make(GatewayReleaseRuntime::class),
             verifier: $app->make(GatewayReleaseVerifier::class),
             web: $app->make(GatewayReleaseWebBuild::class),
-            smoke: $app->make(GatewayReleaseSmoke::class),
             recorder: $app->make(GatewayReleaseRecorder::class),
             builder: $app->make(GatewayReleaseBuilder::class),
             keptReleases: Config::integer('orbit.gateway_releases.keep'),
@@ -305,7 +289,6 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
             RunGatewayReleaseCommand::class,
             SettleGatewayReleaseCommand::class,
             ShowGatewayReleaseCommand::class,
-            SmokeGatewayReleaseCommand::class,
             StageGatewayReleaseCommand::class,
         ]);
     }

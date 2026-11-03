@@ -252,7 +252,7 @@ Each step is one pull request, except step 2, which is four. Each keeps Tasks wo
 
 Every pull request in [Build order](#build-order) passes these checks on the live fleet after its Gateway release.
 
-1. The Gateway release finishes, `gateway:release:smoke` passes, and `orbit doctor` shows no new drift.
+1. The Gateway release finishes, and `orbit doctor` shows no new drift.
 2. A canary task group on a task VM runs end to end: claim, a Pi turn through the router, handoff and review, settle, and destroy. Afterwards the router's key list is the same as before the claim: the anchor key and no group key.
 3. The allowed switch flows hold, and the canary passes again afterwards:
    - `extension:disable ai-router` (or `proxycli` before step 3) while `tasks` is enabled refuses with `extension.required` and changes nothing.
