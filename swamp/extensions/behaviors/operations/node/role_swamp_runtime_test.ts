@@ -174,7 +174,7 @@ for (
     });
 }
 
-Deno.test("grants mode renders the Gateway manifest and serve's other grants from the repository", async () => {
+Deno.test("Gateway renders the manifest and serve grants without widening native output access", async () => {
     const repo = await Deno.makeTempDir();
     try {
         await Deno.mkdir(`${repo}/config`);
@@ -191,14 +191,9 @@ Deno.test("grants mode renders the Gateway manifest and serve's other grants fro
             import.meta.url,
         );
         await Deno.copyFile(serve, `${repo}/config/serve-grants.json`);
-        const result = await new Deno.Command("python3", {
+        const result = await new Deno.Command("php", {
             args: [
-                "-I",
-                new URL(
-                    "../fleet-recipe/scripts/swamp_workers.py",
-                    import.meta.url,
-                ).pathname,
-                "grants",
+                new URL("../../../../../apps/gateway/bin/render-swamp-grants", import.meta.url).pathname,
                 repo,
             ],
         }).output();
@@ -207,9 +202,10 @@ Deno.test("grants mode renders the Gateway manifest and serve's other grants fro
             true,
             new TextDecoder().decode(result.stderr),
         );
+        const rendered = JSON.parse(new TextDecoder().decode(result.stdout));
         const source = JSON.parse(await Deno.readTextFile(manifest));
         const grants = JSON.parse(
-            await Deno.readTextFile(`${repo}/grants/orbit-gateway.yaml`),
+            rendered["grants/orbit-gateway.yaml"],
         ).grants;
         assertEquals(
             grants.length,
@@ -234,7 +230,7 @@ Deno.test("grants mode renders the Gateway manifest and serve's other grants fro
             true,
         );
         const others = JSON.parse(
-            await Deno.readTextFile(`${repo}/grants/orbit-serve.yaml`),
+            rendered["grants/orbit-serve.yaml"],
         ).grants;
         assertEquals(others, JSON.parse(await Deno.readTextFile(serve)).grants);
         // Native resource outputs have generated keys, separate from Gateway execution-input copies.

@@ -126,6 +126,8 @@ A load-input change must release before a workflow requires its new fields. Reti
 
 Required checks invoke the Gateway renderer without deployment credentials and validate both grant files with the pinned serve startup parser before the commit can release.
 
+The checkout helper `swamp_workers.py` supports only `release-restart` for Lab #4282. Grant rendering stays in the Gateway; no Node script renders or publishes grants.
+
 The final `load` step prints the commit, the previous commit, and the workflow count. Any failure, or no terminal within the wait, pauses the release with `gateway.release_swamp_load_failed`, and the old release stays live. The record names the Operation. A failed load can leave the checkout on the new commit; fix forward and resume.
 
 Serve's extension reload keeps each manifest's `additionalFiles` list from serve's start ([Lab #4282](https://swamp-club.com/lab/4282)), so a new shipped script reaches workers only after a restart. Only the release load moves the checkout, so its HEAD reflog at serve's start time names the commit serve started from. The step compares the lists of that commit with the release commit's. When the release commit lists a new file, it schedules a serve restart 5 seconds later and reports the commit serve started from and the manifests with new files.
