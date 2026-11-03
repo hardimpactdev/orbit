@@ -16,7 +16,7 @@ assert plan['nodes'][router_id]['host'] == '10.231.0.11'
 expected = next(site['content'] for site in plan['router']['caddy'] if str(site['node_id']) == router_id)
 actual = subprocess.check_output(['incus', 'exec', 'metrics', '--', 'cat', '/etc/caddy/Caddyfile'], text=True, timeout=30)
 assert actual == expected
-assert '10.231.0.10:443' in actual and '10.231.0.12:443' in actual
+assert 'reverse_proxy https://10.231.0.10 https://10.231.0.12 {' in actual
 for name in ('target', 'peer', 'metrics'):
     subprocess.run(['incus', 'exec', name, '--', 'systemctl', 'is-active', '--quiet', 'caddy'], check=True, timeout=30)
     subprocess.run(['incus', 'exec', name, '--', 'caddy', 'validate', '--config', '/etc/caddy/Caddyfile', '--adapter', 'caddyfile'], check=True, timeout=60)
