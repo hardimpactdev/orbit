@@ -2,6 +2,7 @@ sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS 4 + R1-R4 (process.stop shape: 209, @swamp/ssh, full intent as inputs). instance.create reuses this workflow for development Processes.
   %% Tightened: flow-tighten 2026-11-02, rules 1-22 (cfgmgmt file/systemd/docker_*, no shipped scripts, no report step).
   %% Decided: Nick 2026-11-02, a Docker Process runs as one plain docker run through @swamp/ssh exec; pull with cfgmgmt docker_image, check with the docker_container check. "Remove the retired unit" belongs to process:update (rule 21).
+  %% Rule 23: 2026-11-03 required-only main path.
   %% status: migrated
   %% command: process:create
   %% kind: process.create
@@ -14,14 +15,19 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
-  CLI->>GW: process:create queue<br/>--node=7 --command=… --start
+  CLI->>GW: process:create queue<br/>--node=7 --command=…
   %%> Command:
-  %%> - `orbit process:create queue --node=7 --command=/usr/bin/php --command=artisan --command=queue:work --restart=on-failure --start`
+  %%> - `orbit process:create queue --node=7 --command=/usr/bin/php --command=artisan --command=queue:work`
   %%> - syntax: `process:create <name> (--instance=ID-or-domain | --node=ID-or-name | --project=ID --for=production) [options]`
   %%> Input:
-  %%> - the Process name and its owner: an Instance, a Node, or a Project definition
-  %%> - the runtime (`systemd` or `docker`), command, image, environment, ports, volumes and restart policy
-  %%> - `--start` to start it after it installs
+  %%> - the Process name, its owner (an Instance, a Node, or a Project definition) and its command
+  %%> - without options: a `systemd` Process, restart policy `never`, installed and left stopped
+  %%> Optional:
+  %%> - `--start` starts it after it installs; see the `opt --start` blocks
+  %%> - `--preset=vp-dev` (with `--instance`) adds the Vite steps
+  %%> - `--runtime=docker` with `--image` runs it as a container instead of a unit; `--environment` (Docker only) adds the environment file; `--port` and `--volume` (Docker only) change only the container definition
+  %%> - `--working-directory`, `--user`, `--restart`, `--keep-alive`, `--no-restart-on-deploy` change only the rendered definition
+  %%> - `--idempotency-key` reuses a task start; `--json` returns JSON
   %%> Not handled here:
   %%> - a Project definition with `--for=production` is recorded only; it starts no run (R1)
   %%> Who can call it:
@@ -57,53 +63,57 @@ sequenceDiagram
   end
   Note over SW: Prepare the definition<br/>public rendering only
   %%> Resolves the observed home in certificate paths and shapes Docker argv; no Node effects.
-  opt required mounts set and running
+  opt --start
     SW->>N: Check required mounts<br/>ssh exec · stat
+    %%> systemd only: each recorded required mount, or `/` when none is recorded.
   end
-  opt environment values set
-    SW->>N: Write the environment<br/>cfgmgmt/file · 0600
-    %%> vault.get content, root owner; no secret in public run data.
-  end
-  opt Vite dev Process
+  opt --preset=vp-dev
     SW->>N: Publish the dev route<br/>native Vite workflow
     %%> Publishes the Vite environment before its unit starts.
   end
-  alt systemd
-    SW->>N: Apply the unit<br/>cfgmgmt/systemd.apply
-    %%> Publishes unitFile, reloads on content change, and applies the admitted boot and active state.
-    opt previous activation is pending
-      SW->>N: Reload systemd<br/>ssh exec · daemon-reload
-      %%> Covers a prior publish that failed before daemon-reload.
-    end
-    opt desired state is stopped
-      SW->>N: Stop the unit<br/>ssh exec · stop
-      %%> Cancels activating units too; pinned apply stops only active units.
-    end
+  SW->>N: Apply the unit<br/>cfgmgmt/systemd.apply
+  %%> Publishes unitFile, reloads on content change, and applies the admitted boot and active state: stopped by default.
+  opt previous activation is pending
+    SW->>N: Reload systemd<br/>ssh exec · daemon-reload
+    %%> Covers a prior publish that failed before daemon-reload.
+  end
+  SW->>N: Stop the unit<br/>ssh exec · stop
+  %%> The desired state is stopped by default; cancels activating units too, which pinned apply does not stop.
+  %%> With `--start` this step is skipped.
+  opt --start
     opt changed unit is already running
       SW->>N: Restart if changed<br/>cfgmgmt/systemd.restart
       %%> Pinned apply leaves an already active process running after unitFile changes.
     end
-    SW->>N: Check the unit<br/>cfgmgmt/systemd.check
-  else Docker
+  end
+  SW->>N: Check the unit<br/>cfgmgmt/systemd.check
+  opt --runtime=docker
     SW->>N: Pull the image<br/>cfgmgmt/docker_image
+    %%> The Docker steps replace the systemd steps: the unit steps and the required-mount check are skipped.
+    opt --environment
+      SW->>N: Write the environment<br/>cfgmgmt/file · 0600
+      %%> Docker only: the env-file for the container; vault.get content, root owner; no secret in public run data.
+    end
     SW->>N: Run the container<br/>ssh exec · docker run -d
     %%> One argv command, env-file, workdir, image and exact command arguments.
-    opt desired state is stopped
-      SW->>N: Stop the container<br/>ssh exec · docker stop
-      %%> The detached run starts it; this step converges a stopped creation or update.
-    end
+    SW->>N: Stop the container<br/>ssh exec · docker stop
+    %%> The detached run starts it; the desired state is stopped by default, so this step stops it.
+    %%> With `--start` this step is skipped and the container keeps running.
     SW->>N: Check the container<br/>cfgmgmt/docker_container
   end
-  opt Vite dev Process, running
-    SW->>N: Check the listener<br/>ssh exec · ss
-    SW->>N: Mark it awake<br/>cfgmgmt/file
+  opt --start
+    opt --preset=vp-dev
+      SW->>N: Check the listener<br/>ssh exec · ss
+      SW->>N: Mark it awake<br/>cfgmgmt/file
+    end
   end
   SW->>N: Verify it runs<br/>native assert
-  %%> Requires the admitted active/stopped state and boot policy, and any Vite listener.
-  alt Process running
-    N-->>SW: active (running)
+  %%> Requires the admitted desired state (stopped, or active with `--start`), the boot policy, and any Vite listener.
+  alt desired state reached
+    N-->>SW: inactive (stopped)
     %%> Returns:
-    %%> - the Process has its desired state
+    %%> - the Process has its desired state: stopped
+    %%> - with `--start`: active (running)
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
     %%> - its shared run reader sees the terminal event and reads the end check's output; Swamp never calls the Gateway
