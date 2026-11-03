@@ -1,5 +1,6 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.19";
-import { planSync, resultSync } from "./mod.ts";
+import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
+import { behavior, planSync, resultSync } from "./mod.ts";
 const intent = {
     url: "https://vault.example.test",
     client_id: "client",
@@ -129,4 +130,30 @@ Deno.test("public terminal ledger preserves the 256 KiB transport bound", () => 
         Error,
         "vault.result_invalid",
     );
+});
+
+Deno.test("teardown plans only exact ledger matches and skips missing or empty ledgers", () => {
+    const teardown = { ...intent, wanted: [] };
+    const inventory = [cipher("published"), cipher("copy"), cipher("foreign", null),
+        cipher("changed", "database-user:8"),
+        { ...cipher("other-org"), organization_id: "other" },
+        { ...cipher("other-collection"), collection_ids: ["other"] }];
+    assertEquals(planSync(teardown, inventory).deletes.map((row) => row.id), ["published"]);
+    assertEquals(planSync(teardown, []).deletes, []);
+    assertEquals(planSync({ ...teardown, ledger: [] }, inventory).deletes, []);
+});
+
+Deno.test("failed CLI execution publishes only vault.sync_failed", async () => {
+    const { context, getWrittenResources } = createModelTestContext();
+    const result = await behavior.methods.result.execute({
+        plan: planSync(intent, []), writes: [], successful: false,
+    }, context);
+    assertEquals(result, { successful: false, stdout: '{"error_code":"vault.sync_failed"}' });
+    assertEquals(getWrittenResources().map((row) => row.data), [result]);
+});
+
+Deno.test("a changed fingerprint updates the recorded cipher and preserves its identity in the result", () => {
+    const plan = planSync(intent, [cipher("published")]);
+    assertEquals(plan.writes.map((row) => row.cipher_id), ["published"]);
+    assertEquals(resultSync(plan, [{ source: "database-user:7", cipher_id: "published", revision: "new", fingerprint: "new" }]).data.cipher_ids, ["published"]);
 });
