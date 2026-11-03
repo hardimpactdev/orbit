@@ -122,12 +122,14 @@ jobs:
             rm -rf "$app/storage"
             grep -qxF /apps/gateway/storage "$repo/info/exclude" 2>/dev/null || { install -d -m 0755 "$repo/info"; echo /apps/gateway/storage >> "$repo/info/exclude"; }
             ln -s "$base/shared/gateway-storage" "$app/storage"
+            log=$(mktemp)
             for project in apps/cli apps/gateway; do
-              timeout 900 composer --working-dir="$release/$project" install --no-dev --prefer-dist --no-interaction --no-progress --quiet \
-                || fail gateway.release_dependencies_failed "composer install failed in $project"
-              timeout 120 composer --working-dir="$release/$project" check-platform-reqs --no-dev --no-interaction --quiet \
-                || fail gateway.release_dependencies_failed "platform requirements failed in $project"
+              timeout 900 composer --working-dir="$release/$project" install --no-dev --prefer-dist --no-interaction --no-progress --no-ansi > "$log" 2>&1 \
+                || { tail -n 20 "$log" >&2; fail gateway.release_dependencies_failed "composer install failed in $project"; }
+              timeout 120 composer --working-dir="$release/$project" check-platform-reqs --no-dev --no-interaction --no-ansi > "$log" 2>&1 \
+                || { tail -n 20 "$log" >&2; fail gateway.release_dependencies_failed "platform requirements failed in $project"; }
             done
+            rm -f "$log"
             install -d -m 0755 "$release/apps/agent/delivery"
             printf '%s' "$manifest" > "$release/apps/agent/delivery/manifest.json"
             chmod 0444 "$release/apps/agent/delivery/manifest.json"
