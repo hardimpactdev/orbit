@@ -84,7 +84,7 @@
     {
       "file": "extensions/behaviors/automatic-deploy/gateway.ts",
       "rule": "gateway-http",
-      "count": 3,
+      "count": 2,
       "evidence": [
         "<unknown> <unknown>"
       ]
@@ -131,15 +131,6 @@
       "rule": "private-material",
       "count": 13,
       "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/_lib/local-worker.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "/usr/bin/head",
-        "/usr/bin/timeout"
-      ]
     },
     {
       "file": "extensions/behaviors/operations/dependency-merge/admission.ts",

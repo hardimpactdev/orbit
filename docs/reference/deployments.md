@@ -194,7 +194,7 @@ Under the Instance lock, the automatic operation rechecks enablement, manual pau
 
 A manual deploy or rollback row pauses it regardless of whether that attempt is running, failed or succeeded. A rollback records its rolled-away block when its outcome is recorded, before history pruning, so resume and history pruning cannot lose it while Swamp is idle. `auto_deploy=true` resumes after the newest manual row and keeps the block. A paused operation ends with `deployment.paused`; a rolled-away commit ends with `deployment.commit_blocked`. A manual action that has already started and still holds the Instance makes a new start busy. A rollback may supersede an unclaimed queued deploy under the existing rules.
 
-These primitives retain the existing operation receipt, history, output, recovery, target exclusion and cooperative cancellation. Swamp owns automatic policy for production and default development checkouts, and executes their deployment Operations. Both policies use the same keyed Gateway admission and receipt contracts.
+These primitives retain the existing operation receipt, history, output, recovery, target exclusion and cooperative cancellation. Swamp owns automatic policy for production and default development checkouts, and executes their deployment Operations. Both policies use the same keyed Gateway admission and receipt contracts. The policy runs on a Swamp worker on Node 209 and calls the Gateway API directly over HTTPS, trusting the Orbit root CA.
 
 ### The deploy operation
 
