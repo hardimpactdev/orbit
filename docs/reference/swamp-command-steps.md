@@ -2,7 +2,7 @@
 title: "Swamp command steps"
 description: "The shared execution-copy and terminal-output contract for native command steps."
 covers:
-  - apps/gateway/app/Infrastructure/Swamp/{StartSwampRun,SwampCommandStep,SwampVaultExecutionCopy,SwampRunSubscriber,NativeRunResult}.php
+  - apps/gateway/app/Infrastructure/Swamp/{StartSwampRun,SwampCommandStep,SwampVaultExecutionCopy,SwampRunSubscriber,NativeRunResult,SwampConnection,SwampDispatch,SwampTerminalReadUnavailable}.php
   - apps/gateway/app/Jobs/Operations/ProjectSwampTerminal.php
 ---
 
@@ -45,7 +45,9 @@ A `completed` event can carry a failed run status. Native `interrupted` remains 
 
 A successful run requires its public JSON object; a kind without a result step declares `native` instead (below).
 
-Missing, mismatched or unreadable history leaves the Operation unchanged and raises `swamp.terminal_result_unavailable`; it never triggers resubmission.
+Missing, mismatched or unreadable history leaves the Operation unchanged and raises `swamp.terminal_result_unavailable`; it never triggers resubmission. When Serve cannot be read at all (the connection fails, Serve rate-limits the request, or no reply comes), the queued projection retries with exponential backoff and equal jitter (30–60 seconds initially, capped at 300 seconds) until the kind's run deadline. A missing, mismatched or still-running history is not retried.
+
+Queued projection explicitly fails on permanent or unexpected errors, including a stale binding or missing Operation; unlimited attempts apply only to the delayed transport retry, never automatic exception retries. Direct invocation still raises the error. Terminal reads reuse the admission connection owner's endpoint-and-authority matching across jobs in each PHP process. A failed request drops the connection; replies still match the exact request ID.
 
 ### Read Swamp's run data instead of a result step
 

@@ -18,6 +18,7 @@ use App\Infrastructure\Swamp\SwampRunSubscriber;
 use App\Jobs\Operations\ProjectSwampTerminal;
 use App\Models\Node;
 use App\Models\Operation;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -523,6 +524,32 @@ it('refuses a stale binding before any history read or family projection', funct
     expect($operation->fresh()->result)->toBeNull();
 });
 
+it('fails a queued stale binding once instead of retrying it automatically', function (): void {
+    $operation = nativeSubscriberOperation();
+    $job = new ProjectSwampTerminal($operation->id, $operation->state['swamp_run_id'], 'succeeded')->withFakeQueueInteractions();
+    $operation->update(['state' => ['swamp_run_id' => '25b90c36-1497-45be-ab30-3f1fe650e8f2']]);
+    $history = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $history);
+
+    $job->handle(app(SwampCommandStep::class));
+
+    $job->assertFailedWith(ResourceOperationException::class);
+    $job->assertNotReleased();
+    expect($history->connections)->toBeEmpty();
+    expect($operation->fresh()->status)->toBe(OperationStatus::Running);
+});
+
+it('fails a queued missing Operation once instead of retrying lookup forever', function (): void {
+    $operation = nativeSubscriberOperation();
+    $job = new ProjectSwampTerminal($operation->id, $operation->state['swamp_run_id'], 'succeeded')->withFakeQueueInteractions();
+    $operation->delete();
+
+    $job->handle(app(SwampCommandStep::class));
+
+    $job->assertFailedWith(ModelNotFoundException::class);
+    $job->assertNotReleased();
+});
+
 it('ignores the old subscription after a binding notice replaces its run', function (): void {
     Bus::fake([ProjectSwampTerminal::class]);
     $operation = nativeSubscriberOperation();
@@ -542,6 +569,81 @@ it('ignores the old subscription after a binding notice replaces its run', funct
     Bus::assertDispatched(ProjectSwampTerminal::class, 1);
     Bus::assertDispatched(ProjectSwampTerminal::class, fn ($job): bool => $job->runId === $operation->state['swamp_run_id']);
     expect(array_column($socket->sent, 'type'))->toBe(['run.attach', 'run.attach']);
+});
+
+it('retries the terminal projection while Serve cannot be read, before the run deadline', function (): void {
+    config(['swamp.read_token' => 'synthetic-native-read-token', 'swamp.ca_path' => '/public/ca.pem']);
+    $operation = nativeSubscriberOperation();
+    $history = new FakeRoutePublicationSocket;
+    // Serve refuses the read, as under its rate limit: the connection fails before any reply.
+    $history->onConnect = static function (): void {
+        throw new WebSocketException('429');
+    };
+    app()->instance(WebSocketClient::class, $history);
+    $job = new ProjectSwampTerminal($operation->id, $operation->state['swamp_run_id'], 'succeeded')->withFakeQueueInteractions();
+
+    $job->handle(app(SwampCommandStep::class));
+
+    $job->assertReleased();
+    expect($job->job->releaseDelay)->toBeBetween(30, 60);
+    $job->assertNotFailed();
+    expect($operation->fresh()->status)->toBe(OperationStatus::Running);
+});
+
+it('ends an expired queued transport failure instead of an unlimited exception retry', function (): void {
+    $operation = nativeSubscriberOperation();
+    $this->travel(1801)->seconds();
+    $history = new FakeRoutePublicationSocket;
+    $history->onConnect = static fn () => throw new WebSocketException('429');
+    app()->instance(WebSocketClient::class, $history);
+    $job = new ProjectSwampTerminal($operation->id, $operation->state['swamp_run_id'], 'succeeded')->withFakeQueueInteractions();
+
+    $job->handle(app(SwampCommandStep::class));
+
+    $job->assertFailedWith(ResourceOperationException::class);
+    $job->assertNotReleased();
+    expect($history->connections)->toHaveCount(1);
+});
+
+it('caps delayed transport retries even for an old job with many attempts', function (): void {
+    $operation = nativeSubscriberOperation();
+    $history = new FakeRoutePublicationSocket;
+    $history->onConnect = static fn () => throw new WebSocketException('429');
+    app()->instance(WebSocketClient::class, $history);
+    $job = new ProjectSwampTerminal($operation->id, $operation->state['swamp_run_id'], 'succeeded')->withFakeQueueInteractions();
+    $job->job->attempts = 10000;
+
+    $job->handle(app(SwampCommandStep::class));
+
+    $job->assertReleased();
+    $job->assertNotFailed();
+    expect($job->job->releaseDelay)->toBeBetween(150, 300);
+});
+
+it('reuses one authenticated connection across separate terminal jobs', function (): void {
+    $operation = nativeSubscriberOperation();
+    $history = new FakeRoutePublicationSocket;
+    $history->keepConnected = true;
+    $history->reply = static fn (array $request): array => [['type' => $request['type'], 'id' => $request['id'], 'payload' => ['data' => [
+        'id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-test-native-events', 'status' => 'running',
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
+    ]]]];
+    app()->instance(WebSocketClient::class, $history);
+    foreach ([1, 2] as $_) {
+        $job = new ProjectSwampTerminal($operation->id, $operation->state['swamp_run_id'], null)->withFakeQueueInteractions();
+        $job->handle(app(SwampCommandStep::class));
+        $job->assertFailedWith(ResourceOperationException::class);
+    }
+
+    expect($history->connections)->toHaveCount(1);
+    expect($history->sent)->toHaveCount(2);
+    expect($history->closed)->toBeFalse();
+    expect($history->endpoint->bearerToken)->toBe('private-native-read-token');
+    config(['swamp.read_token' => 'rotated-native-read-token']);
+    $job = new ProjectSwampTerminal($operation->id, $operation->state['swamp_run_id'], null)->withFakeQueueInteractions();
+    $job->handle(app(SwampCommandStep::class));
+    expect($history->connections)->toHaveCount(2);
+    expect($history->endpoint->bearerToken)->toBe('rotated-native-read-token');
 });
 
 it('preserves a terminal Operation when an older event arrives', function (): void {
@@ -700,13 +802,16 @@ it('allows explicit recovery after a queued terminal history read fails', functi
     $request = $socket->sent[0];
     $socket->push(nativeSubscriberAttached($request), nativeSubscriberFrame($request, $operation));
     $subscriber->pass();
-    $job = Bus::dispatched(ProjectSwampTerminal::class)->first();
+    $job = Bus::dispatched(ProjectSwampTerminal::class)->first()->withFakeQueueInteractions();
     $history = new FakeRoutePublicationSocket;
     $history->onConnect = static function (): void {
         throw new RuntimeException('History unavailable.');
     };
     app()->instance(WebSocketClient::class, $history);
-    expect(fn () => $job->handle(app(SwampCommandStep::class)))->toThrow(ResourceOperationException::class);
+    // An unreadable Serve retries the queued read; explicit recovery stays available beside it.
+    $job->handle(app(SwampCommandStep::class));
+    $job->assertReleased();
+    expect($job->job->releaseDelay)->toBeBetween(30, 60);
 
     $subscriber->close();
     $subscriber->recover();

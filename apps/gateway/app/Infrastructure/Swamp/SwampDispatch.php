@@ -32,12 +32,8 @@ final class SwampDispatch
 
     private int $next = 0;
 
-    /** Whether a dispatch is running, so its copies and starts share `$shared`. */
+    /** Whether a dispatch is running, so its copies and starts share the connection owner. */
     private bool $sharing = false;
-
-    private ?WebSocketClient $shared = null;
-
-    private ?string $sharedKey = null;
 
     /** @param Closure(): void $push */
     public function copy(Closure $push): void
@@ -73,21 +69,14 @@ final class SwampDispatch
 
             return [$own, false];
         }
-        $key = hash('sha256', $endpoint->address."\0".$endpoint->port."\0".$endpoint->serverName."\0".$endpoint->path."\0".$endpoint->caPath."\0".$endpoint->bearerToken);
-        if ($this->shared === null || $this->sharedKey !== $key || ! $this->shared->isConnected()) {
-            $this->release();
-            $own->connect($endpoint, $timeoutSeconds);
-            [$this->shared, $this->sharedKey] = [$own, $key];
-        }
 
-        return [$this->shared, true];
+        return [app(SwampConnection::class)->socket($endpoint, $timeoutSeconds, $own), true];
     }
 
     /** Closes the shared connection, after a request on it failed or when the dispatch ends. */
     public function release(): void
     {
-        $this->shared?->close();
-        $this->shared = $this->sharedKey = null;
+        app(SwampConnection::class)->release();
     }
 
     private function dispatch(): void

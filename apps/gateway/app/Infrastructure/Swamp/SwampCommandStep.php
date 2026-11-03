@@ -419,12 +419,13 @@ final readonly class SwampCommandStep
             throw $this->unavailable();
         }
         $id = bin2hex(random_bytes(16));
+        $connection = app(SwampConnection::class);
         try {
-            $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 15);
-            $this->socket->send(['type' => $type, 'id' => $id, 'payload' => $arguments]);
+            $socket = $connection->socket(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 15, $this->socket);
+            $socket->send(['type' => $type, 'id' => $id, 'payload' => $arguments]);
             $deadline = microtime(true) + 30;
-            while ($this->socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {
-                foreach ($this->socket->receive(min(1.0, $remaining)) as $message) {
+            while ($socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {
+                foreach ($socket->receive(min(1.0, $remaining)) as $message) {
                     if (($message['id'] ?? null) !== $id) {
                         continue;
                     }
@@ -435,12 +436,15 @@ final readonly class SwampCommandStep
                     throw $this->unavailable();
                 }
             }
+        } catch (ResourceOperationException $exception) {
+            $connection->release();
+            throw $exception;
         } catch (Throwable) {
-            throw $this->unavailable();
-        } finally {
-            $this->socket->close();
+            $connection->release();
+            throw new SwampTerminalReadUnavailable;
         }
-        throw $this->unavailable();
+        $connection->release();
+        throw new SwampTerminalReadUnavailable;
     }
 
     private function unavailable(): ResourceOperationException
