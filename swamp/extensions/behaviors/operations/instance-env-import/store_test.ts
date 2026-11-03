@@ -44,4 +44,5 @@ Deno.test("a copy over 1 MiB is refused", async () => {
         Error,
         "env.import_source_missing",
     );
+    await assertRejects(() => Deno.lstat(path));
 });

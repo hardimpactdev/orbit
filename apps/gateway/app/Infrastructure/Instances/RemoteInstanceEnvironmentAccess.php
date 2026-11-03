@@ -23,13 +23,6 @@ final readonly class RemoteInstanceEnvironmentAccess implements InstanceEnvironm
 {
     public function __construct(private AgentCommandRunner $agents) {}
 
-    public function assertEnvironmentWritable(InstanceEnvironmentContext $context, int $requiredCapacityBytes): void
-    {
-        if (($this->inspect($context, 'write-check', $requiredCapacityBytes)['state'] ?? null) !== 'ok') {
-            $this->failWritePreflight();
-        }
-    }
-
     public function readWritableEnvironment(InstanceEnvironmentContext $context, int $requiredCapacityBytes): string
     {
         try {
@@ -105,16 +98,6 @@ final readonly class RemoteInstanceEnvironmentAccess implements InstanceEnvironm
             'failed' => ($outcome['installed'] ?? true) === false ? $this->failWrite() : InstanceEnvironmentWriteResult::unconfirmed(),
             default => InstanceEnvironmentWriteResult::unconfirmed(),
         };
-    }
-
-    /** @return array<string, mixed> */
-    private function inspect(InstanceEnvironmentContext $context, string $mode, int $requiredCapacityBytes = 0): array
-    {
-        try {
-            return $this->agents->run($context->node, 'instance.read-environment', [...$this->input($context, $mode), 'required_capacity' => $requiredCapacityBytes]);
-        } catch (Throwable) {
-            $mode === 'write-check' ? $this->failWritePreflight() : $this->failRead();
-        }
     }
 
     /** @return array<string, mixed> */

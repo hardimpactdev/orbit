@@ -8,11 +8,11 @@ export const MaximumBytes = 1048576;
 
 /** Read the private copy once, then delete it; only its size and sha256 leave the method. */
 export async function readCopy(path: string) {
-    const info = await Deno.lstat(path);
-    if (!info.isFile || info.isSymlink || info.size > MaximumBytes) {
-        throw new Error("env.import_source_missing");
-    }
     try {
+        const info = await Deno.lstat(path);
+        if (!info.isFile || info.isSymlink || info.size > MaximumBytes) {
+            throw new Error("env.import_source_missing");
+        }
         const bytes = await Deno.readFile(path);
         const digest = await crypto.subtle.digest("SHA-256", bytes);
         return {

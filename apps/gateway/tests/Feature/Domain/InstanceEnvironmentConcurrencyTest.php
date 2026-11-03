@@ -296,20 +296,6 @@ it('renders stored production values for candidate and previous Route domains wi
         'position' => 0,
     ]);
     $route->update(['replaced_by_route_id' => $replacement->id]);
-    $preflight = new class implements InstanceOperationPreflight
-    {
-        use FakesEnvironmentSyncInspection;
-
-        /** @var list<string> */
-        public array $domains = [];
-
-        public function assertEnvironmentWritable(
-            InstanceEnvironmentContext $context,
-            int $requiredCapacityBytes,
-        ): void {
-            $this->domains[] = $context->routeDomain;
-        }
-    };
     $writer = new class implements InstanceEnvironmentWriter
     {
         /** @var list<string> */
@@ -324,16 +310,13 @@ it('renders stored production values for candidate and previous Route domains wi
             return InstanceEnvironmentWriteResult::changed();
         }
     };
-    app()->instance(InstanceOperationPreflight::class, $preflight);
     app()->instance(InstanceEnvironmentWriter::class, $writer);
     $synchronizer = app(SynchronizeInstanceEnvironmentAction::class);
 
     $synchronizer->synchronizeRouteDomain($instance, InstanceEnvironmentRouteDomain::Candidate);
     $synchronizer->synchronizeRouteDomain($instance, InstanceEnvironmentRouteDomain::Authoritative);
 
-    expect($preflight->domains)
-        ->toBe(['next.example.test', 'concurrency.example.test'])
-        ->and(Dotenv::parse($writer->contents[0]))
+    expect(Dotenv::parse($writer->contents[0]))
         ->toBe([
             'APP_KEY' => 'base64:literal-key',
             'APP_URL' => 'https://next.example.test',

@@ -172,7 +172,6 @@
   "instance.prune-releases": "action",
   "instance.read-application-log": "action",
   "instance.read-development-environment-template": "action",
-  "instance.read-environment": "action",
   "instance.read-queue": "action",
   "instance.read-removal-receipt": "action",
   "instance.read-source-removal-state": "action",

@@ -82,8 +82,6 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
                     throw $exception;
                 }
             }
-        } else {
-            $this->preflight->assertEnvironmentWritable($context, $requiredCapacity);
         }
         $snapshot = $this->store->synchronizationSnapshot($context);
         $contents = $this->renderer->render($context, $snapshot->values());
