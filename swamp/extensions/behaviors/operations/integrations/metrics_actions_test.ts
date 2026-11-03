@@ -10,7 +10,7 @@ import {
   serviceRules,
   type ServiceState,
 } from "./metrics_service_actions.ts";
-import { runMetricsProcess, type Runner } from "./metrics_system.ts";
+import { type Runner } from "./metrics_system.ts";
 const cadvisorHash =
     "6f258bed28113218c88729634c47ead8d928b81b1504b75fd911b98d29003a87",
   fpmHash = "570d2b3d3284179c47acff8efd8f73ea650e42a2c6bd08c0a8e95cb4b0e3ca98";
@@ -474,6 +474,9 @@ Deno.test("large healthy service metrics stay within their explicit readiness bu
   }
 });
 Deno.test("private command output budgets propagate through the canonical Node runner", async () => {
+  const { metricsRunnerFixture } = await import("./metrics_runner_fixture_test.ts");
+  await using fixture = await metricsRunnerFixture();
+  const runMetricsProcess = fixture.run;
   const args = ["-c", "print('x'*70000)"];
   await assertRejects(
     () => runMetricsProcess("/usr/bin/python3", args),

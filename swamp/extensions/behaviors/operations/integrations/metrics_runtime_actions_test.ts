@@ -395,9 +395,11 @@ Deno.test("Grafana verify/reset authenticate inside fetch and never invoke a pro
 });
 
 Deno.test("real fixed-path filesystem refuses foreign roots and ancestor symlinks before Docker", async () => {
-  const { runMetricsProcess } = await import("./metrics_system.ts");
+  const { metricsRunnerFixture } = await import("./metrics_runner_fixture_test.ts");
   for (const symlink of [false, true]) {
     const root = await Deno.makeTempDir({ prefix: "metrics-runtime-fs-" });
+    await using fixture = await metricsRunnerFixture(root);
+    const runMetricsProcess = fixture.run;
     try {
       const base = root + "/etc/orbit/metrics";
       await Deno.mkdir(base, { recursive: true });
@@ -453,9 +455,11 @@ Deno.test("Grafana network and server uncertainty stay recoverable with bounded 
   }
 });
 
-Deno.test("real private files restore exact bytes owner and mode after replacement failure", async () => {
-  const { runMetricsProcess } = await import("./metrics_system.ts");
+Deno.test("real private files restore exact bytes and mode with fake ownership after replacement failure", async () => {
+  const { metricsRunnerFixture } = await import("./metrics_runner_fixture_test.ts");
   const root = await Deno.makeTempDir({ prefix: "metrics-runtime-private-" });
+  await using fixture = await metricsRunnerFixture(root);
+  const runMetricsProcess = fixture.run;
   const h = new Host();
   const run: Runner = (program, args, options) =>
     program === "/usr/bin/python3"

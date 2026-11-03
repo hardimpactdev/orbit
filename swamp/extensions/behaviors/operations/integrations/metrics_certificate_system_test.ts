@@ -18,14 +18,14 @@ async function fixture() {
       "pathlib.Path(" + JSON.stringify(root + "/lock/caddy.lock") + ")",
     );
     source =
-      `import os,subprocess,types,json,grp\nos.chown(${
+      `import os,subprocess,types,json,grp\nreal_stat,real_fstat=os.stat,os.fstat\ndef root_stat(value):\n fields=list(value);fields[4]=0;return os.stat_result(fields)\nos.stat=lambda *a,**kw:root_stat(real_stat(*a,**kw))\nos.fstat=lambda *a:root_stat(real_fstat(*a))\nos.chown=lambda *a,**kw:None\nos.fchown=lambda *a,**kw:None\nos.chown(${
         JSON.stringify(root + "/caddy")
       },0,${Deno.gid()})\ngrp.getgrnam=lambda _:types.SimpleNamespace(gr_gid=${Deno.gid()})\nreal_run=subprocess.run\ndef controlled(args,**kwargs):\n if args[0]=='/usr/bin/systemctl':\n  path=${
         JSON.stringify(control)
       }\n  state=json.load(open(path))\n  if args[1]=='is-active':return types.SimpleNamespace(returncode=0 if state['active'] else 3,stdout=b'active' if state['active'] else b'inactive')\n  fail=state['fail'];state['fail']=False;json.dump(state,open(path,'w'))\n  return types.SimpleNamespace(returncode=1 if fail else 0,stdout=b'')\n return real_run(args,**kwargs)\nsubprocess.run=controlled\n` +
       source;
-    const child = new Deno.Command("/usr/bin/sudo", {
-      args: ["-n", "--", "/usr/bin/python3", "-c", source],
+    const child = new Deno.Command("/usr/bin/python3", {
+      args: ["-c", source],
       stdin: "piped",
       stdout: "piped",
       stderr: "null",
@@ -73,9 +73,7 @@ async function fixture() {
     current: root + "/caddy/orbit-metrics-cert-current",
     versions: root + "/caddy/orbit-metrics-cert-versions",
     close: async () => {
-      await new Deno.Command("/usr/bin/sudo", {
-        args: ["-n", "--", "/usr/bin/rm", "-rf", "--", root],
-      }).output();
+      await Deno.remove(root, { recursive: true });
     },
   };
 }

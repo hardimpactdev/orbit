@@ -149,7 +149,7 @@ jobs:
     # The pinned runtime refuses every command without an account, so native workflow
     # tests use a separate event-scoped token that also permits sandbox serve.
     name: Swamp native tests ${{ matrix.shard }}
-    runs-on: ubuntu-26.04
+    runs-on: ${{ vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","orbit-shard"]') || 'ubuntu-26.04' }}
     strategy:
       fail-fast: false
       matrix:
@@ -167,7 +167,7 @@ jobs:
         with:
           job: swamp
       - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
+        if: ${{ runner.environment != 'self-hosted' && (!inputs.changed-only || steps.scope.outputs.selected == 'true') }}
         with:
           deno-version: v2.9.8
           cache: true
@@ -176,10 +176,9 @@ jobs:
         with:
           path: ~/.cache/orbit-shape-runtime
           key: shape-runtime-${{ runner.os }}-${{ hashFiles('swamp/extensions/behaviors/node-worker/config.ts') }}
-      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+      - uses: ./.github/actions/php
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         with:
-          php-version: "8.5"
           coverage: none
       - name: Run the native workflow tests
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
@@ -211,7 +210,7 @@ jobs:
 
   test-shards:
     name: Swamp Deno shard ${{ matrix.name }}
-    runs-on: ubuntu-26.04
+    runs-on: ${{ vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","orbit-shard"]') || 'ubuntu-26.04' }}
     strategy:
       fail-fast: false
       matrix:
@@ -248,21 +247,17 @@ jobs:
         with:
           job: swamp
       - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
+        if: ${{ runner.environment != 'self-hosted' && (!inputs.changed-only || steps.scope.outputs.selected == 'true') }}
         with:
           deno-version: v2.9.8
           cache: true
-      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+      - uses: ./.github/actions/php
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         with:
-          php-version: "8.5"
-          extensions: pdo_mysql, pdo_pgsql, pdo_sqlite
           coverage: none
       - name: Verify disposable effect prerequisites
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         run: |
-          docker info >/dev/null
-          sudo -n true
           # shellcheck disable=SC2016
           php -r 'foreach (["mysql", "pgsql", "sqlite"] as $driver) { if (!in_array($driver, PDO::getAvailableDrivers(), true)) { exit(1); } }'
       - name: Run Operations test shard

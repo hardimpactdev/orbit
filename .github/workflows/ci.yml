@@ -133,7 +133,7 @@ jobs:
     # The Orbit Project check (bin/review-check) is the task baseline and handoff check. Running it here
     # keeps one definition of green for tasks and CI. Three shards split its lanes by weight.
     name: Project check ${{ matrix.shard }}
-    runs-on: ubuntu-26.04
+    runs-on: ${{ vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","orbit-shard"]') || 'ubuntu-26.04' }}
     strategy:
       fail-fast: false
       matrix:
@@ -148,6 +148,7 @@ jobs:
         with:
           coverage: none
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        if: runner.environment != 'self-hosted'
         with:
           bun-version: 1.4.2
       - name: Install dependencies and build the API contract
@@ -287,6 +288,7 @@ jobs:
       - name: Check CI scope and import fixtures
         run: |
           python3 -m unittest discover -s tools -p 'test_ci_*.py'
+          python3 -m unittest discover -s tools/ci-runners -p 'test_*.py'
           python3 tools/test_swamp_import_base.py
           python3 tools/test_frozen_agent_commands.py
       - name: Select changed build inputs
