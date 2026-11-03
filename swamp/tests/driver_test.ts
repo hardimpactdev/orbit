@@ -2,7 +2,7 @@ import { recordQuery } from "./fixtures/worker_query.ts";
 // Pure helpers of @nckrtl/orbit-driver: ~/.swamp/deno/deno test tests/
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { planConsentNote } from "../extensions/behaviors/_lib/repository_analysis.ts";
-import { behavior, pendingGateIds, preapprovalName, recordedThisEntry, tickOrder } from "../extensions/behaviors/orbit_driver.ts";
+import { behavior, pendingGateIds, preapprovalName, recordedThisEntry } from "../extensions/behaviors/orbit_driver.ts";
 
 const gate = (type: string, pass: boolean, reasons: string[] = []) => ({ type, pass, reasons });
 const awaiting = (id: string) => `awaiting human approval '${id}' (0/1) for stage 'baseline' cycle 1 — a human must run approve with gateId=${id}`;
@@ -63,13 +63,6 @@ Deno.test("evidence counts for the current entry only when it was recorded in th
   assert(!recordedThisEntry(null, "provision", 1, null));
 });
 
-Deno.test("a tick starts at the first work item the last tick deferred", () => {
-  assertEquals(tickOrder(["a", "b", "c", "d"], 0), ["a", "b", "c", "d"]);
-  assertEquals(tickOrder(["a", "b", "c", "d"], 2), ["c", "d", "a", "b"]);
-  assertEquals(tickOrder(["a", "b"], 5), ["b", "a"]);
-  assertEquals(tickOrder([], 3), []);
-});
-
 // Exercise the actual tick, with fixture resources and no effect-capable target.
 function parkedDriver(pre: Record<string, unknown> | null = null) {
   const calls: { definition: string; method: string; arguments?: Record<string, unknown> }[] = [];
@@ -96,7 +89,7 @@ function parkedDriver(pre: Record<string, unknown> | null = null) {
     writeResource: (_spec: string, name: string, _data: Record<string, unknown>) => Promise.resolve({ name }),
     logger: { info: () => {}, warning: () => {} },
   };
-  return { calls, tick: () => behavior.methods.tick.execute({ workItems: ["tg-7"], maxSteps: 1 }, context) };
+  return { calls, tick: () => behavior.methods.tick.execute({ workItem: "tg-7", maxSteps: 1 }, context) };
 }
 
 Deno.test("parked tick passes the exact gate and factory to assistance without approval or effect dispatch", async () => {
@@ -126,9 +119,8 @@ Deno.test("parked tick rejects mismatched or pre-reset preapprovals before facto
   assertEquals(exact.calls[1].arguments!.note, "plan-v1:3:abc", "a gate that checks the note exactly gets it verbatim");
 });
 
-Deno.test("a group's failed status never aborts the remaining groups and is recorded for retry", async () => {
+Deno.test("a group's failed status is recorded for retry, and a later tick retries it", async () => {
   for (const failure of ["throw", "result"] as const) {
-    const items = ["tg-7", "tg-8", "tg-9", "tg-10"];
     const visited: string[] = [];
     const ticks: Record<string, unknown>[] = [];
     let broken = true;
@@ -138,9 +130,8 @@ Deno.test("a group's failed status never aborts the remaining groups and is reco
       definition: { name: "orbit-driver-groups" },
       queryData: recordQuery((predicate: string) => Promise.resolve(predicate.includes('name == "status-') ? [status] : [])),
       invokeModel: (call: { method: string; arguments?: Record<string, unknown> }) => {
-        const item = String(call.arguments?.workItem);
-        visited.push(item);
-        if (broken && ["tg-7", "tg-9"].includes(item)) {
+        visited.push(String(call.arguments?.workItem));
+        if (broken) {
           if (failure === "throw") throw new Error("group unavailable");
           return Promise.resolve({ ok: false, error: { message: "group unavailable" } });
         }
@@ -152,23 +143,16 @@ Deno.test("a group's failed status never aborts the remaining groups and is reco
       },
       logger: { info: () => {}, warning: () => {} },
     };
-    await behavior.methods.tick.execute({ workItems: items, maxSteps: 3 }, context);
-    assertEquals(visited, items);
-    const results = ticks[0].items as { workItem: string; error?: string; stage: string | null; cycle: number | null }[];
-    assertEquals(results.map((r) => r.workItem), items);
-    for (const index of [0, 2]) {
-      assert(results[index].error?.includes("group unavailable"));
-      assertEquals(results[index].stage, null);
-      assertEquals(results[index].cycle, null);
-    }
-    assertEquals(results[1].stage, "completed");
-    assertEquals(results[3].stage, "completed");
+    await behavior.methods.tick.execute({ workItem: "tg-7", maxSteps: 3 }, context);
+    assertEquals(visited, ["tg-7"]);
+    const [failed] = ticks[0].items as { workItem: string; error?: string; stage: string | null; cycle: number | null }[];
+    assert(failed.error?.includes("group unavailable"));
+    assertEquals([failed.workItem, failed.stage, failed.cycle], ["tg-7", null, null]);
     // Failure is visible, not a terminal factory state. A later tick retries it.
     broken = false;
-    visited.length = 0;
-    await behavior.methods.tick.execute({ workItems: items, maxSteps: 3 }, context);
-    assertEquals(visited, items);
-    assertEquals((ticks[1].items as { error?: string }[]).every((r) => !r.error), true);
+    await behavior.methods.tick.execute({ workItem: "tg-7", maxSteps: 3 }, context);
+    const [retried] = ticks[1].items as { error?: string; stage: string | null }[];
+    assertEquals([retried.error, retried.stage], [undefined, "completed"]);
   }
 });
 

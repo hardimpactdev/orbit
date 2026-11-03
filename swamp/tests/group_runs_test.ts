@@ -241,12 +241,12 @@ Deno.test("per-group drivers retain and consume pre-approvals from the original 
     logger: { info() {}, warning() {} },
   };
   await driver.methods.tick.execute(
-    { workItems: ["tg-7"], maxSteps: 1 },
+    { workItem: "tg-7", maxSteps: 1 },
     context,
   );
   // Even if an old status is read again, the per-group consumption receipt holds.
   await driver.methods.tick.execute(
-    { workItems: ["tg-7"], maxSteps: 1 },
+    { workItem: "tg-7", maxSteps: 1 },
     context,
   );
   assertEquals(approvals, 1);
