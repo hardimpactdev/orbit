@@ -1,9 +1,10 @@
+import { swampBinary } from "../../tests/_support/native_harness.ts";
 // Real official workflow/assert engine with the real planner. Only scan and
 // registry IO and host-method dispatch are fixtures. This does not execute a task-VM update.
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { parse, stringify } from "jsr:@std/yaml@1.0.9";
 
-const repo = new URL("..", import.meta.url).pathname;
+const repo = new URL("../../", import.meta.url).pathname;
 Deno.test("official dependency workflow refuses registry faults before approval; no-change remains distinct", async () => {
   const dir = await Deno.makeTempDir({
     prefix: "swamp-dependency-workflow-",
@@ -15,7 +16,7 @@ Deno.test("official dependency workflow refuses registry faults before approval;
     `Dependency policy workflow proof (scan/registry fixtures): ${proof}`,
   );
   const invoke = async (...args: string[]) => {
-    const out = await new Deno.Command("swamp", {
+    const out = await new Deno.Command(await swampBinary(), {
       args,
       cwd: dir,
       stdin: "null",
