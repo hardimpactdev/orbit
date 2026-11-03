@@ -52,4 +52,8 @@ else:
         check([row.split(':')[9] for row in fingerprint.splitlines() if row.startswith('fpr:')][0] == repository['signing_key']['fingerprint'], 'the published binary key has the admitted fingerprint')
         source = subprocess.run(['incus', 'exec', os.environ['PROOF_TARGET'], '--', 'cat', '/etc/apt/sources.list.d/orbit-' + repository['name'] + '.sources'], capture_output=True, text=True, check=True).stdout
         check('Signed-By: ' + key in source and all(uri in source for uri in repository['uris']), 'deb822 uses the verified key and admitted source')
+        preference = subprocess.run(['incus', 'exec', os.environ['PROOF_TARGET'], '--', 'cat', '/etc/apt/preferences.d/orbit-' + repository['name'] + '.pref'], capture_output=True, text=True, check=True).stdout
+        packages = ' '.join(operation['input']['repository_packages'])
+        expected = '\n'.join(f'Package: {packages}\nPin: origin "{uri.split("/")[2]}"\nPin-Priority: 990\n\nPackage: *\nPin: origin "{uri.split("/")[2]}"\nPin-Priority: 1\n' for uri in repository['uris'])
+        check(preference == expected, 'only the admitted packages have vendor priority 990; other packages have priority 1')
 print(f'parity: {kind} {status} {package}={version}')
