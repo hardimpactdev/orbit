@@ -30,66 +30,84 @@ sequenceDiagram
   %%> - Instance 42 is still on Node 12
   %%> Already enabled:
   %%> - the trigger is set again; enable is idempotent
-  opt copy has no workflow yet
-    GW->>SW: Store the command<br/>vault: schedule-command-7f3c…
+  alt a retained production Node timer
+    GW->>SW: Start one run<br/>operation-schedule-control
+    %%> Inputs:
+    %%> - the admitted Schedule UUID and Node SSH host pins
+    SW->>N: timer
     %%> What it does:
-    %%> - stores the copied definition's command in the vault before creating its workflow
-    GW->>SW: Create the workflow<br/>workflow.create, workflow.edit
+    %%> - official systemd enables and starts the retained timer
+    SW->>N: check_timer
     %%> What it does:
-    %%> - creates the copied Schedule's workflow with its fixed intent and command key
-    %%> - an existing workflow is kept as it is
-  end
-  GW->>SW: Set its trigger<br/>workflow.trigger.set
-  %%> What it does:
-  %%> - sets the cron trigger of the Schedule's own workflow `schedule-7f3c…` on serve (Node 209)
-  %%> - there is no Node work, so no run starts (R1)
-  %%> Inputs:
-  %%> - the workflow name and the calendar; the intent stays fixed inside the workflow
-  alt Swamp confirms
-    SW-->>GW: trigger set<br/>next fire 03:00
-    %%> Returns:
-    %%> - the trigger is active, with its next fire time
-    Note over GW: Record result<br/>desired state: enabled
-    %%> Result:
-    %%> - Schedule 7f3c… is recorded as enabled, only after Swamp confirms
-    %%> - task #5140 is recorded as succeeded at once (R1)
-    GW-->>CLI: Schedule enabled<br/>next fire 03:00
-    %%> What you get:
-    %%> - the result at once; there is nothing to follow
-  else Swamp refuses or is down
-    SW--xGW: no confirmation<br/>refused or unreachable
-    %%> When:
-    %%> - serve on 209 does not answer, or refuses the trigger
-    Note over GW: Keep the prior state<br/>desired state: disabled
-    %%> Result:
-    %%> - Schedule 7f3c… stays disabled; nothing changed
-    %%> Retry:
-    %%> - run the same command again; it is safe
-    GW--xCLI: 503 publish unavailable<br/>swamp.schedule_publish_unavailable
-    %%> Returns:
-    %%> - the error code; the Schedule is unchanged
-  end
-  loop each calendar fire
-    Note over SW: Start a root run<br/>schedule-7f3c…
+    %%> - official systemd checks that the timer is enabled and active
+    Note over SW: Check the timer
     %%> What it does:
-    %%> - serve fires the trigger and starts one root run of `schedule-7f3c…` on 209
-    %%> - its step runs `task-command-run` with the fixed intent, within the Schedule's timeout
-    %%> Timing:
-    %%> - serve runs up to 4 scheduled runs at once; a fire can start late when all are busy
-    SW->>N: Run the command<br/>@swamp/ssh, as the Schedule's user
-    %%> How:
-    %%> - checks the user and the working directory on Node 12
-    %%> - reads the command with `vault.get` and sends it on stdin
-    %%> Runs as:
-    %%> - the Schedule's user, in its working directory, with its shell
-    N-->>SW: exit code
-    %%> Returns:
-    %%> - the exit code; command output stays in the Node journal
-    SW-->>GW: Run started, finished<br/>commit feed
-    %%> How the Gateway learns it:
-    %%> - its shared run reader sees the root run start and end; Swamp never calls the Gateway
-    Note over GW: Record the fire<br/>task #5141 · trigger: schedule
+    %%> - native assert requires the systemd check to be compliant
+    SW-->>GW: Native completion<br/>timer check passed
     %%> Result:
-    %%> - each fire becomes a task, with trigger `schedule`, recorded when it starts
-    %%> - `last_run_at` and `last_run_status` of Schedule 7f3c… are set
+    %%> - record the desired state from the existing terminal history read
+  else a native cron Schedule
+    opt copy has no workflow yet
+      GW->>SW: Store the command<br/>vault: schedule-command-7f3c…
+      %%> What it does:
+      %%> - stores the copied definition's command in the vault before creating its workflow
+      GW->>SW: Create the workflow<br/>workflow.create, workflow.edit
+      %%> What it does:
+      %%> - creates the copied Schedule's workflow with its fixed intent and command key
+      %%> - an existing workflow is kept as it is
+    end
+    GW->>SW: Set its trigger<br/>workflow.trigger.set
+    %%> What it does:
+    %%> - sets the cron trigger of the Schedule's own workflow `schedule-7f3c…` on serve (Node 209)
+    %%> - there is no Node work, so no run starts (R1)
+    %%> Inputs:
+    %%> - the workflow name and the calendar; the intent stays fixed inside the workflow
+    alt Swamp confirms
+      SW-->>GW: trigger set<br/>next fire 03:00
+      %%> Returns:
+      %%> - the trigger is active, with its next fire time
+      Note over GW: Record result<br/>desired state: enabled
+      %%> Result:
+      %%> - Schedule 7f3c… is recorded as enabled, only after Swamp confirms
+      %%> - task #5140 is recorded as succeeded at once (R1)
+      GW-->>CLI: Schedule enabled<br/>next fire 03:00
+      %%> What you get:
+      %%> - the result at once; there is nothing to follow
+    else Swamp refuses or is down
+      SW--xGW: no confirmation<br/>refused or unreachable
+      %%> When:
+      %%> - serve on 209 does not answer, or refuses the trigger
+      Note over GW: Keep the prior state<br/>desired state: disabled
+      %%> Result:
+      %%> - Schedule 7f3c… stays disabled; nothing changed
+      %%> Retry:
+      %%> - run the same command again; it is safe
+      GW--xCLI: 503 publish unavailable<br/>swamp.schedule_publish_unavailable
+      %%> Returns:
+      %%> - the error code; the Schedule is unchanged
+    end
+    loop each calendar fire
+      Note over SW: Start a root run<br/>schedule-7f3c…
+      %%> What it does:
+      %%> - serve fires the trigger and starts one root run of `schedule-7f3c…` on 209
+      %%> - its step runs `task-command-run` with the fixed intent, within the Schedule's timeout
+      %%> Timing:
+      %%> - serve runs up to 4 scheduled runs at once; a fire can start late when all are busy
+      SW->>N: Run the command<br/>@swamp/ssh, as the Schedule's user
+      %%> How:
+      %%> - checks the user and the working directory on Node 12
+      %%> - reads the command with `vault.get` and sends it on stdin
+      %%> Runs as:
+      %%> - the Schedule's user, in its working directory, with its shell
+      N-->>SW: exit code
+      %%> Returns:
+      %%> - the exit code; command output stays in the Node journal
+      SW-->>GW: Run started, finished<br/>commit feed
+      %%> How the Gateway learns it:
+      %%> - its shared run reader sees the root run start and end; Swamp never calls the Gateway
+      Note over GW: Record the fire<br/>task #5141 · trigger: schedule
+      %%> Result:
+      %%> - each fire becomes a task, with trigger `schedule`, recorded when it starts
+      %%> - `last_run_at` and `last_run_status` of Schedule 7f3c… are set
+    end
   end

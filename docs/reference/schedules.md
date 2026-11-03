@@ -135,7 +135,7 @@ The service sends an authenticated Node request to the Gateway run endpoint. Its
 
 Definition installation creates the timer files through `operation-schedule-install-instance-definitions`, disabled. Its shared create child checks both unit files, the absence of obsolete files and the captured timer state, then uses a native assertion. The Gateway records readiness from that check rather than a reporting shell. Its native end check confirms every captured member, including an empty set, in the same history read. No parent shell prints a completion marker.
 
-Enable uses `operation-schedule-control` to enable and start the timer, and destroy uses `operation-schedule-destroy` to check for active work, stop the timer, remove the files and reload systemd. These workflows run on the `swamp` Node (`labels: {role: swamp}`) and reach the Node through official cfgmgmt models and `@swamp/ssh`. A failed step records `operation.native_failed`; completed host actions stay, and a repeat converges. A removal refused with `schedule.run_active` keeps the Schedule in `removing`; retry destroy after the command ends.
+Enable uses `operation-schedule-control` to enable and start the timer, check systemd compliance and enforce it with a native assertion, and destroy uses `operation-schedule-destroy` to check for active work, stop the timer, remove the files and reload systemd. These workflows run on the `swamp` Node (`labels: {role: swamp}`) and reach the Node through official cfgmgmt models and `@swamp/ssh`. A failed step records `operation.native_failed`; completed host actions stay, and a repeat converges. A removal refused with `schedule.run_active` keeps the Schedule in `removing`; retry destroy after the command ends.
 
 ## Logs
 

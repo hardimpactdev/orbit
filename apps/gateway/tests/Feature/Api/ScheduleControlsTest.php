@@ -154,13 +154,16 @@ it('projects the fixed native enable result and preserves intent after failure',
         'startedAt' => '2026-10-31T12:00:00Z', 'completedAt' => '2026-10-31T12:00:01Z',
         'jobs' => [['name' => 'schedule', 'steps' => [
             ['name' => 'timer', 'status' => $status],
-            ['name' => 'result', 'status' => $status === 'succeeded' ? 'succeeded' : 'skipped',
-                ...($status === 'succeeded' ? ['outputs' => ['stdout' => '{"ready":true}']] : [])],
+            ['name' => 'check_timer', 'status' => $status === 'succeeded' ? 'succeeded' : 'skipped',
+                ...($status === 'succeeded' ? ['outputs' => ['status' => 'compliant']] : [])],
+            ['name' => 'Check the timer', 'status' => $status === 'succeeded' ? 'succeeded' : 'skipped'],
         ]]],
     ];
     $this->socket->reply = fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $history]]];
     $selector = app(DirectOperation::class)->definition('schedule.enable')['terminal_result'];
     $projected = app(SwampCommandStep::class)->projectTerminal($this->operation, ['id' => $this->runId, 'status' => $status], $selector);
+    app(SwampCommandStep::class)->projectTerminal($this->operation, ['id' => $this->runId, 'status' => $status], $selector);
+    expect($projected->result)->toBe($status === 'succeeded' ? ['ready' => true] : ['error_code' => 'operation.native_failed']);
     expect($projected->status->value)->toBe($status);
     expect($projected->error_code)->toBe($status === 'failed' ? 'operation.native_failed' : null);
     expect($this->schedule->fresh()->desired_timer_state->value)->toBe($status === 'succeeded' ? 'enabled' : 'disabled');
