@@ -109,3 +109,8 @@ The pinned file resource accepts content from the worker; it cannot compose a re
 ## Caddy publication
 
 The pinned file behavior separates apply and check; check records drift without failing, so a native assertion enforces compliance after reload. A separate pinned SSH connection check rejects the request's wrong host key before cfgmgmt uses the enrolled Node's known_hosts entry. Could file accept the admitted host-key list directly? Could check optionally fail on drift while retaining its state? Validation and reload remain separate bounded SSH argvs. No wrapper joins these operations.
+
+
+## Network drift observations
+
+The network parent reads public WireGuard state and DNS state, then uses a pure typed comparison before calling the existing official-resource child. The pinned runtime evaluates behavior definitions and static task inputs before guards. Its CEL checker also rejects a map/null conditional, so the optional DNS policy is an empty-or-one list. Could guarded tasks defer their unused definition expressions, or support nullable typed values? The no-drift proof confirms no WireGuard file or unit changes; no wrapper merges Node actions.

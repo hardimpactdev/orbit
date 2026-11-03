@@ -1,0 +1,76 @@
+{
+  "kind": "node.converge",
+  "scope": "network only; software and maintenance redesign postponed",
+  "topology": "minimal",
+  "topology_version": 16,
+  "scripts_deleted": 0,
+  "retained_script_gaps": [],
+  "budget_seconds": 600,
+  "queue_timeout_seconds": 30,
+  "samples": 4,
+  "p95_seconds": 57.13,
+  "cases": [
+    {
+      "case": "first",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.converge.network/20261103T182905Z-minimal.json",
+      "commit": "29828f20f423bce45933cdccfbf8a71b6db89682",
+      "fixture_seconds": 57.13,
+      "run_id": "49cb1a1b-37a8-42ff-9eaf-773029d45c8b",
+      "topology_version": 16,
+      "proof_pass": true
+    },
+    {
+      "case": "unchanged",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.converge.network-unchanged/20261103T182956Z-minimal.json",
+      "commit": "29828f20f423bce45933cdccfbf8a71b6db89682",
+      "fixture_seconds": 26.77,
+      "run_id": "6113cf12-65ec-4b93-81b9-91f16ad414e4",
+      "topology_version": 16,
+      "proof_pass": true
+    },
+    {
+      "case": "drift",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.converge.network-drift/20261103T183058Z-minimal.json",
+      "commit": "29828f20f423bce45933cdccfbf8a71b6db89682",
+      "fixture_seconds": 43.08,
+      "run_id": "08769d1c-26dc-48cf-a244-5f1c76edc43a",
+      "topology_version": 16,
+      "proof_pass": true
+    },
+    {
+      "case": "hub",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.converge.network-hub/20261103T183558Z-minimal.json",
+      "commit": "8b0a6a7076678f5f70c25976e6e02353ca8c67ba",
+      "fixture_seconds": 55.37,
+      "run_id": "d064814d-e417-4ce7-960e-859fed729ae0",
+      "topology_version": 16,
+      "proof_pass": true
+    }
+  ],
+  "assertions": [
+    "No-drift preserves every WireGuard file inode, mtime, mode and owner on peer and hub, plus unit active-since and InvocationID and live peers.",
+    "Deliberate allowed-IP drift and a removed hub entry are repaired even when the recorded digest matches.",
+    "VPN hub publishes the exact recorded peer list, prunes stale peer files and requires a recent recorded-peer handshake.",
+    "Private keys stay on their Nodes; they are absent from native outputs and Operation data."
+  ],
+  "scope_limits": "Disposable recorded legacy hub and real SSH/WireGuard; no production traffic, scale or image redesign. The protected VPN bootstrap DNS backend is seeded through its existing renderer.",
+  "outer_vm": {
+    "task_vm_id": 519,
+    "host_node_id": 13,
+    "group_id": 3108,
+    "teardown": "succeeded; physical Incus absence confirmed",
+    "cancel_operation_id": 9639,
+    "destroyed_at": "2026-11-03T18:37:51Z"
+  },
+  "independent_review": {
+    "agent": "review_node_converge_network",
+    "reviewed_commit": "ed2677ddf574250c9f153644c6ed025161a78163",
+    "findings_fixed": [
+      "Existing peer-DNS test import and applicability",
+      "Hub handshake from any admitted peer, without first-peer ICMP requirement",
+      "Shared converge/recipe Node and hub reservation, retained through native timeout settlement"
+    ]
+  },
+  "rebased_source_commit": "66b26241d0895961c8d6a2fe563dafebbe5c7aad",
+  "rebase_note": "Network product files are byte-identical to the passing receipts. Main additionally changed only the instance.destroy entry in the shared budget file; the node.converge budget is unchanged."
+}
