@@ -1,17 +1,24 @@
 """route.update, domain change, on the target: the Caddyfile serves only the new domain, its leaf verifies against
 the Orbit root, the temporary leaf is gone, and the new domain answers TLS."""
 
+import json
 import os
+import re
 import subprocess
 import sys
+from pathlib import Path
 
 run = os.environ["PROOF_RUN"]
 old, new = "r-" + run + ".proof.test", "u-" + run + ".proof.test"
 ROOT = "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"
+operation = json.loads(Path(os.environ["PROOF_OPERATION_FILE"]).read_text())
+assert operation["kind"] == "route.update" and operation["status"] == "succeeded", operation["status"]
+assert operation["result"]["ready"] is True, operation["result"]
+assert operation["input"]["route_update"]["plan"]["probe_ssh"]["control_node_id"] == 209
 
 
 def target(*argv):
-    return subprocess.run(["incus", "exec", os.environ["PROOF_TARGET"], "--", *argv], capture_output=True, text=True, check=False)
+    return subprocess.run(["incus", "exec", os.environ["PROOF_TARGET"], "--", *argv], capture_output=True, text=True, check=False, timeout=30)
 
 
 def check(condition, message):
@@ -21,6 +28,10 @@ def check(condition, message):
 
 caddyfile = target("cat", "/etc/caddy/Caddyfile").stdout
 check(f"https://{new} {{" in caddyfile, "the Caddy site serves the new domain")
+site = caddyfile.split(f"https://{new} {{", 1)[1].split("\n# orbit: ", 1)[0]
+roots = re.findall(r"(?m)^\s*root \* (.+)/public\s*$", site)
+check(len(roots) == 1 and "php_fastcgi" in site, "the updated Route serves a PHP application")
+check(all("laravel/framework" in json.loads(target("cat", root + "/composer.json").stdout).get("require", {}) for root in roots), "the updated Route's checkout is a Laravel application")
 check(f"https://{old} {{" not in caddyfile, "the old site is withdrawn")
 check(target("sh", "-c", "ls -d /etc/caddy/orbit-certificates/*-hostname-change").returncode != 0, "the temporary leaf is removed")
 listen = target("ss", "-ltnH", "sport = :443").stdout.split()[3]

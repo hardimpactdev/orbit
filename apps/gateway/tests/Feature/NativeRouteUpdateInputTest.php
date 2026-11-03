@@ -22,6 +22,9 @@ use App\Models\Route;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
+    Node::query()->forceCreate(['id' => 209, 'name' => 'swamp-control', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'user' => 'orbit', 'wireguard_ip' => '10.44.0.209', 'public_ssh_host' => '192.0.2.209', 'status' => 'active',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'control-host-key']);
     $this->manifest = $manifest = tempnam(sys_get_temp_dir(), 'route-snapshot-agent-');
     file_put_contents($manifest, json_encode(['commit' => str_repeat('b', 40), 'version' => '0.5.0', 'artifacts' => ['linux-x86_64' => ['sha256' => str_repeat('a', 64), 'url' => 'https://example.test/agent']]], JSON_THROW_ON_ERROR));
     app()->instance(AgentDelivery::class, new AgentDelivery($manifest, sys_get_temp_dir()));
@@ -75,7 +78,8 @@ it('freezes a reserved rename without changing stored serving state', function (
         ->and($route->fresh()->domain)->toBe('development.snapshot.old.test')
         ->and($replacement->fresh()->sites_published)->toBeFalse();
     // The publish step serves both names; the withdraw step leaves only the new one.
-    expect(native_route_update_caddy($plan['publish'], $this->node->id))->toContain($route->domain, $replacement->domain)
+    expect($plan['probe_ssh']['target'])->toMatchArray(['host' => '10.44.0.209', 'host_keys' => ['ssh-ed25519 control-host-key']])
+        ->and(native_route_update_caddy($plan['publish'], $this->node->id))->toContain($route->domain, $replacement->domain)
         ->and(native_route_update_caddy($plan['retire'], $this->node->id))->toContain($replacement->domain)->not->toContain($route->domain)
         ->and(collect($plan['leaves'])->pluck('domain')->all())->toContain($replacement->domain)
         // The temporary leaf serves the new name before the cutover; the Instance's live leaf changes only after it.
