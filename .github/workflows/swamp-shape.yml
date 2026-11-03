@@ -65,6 +65,8 @@ jobs:
         run: |
           deno test --allow-env --allow-read --allow-run bin/check-swamp-shape_test.ts
           deno test --allow-read --allow-run bin/lint-behavior-names_test.ts
+          deno test -A bin/swamp-liveness_test.ts
+          deno test -A bin/swamp-liveness_native_test.ts
           python3 tests/swamp_shape_gate_test.py
           python3 tests/swamp_validate_ci_test.py
           python3 tests/swamp_deno_shards_test.py
