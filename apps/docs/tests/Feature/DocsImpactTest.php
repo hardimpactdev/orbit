@@ -496,6 +496,38 @@ it('docs impact needs no owner for a test file beside its source', function (): 
         ->and(collect($report['surfaces'])->where('owner', 'unowned')->all())->toBe([]);
 });
 
+it('docs impact needs no prose for a recipe change that only bumps pinned values', function (string $after, bool $documented): void {
+    $root = docsImpactFixture();
+    $path = 'apps/gateway/resources/machine-software/recipe.json';
+    @mkdir(dirname($root.'/'.$path), 0777, true);
+    file_put_contents($root.'/docs/reference/compute-drivers.md', "---\ntitle: Compute drivers\ncovers:\n  - \"apps/gateway/resources/machine-software/**\"\n---\nRecipe\n");
+    file_put_contents($root.'/'.$path, json_encode(['ubuntu' => ['snapshot' => '20261102T000000Z'], 'tools' => [
+        ['name' => 'php', 'version' => '8.5.1', 'artifacts' => [['url' => 'https://example.test/php-8.5.1.deb', 'sha256' => str_repeat('a', 64)]]],
+        ['name' => 'git', 'version' => '1:2.51.0-1'],
+    ], 'profiles' => ['app-dev' => ['php', 'git']]]));
+    exec('git -C '.escapeshellarg($root).' add -A');
+    exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm recipe');
+    $base = trim(shell_exec('git -C '.escapeshellarg($root).' rev-parse HEAD'));
+    file_put_contents($root.'/'.$path, $after);
+    $pages = collect(new DocsImpact($root)->report($base, [])['impacted_pages'])->pluck('page');
+
+    $documented ? expect($pages)->toContain('docs/reference/compute-drivers.md') : expect($pages)->not->toContain('docs/reference/compute-drivers.md');
+})->with([
+    'snapshot, version, URL and digest' => [json_encode(['ubuntu' => ['snapshot' => '20261103T000000Z'], 'tools' => [
+        ['name' => 'php', 'version' => '8.5.2', 'artifacts' => [['url' => 'https://example.test/php-8.5.2.deb', 'sha256' => str_repeat('b', 64)]]],
+        ['name' => 'git', 'version' => '1:2.51.0-1'],
+    ], 'profiles' => ['app-dev' => ['php', 'git']]]), false],
+    'a new tool in a profile' => [json_encode(['ubuntu' => ['snapshot' => '20261102T000000Z'], 'tools' => [
+        ['name' => 'php', 'version' => '8.5.1', 'artifacts' => [['url' => 'https://example.test/php-8.5.1.deb', 'sha256' => str_repeat('a', 64)]]],
+        ['name' => 'git', 'version' => '1:2.51.0-1'],
+    ], 'profiles' => ['app-dev' => ['php', 'git', 'jq']]]), true],
+    'a reordered list' => [json_encode(['ubuntu' => ['snapshot' => '20261102T000000Z'], 'tools' => [
+        ['name' => 'git', 'version' => '1:2.51.0-1'],
+        ['name' => 'php', 'version' => '8.5.1', 'artifacts' => [['url' => 'https://example.test/php-8.5.1.deb', 'sha256' => str_repeat('a', 64)]]],
+    ], 'profiles' => ['app-dev' => ['php', 'git']]]), true],
+    'invalid JSON' => ['{', true],
+]);
+
 it('docs impact extracts a deleted surface from the base commit', function (): void {
     $root = docsImpactFixture();
     $path = 'apps/gateway/app/Domain/Tasks/TaskGroupGuard.php';

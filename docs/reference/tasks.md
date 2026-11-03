@@ -311,7 +311,7 @@ Stdout is exactly one strict UTF-8 JSON envelope:
 }
 ```
 
-The docs-impact report maps a Form Request to its OpenAPI operation even when the route inherits its `api/v1` prefix from a group. It asks for no page for a CLI command whose source file was deleted.
+The docs-impact report maps a Form Request to its OpenAPI operation even when the route inherits its `api/v1` prefix from a group. It asks for no page for a machine recipe change that only bumps pinned values. It asks for no page for a CLI command whose source file was deleted.
 
 The placeholder report above illustrates the envelope, not a valid reduced payload. `status` is `ready`, `action_required`, or `blocked`; diagnostics are a list of `{code, message}`. Require every envelope field.
 
