@@ -206,8 +206,10 @@ export const behavior = {
                             op.target_id === project.projectId
                         )
                     ) continue;
+                    // The hourly inspection comes last, so it never starves a due routine or observation; while
+                    // a maintenance group is open, inspection could not admit another group anyway.
                     for (
-                        const mode of ["detect", "routine", "observe"] as const
+                        const mode of ["routine", "observe", "detect"] as const
                     ) {
                         if (
                             mode === "observe" &&

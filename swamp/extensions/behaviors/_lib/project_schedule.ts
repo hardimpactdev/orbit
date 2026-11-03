@@ -27,10 +27,10 @@ export function scheduleKey(
   mode: "routine" | "detect",
   now = new Date(),
 ): string {
+  // An inspection is hourly: its first step only compares blob SHAs, so an unchanged Project costs one tree read.
+  if (mode === "detect") return `${project}-detect-${now.toISOString().slice(0, 13)}:00`;
   const day = new Date(now);
-  if (mode === "routine") {
-    day.setUTCDate(day.getUTCDate() - (day.getUTCDay() + 6) % 7);
-  }
+  day.setUTCDate(day.getUTCDate() - (day.getUTCDay() + 6) % 7);
   return `${project}-${mode}-${day.toISOString().slice(0, 10)}`;
 }
 

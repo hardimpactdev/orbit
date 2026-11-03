@@ -89,7 +89,7 @@ Deno.test("config refresh refuses stale, missing, wrong-project and duplicate ex
   );
 });
 
-Deno.test("weekly slots cross year boundaries and daily detection stays separate", () => {
+Deno.test("weekly slots cross year boundaries and hourly inspection stays separate", () => {
   assertEquals(
     scheduleKey(20, "routine", new Date("2027-01-03T23:59:59Z")),
     "20-routine-2026-12-28",
@@ -100,7 +100,7 @@ Deno.test("weekly slots cross year boundaries and daily detection stays separate
   );
   assertEquals(
     scheduleKey(20, "detect", new Date("2027-01-03T23:59:59Z")),
-    "20-detect-2027-01-03",
+    "20-detect-2027-01-03T23:00",
   );
 });
 Deno.test("project findings retain reports and blocked reasons and create one deterministic whole batch receipt", async () => {

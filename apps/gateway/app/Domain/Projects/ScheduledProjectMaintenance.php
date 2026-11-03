@@ -30,7 +30,7 @@ final readonly class ScheduledProjectMaintenance implements ScheduledResultProje
 
     public const string StateKey = 'swamp.project-maintenance';
 
-    /** Hourly at :17:40. Detection is daily and routines weekly, so an hour of latency costs nothing. */
+    /** Hourly at :17:40: each opted-in Project is inspected every hour, and routines are weekly. */
     public const string Schedule = '40 17 * * * *';
 
     public function activate(): void

@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
+import { assertEquals, assertMatch, assertRejects } from "jsr:@std/assert@1.0.19";
 import { behavior } from "../extensions/behaviors/orbit_gateway.ts";
 import { behavior as metadata } from "../extensions/behaviors/operations/project-maintenance/metadata.ts";
 import { indexName } from "../extensions/behaviors/_lib/dependency_results_schema.ts";
@@ -238,32 +238,35 @@ Deno.test("native schedule selects from full public intent and skips the recorde
         };
         await metadata.methods.schedule.execute(args, ctx);
         const first = JSON.parse(result.result_json as string);
+        // A due routine comes first; the hourly inspection comes last, so it never starves the others.
         assertEquals(first.requests.length, 1);
-        assertEquals(first.requests[0].mode, "detect");
+        assertEquals(first.requests[0].mode, "routine");
         await metadata.methods.schedule.execute({
             ...args,
-            admissions: { "32:detect": { key: first.requests[0].key } },
+            admissions: { "32:routine": { key: first.requests[0].key } },
         }, ctx);
         const next = JSON.parse(result.result_json as string);
         assertEquals(next.requests.length, 1);
-        assertEquals(next.requests[0].mode, "routine");
+        assertEquals(next.requests[0].mode, "detect");
+        assertMatch(next.requests[0].key, /^32-detect-\d{4}-\d{2}-\d{2}T\d{2}:00$/);
+        const pending = [{ id: 7, project_id: 32, status: "todo", maintenance: { admission_pending: true } }];
         await metadata.methods.schedule.execute({
             ...args,
-            groups: [{
-                id: 7,
-                project_id: 32,
-                status: "todo",
-                maintenance: { admission_pending: true },
-            }],
-            admissions: {
-                "32:detect": { key: first.requests[0].key },
-                "32:routine": { key: next.requests[0].key },
-            },
+            groups: pending,
+            admissions: { "32:routine": { key: first.requests[0].key } },
         }, ctx);
         assertEquals(
             JSON.parse(result.result_json as string).requests[0].mode,
             "observe",
         );
+        await metadata.methods.schedule.execute({
+            ...args,
+            admissions: {
+                "32:routine": { key: first.requests[0].key },
+                "32:detect": { key: next.requests[0].key },
+            },
+        }, ctx);
+        assertEquals(JSON.parse(result.result_json as string).requests, []);
         await metadata.methods.schedule.execute({
             ...args,
             operations: [{ target_id: 32, status: "running" }],
