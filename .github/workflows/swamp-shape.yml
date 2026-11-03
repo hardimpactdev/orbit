@@ -63,14 +63,14 @@ jobs:
       - name: Check shape regression fixtures
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         run: |
-          deno test --allow-env --allow-read --allow-run bin/check-swamp-shape_test.ts
+          deno test --allow-env --allow-read --allow-run --allow-write bin/check-swamp-shape_test.ts
           deno test --allow-read --allow-run bin/lint-behavior-names_test.ts
           deno test -A bin/swamp-liveness_test.ts
           deno test -A bin/swamp-liveness_native_test.ts
-          python3 tests/swamp_shape_gate_test.py
-          python3 tests/swamp_validate_ci_test.py
-          python3 tests/swamp_deno_shards_test.py
-          python3 tests/swamp_base_policy_test.py
+          deno test --allow-env --allow-read --allow-run --allow-write bin/swamp-shape-python_test.ts
+          deno test --allow-env --allow-read --allow-run --allow-write bin/validate-swamp-workflows_test.ts
+          deno test --allow-env --allow-read --allow-run --allow-write bin/swamp-deno-shards_test.ts
+          deno test --allow-env --allow-read --allow-run --allow-write bin/check-swamp-base-policy_test.ts
       - name: Reject new violations with current and base rules
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         env:
