@@ -156,7 +156,7 @@ Every operation has the same fields, whatever its kind.
 
 A cancelled operation has an `error_code` only when a rollback superseded it: `operation.superseded`.
 
-`operation:show` and cancellation replies include observed native `steps`, in event order:
+`operation:show` and cancellation replies include observed native `steps`, in event order. Start and list replies may omit `steps`. Each entry uses the typed `OperationStep` schema:
 
 | Field | Contract |
 | --- | --- |
