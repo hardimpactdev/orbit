@@ -19,5 +19,5 @@ Deno.test("Gateway discovery and slot models cannot claim work", async () => {
 Deno.test("native retention keeps history and current data", () => {
   const marker = parse(Deno.readTextFileSync(`${ROOT}/.swamp.yaml`)) as Record<string, unknown>;
   assert(marker.autoGc);
-  assertEquals(marker.garbageCollection, { automatic: true, retention: "30d", workflowRuns: "6h", outputs: "1h", bookkeeping: "2h" });
+  assertEquals(marker.garbageCollection, { automatic: true, retention: "30d", workflowRuns: "6h", outputs: "30m", bookkeeping: "2h" });
 });
