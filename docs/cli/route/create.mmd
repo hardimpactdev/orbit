@@ -44,7 +44,7 @@ sequenceDiagram
     Note over GW: Record result<br/>Route 14 active · task succeeded
   else a step fails
     SW--xGW: Run failed<br/>error_code, failed step
-    Note over GW: Mark the Route failed<br/>domain kept · rerun after a fix
+    Note over GW: Record the failure<br/>domain kept · rerun after a fix
     %%> There is no rollback. Rerun to converge, or route:destroy to remove what was added.
   end
   loop every 2 s until terminal
