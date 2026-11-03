@@ -48,7 +48,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ansible-role-private-metrics-password
+      behaviorName: '${{ "ansible-role-private-metrics-password-" + string(inputs.node_id) }}'
       methodName: execute
       inputs:
         run: 'umask 077
@@ -69,7 +69,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ansible-role-private-websocket-environment
+      behaviorName: '${{ "ansible-role-private-websocket-environment-" + string(inputs.node_id) }}'
       methodName: execute
       inputs:
         run: 'umask 077
@@ -90,7 +90,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ansible-role-private-analytics-environment
+      behaviorName: '${{ "ansible-role-private-analytics-environment-" + string(inputs.node_id) }}'
       methodName: execute
       inputs:
         run: 'umask 077
@@ -111,7 +111,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ansible-role-input
+      behaviorName: '${{ "ansible-role-input-" + string(inputs.node_id) }}'
       methodName: execute
       inputs:
         run: timeout 30 python3 "$ORBIT_ANSIBLE/build_vars.py" "$ORBIT_RUN" "$ORBIT_KIND"
@@ -300,7 +300,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ansible-role-prerequisites
+      behaviorName: '${{ "ansible-role-prerequisites-" + string(inputs.node_id) }}'
       methodName: execute
       inputs:
         run: timeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags prerequisites
@@ -337,7 +337,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ansible-role-node
+      behaviorName: '${{ "ansible-role-node-" + string(inputs.node_id) }}'
       methodName: execute
       inputs:
         run: timeout 900 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags node "$ORBIT_ANSIBLE/operation-node-role-add.yml"
@@ -704,7 +704,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ansible-role-publication
+      behaviorName: '${{ "ansible-role-publication-" + string(inputs.node_id) }}'
       methodName: execute
       inputs:
         run: timeout 180 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags publication
@@ -722,7 +722,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ansible-role-firewall
+      behaviorName: '${{ "ansible-role-firewall-" + string(inputs.node_id) }}'
       methodName: execute
       inputs:
         run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags firewall
@@ -740,7 +740,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ansible-role-exporters
+      behaviorName: '${{ "ansible-role-exporters-" + string(inputs.node_id) }}'
       methodName: execute
       inputs:
         run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags exporters
@@ -759,7 +759,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ansible-role-prometheus
+      behaviorName: '${{ "ansible-role-prometheus-" + string(inputs.node_id) }}'
       methodName: execute
       inputs:
         run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags prometheus
@@ -778,7 +778,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ansible-role-role
+      behaviorName: '${{ "ansible-role-role-" + string(inputs.node_id) }}'
       methodName: execute
       inputs:
         run: timeout 60 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/vars.yml" --tags check "$ORBIT_ANSIBLE/operation-node-role-add.yml"
@@ -790,53 +790,53 @@ jobs:
   labels: {role: swamp}
   dependsOn:
   - job: intent
-    condition: {type: completed}
+    condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
   - job: private-metrics_password
-    condition: {type: completed}
+    condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
   - job: private-websocket_environment
-    condition: {type: completed}
+    condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
   - job: private-analytics_environment
-    condition: {type: completed}
+    condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
   - job: input
-    condition: {type: completed}
+    condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
   - job: phase_0
-    condition: {type: completed}
+    condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
   - job: phase_1
-    condition: {type: completed}
+    condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
   - job: ansible
-    condition: {type: completed}
+    condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
   - job: prerequisites
-    condition: {type: completed}
+    condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
   - job: phase_13
-    condition: {type: completed}
+    condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
   - job: node
-    condition: {type: completed}
+    condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
   - job: phase_46
-    condition: {type: completed}
+    condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
   - job: phase_47
-    condition: {type: completed}
+    condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
   - job: phase_48
-    condition: {type: completed}
+    condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
   - job: swamp_runtime_job
-    condition: {type: completed}
+    condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
   - job: swamp_workers_job
-    condition: {type: completed}
+    condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
   - job: swamp_check_job
-    condition: {type: completed}
+    condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
   - job: Check Swamp runtime_job
-    condition: {type: completed}
+    condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
   - job: phase_51
-    condition: {type: completed}
+    condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
   - job: publication
-    condition: {type: completed}
+    condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
   - job: firewall
-    condition: {type: completed}
+    condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
   - job: exporters
-    condition: {type: completed}
+    condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
   - job: prometheus
-    condition: {type: completed}
+    condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
   - job: role
-    condition: {type: completed}
+    condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
   steps:
   - name: Remove the playbook input
     labels: {role: swamp}
@@ -844,7 +844,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ansible-role-cleanup
+      behaviorName: '${{ "ansible-role-cleanup-" + string(inputs.node_id) }}'
       methodName: execute
       inputs:
         run: timeout 30 rm -rf -- "$ORBIT_RUN"

@@ -45,6 +45,7 @@ Until then, follow this skill and add the missing part in the same PR.
 - Ansible treats a string with `{{` as a Jinja template, for example in Grafana dashboards. Tag such strings `!unsafe`, and only those: `!unsafe "on"` loads as `True`.
 - A `when` condition must be a real boolean. Write `x is not none`, not `x`.
 - `include_tasks` in a loop runs the hosts one at a time. To give each host its own item, set the item as a play variable and use `import_tasks`.
+- A `completed` dependency excludes a skipped job on the pinned runtime. Cleanup that waits for optional or downstream jobs uses `or: [completed, skipped]`, so an earlier failure cannot skip private-file removal.
 - `file` with `state: link` does not replace a file unless you set `force: true`.
 - `get_url` needs the algorithm in a checksum: add `sha256:` to a bare digest.
 - `regex_search` with a `'\1'` group argument fails. Use `regex_findall`.

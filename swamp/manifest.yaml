@@ -17,6 +17,5 @@ additionalFiles:
   - ansible/tasks/dns-publication.yml
   - ansible/requirements.txt
   - ansible/requirements.yml
-binaries:
   - ansible/build_vars.py
   - ansible/ansible.cfg
