@@ -21,6 +21,10 @@ use Illuminate\Support\Facades\Queue;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
+    // The Route's TLS probe runs from Node 209 (route.create).
+    Node::query()->forceCreate(['id' => 209, 'name' => 'swamp-control', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'user' => 'orbit', 'wireguard_ip' => '10.44.0.209', 'public_ssh_host' => '192.0.2.209', 'status' => 'active',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'control-host-key']);
     config(['swamp.run_token' => 'fixture-shared-token']);
     $this->socket = new FakeRoutePublicationSocket;
     $this->socket->reply = static fn (array $sent): array => $sent['type'] === 'vault.put'
