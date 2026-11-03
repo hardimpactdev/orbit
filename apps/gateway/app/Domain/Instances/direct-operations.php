@@ -49,13 +49,11 @@ return [
         'projection' => NativeInstanceEnvironmentProjection::class,
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-environment-(?:testing-)?[1-9][0-9]*$']]],
     'instance.register' => ['workflow' => 'operation-instance-register', 'workflow_inputs' => true, 'projection' => InstanceRegisterResult::class,
-        // The native result cuts stdout short, so each read comes as one capture for the Gateway's fact check.
-        'terminal_result' => ['job' => 'source', 'step' => 'Protect the .env file', 'native' => true, 'captures' => array_map(
-            static fn (string $step): array => ['job' => 'source', 'step' => $step, 'field' => 'stdout'],
-            ['filesystem' => 'Read the checkout files', 'top' => 'Read the Git top level', 'common' => 'Read the Git common dir',
-                'worktrees' => 'List the worktrees', 'origin' => 'Read the origin', 'branch' => 'Read the branch',
-                'commit' => 'Read the commit', 'default' => 'Read the default branch'],
-        )]],
+        'terminal_result' => ['job' => 'register', 'step' => 'Create the Route', 'alternatives' => ['Protect the .env', 'Run Project setup steps-0', 'Create, start Processes-0'], 'native' => true],
+        'execution_copies' => [
+            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$'],
+            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$'],
+        ]],
     'instance.destroy' => ['workflow' => 'operation-instance-destroy', 'workflow_inputs' => true,
         'projection' => DevelopmentInstanceDestroyProjection::class,
         // The Route child allows its own step failures; its ready result says whether the withdrawal held.

@@ -1,7 +1,6 @@
 sequenceDiagram
   %% Target design: rule 1 (read-only from Node agent reports, like tool.adopt), R1 record-only default, R4 Node-work branch; .env stays the user's file; Processes from Project definitions (instance.create). docs/domains/applications.md#register-an-existing-checkout.
   %% Revised: Nick 2026-11-03. Default: check and record, no run. --setup and --domain are opt-in Node work. A linked worktree of the Project's repository is accepted. Caller-agnostic.
-  %% Implemented: the record-only default checks the Node agent's checkout fact (agent 0.8.0, 2026-11-03). Not yet: linked worktrees, --setup and --domain are still refused (operation.kind_unavailable); this chart is the target.
   %% status: reviewed
   %% command: instance:register
   %% kind: instance.register
@@ -21,8 +20,6 @@ sequenceDiagram
     %%> What it observes:
     %%> - each Git checkout under `<apps-root>/<project-slug>/<name>`: owner, layout (checkout or linked worktree), origin, branch, `HEAD` commit, dirty state
     %%> - whether `.env` exists and who can read it; PHP version and the Laravel flag
-    %%> Today:
-    %%> - the agent reports only task checkouts; until it reports app checkouts, the run reads the checkout over `@swamp/ssh` (interim)
     %%> Runs as:
     %%> - read-only; the Node agent never changes a Node
   end

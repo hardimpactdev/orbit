@@ -156,7 +156,7 @@ final readonly class NativeRouteMutationInput
      * @param  array<int,Instance>  $placements
      * @return CapturedRoute
      */
-    public function route(Route $route, array $candidates = [], array $placements = [], bool $environment = true): array
+    public function route(Route $route, array $candidates = [], array $placements = [], bool $environment = true, bool $urlsOnly = false): array
     {
         $intent = $route->isAnalyticsTracking() ? app(AnalyticsRoutePlan::class)->capture($route) : app(NativeRouteConvergenceIntent::class)->forRoute($route, ['mode' => 'placement']);
         if ($route->isAnalyticsTracking()) {
@@ -164,7 +164,7 @@ final readonly class NativeRouteMutationInput
         }
         $writes = [];
         foreach ($environment ? ValidatedData::integerList($intent['workload_node_ids']) : [] as $nodeId) {
-            foreach (app(NativeRouteConvergenceEnvironmentMaterial::class)->forRoute($route, $nodeId, $intent, candidates: $candidates, placements: $placements) as $write) {
+            foreach (app(NativeRouteConvergenceEnvironmentMaterial::class)->forRoute($route, $nodeId, $intent, candidates: $candidates, placements: $placements, urlsOnly: $urlsOnly) as $write) {
                 $writes[] = ['node_id' => $nodeId, ...$write];
             }
         }

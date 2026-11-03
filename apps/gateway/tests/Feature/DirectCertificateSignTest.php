@@ -411,3 +411,19 @@ it('does not extend enrollment signing to another provisioning Node', function (
     $body['requests'][0]['node_id'] = $other->id;
     $this->postJson($this->path, $body)->assertForbidden()->assertJsonPath('error.code', 'certificate.intent_missing');
 });
+
+it('signs registration Route leaves only from forward admission, never restoration', function (string $path): void {
+    $input = [];
+    data_set($input, $path, [$this->leaf]);
+    $this->operation->update(['kind' => 'instance.register', 'input' => $input]);
+    $this->postJson($this->path, $this->body)->assertOk();
+    $this->body['restoring'] = true;
+    $this->postJson($this->path, $this->body)->assertForbidden()->assertJsonPath('error.code', 'certificate.intent_missing');
+})->with(['route_lifecycle.preparation.certificates', 'route_lifecycle.route_mutations.forward.certificates']);
+
+it('refuses registration signing authority from unrelated or restoration leaves', function (string $path): void {
+    $input = [];
+    data_set($input, $path, [$this->leaf]);
+    $this->operation->update(['kind' => 'instance.register', 'input' => $input]);
+    $this->postJson($this->path, $this->body)->assertForbidden()->assertJsonPath('error.code', 'certificate.intent_missing');
+})->with(['certificates', 'route_lifecycle.route_mutations.restore.certificates']);
