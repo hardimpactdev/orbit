@@ -31,7 +31,7 @@ elif mode == 'hub':
     # This fixture records an already-bootstrapped VPN hub. Seed the same loopback backend bind its
     # bootstrap writes; Ubuntu's stock dnsmasq instead collides with systemd-resolved on port 53.
     backend = subprocess.run(['runuser', '-u', 'orbit', '--', 'env', '-C', 'apps/gateway', 'php', '-r',
-        'require "vendor/autoload.php"; echo \App\Infrastructure\AppDev\VpnDnsmasqBackendListen::apply("# Managed by Orbit.\\n");'],
+        r'require "vendor/autoload.php"; echo \App\Infrastructure\AppDev\VpnDnsmasqBackendListen::apply("# Managed by Orbit.\n");'],
         capture_output=True, text=True, check=True).stdout
     subprocess.run(['incus', 'exec', 'target', '--', 'tee', '/etc/dnsmasq.d/orbit-vpn.conf'],
                    input=backend, capture_output=True, text=True, check=True)
