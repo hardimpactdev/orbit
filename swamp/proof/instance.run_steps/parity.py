@@ -25,8 +25,16 @@ def check(condition, message):
 check('proof-private-step-output' not in outputs, 'step stdout reached native history')
 if sys.argv[1:] == ['redaction']:
     check(operation['status'] == 'failed', 'the failing setup Operation failed')
-    detail = operation['state']['native_failure']['detail']
-    check(detail.strip() == '[REDACTED]\nsafe-diagnostic', 'overlapping stored values are fully redacted from the public stderr diagnostic')
+    reply = subprocess.run(
+        ['runuser', '-u', 'orbit', '--', 'php', '../../tools/swamp-proof-guest/gateway.php', 'request'],
+        input=json.dumps({'method': 'GET', 'path': f'operations/{operation["id"]}', 'caller': '10.231.0.2',
+                          'operation': False, 'key': 'proof-redaction-read', 'seconds': 10}),
+        cwd='apps/gateway', capture_output=True, text=True, check=True,
+    )
+    public = json.loads(reply.stdout.strip().splitlines()[-1])
+    check(public['http_status'] == 200, 'the Operation diagnostic is readable')
+    detail = public['response']['data']['error']['detail']
+    check(detail.strip().endswith('[REDACTED]\nsafe-diagnostic'), 'overlapping stored values are fully redacted from the public stderr diagnostic')
     check(target('test', '!', '-e', directory + '/.git/proof-must-not-run').returncode == 0, 'later steps were skipped')
     check(target('cat', directory + '/.git/orbit-proof-steps').stdout == 'xx', 'the running list executed its first step once')
     print('parity: overlapping values redacted, stdout discarded, later setup steps skipped')
