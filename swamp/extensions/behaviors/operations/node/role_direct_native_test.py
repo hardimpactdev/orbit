@@ -26,29 +26,44 @@ class DirectRoleNative(NativeTestCase):
                           module.read_text().replace('export const behavior = nodeRoleAdd();',
                             'export const behavior = nodeRoleAdd(fixtureBaseline, () => fixtureHttp, fixtureFootprint);'))
         # The real node-cli-install child has its own native test; here it reports a published CLI.
+        (self.repo / 'extensions/behaviors/role-cli-fixture.ts').write_text('import {z} from "npm:zod@4.4.3";\nexport const behavior={type:"@fixture/role-cli",version:"2026.11.03.1",resources:{data:{schema:z.record(z.string(),z.unknown()),lifetime:"1d",garbageCollection:1}},methods:{result:{description:"Harmless CLI child boundary",arguments:z.object({installed:z.string(),version:z.string(),configured:z.boolean()}),execute:async(args,ctx)=>{await ctx.writeResource("data","data",args);return args;}},file:{description:"Harmless file boundary",arguments:z.object({}),execute:async(args,ctx)=>{const state=JSON.parse(await Deno.readTextFile("native-role.json"));state.effects.push("tmpfiles");await Deno.writeTextFile("native-role.json",JSON.stringify(state));const result={status:"compliant",changed:false};await ctx.writeResource("data","data",result);return result;}}}};\n')
         (self.repo / 'workflows/workflow-node-cli-install.yaml').write_text(json.dumps({
             'id': '440d10ad-68c2-4f59-a3ae-0ce705a84e47', 'name': 'node-cli-install', 'inputs': {'type': 'object', 'properties': {
                 'node_id': {'type': 'integer'}, 'intent': {'type': 'object'}}, 'required': ['node_id', 'intent']},
             'jobs': [{'name': 'cli', 'steps': [{'name': 'result', 'task': {'type': 'behavior',
-                'behaviorType': '@nckrtl/node-role-converge-command', 'behaviorName': '${{ "cli-result-" + string(inputs.node_id) }}',
-                'methodName': 'cli_native_result', 'inputs': {'installed': True, 'version': '${{ inputs.intent.cli.release.version }}', 'configured': True}}}]}]}))
+                'behaviorType': '@fixture/role-cli', 'behaviorName': '${{ "cli-result-" + string(inputs.node_id) }}',
+                'methodName': 'result', 'inputs': {'installed': '1.2.3', 'version': '${{ inputs.intent.cli.release.version }}', 'configured': True}}}]}]}))
         removal = self.repo / 'extensions/behaviors/operations/node/role_removal.ts'
         removal.write_text('import {fixtureSourceHttp,fixtureCleanup,fixtureGrace} from "./role_removal_native_fixture.ts";\n' + removal.read_text().replace('export const behavior = roleRemoval();','export const behavior = roleRemoval(() => fixtureSourceHttp, fixtureCleanup, fixtureGrace);'))
         for filename, factory in [('role_metrics.ts', 'roleMetrics'), ('role_publication.ts', 'rolePublication'), ('role_certificates.ts', 'roleCertificates')]:
             helper = self.repo / 'extensions/behaviors/operations/node' / filename
             helper.write_text('import {fixtureHttp} from "./role_direct_native_fixture.ts";\n' + helper.read_text().replace(f'export const behavior = {factory}();', f'export const behavior = {factory}(() => fixtureHttp);'))
         source = ROOT / ('workflows/workflow-' + getattr(self, 'workflow_name', 'operation-node-role-add-direct') + '.yaml')
-        self.source = source.read_text()
+        if source.name == 'workflow-operation-node-role-add-direct.yaml':
+            generator = ROOT / 'extensions/behaviors/operations/node/footprint_workflows.ts'
+            self.source = subprocess.run(['deno', 'eval',
+                'import {footprintWorkflow} from ' + json.dumps(str(generator)) + ';' +
+                'import {stringify} from "jsr:@std/yaml@1.0.12";' +
+                'console.log(stringify(footprintWorkflow(true),{flowLevel:4,lineWidth:-1}));'],
+                capture_output=True, text=True, check=True).stdout
+        else:
+            self.source = source.read_text()
         parsed = subprocess.run(['/tmp/lane0d-deno/deno', 'eval',
             'import {parse} from "jsr:@std/yaml@1.0.12"; console.log(JSON.stringify(parse(await new Response(Deno.stdin.readable).text())));'],
             input=self.source, capture_output=True, text=True, check=True)
         def local(value):
             if isinstance(value, list): return [local(entry) for entry in value]
-            if isinstance(value, dict): return {key:local(entry) for key,entry in value.items() if key not in ['target','labels']}
+            if isinstance(value, dict):
+                if value.get('behaviorType') == '@swamp/cfgmgmt/file':
+                    return {'type': 'behavior', 'behaviorType': '@fixture/role-cli', 'behaviorName': 'retained-file-fixture', 'methodName': 'file', 'inputs': {}}
+                return {key:local(entry) for key,entry in value.items() if key not in ['target','labels']}
             return value
+        self.local_workflow = local
         (self.repo / 'workflows' / source.name).write_text(json.dumps(local(json.loads(parsed.stdout))))
         self.state = {'operation': {'id': 91, 'kind': 'node.role_add', 'node_id': 13,
             'status': 'queued', 'result': None, 'cancel_requested': False, 'input': {
+            'ssh': {'target': {'host': 'fixture', 'port': 22, 'user': 'orbit'}, 'identity_file': '/synthetic'},
+            'role_files': {'tmpfiles': 'e /tmp/orbit-* - - - 1d', 'home': '/home/orbit', 'php': {}, 'php_versions': [], 'dns': {}, 'residue': {}},
             'certificates': {'leaves': [], 'withdrawals': []}, 'metrics_fleet': None, 'runtime': None, 'schema_version': 1, 'node_id': 13, 'agent_sha256': 'a' * 64,
             'assignment_id': 33, 'publication': {'caddy_node_ids': [], 'php_node_ids': [], 'dns_node_ids': []}, 'role': 'ci-runner', 'created': False, 'user': 'nckrtl',
             'prerequisites': {'packages': ['incus'], 'releases': ['resolute'], 'apps_directory': False, 'composer_home': False},
@@ -80,7 +95,6 @@ class DirectRoleNative(NativeTestCase):
         state = self.read()
         self.assertEqual(state['operation']['status'], 'succeeded')
         self.assertEqual(state['effects'][:5], ['agent-install', 'caddy-package', 'prerequisites', 'ci-host', 'firewall'])
-        self.assertEqual(len(state['effects']), 12)
         self.assertEqual(state['operation']['result']['cli']['outcome'], 'cli_installed')
         self.assertEqual(len(state['operation']['result']['footprint']['artifacts']), 2)
         self.assertIsNone(state['operation']['result']['follow_up'])

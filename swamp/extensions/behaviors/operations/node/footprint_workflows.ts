@@ -376,7 +376,6 @@ export function footprintWorkflow(
 
 export function generatedFootprintWorkflows() {
   return [
-    footprintWorkflow(true),
     footprintWorkflow(true, true),
   ].map((workflow) => {
     return {

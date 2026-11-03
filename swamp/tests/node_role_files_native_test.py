@@ -13,7 +13,7 @@ export const behavior={type:"@fixture/native-role-files",version:"2026.11.02.1",
 plan:{description:"Public admission fixture",arguments:z.object({snapshot:z.record(z.string(),z.unknown())}),execute:async(args,ctx)=>{const data={snapshot:args.snapshot,ready:true,started_at:"2026-11-02T00:00:00Z",refusal:null};await ctx.writeResource("data","data",data);return data;}},
 apply:{description:"Harmless child transport boundary",arguments:z.object({fail:z.boolean()}),execute:async(args)=>{if(args.fail)throw new Error("Native child failed");return {};}}
 }};''')
-        source=yaml.safe_load((ROOT/'workflows/workflow-operation-node-role-add-direct.yaml').read_text())
+        source=yaml.safe_load((ROOT/'workflows/workflow-operation-node-role-relocate-direct.yaml').read_text())
         jobs=[]
         for job in source['jobs']:
             if job['name'] not in ('private_dns_job','php_runtime_job','tmpfiles_job','route_residue_job'):

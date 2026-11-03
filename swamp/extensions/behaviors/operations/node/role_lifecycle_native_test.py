@@ -19,11 +19,7 @@ class RoleLifecycleNative(DirectRoleNative):
         import json,subprocess
         source=Path(__file__).resolve().parents[4]/('workflows/workflow-'+self.workflow_name+'.yaml')
         result=subprocess.run(['/tmp/lane0d-deno/deno','eval','import {parse} from "jsr:@std/yaml@1.0.12";console.log(JSON.stringify(parse(await new Response(Deno.stdin.readable).text())));'],input=source.read_text(),text=True,capture_output=True,check=True)
-        def local(v):
-            if isinstance(v,list):return [local(x) for x in v]
-            if isinstance(v,dict):return {k:local(x) for k,x in v.items() if k not in ['target','labels']}
-            return v
-        (self.repo/'workflows'/source.name).write_text(json.dumps(local(json.loads(result.stdout))))
+        (self.repo/'workflows'/source.name).write_text(json.dumps(self.local_workflow(json.loads(result.stdout))))
 
     def relocate(self,source=18):
         self.workflow_name='operation-node-role-relocate-direct';self.set_workflow()
