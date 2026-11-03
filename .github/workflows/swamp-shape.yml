@@ -131,7 +131,6 @@ jobs:
           SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_SIGNIN_TOKEN || '' }}
         run: |
           python3 bin/check-grant-patterns.py --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/grant-validation.json"
-          SWAMP_RUNTIME_CACHE="$HOME/.cache/orbit-shape-runtime" python3 tests/grant_patterns_native_test.py
       - name: Check placement on every step
         if: ${{ always() && (!inputs.changed-only || steps.scope.outputs.selected == 'true') }}
         run: deno run --allow-read bin/lint-workflow-placement.ts

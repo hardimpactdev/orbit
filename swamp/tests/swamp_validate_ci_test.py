@@ -41,7 +41,7 @@ class ValidateCI(unittest.TestCase):
         source = (ROOT.parent / '.github/workflows/swamp-shape.yml').read_text()
         validate = source.split('  validate:', 1)[1].split('  tests:', 1)[0]
         self.assertIn('python3 bin/check-grant-patterns.py --cache', validate)
-        self.assertIn('python3 tests/grant_patterns_native_test.py', validate)
+        self.assertTrue((ROOT / 'extensions/behaviors/operations/workflow_grant_patterns_native_test.ts').is_file())
         self.assertNotIn('check-grant-patterns.ts', source)
         self.assertNotIn('continue-on-error', validate)
         self.assertIn('grant-validation.json', validate)
