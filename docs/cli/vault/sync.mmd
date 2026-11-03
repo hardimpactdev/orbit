@@ -13,7 +13,7 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant VW as Vaultwarden<br/>vault.orbit Route
-  CLI->>GW: vault:sync<br/>--json
+  CLI->>GW: vault:sync
   %%> Command:
   %%> - `orbit vault:sync`
   %%> - syntax: `[--idempotency-key=KEY] [--json]`

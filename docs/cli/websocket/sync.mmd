@@ -10,7 +10,7 @@ sequenceDiagram
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant N as Reverb<br/>on websocket Node
-  CLI->>GW: websocket:sync<br/>--wait=60 --operation-key=KEY
+  CLI->>GW: websocket:sync
   %%> Command:
   %%> - `orbit websocket:sync --wait=60`
   %%> - syntax: `[--wait=SECONDS] [--operation-key=KEY] [--json]`
