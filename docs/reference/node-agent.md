@@ -92,7 +92,9 @@ The agent reports facts the Gateway stores and answers reads from, such as Docto
 | `checkout` | One Git checkout at `<apps_root>/<project>/<name>`, named by its path in `subject`. See [Checkouts](#checkouts). | on change |
 | `checkouts` | `paths`: the path of every checkout the agent found under the apps root | on change |
 | `packages` | One Tool Manager's packages, named by the manager in `subject`. See [Packages](#packages). | every 60 seconds |
-| `ufw` | `installed`, `enabled`, and each rule from the `### tuple ###` lines of `/etc/ufw/user.rules` and `user6.rules`: `action`, `protocol`, `port`, `destination`, `source_port`, `source`, `direction` (`in`, `out` or `fwd`), `in_interface`, `out_interface`, `family`, the decoded `comment` (empty for a rule without one) and `app`. A rule the agent cannot read is `{"unreadable": true}`. The agent reads `ufw.conf` and the rules files; it runs no `ufw` command. | every 60 seconds |
+| `ufw` | `installed`, `enabled`, and each rule. See below. | every 60 seconds |
+
+`ufw` holds each rule from the `### tuple ###` lines of `/etc/ufw/user.rules` and `user6.rules`: `action`, `protocol`, `port`, `destination`, `source_port`, `source`, `direction` (`in`, `out` or `fwd`), `in_interface`, `out_interface`, `family`, the decoded `comment` (empty for a rule without one) and `app`. A rule the agent cannot read is `{"unreadable": true}`. The agent reads `ufw.conf` and the rules files; it runs no `ufw` command.
 
 `units` lists each `orbit-process-*` unit, each Process container, and each role service and Process unit from the [watch list](#watch-list). `docker` is `available` or `absent`. A systemd unit also has its `load` and `sub` state; one that is not installed reads `not-found`. `awake` lists the watched awake markers that exist. Agents before 0.10.0 send neither `load`, `sub` nor `awake`.
 
