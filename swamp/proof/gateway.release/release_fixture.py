@@ -159,9 +159,10 @@ def setup(gateway_node):
     hosts = Path('/etc/hosts')
     hosts.write_text('\n'.join(line for line in hosts.read_text().splitlines() if not line.startswith(LISTEN + ' ')) + '\n')
     tag = pinned_assets()
-    # The serve checkout, its loopback API and grants paths, exactly as the load proof prepares them.
-    command(['python3', '-I', str(SOURCE / 'swamp/proof/gateway.swamp_load/prepare.py')], cwd=SOURCE)
     staged = layout(gateway_node)
+    # The serve checkout, its loopback API and grants paths, exactly as the load proof prepares them. After the layout:
+    # its Caddy site joins the Caddyfile the layout rendered.
+    command(['python3', '-I', str(SOURCE / 'swamp/proof/gateway.swamp_load/prepare.py')], cwd=SOURCE)
     work = STATE / 'work'
     shutil.rmtree(work, ignore_errors=True)
     orbit('git', 'clone', '--quiet', str(SOURCE), str(work))
