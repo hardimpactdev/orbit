@@ -689,3 +689,5 @@ The cleanup deletes the unused Node, certificate and route executor chain.
 ## 2026-11-03: Schedule lifecycle tests read native completion
 
 The newly ported lifecycle suite still looked for the deleted destroy printer. It now reads `Check the removal`, as creation and enable read their own native checks. Cascade service stop uses one bounded SSH argv: official systemd `ensure: stopped` compares only the `active` state and leaves an activating oneshot alone. The explicit stop preserves the previous cascade behavior without a shell. End checks remain official file and systemd checks plus the native assertion.
+
+Fresh standalone and cascade receipts on `ff8ad3169f` pass: `schedule.destroy.timer/20261103T073252Z-minimal.json` and `schedule.destroy.timer.cascade/20261103T073618Z-minimal.json`. Three destroy lifecycle cases pass in 60 seconds; the activating-service regression passes in 13 seconds. No case is dropped.

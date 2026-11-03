@@ -14,5 +14,10 @@
   "swamp_run_id": "77aa527f-b015-4d66-b19e-e86f9ee68c3a",
   "reporting_steps_removed": 1,
   "scripts_deleted": 0,
-  "limits": "One retained Node timer removed through real official file/systemd resources and pinned SSH. A native create prerequisite took 8.32 seconds. Four managed files are absent; the timer LoadState is not-found. Captured public intent enters production admission; no frozen agent account lookup, active fire, command credentials or full production clone. Native local regressions cover active and activating service refusal before writes, cascade stop, file/timer drift and a still-loaded timer."
+  "limits": "One retained Node timer removed through real official file/systemd resources and pinned SSH. A native create prerequisite took 8.32 seconds. Four managed files are absent; the timer LoadState is not-found. Captured public intent enters production admission; no frozen agent account lookup, active fire, command credentials or full production clone. Native local regressions cover active and activating service refusal before writes, cascade stop, file/timer drift and a still-loaded timer. Follow-up standalone and cascade receipts prove the bounded SSH stop; native lifecycle regressions cover a real official-behavior composition with an activating service.",
+  "followup_receipts": [
+    "/home/nckrtl/swamp-execution/evidence/proof/schedule.destroy.timer/20261103T073252Z-minimal.json",
+    "/home/nckrtl/swamp-execution/evidence/proof/schedule.destroy.timer.cascade/20261103T073618Z-minimal.json"
+  ],
+  "followup_source": "ff8ad3169f8966ff0c699976eff86e7e58250aac"
 }
