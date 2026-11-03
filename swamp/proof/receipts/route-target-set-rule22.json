@@ -10,7 +10,10 @@
   "budget_seconds": 1800,
   "queue_timeout_seconds": 30,
   "swamp_run_id": "316b1f34-c994-43b5-bd30-1ccec5e6a920",
-  "vm_destroyed": false,
+  "vm_destroyed": true,
   "scripts_deleted": 0,
-  "named_gap": null
+  "named_gap": null,
+  "pending_proofs": [
+    "development: swamp.start_uncertain, no native run or history after a fresh retry"
+  ]
 }
