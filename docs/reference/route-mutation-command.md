@@ -3,7 +3,7 @@ title: Route mutation steps
 description: Capture complete Route changes for a Node parent without worker callbacks.
 ---
 
-Node enrollment discovers Route changes from the actual stored Node. `NativeRouteNodeMutationInput::capture(Node $actual, NativeRouteNodeRender $candidate, ?int $clusterId)` reserves replacement Route intent through `NativeRouteMutationPlan` before it enters the prospective render context. It keeps the Node's stored address, account and activation unchanged. The capture returns the immutable `route_mutations` plan, participant IDs, admitted certificate leaves and `execution_secrets` descriptors.
+Node enrollment discovers Route changes from the actual stored Node. It reserves replacement Route intent through `NativeRouteMutationPlan` before it enters the prospective render context. It keeps the Node's stored address, account and activation unchanged. The capture returns the immutable `route_mutations` plan, participant IDs, admitted certificate leaves and `execution_secrets` descriptors.
 
 Prior publications use stored identity. Forward publications use the admitted address and TLD through `RouteRenderContext`, with the complete proposed Route site catalog. Both sides include Caddy, PHP, DNS, Route LAN, certificate and URL contributions. Secret values go only through the shared `SwampCommandStep::executionCopy` helper. Public workflow inputs contain vault and key names.
 

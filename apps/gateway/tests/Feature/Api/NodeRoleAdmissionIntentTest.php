@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Actions\Nodes\AdmitNodeRoleOperationAction;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\NodeReachabilityProbe;
-use App\Domain\Nodes\NodeRoleIntent;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\NodeSettingsOperationCompletion;
 use App\Domain\Nodes\RoleAssignmentException;
@@ -82,22 +81,6 @@ it('leaves assignments unchanged when another Operation holds the Node', functio
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
 
     expect($node->roles()->sole()->status)->toBe(LifecycleStatus::Active);
-});
-
-it('keeps the source assignment and Settings scopes after claim transfer', function (): void {
-    $source = FleetFixtures::node('role-intent-source', [RoleName::WebSocket]);
-    $target = FleetFixtures::node('role-intent-target');
-    $assignment = $source->roles->sole();
-    $intent = NodeRoleIntent::capture($assignment, false, $target);
-    $operation = Operation::query()->create(['kind' => 'node.role_relocate', 'target_type' => 'node', 'target_id' => $target->id,
-        'node_id' => $target->id, 'input' => [], 'state' => ['role_intent' => $intent], 'status' => 'queued', 'sequence' => 1, 'attempts' => 0]);
-    $assignment->update(['node_id' => $target->id]);
-
-    expect($operation->fresh()->state['role_intent'])->toBe([
-        'assignment_id' => $assignment->id, 'created' => false, 'role' => 'websocket', 'source_node_id' => $source->id, 'target_node_id' => $target->id,
-        'role_configuration' => ['cluster_id' => null, 'source_settings' => ['scope_type' => 'node', 'scope_id' => $source->id],
-            'target_settings' => ['scope_type' => 'node', 'scope_id' => $target->id]],
-    ]);
 });
 
 it('records removal as an existing assignment and retains it for cleanup proof', function (): void {

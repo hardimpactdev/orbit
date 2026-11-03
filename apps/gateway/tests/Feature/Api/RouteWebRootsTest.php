@@ -15,7 +15,6 @@ use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentPhpFpmConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
-use App\Infrastructure\Doctor\ProductionInstanceInspectionExpectationFactory;
 use App\Infrastructure\Instances\ProductionPhpRuntimeConfigRenderer;
 use App\Infrastructure\Projects\NativeProjectUpdateProjectionMutator;
 use App\Models\Instance;
@@ -257,8 +256,7 @@ describe('route web root', function (): void {
             ->toContain("listen = /run/php/orbit-acme.{$suffix}.sock\n")
             ->toContain("chdir = /home/orbit-acme/current/apps/docs\n")
             ->toContain("pm = ondemand\n")
-            ->and($initial)->toContain("chdir = /home/orbit-acme/releases/initial/apps/docs\n")
-            ->and(app(ProductionInstanceInspectionExpectationFactory::class)->make($instance)->runtimeConfiguration?->pool)->toBe($pool);
+            ->and($initial)->toContain("chdir = /home/orbit-acme/releases/initial/apps/docs\n");
     });
 
     it('excludes withdrawn and failed production web roots from served and runtime inventories', function (string $status): void {
@@ -274,8 +272,7 @@ describe('route web root', function (): void {
         ]);
 
         expect(RouteWebRoot::servedApplications($instance))->toBe([])
-            ->and(web_root_production_deploy_served($instance))->toBe([])
-            ->and(app(ProductionInstanceInspectionExpectationFactory::class)->make($instance)->runtimeConfiguration?->pool)->not->toContain('apps/docs');
+            ->and(web_root_production_deploy_served($instance))->toBe([]);
     })->with(['withdrawn' => ['retiring'], 'failed' => ['failed']]);
 
 });

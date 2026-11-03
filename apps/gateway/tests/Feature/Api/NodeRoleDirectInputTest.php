@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeRoleDirectInput;
-use App\Domain\Nodes\NodeRoleIntent;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
@@ -52,8 +51,7 @@ function boundRoleRoot(string $kind = 'node.role_add'): Operation
 
     return new Operation(['kind' => $kind, 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id,
         'status' => 'running', 'input' => ['node_id' => $node->id, 'role' => 'database', '_role' => $snapshot],
-        'state' => ['swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
-            'role_intent' => NodeRoleIntent::capture($assignment, false)]]);
+        'state' => ['swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]);
 }
 
 it('binds only a standalone native role root to its original Node and assignment', function (string $kind): void {

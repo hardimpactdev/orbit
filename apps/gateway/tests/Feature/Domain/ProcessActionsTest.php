@@ -16,8 +16,6 @@ use App\Domain\Analytics\AnalyticsStorageConnection;
 use App\Domain\Analytics\PlausibleProcess;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Logs\LogRedactor;
-use App\Domain\Nodes\NodeRoleDependencySet;
-use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
@@ -32,7 +30,6 @@ use App\Domain\Processes\ProcessUsageIndex;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
-use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -955,56 +952,6 @@ it('does not rewrite existing intent while another owner holds its runtime lease
     } finally {
         $lock->release();
     }
-});
-
-it('does not mark a process failed when role cleanup loses the runtime owner', function (): void {
-    $process = process_actions_record($this->instance);
-    $original = $process->fresh()->getRawOriginal();
-    $lock = Cache::lock(process_actions_runtime_lock_key($process), 60);
-    expect($lock->get())->toBeTrue();
-
-    try {
-        $cleaner = new NativeNodeRoleDependentCleaner(
-            processes: $this->runtime,
-        );
-
-        expect(fn () => $cleaner->clean(new NodeRoleDependencySet(
-            instanceIds: [],
-            workspaceIds: [],
-            processIds: [$process->id],
-            summaries: [],
-        )))->toThrow(function (NodeRoleOperationException $exception): void {
-            expect($exception->underlyingErrorCode)->toBe('process.runtime_lock_failed');
-        });
-
-        expect($process->refresh()->getRawOriginal())
-            ->toBe($original)
-            ->and($this->runtime->removed)
-            ->toBeEmpty();
-    } finally {
-        $lock->release();
-    }
-});
-
-it('role cleanup removes runtime artifacts and leaves the process row for the parent', function (): void {
-    $process = process_actions_record($this->instance);
-    $cleaner = new NativeNodeRoleDependentCleaner(
-        processes: $this->runtime,
-    );
-
-    $cleaner->clean(new NodeRoleDependencySet(
-        instanceIds: [],
-        workspaceIds: [],
-        processIds: [$process->id],
-        summaries: [],
-    ));
-
-    expect($this->runtime->removed)
-        ->toBe([$process->id])
-        ->and(Process::query()->whereKey($process->id)->exists())
-        ->toBeTrue()
-        ->and($process->refresh()->status)
-        ->toBe(LifecycleStatus::Active);
 });
 
 it('records stable lifecycle failure state without losing the process definition', function (): void {

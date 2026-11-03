@@ -4,12 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
-use App\Domain\Instances\Deployment\DeploymentEvent;
-use App\Domain\Instances\Deployment\DeploymentOutputStream;
 use App\Domain\Instances\Deployment\DeploymentRelease;
 use App\Domain\Instances\Deployment\DeploymentReleaseState;
-use App\Domain\Instances\Deployment\DeploymentRequest;
-use App\Domain\Instances\Deployment\DeploymentStep;
 use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\Environment\InstanceEnvironmentResult;
@@ -22,7 +18,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Instance;
 use App\Models\Node;
@@ -195,9 +190,6 @@ final class Orb220ProductionDeployment implements ProductionDeployment
     /** @var list<string> */
     public array $steps = [];
 
-    /** How many 16 KiB stdout chunks the `prepare` step emits. */
-    public int $prepareOutputChunks = 1;
-
     /** @var list<string|null> The commit each preparation was pinned to, or null for the branch's newest commit. */
     public array $preparedCommits = [];
 
@@ -215,25 +207,6 @@ final class Orb220ProductionDeployment implements ProductionDeployment
         }
 
         return $this->release('fresh', $commit);
-    }
-
-    public function executeStep(
-        Instance $instance,
-        DeploymentRelease $release,
-        DeploymentStep $step,
-        DeploymentRequest $request,
-    ): CommandResult {
-        $this->steps[] = $step->name;
-
-        for ($chunk = 0; $chunk < ($step->name === 'prepare' ? $this->prepareOutputChunks : 1); $chunk++) {
-            $request->emit(new DeploymentEvent(
-                $step->name,
-                $step->name === 'prepare' ? DeploymentOutputStream::Stdout : DeploymentOutputStream::Stderr,
-                $step->name === 'prepare' ? str_repeat("\xff", 16 * 1024) : "output-secret\0bytes",
-            ));
-        }
-
-        return new CommandResult(0, '', '', 1, false);
     }
 
     public function activate(Instance $instance, DeploymentRelease $release): DeploymentRelease

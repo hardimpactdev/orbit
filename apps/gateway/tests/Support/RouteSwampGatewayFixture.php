@@ -19,7 +19,6 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationTransport;
 use App\Domain\Operations\OperationTransports;
 use App\Domain\Operations\SwampOperationExecutor;
-use App\Domain\Routes\RoutePublicationPrimitive;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -334,7 +333,7 @@ final class RouteSwampGatewayFixture
     }
 }
 
-final readonly class RouteFixtureDnsTransport implements OperationTransport, RoutePublicationPrimitive
+final readonly class RouteFixtureDnsTransport implements OperationTransport
 {
     public function __construct(private ?\Closure $publish = null) {}
 
