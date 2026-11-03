@@ -336,8 +336,11 @@ def parity():
     assert Path(operation['result']['snapshot']).is_file()
     status = json.loads(command(['curl', '-fsS', '--cacert', str(HOME / '.orbit/ca/root.pem'), 'https://gateway.orbit/api/v1/gateway/status']))
     assert (status.get('data') or status)['version'] == target, status
-    # One Actions-only token selected the web build; the run's own token read contents and Actions.
-    assert data['minted'][0] == {'actions': 'read'} and data['minted'][-1] == {'contents': 'read', 'actions': 'read'}, data['minted']
+    # An Actions-only token selected the web build, then the run's own token read contents and Actions. The manual
+    # deploy's newer-green check mints its own contents token afterwards.
+    minted = data['minted']
+    assert {'actions': 'read'} in minted and {'contents': 'read', 'actions': 'read'} in minted, minted
+    assert minted.index({'actions': 'read'}) < minted.index({'contents': 'read', 'actions': 'read'}), minted
     fetched = [call for call in data['calls'] if call[1] == 'github.com' and 'git-upload-pack' in call[2]]
     downloaded = [call for call in data['calls'] if call[2].endswith(f'/actions/artifacts/{ARTIFACT}/zip')]
     assert fetched and downloaded, data['calls']
