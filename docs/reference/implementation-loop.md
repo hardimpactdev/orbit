@@ -137,7 +137,7 @@ The required check name stays exactly `Required checks`. The branch ruleset and 
 
 Every checkout uses the immutable event commit, `github.sha`. On a pull request, this is the event's merge commit. A new push cancels the older run of that pull request or handoff branch. Each main commit has its own concurrency group, so an earlier main run cannot queue or cancel a newer release candidate.
 
-On `main`, when Gateway release inputs are selected, Web uploads `web-dist-<full commit SHA>` for 14 days. It includes hidden files and keeps `index.html` and `version.json` at its root. Automatic Gateway releases install this commit's build. Pull requests publish no web build.
+In the merge queue run and on `main`, when Gateway release inputs are selected, Web uploads `web-dist-<full commit SHA>` for 14 days. The merge queue run tests the exact commit the queue then puts on `main`, so the commit has its build as soon as `Required checks` passes. It includes hidden files and keeps `index.html` and `version.json` at its root. Automatic Gateway releases install this commit's build. Pull requests publish no web build.
 
 ### Action pins and token permissions
 

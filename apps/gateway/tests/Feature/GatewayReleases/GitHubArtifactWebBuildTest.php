@@ -68,6 +68,8 @@ describe('web build install', function (): void {
         'pull request run' => [['run' => ['event' => 'pull_request']], 'published no artifact'],
         'fork run' => [['run' => ['head_repository' => ['id' => 99, 'full_name' => 'fork/orbit']]], 'published no artifact'],
         'other branch' => [['run' => ['head_branch' => 'feature']], 'published no artifact'],
+        'merge queue of another branch' => [['run' => ['event' => 'merge_group', 'head_branch' => 'gh-readonly-queue/feature/pr-7-'.str_repeat('c', 40)]], 'published no artifact'],
+        'push to a merge queue branch' => [['run' => ['event' => 'push', 'head_branch' => 'gh-readonly-queue/main/pr-7-'.str_repeat('c', 40)]], 'published no artifact'],
         'other workflow' => [['run' => ['path' => '.github/workflows/dependency-audit.yml']], 'published no artifact'],
         'other commit' => [['artifact' => ['workflow_run' => ['id' => 37647307459, 'repository_id' => 1348221080, 'head_repository_id' => 1348221080, 'head_branch' => 'main', 'head_sha' => str_repeat('b', 40)]]], 'published no artifact'],
     ]);
@@ -76,6 +78,17 @@ describe('web build install', function (): void {
         $this->web->github(run: ['event' => 'workflow_dispatch']);
 
         expect($this->web->build()->install($this->id, WebArtifactFixture::Sha))->toBeFalse();
+    });
+
+    it('accepts the artifact of the merge queue run that tested the commit for main', function (): void {
+        $branch = 'gh-readonly-queue/main/pr-2486-'.str_repeat('c', 40);
+        $this->web->github(
+            artifact: ['workflow_run' => ['id' => 37647307459, 'repository_id' => 1348221080, 'head_repository_id' => 1348221080, 'head_branch' => $branch, 'head_sha' => WebArtifactFixture::Sha]],
+            run: ['event' => 'merge_group', 'head_branch' => $branch],
+        );
+
+        expect($this->web->build()->install($this->id, WebArtifactFixture::Sha))->toBeFalse()
+            ->and($this->web->agents->commands())->toContain('gateway.install-web-build');
     });
 
     it('refuses an artifact without a digest before it downloads it', function (): void {

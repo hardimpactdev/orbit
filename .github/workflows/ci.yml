@@ -220,7 +220,7 @@ jobs:
         if: steps.scope.outputs.selected == 'true'
         run: bun run build && test -s dist/index.html && test -s dist/version.json
       - name: Publish web build
-        if: steps.scope.outputs.selected == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        if: steps.scope.outputs.selected == 'true' && (github.event_name == 'merge_group' || github.ref == 'refs/heads/main' && github.event_name != 'pull_request')
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: web-dist-${{ github.sha }}
