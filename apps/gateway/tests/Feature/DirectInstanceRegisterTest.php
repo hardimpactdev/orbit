@@ -21,6 +21,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeFact;
 use App\Models\Operation;
+use App\Models\Process;
 use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 use App\Models\Route;
@@ -308,4 +309,30 @@ it('refuses a domain owned by another Instance before reserving a registration',
         expect($exception->errorCode)->toBe('route.domain_conflict')->and($exception->status)->toBe(422);
     }
     expect(Instance::query()->count())->toBe(1)->and(Operation::query()->count())->toBe(1);
+});
+
+it('keeps completed development Processes when a registration Route fails', function (): void {
+    app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
+    config(['swamp.run_token' => 'native-register-fixture']);
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('fixture-public-root');
+    $this->project->update(['type' => 'laravel-app', 'root' => 'public']);
+    $definition = $this->project->processDefinitions()->create(['name' => 'dev-server', 'environments' => ['development'],
+        'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/sleep', '300'], 'restart_policy' => 'never']]);
+    register_report($this->node, '/srv/apps/register-proof/native');
+    $data = new RegisterInstanceData('/srv/apps/register-proof/native', false, $this->project->id, 'native', null, 'native.register-proof.test', true);
+    $operation = app(RegisterInstanceAction::class)->execute($this->node, $data);
+    $intent = app(InstanceRegisterResult::class)->input($operation)['intent'];
+    expect($intent['processes'])->toHaveCount(1)->and($intent['setup_steps'])->toBe([]);
+    app(InstanceRegisterResult::class)->apply($operation, [
+        ...register_terminal('failed', ['steps' => ['Create, start Processes-0' => ['status' => 'succeeded'], 'Create the Route' => ['status' => 'failed']]]),
+        'failure' => ['failed_step' => 'Create the Route'],
+    ]);
+    $process = Process::query()->where('source_definition_id', $definition->id)->sole();
+    expect($process->status->value)->toBe('active')->and($process->desired_state->value)->toBe('running')
+        ->and(Instance::query()->findOrFail($operation->target_id)->status->value)->toBe('reserved');
+    $retry = app(RegisterInstanceAction::class)->execute($this->node, $data);
+    expect($retry->input['members'])->toBe([])->and(Process::query()->count())->toBe(1);
+    app(InstanceRegisterResult::class)->apply($retry, register_terminal('succeeded', ['steps' => ['Create the Route' => ['status' => 'succeeded']]]));
+    expect(Instance::query()->findOrFail($retry->target_id)->status->value)->toBe('active')
+        ->and($process->refresh()->status->value)->toBe('active');
 });

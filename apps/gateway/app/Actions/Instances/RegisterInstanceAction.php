@@ -117,6 +117,7 @@ final readonly class RegisterInstanceAction
             ]);
             RegistrationFacts::record($instance, $facts, $project->repository_url, $project->repository_identity);
             $instance->update(['status' => InstanceState::Reserved, 'first_setup_pending' => $data->runSetup]);
+            $route = $data->domain === null ? null : app(CreateRouteAction::class)->ensureForInstance($instance, $data->domain);
             $setup = null;
             $members = [];
             if ($data->runSetup) {
@@ -133,7 +134,6 @@ final readonly class RegisterInstanceAction
 
                 return $instance->refresh();
             }
-            $route = $data->domain === null ? null : app(CreateRouteAction::class)->ensureForInstance($instance, $data->domain);
             $routeInput = $route === null ? [] : app(NativeRouteAdmission::class)->capture('route.create', $route, ['mode' => 'converge'], $caller->id, preserveEnvironment: true);
 
             return $this->operations->execute('instance.register', 'instance', $instance->id, $caller->id, [

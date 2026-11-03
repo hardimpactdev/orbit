@@ -26,9 +26,11 @@ The CLI refuses a directory outside Git and an origin with credentials before se
 
 With a private or absent `.env` and no opt-in work, registration answers HTTP 201 with the active Instance. It starts no Operation and reads nothing on the Node. The Gateway records the observed branch, commit, PHP version and Laravel marker.
 
-`--setup`, `--domain`, or a publicly readable `.env` starts one native Operation and answers HTTP 202. Its guarded steps protect an existing public `.env` as `0640 orbit-env`, run the Project setup steps in order, start its development Processes, and create the Route through the same child workflow as `route:create`. Each step runs only when requested or needed. Registration preserves the user's `.env`; setup follows the Project's commands, and Route creation may set its `APP_URL`.
+`--setup`, `--domain`, or a publicly readable `.env` starts one native Operation and answers HTTP 202. Its guarded steps protect an existing public `.env` as `0640 orbit-env`, run the Project setup steps in order, start its development Processes, and create the Route through the same child workflow as `route:create`. Each step runs only when requested or needed.
 
-A failed step keeps the checkout and the Instance, marked failed. Fix the cause and repeat the request. Completed work stays in place. With a silent agent, missing checkout metadata or mismatched ownership or origin, the Gateway refuses before reservation with `instance.source_invalid` or the specific source error.
+Setup uses a private umask for new files. If setup has no steps or Process definitions and no other Node work is needed, registration returns HTTP 201 without a run. Registration preserves the user's `.env`; setup follows the Project's commands, and Route creation may set its `APP_URL`.
+
+A failed step keeps the checkout and the Instance reserved with failure details. Fix the cause and repeat the request. Completed work stays in place. With a silent agent, missing checkout metadata or mismatched ownership or origin, the Gateway refuses before reservation with `instance.source_invalid` or the specific source error.
 
 Registration requires an existing Project and an in-place source under its configured apps directory. Project inference, source relocation and adopting every worktree remain unavailable. See [Register an existing checkout](/domains/applications#register-an-existing-checkout).
 
