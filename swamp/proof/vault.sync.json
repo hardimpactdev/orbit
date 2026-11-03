@@ -12,7 +12,7 @@
     [
       "python3",
       "-I",
-      "swamp/tests/fixtures/vaultwarden_proof_setup.py",
+      "tools/swamp-proof-guest/vaultwarden_setup.py",
       "sync"
     ]
   ],

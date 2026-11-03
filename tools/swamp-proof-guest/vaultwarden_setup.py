@@ -11,7 +11,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-SOURCE = Path(__file__).resolve().parents[3]
+SOURCE = Path(__file__).resolve().parents[2]
 STATE = Path("/home/orbit/.orbit/swamp-proof")
 IMAGE = "vaultwarden/server@sha256:4fe17f415f90087377d37c755e0ea3cf189dcc6794e49cdd2a9adbb4937d9e1f"
 
@@ -169,8 +169,8 @@ def main():
                     "Disposable Vaultwarden did not become ready"
                 ) from None
             time.sleep(0.2)
-    sys.path.insert(0, str(SOURCE / "swamp/tests"))
-    from fixtures.vaultwarden_account import provision
+    sys.path.insert(0, str(SOURCE / "tools/swamp-proof-guest"))
+    from vaultwarden_account import provision
 
     configuration = provision(url, secrets.token_urlsafe(32), ca)
     if len(sys.argv) > 1 and sys.argv[1] in ("sync", "teardown", "keep"):
