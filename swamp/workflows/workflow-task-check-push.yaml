@@ -1,7 +1,6 @@
 id: 550a0a41-b59c-5ae7-bce7-399ad0fa27ac
 name: task-check-push
-description: Push a passed handoff candidate when CI is required, shape the check result and remove the scratch files; the
-  parent reports the result.
+description: Push a passed handoff candidate when CI is required, produce the check receipt and remove the scratch files.
 vaults:
 - orbit-control-inputs
 inputs:
@@ -308,7 +307,7 @@ jobs:
       behaviorName: ${{ "task-check-revoke-write" }}
       methodName: execute
       inputs:
-        run: 'gh api --method DELETE installation/token
+        run: 'timeout 30 gh api --method DELETE installation/token
 
           '
         timeout: 30000
@@ -333,7 +332,7 @@ jobs:
       behaviorName: ${{ "task-check-revoke-unused-read" }}
       methodName: execute
       inputs:
-        run: 'gh api --method DELETE installation/token
+        run: 'timeout 30 gh api --method DELETE installation/token
 
           '
         timeout: 30000

@@ -90,8 +90,7 @@ final readonly class TaskCheckProjection implements DirectOperationProjection
     }
 
     /**
-     * The report step prints the result and fails on its error code; a failed step keeps no stdout,
-     * so the result then comes from the push step, which always ends with it.
+     * Root runs capture the push producer receipt. Scheduled observations supply their typed row result.
      *
      * @param  array<string,mixed>  $result
      * @return array<string,mixed>
@@ -99,11 +98,10 @@ final readonly class TaskCheckProjection implements DirectOperationProjection
     private static function receipt(array $result): array
     {
         $captured = $result['receipt'] ?? null;
-        unset($result['receipt']);
-        if ($result === [] && is_array($captured) && is_string($captured['result_json'] ?? null)) {
+        if (is_array($captured) && is_string($captured['result_json'] ?? null)) {
             return ValidatedData::object(json_decode($captured['result_json'], true, flags: JSON_THROW_ON_ERROR));
         }
 
-        return $result;
+        return isset($result['steps'], $result['summary']) ? [] : $result;
     }
 }

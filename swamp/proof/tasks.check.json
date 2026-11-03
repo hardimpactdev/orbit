@@ -116,9 +116,9 @@
       "budget_seconds": 20
     },
     {
-      "name": "Report the result",
+      "name": "Check the result",
       "job": "check",
-      "step": "Report the result",
+      "step": "Check the result",
       "budget_seconds": 10
     }
   ],

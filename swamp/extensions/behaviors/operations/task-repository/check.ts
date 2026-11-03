@@ -613,7 +613,7 @@ export function finish(args: Record<string, unknown>) {
 /** Public check data on Node 209; commands, Git and HTTP are placed steps. */
 export const behavior = {
     type: "@nckrtl/task-check-data",
-    version: "2026.11.02.4",
+    version: "2026.11.03.1",
     resources: {
         public: {
             description: "Public check observations",
@@ -649,7 +649,7 @@ export const behavior = {
                             result: item.result,
                         };
                     });
-                return output(ctx, { result_json: JSON.stringify({ checks }) });
+                return output(ctx, { stdout: JSON.stringify({ checks }) });
             },
         },
         prepare: {

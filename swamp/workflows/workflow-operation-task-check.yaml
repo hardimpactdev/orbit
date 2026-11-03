@@ -186,21 +186,13 @@ jobs:
     - step: Commit the candidate
       condition:
         type: always
-  - name: Report the result
+  - name: Check the result
     labels: {role: swamp}
-    # Prints the result and fails on its error code. A failed step keeps no stdout, so the Gateway
-    # then reads the same result from the push step, which always ends with it.
     task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "task-check-result" }}'
-      methodName: execute
-      inputs:
-        run: |
-          printf '%s\n' "$ORBIT_RESULT"
-          python3 -c 'import json,os,sys; sys.exit(1 if "error_code" in json.loads(os.environ["ORBIT_RESULT"]) else 0)'
-        env:
-          ORBIT_RESULT: '${{ "Push the candidate" in steps && "outputs" in steps["Push the candidate"] && "finish" in steps["Push the candidate"].outputs ? steps["Push the candidate"].outputs.finish.result_json : "{\"error_code\":\"tasks.repository_execution_unknown\",\"check_id\":" + string(inputs.intent.check_id) + "}" }}'
+      type: assert
+      expr: '"Push the candidate" in steps && "outputs" in steps["Push the candidate"] && "finish" in steps["Push the candidate"].outputs && !("error_code" in steps["Push the candidate"].outputs.finish.result)'
+      message: The task check could not complete its repository work.
+      severity: high
     dependsOn:
     - step: Push the candidate
       condition:

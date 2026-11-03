@@ -1,7 +1,7 @@
 sequenceDiagram
   %% Target design: docs/reference/tasks.md#check-an-external-group, the shape guide (official `@swamp/ssh exec`), the publish chart for the handoff push.
   %% Tightened: flow-tighten 2026-11-02, rule 22 (no shipped scripts: every task VM step is one `@swamp/ssh exec` argv, 209 shapes the outputs in TypeScript; no step copies a script to the VM), rule 16 (no snapshot after the push: the import checks the bundled commit and tree).
-  %% status: draft
+  %% status: migrated
   %% command: tasks:check
   %% kind: tasks.check
   autonumber
@@ -30,64 +30,66 @@ sequenceDiagram
   %%> Inputs:
   %%> - the intent, and vault key names for the CI tokens when the Project requires handoff CI
   GW-->>CLI: 202 Accepted<br/>task #5170
-  Note over SW: Build every argv<br/>prepare · paths checked
+  Note over SW: Build every argv
   %%> What it does:
   %%> - TypeScript on 209 builds each step's `@swamp/ssh exec` argv from the intent
   %%> Refuses:
   %%> - an absolute or `..` deliverable directory, a non-canonical overlay path, or a `fails_on_base` command without a base commit: `tasks.deliverable_invalid`, before any command
   opt baseline with setup steps
-    SW->>N: Run setup in order<br/>setup-0, setup-1, …
+    SW->>N: Run setup in order
     %%> How:
     %%> - each is `env -C <checkout> … /bin/bash -lc <command>` with its own timeout; `@orbit/ci-caches` expands to the shared program
     %%> - every command writes its output to `<run>/output/<step>` on the VM, never to the SSH session, so native history keeps only its exit code
     %%> - a failed step skips the rest and the Project check
   end
-  SW->>N: Snapshot the workspace<br/>snapshot-before-* · own index
+  SW->>N: Snapshot the workspace
   %%> How:
   %%> - `git read-tree HEAD`, `git add --all`, `git write-tree` on the run's index file, and `git rev-parse HEAD`; the real index is untouched
-  SW->>N: Run the Project check<br/>project · bash -lc
+  SW->>N: Run the Project check
   %%> How:
   %%> - one argv in the checkout; its output goes to its file on the VM, not to native history
   opt handoff with deliverables
-    SW->>N: Run each deliverable<br/>diff · base-N · deliverable-N
+    SW->>N: Run each deliverable
     %%> How:
     %%> - `diff`: `git diff-tree -r --no-renames --name-status -z <base> <tree>` for file deliverables
     %%> - a `fails_on_base` command first runs on its start commit: `git archive`, `tar -x`, a copy of installed `vendor` and `node_modules`, the declared test paths, then the command
     %%> Refuses:
     %%> - a missing overlay file or directory: `tasks.deliverable_invalid`
   end
-  SW->>N: Snapshot the checked tree<br/>snapshot-after-* · changed
+  SW->>N: Snapshot the checked tree
   %%> What it does:
   %%> - a moved tree makes the check `changed`; a failed command or unmet deliverable makes it `failed`
-  N-->>SW: Download command output<br/>output_copy · private dir
   %%> How:
-  %%> - one official `@swamp/ssh copy` of `<run>/output` into a private (`0700`) worker directory on 209
-  %%> - `local` reads each file, redacts it with the shared rule (`_lib/public_output.ts`), keeps a 16 KiB tail and deletes the file; only that tail reaches history
-  %%> - cleanup steps remove both run directories
+  %%> - official SSH copy downloads the private command files; the local reader redacts them, keeps a 16 KiB tail and deletes them before history
   opt passed handoff
-    SW->>N: Commit the candidate<br/>git commit · check-operations ref
+    SW->>N: Commit the candidate
     %%> How:
     %%> - `git add --all`, one `git commit` as Orbit with hooks off, `git rev-parse HEAD HEAD^{tree} HEAD^`
     %%> - 209 checks the tree and parent equal the checked snapshot, else `changed`; then `git update-ref refs/orbit/check-operations/<operation>`
   end
   opt Project requires handoff CI
-    SW->>GH: Push the candidate<br/>task-42-handoff · no force
+    SW->>GH: Push the candidate
     %%> How:
     %%> - export, import, mint, push and revoke as in `tasks:publish`; the run then ends with CI pending
     %%> - a native schedule reads the Checks once a minute, snapshots the workspace again and settles the check
   end
-  Note over SW: Report the result<br/>outcome · error code
+  Note over SW: Check the result
   %%> What it does:
-  %%> - prints the check result and fails the run on its error code
-  %%> Why a step of its own:
-  %%> - each chart step above is a child workflow, and a failed step keeps no output; this parent step reports the result the push step always ends with
+  %%> - native assert checks the push producer receipt for an execution error
+  %%> - the Gateway captures that receipt in the same history read; no shell prints it again
+  opt hosted CI is pending
+    Note over GW: Record scheduled CI
+    %%> What it does:
+    %%> - on each native schedule tick, `collect` shapes public observations for admitted checks after their SSH snapshots
+    %%> - the existing reader takes these rows directly from the collector output; no reporting shell runs
+  end
   alt every step passes
     SW-->>GW: Run succeeded<br/>outcome · commit · ci
     Note over GW: Record check 17<br/>passed, failed or changed
   else a step fails
     N--xSW: exit ≠ 0 or no reply
     SW--xGW: Run failed<br/>error_code, failed step
-    Note over GW: Mark the task failed<br/>check 17 failed
+    Note over GW: Record the failed check<br/>group lifecycle stays external
   end
   loop every 2 s until terminal
     CLI->>GW: operation:show #5170

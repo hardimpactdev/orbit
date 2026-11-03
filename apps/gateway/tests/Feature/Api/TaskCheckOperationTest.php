@@ -59,16 +59,14 @@ function native_check_start(Task $group, Task $task, string $phase = 'baseline')
     return Operation::findOrFail($id);
 }
 
-/** The run's last two chart steps: the report prints the result, and a failed report keeps none, so the push step's finish holds it. */
+/** Native end check and the receipt captured from the push producer. */
 function native_check_steps(array $result, string $status): array
 {
     $json = json_encode($result === [] ? (object) [] : $result, JSON_THROW_ON_ERROR);
-    $failed = in_array($status, ['failed', 'interrupted'], true) && isset($result['error_code']);
 
     return [
         ['name' => 'Push the candidate', 'status' => 'succeeded', 'outputs' => ['finish' => ['result_json' => $json]]],
-        $failed ? ['name' => 'Report the result', 'status' => 'failed', 'outputs' => null]
-            : ['name' => 'Report the result', 'status' => $status === 'succeeded' ? 'succeeded' : 'failed', 'outputs' => ['stdout' => $json]],
+        ['name' => 'Check the result', 'status' => $status],
     ];
 }
 
@@ -108,6 +106,27 @@ it('projects failed and changed native checks without starting another action', 
     expect(TaskCheck::findOrFail($operation->input['check_id'])->status->value)->toBe($outcome)
         ->and($group->fresh()->status->value)->toBe('running')->and(count($this->socket->sent))->toBe(2);
 })->with(['failed', 'changed']);
+
+it('records a native failure without exposing run metadata when the receipt producer fails', function (): void {
+    [$group, $task] = native_check_group();
+    $operation = native_check_start($group, $task);
+    $history = ['id' => $this->run, 'workflowName' => 'operation-task-check', 'status' => 'failed',
+        'inputs' => app(DirectOperation::class)->workflowInputs($operation),
+        'startedAt' => '2026-10-31T08:00:00.000Z', 'completedAt' => '2026-10-31T08:01:00.000Z',
+        'jobs' => [['name' => 'check', 'steps' => [
+            ['name' => 'Push the candidate', 'status' => 'failed'],
+            ['name' => 'Check the result', 'status' => 'skipped'],
+        ]]]];
+    $this->socket->reply = static fn (array $message): array => [['type' => 'workflow.history.get', 'id' => $message['id'], 'payload' => ['data' => $history]]];
+
+    app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $this->run, 'status' => 'failed'], app(DirectOperation::class)->definition('tasks.check')['terminal_result']);
+
+    expect($operation->fresh()->status->value)->toBe('failed')
+        ->and($operation->fresh()->error_code)->toBe('operation.native_failed')
+        ->and($operation->fresh()->result)->toBe([]);
+    expect(TaskCheck::findOrFail($operation->input['check_id'])->status->value)->toBe('failed');
+    expect($group->fresh()->status->value)->toBe('running');
+});
 
 it('keeps the result and error code of a failed run from the push step', function (): void {
     [$group, $task] = native_check_group();
@@ -262,7 +281,7 @@ it('projects native scheduled observations through the shared reader without rep
         'root_run_id' => $this->run, 'status' => 'succeeded', 'result' => $result];
     $history = ['id' => $scheduledRun, 'workflowId' => $declaration['workflow_id'], 'workflowName' => 'task-check-ci',
         'status' => 'succeeded', 'startedAt' => '2026-11-01T00:00:00Z', 'completedAt' => '2026-11-01T00:00:01Z',
-        'jobs' => [['name' => 'checks', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => json_encode(['checks' => [$row]], JSON_THROW_ON_ERROR)]]]]]];
+        'jobs' => [['name' => 'checks', 'steps' => [['name' => 'collect', 'status' => 'succeeded', 'outputs' => ['stdout' => json_encode(['checks' => [$row]], JSON_THROW_ON_ERROR)]]]]]];
     $this->socket->reply = static fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $history]]];
     $before = count($this->socket->sent);
     app(SwampCommandStep::class)->projectScheduledTerminal($declaration['workflow_id'], ['id' => $scheduledRun, 'status' => 'succeeded']);

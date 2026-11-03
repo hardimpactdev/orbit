@@ -19,7 +19,7 @@ jobs:
       methodName: execute
       inputs:
         run: |
-          gh api "$ORBIT_PATH"
+          timeout 30 gh api "$ORBIT_PATH"
         ignoreExitCode: true
         timeout: 30000
         env:
@@ -244,7 +244,7 @@ jobs:
       methodName: execute
       inputs:
         run: |
-          gh api --method DELETE installation/token
+          timeout 30 gh api --method DELETE installation/token
         timeout: 30000
         env:
           GH_TOKEN: ${{ vault.get(self.check.attributes.inputs.execution_secrets.checks_token.vault, self.check.attributes.inputs.execution_secrets.checks_token.key)
@@ -271,20 +271,3 @@ jobs:
     - step: settle-${{ self.check.attributes.inputs.operation_id }}
       condition:
         type: always
-  - name: result
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "task-check-ci-result" }}'
-      methodName: execute
-      inputs:
-        run: 'printf ''%s\n'' "$ORBIT_RESULT"
-
-          '
-        env:
-          ORBIT_RESULT: ${{ steps.collect.outputs.result_json }}
-    dependsOn:
-    - step: collect
-      condition:
-        type: succeeded

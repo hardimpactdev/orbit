@@ -230,6 +230,8 @@ If SSH preparation fails, native dependencies skip the checks and result steps t
 
 The scheduled result identifies the admitted repository, check name and exact SHA; passed CI or a code failure records terminal check evidence through the shared projection. Unreadable or misconfigured CI records an infrastructure failure. Cancellation preserves the pushed candidate and does not cancel GitHub workflows. No webhook or new GitHub access is required.
 
+The native `Check the result` assert fails on an execution error in the push producer receipt. The Gateway captures that receipt in its terminal history read. Scheduled CI reads take their rows directly from `collect`. Neither workflow prints its result through another shell step.
+
 The result retains `outcome`, `deliverables`, `check_id`, `commit`, `head`, `tree`, redacted `output` and `ci`. Baselines and review-only deliverables are `not_checked`. `head` identifies the checked snapshot before commit; `commit` identifies the candidate a reviewer or publisher may use. Only a passed check with the matching commit, tree and required CI supplies a checked candidate. The Gateway records native results without rerunning checks or judging their evidence.
 
 #### Run a tracked repository script

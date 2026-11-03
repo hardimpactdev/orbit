@@ -9,13 +9,10 @@ from publication_native_test import ROOT, TOKEN, NativePublicationFixture
 
 
 def check_result(history):
-    """The result as the Gateway reads it: the report's stdout, else the push step's finish."""
+    """Read the producer output selected by the Gateway's single history read."""
     steps = {step["name"]: step for step in history["jobs"][0]["steps"]}
-    if "Report the result" not in steps:  # the scheduled CI workflow keeps its own result step
-        return steps["result"]["outputs"]["stdout"]
-    report = steps["Report the result"]
-    if report["status"] == "succeeded":
-        return report["outputs"]["stdout"]
+    if "collect" in steps:
+        return steps["collect"]["outputs"]["stdout"]
     return steps["Push the candidate"]["outputs"]["finish"]["result_json"]
 
 
