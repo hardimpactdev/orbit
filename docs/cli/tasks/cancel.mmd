@@ -15,7 +15,7 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant VM as Task VM<br/>tvm-88 over ssh
   participant H as Incus host<br/>Node 14 · VM power
-  CLI->>GW: tasks:cancel 42<br/>--yes
+  CLI->>GW: tasks:cancel 42
   %%> Command:
   %%> - `orbit tasks:cancel 42 --yes`
   %%> - syntax: `[group] [--yes] [--json]`

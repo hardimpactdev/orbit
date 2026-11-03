@@ -15,9 +15,9 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant N as Task VM<br/>reached over ssh
   participant GH as GitHub<br/>repository · PRs
-  CLI->>GW: tasks:publish 42<br/>--check=17 --title=… --body=…
+  CLI->>GW: tasks:publish 42<br/>--check=17
   %%> Command:
-  %%> - `orbit tasks:publish 42 --check=17 --title="Deliver the feature" --body="Adds the feature."`
+  %%> - `orbit tasks:publish 42 --check=17`
   %%> - syntax: `[group] --check=ID [--title=TEXT --body=TEXT] [--idempotency-key=KEY] [--json]`
   %%> Input:
   %%> - the task group, and the passed handoff check whose commit is published
@@ -86,19 +86,19 @@ sequenceDiagram
   Note over SW: Read push result
   %%> How:
   %%> - typed data reads private replies and preserves fast-forward and Workflows refusal codes
-  opt with --title and --body
-  SW->>GH: Read open PRs
-  %%> How:
-  %%> - one bounded native command on the worker; no shipped script
-  Note over SW: Plan the PR
-  %%> How:
-  %%> - typed data selects an open PR or creation and writes unchanged caller prose into a JSON input file
-  SW->>GH: Write the PR
-  %%> How:
-  %%> - one bounded native command on the worker; no shipped script
-  Note over SW: Read PR result
-  %%> How:
-  %%> - typed data keeps only the PR number and URL
+  opt --title and --body
+    SW->>GH: Read open PRs
+    %%> How:
+    %%> - one bounded native command on the worker; no shipped script
+    Note over SW: Plan the PR
+    %%> How:
+    %%> - typed data selects an open PR or creation and writes unchanged caller prose into a JSON input file
+    SW->>GH: Write the PR
+    %%> How:
+    %%> - one bounded native command on the worker; no shipped script
+    Note over SW: Read PR result
+    %%> How:
+    %%> - typed data keeps only the PR number and URL
   end
   SW->>GH: Revoke the token
   %%> How:
@@ -113,15 +113,15 @@ sequenceDiagram
   %%> How:
   %%> - the native assert requires the push, optional PR reply and worker cleanup to be complete
   alt pushed
-    GH-->>SW: PR #57 · head sha
+    GH-->>SW: Branch pushed · head sha
     %%> Returns:
     %%> - the branch, commit, and the PR number and URL, or null PR fields for a push alone
-    SW-->>GW: Run succeeded<br/>terminal event · PR
+    SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
     %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-    Note over GW: Record the publication<br/>watch PR #57 · task done
+    Note over GW: Record the publication<br/>branch · commit · task done
     %%> Result:
-    %%> - group 42 watches PR #57; its board status and settle metrics stay as they are
+    %%> - group 42 watches PR #57 only with `--title` and `--body`; its board status and settle metrics stay as they are
     %%> - task #5165 succeeds
   else a step fails
     GH--xSW: refused or no reply
