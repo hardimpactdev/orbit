@@ -3,7 +3,7 @@ title: "Feature delivery"
 description: "How a change reaches main: review evidence, merge, CI, local checks, worktrees, and the shared main caches."
 covers:
   - apps/docs/app/Documentation/{AdrLifecycle,DocsImpact}.php
-  - bin/{review-check,project-vocabulary,bug-repro,task-group-check,pr-head-check,deploy-verify,test,ci-cache-ref,worktree-cache,worktree-create,worktree-remove,check-classification-fakes,check-processes,quality-scope,php-build}
+  - bin/{review-check,project-vocabulary,pr-head-check,deploy-verify,test,ci-cache-ref,worktree-cache,worktree-create,worktree-remove,check-classification-fakes,check-processes,quality-scope,php-build}
   - "{swamp/bin/{check-grant-patterns,validate-swamp-workflows}.py,tools/{check-processes,rector-cache}.php}"
   - tools/check_budget.py
   - "{apps/*,packages/php-sdk}/rector.php"
@@ -77,7 +77,7 @@ Read all effective decisions from the designated final reviewer in submission or
 
 After the merge, keep the review evidence and release the resources allocated to the feature. For a local worktree, run `bin/worktree-remove ISSUE`.
 
-[Delivery-line proofs](/reference/delivery-line) are the read-only commands for reproduction on current main, task-group shape, the current pull-request head, and post-merge live state. They do not file a task, merge, deploy, or roll back. Use `bin/pr-head-check` to confirm the diff adds no named leftover, including `object-storage-host` and `linear-reference`; the [leftover list](/reference/delivery-line#binpr-head-check) defines their generic, public-safe forms.
+[Delivery-line proofs](/reference/delivery-line) are the read-only commands for the current pull-request head and post-merge live state. They do not merge, deploy, or roll back. Use `bin/pr-head-check` to confirm the diff adds no named leftover, including `object-storage-host` and `linear-reference`; the [leftover list](/reference/delivery-line#binpr-head-check) defines their generic, public-safe forms.
 
 ## CI
 

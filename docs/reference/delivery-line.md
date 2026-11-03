@@ -1,24 +1,21 @@
 ---
 title: "Delivery-line proofs"
-description: "Four repository commands that prove reproduction, task-group shape, pull-request head review, and post-merge live state, without filing, merging, deploying, or rolling back."
+description: "Two repository commands that prove pull-request head review and post-merge live state, without merging, deploying, or rolling back."
 covers:
-  - bin/{bug-repro,task-group-check,pr-head-check,deploy-verify}
+  - bin/{pr-head-check,deploy-verify}
   - apps/e2e/tests/Unit/E2E/DeliveryLineCommandsTest.php
   - apps/e2e/tests/Fixtures/delivery-line/**
   - .agents/skills/merging-pull-requests/SKILL.md
-  - apps/gateway/app/Http/Requests/Tasks/CreateTaskGroupRequest.php
 ---
 
 # Delivery-line proofs
 
-Orbit's delivery line uses four repository commands. Each command prints one JSON object on stdout, has `--help`, and exits nonzero on failure. The error text says what to do next. Commands that can run a side effect support `--dry-run` and default to read-only work. They add no proof field on a task or subtask. They reuse the existing task fields and `fails_on_base`.
+Orbit's delivery line uses two repository commands. Each command prints one JSON object on stdout, has `--help`, and exits nonzero on failure. The error text says what to do next. Commands that can run a side effect support `--dry-run` and default to read-only work.
 
 The style matches [`bin/review-check`](/reference/implementation-loop#the-candidate-gate), the Project [task check](/reference/tasks#prove-a-command-fails-on-the-start-commit), and [`doctor`](/cli/doctor): one structured result, no repair, and a next step on failure.
 
 | Command | Result | Side effects |
 | --- | --- | --- |
-| [`bin/bug-repro`](#binbug-repro) | The command fails on current main | Runs the command on an extracted main tree. Does not file a task. |
-| [`bin/task-group-check`](#bintask-group-check) | The payload is one valid ordered group | None. Does not create a group. |
 | [`bin/pr-head-check`](#binpr-head-check) | The current head has a matching review and Required checks that ran with the current main tip, and no named leftover | None. Does not merge. |
 | [`bin/deploy-verify`](#bindeploy-verify) | Live `APP_VERSION` matches the merged SHA, `/up` is up, and gateway status is `ok` | None. Does not deploy or roll back. |
 
@@ -37,76 +34,6 @@ Success prints one JSON object and exits `0`. Failure prints one JSON object on 
 | `next` | Present on failure. What to do next. |
 
 Machine output contains no heading, progress line, or ANSI sequence.
-
-## bin/bug-repro
-
-Run one command against current main the same way the task engine runs a `fails_on_base` command: extract main, overlay the given `paths`, and run the command. Pass when that command exits nonzero. Do not file a task.
-
-```bash
-bin/bug-repro --command COMMAND --paths PATH [--paths PATH ...] [--directory DIR] [--repository DIR] [--main REF] [--timeout SECONDS] [--dry-run]
-```
-
-| Option | Default | Meaning |
-| --- | --- | --- |
-| `--command` | required | The shell command the task engine would run. |
-| `--paths` | required, repeatable | Workspace-relative files the task engine already requires for a base run. |
-| `--directory` | `.` | Directory relative to the extracted tree. |
-| `--repository` | the current checkout | Git repository that holds main and the overlay files. |
-| `--main` | `origin/main`, then `main` | Pin that ref as the main SHA and skip the origin freshness check. |
-| `--timeout` | `600` | Seconds before the base run stops, matching the task check. |
-| `--dry-run` | off | Print the main SHA, command, directory, and paths. Do not extract or run. |
-
-```bash
-bin/bug-repro --command "vendor/bin/pest tests/Feature/HomeScreenTest.php --filter='home screen layout'" --paths apps/gateway/tests/Feature/HomeScreenTest.php --directory apps/gateway
-bin/bug-repro --command "bin/docs-impact --gate" --paths bin/docs-impact --dry-run
-```
-
-When `--main` is omitted, the command names current main only after the local `origin/main` or `main` SHA matches `git ls-remote origin main`. It does not fetch. A cached ref that differs is `main_stale`. Fetch origin main, then run again. `--main` pins a ref and skips that check.
-
-The command copies installed `vendor` and `node_modules` directories into the extracted tree, then copies each path from the working tree, including an uncommitted file. It registers no Git worktree and does not change the checkout. A `--paths` value that is absolute, that leaves the tree, that is a symlink, or that is not a file fails before the run.
-
-When the command exits nonzero, stdout includes `main_sha`, `command`, `exit_code`, and `paths`. When it exits `0`, the verdict is `not_reproduced`. The next step is to stop: the failure is not on current main, so do not file a task.
-
-| `error` | Next step |
-| --- | --- |
-| `usage` | Pass `--command` and at least one `--paths`. |
-| `main_stale` | Fetch origin main, then run again. Do not name a cached main SHA. |
-| `main_unavailable` | Fetch `origin/main` or pass `--main`. |
-| `path_invalid` | Fix the named path so it is a regular workspace-relative file. |
-| `not_reproduced` | Do not file a task. The command exited 0 on current main. |
-| `command_unstarted` | Fix the overlay, the directory, or the extracted tree, then run again. |
-
-## bin/task-group-check
-
-Validate a task-group payload's shape against [`CreateTaskGroupRequest`](/reference/tasks#deliverables) without creating a group. The payload may set `current_recipe` when the group's VM must wait for the current recipe image. This local check does not read the Project repository. The Gateway checks deliverable paths against the selected base when the group or subtask is created or updated. Then apply Orbit's repository policy from the [Orbit Tasks skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md).
-
-```bash
-bin/task-group-check --payload FILE [--kind auto|bug|feature]
-```
-
-| Option | Default | Meaning |
-| --- | --- | --- |
-| `--payload` | required | A JSON object, or `-` for stdin. The body `tasks-create` accepts. |
-| `--kind` | `auto` | `bug` applies the failing-command rule. `feature` does not. `auto` treats a group as a bug when the brief starts with `Filed by the outer loop.` or the title starts with `Doctor `. |
-
-The command refuses an unsupported top-level key, a duplicate top-level key, or a body that is not one JSON object. It checks `project_id`, `title`, `brief`, optional `status` and `tasks` with the same required, prohibited, length, list, and `fails_on_base` rules as create. `project_id` must be an integer of at least 1. The check does not look up the Project row.
-
-The check does not read a subtask's `topology`. The Gateway validates it when it creates the group, by the rules in [Declare a topology](/reference/compute-drivers#declare-a-topology), and the same section owns admission and readiness.
-
-It then requires one ordered group: the payload is that group, and `tasks` is a nonempty list in order. A wrapper with `groups` is accepted only when that list has exactly one group. Every subtask brief must contain a `Goal` line and an `Acceptance` line, as the skill template writes them.
-
-A subtask that only restates the final gate fails. That includes a goal or acceptance that only names `review-check`, the candidate gate, the task check, or preparing or proposing the pull request. Every handoff already runs the task check, and the last subtask's approval proposes the pull request.
-
-A bug group's first code-changing subtask must carry `fails_on_base` `true` on a `command` deliverable, with `paths`. A docs-only first subtask does not count as the first code-changing subtask. A bug group with no failing command fails. The command does not add a proof field.
-
-| `error` | Next step |
-| --- | --- |
-| `usage` | Pass `--payload` with one JSON object. |
-| `validation.failed` | Fix the named field so it matches create. |
-| `group_invalid` | Supply exactly one ordered group. |
-| `brief_incomplete` | Add `Goal` and `Acceptance` to the named subtask brief. |
-| `final_gate` | Give that subtask real work. Do not add a gate-only subtask. |
-| `fails_on_base_missing` | Put `fails_on_base` true and `paths` on BugBot's command in the first code-changing subtask. |
 
 ## bin/pr-head-check
 
@@ -184,10 +111,6 @@ Python HTTPS calls need `SSL_CERT_FILE` set to Orbit's root CA, or they fail cer
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.
-
-### Existing fields already name the failing command
-
-The first subtask that changes code in a bug group already carries a `command` deliverable with `fails_on_base` true and `paths`. A new proof field would duplicate that contract and break the Orbit Tasks policy. `bin/bug-repro` is the operator command that runs the same overlay against current main before anyone files a task.
 
 ### Repository commands stay outside the engine
 

@@ -5,7 +5,7 @@ description: "Prepare architecture and documentation, build a feature, and submi
 covers:
   - .agents/skills/reviewing-pull-requests/references/test-*.md
   - "{composer.json,vet.json,.gitattributes,.githooks/pre-push}"
-  - bin/{bootstrap,gateway-app-key,test,pest-plain,review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,docs-merge-check,build-api,docs-navigation,docs-flows,check-flows,dependency-audit}
+  - bin/{bootstrap,gateway-app-key,test,pest-plain,review-check,pr-head-check,deploy-verify,docs-merge-check,build-api,docs-navigation,docs-flows,check-flows,dependency-audit}
   - "{apps/*,packages/php-sdk}/{composer,vet}.json"
   - "{apps/*,packages/php-sdk}/phpstan.neon"
   - apps/gateway/{database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,tests/{Support/{LinuxHost,TestToolchain,LocalShellSshExecutor,WithCommittedSqliteDatabase}.php,Feature/Database/SchemaBaselineTest.php}}
@@ -205,7 +205,7 @@ Recorded fixtures contain real generator output for the base, combined ADR addit
 
 Run the merge generators in sequence. Give each independent freshness gate its own Python case for each recorded fixture: OpenAPI, MCP tools, Docs lint, navigation, and web types. Each gate checks that all recorded artifacts remain unchanged. The quality check runs these cases sequentially, without a nested worker pool. Another case rejects generators that run on a different thread. The real merge and freshness cases remain separate.
 
-Use the [delivery-line commands](/reference/delivery-line) to prove a bug on current main, to validate a task-group payload, to check the current pull-request head, and to verify post-merge live state. They print one JSON object, exit nonzero on failure, and do not file, merge, deploy, or roll back.
+Use the [delivery-line commands](/reference/delivery-line) to check the current pull-request head and to verify post-merge live state. They print one JSON object, exit nonzero on failure, and do not merge, deploy, or roll back.
 
 GitHub CI runs Composer validation, changed-PHP syntax checks, CLI and web builds, the Docs build and generated-contract freshness, as [CI](/reference/implementation-loop#ci) lists. It builds agent delivery only when the published agent's `apps/agent` tree differs; otherwise it reuses the verified published artifacts.
 
