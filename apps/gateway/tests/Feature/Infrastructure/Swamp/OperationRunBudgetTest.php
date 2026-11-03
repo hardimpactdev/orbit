@@ -315,7 +315,7 @@ it('expires never-started native admissions on the first observer startup with n
     $cancelled = $requested ? now()->subSeconds(500)->toImmutable() : null;
     $operation = budgetOperation($kind, ['status' => $status, 'attempts' => 0, 'started_at' => $started ? now()->subSeconds(600) : null,
         'cancel_requested_at' => $cancelled, 'state' => ['retained' => true], 'input' => [],
-        'error_code' => $kind === 'doctor.inspect' ? 'swamp.start_uncertain' : null]);
+        'error_code' => $kind === 'vault.setup' ? 'swamp.start_uncertain' : null]);
     $operation->forceFill(['created_at' => now()->subSeconds(600)])->save();
     $socket = new FakeSwampEventSocket;
     $subscriber = new SwampRunSubscriber($socket, new NullLogger);
@@ -333,8 +333,8 @@ it('expires never-started native admissions on the first observer startup with n
     expect($socket->endpoints)->toBeEmpty();
 })->with([
     ['vault.sync', 'running', true, true],
-    ['doctor.inspect', 'running', true, false],
-    ['doctor.inspect', 'queued', false, true],
+    ['vault.setup', 'running', true, false],
+    ['vault.setup', 'queued', false, true],
     ['vault.sync', 'queued', false, false],
 ]);
 

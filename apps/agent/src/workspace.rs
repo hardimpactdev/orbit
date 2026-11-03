@@ -129,6 +129,22 @@ pub struct WatchFacts {
     pub applications: BTreeMap<String, String>,
     /// Each Tool Manager with the candidate paths of its state; the agent reads the first that exists.
     pub tools: Vec<(String, Vec<String>)>,
+    /// The awake markers of hibernating Processes; the agent reports which exist.
+    pub awake_markers: Vec<String>,
+}
+
+/// Parses the `awake_markers` of `GET /api/v1/agent/watch`: plain names below the hibernation directory only.
+pub fn parse_watch_awake_markers(body: &Value) -> Vec<String> {
+    let markers: BTreeSet<String> = body
+        .pointer("/data/awake_markers")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .filter(|path| crate::facts::valid_awake_marker(path))
+        .map(str::to_owned)
+        .collect();
+    markers.into_iter().collect()
 }
 
 /// Parses the `tools` of `GET /api/v1/agent/watch`: plain manager names with normalized absolute candidate paths.
@@ -472,6 +488,7 @@ async fn fetch_watch_list(
         apps_root,
         applications,
         tools: parse_watch_tools(&body),
+        awake_markers: parse_watch_awake_markers(&body),
     };
     Ok((parse_watch_list(&body)?, facts))
 }

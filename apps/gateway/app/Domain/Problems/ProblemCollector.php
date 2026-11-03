@@ -34,30 +34,63 @@ final readonly class ProblemCollector
         private GatewayLogSignals $logs,
     ) {}
 
-    /** Safe state read. Swamp owns classification, ordering and source selection.
-     * @return array<string,mixed>
+    /**
+     * The signals since the last collection: activity rows that failed, from the stored cursor on, and open
+     * assistance requests not yet recorded, keyed by their reason with numbers and ids replaced. Text is redacted.
+     *
+     * @return array{activity_cursor_before: ?int, activity_cursor_after: int, activities: list<array{key: string, seen_at: string, observation: array<string, mixed>}>,
+     *     open_assistance_ids: list<int>, assistance: list<array{key: string, observation: array<string, mixed>}>}
      */
-    public function input(): array
+    public function signals(): array
     {
         $cursor = ProblemCollectorState::query()->orderBy('id')->value('activity_cursor');
-        $activities = $cursor === null ? [] : Activity::query()->where('id', '>', $cursor)->orderBy('id')->limit(500)->get(['id', 'command', 'error_code', 'exit_code', 'request_id', 'created_at', 'properties'])->map(function (Activity $row): array {
+        $cursor = is_int($cursor) ? $cursor : null;
+        $rows = $cursor === null ? [] : Activity::query()->where('id', '>', $cursor)->orderBy('id')->limit(500)->get(['id', 'command', 'error_code', 'exit_code', 'request_id', 'created_at', 'properties'])->all();
+        $failed = static function (Activity $row): bool {
+            $code = $row->error_code ?? '';
+
+            return $code === 'gateway.unhandled' || $code === 'activity.interrupted' || str_ends_with($code, '_failed') || str_ends_with($code, '.unavailable')
+                || (preg_match('/\Ahttp\.([0-9]{3})\z/', $code, $match) === 1 && (int) $match[1] >= 500)
+                || ($row->exit_code !== null && $row->exit_code !== 0);
+        };
+        $activities = array_values(array_map(function (Activity $row): array {
             $message = $row->properties?->get('error_message');
+            $path = $row->properties?->get('path');
 
-            return [
-                'id' => $row->id, 'command' => $row->command, 'error_code' => $row->error_code, 'exit_code' => $row->exit_code,
-                'request_id' => $row->request_id, 'created_at' => $row->created_at?->toISOString(),
-                'path' => $row->properties?->get('path'), 'message' => is_string($message) ? $this->redactor->redact($message, []) : '',
-            ];
-        })->all();
+            return ['key' => $row->command.'|'.(($row->error_code ?? '') !== '' ? $row->error_code : 'exit'), 'seen_at' => (string) $row->created_at?->toISOString(),
+                'observation' => ['request_ids' => ($row->request_id ?? '') !== '' ? [$row->request_id] : [], 'activity_ids' => [$row->id],
+                    'paths' => is_string($path) && $path !== '' ? [$path] : [],
+                    ...(is_string($message) && $message !== '' ? ['error_message' => $this->redactor->redact($message, [])] : [])]];
+        }, array_filter($rows, $failed)));
+        $open = Task::query()->withoutGlobalScope('subtask')->where('assistance_requested', true)->orderBy('id')->get(['id', 'assistance_reason']);
+        $stored = array_values(array_unique(ProblemFingerprint::query()->where('source', ProblemSource::Assist)->get(['evidence'])->flatMap(fn (ProblemFingerprint $row): array => $this->evidence->ints($row->evidence['assistance_task_ids'] ?? null))->all()));
+        $kept = array_values(array_filter($stored, static fn (int $id): bool => $open->contains('id', $id)));
+        $assistance = [];
+        foreach ($open->reject(static fn (Task $task): bool => in_array($task->id, $kept, true) || $task->assistance_reason === null)->take(200) as $task) {
+            $reason = $this->redactor->redact((string) $task->assistance_reason, []);
+            $key = self::reasonKey($reason);
+            if ($key !== '') {
+                $assistance[] = ['key' => $key, 'observation' => ['assistance_task_ids' => [$task->id], 'assistance_reason' => $reason]];
+            }
+        }
+        $last = $rows === [] ? null : array_last($rows)->id;
 
-        return ['activity_cursor' => $cursor, 'activity_max' => StoredInteger::fromOrZero(Activity::query()->max('id')), 'activities' => $activities,
-            'assistance' => Task::query()->withoutGlobalScope('subtask')->where('assistance_requested', true)->orderBy('id')->get(['id', 'assistance_reason'])->map(fn (Task $task): array => [
-                'id' => $task->id, 'reason' => $task->assistance_reason === null ? null : $this->redactor->redact($task->assistance_reason, []),
-            ])->all(),
-            'stored_assistance_ids' => array_values(array_unique(ProblemFingerprint::query()->where('source', ProblemSource::Assist)->get(['evidence'])->flatMap(fn (ProblemFingerprint $row): array => $this->evidence->ints($row->evidence['assistance_task_ids'] ?? null))->all()))];
+        return ['activity_cursor_before' => $cursor,
+            'activity_cursor_after' => $cursor === null ? StoredInteger::fromOrZero(Activity::query()->max('id')) : ($last ?? $cursor),
+            'activities' => $activities, 'open_assistance_ids' => $kept, 'assistance' => $assistance];
     }
 
-    /** Applies native-selected fingerprints and cursor under the owning state lock.
+    /** An assistance reason as a Problem key: lower case, with ids and numbers as `#` and single spaces. */
+    public static function reasonKey(string $reason): string
+    {
+        $key = mb_strtolower(trim($reason));
+        $key = (string) preg_replace('/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i', '#', $key);
+        $key = (string) preg_replace('/[0-9]+/', '#', $key);
+
+        return trim((string) preg_replace('/\s+/u', ' ', $key));
+    }
+
+    /** Applies the signals {@see self::signals()} selected, and the cursor, under the owning state lock.
      * @param  array<string,mixed>  $native
      */
     public function recordSignals(array $native): void

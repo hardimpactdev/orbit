@@ -9,7 +9,6 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Doctor\RunDoctorRequest;
-use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Responses\Doctor\DoctorFamily;
 use Orbit\Sdk\Responses\Doctor\DoctorReportResponse;
 use Saloon\Enums\Method;
@@ -448,6 +447,7 @@ function doctor_cli_node(string $name, array $families, int $nodeId = 7): array
         'healthy' => $families === []
                 || array_all($families, static fn (array $family): bool => $family['status'] === 'healthy'),
         'families' => $families,
+        'agent' => null,
     ];
 }
 
@@ -495,7 +495,7 @@ function doctor_cli_mock(array $data, ?string $requestId = null): MockClient
 {
     return MockClient::global([
         RunDoctorRequest::class => MockResponse::make([
-            'data' => ['id' => 41, 'kind' => 'doctor.inspect', 'target_type' => 'node', 'target_id' => 7, 'status' => 'succeeded', 'sequence' => 1, 'result' => ['report' => $data]],
+            'data' => $data,
             'meta' => ['request_id' => $requestId ?? doctor_cli_request_id()],
         ]),
     ]);
@@ -602,7 +602,7 @@ function doctor_cli_pty_fixture(string $root, bool $healthy): array
     mkdir($directory, 0o700, recursive: true);
     [$certificate, $privateKey] = doctor_cli_pty_certificate($directory);
     $body = json_encode([
-        'data' => ['id' => 41, 'kind' => 'doctor.inspect', 'target_type' => 'node', 'target_id' => 7, 'status' => 'succeeded', 'sequence' => 1, 'result' => ['report' => $healthy
+        'data' => $healthy
             ? doctor_cli_report(healthy: true)
             : doctor_cli_report(
                 healthy: false,
@@ -612,7 +612,7 @@ function doctor_cli_pty_fixture(string $root, bool $healthy): array
                     ]),
                 ])],
                 summary: ['nodes' => 1, 'families' => 1, 'checks' => 1, 'drift' => 1, 'unverifiable' => 0, 'informational' => 0],
-            )]],
+            ),
         'meta' => ['request_id' => doctor_cli_request_id()],
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
@@ -665,7 +665,7 @@ function doctor_cli_pty_fixture(string $root, bool $healthy): array
             }
 
             $body = $argv[3];
-            $response = "HTTP/1.1 202 Accepted\r\n"
+            $response = "HTTP/1.1 200 OK\r\n"
                 ."Content-Type: application/json\r\n"
                 ."Content-Length: ".strlen($body)."\r\n"
                 ."Connection: close\r\n\r\n"
@@ -741,45 +741,31 @@ function doctor_cli_pty_certificate(string $directory): array
     return [$certificatePath, $privateKeyPath];
 }
 
-it('awaits the native Doctor Operation and renders only its final report JSON', function (): void {
-    $operation = ['id' => 41, 'kind' => 'doctor.inspect', 'target_type' => 'node', 'target_id' => 7, 'status' => 'queued', 'sequence' => 1, 'result' => null];
+it('renders the report the Gateway answers at once, with one request and no Operation to follow', function (): void {
     $requestId = doctor_cli_request_id();
-    $mock = MockClient::global([
-        RunDoctorRequest::class => MockResponse::make(['data' => $operation, 'meta' => ['request_id' => $requestId]], 202),
-        ShowOperationRequest::class => MockResponse::make([
-            'data' => [...$operation, 'status' => 'succeeded', 'sequence' => 2, 'result' => ['report' => doctor_cli_report(healthy: true)]],
-            'meta' => ['request_id' => $requestId],
-        ]),
-    ]);
+    $mock = doctor_cli_mock(doctor_cli_report(healthy: true), $requestId);
 
     expect(Artisan::call('doctor', ['--json' => true]))->toBe(Command::SUCCESS);
-    $result = json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR);
-    expect($result)->toBe([...doctor_cli_report(healthy: true), 'request_id' => $requestId])
-        ->and($mock->getLastRequest())->toBeInstanceOf(ShowOperationRequest::class)
-        ->and($mock->getLastPendingRequest()?->getUrl())->toBe('https://10.44.0.1/api/v1/operations/41');
+    expect(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR))->toBe([...doctor_cli_report(healthy: true), 'request_id' => $requestId])
+        ->and($mock->getRecordedResponses())->toHaveCount(1);
 });
 
-it('keeps native Doctor Operation failures separate from an unhealthy report', function (string $status): void {
-    $requestId = doctor_cli_request_id();
-    MockClient::global([
-        RunDoctorRequest::class => MockResponse::make([
-            'data' => ['id' => 41, 'kind' => 'doctor.inspect', 'target_type' => 'node', 'target_id' => 7, 'status' => $status, 'sequence' => 2, 'error_code' => 'doctor.worker_unavailable', 'result' => null],
-            'meta' => ['request_id' => $requestId],
-        ], 202),
-    ]);
-    expect(Artisan::call('doctor', ['--json' => true]))->toBe(Command::FAILURE);
-    expect(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR))->toBe([
-        'error' => ['code' => 'doctor.worker_unavailable', 'message' => 'Doctor inspection did not complete.', 'request_id' => $requestId],
-    ]);
-})->with(['failed', 'cancelled']);
+it('prints each agent first and marks the findings of a silent agent possibly outdated', function (): void {
+    $node = [...doctor_cli_node('alpha', [doctor_cli_family(family: 'role', status: 'drift', checked: 1, issues: [
+        doctor_cli_issue(code: 'role.services_inactive', summary: 'A role service is not active.'),
+    ])]), 'agent' => ['state' => 'offline', 'since' => '2026-11-03T02:00:00Z']];
+    doctor_cli_mock(doctor_cli_report(healthy: false, nodes: [$node, [...doctor_cli_node('beta', [], 8), 'agent' => ['state' => 'online', 'since' => null]]],
+        summary: ['nodes' => 2, 'families' => 1, 'checks' => 1, 'drift' => 1, 'unverifiable' => 0, 'informational' => 0]));
 
-it('rejects a native Doctor Operation without a typed final report', function (): void {
-    MockClient::global([
-        RunDoctorRequest::class => MockResponse::make([
-            'data' => ['id' => 41, 'kind' => 'doctor.inspect', 'target_type' => 'node', 'target_id' => 7, 'status' => 'succeeded', 'sequence' => 2, 'result' => []],
-            'meta' => ['request_id' => doctor_cli_request_id()],
-        ], 202),
-    ]);
+    expect(Artisan::call('doctor'))->toBe(Command::FAILURE);
+    $output = Artisan::output();
+    expect($output)->toContain('alpha: agent offline since 2026-11-03T02:00:00Z', 'beta: agent online',
+        'A role service is not active.', '(possibly outdated, agent silent since')
+        ->and(strpos($output, 'alpha: agent offline'))->toBeLessThan(strpos($output, 'role.services_inactive'));
+});
+
+it('rejects a reply without a typed report', function (): void {
+    doctor_cli_mock(['nodes' => []]);
     expect(Artisan::call('doctor', ['--json' => true]))->toBe(Command::FAILURE);
     expect(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('gateway.invalid_response');
 });

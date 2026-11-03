@@ -76,7 +76,7 @@ Observation is explicitly admitted through the configured control-plane peer. Fl
 
 The observation family is read-only. It does not reset Redis counters, publish Horizon snapshots or prune records; the Gateway self-maintenance commands above do that. The Node agent observer reports host and Horizon state, so no separate maintenance or retention observation exists.
 
-Fleet collection and Horizon health have no schedule: they run `operation-doctor-inspect`, which is being removed because Doctor reads agent observations.
+Fleet collection and Horizon health have no schedule. `observation:plan` and `observation:health` run Doctor from the agents' facts at once, then record its findings, the Gateway's logs and the activity and assistance signals as Problems.
 
 No Gateway observation scheduler or family poller is added. `problems:file` retains its separate hourly schedule and lock.
 

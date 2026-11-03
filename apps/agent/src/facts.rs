@@ -64,16 +64,166 @@ pub fn host_data(os: &str, arch: &str, filesystems: &[Filesystem]) -> Value {
     })
 }
 
+/// The awake markers live here; the agent checks only watch-list paths below it.
+pub const AWAKE_MARKER_DIRECTORY: &str = "/dev/shm/orbit/hibernation/";
+/// The UFW configuration and the rules files UFW writes, IPv4 then IPv6.
+pub const UFW_CONF: &str = "/etc/ufw/ufw.conf";
+pub const UFW_RULES: [(&str, &str); 2] = [
+    ("/etc/ufw/user.rules", "v4"),
+    ("/etc/ufw/user6.rules", "v6"),
+];
+const MAX_UFW_RULES: usize = 1024;
+
+/// One unit's state. `state` is the active state, or `not-found` when systemd has no such unit; `load` and `sub` are
+/// systemd's load and sub state, absent for a Docker container.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct UnitState {
+    pub state: String,
+    pub load: Option<String>,
+    pub sub: Option<String>,
+}
+
+impl UnitState {
+    /// A Docker container, which has only its state.
+    pub fn container(state: String) -> Self {
+        Self {
+            state,
+            load: None,
+            sub: None,
+        }
+    }
+
+    /// A systemd unit: a unit systemd cannot find reads as `not-found`, so Doctor can name it.
+    pub fn systemd(load: String, active: String, sub: String) -> Self {
+        let state = if load == "not-found" {
+            load.clone()
+        } else {
+            active
+        };
+        Self {
+            state,
+            load: Some(load),
+            sub: Some(sub),
+        }
+    }
+}
+
 /// The units the agent watches and their state, sorted by runtime and name so an unchanged set gives the same
-/// digest. `docker` is `available` or `absent`.
-pub fn units_data(units: &BTreeMap<(String, String), String>, docker_available: bool) -> Value {
+/// digest. `docker` is `available` or `absent`. `awake` lists the watched awake markers that exist.
+pub fn units_data(
+    units: &BTreeMap<(String, String), UnitState>,
+    docker_available: bool,
+    awake: &[String],
+) -> Value {
     json!({
         "docker": if docker_available { "available" } else { "absent" },
         "units": units
             .iter()
-            .map(|((runtime, name), state)| json!({"name": name, "runtime": runtime, "state": state}))
+            .map(|((runtime, name), unit)| {
+                let mut row = json!({"name": name, "runtime": runtime, "state": unit.state});
+                if let (Some(load), Some(sub)) = (&unit.load, &unit.sub) {
+                    row["load"] = json!(load);
+                    row["sub"] = json!(sub);
+                }
+                row
+            })
             .collect::<Vec<_>>(),
+        "awake": awake,
     })
+}
+
+/// An awake marker path from the watch list, only when it is a plain file name below [`AWAKE_MARKER_DIRECTORY`].
+pub fn valid_awake_marker(path: &str) -> bool {
+    path.strip_prefix(AWAKE_MARKER_DIRECTORY)
+        .is_some_and(|name| {
+            !name.is_empty()
+                && name != "."
+                && name != ".."
+                && name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+        })
+}
+
+/// The UFW fact from its configuration and rules files, read as text: whether it is enabled, and each rule from the
+/// `### tuple ###` lines UFW writes, in file order. Without `ufw.conf` UFW is not installed. A tuple the agent cannot
+/// read is reported as `{"unreadable": true}`, so the Gateway never mistakes it for an absent rule.
+pub fn ufw_data(conf: Option<&str>, rules: &[(Option<String>, &str)]) -> Value {
+    let Some(conf) = conf else {
+        return json!({"installed": false, "enabled": false, "rules": []});
+    };
+    let enabled = conf.lines().any(|line| {
+        line.trim()
+            .strip_prefix("ENABLED=")
+            .is_some_and(|value| value.trim_matches(['"', '\'']) == "yes")
+    });
+    let rules: Vec<Value> = rules
+        .iter()
+        .filter_map(|(text, family)| text.as_deref().map(|text| (text, *family)))
+        .flat_map(|(text, family)| {
+            text.lines()
+                .filter_map(|line| line.strip_prefix("### tuple ### "))
+                .map(move |tuple| {
+                    ufw_rule(tuple, family).unwrap_or_else(|| json!({"unreadable": true}))
+                })
+        })
+        .take(MAX_UFW_RULES)
+        .collect();
+    json!({"installed": true, "enabled": enabled, "rules": rules})
+}
+
+/// One UFW tuple: `[route:]action[_log] protocol dport dst sport src [dapp sapp] direction[_iface][!out_iface] [comment=hex]`.
+fn ufw_rule(tuple: &str, family: &str) -> Option<Value> {
+    let mut fields: Vec<&str> = tuple.split_whitespace().collect();
+    let comment = match fields.last() {
+        Some(field) if field.starts_with("comment=") => {
+            let comment = hex_text(&field["comment=".len()..])?;
+            fields.pop();
+            comment
+        }
+        _ => String::new(),
+    };
+    let (route, action) = match fields.first()?.strip_prefix("route:") {
+        Some(action) => (true, action),
+        None => (false, *fields.first()?),
+    };
+    let action = action.split('_').next()?;
+    let (app, direction) = match fields.len() {
+        7 => (false, fields[6]),
+        9 => (true, fields[8]),
+        _ => return None,
+    };
+    let (mut inward, mut outward) = (None, None);
+    let mut way = None;
+    for part in direction.split('!') {
+        let (side, interface) = part
+            .split_once('_')
+            .map_or((part, None), |(side, name)| (side, Some(name)));
+        match side {
+            "in" => inward = interface,
+            "out" => outward = interface,
+            _ => return None,
+        }
+        way.get_or_insert(side);
+    }
+    let direction = if route { "fwd" } else { way? };
+    Some(json!({
+        "action": action, "protocol": fields[1], "port": fields[2], "destination": fields[3],
+        "source_port": fields[4], "source": fields[5], "direction": direction,
+        "in_interface": inward, "out_interface": outward, "family": family, "comment": comment, "app": app,
+    }))
+}
+
+/// A UFW comment, which UFW stores hex-encoded.
+fn hex_text(hex: &str) -> Option<String> {
+    if !hex.len().is_multiple_of(2) {
+        return None;
+    }
+    let bytes = (0..hex.len())
+        .step_by(2)
+        .map(|at| u8::from_str_radix(hex.get(at..at + 2)?, 16).ok())
+        .collect::<Option<Vec<u8>>>()?;
+    String::from_utf8(bytes).ok()
 }
 
 /// A role service name from the watch list, such as `caddy.service`, only when it is a plain unit name.
@@ -188,25 +338,84 @@ mod tests {
         let mut units = BTreeMap::new();
         units.insert(
             ("systemd".to_owned(), "orbit-process-4-web".to_owned()),
-            "active".to_owned(),
+            UnitState::systemd("loaded".into(), "activating".into(), "auto-restart".into()),
         );
         units.insert(
             ("docker".to_owned(), "orbit-process-9-db".to_owned()),
-            "running".to_owned(),
+            UnitState::container("running".into()),
         );
         units.insert(
             ("systemd".to_owned(), "caddy.service".to_owned()),
-            "failed".to_owned(),
+            UnitState::systemd("not-found".into(), "inactive".into(), "dead".into()),
         );
 
         assert_eq!(
-            units_data(&units, true),
+            units_data(
+                &units,
+                true,
+                &["/dev/shm/orbit/hibernation/instance-4".to_owned()]
+            ),
             json!({"docker": "available", "units": [
                 {"name": "orbit-process-9-db", "runtime": "docker", "state": "running"},
-                {"name": "caddy.service", "runtime": "systemd", "state": "failed"},
-                {"name": "orbit-process-4-web", "runtime": "systemd", "state": "active"},
-            ]})
+                {"name": "caddy.service", "runtime": "systemd", "state": "not-found", "load": "not-found", "sub": "dead"},
+                {"name": "orbit-process-4-web", "runtime": "systemd", "state": "activating", "load": "loaded", "sub": "auto-restart"},
+            ], "awake": ["/dev/shm/orbit/hibernation/instance-4"]})
         );
+    }
+
+    #[test]
+    fn only_plain_marker_names_below_the_hibernation_directory_are_watched() {
+        assert!(valid_awake_marker("/dev/shm/orbit/hibernation/instance-4"));
+        assert!(!valid_awake_marker("/dev/shm/orbit/hibernation/"));
+        assert!(!valid_awake_marker("/dev/shm/orbit/hibernation/../secret"));
+        assert!(!valid_awake_marker("/dev/shm/orbit/hibernation/a/b"));
+        assert!(!valid_awake_marker("/etc/shadow"));
+    }
+
+    #[test]
+    fn ufw_data_reads_each_tuple_with_its_interfaces_and_hex_comment() {
+        let v4 = "*filter\n### tuple ### allow tcp 22 0.0.0.0/0 any 0.0.0.0/0 in comment=6f72626974\n-A ufw-user-input -p tcp --dport 22 -j ACCEPT\n### tuple ### deny_log any 9000:9100 0.0.0.0/0 any 10.44.0.0/24 in_wg0\n### tuple ### route:allow any any 0.0.0.0/0 any 0.0.0.0/0 in_wg0!out_eth0\n### tuple ### allow tcp 22 0.0.0.0/0 any 0.0.0.0/0 OpenSSH - in\n### tuple ### nonsense\n";
+        let data = ufw_data(
+            Some("ENABLED=yes\nLOGLEVEL=low\n"),
+            &[(Some(v4.to_owned()), "v4"), (None, "v6")],
+        );
+
+        assert_eq!(data["installed"], json!(true));
+        assert_eq!(data["enabled"], json!(true));
+        let rules = data["rules"].as_array().unwrap();
+        assert_eq!(rules.len(), 5);
+        assert_eq!(
+            rules[0],
+            json!({"action": "allow", "protocol": "tcp", "port": "22", "destination": "0.0.0.0/0",
+            "source_port": "any", "source": "0.0.0.0/0", "direction": "in", "in_interface": null, "out_interface": null,
+            "family": "v4", "comment": "orbit", "app": false})
+        );
+        assert_eq!(
+            (
+                rules[1]["action"].clone(),
+                rules[1]["in_interface"].clone(),
+                rules[1]["port"].clone()
+            ),
+            (json!("deny"), json!("wg0"), json!("9000:9100"))
+        );
+        assert_eq!(
+            (
+                rules[2]["direction"].clone(),
+                rules[2]["out_interface"].clone()
+            ),
+            (json!("fwd"), json!("eth0"))
+        );
+        assert_eq!(rules[3]["app"], json!(true));
+        assert_eq!(rules[4], json!({"unreadable": true}));
+    }
+
+    #[test]
+    fn ufw_data_without_its_configuration_is_not_installed_and_disabled_without_enabled_yes() {
+        assert_eq!(
+            ufw_data(None, &[]),
+            json!({"installed": false, "enabled": false, "rules": []})
+        );
+        assert_eq!(ufw_data(Some("ENABLED=no\n"), &[])["enabled"], json!(false));
     }
 
     #[test]

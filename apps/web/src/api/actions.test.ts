@@ -17,7 +17,7 @@ const doctor = (node: Node) => {
 afterEach(() => setTransport(null));
 
 describe("the Node doctor action", () => {
-    it("follows the started Doctor Operation and reads the report from its result", async () => {
+    it("reads the report the Gateway answers at once, starting no Operation", async () => {
         const gateway = createDemoGateway();
         setTransport(gateway.transport, "demo fleet");
         const [node] = await get<Node[]>("/api/v1/nodes");
@@ -27,44 +27,42 @@ describe("the Node doctor action", () => {
         }
 
         expect(await doctor(node)()).toBe(`Node [${node.name}] has no drift.`);
-        expect(gateway.requests.map(({ method, path }) => `${method} ${path}`)).toEqual(
-            expect.arrayContaining([
-                "POST /api/v1/doctor",
-                expect.stringMatching(/^GET \/api\/v1\/operations\/\d+$/),
-            ]),
+        expect(gateway.requests.map(({ method, path }) => `${method} ${path}`)).not.toEqual(
+            expect.arrayContaining([expect.stringMatching(/^GET \/api\/v1\/operations\//)]),
         );
     });
 
-    it("reports a Doctor Operation that ends without a report", async () => {
+    it("says the findings may be outdated while the agent is silent", async () => {
         const node = { id: 3, name: "beast" } as Node;
-        const operation = {
-            id: 9,
-            kind: "doctor.inspect",
-            status: "queued",
-            sequence: 1,
-            error_code: null,
-            result: null,
-            poll_after_seconds: 0,
-        };
-        setTransport(async (method) =>
-            method === "POST"
-                ? { status: 202, payload: { data: operation, meta: { request_id: "r" } } }
-                : {
-                      status: 200,
-                      payload: {
-                          data: {
-                              ...operation,
-                              status: "failed",
-                              sequence: 2,
-                              error_code: "doctor.unreachable",
-                          },
-                          meta: { request_id: "r" },
-                      },
-                  },
-        );
+        setTransport(async () => ({
+            status: 200,
+            payload: {
+                data: {
+                    healthy: false,
+                    nodes: [
+                        {
+                            node_id: 3,
+                            node_name: "beast",
+                            healthy: false,
+                            families: [],
+                            agent: { state: "offline", since: "2026-11-03T02:00:00Z" },
+                        },
+                    ],
+                    summary: {
+                        nodes: 1,
+                        families: 1,
+                        checks: 1,
+                        drift: 1,
+                        unverifiable: 0,
+                        informational: 0,
+                    },
+                },
+                meta: { request_id: "r" },
+            },
+        }));
 
-        await expect(doctor(node)()).rejects.toThrow(
-            "Doctor for node [beast] ended failed (doctor.unreachable) without a report.",
+        expect(await doctor(node)()).toBe(
+            "Node [beast] has 1 drifted check(s); see doctor --node=3. Possibly outdated: the agent is silent since 2026-11-03T02:00:00Z.",
         );
     });
 });

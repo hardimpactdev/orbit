@@ -13,33 +13,33 @@ orbit doctor [--node=ID] [--family=FAMILY ...] [--json]
 | `--family=FAMILY` | all families | Repeat to select families. Current checks belong to `node`, `role`, `process`, and `firewall`. |
 | `--json` | false | Return the report as JSON. |
 
-The API admits one `doctor.inspect` Operation with HTTP 202. The CLI follows it and renders `result.report`. Node access applies before admission. Nodes sort by name and ID; the family order is fixed.
+The Gateway answers at once with the report, from the facts each Node's [agent](/reference/node-agent#facts) reported. It starts no run and never reaches a Node. Node access applies first. Nodes sort by name and ID; the family order is fixed.
+
+Each Node's report starts with its agent: online, offline since a time, or not seen. Human output prints that line first for every Node. While an agent is offline, each finding of its Node is marked "possibly outdated, agent silent since <time>": the facts stop at that time.
 
 Human output lists Node, Family, Status, Checked, Resource and Finding. JSON returns the same report, with node/family/check counts and counts of drift, unverifiable and informational issues. Exit 0 means the performed checks have no drift or unverifiable findings. Exit 1 means a check found drift, could not be verified, or the request failed.
 
-## How Swamp inspects
+## How Doctor reads the Node
 
-Every read runs through official `@swamp/ssh` from the Node209 control worker, using stored host pins and the approved worker identity. The Gateway supplies full public expectations. A pure plan lists native argv; each read is a separate native step. One typed comparison step emits the report for the existing shared terminal projector. There is no Gateway callback, private-material fetch, binding wait, remote script bundle, or repair action.
+Doctor compares the Gateway's records with three facts: `host` (platform, architecture and filesystem space), `units` (role services, Process units and containers, and awake markers) and `ufw` (whether UFW is enabled, and its rules). The agent's liveness gives the agent check. There is no Swamp run, SSH read or repair action.
 
-The commands are `uname -sm`, `df -Pk /`, `systemctl show` with selected state properties, a filtered `docker container ls` showing only name and state, `test -e` for a managed hibernation marker, and `ufw status numbered` for firewall comparison. Process and numbered UFW reads use sudo. Docker environment, command arguments, service file contents and credentials are never requested.
-
-Failed or malformed reads produce one unverifiable inspection finding for their family and Node. Other reads continue. A parked or unmanaged Node dispatches no SSH reads and supplies no positive recovery evidence. Parked task VMs have an informational finding.
+A check whose fact has not arrived yet, or cannot be read, gives one unverifiable `<family>.inspection_failed` finding for the family and Node: "not observed yet". Other checks continue. A Node without an observing agent, such as a Mac, gets its lifecycle checks only. A parked task VM gets an informational finding and no other check.
 
 ## What each family checks
 
 | Family | Checks |
 | --- | --- |
-| `node` | Recorded lifecycle; platform and architecture; root filesystem free space; Linux agent service presence/state; freshness of the Gateway's continuous agent observation at comparison time. |
+| `node` | Recorded lifecycle; platform and architecture; root filesystem free space; the agent's liveness: never seen (`node.agent_missing`) or silent (`node.agent_view_stale`). |
 | `role` | Recorded lifecycle and current state of each service required by an active Linux role. |
 | `process` | Current registered systemd unit or Docker container presence and running/stopped state. A systemd `activating/auto-restart` snapshot is crash-loop evidence. A cumulative restart count alone is not. |
 
 | `firewall` | Rule lifecycle, UFW active state, and missing or extra lines by port, protocol and source. |
 
-A stopped, non-keep-alive development Process desired running is healthy only when its managed awake marker is proven absent. An unavailable marker does not count as sleep. This inspection takes no timed samples and does not infer a restart rate.
+A stopped, non-keep-alive development Process desired running is healthy only when the agent reports its awake marker absent. An agent before 0.10.0 reports no markers, so that check is unverifiable there, and so is a Process unit it does not list. This inspection takes no timed samples and does not infer a restart rate.
 
 The existing family selectors `project`, `instance`, `schedule`, `tool`, `database_connection`, `route` and `database_server` remain accepted by the API, but have zero Doctor checks. A healthy family with `checked: 0` supplies no verdict on its resources. Use the owning native operation and its result for configuration validation.
 
-`checked` counts the focused reads performed for a family. Auxiliary awake-marker reads do not add another Process check. Lifecycle findings can exist without a host read. Missing reads remain in the count and produce unverifiable findings.
+`checked` counts the checks performed for a family: platform, disk and agent for `node`, one per role service, one per Process, and one for UFW. Lifecycle findings need no fact. Checks without a usable fact remain in the count and give unverifiable findings.
 
 ## Informational package discoveries
 

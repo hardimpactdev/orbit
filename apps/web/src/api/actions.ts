@@ -2,7 +2,7 @@ import { firewallIdentity } from "../fleet/firewall";
 import { processRuntimeIsActive } from "../fleet/fleet";
 import { applyRow } from "../realtime/apply";
 import { api } from "./client";
-import { awaitOperation, instanceOperationsQuery, startDeploy, type Operation } from "./operations";
+import { instanceOperationsQuery, startDeploy, type Operation } from "./operations";
 import { queryClient } from "./queryClient";
 import type {
     AnyRecord,
@@ -128,23 +128,23 @@ export function actionsFor(kind: Kind, row: AnyRecord): Action[] {
                     label: "doctor",
                     description: `Check node [${node.name}] for drift.`,
                     run: async () => {
-                        // Doctor starts an Operation; its report arrives as the result of the finished run.
-                        const operation = await awaitOperation(
-                            await api<Operation>("POST", "/api/v1/doctor", { node_id: node.id }),
-                        );
-                        const report = operation.result?.report as DoctorReport | undefined;
-
-                        if (operation.status !== "succeeded" || report === undefined) {
-                            throw new Error(
-                                `Doctor for node [${node.name}] ended ${operation.status}${operation.error_code === null ? "" : ` (${operation.error_code})`} without a report.`,
-                            );
-                        }
-
+                        // Doctor answers at once from the facts the Node's agent reported.
+                        const report = await api<DoctorReport>("POST", "/api/v1/doctor", {
+                            node_id: node.id,
+                        });
                         const drift = Number(report.summary?.drift ?? 0);
+                        const agent = report.nodes?.[0]?.agent;
+                        const outdated =
+                            agent?.state === "offline"
+                                ? ` Possibly outdated: the agent is silent since ${agent.since}.`
+                                : "";
 
-                        return drift === 0
-                            ? `Node [${node.name}] has no drift.`
-                            : `Node [${node.name}] has ${drift} drifted check(s); see doctor --node=${node.id}.`;
+                        return (
+                            (drift === 0
+                                ? `Node [${node.name}] has no drift.`
+                                : `Node [${node.name}] has ${drift} drifted check(s); see doctor --node=${node.id}.`) +
+                            outdated
+                        );
                     },
                 },
                 leaves(

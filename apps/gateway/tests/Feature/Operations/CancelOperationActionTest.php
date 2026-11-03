@@ -8,7 +8,7 @@ use App\Models\Operation;
 
 it('settles an existing cancellation only when no native run or attempt exists', function (string $status): void {
     $this->freezeSecond();
-    $operation = Operation::query()->create(['kind' => 'doctor.inspect', 'target_type' => 'node', 'target_id' => 1,
+    $operation = Operation::query()->create(['kind' => 'vault.sync', 'target_type' => 'node', 'target_id' => 1,
         'status' => $status, 'sequence' => 4, 'attempts' => 0, 'state' => [], 'input' => [],
         'cancel_requested_at' => now()->subMinute(), 'lock_key' => 'node:1']);
     $requested = $operation->cancel_requested_at;
@@ -26,7 +26,7 @@ it('settles an existing cancellation only when no native run or attempt exists',
 })->with(['queued', 'running']);
 
 it('leaves native or previously attempted work cooperative', function (string $status, int $attempts, array $state): void {
-    $operation = Operation::query()->create(['kind' => 'doctor.inspect', 'target_type' => 'node', 'target_id' => 1,
+    $operation = Operation::query()->create(['kind' => 'vault.sync', 'target_type' => 'node', 'target_id' => 1,
         'status' => $status, 'sequence' => 1, 'attempts' => $attempts, 'state' => $state, 'input' => []]);
 
     app(CancelOperationAction::class)->execute($operation);
@@ -39,7 +39,7 @@ it('leaves native or previously attempted work cooperative', function (string $s
     'bound' => ['running', 0, ['swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]]);
 
 it('preserves an existing terminal result on cancellation', function (string $status): void {
-    $operation = Operation::query()->create(['kind' => 'doctor.inspect', 'target_type' => 'node', 'target_id' => 1,
+    $operation = Operation::query()->create(['kind' => 'vault.sync', 'target_type' => 'node', 'target_id' => 1,
         'status' => $status, 'sequence' => 2, 'attempts' => 0, 'state' => [], 'input' => [],
         'finished_at' => now(), 'result' => ['retained' => true]]);
     $operation->refresh();

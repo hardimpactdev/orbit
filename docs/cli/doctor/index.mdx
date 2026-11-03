@@ -24,7 +24,7 @@ Doctor compares current Node and runtime facts with the Gateway's recorded inten
 
 ### Verify only
 
-Doctor reports current liveness and shares the native firewall comparison. Each native family owns the checks that establish its configuration. Repeating those implementations in Doctor creates a second execution engine and competing definitions of success.
+Doctor reports from the facts each Node's agent reported, and shares its firewall comparison with `firewall:live:list`. Each native family owns the checks that establish its configuration. Repeating those implementations in Doctor creates a second execution engine and competing definitions of success.
 
 ### Informational findings stay healthy
 
@@ -32,7 +32,7 @@ An informational finding is not drift or unverifiable. A parked task VM does not
 
 ### No stored reports
 
-Native run history holds the public report. The Gateway projects the Operation result. Scheduled collection records bounded fingerprints, not raw host output or private values.
+Each request compares the latest facts and returns the report; nothing stores it. Scheduled collection records bounded fingerprints, not raw host output or private values.
 
 ### One observation per Node
 
@@ -44,7 +44,7 @@ The API keeps its fixed family names. The table above defines the current inspec
 
 ### Bounded values
 
-Expected and observed issue values contain at most 255 characters. Recovery evidence names only the codes actually compared. It never claims whole-resource coverage, so retiring a check does not silently resolve its old findings. Unavailable native reads share the existing `node:ID` check identity within their family; a later run clears that inspection failure only when every retained read for that family and Node is usable. Old numeric-resource inspection failures remain outside this reduced scope.
+Expected and observed issue values contain at most 255 characters. Recovery evidence names only the codes actually compared. It never claims whole-resource coverage, so retiring a check does not silently resolve its old findings. Checks without a usable fact share the `node:ID` check identity within their family; a later request clears that inspection failure only when every check for that family and Node has a usable fact. Old numeric-resource inspection failures remain outside this reduced scope.
 
 ## Related
 
@@ -54,6 +54,6 @@ Expected and observed issue values contain at most 255 characters. Recovery evid
 
 ## Scheduled collection
 
-Collection uses the same Doctor workflow. When the run succeeds, the Gateway reads its own Laravel log in `storage/logs` from the stored cursor; no Swamp step and no Node read is involved. It reads at most 1 MiB per pass, finishing a record up to an 8 MiB cap. It keeps exception class, safe source frame, request ID and timestamp; messages and raw logs never leave the reader.
+Collection runs the same Doctor comparison. Then the Gateway reads its own Laravel log in `storage/logs` from the stored cursor; no Swamp step and no Node read is involved. It reads at most 1 MiB per pass, finishing a record up to an 8 MiB cap. It keeps exception class, safe source frame, request ID and timestamp; messages and raw logs never leave the reader.
 
 The first pass starts at the current end. Rotation preserves unread records by inode; truncation resumes at the shorter end. An unreadable log result preserves the cursor. The Gateway commits returned fingerprints and the cursor together. Activity and assistance collection keep their existing bounded database cursors and redacted inputs.

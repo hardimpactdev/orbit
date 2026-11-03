@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\NodeFacts;
 
+use App\Actions\Doctor\Intent\RuntimeDoctorIntent;
 use App\Actions\Tasks\ListAgentWorkspacesAction;
 use App\Data\Tasks\AgentWorkspaceData;
 use App\Domain\Nodes\RoleName;
@@ -16,14 +17,15 @@ use App\Models\Project;
 
 /**
  * What one Node's agent watches, at start and every 60 seconds. It opens only what this list names: the services
- * of the Node's roles, in addition to the `orbit-process-*` units it always watches, the task checkouts, and on an
- * app-dev Node the apps root whose `<project>/<name>` checkouts it reports.
+ * of the Node's roles and the units of its systemd Processes, in addition to the `orbit-process-*` units it always
+ * watches, the awake markers of its hibernating Processes, the task checkouts, and on an app-dev Node the apps root
+ * whose `<project>/<name>` checkouts it reports.
  */
 final readonly class AgentWatchListAction
 {
-    public function __construct(private NodeRoleServiceCatalog $services, private ListAgentWorkspacesAction $workspaces, private NodeToolScopes $tools) {}
+    public function __construct(private NodeRoleServiceCatalog $services, private ListAgentWorkspacesAction $workspaces, private NodeToolScopes $tools, private RuntimeDoctorIntent $processes) {}
 
-    /** @return array{services: list<string>, workspaces: list<array<string, mixed>>, apps_root: ?string, applications: array<string, string>, tools: list<array{manager: string, paths: list<string>}>} */
+    /** @return array{services: list<string>, awake_markers: list<string>, workspaces: list<array<string, mixed>>, apps_root: ?string, applications: array<string, string>, tools: list<array{manager: string, paths: list<string>}>} */
     public function execute(Node $node): array
     {
         $services = [];
@@ -32,11 +34,24 @@ final readonly class AgentWatchListAction
                 $services[$service.'.service'] = true;
             }
         }
+        $markers = [];
+        foreach ($this->processes->execute($node)['processes'] as $process) {
+            // A named unit is read even when systemd unloaded it, so Doctor tells a stopped Process from a missing one.
+            if ($process['runtime'] === 'systemd') {
+                $services[$process['input']['name']] = true;
+            }
+            if (is_string($process['hibernation_path'])) {
+                $markers[$process['hibernation_path']] = true;
+            }
+        }
         $services = array_keys($services);
         sort($services);
+        $markers = array_keys($markers);
+        sort($markers);
 
         return [
             'services' => $services,
+            'awake_markers' => $markers,
             'workspaces' => array_map(static fn (AgentWorkspaceData $workspace): array => $workspace->toArray(), $this->workspaces->execute($node)),
             'apps_root' => $root = $this->appsRoot($node),
             'applications' => $root === null ? [] : $this->applications(),

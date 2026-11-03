@@ -1128,8 +1128,8 @@ export function createDemoGateway() {
             [
                 "POST",
                 /^\/api\/v1\/doctor$/,
-                (_, body) =>
-                    startDemoOperation("doctor.inspect", Number(body.node_id ?? 0), body, "node"),
+                // Doctor answers at once from the Node agents' facts; it starts no Operation.
+                () => ok(structuredClone(byRoute.get("POST /api/v1/doctor#"))),
             ],
             [
                 "DELETE",
@@ -1274,10 +1274,7 @@ export function createDemoGateway() {
             status: "succeeded",
             finished_at: now,
             poll_after_seconds: null,
-            result:
-                operation.kind === "doctor.inspect"
-                    ? (byRoute.get("GET /api/v1/operations/{operation}#doctor") as Operation).result
-                    : { deployment_id: null, release: null, selected_release: null, commit: null },
+            result: { deployment_id: null, release: null, selected_release: null, commit: null },
             sequence,
         });
     }

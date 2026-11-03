@@ -4,24 +4,21 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\Doctor\StartDoctorAction;
-use App\Data\Operations\OperationData;
+use App\Actions\Doctor\RunDoctorAction;
 use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Doctor\RunDoctorRequest;
-use App\Http\Requests\Operations\StartsOperation;
 use App\Models\Node;
 use Illuminate\Http\JsonResponse;
 
 final class DoctorRunsController extends Controller
 {
-    #[StartsOperation('doctor.inspect')]
     #[RequiresNodeAccess(ServingNode::Collection)]
     public function store(
         RunDoctorRequest $request,
-        StartDoctorAction $action,
+        RunDoctorAction $action,
         NodeAccessAuthorizer $authorizer,
     ): JsonResponse {
         $consumer = $request->user();
@@ -39,9 +36,9 @@ final class DoctorRunsController extends Controller
         }
 
         return response()->json([
-            'data' => OperationData::fromModel($action->execute($consumer, $nodeId, $request->families(), $request->attributes->getString('orbit.request_id')))->toArray(),
+            'data' => $action->execute($consumer, $nodeId, $request->families())->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
-        ], 202);
+        ]);
     }
 
     private function accessRequired(Node $consumer, Node $serving): JsonResponse

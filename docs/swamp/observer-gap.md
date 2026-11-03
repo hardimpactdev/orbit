@@ -4,6 +4,8 @@ Written 2026-11-01T20:14Z at `d761329ff8` (branch `observer-gap-audit`). Read-on
 
 **Decision under audit (Nick, 2026-11-01).** orbit-agent is the only collector of live Node facts. It observes services, Processes, disk and the firewall (ufw) continuously, reports them to the Gateway with `observed_at`, and acts on nothing. `orbit doctor` and `firewall:live:list` read the Gateway's latest observations: no Swamp run, no SSH. A stale or missing observation is "unverifiable".
 
+**Status (2026-11-03).** Observer item 5 is done: Doctor's node, role, process and firewall checks and `firewall:live:list` read the `host`, `units` and `ufw` facts. `doctor.inspect`, its workflow and the doctor-read behavior are gone. The rows below describe the state before it.
+
 ## Summary
 
 This section lists the main findings of the audit.

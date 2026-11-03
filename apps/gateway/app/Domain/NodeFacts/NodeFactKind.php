@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\NodeFacts;
 
+use App\Domain\Hibernation\RuntimeHibernation;
+
 /**
  * The kinds of fact a Node agent reports, each with the validation rules of its `data`. The agent only observes; the
  * Gateway answers reads such as Doctor from the stored facts.
@@ -24,6 +26,9 @@ enum NodeFactKind: string
 
     /** The packages one Tool Manager holds, named by the manager in `subject`, read from its own state files. */
     case Packages = 'packages';
+
+    /** Whether UFW is installed and enabled, and its rules, read from its configuration and rules files. */
+    case Ufw = 'ufw';
 
     /** Free space is stored in whole steps of this size, so ordinary disk use is not a change to write. */
     public const int FreeStepBytes = 268_435_456;
@@ -46,6 +51,11 @@ enum NodeFactKind: string
                 'units.*.name' => ['required', 'string', 'max:255', 'regex:/\A[A-Za-z0-9@._:-]+\z/'],
                 'units.*.runtime' => ['required', 'string', 'in:systemd,docker'],
                 'units.*.state' => ['required', 'string', 'max:32', 'regex:/\A[a-z-]+\z/'],
+                // Agents before 0.10.0 report neither a systemd unit's load and sub state nor the awake markers.
+                'units.*.load' => ['sometimes', 'string', 'max:32', 'regex:/\A[a-z-]+\z/'],
+                'units.*.sub' => ['sometimes', 'string', 'max:32', 'regex:/\A[a-z-]+\z/'],
+                'awake' => ['sometimes', 'array', 'list', 'max:4096'],
+                'awake.*' => ['required', 'string', 'starts_with:'.RuntimeHibernation::MarkerDirectory.'/', 'max:4096'],
             ],
             self::Checkout => [
                 'owner' => ['present', 'nullable', 'string', 'max:64'],
@@ -96,6 +106,26 @@ enum NodeFactKind: string
                 'casks' => ['sometimes', 'array', 'list', 'max:5000'],
                 'casks.*.name' => ['required', 'string', 'max:255'],
                 'casks.*.versions' => ['present', 'array', 'list', 'max:64'],
+            ],
+            self::Ufw => [
+                'installed' => ['required', 'boolean'],
+                'enabled' => ['required', 'boolean'],
+                'rules' => ['present', 'array', 'list', 'max:1024'],
+                // A rule the agent could not read arrives as {unreadable: true}; Doctor then reports the check unverifiable.
+                'rules.*' => ['array'],
+                'rules.*.unreadable' => ['sometimes', 'accepted'],
+                'rules.*.action' => ['sometimes', 'string', 'max:32'],
+                'rules.*.protocol' => ['sometimes', 'string', 'max:32'],
+                'rules.*.port' => ['sometimes', 'string', 'max:255'],
+                'rules.*.destination' => ['sometimes', 'string', 'max:64'],
+                'rules.*.source_port' => ['sometimes', 'string', 'max:255'],
+                'rules.*.source' => ['sometimes', 'string', 'max:64'],
+                'rules.*.direction' => ['sometimes', 'string', 'in:in,out,fwd'],
+                'rules.*.in_interface' => ['nullable', 'string', 'max:64'],
+                'rules.*.out_interface' => ['nullable', 'string', 'max:64'],
+                'rules.*.family' => ['sometimes', 'string', 'in:v4,v6'],
+                'rules.*.comment' => ['sometimes', 'string', 'max:1024'],
+                'rules.*.app' => ['sometimes', 'boolean'],
             ],
         };
     }

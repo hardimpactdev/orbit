@@ -16,7 +16,10 @@ final readonly class RuntimeDoctorIntent
 {
     public function __construct(private DevelopmentHibernationPolicy $hibernation) {}
 
-    /** @return array<string,list<array<string,mixed>>> */
+    /**
+     * @return array{processes: list<array{id: int, name: string, runtime: string, desired: string, keep_alive: bool, hibernation_path: ?string,
+     *     input: array{process_id: int, runtime: string, name: string, desired: string}}>}
+     */
     public function execute(Node $node): array
     {
         $processes = Process::query()->with('owner')->where(function ($query) use ($node): void {

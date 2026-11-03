@@ -419,7 +419,7 @@ The pane subscribes to `private-operation.{id}`, reads the operation, and reads 
 
 ## Run Doctor on a Node
 
-A Node's doctor action starts a `doctor.inspect` [operation](/reference/operations) with the same request as `doctor --node`. It reads the operation every `poll_after_seconds` until it ends, then reads the report from `result.report` and shows whether the Node has drift. An operation that fails, is cancelled, or ends without a report shows its status and error code instead.
+A Node's doctor action sends the same request as `doctor --node` and shows whether the report has drift. While the Node's agent is offline, it adds that the findings may be outdated since the agent went silent.
 
 ## Database tables
 

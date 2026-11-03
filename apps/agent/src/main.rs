@@ -695,9 +695,14 @@ async fn report_facts(
     loop {
         let (kind, data) = tokio::select! {
             _ = units_tick.tick() => {
-                let names = listed.borrow().services.clone();
+                let (names, markers) = {
+                    let listed = listed.borrow();
+                    (listed.services.clone(), listed.awake_markers.clone())
+                };
+                // A marker that cannot be stat'ed reads as absent; Doctor then reports the Process as stopped.
+                let awake: Vec<String> = markers.into_iter().filter(|path| std::path::Path::new(path).exists()).collect();
                 match observed_units(&manager, &names).await {
-                    Ok((units, docker)) => ("units", facts::units_data(&units, docker)),
+                    Ok((units, docker)) => ("units", facts::units_data(&units, docker, &awake)),
                     Err(error) => {
                         eprintln!("orbit-agent: systemd D-Bus read for facts failed: {error}");
                         std::process::exit(1);
@@ -717,6 +722,19 @@ async fn report_facts(
                             Ok(()) => sender.sent("packages", Some(&manager), &data, now),
                             Err(error) => eprintln!("orbit-agent: {manager} packages fact report failed: {error}"),
                         }
+                    }
+                }
+                // UFW rides the host tick too: the agent reads its files and starts no program.
+                let ufw = tokio::task::spawn_blocking(|| {
+                    let read = |path: &str| std::fs::read_to_string(path).ok();
+                    let rules: Vec<(Option<String>, &str)> = facts::UFW_RULES.iter().map(|(path, family)| (read(path), *family)).collect();
+                    facts::ufw_data(read(facts::UFW_CONF).as_deref(), &rules)
+                }).await.unwrap_or_else(|_| facts::ufw_data(None, &[]));
+                let now = std::time::Instant::now();
+                if let Some(body) = sender.body("ufw", None, &ufw, &facts::observed_at(), now) {
+                    match facts::post(&client, &url, &body).await {
+                        Ok(()) => sender.sent("ufw", None, &ufw, now),
+                        Err(error) => eprintln!("orbit-agent: ufw fact report failed: {error}"),
                     }
                 }
                 ("host", facts::host_data(std::env::consts::OS, std::env::consts::ARCH, &observed_filesystems()))
@@ -741,34 +759,43 @@ async fn report_facts(
     }
 }
 
-/// The `orbit-process-*` units, the listed role services, and the Process containers, by (runtime, name).
+/// The `orbit-process-*` units, the listed role services and Process units, and the Process containers, by
+/// (runtime, name). A Process unit is named without `.service`, as the realtime snapshot names it.
 async fn observed_units(
     manager: &Proxy<'_>,
     services: &[String],
-) -> Result<(BTreeMap<(String, String), String>, bool), Box<dyn Error + Send + Sync>> {
-    let mut units: BTreeMap<(String, String), String> = systemd_snapshot(manager)
-        .await?
-        .into_values()
-        .map(|unit| ((unit.runtime, unit.name), unit.runtime_status))
-        .collect();
-    if !services.is_empty() {
-        type Row = (
-            String,
-            String,
-            String,
-            String,
-            String,
-            String,
-            OwnedObjectPath,
-            u32,
-            String,
-            OwnedObjectPath,
+) -> Result<(BTreeMap<(String, String), facts::UnitState>, bool), Box<dyn Error + Send + Sync>> {
+    type Row = (
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        OwnedObjectPath,
+        u32,
+        String,
+        OwnedObjectPath,
+    );
+    let mut units = BTreeMap::new();
+    let mut put = |name: String, load: String, active: String, sub: String| {
+        let name = process_unit_name(&name).unwrap_or(name);
+        units.insert(
+            ("systemd".to_owned(), name),
+            facts::UnitState::systemd(load, active, sub),
         );
+    };
+    let loaded: Vec<Row> = manager.call("ListUnits", &()).await?;
+    for (name, _, load, active, sub, _, _, _, _, _) in loaded {
+        if process_unit_name(&name).is_some() {
+            put(name, load, active, sub);
+        }
+    }
+    // Named units are read even when systemd has unloaded them; one that is not installed reads as not-found.
+    if !services.is_empty() {
         let rows: Vec<Row> = manager.call("ListUnitsByNames", &(services,)).await?;
-        for (name, _, load, active, _, _, _, _, _, _) in rows {
-            // A service that is not installed reads as not-found, so Doctor can name it.
-            let state = if load == "not-found" { load } else { active };
-            units.insert(("systemd".into(), name), state);
+        for (name, _, load, active, sub, _, _, _, _, _) in rows {
+            put(name, load, active, sub);
         }
     }
     let docker = if std::path::Path::new("/run/docker.sock").exists() {
@@ -781,7 +808,10 @@ async fn observed_units(
     };
     let available = docker.is_some();
     for unit in docker.unwrap_or_default() {
-        units.insert((unit.runtime, unit.name), unit.runtime_status);
+        units.insert(
+            (unit.runtime, unit.name),
+            facts::UnitState::container(unit.runtime_status),
+        );
     }
     Ok((units, available))
 }

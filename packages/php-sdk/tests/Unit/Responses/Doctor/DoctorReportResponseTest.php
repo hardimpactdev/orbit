@@ -37,11 +37,13 @@ it('preserves the exact report, received order, aggregates, and scalar variants'
         ]),
         doctor_family_data(family: 'instance', status: 'drift', checked: 2, issues: []),
     ];
+    $data['nodes'][0]['agent'] = ['state' => 'online', 'since' => null];
     $data['nodes'][] = [
         'node_id' => 3,
         'node_name' => 'earlier-node-id',
         'healthy' => true,
         'families' => [],
+        'agent' => null,
     ];
     $data['summary'] = ['nodes' => 99, 'families' => 88, 'checks' => 77, 'drift' => 66, 'unverifiable' => 55, 'informational' => 44];
     $data['unknown'] = 'drop';

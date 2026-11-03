@@ -1,0 +1,22 @@
+{
+    "schema": 1,
+    "route": "POST /api/v1/doctor",
+    "status": 200,
+    "body": {
+        "data": {
+            "healthy": true,
+            "nodes": [],
+            "summary": {
+                "nodes": 1,
+                "families": 4,
+                "checks": 12,
+                "drift": 0,
+                "unverifiable": 0,
+                "informational": 0
+            }
+        },
+        "meta": {
+            "request_id": "00000000-0000-4000-8000-000000000000"
+        }
+    }
+}

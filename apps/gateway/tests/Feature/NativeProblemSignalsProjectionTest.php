@@ -8,12 +8,28 @@ use App\Models\Activity;
 use App\Models\ProblemCollectorState;
 use App\Models\ProblemFingerprint;
 
-it('reads only redacted Activity evidence without changing the source cursor', function (): void {
+it('remembers the newest Activity on the first collection without counting history', function (): void {
+    ProblemCollectorState::query()->create(['activity_cursor' => null]);
+    $row = Activity::query()->create(['log_name' => 'commands', 'description' => 'fixture', 'command' => 'instance:create', 'status' => 'failed', 'request_id' => 'req-0', 'error_code' => 'gateway.unhandled']);
+    $signals = app(ProblemCollector::class)->signals();
+    expect($signals['activity_cursor_before'])->toBeNull()->and($signals['activity_cursor_after'])->toBe($row->id)->and($signals['activities'])->toBe([]);
+});
+it('selects server failures with redacted evidence and moves the cursor past ignored client errors', function (): void {
     ProblemCollectorState::query()->create(['activity_cursor' => 0]);
-    $row = Activity::query()->create(['log_name' => 'commands', 'description' => 'fixture', 'command' => 'instance:create', 'status' => 'failed', 'request_id' => 'req-1', 'error_code' => 'gateway.unhandled', 'properties' => ['path' => '/instances', 'error_message' => 'password=private-sentinel', 'other' => 'private-property-sentinel']]);
-    $input = app(ProblemCollector::class)->input();
-    expect($input['activities'][0]['id'])->toBe($row->id)->and(json_encode($input))->not->toContain('private-sentinel', 'private-property-sentinel')
+    $failed = Activity::query()->create(['log_name' => 'commands', 'description' => 'fixture', 'command' => 'instance:create', 'status' => 'failed', 'request_id' => 'req-1', 'error_code' => 'gateway.unhandled', 'properties' => ['path' => '/instances', 'error_message' => 'password=private-sentinel', 'other' => 'private-property-sentinel']]);
+    $server = Activity::query()->create(['log_name' => 'commands', 'description' => 'fixture', 'command' => 'node:show', 'status' => 'failed', 'request_id' => 'req-2', 'error_code' => 'http.503']);
+    $client = Activity::query()->create(['log_name' => 'commands', 'description' => 'fixture', 'command' => 'node:show', 'status' => 'failed', 'request_id' => 'req-3', 'error_code' => 'http.404']);
+    $signals = app(ProblemCollector::class)->signals();
+    expect(array_column($signals['activities'], 'key'))->toBe(['instance:create|gateway.unhandled', 'node:show|http.503'])
+        ->and($signals['activities'][0]['observation'])->toMatchArray(['request_ids' => ['req-1'], 'activity_ids' => [$failed->id], 'paths' => ['/instances']])
+        ->and($signals['activities'][1]['observation'])->toBe(['request_ids' => ['req-2'], 'activity_ids' => [$server->id], 'paths' => []])
+        ->and(json_encode($signals))->not->toContain('private-sentinel', 'private-property-sentinel')
+        ->and($signals['activity_cursor_after'])->toBe($client->id)->and($server->id)->toBeLessThan($client->id)
         ->and(ProblemCollectorState::query()->sole()->activity_cursor)->toBe(0)->and(ProblemFingerprint::query()->count())->toBe(0);
+});
+it('keys assistance by its reason with ids and numbers replaced', function (): void {
+    expect(ProblemCollector::reasonKey("  Retry  42 for\tc0ffee00-1234-4abc-9def-0123456789ab "))->toBe('retry # for #')
+        ->and(ProblemCollector::reasonKey('   '))->toBe('');
 });
 it('commits native Activity signals and cursor once and refuses stale collection cursors', function (): void {
     $collector = app(ProblemCollector::class);

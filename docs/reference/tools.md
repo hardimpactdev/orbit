@@ -496,7 +496,7 @@ Tool admission holds the existing Operation `lock_key` for the exact Node and ma
 
 ## Check removal with Doctor
 
-Use the Tool removal result and native Tool scan to inspect installation state. [Doctor](/cli/doctor/doctor#what-each-family-checks) does not repeat package inventory, version constraints or account-scope checks.
+Use the Tool removal result and native Tool scan to inspect installation state. [Doctor](/cli/doctor/doctor#what-each-family-checks) does not repeat package inventory, version constraints or account-scope checks. Its Process checks read the same Process list that names the units and awake markers the Node agent watches.
 
 ## Direct Swamp execution
 

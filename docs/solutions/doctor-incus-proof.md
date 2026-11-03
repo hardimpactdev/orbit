@@ -19,6 +19,8 @@ Informational tool discoveries may appear in a healthy baseline. They do not cha
 
 ## Cause
 
+Doctor reads the facts the Node agent reported: `units` every 10 seconds, and `host` and `ufw` every 60 seconds. After a fixture changes a Node, wait that long before you record Doctor. A check whose fact has not arrived yet is unverifiable. The inspectors below predate the facts; the fixture patterns still apply.
+
 Doctor reports one finding per inspector that fails, so a fixture must break exactly one inspector. The Node inspector also reads the free space and free inodes for root and the managed user's home filesystem, including on the Gateway. Low disk space can therefore spoil a baseline even when the intended fixture affects another family.
 
 The production Instance inspector calls the Node agent. Role and firewall checks call `firewall.inspect`, which runs UFW with fixed arguments inside the agent. The public Route edge inspector also reads firewall state on a Node that serves a public Route edge. Doctor checks current projections only. The proof does not need to fixture local DNS snippet compatibility checks.

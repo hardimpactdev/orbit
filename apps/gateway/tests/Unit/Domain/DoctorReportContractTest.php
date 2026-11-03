@@ -131,6 +131,7 @@ it('serializes bounded doctor reports and derives status precedence', function (
                         ],
                     ],
                 ]],
+                'agent' => null,
             ]],
             'summary' => ['nodes' => 1, 'families' => 1, 'checks' => 1, 'drift' => 2, 'unverifiable' => 1, 'informational' => 0],
         ])

@@ -9,13 +9,8 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
 use App\Support\Console\ProgressState;
-use App\Support\Operations\OperationFollower;
-use InvalidArgumentException;
-use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Requests\Doctor\RunDoctorRequest;
-use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Responses\Doctor\DoctorReportResponse;
-use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class DoctorCommand extends GatewayCommand
 {
@@ -50,39 +45,13 @@ final class DoctorCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $report = null;
-        $this->sendWithProgress(
+        // The Gateway answers at once from the facts each Node's agent reported; it starts no run.
+        $report = $this->sendWithProgress(
             $connector,
             new RunDoctorRequest($nodeId, $families),
-            OperationResponse::class,
+            DoctorReportResponse::class,
             ['Verify registered state', 'Verifying registered state', 'Verified registered state'],
-            function (OperationResponse $operation) use ($connector, &$report): ProgressState {
-                $follower = new OperationFollower(
-                    fn (): OperationResponse => $this->sendOrThrow($connector, new ShowOperationRequest($operation->id), OperationResponse::class),
-                    null,
-                );
-                try {
-                    while (! $operation->terminal()) {
-                        $operation = $follower->next($operation);
-                    }
-                } finally {
-                    $follower->close();
-                }
-                if (! $operation->succeeded()) {
-                    throw new GatewayApiException('Doctor inspection did not complete.', $operation->errorCode ?? 'doctor.inspection_failed', requestId: $operation->requestId);
-                }
-                try {
-                    $data = $operation->result['report'] ?? null;
-                    if (! is_array($data)) {
-                        throw new InvalidArgumentException('Missing Doctor report.');
-                    }
-                    $report = DoctorReportResponse::fromGatewayData($data, $operation->requestId);
-                } catch (InvalidArgumentException $exception) {
-                    throw new GatewayApiException('Gateway response is invalid.', 'gateway.invalid_response', previous: $exception, requestId: $operation->requestId);
-                }
-
-                return $report->healthy ? ProgressState::Success : ProgressState::Warning;
-            },
+            static fn (DoctorReportResponse $report): ProgressState => $report->healthy ? ProgressState::Success : ProgressState::Warning,
         );
         if (! $report instanceof DoctorReportResponse) {
             return self::FAILURE;
@@ -94,8 +63,15 @@ final class DoctorCommand extends GatewayCommand
             return $report->healthy ? self::SUCCESS : self::FAILURE;
         }
 
+        // The agent comes first: while it is offline, its Node's findings may be outdated.
+        foreach ($report->nodes as $nodeReport) {
+            if ($nodeReport->agent !== null) {
+                $this->writeHumanMessage("{$nodeReport->nodeName}: agent {$nodeReport->agent->label()}");
+            }
+        }
         $rows = [];
         foreach ($report->nodes as $nodeReport) {
+            $outdated = $nodeReport->possiblyOutdated() ? " (possibly outdated, agent silent since {$nodeReport->agent?->since})" : '';
             foreach ($nodeReport->families as $family) {
                 $issues = $family->issues;
                 if ($issues === []) {
@@ -116,7 +92,7 @@ final class DoctorCommand extends GatewayCommand
                             $issue->resourceName,
                             $issue->expected,
                         ),
-                        "{$issue->code}: {$issue->summary}".$this->doctorExpectedObserved($issue->expected, $issue->observed),
+                        "{$issue->code}: {$issue->summary}".$this->doctorExpectedObserved($issue->expected, $issue->observed).$outdated,
                     ];
                 }
             }

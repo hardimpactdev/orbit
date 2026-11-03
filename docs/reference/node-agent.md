@@ -88,10 +88,13 @@ The agent reports facts the Gateway stores and answers reads from, such as Docto
 | Kind | Data | Read |
 | --- | --- | --- |
 | `host` | `os`, `arch`, and the `mount`, `size` and `free` bytes of each data filesystem (ext2–4, XFS, Btrfs, ZFS, F2FS; no snap mounts; at most 64) | every 60 seconds |
-| `units` | `docker` (`available` or `absent`), and each `orbit-process-*` unit, each Process container, and each role service from the [watch list](#watch-list), with its `runtime` and `state`. A role service that is not installed reads `not-found`. | every 10 seconds |
+| `units` | `docker`, `awake`, and each watched unit and container with its `runtime` and `state`. See below. | every 10 seconds |
 | `checkout` | One Git checkout at `<apps_root>/<project>/<name>`, named by its path in `subject`. See [Checkouts](#checkouts). | on change |
 | `checkouts` | `paths`: the path of every checkout the agent found under the apps root | on change |
 | `packages` | One Tool Manager's packages, named by the manager in `subject`. See [Packages](#packages). | every 60 seconds |
+| `ufw` | `installed`, `enabled`, and each rule from the `### tuple ###` lines of `/etc/ufw/user.rules` and `user6.rules`: `action`, `protocol`, `port`, `destination`, `source_port`, `source`, `direction` (`in`, `out` or `fwd`), `in_interface`, `out_interface`, `family`, the decoded `comment` and `app`. A rule the agent cannot read is `{"unreadable": true}`. The agent reads `ufw.conf` and the rules files; it runs no `ufw` command. | every 60 seconds |
+
+`units` lists each `orbit-process-*` unit, each Process container, and each role service and Process unit from the [watch list](#watch-list). `docker` is `available` or `absent`. A systemd unit also has its `load` and `sub` state; one that is not installed reads `not-found`. `awake` lists the watched awake markers that exist. Agents before 0.10.0 send neither `load`, `sub` nor `awake`.
 
 The Gateway stores a host's `free` bytes rounded down to 256 MiB. Free space moves with every log line, so without the rounding each `host` report would write a row.
 
@@ -141,7 +144,8 @@ The agent asks `GET /api/v1/agent/watch` what to watch, at start and every 60 se
 ```json
 {
   "data": {
-    "services": ["caddy.service", "docker.service"],
+    "services": ["caddy.service", "docker.service", "orbit-process-12-web.service"],
+    "awake_markers": ["/dev/shm/orbit/hibernation/instance-31"],
     "apps_root": "/home/orbit/apps",
     "applications": { "operator": "server/web" },
     "tools": [{ "manager": "apt", "paths": ["/var/lib/dpkg/status"] }],
@@ -158,7 +162,9 @@ The agent asks `GET /api/v1/agent/watch` what to watch, at start and every 60 se
 }
 ```
 
-`services` are the services of the Node's roles, which the agent reports as [facts](#facts). `apps_root` is the apps path of an active app-dev Node, whose [checkouts](#checkouts) the agent reports; it is null on other Nodes. `applications` names, by Project slug, the application directory inside a checkout when the Project's `root` puts it below the checkout root. `tools` lists each active Tool Manager with the candidate paths of its [package](#packages) state. Only plain unit names ending in `.service` are accepted. Agents released before the observer pass still ask `GET /api/v1/agent/workspaces`, which returns only the `workspaces` list. The Gateway serves it until every Node runs the new agent.
+`services` are the services of the Node's roles and the units of its systemd Processes, which the agent reports as [facts](#facts). A named unit is read even when systemd has unloaded it. `awake_markers` are the awake markers of its hibernating Processes, all below `/dev/shm/orbit/hibernation/`.
+
+`apps_root` is the apps path of an active app-dev Node, whose [checkouts](#checkouts) the agent reports; it is null on other Nodes. `applications` names, by Project slug, the application directory inside a checkout when the Project's `root` puts it below the checkout root. `tools` lists each active Tool Manager with the candidate paths of its [package](#packages) state. Only plain unit names ending in `.service` are accepted. Agents released before the observer pass still ask `GET /api/v1/agent/workspaces`, which returns only the `workspaces` list. The Gateway serves it until every Node runs the new agent.
 
 `workspaces` holds the Instances on the caller's Node that hold the workspace of an unfinished task: `backlog` or `todo` with an Instance, `reserved`, `running`, `reviewing`, or `settling`. `base` is the Project's default branch. `start` is the Instance's starting commit, or null. The list is empty while Tasks is disabled, and it holds at most 64 entries.
 
@@ -676,9 +682,7 @@ Online [`node:remove`](/reference/node-provisioning#remove-a-node) stops and dis
 
 ## Doctor
 
-Doctor reads current host facts through official `@swamp/ssh` from Node209. The Gateway passes public intent and stored SSH pins. Every `uname`, `df`, `systemctl show`, filtered Docker state or awake-marker read is a native step. One typed comparison returns the public report through the shared terminal projector. Doctor reads no credentials, private configuration, package inventory or agent action command.
-
-On managed Linux Nodes, Doctor checks `orbit-agent.service` and the freshness of the Gateway's cached continuous observation at result comparison time. It reports `node.agent_missing`, `node.agent_inactive`, or `node.agent_view_stale`. Provisioning owns agent binary, secret and configuration verification; Doctor does not duplicate it. The agent remains an observer.
+[Doctor](/cli/doctor/doctor) answers from the `host`, `units` and `ufw` facts and the agent's liveness. It starts no run and reaches no Node. It reports `node.agent_missing` for an agent the Gateway never heard from, and `node.agent_view_stale` for a silent one; while the agent is silent, the Node's other findings may be outdated. Provisioning owns agent binary, secret and configuration verification; Doctor does not duplicate it. The agent remains an observer.
 
 See [Doctor](/cli/doctor/doctor#what-each-family-checks) for the current scope, skipped families and recovery rules.
 

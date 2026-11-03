@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 use App\Data\Nodes\NodeData;
+use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\NodeFacts\NodeAgentLiveness;
 use App\Domain\NodeFacts\NodeAgentState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Processes\ProcessRuntime;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Models\NodeFact;
 use App\Models\Project;
@@ -85,6 +87,31 @@ describe('agent facts and liveness', function (): void {
         $this->getJson('/api/v1/agent/watch')->assertOk()
             ->assertJsonPath('data.services', ['caddy.service', 'docker.service'])->assertJsonPath('data.workspaces', [])
             ->assertJsonPath('data.apps_root', '/fast/apps')->assertJsonPath('data.applications', ['operator' => 'server/web']);
+    });
+
+    it('names each systemd Process unit and each hibernating Process awake marker', function (): void {
+        $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+        $web = agent_view_instance_process($this->node, 'web');
+        agent_view_instance_process($this->node, 'db', ProcessRuntime::Docker);
+
+        $data = $this->getJson('/api/v1/agent/watch')->assertOk()->json('data');
+        expect($data['services'])->toBe(['caddy.service', 'docker.service', "orbit-process-{$web->id}-web.service"])
+            ->and($data['awake_markers'])->toBe([RuntimeHibernation::awakePath(RuntimeHibernation::key($web->owner_id))]);
+    });
+
+    it('stores the ufw fact and a 0.10.0 units fact with load, sub state and awake markers', function (): void {
+        $rule = ['action' => 'allow', 'protocol' => 'tcp', 'port' => '22', 'destination' => '0.0.0.0/0', 'source_port' => 'any', 'source' => '0.0.0.0/0',
+            'direction' => 'in', 'in_interface' => null, 'out_interface' => null, 'family' => 'v4', 'comment' => 'orbit ssh', 'app' => false];
+        $this->postJson('/api/v1/agent/facts', ['kind' => 'ufw', 'observed_at' => '2026-11-02T18:00:00Z',
+            'data' => ['installed' => true, 'enabled' => true, 'rules' => [$rule, ['unreadable' => true]]]])->assertNoContent();
+        $this->postJson('/api/v1/agent/facts', ['kind' => 'units', 'observed_at' => '2026-11-02T18:00:00Z', 'data' => ['docker' => 'absent',
+            'units' => [['name' => 'caddy.service', 'runtime' => 'systemd', 'state' => 'activating', 'load' => 'loaded', 'sub' => 'auto-restart']],
+            'awake' => ['/dev/shm/orbit/hibernation/instance-4']]])->assertNoContent();
+        $this->postJson('/api/v1/agent/facts', ['kind' => 'units', 'observed_at' => '2026-11-02T18:00:00Z', 'data' => ['docker' => 'absent', 'units' => [], 'awake' => ['/etc/shadow']]])
+            ->assertUnprocessable();
+
+        expect(NodeFact::query()->where('kind', 'ufw')->sole()->data['rules'][0])->toBe($rule)
+            ->and(NodeFact::query()->where('kind', 'units')->sole()->data['units'][0]['sub'])->toBe('auto-restart');
     });
 
     $checkout = static fn (string $path = '/fast/apps/acme/default', string $branch = 'main'): array => ['kind' => 'checkout',

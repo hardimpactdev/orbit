@@ -52,7 +52,7 @@ describe('doctor discovery contract', function (): void {
 /** @param array<string, mixed> $arguments */
 function run_doctor_operation_contract(string $fixtureName, string $command, array $arguments, string $expected, int $exitCode): void
 {
-    // Each fixture is the Gateway's 202 reply that returns a finished Doctor Operation, as a replayed request does.
+    // Each fixture is the Gateway's reply: the report it answers at once from the Node agents' facts.
     $fixture = gateway_fixture($fixtureName);
     MockClient::destroyGlobal();
     MockClient::global([
