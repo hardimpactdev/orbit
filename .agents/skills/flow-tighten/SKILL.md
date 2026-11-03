@@ -38,6 +38,7 @@ Swamp's own skill (`swamp`, installed by `swamp repo upgrade`) explains how to b
 
 - A step that changes a Node over SSH declares `writes: true`. Without it, Swamp can run the step again when its worker drops.
 - A step that waits for a behavior another step holds fails after 60 seconds (`SWAMP_LOCK_TIMEOUT_MS`). Keep steps on one behavior short, or give long work its own behavior name.
+- Official SSH puts its connection name in an OpenSSH control-socket path. Keep that name short, preferably a short step family plus Node id: a valid 58-character behavior name can exceed Linux’s socket-path limit after SSH adds its suffix. Prove the actual transport; local SSH shims do not exercise this limit.
 - Workflow inputs are recorded in the run. Pass vault key names, never secrets.
 - Nest a workflow only for a typed boundary or its own schedule, never just to order steps.
 - Create a workflow with `swamp workflow create`, never by writing its id by hand.
