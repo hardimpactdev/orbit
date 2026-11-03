@@ -289,7 +289,7 @@ Rolling back to a release from before provenance runs code without the verifier.
 
 #### Web build
 
-The web app ships with the Gateway release of the same commit. On CI runs on `main` that select Gateway release inputs, from a push or a manual dispatch, CI uploads the build of `apps/web` as the artifact `web-dist-<sha>` and keeps it for 14 days ([Feature delivery: CI](/reference/implementation-loop#ci)). Prepare installs it into `web/releases/<id>` of the [web directory](/reference/web-app#web-directory), in the layout `bin/web-deploy` uses:
+The web app ships with the Gateway release of the same commit. On CI runs that select Gateway release inputs, in the merge queue or from a push or a manual dispatch on `main`, CI uploads the build of `apps/web` as the artifact `web-dist-<sha>` and keeps it for 14 days ([Feature delivery: CI](/reference/implementation-loop#ci)). Prepare installs it into `web/releases/<id>` of the [web directory](/reference/web-app#web-directory), in the layout `bin/web-deploy` uses:
 
 1. It asks the [GitHub App](/reference/github-app#read-ci-artifacts) for a token with only `Actions: read`, for the repository that `shared/orbit.git` names as `origin`.
 2. It finds the newest unexpired artifact with that name from an [accepted CI run](#accepted-ci-runs) of exactly this commit.
@@ -310,7 +310,7 @@ CI's `Required checks` job needs the Web job, and the Web job uploads the artifa
 
 ##### Accepted CI runs
 
-The run must be a `push` or a `workflow_dispatch` of `.github/workflows/ci.yml` on `main`, in this repository. A run from a fork, a pull request, another workflow, or another branch does not count. An artifact without a SHA-256 digest is refused.
+The run must be a run of `.github/workflows/ci.yml` in this repository: a `push` or a `workflow_dispatch` on `main`, or a `merge_group` run on a `gh-readonly-queue/main/` branch. The merge queue run tests the exact commit the queue then puts on `main`, and `Required checks` passes there first. A run from a fork, a pull request, another workflow, or another branch does not count. An artifact without a SHA-256 digest is refused.
 
 ### Deploy a release
 

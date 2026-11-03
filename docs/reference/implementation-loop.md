@@ -91,7 +91,7 @@ Orbit CI runs builds and static checks. Swamp changes also run the Operation Den
 | Docs build | Generate the documentation index, check its committed freshness and run strict documentation lint; run `bin/check-flows` on the [flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md) |
 | Generated contracts | Boot the Gateway, load all Operation kinds and check exact workflow run/read intent; check OpenAPI, MCP tools and `apps/web/src/api/schema.d.ts` against their generators |
 | Web build | Build the web app and require `dist/index.html` and `dist/version.json` |
-| Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only changes |
+| Gateway release inputs | Pass on every main commit and its merge queue run, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only changes |
 | Swamp | Validate every workflow, run the Operation Deno tests, enforce the Swamp-shape gate and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Required checks | Require every selected build and static check to succeed; only an explicitly untouched job may skip |
 
@@ -101,7 +101,7 @@ Runner containers are unprivileged. Install or repair their toolchain with `tool
 
 `bin/ci-build-plan` owns build input selection. Gateway or SDK changes run generated contracts and Web; CLI or SDK changes build CLI binaries. Documentation changes run Docs. PHP changes run syntax and Composer validation. Shared workflow, script and tooling changes select all builds.
 
-Swamp source lives under `swamp/`. Swamp-only changes select the Swamp checks and skip PHP and Gateway builds. Changing `swamp/config/gateway-workflow-grants.json` also selects Generated contracts. That job checks the intended policy against the loaded Gateway declarations. Every main commit builds and uploads Web and becomes a Gateway release, Swamp-only ones too, because the release [loads Swamp](/reference/gateway-recovery#load-swamp).
+Swamp source lives under `swamp/`. Swamp-only changes select the Swamp checks and skip PHP and Gateway builds. Changing `swamp/config/gateway-workflow-grants.json` also selects Generated contracts. That job checks the intended policy against the loaded Gateway declarations. Every main commit builds and uploads Web and becomes a Gateway release, Swamp-only ones too, because the release [loads Swamp](/reference/gateway-recovery#load-swamp). The merge queue run for `main` selects builds the same way, because `Required checks` passes there first.
 
 The Swamp shape job runs its gate, Python analyzer, frozen-base policy and validation CI regression tests through Deno. Tests live beside the checked scripts in `swamp/bin/` and run one file at a time. Python helpers run as subprocesses with assertions in Deno. These regression tests use disposable fixtures and do not run the Swamp CLI.
 
@@ -137,7 +137,7 @@ The required check name stays exactly `Required checks`. The branch ruleset and 
 
 Every checkout uses the immutable event commit, `github.sha`. On a pull request, this is the event's merge commit. A new push cancels the older run of that pull request or handoff branch. Each main commit has its own concurrency group, so an earlier main run cannot queue or cancel a newer release candidate.
 
-On `main`, when Gateway release inputs are selected, Web uploads `web-dist-<full commit SHA>` for 14 days. It includes hidden files and keeps `index.html` and `version.json` at its root. Automatic Gateway releases install this commit's build. Pull requests publish no web build.
+In the merge queue run for `main` and on `main`, Web uploads `web-dist-<full commit SHA>` for 14 days. The merge queue run tests the exact commit the queue then puts on `main`, so the commit has its build as soon as `Required checks` passes. It includes hidden files and keeps `index.html` and `version.json` at its root. Automatic Gateway releases install this commit's build. Pull requests publish no web build.
 
 ### Action pins and token permissions
 
