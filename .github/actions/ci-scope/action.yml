@@ -27,7 +27,7 @@ runs:
         SCOPE_JOB: ${{ inputs.job }}
         SWAMP_BASE: ${{ inputs.swamp-base }}
         SCOPE_ENABLED: ${{ inputs.enabled }}
-        BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
         EVENT_SHA: ${{ github.sha }}
         MAIN: ${{ github.ref == 'refs/heads/main' }}
       run: |

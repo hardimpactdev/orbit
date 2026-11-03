@@ -1,3 +1,4 @@
+import { effect } from "./effects.ts";
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { RecipeWorkflowFixture as RecipePrAction } from "./fixture.ts";
 import { RecipeGitHub } from "./api.ts";
@@ -377,4 +378,30 @@ Deno.test("lost committed merge completes on exact merged head without another w
     f.mutations().filter((c) => c.path === "/pulls/19/merge").length,
     1,
   );
+});
+
+Deno.test("open retry skips an already written recipe file", async () => {
+    const f = fixture();
+    await effect("file", f.github, {
+        action: "open",
+        branch,
+        content: f.before,
+        base_blob: parent,
+    });
+    assertEquals(f.mutations(), []);
+});
+
+Deno.test("open retry recognizes an existing snapshot or artifact pull", async () => {
+    for (const candidate of [branch, "nightly/artifacts-" + "a".repeat(12)]) {
+        const f = fixture();
+        f.state.existing = [{ html_url: pull().html_url }];
+        assertEquals(
+            await effect("pull", f.github, {
+                action: "open",
+                branch: candidate,
+            }),
+            { url: pull().html_url },
+        );
+        assertEquals(f.mutations(), []);
+    }
 });

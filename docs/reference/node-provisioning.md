@@ -552,7 +552,29 @@ The roles `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, `a
 
 The `swamp` role runs Swamp serve as `orbit-swamp-serve.service`, with at most 4 scheduled runs in flight. The Gateway renders serve's unit and the worker template at admission. Official `@swamp/cfgmgmt/systemd` steps write them over SSH from 209, enable the services and start any that is stopped. Their `check` and a native `assert` prove the end state.
 
-Serve and the workers run `/usr/local/bin/swamp`. The role installs it there from the [machine software recipe](/reference/compute-drivers)'s pinned Swamp release with `@swamp/cfgmgmt/fetch`, by SHA-256. Convergence never restarts serve or a running worker, so a changed unit or binary takes effect at its next restart. Serve's grants follow the checkout: the release's Swamp load renders them and runs `swamp access reload` ([Load Swamp](/reference/gateway-recovery#load-swamp)).
+Serve and the workers run `/usr/local/bin/swamp`. The role installs it in this order, so no running serve or worker loses its binary:
+
+1. `@swamp/cfgmgmt/fetch` installs the [machine software recipe](/reference/compute-drivers)'s pinned Swamp release by SHA-256. It writes `/usr/local/lib/orbit-swamp/<version>/swamp`, which no process runs from yet.
+2. One SSH command renames a regular file at `/usr/local/bin/swamp` into a new directory under `/usr/local/lib/orbit-swamp`, then links the path to the release. The rename keeps the inode. A running process can still start children from it.
+3. `@swamp/cfgmgmt/link` points `/usr/local/bin/swamp` at the release. A process keeps the file it started from.
+4. The units are written after the link.
+
+Replacing the file in place would leave serve and the workers on a deleted binary, and every dispatch would fail until they restart.
+
+Convergence never restarts serve or a running worker, so a changed unit or binary takes effect at its next restart.
+
+### Bump the Swamp pin
+
+A new Swamp release reaches serve and its workers through the role, with one restart in a quiet moment.
+
+1. Merge the pin change in the recipe and the other pins. The release handoff rebuilds the task VM images.
+2. Converge the role: `orbit node:role:add <node> swamp --converge`. Nothing restarts; the running processes keep their release.
+3. When `operation:list --status=running` is empty, restart serve, which drains in-flight runs, then both workers: `systemctl restart orbit-swamp-serve`, then `systemctl restart orbit-swamp-worker@a orbit-swamp-worker@b`. The workers retry until serve listens.
+4. Check that each process runs the pinned file (`readlink /proc/<pid>/exe`), and run the release smoke.
+
+Earlier releases stay in `/usr/local/lib/orbit-swamp`, about 400 MB each. Rollback points the link at one and restarts the same way. Remove an old release or `replaced-*` directory by hand once no process runs from it: no `/proc/*/exe` names it.
+
+Another installer can put a plain file back at `/usr/local/bin/swamp`, such as the Node worker installer. The next converge renames that file into a new directory and links the path again, so no running process loses its binary. Serve's grants follow the checkout: the release's Swamp load renders them and runs `swamp access reload` ([Load Swamp](/reference/gateway-recovery#load-swamp)).
 
 The role also runs two Swamp workers, `orbit-swamp-worker@a` and `@b`, which reach serve on loopback with 8 dispatch slots each and the labels `role=swamp` and `node=<id>`. Place each worker's enrollment and server tokens at `/etc/orbit/swamp-role-worker/<a|b>/{enrollment,server}.token` (root, `0600`) before adding the role. Nothing reads them first: without them, the worker start fails with `swamp.worker_unit_failed`. The other runtime codes are `swamp.ssh_identity_failed`, `swamp.serve_unit_failed` and `swamp.runtime_check_failed`, at the failed step `runtime`. `node:role:remove` refuses the `swamp` role with `validation.failed`, because serve on its Node runs that removal.
 
