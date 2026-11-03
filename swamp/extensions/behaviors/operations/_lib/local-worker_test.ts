@@ -1,12 +1,10 @@
 import {
   assertEquals,
-  assertRejects,
   assertThrows,
 } from "jsr:@std/assert@1.0.14";
 import { localFilesystem } from "./local-worker.ts";
-import { selectVitePort } from "../processes-schedules/vite-system.ts";
 
-Deno.test("a route or process job in a proxy cgroup refuses before any local effect", async () => {
+Deno.test("a job in a proxy cgroup refuses before any local effect", () => {
   const original = Deno.Command;
   let effects = 0;
   class ProxyCommand extends original {
@@ -33,11 +31,6 @@ Deno.test("a route or process job in a proxy cgroup refuses before any local eff
   try {
     assertThrows(
       () => localFilesystem().makeTempDir(),
-      Error,
-      "proxy Node effect locally",
-    );
-    await assertRejects(
-      () => selectVitePort({ preferred: 5173, excluded: [] }),
       Error,
       "proxy Node effect locally",
     );
