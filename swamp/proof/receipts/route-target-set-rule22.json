@@ -1,0 +1,17 @@
+{
+  "kind": "route.target_set",
+  "rule": 22,
+  "source_commit": "df550c425802ec52128279c0e36aa1d3d2bd275f",
+  "topology": "minimal@16",
+  "receipt": "/home/nckrtl/swamp-execution/evidence/proof/route.target_set-production/20261103T185411Z-minimal.json",
+  "proof_pass": true,
+  "operation_seconds": 83.73,
+  "fixture_seconds": 138.0,
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "swamp_run_id": "316b1f34-c994-43b5-bd30-1ccec5e6a920",
+  "vm_destroyed": true,
+  "scripts_deleted": 0,
+  "named_gap": null,
+  "development_receipt": "/home/nckrtl/swamp-execution/evidence/proof/route.target_set/20261103T191850Z-minimal.json"
+}

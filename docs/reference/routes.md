@@ -43,7 +43,9 @@ A failure before the cutover leaves the old Route serving: a domain replacement 
 
 Caddy convergence starts `operation-route-caddy` after intent commits. Its native Node method acquires the canonical publication lock before reading the current public render through the bound Operation GET. Swamp validates the candidate and runs the filesystem swap and Caddy service commands locally with sudo, then reports the result. The Node agent only observes; it does not publish Caddy. The Gateway neither executes Caddy nor exposes a Caddy publication primitive. The shared `swamp.direct_writers` setting accepts only `direct` for this kind; selecting the removed writer refuses admission. Rollback is a revert PR.
 
-Route destroy and withdrawal follow the chart [`route/destroy.mmd`](/cli/route). Admission captures every Node the Route touches and renders each one's whole Caddyfile without the Route. The run removes private DNS outside the TLD and waits the DNS grace. Then each Node gets that Caddyfile and loses the Route's certificate scopes, and development pools converge. LAN tuples and public ports that no published Route needs close last. The end check is the `check` of the same official behaviors: no site, scope or rule of the Route is left.
+Route destroy and withdrawal follow the chart [`route/destroy.mmd`](/cli/route). Admission captures every Node the Route touches and renders each one's whole Caddyfile without the Route. The run removes private DNS outside the TLD and waits the DNS grace. Then each Node gets that Caddyfile and loses the Route's certificate scopes, and development pools converge. LAN tuples and public ports that no published Route needs close last.
+
+The end check uses the `check` of the same official behaviors and a native assertion that each result is compliant: no site, scope or rule of the Route is left. A successful check command with a `non_compliant` result fails the removal.
 
 With `--offline`, the run first tries each Node once. A Node that does not answer is skipped by every later step and keeps residue for `node:converge`; a VPN Node is never skipped. On success the Gateway deletes the captured Route rows; a withdrawal keeps them. A failed removal leaves the Route as it was, and its Operation records the failed step:
 
@@ -787,6 +789,8 @@ Admission prepares the complete plan in its state transaction. Every child must 
 A single target binding grants development source access when the Route is not active. It preserves the Route's lifecycle and publication state and leaves the next Caddy build to its owning operation.
 
 A target pool stages workload sites under temporary certificate scopes before the Router selects them; [Native Route targets](/reference/native-route-targets) describes the steps. A new version of a certificate scope that a site still names installs only after the cutover, so the old site keeps a matching certificate until it leaves.
+
+Target-set TLS probes use pinned SSH argv commands from 209. A failed workload probe stops the Router switch. After the switch, every staged workload gets its final Caddyfile before temporary certificates are deleted, including retained workloads whose final file did not change.
 
 Cluster Router set starts one native `operation-cluster-router` run, and unset starts one `operation-cluster-router-unset` run. Admission captures the candidate, obsolete assignments, workload Nodes, edge Nodes, DNS Nodes and certificate leaves before committing intent.
 

@@ -24,7 +24,7 @@ The CLI requires consent. `--yes` confirms without a prompt and is required for 
 
 ## Native order
 
-The run follows the [destroy flow](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/destroy.mmd). Each Node action is one `@swamp/ssh exec` command or an official `@swamp/cfgmgmt/file` step; nothing is copied to the Node. Admission already removed the Instance's native Schedules. A normal removal first writes the read token as a 0600 credential file, fetches origin in each checkout and refuses dirty or unpushed work (`Check work is pushed`); the next step removes the credential file.
+The run follows the [destroy flow](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/destroy.mmd). Each Node action is one `@swamp/ssh exec` command or an official `@swamp/cfgmgmt/file` step; nothing is copied to the Node. Admission already removed the Instance's native Schedules. A normal removal first writes the read token as a 0600 credential file, fetches origin in each checkout and refuses dirty or unpushed work (`Check work is pushed`); the next step removes the credential file. The `.env` and `.env.testing` that Orbit renders, at any depth, do not count as work: a stock Laravel `.gitignore` covers `.env` but not `.env.testing`.
 
 The run then withdraws the captured Route publications through the shared Route mutation, so the site goes down first. It stops and removes each Process through the canonical Process child, and runs the Project teardown commands, passed as run inputs, one command per step as the managed account. It removes owned SQLite files with the file behavior and drops owned databases and users on each Database server through the `operation-database-destroy` workflow that `database:destroy` uses. It removes each checkout, a linked worktree through `git worktree remove`, then checks that every checkout is gone. The Gateway deletes owned records only after native success.
 
@@ -34,7 +34,7 @@ Publication captures include the full site catalogs so unrelated Routes, PHP poo
 
 ## Retry and ownership
 
-The Gateway captures the run budget at admission from the teardown timeouts, the Routes it withdraws and its owned databases; see [Instance setup](/reference/instance-setup#run-setup). A failed or cancelled run retains its removal intent. Start a fresh normal `instance:destroy` Operation with a new idempotency key to converge the same admitted removal. Repeating the old key returns the old Operation. This workflow does not depend on `workflow resume`: pinned e459 loses inline official SSH global arguments when resuming a failed run.
+The Gateway captures the run budget at admission from the teardown timeouts, the Routes it withdraws and its owned databases; see [Instance setup](/reference/instance-setup#run-setup). Before it removes the source, the run removes each member's [hibernation](/reference/app-dev-runtime-hibernation) files: its awake marker, cold marker and Caddy access log. A failed or cancelled run retains its removal intent. Start a fresh normal `instance:destroy` Operation with a new idempotency key to converge the same admitted removal. Repeating the old key returns the old Operation. This workflow does not depend on `workflow resume`: pinned e459 loses inline official SSH global arguments when resuming a failed run.
 
 A retry repeats every step; each converges, and a checkout that is already gone counts as removed. If a step fails after the Route withdrawal, the site stays down until a rerun finishes the removal.
 

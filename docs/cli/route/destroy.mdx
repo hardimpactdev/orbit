@@ -12,7 +12,7 @@ orbit route:destroy <route> [--yes] [--offline] [--idempotency-key=KEY] [--json]
 | Option | Meaning |
 | --- | --- |
 | `--yes` | Confirm removal without prompting. |
-| `--offline` | Remove the Route without changing a Node the Gateway cannot reach. The Gateway probes each Node first, and a Node that answers keeps every step. |
+| `--offline` | Swamp probes each Node once from 209 and skips unreachable Nodes. Each Node that answers keeps every step. |
 | `--json` | Return machine-readable JSON. |
 
 When a Node the removal changes does not answer, the Gateway returns `route.node_unreachable`. The message names the Node and `--offline`. With `--offline`, the response lists each skipped Node and its remaining steps under `retained_on_nodes`. Run `orbit node:converge NODE` once that Node answers. See [Remove a Route from an unreachable Node](/reference/routes#remove-a-route-from-an-unreachable-node).
@@ -22,6 +22,8 @@ The Gateway refuses removal with `route.target_conflict` while an active Instanc
 </Warning>
 
 `route:destroy` and `route:target:unset` resolve the Route and then ask for confirmation, with No selected. Pass `--yes` for automation, also with `--json`. Declining, Ctrl-C, or end of input returns `input.cancelled` and sends nothing. A call without a terminal and without `--yes` returns `input.confirmation_required`.
+
+Private DNS outside the TLD is removed first, followed by a 31-second grace for the old answer to expire. The site and certificate are withdrawn together; shared LAN and public firewall rules stay while another Route needs them. Unreachable VPN Nodes cannot be skipped. The final official resource checks and native assertion require the captured files, certificate scopes and firewall rules to match the removal. Drift fails the run and keeps the Route record for a retry.
 
 ## How it works
 

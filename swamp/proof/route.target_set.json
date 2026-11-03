@@ -14,7 +14,7 @@
       "body": {
         "slug": "proof-target",
         "name": "Proof target",
-        "type": "monorepo",
+        "type": "node-package",
         "root": "public",
         "repository_url": "https://github.com/laravel/laravel.git",
         "default_branch": "13.x"
@@ -27,7 +27,17 @@
       "body": {
         "project_id": "${project.id}",
         "node_id": "${node.target}",
-        "name": "o-${proof.run}"
+        "name": "o-${proof.run}",
+        "branch": "13.x"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "routes",
+      "bind": "old_route",
+      "body": {
+        "instance_id": "${old.id}",
+        "domain": "o-${proof.run}.proof.test"
       }
     },
     {
@@ -36,7 +46,8 @@
       "bind": "route",
       "body": {
         "instance_id": "${old.id}",
-        "domain": "t-${proof.run}.proof.test"
+        "domain": "t-${proof.run}.proof.test",
+        "web_root": "public"
       }
     },
     {
@@ -46,7 +57,25 @@
       "body": {
         "project_id": "${project.id}",
         "node_id": "${node.target}",
-        "name": "n-${proof.run}"
+        "name": "n-${proof.run}",
+        "branch": "13.x"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "routes",
+      "bind": "candidate_route",
+      "body": {
+        "instance_id": "${new.id}",
+        "domain": "c-${proof.run}.proof.test"
+      }
+    },
+    {
+      "method": "PATCH",
+      "path": "projects/${project.id}",
+      "operation": false,
+      "body": {
+        "type": "laravel-app"
       }
     }
   ],
