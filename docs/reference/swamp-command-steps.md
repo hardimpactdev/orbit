@@ -14,9 +14,13 @@ Use `App\Infrastructure\Swamp\SwampCommandStep` for execution-copy references an
 
 Call `executionCopy(string $vault, string $key, string $value): array{vault:string,key:string}` when the source value changes. The value is a sensitive parameter. The helper sends one native `vault.put` request over the authenticated TLS WebSocket and retains only a synchronization digest. The value is in `payload.value`, never process arguments. It accepts only a matching vault/key acknowledgement from a `local_encryption` vault before recording synchronization. Pass the returned descriptor in `execution_secrets`; never pass a secret value in workflow inputs.
 
-Serve rate-limits requests and WebSocket handshakes per client and answers `429` with `Retry-After`. The Gateway opens one connection per admission instead of one per request: the copies and run starts that one transaction admits share a single WebSocket, because serve matches each reply to its request by `id`. A request that fails on it closes that connection, and the next request opens a new one.
+Serve rate-limits requests and WebSocket handshakes per client and answers `429` with `Retry-After`. Its source admits at most 50 new WebSocket connections from one IP address in a fixed minute, for every token together, and names the rest of that minute as `Retry-After`; no serve setting changes it. Every Gateway process shares that budget.
 
-Every Gateway WebSocket client also tries a refused `429` handshake again after the server's `Retry-After`, or after a doubling backoff from half a second when serve names none. It tries at most four times and only while the caller's connect timeout leaves room, so a copy or start waits up to 15 seconds instead of failing at once.
+The Gateway opens one connection per admission instead of one per request: the copies and run starts that one transaction admits share a single WebSocket, because serve matches each reply to its request by `id`. A request that fails on it closes that connection, and the next request opens a new one.
+
+Every Gateway WebSocket client also tries a refused `429` handshake again after the server's `Retry-After`, or after a doubling backoff from half a second when serve names none. It tries at most four times and only while the caller's connect timeout leaves room, so a copy or start waits up to 15 seconds instead of failing at once. A wait for the rest of serve's minute is longer, so the Gateway keeps its own connection rate low instead.
+
+Reads that only refresh what a caller sees take a connection from one Gateway-wide read budget: at most 20 per minute, and one per subject per interval. An Operation read checks one run's history at most every 30 seconds, however often clients poll it; a task group's Swamp runs are read at most every five seconds. A read the budget refuses answers from recorded state. The rest of serve's minute stays for admissions, execution copies and the shared observers.
 
 Map each named variable with one whole native expression under `task.inputs.env`:
 

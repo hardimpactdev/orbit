@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Swamp\NativeStepFailure;
+use App\Infrastructure\Swamp\SwampReadBudget;
 use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\Node;
@@ -57,10 +58,32 @@ it('keeps a serve outage active then settles its exact interrupted history on th
     };
     $this->getJson($this->url)->assertOk()->assertJsonPath('data.status', 'running');
     expect($this->operation->fresh()->lock_key)->toBe('native-read-fixture');
+    $this->travel(31)->seconds();
     $this->socket->onConnect = null;
     $this->native['status'] = 'interrupted';
     $this->getJson($this->url)->assertOk()->assertJsonPath('data.status', 'interrupted')->assertJsonPath('data.error_code', 'operation.native_failed');
     expect($this->socket->sent)->toHaveCount(1);
+});
+
+it('reads one Operation\'s history at most every 30 seconds however often it is polled', function (): void {
+    $this->native['status'] = 'running';
+    foreach (range(1, 5) as $_poll) {
+        $this->getJson($this->url)->assertOk()->assertJsonPath('data.status', 'running');
+    }
+    expect($this->socket->sent)->toHaveCount(1);
+    $this->travel(31)->seconds();
+    $this->getJson($this->url)->assertOk();
+    expect($this->socket->sent)->toHaveCount(2);
+});
+
+it('leaves the recorded status without a read while the Swamp read budget is spent', function (): void {
+    foreach (range(1, SwampReadBudget::PerMinute) as $subject) {
+        app(SwampReadBudget::class)->take('other:'.$subject, 60);
+    }
+    $this->getJson($this->url)->assertOk()->assertJsonPath('data.status', 'running');
+    expect($this->socket->sent)->toBe([]);
+    $this->travel(61)->seconds();
+    $this->getJson($this->url)->assertOk()->assertJsonPath('data.status', 'failed');
 });
 
 it('does not invent a failure from native cancellation', function (): void {
@@ -92,6 +115,7 @@ it('never treats absent native history as failure even for an old binding', func
     $this->socket->reply = static fn (array $request): array => [['id' => $request['id'], 'type' => 'error', 'error' => ['code' => 'not_found']]];
     $this->operation->update(['dispatched_at' => now()]);
     $this->getJson($this->url)->assertOk()->assertJsonPath('data.status', 'running');
+    $this->travel(31)->seconds();
     $this->operation->update(['dispatched_at' => now()->subMinutes(2)]);
     $this->getJson($this->url)->assertOk()->assertJsonPath('data.status', 'running')->assertJsonPath('data.error_code', null);
 });

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\SwampRunReader;
 use App\Domain\Tasks\TaskExtensionState;
+use App\Infrastructure\Swamp\SwampReadBudget;
 use App\Models\Node;
 use App\Models\Task;
 
@@ -80,6 +81,7 @@ it('keeps a stale snapshot through outages and recovers on a later read', functi
     $this->reader->fail = true;
     $this->getJson($this->url)->assertOk()->assertJsonPath('data.availability', 'stale')
         ->assertJsonPath('data.observed_at', $observed)->assertJsonPath('data.runs.0.id', 'run-1');
+    $this->travel(6)->seconds();
     $this->reader->fail = false;
     $this->reader->runs[0]['status'] = 'succeeded';
     $this->getJson($this->url)->assertOk()->assertJsonPath('data.availability', 'available')->assertJsonPath('data.runs.0.status', 'succeeded');
@@ -90,6 +92,17 @@ it('distinguishes an empty read from unavailability and expires stale evidence a
     $this->travel(25)->hours();
     $this->reader->fail = true;
     $this->getJson($this->url)->assertOk()->assertJsonPath('data.availability', 'unavailable')->assertJsonPath('data.observed_at', null)->assertJsonPath('data.runs', []);
+});
+
+it('keeps the stale snapshot without a read while the Swamp read budget is spent', function (): void {
+    $this->reader->runs = [swamp_run_fixture()];
+    $this->getJson($this->url)->assertOk()->assertJsonPath('data.availability', 'available');
+    $this->travel(6)->seconds();
+    foreach (range(1, SwampReadBudget::PerMinute) as $subject) {
+        app(SwampReadBudget::class)->take('other:'.$subject, 60);
+    }
+    $this->getJson($this->url)->assertOk()->assertJsonPath('data.availability', 'stale')->assertJsonPath('data.runs.0.id', 'run-1');
+    expect($this->reader->calls)->toBe(1);
 });
 
 it('bounds step count and UTF-8 output across a run', function (): void {

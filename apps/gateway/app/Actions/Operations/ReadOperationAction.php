@@ -10,13 +10,14 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\ReadNativeRunFailure;
 use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\Swamp\SwampReadBudget;
 use App\Models\Operation;
 use Illuminate\Support\Str;
 
 /** Records terminal native history when the original workflow could not deliver its callback. */
 final readonly class ReadOperationAction
 {
-    public function __construct(private ReadNativeRunFailure $history, private DirectOperation $direct, private FailNativeOperationAction $failures) {}
+    public function __construct(private ReadNativeRunFailure $history, private DirectOperation $direct, private FailNativeOperationAction $failures, private SwampReadBudget $budget) {}
 
     public function execute(Operation $operation): Operation
     {
@@ -36,6 +37,10 @@ final readonly class ReadOperationAction
             && in_array($operation->status, [OperationStatus::Failed, OperationStatus::Interrupted], true)
             && ! array_key_exists('native_failure', $operation->state ?? []))) || ! is_string($runId) || ! Str::isUuid($runId)
             || $definition === null || $operation->node_id === null) {
+            return $operation;
+        }
+        // The shared terminal subscriber is the main observer; a read checks the run again at most every 30 seconds.
+        if (! $this->budget->take('operation:'.$operation->id, 30)) {
             return $operation;
         }
         $receipt = $this->history->read($operation, $definition['workflow'], $runId);
