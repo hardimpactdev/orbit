@@ -1503,7 +1503,7 @@ jobs:
     labels:
       role: swamp
     task:
-      behaviorName: ${{ "id-sgroup-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id) }}
+      behaviorName: ${{ "id-sgroup-" + string(inputs.node_id) }}
       behaviorType: '@swamp/ssh'
       globalArgs:
         hosts:
@@ -1511,7 +1511,7 @@ jobs:
           name: target
           transport:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-        name: ${{ "id-sgroup-" + string(inputs.intent.production.instance_id) + "-" + string(inputs.node_id) }}
+        name: ${{ "id-sgroup-" + string(inputs.node_id) }}
         transport:
           identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
           kind: ssh
