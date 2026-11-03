@@ -110,10 +110,11 @@ Deno.test("registration setup runs in order without changing a renamed worktree 
   intent.checkout = intent.application = worktree;
   intent.protect_environment = false;
   intent.run_setup = true;
-  intent.setup_steps = ["printf 'first\\n' > order", "printf 'second\\n' >> order"].map((command) => ({ command, directory: worktree, timeout_seconds: 20, instance_id: 42, instance_name: "linked", seed_path: "", seed_commit: "" }));
+  intent.setup_steps = ["printf 'first\\n' > order; cp file .env", "printf 'second\\n' >> order"].map((command) => ({ command, directory: worktree, timeout_seconds: 20, instance_id: 42, instance_name: "linked", seed_path: "", seed_commit: "" }));
   const head = git(worktree, "rev-parse", "HEAD");
   await register(repo, intent);
   assertEquals(await Deno.readTextFile(worktree + "/order"), "first\nsecond\n");
+  assertEquals(await mode(worktree + "/.env"), 0o600);
   assertEquals(git(worktree, "branch", "--show-current"), "renamed-feature");
   assertEquals(git(worktree, "rev-parse", "HEAD"), head);
 });

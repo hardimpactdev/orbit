@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\RegisterInstanceAction;
+use App\Actions\Routes\CreateRouteAction;
 use App\Data\Instances\RegisterInstanceData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
@@ -280,4 +281,30 @@ it('refuses application facts for a different requested root', function (): void
         new RegisterInstanceData('/srv/apps/register-proof/native', false, $this->project->id, 'native', null, null, false)))
         ->toThrow(ResourceOperationException::class, 'requested application directory');
     expect(Instance::query()->count())->toBe(1);
+});
+
+it('returns the Instance with HTTP 201 and no Operation for plain registration', function (): void {
+    register_report($this->node, '/srv/apps/register-proof/native');
+    $gateway = $this->markAsGateway(Node::query()->create(['name' => 'register-gateway', 'status' => 'active',
+        'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1']));
+    $this->node->accessibleNodes()->attach($gateway);
+    $this->node->accessibleNodes()->attach($this->node);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
+    $this->postJson('/api/v1/instances/register', ['source_path' => '/srv/apps/register-proof/native', 'project_id' => $this->project->id])
+        ->assertCreated()->assertJsonPath('data.status', 'active')->assertJsonPath('data.name', 'native');
+    expect(Operation::query()->count())->toBe(1);
+});
+
+it('refuses a domain owned by another Instance before reserving a registration', function (): void {
+    $this->project->update(['type' => 'laravel-app', 'root' => 'public']);
+    app(CreateRouteAction::class)->ensureForInstance($this->instance, 'taken.register-proof.test');
+    register_report($this->node, '/srv/apps/register-proof/native');
+    try {
+        app(RegisterInstanceAction::class)->execute($this->node,
+            new RegisterInstanceData('/srv/apps/register-proof/native', false, $this->project->id, 'native', null, 'taken.register-proof.test', false));
+        $this->fail('The domain must be refused.');
+    } catch (ResourceOperationException $exception) {
+        expect($exception->errorCode)->toBe('route.domain_conflict')->and($exception->status)->toBe(422);
+    }
+    expect(Instance::query()->count())->toBe(1)->and(Operation::query()->count())->toBe(1);
 });

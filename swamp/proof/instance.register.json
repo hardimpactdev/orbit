@@ -46,7 +46,7 @@
       "operation": false,
       "body": {
         "name": "prepare-env",
-        "command": "umask 077; printf 'PRIVATE_SENTINEL=proof-private-setup\\n' > .env; printf 'registered-worktree\\n' > public/proof.txt",
+        "command": "printf 'PRIVATE_SENTINEL=proof-private-setup\\n' > .env; printf 'registered-worktree\\n' > public/proof.txt",
         "timeout_seconds": 10
       }
     },

@@ -71,7 +71,7 @@ jobs:
         argv: [/usr/bin/timeout, '${{ string(self.step.timeout_seconds) }}', /usr/bin/env, -C, '${{ self.step.directory }}',
           '${{ "ORBIT_INSTANCE_ID=" + string(self.step.instance_id) }}', '${{ "ORBIT_INSTANCE_NAME=" + self.step.instance_name }}',
           '${{ "ORBIT_SEED_PATH=" + self.step.seed_path }}', '${{ "ORBIT_SEED_COMMIT=" + self.step.seed_commit }}',
-          /bin/sh, -c, 'exec /bin/bash -eu -c "$1" >/dev/null', sh, '${{ self.step.command }}']
+          /bin/sh, -c, 'umask 077; exec /bin/bash -eu -c "$1" >/dev/null', sh, '${{ self.step.command }}']
   - name: Create, start Processes
     labels: {role: swamp}
     writes: true
