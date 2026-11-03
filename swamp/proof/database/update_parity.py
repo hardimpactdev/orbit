@@ -5,7 +5,8 @@ import os
 import subprocess
 import sys
 
-operation = json.load(open(os.environ['PROOF_OPERATION_FILE']))
+with open(os.environ['PROOF_OPERATION_FILE']) as source:
+    operation = json.load(source)
 
 
 def check(condition, message):
