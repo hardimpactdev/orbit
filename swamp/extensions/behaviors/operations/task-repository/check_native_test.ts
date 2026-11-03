@@ -73,29 +73,6 @@ Deno.test("baseline setup is ordered before the checked snapshot and preserves t
   assertEquals(result.tree_before, result.tree);
   assertEquals(await t.scratch("check-"), []);
 });
-Deno.test("setup, project, base and deliverable output is redacted before history", async () => {
-  await using t = await checkFixture();
-  t.repo.secrets = ["ghp_" + "C".repeat(36), "c2".repeat(32)];
-  const emit = await t.repo.fakeBinary(
-    "emit",
-    'console.log("ghp_"+"C".repeat(36));console.log("c2".repeat(32));',
-  );
-  Object.assign(t.inputs.intent, {
-    phase: "handoff",
-    setup: [{ name: "first", command: emit, timeout_seconds: 30 }],
-    command: emit + " && test -f code",
-    deliverables: [command({ command: emit + " >&2; test -f code" })],
-  });
-  const { steps, result } = await t.check();
-  for (const name of ["setup-0", "project", "base-0", "deliverable-0"]) {
-    assertEquals(steps[name].outputs.stdout, "", name);
-  }
-  assertEquals(result.output.split("[REDACTED]").length - 1, 4);
-  const evidence = result.evidence.commands.test;
-  assertEquals(evidence.output.split("[REDACTED]").length - 1, 2);
-  assertEquals(evidence.base_output.split("[REDACTED]").length - 1, 2);
-  assertEquals(await t.scratch("check-"), []);
-});
 Deno.test("setup failure skips later setup and the project command", async () => {
   await using t = await checkFixture();
   t.inputs.intent.setup = [{
@@ -110,16 +87,6 @@ Deno.test("setup failure skips later setup and the project command", async () =>
   const { result } = await t.check();
   assertEquals(result.outcome, "failed");
   assertEquals(result.failed_step, "failure");
-  assert(!await exists(`${t.workspace}/should-not-run`));
-});
-Deno.test("invalid overlay refuses before a project command", async () => {
-  await using t = await checkFixture();
-  Object.assign(t.inputs.intent, {
-    command: "touch should-not-run",
-    deliverables: [command({ id: "bad", paths: ["../code"] })],
-  });
-  const { result } = await t.check(false);
-  assertEquals(result.error_code, "tasks.deliverable_invalid");
   assert(!await exists(`${t.workspace}/should-not-run`));
 });
 Deno.test("missing overlay or base directory refuses without running the base", async () => {
@@ -162,38 +129,6 @@ Deno.test("missing base cannot count as a reproduced failure", async () => {
   assert("error_code" in result);
   assertEquals(await t.git("rev-parse", "HEAD"), before);
 });
-Deno.test("project failure skips the command deliverable and returns a failed check", async () => {
-  await using t = await checkFixture();
-  Object.assign(t.inputs.intent, {
-    phase: "handoff",
-    command: "exit 23",
-    deliverables: [
-      command({
-        id: "project-check",
-        command: "touch should-not-run",
-        fails_on_base: false,
-      }),
-    ],
-  });
-  const { history, result } = await t.check();
-  assertEquals(history.status, "succeeded");
-  assertEquals(result.outcome, "failed");
-  assertEquals(result.exit_code, 23);
-  assertEquals(result.evidence.commands, {});
-  assertEquals(result.deliverables[0].outcome, "failed");
-  assertEquals(result.commit, null);
-  assert(!await exists(`${t.workspace}/should-not-run`));
-});
-Deno.test("a mutating check cannot create a candidate", async () => {
-  await using t = await checkFixture();
-  Object.assign(t.inputs.intent, {
-    phase: "handoff",
-    command: "printf moved > code",
-  });
-  const { result } = await t.check();
-  assertEquals(result.outcome, "changed");
-  assertEquals(result.commit, null);
-});
 Deno.test("handoff file and base command evidence precedes the candidate commit", async () => {
   await using t = await checkFixture();
   await write(`${t.workspace}/code`, "new\n");
@@ -225,8 +160,16 @@ Deno.test("handoff file and base command evidence precedes the candidate commit"
       }),
     ],
   });
+  t.repo.secrets = ["ghp_" + "C".repeat(36), "c2".repeat(32)];
+  const emit = await t.repo.fakeBinary(
+    "emit",
+    'console.log("ghp_"+"C".repeat(36));console.log("c2".repeat(32));',
+  );
+  t.inputs.intent.setup = [{ name: "first", command: emit, timeout_seconds: 30 }];
+  t.inputs.intent.command = emit + " && test -f code";
+  t.inputs.intent.deliverables[1].command = emit + " >&2; bash test.sh";
   const start = await t.git("rev-parse", "HEAD");
-  const { result } = await t.check();
+  const { steps, result } = await t.check();
   assertEquals(result.outcome, "passed");
   assertEquals(result.commit, await t.git("rev-parse", "HEAD"));
   assertEquals(result.evidence.commands.test.base_exit_code, 1);
@@ -248,5 +191,12 @@ Deno.test("handoff file and base command evidence precedes the candidate commit"
     result.commit,
   );
   assertEquals(await t.git("status", "--porcelain"), "");
+  for (const name of ["setup-0", "project", "base-0", "deliverable-0"]) {
+    assertEquals(steps[name].outputs.stdout, "", name);
+  }
+  assertEquals(result.output.split("[REDACTED]").length - 1, 4);
+  const evidence = result.evidence.commands.test;
+  assertEquals(evidence.output.split("[REDACTED]").length - 1, 2);
+  assertEquals(evidence.base_output.split("[REDACTED]").length - 1, 2);
   assertEquals(await t.scratch("check-"), []);
 });

@@ -1,0 +1,199 @@
+{
+  "input": {
+    "assignment_id": 42,
+    "address": "10.44.0.12",
+    "files": [
+      {
+        "path": "/etc/orbit/metrics/prometheus.yml",
+        "content": "global:\n  scrape_interval: 15s\n# ünï \"q\" </x>\n"
+      },
+      {
+        "path": "/etc/orbit/metrics/grafana/grafana.ini",
+        "content": "[server]\nroot_url = https://metrics.orbit/\n"
+      },
+      {
+        "path": "/etc/orbit/metrics/grafana/provisioning/datasources/prometheus.yml",
+        "content": "apiVersion: 1\n"
+      },
+      {
+        "path": "/etc/orbit/metrics/grafana/provisioning/dashboards/provider.yml",
+        "content": "providers: []\n"
+      },
+      {
+        "path": "/etc/orbit/metrics/grafana/dashboards/orbit-caddy.json",
+        "content": "{}\n"
+      }
+    ]
+  },
+  "plan": {
+    "services": [
+      {
+        "name": "orbit-metrics-prometheus",
+        "image": "prom/prometheus:v3.5.0",
+        "unit": "[Unit]\nDescription=Orbit Metrics prometheus\nAfter=docker.service network-online.target\nRequires=docker.service\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/usr/bin/docker \"container\" \"run\" \"--detach\" \"--pull=never\" \"--name\" \"orbit-metrics-prometheus\" \"--restart\" \"unless-stopped\" \"--network\" \"host\" \"--log-driver\" \"json-file\" \"--log-opt\" \"max-size=10m\" \"--log-opt\" \"max-file=3\" \"--label\" \"com.orbit.managed=metrics\" \"--label\" \"com.orbit.metrics.service=prometheus\" \"--label\" \"com.orbit.metrics.assignment=42\" \"--mount\" \"type=volume,source=orbit-metrics-prometheus-data,target=/prometheus\" \"--volume\" \"/etc/orbit/metrics/prometheus.yml:/etc/prometheus/prometheus.yml:ro\" \"--health-cmd\" \"wget --no-verbose --tries=1 --spider http://127.0.0.1:9090/-/ready\" \"--health-start-period\" \"30s\" \"--health-interval\" \"5s\" \"--health-retries\" \"12\" \"--label\" \"com.orbit.metrics.spec-hash=f5add5cf08566ac2a860180d10bc31192ec5cb2fce3722ed2f2f3092262ed4fc\" \"--\" \"prom/prometheus:v3.5.0\" \"--config.file=/etc/prometheus/prometheus.yml\" \"--storage.tsdb.path=/prometheus\" \"--storage.tsdb.retention.time=7d\" \"--web.listen-address=127.0.0.1:9090\"\n",
+        "volume_args": [
+          "/usr/bin/docker",
+          "volume",
+          "create",
+          "--label",
+          "com.orbit.managed=metrics",
+          "--label",
+          "com.orbit.metrics.volume=prometheus",
+          "orbit-metrics-prometheus-data"
+        ],
+        "argv": [
+          "timeout",
+          "60",
+          "/usr/bin/docker",
+          "container",
+          "run",
+          "--detach",
+          "--pull=never",
+          "--name",
+          "orbit-metrics-prometheus",
+          "--restart",
+          "unless-stopped",
+          "--network",
+          "host",
+          "--log-driver",
+          "json-file",
+          "--log-opt",
+          "max-size=10m",
+          "--log-opt",
+          "max-file=3",
+          "--label",
+          "com.orbit.managed=metrics",
+          "--label",
+          "com.orbit.metrics.service=prometheus",
+          "--label",
+          "com.orbit.metrics.assignment=42",
+          "--mount",
+          "type=volume,source=orbit-metrics-prometheus-data,target=/prometheus",
+          "--volume",
+          "/etc/orbit/metrics/prometheus.yml:/etc/prometheus/prometheus.yml:ro",
+          "--health-cmd",
+          "wget --no-verbose --tries=1 --spider http://127.0.0.1:9090/-/ready",
+          "--health-start-period",
+          "30s",
+          "--health-interval",
+          "5s",
+          "--health-retries",
+          "12",
+          "--label",
+          "com.orbit.metrics.spec-hash=f5add5cf08566ac2a860180d10bc31192ec5cb2fce3722ed2f2f3092262ed4fc",
+          "--",
+          "prom/prometheus:v3.5.0",
+          "--config.file=/etc/prometheus/prometheus.yml",
+          "--storage.tsdb.path=/prometheus",
+          "--storage.tsdb.retention.time=7d",
+          "--web.listen-address=127.0.0.1:9090"
+        ],
+        "check": {
+          "volumes": [
+            "orbit-metrics-prometheus-data:/prometheus",
+            "/etc/orbit/metrics/prometheus.yml:/etc/prometheus/prometheus.yml:ro"
+          ],
+          "restart": "unless-stopped",
+          "ports": []
+        }
+      },
+      {
+        "name": "orbit-metrics-grafana",
+        "image": "grafana/grafana:12.1.1",
+        "unit": "[Unit]\nDescription=Orbit Metrics grafana\nAfter=docker.service network-online.target\nRequires=docker.service\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/usr/bin/docker \"container\" \"run\" \"--detach\" \"--pull=never\" \"--name\" \"orbit-metrics-grafana\" \"--restart\" \"unless-stopped\" \"--network\" \"host\" \"--log-driver\" \"json-file\" \"--log-opt\" \"max-size=10m\" \"--log-opt\" \"max-file=3\" \"--label\" \"com.orbit.managed=metrics\" \"--label\" \"com.orbit.metrics.service=grafana\" \"--label\" \"com.orbit.metrics.assignment=42\" \"--mount\" \"type=volume,source=orbit-metrics-grafana-data,target=/var/lib/grafana\" \"--volume\" \"/etc/orbit/metrics/grafana/grafana.ini:/etc/grafana/grafana.ini:ro\" \"--volume\" \"/etc/orbit/metrics/grafana/provisioning:/etc/grafana/provisioning:ro\" \"--volume\" \"/etc/orbit/metrics/grafana/dashboards:/var/lib/grafana/dashboards:ro\" \"--volume\" \"/etc/orbit/metrics/grafana/admin-password:/run/orbit/grafana-admin-password:ro\" \"--env\" \"GF_SECURITY_ADMIN_USER=admin\" \"--env\" \"GF_SECURITY_ADMIN_PASSWORD__FILE=/run/orbit/grafana-admin-password\" \"--env\" \"GF_SERVER_HTTP_ADDR=10.44.0.12\" \"--env\" \"GF_SERVER_HTTP_PORT=3000\" \"--health-cmd\" \"wget --no-verbose --tries=1 --spider http://10.44.0.12:3000/api/health\" \"--health-start-period\" \"30s\" \"--health-interval\" \"5s\" \"--health-retries\" \"12\" \"--label\" \"com.orbit.metrics.spec-hash=c03d32f06c5c315b9841f6695a3628811ee6d03c225c8ad9e08dabc6aac4ef3e\" \"--\" \"grafana/grafana:12.1.1\"\n",
+        "volume_args": [
+          "/usr/bin/docker",
+          "volume",
+          "create",
+          "--label",
+          "com.orbit.managed=metrics",
+          "--label",
+          "com.orbit.metrics.volume=grafana",
+          "orbit-metrics-grafana-data"
+        ],
+        "argv": [
+          "timeout",
+          "60",
+          "/usr/bin/docker",
+          "container",
+          "run",
+          "--detach",
+          "--pull=never",
+          "--name",
+          "orbit-metrics-grafana",
+          "--restart",
+          "unless-stopped",
+          "--network",
+          "host",
+          "--log-driver",
+          "json-file",
+          "--log-opt",
+          "max-size=10m",
+          "--log-opt",
+          "max-file=3",
+          "--label",
+          "com.orbit.managed=metrics",
+          "--label",
+          "com.orbit.metrics.service=grafana",
+          "--label",
+          "com.orbit.metrics.assignment=42",
+          "--mount",
+          "type=volume,source=orbit-metrics-grafana-data,target=/var/lib/grafana",
+          "--volume",
+          "/etc/orbit/metrics/grafana/grafana.ini:/etc/grafana/grafana.ini:ro",
+          "--volume",
+          "/etc/orbit/metrics/grafana/provisioning:/etc/grafana/provisioning:ro",
+          "--volume",
+          "/etc/orbit/metrics/grafana/dashboards:/var/lib/grafana/dashboards:ro",
+          "--volume",
+          "/etc/orbit/metrics/grafana/admin-password:/run/orbit/grafana-admin-password:ro",
+          "--env",
+          "GF_SECURITY_ADMIN_USER=admin",
+          "--env",
+          "GF_SECURITY_ADMIN_PASSWORD__FILE=/run/orbit/grafana-admin-password",
+          "--env",
+          "GF_SERVER_HTTP_ADDR=10.44.0.12",
+          "--env",
+          "GF_SERVER_HTTP_PORT=3000",
+          "--health-cmd",
+          "wget --no-verbose --tries=1 --spider http://10.44.0.12:3000/api/health",
+          "--health-start-period",
+          "30s",
+          "--health-interval",
+          "5s",
+          "--health-retries",
+          "12",
+          "--label",
+          "com.orbit.metrics.spec-hash=c03d32f06c5c315b9841f6695a3628811ee6d03c225c8ad9e08dabc6aac4ef3e",
+          "--",
+          "grafana/grafana:12.1.1"
+        ],
+        "check": {
+          "volumes": [
+            "orbit-metrics-grafana-data:/var/lib/grafana",
+            "/etc/orbit/metrics/grafana/grafana.ini:/etc/grafana/grafana.ini:ro",
+            "/etc/orbit/metrics/grafana/provisioning:/etc/grafana/provisioning:ro",
+            "/etc/orbit/metrics/grafana/dashboards:/var/lib/grafana/dashboards:ro",
+            "/etc/orbit/metrics/grafana/admin-password:/run/orbit/grafana-admin-password:ro"
+          ],
+          "restart": "unless-stopped",
+          "ports": []
+        }
+      }
+    ],
+    "files": [
+      {
+        "path": "/etc/orbit/metrics/.orbit-owner",
+        "content": "metrics\n"
+      },
+      {
+        "path": "/etc/systemd/system/orbit-metrics-prometheus.service",
+        "content": "[Unit]\nDescription=Orbit Metrics prometheus\nAfter=docker.service network-online.target\nRequires=docker.service\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/usr/bin/docker \"container\" \"run\" \"--detach\" \"--pull=never\" \"--name\" \"orbit-metrics-prometheus\" \"--restart\" \"unless-stopped\" \"--network\" \"host\" \"--log-driver\" \"json-file\" \"--log-opt\" \"max-size=10m\" \"--log-opt\" \"max-file=3\" \"--label\" \"com.orbit.managed=metrics\" \"--label\" \"com.orbit.metrics.service=prometheus\" \"--label\" \"com.orbit.metrics.assignment=42\" \"--mount\" \"type=volume,source=orbit-metrics-prometheus-data,target=/prometheus\" \"--volume\" \"/etc/orbit/metrics/prometheus.yml:/etc/prometheus/prometheus.yml:ro\" \"--health-cmd\" \"wget --no-verbose --tries=1 --spider http://127.0.0.1:9090/-/ready\" \"--health-start-period\" \"30s\" \"--health-interval\" \"5s\" \"--health-retries\" \"12\" \"--label\" \"com.orbit.metrics.spec-hash=f5add5cf08566ac2a860180d10bc31192ec5cb2fce3722ed2f2f3092262ed4fc\" \"--\" \"prom/prometheus:v3.5.0\" \"--config.file=/etc/prometheus/prometheus.yml\" \"--storage.tsdb.path=/prometheus\" \"--storage.tsdb.retention.time=7d\" \"--web.listen-address=127.0.0.1:9090\"\n"
+      },
+      {
+        "path": "/etc/systemd/system/orbit-metrics-grafana.service",
+        "content": "[Unit]\nDescription=Orbit Metrics grafana\nAfter=docker.service network-online.target\nRequires=docker.service\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/usr/bin/docker \"container\" \"run\" \"--detach\" \"--pull=never\" \"--name\" \"orbit-metrics-grafana\" \"--restart\" \"unless-stopped\" \"--network\" \"host\" \"--log-driver\" \"json-file\" \"--log-opt\" \"max-size=10m\" \"--log-opt\" \"max-file=3\" \"--label\" \"com.orbit.managed=metrics\" \"--label\" \"com.orbit.metrics.service=grafana\" \"--label\" \"com.orbit.metrics.assignment=42\" \"--mount\" \"type=volume,source=orbit-metrics-grafana-data,target=/var/lib/grafana\" \"--volume\" \"/etc/orbit/metrics/grafana/grafana.ini:/etc/grafana/grafana.ini:ro\" \"--volume\" \"/etc/orbit/metrics/grafana/provisioning:/etc/grafana/provisioning:ro\" \"--volume\" \"/etc/orbit/metrics/grafana/dashboards:/var/lib/grafana/dashboards:ro\" \"--volume\" \"/etc/orbit/metrics/grafana/admin-password:/run/orbit/grafana-admin-password:ro\" \"--env\" \"GF_SECURITY_ADMIN_USER=admin\" \"--env\" \"GF_SECURITY_ADMIN_PASSWORD__FILE=/run/orbit/grafana-admin-password\" \"--env\" \"GF_SERVER_HTTP_ADDR=10.44.0.12\" \"--env\" \"GF_SERVER_HTTP_PORT=3000\" \"--health-cmd\" \"wget --no-verbose --tries=1 --spider http://10.44.0.12:3000/api/health\" \"--health-start-period\" \"30s\" \"--health-interval\" \"5s\" \"--health-retries\" \"12\" \"--label\" \"com.orbit.metrics.spec-hash=c03d32f06c5c315b9841f6695a3628811ee6d03c225c8ad9e08dabc6aac4ef3e\" \"--\" \"grafana/grafana:12.1.1\"\n"
+      }
+    ]
+  }
+}
