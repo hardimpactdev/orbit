@@ -1,14 +1,14 @@
 // Existing dependency planner, with controlled registry/transport faults. No
 // scan of a host checkout, task VM, package-manager update, or LLM is dispatched.
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { buildInventory } from "../extensions/behaviors/_lib/inventory.ts";
-import { isMajorJump, toRange } from "../extensions/behaviors/_lib/versions.ts";
+import { buildInventory } from "../../_lib/inventory.ts";
+import { isMajorJump, toRange } from "../../_lib/versions.ts";
 
 const source = Deno.env.get("DEPENDENCY_PLAN_TEST_SOURCE") ??
-  new URL("../extensions/behaviors/orbit_deps.ts", import.meta.url).href;
+  new URL("../../orbit_deps.ts", import.meta.url).href;
 const { behavior } = await import(
   source
-) as typeof import("../extensions/behaviors/orbit_deps.ts");
+) as typeof import("../../orbit_deps.ts");
 const commit = "a".repeat(40);
 const dep = (name: string, constraint = "^1.0", locked = "1.0.0") => ({
   name,

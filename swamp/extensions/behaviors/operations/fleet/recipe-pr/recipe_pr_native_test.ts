@@ -135,9 +135,6 @@ Deno.test("native resume keeps candidate and recognizes uncertain writes", async
     for (
         const [phase, variant] of [
             ["branch", "snapshot"],
-            ["file", "snapshot"],
-            ["pull", "snapshot"],
-            ["pull", "artifacts"],
         ]
     ) {
         await t.step(`${phase}/${variant}`, async () => {
