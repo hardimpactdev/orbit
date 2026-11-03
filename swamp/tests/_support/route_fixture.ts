@@ -415,7 +415,6 @@ if (name === "systemctl" && Deno.args.join(" ") === "restart dnsmasq" && fail ==
       "operation-route-caddy-delta",
       "operation-route-php-delta",
       "route-dns-publish",
-      "operation-route-publication",
     ]
   ) {
     await f.copyWorkflow(name, replacements, (step) => {

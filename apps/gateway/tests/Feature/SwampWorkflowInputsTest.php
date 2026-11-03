@@ -58,22 +58,6 @@ it('starts a converted workflow with public intent and vault names while preserv
     expect($operation->fresh()->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676');
 });
 
-it('keeps unconverted declarations on their original envelope without copying stored input', function (): void {
-    $node = Node::query()->create(['name' => 'command-input-host', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active', 'public_ssh_host' => '192.0.2.27']);
-    $operation = Operation::query()->create(['kind' => 'route.private_dns_publish', 'target_type' => 'node_route_projection',
-        'target_id' => $node->id, 'node_id' => $node->id, 'status' => 'queued', 'sequence' => 1,
-        'input' => ['private' => 'must-stay-out-of-history'], 'state' => []]);
-    $socket = new FakeRoutePublicationSocket;
-    app()->instance(WebSocketClient::class, $socket);
-    config(['swamp.run_token' => 'private.start-token']);
-
-    app(StartSwampRun::class)->start($operation);
-
-    expect($socket->sent[0]['payload']['inputs'])->toBe([
-        'operation_id' => $operation->id, 'kind' => 'route.private_dns_publish', 'node_id' => $node->id,
-    ]);
-});
-
 final readonly class DescriptorCommandInputsProjection implements DirectOperationProjection
 {
     public function input(Operation $operation): array
@@ -89,7 +73,7 @@ final readonly class DescriptorCommandInputsProjection implements DirectOperatio
 
 function commandInputDefinition(array $options = []): DirectOperation
 {
-    $direct = new DirectOperation([new class($options) implements DirectOperationContribution
+    $direct = new DirectOperation([new readonly class($options) implements DirectOperationContribution
     {
         public function __construct(private array $options) {}
 

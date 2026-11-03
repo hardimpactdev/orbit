@@ -20,7 +20,7 @@ Build step 1 adds only the [Router LAN DNS firewall families](/cli/firewall#rout
 
 Before later Cluster DNS enablement, the [firewall rollout](/cli/firewall#safe-dns-firewall-rollout) requires authorized narrowing of overlapping allowances, preservation of bridge-scoped Incus DNS, and authorized success plus unauthorized LAN denial over both transports. Disposable tests are not live acceptance. Exact outside-TLD Route NODATA, descendant forwarding, no-TLD behavior, bind-overlap refusal, and automatic member return remain later implementation gates, not claims made by the firewall step.
 
-The `route.private_dns_publish` Operation publishes Gateway-rendered records and the requester catalog on the serving Node. Its input is a reason, never DNS records or executable source. Swamp runs the fixed publication program. The Node footprint installs the socket-activated listener; publication updates data and confirms the loaded catalog. A failed activation restores the previous records, catalog, and service state.
+Node and Route parents capture Gateway-rendered records and the requester catalog, then publish them through the shared `route-dns-publish` child in their native run. The Node footprint installs the listener before publication. Private DNS publication starts no separate Operation.
 
 ## Resolver selection
 
@@ -291,10 +291,4 @@ Syncing a full checkout on the `vpn` Node is rejected, because every deploy woul
 
 The backend must not forward to the systemd-resolved stub on `127.0.0.53` or `127.0.0.54`, because that path can loop back once the VPN DNS listener is bound. It forwards to the uplink resolvers instead, which a default-deny host firewall already admits.
 
-`route.private_dns_publish` takes `{reason}` and runs on the Node that serves
-private DNS. The Gateway records its records and requester catalog from stored
-fleet state. Swamp publishes that snapshot through a named Node program. The
-Node footprint installs the listener and its socket units before publication.
-Publication keeps the socket listeners active, validates the candidate records,
-and restores the previous files and service states on refusal. It carries no
-secret input.
+Owning native workflows pass the captured records and requester catalog directly to `route-dns-publish`. The Node footprint installs the listener and socket units before publication. The child validates and activates its captured data, and its parent owns terminal success or failure.

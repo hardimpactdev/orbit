@@ -39,10 +39,6 @@ return [
         'workflow_inputs' => true, 'terminal_result' => ['job' => 'publication', 'step' => NativeCaddyPublicationProjection::EndCheck, 'native' => true,
             'captures' => ['caddy' => ['job' => 'publication', 'step' => 'Read the input', 'field' => 'caddy']]],
     ],
-    'route.private_dns_publish' => [
-        'workflow' => 'operation-route-publication', 'projection' => RouteOperationProjection::class,
-        'workflow_inputs' => true, 'terminal_result' => ['job' => 'publication', 'step' => 'result'],
-    ],
     ...array_fill_keys(RouteOperationProjection::Kinds, [
         'workflow' => 'operation-route-verification',
         'projection' => RouteOperationProjection::class, 'workflow_inputs' => true,

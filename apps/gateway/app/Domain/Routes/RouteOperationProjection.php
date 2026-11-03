@@ -27,16 +27,6 @@ final readonly class RouteOperationProjection implements DirectOperationProjecti
 
     public function input(Operation $operation): array
     {
-        if ($operation->kind === 'route.private_dns_publish') {
-            $node = PrivateDnsPublicationNodes::query()->find($operation->node_id);
-            if ($node === null) {
-                throw new ResourceOperationException('operation.execution_forbidden', 'Only an active VPN Node publishes private DNS.', 422);
-            }
-            $dns = app(NativeRoutePublicationInput::class)->dns($node);
-
-            return ['intent' => ['node_id' => $node->id, ...app(NativeCaddyPublicationInput::class)->connectionForNode($node),
-                'after' => $dns], 'execution_secrets' => []];
-        }
         if (! in_array($operation->kind, self::Kinds, true) || $operation->target_type !== 'route_effect' || $operation->node_id === null) {
             throw new ResourceOperationException('operation.direct_invalid', 'A Node-bound Route operation is required.', 422);
         }
