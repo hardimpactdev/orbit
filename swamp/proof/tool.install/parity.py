@@ -22,6 +22,13 @@ query = subprocess.run(['incus', 'exec', os.environ['PROOF_TARGET'], '--', 'dpkg
 installed = query.returncode == 0 and query.stdout.startswith('install ok installed')
 version = query.stdout.split('\t')[1] if installed else None
 check('Setting up' not in json.dumps(result) and 'Unpacking' not in json.dumps(result), 'apt output reached the API result')
+if sys.argv[1:] == ['wrong-fingerprint']:
+    check(status == 'failed' and operation.get('error_code') == 'tool.repository_key_mismatch', 'the key mismatch stops the install')
+    check(not installed, 'a mismatched key installs no package')
+    for path in ['/etc/apt/keyrings/orbit-rex.gpg', '/etc/apt/sources.list.d/orbit-rex.sources', '/etc/apt/preferences.d/orbit-rex.pref']:
+        check(subprocess.run(['incus', 'exec', os.environ['PROOF_TARGET'], '--', 'test', '!', '-e', path]).returncode == 0, 'no repository file was published: ' + path)
+    print('parity: mismatched fingerprint refused before repository publication')
+    sys.exit(0)
 if status == 'failed':
     check(operation.get('error_code') == 'tool.version_constraint_blocked', 'the constraint blocked the install')
     check(not installed, 'a blocked install writes nothing')

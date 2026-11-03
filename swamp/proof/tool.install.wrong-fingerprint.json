@@ -1,0 +1,65 @@
+{
+  "kind": "tool.install",
+  "workflow": "operation-tool-write-209",
+  "topology": "minimal",
+  "budget_seconds": 300,
+  "queue_timeout_seconds": 60,
+  "clean_target": [
+    [
+      "timeout",
+      "120",
+      "apt-get",
+      "update"
+    ],
+    [
+      "sh",
+      "-c",
+      "dpkg --purge rex >/dev/null 2>&1; true"
+    ],
+    [
+      "sh",
+      "-c",
+      "rm -f /etc/apt/keyrings/orbit-rex.gpg /etc/apt/sources.list.d/orbit-rex.sources /etc/apt/preferences.d/orbit-rex.pref"
+    ]
+  ],
+  "request": {
+    "method": "POST",
+    "path": "tools",
+    "body": {
+      "node_id": "${node.target}",
+      "manager": "apt",
+      "package": "rex",
+      "repository": {
+        "name": "rex",
+        "uris": [
+          "https://pkgs.superlogical.com/rex/apt"
+        ],
+        "suites": [
+          "preview"
+        ],
+        "components": [
+          "main"
+        ],
+        "signing_key": {
+          "url": "https://pkgs.superlogical.com/rex/keys/rex-archive-keyring.gpg",
+          "fingerprint": "0000000000000000000000000000000000000000"
+        }
+      }
+    }
+  },
+  "expect": {
+    "status": "failed"
+  },
+  "phases": [
+    {
+      "name": "Assert the key fingerprint",
+      "job": "tools",
+      "step": "Assert the key fingerprint",
+      "budget_seconds": 10
+    }
+  ],
+  "parity": [
+    "swamp/proof/tool.install/parity.py",
+    "wrong-fingerprint"
+  ]
+}

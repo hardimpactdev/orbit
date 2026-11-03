@@ -1,0 +1,47 @@
+{
+  "workflow": "operation-node-remove",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "prepare": [],
+  "phases": [
+    {
+      "name": "Confirm Node removal",
+      "job": "remove",
+      "step": "Confirm Node removal",
+      "budget_seconds": 20
+    }
+  ],
+  "kind": "node.remove",
+  "before_node": {
+    "peer": [
+      [
+        "sh",
+        "-c",
+        "mkdir -p /srv/proof-retained /etc/orbit/agent; echo keep > /srv/proof-retained/user-data; printf \"ssh-ed25519 AAAAProofUnrelated operator\\n\" >> /home/orbit/.ssh/authorized_keys; printf \"observer\" > /usr/local/bin/orbit-agent; echo secret > /etc/orbit/agent/proof"
+      ]
+    ]
+  },
+  "request": {
+    "method": "DELETE",
+    "path": "nodes/${node.peer}",
+    "body": {
+      "force": true
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "parity": [
+    "swamp/proof/node.remove/parity.py",
+    "guest"
+  ],
+  "before_gateway": [
+    [
+      "sh",
+      "-c",
+      "cd apps/gateway && printf '%s' '{\"replace_roles\":{\"${node.peer}\":[]},\"task_vms\":[{\"node_id\":${node.peer},\"provider\":\"incus\",\"name\":\"tvm-proof-guest\",\"state\":\"ready\",\"wireguard_ip\":\"10.231.0.12\"}]}' | php ../../tools/swamp-proof-guest/gateway.php fixture"
+    ]
+  ]
+}
