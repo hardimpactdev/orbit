@@ -95,6 +95,10 @@ beforeEach(function (): void {
 /** A routed Laravel workspace: the guest joins an active dev Cluster, whose TLD names the generated Route. */
 function taskProvisionRoutedProject(object $test): void
 {
+    // Route create probes the published site from the Swamp control Node.
+    Node::query()->forceCreate(['id' => 209, 'name' => 'swamp-control', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'user' => 'orbit', 'wireguard_ip' => '10.44.0.209', 'public_ssh_host' => '192.0.2.210', 'status' => 'active',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'control-host-key']);
     $cluster = Cluster::query()->create(['name' => 'task-dev', 'tld' => 'test', 'state' => ClusterState::Active]);
     $router = router_lan_node('task-router', '10.44.0.10', '10.20.0.10', $cluster);
     $router->roles()->create(['role' => RoleName::Router, 'status' => LifecycleStatus::Active, 'cluster_id' => $cluster->id]);
