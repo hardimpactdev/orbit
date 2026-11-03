@@ -14,7 +14,7 @@ use Throwable;
  * Gateway release commands run on the Gateway host as the Gateway account. Each prints one JSON
  * object on stdout. Success exits 0, a refused input exits 2, and every other failure exits 1
  * with `error_code`, `step`, and `message`, plus `detail` when the step reported what it saw,
- * such as the smoke report.
+ * such as the foreign key violations a recovery found.
  */
 abstract class GatewayReleaseCommand extends Command
 {

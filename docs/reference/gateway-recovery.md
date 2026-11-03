@@ -345,8 +345,7 @@ After the switch, deploy:
 1. runs the serving phase of the runtime handoff: Caddy, PHP-FPM, and the units;
 2. verifies the release, as described below;
 3. runs the [scheduler phase](#runtime-handoff) of the handoff;
-4. switches `web/current` to the release's [web build](#web-build) with one rename;
-5. runs [smoke](#smoke) against the switched release.
+4. switches `web/current` to the release's [web build](#web-build) with one rename.
 
 Verify runs before the scheduler phase, so a broken release is found and switched back without waiting for a long scheduled command or an idle pool.
 
@@ -354,7 +353,7 @@ Verify checks `GET /up` and Gateway status at `ORBIT_GATEWAY_VERIFY_ORIGIN` (def
 
 Each request has a 15-second overall deadline. HTTPS trusts only `/etc/caddy/orbit-cert-current/root-ca.pem`, with the system CA directory disabled. A missing CA file fails verification. Laravel's HTTP client retries the complete check, including status and version validation. After the last failure, it reports `gateway.release_verify_failed` at the `verify` step with the failed endpoint or the observed status and version.
 
-Smoke runs after the web switch. Any failure after the switch counts, including `gateway.release_unexpected_failure`.
+Any failure after the switch counts, including `gateway.release_unexpected_failure`.
 
 Deploy pauses after running the migrator. It writes `ORBIT_HOME/gateway-release.paused` and records outcome `paused`. This also applies when Laravel has no pending migrations. Deploy does not inspect migration files or infer schema compatibility. A failed switch pauses too; the previous code then still serves.
 
@@ -368,7 +367,7 @@ Deploy keeps an incomplete directory that is the current or the previous release
 
 #### Stage a release with consumers held
 
-For a destructive schema change, use the local operator command `gateway:release:stage <full-SHA>` after a maintenance drain. It reuses prepare, snapshot, migration and atomic switch, but stops after the switch. It does not run runtime handoff, verification, scheduler startup, web publication, smoke, fleet convergence or release/web pruning. The snapshot step still applies the configured database-backup retention policy. Its trigger is `stage` and its result is `paused`, with `gateway.release_held` and pause reason `held`; it is not a verified release. Intentional staging raises no failure alert and does not consume normal deploy retry attempts.
+For a destructive schema change, use the local operator command `gateway:release:stage <full-SHA>` after a maintenance drain. It reuses prepare, snapshot, migration and atomic switch, but stops after the switch. It does not run runtime handoff, verification, scheduler startup, web publication, fleet convergence or release/web pruning. The snapshot step still applies the configured database-backup retention policy. Its trigger is `stage` and its result is `paused`, with `gateway.release_held` and pause reason `held`; it is not a verified release. Intentional staging raises no failure alert and does not consume normal deploy retry attempts.
 
 Before snapshot, migration and promotion, staging checks a root-owned `/run/orbit-gateway-drain/hold.json` bound to that exact SHA. The file lists the complete installed and loaded Gateway writer units and the previous release SHA. Every writer unit and timer must be masked, inactive with no MainPID and no remaining cgroup members. PHP-FPM must be masked and stopped, so no HTTP request, including health requests, reaches application code during migration.
 
@@ -436,7 +435,7 @@ The Gateway holds the operation lock and checks itself, without the agent, wheth
 
 After staging, verify the ledger and new source while holds remain. Restore only PHP-FPM first, with Caddy allowing only GET `/up` and GET `/api/v1/gateway/status`; require the exact target version. When the operator approves consumer startup, run `sudo -u orbit php /home/orbit/orbit/apps/gateway/artisan gateway:release:finalize <full-SHA> <staged-record-id>`. Finalization binds to that original record and source, refuses pending migrations, and verifies a private SQLite recovery copy under `ORBIT_HOME/recovery` outside ordinary snapshot retention before clearing the hold. It does not snapshot, migrate or switch again.
 
-Recovery is checked before runtime handoff and again immediately before recording verification and clearing the pause. If recovery changes during handoff or smoke, the second check refuses and retains the logical hold. Consumers may already have started: stop them and re-establish the full drain before recovery. A held record does not prove that services are stopped.
+Recovery is checked before runtime handoff and again immediately before recording verification and clearing the pause. If recovery changes after the first check, the second check refuses and retains the logical hold. Consumers may already have started: stop them and re-establish the full drain before recovery. A held record does not prove that services are stopped.
 
 `gateway.protect-release-recovery` preserves the original snapshot as a private, account-owned file under `ORBIT_HOME/recovery`. `gateway.verify-release-recovery` checks its ownership, permissions, SHA-256 and SQLite integrity without changing it. Both refuse a live WAL or journal and report at most 20 foreign-key violations. The Gateway supplies the staged record and target SHA, validates the returned identity and keeps the recovery phase on the record.
 
@@ -584,8 +583,7 @@ When publication is needed, the Caddy handoff submits the normal
 `caddy: submitted` and `caddy_operation_id`; the Operation records publication
 success or failure. With an unchanged published digest, deploy and rollback can
 complete while Swamp is unreachable. A changed configuration still requires a
-successful native admission within the release-only health window. Release smoke
-checks the live HTTPS response in both cases.
+successful native admission within the release-only health window.
 
 When any step fails, the handoff still starts the scheduler unit, so the scheduler never stays down. The handoff prints one JSON object with `caddy`, `fpm`, `opcache`, `scheduler`, `scheduler_unit`, `scheduler_drain`, `processes_restarted`, `horizon`, `cleanup`, `cleanup_error_code`, `agent_view`, `cleanup_paused`, and `gateway_agent`. Run it again by hand after fixing a handoff failure. It takes no release lock, so run it only when no release step is running.
 
@@ -593,7 +591,7 @@ When any step fails, the handoff still starts the scheduler unit, so the schedul
 
 The [fleet rollout](#rollout-set-and-order) never visits the Gateway's own machine. [Prepare](#prepare-a-release) installs the release's pin there. For a release the Gateway already holds, such as one an older Gateway prepared, it does so before any agent command, so an agent that predates that release's code does not block its deploy. Every agent command then keeps that Node at the pin of the code that sends it, through [install on mismatch](/reference/node-agent#install-on-mismatch). So the deployer's own later commands move it back to the deployer's pin until the switch.
 
-The scheduler phase updates that Node's `orbit-agent` to the release's pin once more. It runs with the release's own code, so it uses that release's [agent pin](/reference/node-agent#install-and-upgrade). It runs after verify, so an agent restart never delays verify. When smoke later fails and the release switches back, the scheduler phase runs again with the previous release's code, which moves the agent to that release's pin. It leaves the Gateway's CLI alone: the Gateway runs the release's own `apps/cli`.
+The scheduler phase updates that Node's `orbit-agent` to the release's pin once more. It runs with the release's own code, so it uses that release's [agent pin](/reference/node-agent#install-and-upgrade). It runs after verify, so an agent restart never delays verify. When a later step fails and the release switches back, the scheduler phase runs again with the previous release's code, which moves the agent to that release's pin. It leaves the Gateway's CLI alone: the Gateway runs the release's own `apps/cli`.
 
 The update installs the release's pin through the agent's own installer, as a local process, never over SSH to itself. It stages the pinned binary under `ORBIT_HOME/agent-candidates` and runs that candidate's [`agent.install`](/reference/node-agent#install-on-mismatch). The installer holds `/run/lock/orbit-self-update.lock` and waits up to 120 seconds for it. It does nothing when the binary already matches the pin.
 
@@ -610,40 +608,22 @@ The handoff result records the update as `gateway_agent`. It has an `outcome` an
 
 A failed update never fails or switches back the release. The release stays `verified`, and the record raises one [`release_gateway_agent_failed` alert](#release-alerts), stored as `gateway_agent.alert`. Doctor keeps reporting `node.agent_binary_mismatch` for the Gateway Node until a later release updates the agent. To retry sooner, run the scheduler phase of the handoff again by hand, as described above. Do not run `orbit self-update` on the Gateway machine, because it also replaces the Gateway's CLI.
 
-#### Smoke
-
-Smoke runs `bin/gateway-smoke` of the new release, `releases/<id>/bin/gateway-smoke`, as the Gateway account. So it is the exact code under test, and it uses that release's `apps/cli/orbit` with the account's Gateway profile. [Delivery-line proofs: bin/gateway-smoke](/reference/delivery-line#bingateway-smoke) lists its checks. The release passes:
-
-| Option | Value |
-| --- | --- |
-| `--sha` | The release's commit. |
-| `--since` | The time the runtime handoff started, in whole seconds. The scheduler and agent view must have restarted after it. |
-| `--timeout` | `ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT`, default `90` seconds. |
-| `--checkout`, `--web-dir` | `/home/orbit/orbit` and the web directory, so the checks read the live paths. |
-| `--web-url`, `--up-url`, `--status-url` | Built from `ORBIT_GATEWAY_VERIFY_ORIGIN`. |
-| `--write-check --smoke-project` | Only when `ORBIT_GATEWAY_RELEASE_SMOKE_PROJECT` names a Project. |
-
-The Python checks trust Orbit's root CA through `SSL_CERT_FILE`, set to Caddy's `root-ca.pem` unless the environment already sets it. The document write check is off by default, because it writes a Project Document on every release. To turn it on, create a dedicated Project and set `ORBIT_GATEWAY_RELEASE_SMOKE_PROJECT` to its ID or slug in the shared env file, then [apply the env change](#apply-an-env-change).
-
-The release record stores the smoke JSON as `phases.smoke.report`, also when smoke fails. Smoke fails when it exits nonzero, reports `passed: false`, prints no JSON, or the release has no `bin/gateway-smoke`. When it runs 15 seconds past its own limit, the step fails with `gateway.release_smoke_timeout`. `timeout` then sends `SIGTERM` to smoke, which kills every check command it started, each in a session of its own, and prints a `terminated` result that the record keeps as the report. After 5 more seconds, `timeout` kills what is left. No check outlives the step. A smoke failure is handled like a failed verification: switch back without migrations, pause after them.
-
-
 ##### Roll back
 
-Roll back to return the Gateway to a release it still keeps, for example after a pause or a bad release that verify and smoke did not catch.
+Roll back to return the Gateway to a release it still keeps, for example after a pause or a bad release that verify did not catch.
 
 ```bash
 php /home/orbit/orbit/apps/gateway/artisan gateway:release:rollback <id>
 php /home/orbit/orbit/apps/gateway/artisan gateway:release:rollback <id>
 ```
 
-`<id>` is the first 12 hex digits of a retained release. With the default of 3, a rollback can reach the previous release and one other retained release. Rollback switches to it and runs the same handoff, verify, web switch, and smoke as a deploy.
+`<id>` is the first 12 hex digits of a retained release. With the default of 3, a rollback can reach the previous release and one other retained release. Rollback switches to it and runs the same handoff, verify, and web switch as a deploy.
 
 Rollback switches code only. It names the newest pre-release snapshot for recovery, but never runs migrations or restores the database. Check that the target code can use the current database.
 
 If a database restore is needed, keep access and automation paused and follow [Recover a failed update](#recover-a-failed-update) with the matching snapshot; restore is an explicit operator step. A failed verification switches back to the release that was current, because rollback itself does not migrate.
 
-Rollback switches the web app to the target's build. Pruning a Gateway release removes its web build too, so every retained release keeps its own, and a manual `bin/web-deploy` never prunes it. When the build is gone anyway, rollback installs it from the commit's CI artifact, which exists for 14 days. When the artifact has expired too, a rollback does not block the code on assets: it leaves `web/current` as it is, records the web step as `kept` with a warning, and smoke skips its `web` check. A deploy always fails without its web build.
+Rollback switches the web app to the target's build. Pruning a Gateway release removes its web build too, so every retained release keeps its own, and a manual `bin/web-deploy` never prunes it. When the build is gone anyway, rollback installs it from the commit's CI artifact, which exists for 14 days. When the artifact has expired too, a rollback does not block the code on assets: it leaves `web/current` as it is, records the web step as `kept` with a warning. A deploy always fails without its web build.
 
 ### Apply an env change
 
@@ -762,9 +742,8 @@ Check these conditions on the Gateway before you run the command.
 - The disk has room for one release, about the size of the checkout without `.git`, plus the free-space floor and a database snapshot.
 - The pinned agent and file system support Linux atomic exchanges between the checkout and shared storage.
 - The Gateway GitHub App installation has accepted `Actions: read`. See [Read CI artifacts](/reference/github-app#read-ci-artifacts). Phase 2 needs it for the web build.
-- `orbit node:list` succeeds as `orbit` on the Gateway. The [Quickstart](/quickstart) step "Connect the CLI" sets this up. Smoke needs it.
 
-Without the permission, phase 2 stops in prepare with `gateway.release_web_build_unavailable`. Nothing changes live. Without the CLI profile, smoke fails with `gateway.profile_missing`, and phase 2 pauses after its migrations.
+Without the permission, phase 2 stops in prepare with `gateway.release_web_build_unavailable`. Nothing changes live.
 
 ### Run adoption
 
@@ -797,7 +776,7 @@ Phase 1 runs these steps for the commit the in-place checkout has:
 | Handoff | The temporary checkout's code hands the runtime over, because the checkout's commit may predate the handoff command. The app code that serves is the same as before. |
 | Serving | `/up` is up and Gateway status is `ok`. The version may be `dev`, because `APP_VERSION` is commented out. |
 
-Phase 2 deploys `<SHA>` exactly as [Deploy a release](#deploy-a-release) describes, with its snapshot, migrations, handoff, verify, web build, and smoke. Without `--commit`, it deploys the checkout's commit itself, which then must have the command; that adds the web build, the exact version check, and smoke. The web build comes from the commit's CI artifact, which CI keeps for 14 days, so phase 2 needs a commit built within that time.
+Phase 2 deploys `<SHA>` exactly as [Deploy a release](#deploy-a-release) describes, with its snapshot, migrations, handoff, verify, and web build. Without `--commit`, it deploys the checkout's commit itself, which then must have the command; that adds the web build and the exact version check. The web build comes from the commit's CI artifact, which CI keeps for 14 days, so phase 2 needs a commit built within that time.
 
 The command prints one JSON object with `release`, `sha`, `from`, `pre_adopt_path`, `shared`, `switch`, `phase1`, and `deploy`, the phase-2 release record. `switch.method` and `shared.storage_method` are `exchange`, with zero in `switch.gap_us` and `shared.storage_gap_us`. Each phase writes a release record with trigger `adopt` and an Activity entry.
 
@@ -954,7 +933,7 @@ The Gateway posts one JSON object. It signs `{unix timestamp}.{raw body}` with H
 | `subject` | `target`, `repository`, `sha`, and `release_id` |
 | `summary` | The redacted summary |
 | `evidence_url` | The evidence link, or null |
-| `text` | One line for a chat channel, such as `Release failed for gateway hardimpactdev/orbit@0123456789ab: Smoke check web.index failed.`, followed by the evidence link. It escapes `&`, `<`, and `>` as Slack expects |
+| `text` | One line for a chat channel, such as `Release failed for gateway hardimpactdev/orbit@0123456789ab: Verify found an old version.`, followed by the evidence link. It escapes `&`, `<`, and `>` as Slack expects |
 | `occurred_at` | When the alert was raised, in ISO 8601 UTC |
 | `request_id` | The Activity entry's request ID |
 | `activity_id` | The Activity entry's id, or null when it could not be written |
@@ -1159,7 +1138,7 @@ A CI deploy job that connects to the Gateway over SSH was rejected too: the CI r
 
 ### Code decides what ships
 
-Whether a commit passed its checks, and whether a release serves, are deterministic questions. `Required checks`, verify, and smoke answer them, not an agent's judgment. A deploy bot was planned for this duty and rejected for that reason. Judgment is needed only after a pause, and the operator gives it. Every step is a `gateway:release:*` command that an agent can run and a person can read.
+Whether a commit passed its checks, and whether a release serves, are deterministic questions. `Required checks` and verify answer them, not an agent's judgment. A deploy bot was planned for this duty and rejected for that reason. Judgment is needed only after a pause, and the operator gives it. Every step is a `gateway:release:*` command that an agent can run and a person can read.
 
 ### Immutable releases behind one link
 
@@ -1167,7 +1146,7 @@ An update in place serves a half-changed tree while `git checkout` and `composer
 
 ### Releases install no development packages
 
-A release runs the Gateway, its artisan commands, and the CLI for the smoke test. None of them needs a development package. The Gateway and the CLI register Boost only when its classes exist, and the CLI binary already ships from a no-dev install. Leaving those packages out cut the two `vendor/` directories from about 277 MB to 115 MB and the install from about 8 s to 5 s on a warm Composer cache, measured on a build host on 8 Oct 2026. A release cannot run `composer test` or `artisan boost:*`; use a checkout for those.
+A release runs the Gateway, its artisan commands, and its own CLI. None of them needs a development package. The Gateway and the CLI register Boost only when its classes exist, and the CLI binary already ships from a no-dev install. Leaving those packages out cut the two `vendor/` directories from about 277 MB to 115 MB and the install from about 8 s to 5 s on a warm Composer cache, measured on a build host on 8 Oct 2026. A release cannot run `composer test` or `artisan boost:*`; use a checkout for those.
 
 Copying the current release's `vendor/` into the next one when `composer.lock` is unchanged was measured and rejected. The copy, the write bit it needs back, and the `composer install` that still runs to rebuild the autoloader took 6.6 to 7.2 s against 4.6 to 5.1 s for a fresh no-dev install. Hard links are not an option, because Composer rewrites autoload files in place.
 

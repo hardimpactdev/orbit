@@ -458,7 +458,7 @@ it('files a release alert on its first occurrence and ahead of higher counts', f
 it('does not file an ambiguous historical SHA bucket without incident evidence', function (): void {
     problem_filer_project();
     $fingerprint = problem_filer_fingerprint('release|release_failed|gateway|'.str_repeat('b', 40), 2, [
-        'summary' => 'Smoke failed on two release attempts.',
+        'summary' => 'Verify failed on two release attempts.',
         'release_kind' => 'release_failed',
         'release_shas' => [str_repeat('b', 40)],
         'release_repository' => 'nckrtl/orbit',
@@ -476,7 +476,7 @@ it('does not file an ambiguous historical SHA bucket without incident evidence',
 
 it('does not file a release fingerprint without an occurrence', function (): void {
     problem_filer_project();
-    problem_filer_fingerprint('release|release_failed|gateway|'.str_repeat('b', 40), 0, ['summary' => 'Smoke failed.']);
+    problem_filer_fingerprint('release|release_failed|gateway|'.str_repeat('b', 40), 0, ['summary' => 'Verify failed.']);
 
     expect(Artisan::call('problems:file'))->toBe(0)
         ->and(Task::topLevel()->count())->toBe(0);
@@ -580,13 +580,13 @@ function problem_filer_fingerprint(
 it('updates the open generated incident instead of filing another group', function (): void {
     problem_filer_project();
     $collector = app(ProblemCollector::class);
-    $collector->recordRelease('release_failed|gateway|17|smoke', ['summary' => 'First failure', 'release_kind' => 'release_failed', 'incident_resource' => 'gateway', 'incident_attempt' => '17', 'incident_fault' => 'smoke']);
+    $collector->recordRelease('release_failed|gateway|17|verify', ['summary' => 'First failure', 'release_kind' => 'release_failed', 'incident_resource' => 'gateway', 'incident_attempt' => '17', 'incident_fault' => 'verify']);
     expect(Artisan::call('problems:file'))->toBe(0);
     $group = Task::topLevel()->sole();
     $instructions = $group->tasks()->orderBy('position')->get(['title', 'brief', 'deliverables'])->toArray();
 
     $this->travel(5)->minutes();
-    $collector->recordRelease('release_failed|gateway|17|smoke', ['summary' => 'Same fault with fresh evidence', 'activity_ids' => [99]]);
+    $collector->recordRelease('release_failed|gateway|17|verify', ['summary' => 'Same fault with fresh evidence', 'activity_ids' => [99]]);
     expect(Artisan::call('problems:file'))->toBe(0);
 
     expect(Task::topLevel()->count())->toBe(1)
@@ -597,9 +597,9 @@ it('updates the open generated incident instead of filing another group', functi
 it('closes an untouched release alert only after a verified successor', function (bool $scoped): void {
     problem_filer_project();
     $failed = GatewayRelease::query()->create(['duration_ms' => 0, 'trigger' => 'auto', 'outcome' => 'failed', 'sha' => str_repeat('a', 40), 'phases' => []]);
-    app(ProblemCollector::class)->recordRelease('release_failed|gateway|'.$failed->id.'|smoke', [
-        'summary' => 'Smoke failed', 'release_id' => (string) $failed->id,
-        'release_kind' => 'release_failed', 'incident_resource' => 'gateway', 'incident_attempt' => (string) $failed->id, 'incident_fault' => 'smoke',
+    app(ProblemCollector::class)->recordRelease('release_failed|gateway|'.$failed->id.'|verify', [
+        'summary' => 'Verify failed', 'release_id' => (string) $failed->id,
+        'release_kind' => 'release_failed', 'incident_resource' => 'gateway', 'incident_attempt' => (string) $failed->id, 'incident_fault' => 'verify',
     ]);
     Artisan::call('problems:file');
     $group = Task::topLevel()->sole();

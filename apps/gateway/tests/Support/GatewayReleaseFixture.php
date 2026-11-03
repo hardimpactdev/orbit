@@ -130,22 +130,6 @@ final class GatewayReleaseFixture
         return $this->current;
     }
 
-    /**
-     * Writes a file into a release directory, for Gateway code that reads the release tree itself:
-     * the fleet rollout command or the smoke script.
-     */
-    public function releaseFile(string $id, string $relative, string $contents, int $mode = 0644): string
-    {
-        $path = $this->layout->releasePath($id).'/'.$relative;
-        if (! is_dir(dirname($path))) {
-            mkdir(dirname($path), 0755, true);
-        }
-        file_put_contents($path, $contents);
-        chmod($path, $mode);
-
-        return $path;
-    }
-
     public function releaseCommands(?AgentCommandRunner $agents = null): GatewayReleaseCommands
     {
         $node = Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->first();

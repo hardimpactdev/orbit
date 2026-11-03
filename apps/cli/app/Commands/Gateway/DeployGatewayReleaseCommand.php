@@ -56,7 +56,7 @@ final class DeployGatewayReleaseCommand extends GatewayReleaseFollowCommand
         return $this->followRelease(
             $connector,
             'Deploy Gateway release '.substr($commit, 0, 12),
-            ['prepare', 'migrate', 'switch', 'handoff', 'verify', 'scheduler', 'web', 'smoke'],
+            ['prepare', 'migrate', 'switch', 'handoff', 'verify', 'scheduler', 'web'],
             fn (): GatewayReleaseResponse => $this->sendOrThrow($connector, new DeployGatewayReleaseRequest($commit), GatewayReleaseResponse::class),
         );
     }

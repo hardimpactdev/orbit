@@ -45,7 +45,6 @@ abstract class GatewayReleaseFollowCommand extends GatewayCommand
         'verify' => ['Verify release', 'Verifying release', 'Verified release'],
         'scheduler' => ['Move scheduler', 'Moving scheduler', 'Moved scheduler'],
         'web' => ['Publish web app', 'Publishing web app', 'Published web app'],
-        'smoke' => ['Run smoke tests', 'Running smoke tests', 'Passed smoke tests'],
     ];
 
     /**

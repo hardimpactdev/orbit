@@ -66,10 +66,6 @@ return [
         // key rotation the committed root does not hold yet (docs/reference/gateway-recovery.md#release-provenance).
         'trusted_root' => trim((string) env('ORBIT_CLI_RELEASE_TRUSTED_ROOT', '')) ?: resource_path('sigstore/trusted_root.json'),
     ],
-    // The limit bin/gateway-smoke gets in each release, in seconds (1 to 600).
-    'gateway_release_smoke_timeout' => max(1, min(600, (int) env('ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT', 90))),
-    // A Project id or slug turns on the smoke write check, which writes one Project Document per release.
-    'gateway_release_smoke_project' => trim((string) env('ORBIT_GATEWAY_RELEASE_SMOKE_PROJECT', '')),
     // PHP-FPM and Caddy end a Gateway request after 600 seconds. The command deadline ends remote
     // work 30 seconds earlier, so a slow command fails with an error and records its Activity.
     'command_timeout' => 570.0,

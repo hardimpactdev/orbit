@@ -36,7 +36,7 @@ use Throwable;
  * it reaches the same files.
  *
  * Phase 2, only when the target is another commit: {@see DeployGatewayReleaseAction::deploy()} releases it like any
- * deploy, with its snapshot, migrations, handoff, verify, web build, and smoke, and switches back or pauses on failure.
+ * deploy, with its snapshot, migrations, handoff, verify, and web build, and switches back or pauses on failure.
  *
  * Every step can run again. A rerun finishes an adoption that swapped but never verified, then deploys the target.
  */
@@ -84,8 +84,8 @@ final readonly class GatewayReleaseAdopter
             return $layout;
         }
 
-        // Phase 2 runs the target through the deploy path. For the checkout's own commit it installs the web build,
-        // verifies the exact version, and runs smoke, which phase 1 does not.
+        // Phase 2 runs the target through the deploy path. For the checkout's own commit it installs the web build
+        // and verifies the exact version, which phase 1 does not.
         try {
             $deployed = $this->deploy->deploy($sha, false, 'adopt');
         } finally {
@@ -270,7 +270,7 @@ final readonly class GatewayReleaseAdopter
     }
 
     /**
-     * Puts the checkout directory and the web build back after a failed handoff, verify, web switch, or smoke, repeats the handoff
+     * Puts the checkout directory and the web build back after a failed handoff, verify, or web switch, repeats the handoff
      * from it, records the attempt, and returns the failure to throw.
      *
      * @param  array<string, mixed>  $phases

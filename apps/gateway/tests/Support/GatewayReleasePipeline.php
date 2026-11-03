@@ -14,7 +14,6 @@ use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseExecutionOwner;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
-use App\Domain\GatewayReleases\GatewayReleaseSmoke;
 use App\Domain\GatewayReleases\GatewayReleaseSwampLoad;
 use App\Domain\GatewayReleases\GatewayReleaseUnitStarter;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
@@ -43,15 +42,14 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSource;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSupersession;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSwitcher;
-use DateTimeImmutable;
 use Illuminate\Support\Facades\Config;
 
 /**
  * The whole Gateway release pipeline on a {@see GatewayReleaseFixture}: scripted agent answers, and the real
- * lock and records; fake runtime handoff, verifier, smoke, GitHub resolver, and alert notifier. A test sets
+ * lock and records; fake runtime handoff, verifier, GitHub resolver, and alert notifier. A test sets
  * `$failVerify`, `$failSnapshot`, or `$green` to steer one release.
  */
-final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDatabase, GatewayReleaseRuntime, GatewayReleaseSmoke, GatewayReleaseUnitStarter, GatewayReleaseVerifier, GatewayReleaseWebBuild, GreenCommitResolver, ReleaseAlertNotifier
+final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDatabase, GatewayReleaseRuntime, GatewayReleaseUnitStarter, GatewayReleaseVerifier, GatewayReleaseWebBuild, GreenCommitResolver, ReleaseAlertNotifier
 {
     public readonly GatewayReleaseFixture $fixture;
 
@@ -157,14 +155,14 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
         $recorder = $this->recorder();
         $builder = $this->fixture->builder($this);
 
-        return new DeployGatewayReleaseAction($this->lock(), $builder, $this, $this->promoter($recorder, $this), $recorder, $this->guard(), new GatewayReleaseRetry, new GatewayReleaseSupersession($this->source(), $this), new ReleaseTestOwner, $this->swamp, $drain);
+        return new DeployGatewayReleaseAction($this->lock(), $builder, $this, $this->promoter($recorder), $recorder, $this->guard(), new GatewayReleaseRetry, new GatewayReleaseSupersession($this->source(), $this), new ReleaseTestOwner, $this->swamp, $drain);
     }
 
-    public function rollback(?GatewayReleaseSmoke $smoke = null): RollbackGatewayReleaseAction
+    public function rollback(): RollbackGatewayReleaseAction
     {
         $recorder = $this->recorder();
 
-        return new RollbackGatewayReleaseAction($this->lock(), $this->fixture->layout, $this->promoter($recorder, $smoke ?? $this), $recorder);
+        return new RollbackGatewayReleaseAction($this->lock(), $this->fixture->layout, $this->promoter($recorder), $recorder);
     }
 
     public function guard(): GatewayReleaseGuard
@@ -204,7 +202,7 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
 
     /**
      * Binds only the leaf services: the layout, the lock, the builder, the switcher, and the fakes for
-     * the runtime, verifier, web build, smoke, database, GitHub, units, and alerts. Every action,
+     * the runtime, verifier, web build, database, GitHub, units, and alerts. Every action,
      * the recorder, the promoter, and the supersession check come from the service provider, so a
      * test proves their production wiring.
      */
@@ -223,7 +221,7 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
 
         foreach ([
             GatewayReleaseDatabase::class, GatewayReleaseRuntime::class, GatewayReleaseVerifier::class, GatewayReleaseWebBuild::class,
-            GatewayReleaseSmoke::class, GreenCommitResolver::class, BranchHeadReader::class, ReleaseAlertNotifier::class,
+            GreenCommitResolver::class, BranchHeadReader::class, ReleaseAlertNotifier::class,
             GatewayReleaseUnitStarter::class,
         ] as $contract) {
             app()->instance($contract, $this);
@@ -405,13 +403,6 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
         return ['status' => 'ok', 'version' => $sha];
     }
 
-    public function run(string $id, string $sha, ?DateTimeImmutable $since = null, array $skip = []): array
-    {
-        $this->steps[] = 'smoke';
-
-        return ['outcome' => 'passed'];
-    }
-
     public function install(string $id, string $sha): bool
     {
         return false;
@@ -431,7 +422,7 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
 
     public function prune(array $retained): void {}
 
-    private function promoter(GatewayReleaseRecorder $recorder, GatewayReleaseSmoke $smoke): GatewayReleasePromoter
+    private function promoter(GatewayReleaseRecorder $recorder): GatewayReleasePromoter
     {
         $builder = $this->fixture->builder($this);
 
@@ -441,7 +432,6 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
             $this,
             $this,
             $this,
-            $smoke,
             $recorder,
             $builder,
             Config::integer('orbit.gateway_releases.keep'),

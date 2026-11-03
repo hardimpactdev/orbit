@@ -8,7 +8,6 @@ use App\Domain\GatewayReleases\DeployedGatewayRelease;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
-use App\Domain\GatewayReleases\GatewayReleaseSmoke;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
 use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
 use App\Domain\Nodes\RoleName;
@@ -24,8 +23,6 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseRecovery;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRestore;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSwitcher;
-use App\Infrastructure\GatewayReleases\ScriptGatewayReleaseSmoke;
-use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Models\Activity;
 use App\Models\GatewayRelease;
 use App\Models\Node;
@@ -90,7 +87,7 @@ describe('gateway:release:adopt', function (): void {
             ->and($this->steps->steps)->toBe([
                 'handoff:'.$this->id, 'serving', 'schedule:'.$this->id,
                 'snapshot:'.$this->id, 'migrate:'.$this->id,
-                'handoff:'.$this->id, 'verify:'.$this->sha, 'schedule:'.$this->id, 'web:publish:'.$this->id, 'smoke:'.$this->id,
+                'handoff:'.$this->id, 'verify:'.$this->sha, 'schedule:'.$this->id, 'web:publish:'.$this->id,
             ])
             ->and(GatewayRelease::query()->pluck('trigger')->all())->toBe(['adopt', 'adopt'])
             ->and(GatewayRelease::query()->pluck('outcome')->all())->toBe(['verified', 'verified'])
@@ -130,38 +127,26 @@ describe('gateway:release:adopt', function (): void {
             ->and($this->steps->steps)->toBe([
                 'handoff:'.$this->id, 'serving', 'schedule:'.$this->id,
                 'snapshot:'.$targetId, 'migrate:'.$targetId,
-                'handoff:'.$targetId, 'verify:'.$target, 'schedule:'.$targetId, 'web:publish:'.$targetId, 'smoke:'.$targetId,
+                'handoff:'.$targetId, 'verify:'.$target, 'schedule:'.$targetId, 'web:publish:'.$targetId,
             ])
             ->and($this->steps->servingDuringMigrate)->toBe('release '.$this->id)
             ->and(GatewayRelease::query()->orderBy('id')->pluck('release_id')->all())->toBe([$this->id, $targetId]);
     });
 
-    it('adopts into a commit with its CI web build installed and published, and smokes the release', function (): void {
-        $arguments = $this->fixture->base.'/smoke-args';
-        $target = $this->fixture->commit('Newer release with smoke');
+    it('adopts into a commit with its CI web build installed and published', function (): void {
+        $target = $this->fixture->commit('Newer release with a web build');
         $targetId = substr($target, 0, 12);
-        $this->fixture->releaseFile($targetId, 'bin/gateway-smoke', "#!/usr/bin/env bash\nprintf '%s\\n' \"\$@\" > ".escapeshellarg($arguments)."\necho '{\"schema\":1,\"passed\":true,\"checks\":{}}'\n", 0755);
         $web = new WebArtifactFixture($this->fixture->layout, $this->fixture->base.'/web');
         $web->github(sha: $target);
-        $smoke = new ScriptGatewayReleaseSmoke(
-            layout: $this->fixture->layout,
-            processes: new NativeProcessRunner,
-            origin: 'https://gateway.orbit',
-            webRoot: $web->web,
-        );
 
-        $result = adoption($this->fixture, $this->steps, web: $web->build(), smoke: $smoke)->execute($target, $this->source);
-        $passed = file($arguments, FILE_IGNORE_NEW_LINES);
+        $result = adoption($this->fixture, $this->steps, web: $web->build())->execute($target, $this->source);
         $record = GatewayRelease::query()->where('release_id', $targetId)->sole();
 
         expect($result['release'])->toBe($targetId)
             ->and($result['deploy']['phases']['web'])->toBe(['outcome' => 'published'])
             ->and($web->agents->commands())->toContain('gateway.install-web-build', 'gateway.publish-web-build')
             ->and(collect($web->agents->calls)->firstWhere('command', 'gateway.publish-web-build')['input'])->toBe(['web_root' => $web->web, 'release' => $targetId])
-            ->and($passed[array_search('--sha', $passed, true) + 1])->toBe($target)
-            ->and($passed)->toContain('--since')
-            ->and($record->outcome)->toBe('verified')
-            ->and($record->phases['smoke'])->toBe(['outcome' => 'passed', 'report' => ['schema' => 1, 'passed' => true, 'checks' => []]]);
+            ->and($record->outcome)->toBe('verified');
     });
 
     it('records phase 1 after phase 2 when the checkout\'s database has no release records yet', function (): void {
@@ -307,14 +292,12 @@ function adoption(
     GatewayReleaseFixture $fixture,
     AdoptionSteps $steps,
     ?GatewayReleaseWebBuild $web = null,
-    ?GatewayReleaseSmoke $smoke = null,
     ?AgentCommandRunner $agents = null,
 ): AdoptGatewayReleaseAction {
     $web ??= new AdoptionWebBuild($steps);
     $database = new AdoptionDatabase($steps, $fixture);
     $runtime = new AdoptionRuntime($steps);
     $verifier = new AdoptionVerifier($steps);
-    $smoke ??= new AdoptionSmoke($steps);
     $builder = $fixture->builder($web);
     $recorder = new GatewayReleaseRecorder(app(GatewayReleaseRecovery::class), app(GatewayReleaseRestore::class), $fixture->base.'/home');
     $guard = new GatewayReleaseGuard($fixture->layout, $fixture->releaseCommands());
@@ -323,7 +306,7 @@ function adoption(
         $lock,
         $builder,
         $database,
-        new GatewayReleasePromoter($fixture->layout, new GatewayReleaseSwitcher($fixture->layout, $fixture->releaseCommands()), $runtime, $verifier, $web, $smoke, $recorder, $builder, Config::integer('orbit.gateway_releases.keep')),
+        new GatewayReleasePromoter($fixture->layout, new GatewayReleaseSwitcher($fixture->layout, $fixture->releaseCommands()), $runtime, $verifier, $web, $recorder, $builder, Config::integer('orbit.gateway_releases.keep')),
         $recorder,
         $guard,
         new GatewayReleaseRetry,
@@ -360,8 +343,6 @@ final class AdoptionSteps
     public bool $failVerify = false;
 
     public bool $failMigrate = false;
-
-    public bool $failSmoke = false;
 
     public ?string $servingDuringMigrate = null;
 
@@ -411,22 +392,6 @@ final readonly class AdoptionVerifier implements GatewayReleaseVerifier
         }
 
         return ['status' => 'ok', 'version' => '0.1.0'];
-    }
-}
-
-final readonly class AdoptionSmoke implements GatewayReleaseSmoke
-{
-    public function __construct(private AdoptionSteps $steps) {}
-
-    public function run(string $id, string $sha, ?DateTimeImmutable $since = null, array $skip = []): array
-    {
-        $this->steps->steps[] = 'smoke:'.$id;
-
-        if ($this->steps->failSmoke) {
-            throw new GatewayReleaseException('smoke', 'gateway.release_smoke_failed', 'Smoke failed.', phase: ['report' => ['passed' => false]]);
-        }
-
-        return ['outcome' => 'passed', 'report' => ['passed' => true]];
     }
 }
 

@@ -59,7 +59,7 @@ The firewall API removes a rule with `POST /api/v1/nodes/{node}/firewall-rules/r
 
 The generator reads every command class, including commands the CLI hides at runtime. It does not run `orbit list`, and it does not load `apps/cli/vendor`.
 
-`bin/docs-openapi` also contains fixed schema text that it does not parse from the rows above, such as the deployment event stream and the `AdoptedTool` reply of `tool:adopt`, a Tool with the agent's liveness. It also stores operation summaries and descriptions, including `tool:scan`, `tool:adopt`, `tasks:create`, `tasks:update`, and `tasks:complete`. Those descriptions stay in the script so the API and MCP keep the operation contracts rather than only the short CLI summaries.
+`bin/docs-openapi` also contains fixed schema text that it does not parse from the rows above, such as the deployment event stream and the `AdoptedTool` reply of `tool:adopt`, a Tool with the agent's liveness. It also stores operation summaries and descriptions, including `tool:scan`, `tool:adopt`, `gateway:release:deploy`, `tasks:create`, `tasks:update`, and `tasks:complete`. Those descriptions stay in the script so the API and MCP keep the operation contracts rather than only the short CLI summaries.
 
 Each summary is keyed by route name, so removing a route removes its summary in the same change. A new route needs its own summary in the same change, as `cluster:activate`, `instance:auto-deploy:enable`, `project:review-and-merge:enable`, `project:maintenance:enable` and `project:maintenance:inspect` have; without one, the operation's summary is its bare route name. That text is part of the checkout. Editing the script changes the document in the same way on every machine.
 

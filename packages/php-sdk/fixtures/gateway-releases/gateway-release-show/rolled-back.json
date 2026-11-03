@@ -51,9 +51,6 @@
                 },
                 "web": {
                     "outcome": "published"
-                },
-                "smoke": {
-                    "outcome": "passed"
                 }
             },
             "error_code": null,
