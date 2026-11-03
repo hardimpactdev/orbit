@@ -4,6 +4,7 @@ sequenceDiagram
   %% status: migrated
   %% command: node:role:add
   %% kind: node.role_add
+  %% Rule 23: 2026-11-03 required-only main path.
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -15,14 +16,17 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant N as Node 12<br/>gets the role
   participant M as Metrics Node<br/>Prometheus
-  CLI->>GW: node:role:add 12 app-dev<br/>--idempotency-key=KEY
+  CLI->>GW: node:role:add 12 app-dev<br/>Node and role
   %%> Command:
   %%> - `orbit node:role:add 12 app-dev`
   %%> - syntax: `<node> <role> [--converge] [--postgres-process=ID] [--clickhouse-process=ID] [--idempotency-key=KEY] [--json]`
   %%> Input:
   %%> - the Node, by id or exact name, and the role, such as `app-dev`, `app-prod`, `ingress`, `database`, `websocket`, `analytics`, `ci-runner`, `gateway` or `swamp`
   %%> - for `analytics` only: the PostgreSQL and ClickHouse Processes; in a terminal the CLI asks for them
+  %%> Optional flags:
   %%> - `--converge` converges a role the Node already has; that is `node.role_converge`, with its own chart
+  %%> - `--postgres-process=ID`, `--clickhouse-process=ID`: required for `analytics` only; they feed the role plan and add no steps of their own
+  %%> - `--idempotency-key=KEY` reuses a key to retry the start; `--json` gives machine-readable output
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
   Note over GW: Validate, claim the role<br/>role: provisioning · task #5170

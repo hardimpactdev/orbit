@@ -4,6 +4,7 @@ sequenceDiagram
   %% status: migrated
   %% command: node:role:add
   %% kind: node.role_converge
+  %% Rule 23: 2026-11-03 required-only main path.
   %% Metrics compliance uses the canonical mount, public environment, port and restart settings; missing official launch-option checks are noted in swamp-evaluation.md.
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
@@ -22,6 +23,13 @@ sequenceDiagram
   %%> - syntax: `<node> <role> --converge [--idempotency-key=KEY] [--json]`
   %%> Input:
   %%> - the Node, by id or exact name, and a role it already has
+  %%> - `--converge` is required: this kind only exists with it
+  %%> Without --converge:
+  %%> - the same call on a role Node 12 already has is refused at once: 422 `validation.failed`, "explicit convergence is required"; no task, no run
+  %%> - exception: an `active` `ingress` role may be added again without `--converge`; that runs `node.role_add`
+  %%> - a Node without the role gets `node.role_add`, with its own chart
+  %%> Optional flags:
+  %%> - `--idempotency-key=KEY` reuses a key to retry the start; `--json` gives machine-readable output
   %%> What it does:
   %%> - applies the role's packages, files, units and publication again, and repairs drift
   %%> - never changes an Instance, a Process, a Schedule or the role assignment itself

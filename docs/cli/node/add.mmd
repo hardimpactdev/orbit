@@ -7,6 +7,7 @@ sequenceDiagram
   %% status: migrated
   %% command: node:add
   %% kind: node.add
+  %% Rule 23: 2026-11-03 required-only main path.
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -18,14 +19,19 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant N as New Node 12<br/>reached over ssh
   participant HUB as WireGuard hub<br/>vpn Node 1
-  CLI->>GW: node:add beast 203.0.113.7<br/>--host-key-fingerprint=… --role=…
+  CLI->>GW: node:add beast 203.0.113.7<br/>--host-key-fingerprint=…
   %%> Command:
-  %%> - `orbit node:add beast 203.0.113.7 --host-key-fingerprint=SHA256:… --role=app-dev --tld=test`
+  %%> - `orbit node:add beast 203.0.113.7 --host-key-fingerprint=SHA256:…`
   %%> - syntax: `<name> [host] [--host-key-fingerprint=SHA256] [--ssh-port=PORT] [--user=USER] [--orbit-user=USER] [--platform=linux|macos] [--architecture=ARCH] [--tld=TLD] [--role=ROLE]… [--cluster=ID] [--wireguard-ip=IP] [--lan-ip=IP] [--wireguard-endpoint=HOST:PORT] [--dns-server=IP] [--setting=PATH:VALUE]`
   %%> Input:
   %%> - the Node name and its public SSH host
   %%> - the approved SSH host key fingerprint; required for a new Node
-  %%> - optionally roles, a TLD, a Cluster and network overrides
+  %%> - the host and the fingerprint are required for a new Node; everything else is optional
+  %%> Optional flags:
+  %%> - `--role=ROLE` (repeatable): adds the role steps in `opt --role`
+  %%> - `--platform=macos`: skips the Linux steps and adds `opt --platform=macos`
+  %%> - `--tld`, `--cluster`, `--ssh-port`, `--user`, `--orbit-user`, `--architecture`, `--wireguard-ip`, `--lan-ip`, `--wireguard-endpoint`, `--dns-server`, `--setting`: recorded in the intent; they add no steps
+  %%> - `--json`: machine-readable output
   %%> What it does:
   %%> - adds the machine to the fleet as Node 12, named `beast`
   %%> - for a Node that already exists, the same command converges it again with its new TLD, roles or settings
@@ -75,11 +81,12 @@ sequenceDiagram
   SW->>N: Read the host key<br/>SSH argv
   SW->>SW: Require approved host key<br/>native assert
   SW->>N: Read the platform<br/>SSH argv
-  opt Linux Node
+  %%> Linux by default:
+  %%> - `--platform` defaults to `linux`, so the Linux steps are the main path
+  %%> - the workflow guards each Linux step on the admitted platform (`inputs.intent.platform == "linux"`), not on what this step observes
+  %%> - with `--platform=macos` those steps are skipped and `opt --platform=macos` runs instead
   SW->>N: Read the bootstrap account<br/>SSH argv
-  end
   SW->>SW: Bind the Node identity<br/>public resource binding
-  opt Linux Node
   SW->>N: Read bootstrap keys<br/>SSH argv
   SW->>N: Authorize the control key<br/>SSH argv
   SW->>SW: Remove an old host pin<br/>control Node SSH argv
@@ -107,7 +114,6 @@ sequenceDiagram
   SW->>N: Finish tunnel config<br/>SSH argv
   SW->>N: Apply the tunnel peers<br/>SSH argv
   SW->>N: Trust WireGuard members<br/>SSH argv
-  end
   opt Linux peer joins the VPN hub
   SW->>HUB: Create the hub folders<br/>cfgmgmt directory
   SW->>HUB: Write hub configuration<br/>cfgmgmt file
@@ -117,20 +123,16 @@ sequenceDiagram
   SW->>HUB: Read the hub public key<br/>SSH argv
   SW->>SW: Check the hub key<br/>native assert
   end
-  opt Linux Node
   SW->>N: Create observer folders<br/>cfgmgmt directory
   SW->>N: Write observer config<br/>cfgmgmt file
   SW->>N: Write the observer secret<br/>cfgmgmt file
   SW->>N: Start the Node agent<br/>cfgmgmt systemd
-  end
   SW->>N: Verify managed SSH<br/>SSH argv
-  opt Linux Node
   SW->>N: Verify passwordless sudo<br/>SSH argv
   opt eligible CLI plan
   SW->>N: Publish the Orbit CLI<br/>native child workflow
   end
-  end
-  opt roles need convergence
+  opt --role
   SW->>N: Converge each role<br/>native child workflow
   end
   opt new VPN hub needs its DNS listener
@@ -140,17 +142,15 @@ sequenceDiagram
   opt private DNS records need publication
   SW->>N: Publish private DNS<br/>native child workflow
   end
-  opt macOS Node
+  opt --platform=macos
   SW->>N: Inspect the Mac tunnel<br/>SSH argv
   end
-  opt Linux Node
   SW->>N: Check the Node agent<br/>cfgmgmt systemd
   SW->>N: Check the agent binary<br/>cfgmgmt fetch
   SW->>N: Check the observer secret<br/>cfgmgmt file
   SW->>N: Read tunnel handshakes<br/>SSH argv
-  end
   SW->>SW: Check the Node<br/>native assert
-  opt Linux Node, run completed or failed
+  opt run completed or failed
   SW->>N: Remove staged sudo rule<br/>cfgmgmt file, best effort
   end
   %%> Secrets:

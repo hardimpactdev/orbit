@@ -3,6 +3,7 @@ sequenceDiagram
   %% status: draft
   %% command: node:update
   %% kind: node.update
+  %% Rule 23: 2026-11-03 required-only main path.
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -18,7 +19,13 @@ sequenceDiagram
   %%> - syntax: `<node> [--name=NAME] [--platform=PLATFORM] [--apps-path=PATH] [--task-vms=JSON] [--idempotency-key=KEY] [--json]`
   %%> Input:
   %%> - the Node, by id or exact name
-  %%> - at least one of: a new name, a platform, the apps folder, or the task VM host settings as a JSON object
+  %%> - `--apps-path` is required for this chart: `node.update` only starts with it
+  %%> Without --apps-path (R1):
+  %%> - `--name`, `--platform` and `--task-vms` alone are record-only; the Gateway stores them and answers at once with the Node, no task and no run
+  %%> - unsetting the apps folder on a Node without an active `app-dev` role needs no folder; it is record-only too
+  %%> Optional flags:
+  %%> - `--name`, `--platform`, `--task-vms` in the same request: a name or platform is saved at once, `task_vms` with the run's result; they add no steps
+  %%> - `--idempotency-key=KEY` reuses a key to retry the start; `--json` gives machine-readable output
   %%> - an empty value unsets a setting: `--apps-path=` sends a null path, `--task-vms=null` removes the task VM host settings
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
@@ -40,87 +47,71 @@ sequenceDiagram
   %%> - typed fields only, such as `cidr`, `max_vms`, `pool`, `image_alias`
   %%> - the bridge `cidr` overlaps no other task VM host
   %%> Decides:
-  %%> - whether the change touches Node 12, or only the record
-  alt only record fields change
-    Note over GW: Store the record<br/>R1: no run · decision 8
-    %%> When:
-    %%> - the request changes only the name, the platform or `task_vms`
-    %%> - or it unsets the apps folder on a Node without an active `app-dev` role, so no folder is needed
-    %%> Why no run:
-    %%> - nothing on Node 12 changes now; the name and platform are registry facts, and `task_vms` applies when the next task VM is created on Node 12
-    %%> - task VMs that already run keep their settings
+  %%> - that the apps folder needs Node work, so a run starts
+  GW->>SW: Start run, full intent<br/>operation-node-update
+  %%> When:
+  %%> - the request changes the apps folder, alone or together with other fields
+  %%> - a new name or platform in the same request is saved at once; it needs no run
+  %%> - unsetting it on a Node with an active `app-dev` role prepares the default folder, `<managed-user-home>/apps`
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - the new apps folder, and the managed user and group that must own it
+  %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
+  %%> Not stored yet:
+  %%> - the settings stay unchanged until the run succeeds (R2)
+  GW-->>CLI: 202 Accepted<br/>task #5131
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>N: Create the apps folder<br/>@swamp/cfgmgmt/directory apply
+  %%> What it does:
+  %%> - creates `/srv/apps` and any missing folders above it
+  %%> - gives `/srv/apps` the managed user and group and mode `0755`
+  %%> How:
+  %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/cfgmgmt/directory` behavior and sudo
+  %%> Not included:
+  %%> - existing Instances don't move; their checkouts stay where they are
+  %%> - new development Instances use `/srv/apps/<project>/<instance>`
+  SW->>N: Check owner and mode<br/>@swamp/ssh exec · stat
+  %%> What it does:
+  %%> - reads the folder's type, owner, group and mode in one `stat`
+  %%> Why:
+  %%> - it is the one end check: the Gateway compares its output with the intent, a real folder of the managed user and group, mode 0755
+  alt folder is ready
+    N-->>SW: orbit:orbit · 0755
+    %%> Returns:
+    %%> - the check passed
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Save the settings<br/>apps.path set · task succeeded
     %%> Result:
-    %%> - Node 12's record is saved
-    %%> - no Swamp run starts (R1)
-    GW-->>CLI: Node updated<br/>Node 12
-    %%> What you get:
-    %%> - the Node with its new values, at once; there is nothing to follow
-  else apps path changes
-    GW->>SW: Start run, full intent<br/>operation-node-update
+    %%> - Node 12's apps folder is `/srv/apps`; any `task_vms` change in the same request is saved with it
+    %%> - task #5131 succeeds
+  else a step fails
+    N--xSW: wrong owner or exit ≠ 0
     %%> When:
-    %%> - the request changes the apps folder, alone or together with other fields
-    %%> - a new name or platform in the same request is saved at once; it needs no run
-    %%> - unsetting it on a Node with an active `app-dev` role prepares the default folder, `<managed-user-home>/apps`
+    %%> - the folder can't be created, a file is in the way, or the check doesn't match
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Keep the old settings<br/>task failed · rerun after a fix
+    %%> Result:
+    %%> - Node 12's settings stay unchanged
+    %%> - task #5131 fails
+    %%> On the Node:
+    %%> - folders created before the failure stay; there is no rollback
+    %%> - that is safe: an empty folder is harmless, and a rerun leaves it as it is
+    %%> Retry:
+    %%> - run the same command again after fixing the cause; it is a new task
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5131
     %%> What it does:
-    %%> - starts one Swamp run on serve (Node 209)
-    %%> Inputs:
-    %%> - the new apps folder, and the managed user and group that must own it
-    %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
-    %%> Not stored yet:
-    %%> - the settings stay unchanged until the run succeeds (R2)
-    GW-->>CLI: 202 Accepted<br/>task #5131
-    %%> What you get:
-    %%> - the task number, at once
-    %%> Next:
-    %%> - the CLI follows the task with `operation:show`
-    SW->>N: Create the apps folder<br/>@swamp/cfgmgmt/directory apply
-    %%> What it does:
-    %%> - creates `/srv/apps` and any missing folders above it
-    %%> - gives `/srv/apps` the managed user and group and mode `0755`
-    %%> How:
-    %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/cfgmgmt/directory` behavior and sudo
-    %%> Not included:
-    %%> - existing Instances don't move; their checkouts stay where they are
-    %%> - new development Instances use `/srv/apps/<project>/<instance>`
-    SW->>N: Check owner and mode<br/>@swamp/ssh exec · stat
-    %%> What it does:
-    %%> - reads the folder's type, owner, group and mode in one `stat`
-    %%> Why:
-    %%> - it is the one end check: the Gateway compares its output with the intent, a real folder of the managed user and group, mode 0755
-    alt folder is ready
-      N-->>SW: orbit:orbit · 0755
-      %%> Returns:
-      %%> - the check passed
-      SW-->>GW: Run succeeded<br/>terminal event
-      %%> How the Gateway learns it:
-      %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-      Note over GW: Save the settings<br/>apps.path set · task succeeded
-      %%> Result:
-      %%> - Node 12's apps folder is `/srv/apps`; any `task_vms` change in the same request is saved with it
-      %%> - task #5131 succeeds
-    else a step fails
-      N--xSW: wrong owner or exit ≠ 0
-      %%> When:
-      %%> - the folder can't be created, a file is in the way, or the check doesn't match
-      SW--xGW: Run failed<br/>error_code, failed step
-      %%> The Gateway reads:
-      %%> - which step failed and its error code
-      Note over GW: Keep the old settings<br/>task failed · rerun after a fix
-      %%> Result:
-      %%> - Node 12's settings stay unchanged
-      %%> - task #5131 fails
-      %%> On the Node:
-      %%> - folders created before the failure stay; there is no rollback
-      %%> - that is safe: an empty folder is harmless, and a rerun leaves it as it is
-      %%> Retry:
-      %%> - run the same command again after fixing the cause; it is a new task
-    end
-    loop every 2 s until terminal
-      CLI->>GW: operation:show #5131
-      %%> What it does:
-      %%> - asks for the task's status every 2 seconds until it has ended
-      GW-->>CLI: status + result
-      %%> Returns:
-      %%> - the current status, and the result once the task has ended
-    end
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
   end
