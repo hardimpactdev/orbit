@@ -38,9 +38,9 @@ final readonly class ProcessInstanceOperation implements DirectOperationProjecti
     }
 
     /** Safe record capture, also reusable by an owning parent admission transaction.
-     * @return array<string,mixed>
+     * @return array{instance_id:int,node_id:int,members:list<array{id:int,input:array<string,mixed>}>}
      */
-    public function capture(Instance $instance, string $kind): array
+    public function capture(Instance $instance, string $kind, bool $includeActive = false): array
     {
         if ($kind !== 'process.install_instance_definitions') {
             throw new ResourceOperationException('operation.kind_unavailable', 'This is not an Instance Process kind.', 409);
@@ -48,8 +48,9 @@ final readonly class ProcessInstanceOperation implements DirectOperationProjecti
         if ($instance->placedOnAppProd()) {
             $instance = app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForClone($instance);
         }
+        $excluded = $includeActive ? [LifecycleStatus::Removing] : [LifecycleStatus::Active, LifecycleStatus::Removing];
         $query = Process::query()->whereIn('owner_type', Instance::morphTypes())->where('owner_id', $instance->id)
-            ->whereNotNull('source_definition_id')->whereNotIn('status', [LifecycleStatus::Active, LifecycleStatus::Removing]);
+            ->whereNotNull('source_definition_id')->whereNotIn('status', $excluded);
         $records = $query->orderBy('id')->lockForUpdate()->limit(4097)->get();
         if ($records->count() > 4096) {
             throw new ResourceOperationException('operation.runtime_limit', 'An Instance runtime plan may contain at most 4096 members.', 409);

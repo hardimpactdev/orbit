@@ -25,7 +25,7 @@ final readonly class NativeRouteLifecycleInput
     /** @param array<string,mixed> $input
      * @return array{intent:array<string,mixed>,certificates:list<array<string,mixed>>,participant_node_ids:list<int>,execution_secrets:array<string,array{vault:string,key:string}>}
      */
-    public function capture(Route $route, array $input, bool $removing = false, ?int $deletedWorkloadNodeId = null, bool $restorable = true, bool $preserveEnvironment = false, bool $preparedWorkloads = false): array
+    public function capture(Route $route, array $input, bool $removing = false, ?int $deletedWorkloadNodeId = null, bool $restorable = true, bool $preserveEnvironment = false, bool $preparedWorkloads = false, bool $wakePreparedWorkloads = false): array
     {
         $route->loadMissing(['targets.instance.node', 'targets.instance.project', 'cluster.routerAssignment.node', 'cluster.ingressAssignment.node']);
         $metadata = ['route_id' => $route->id, 'result_route_id' => $route->id, 'effectful' => $removing || ($input['mode'] ?? null) !== 'state_only',
@@ -110,7 +110,7 @@ final readonly class NativeRouteLifecycleInput
             }
             $instances[$target->instance_id] = $target->instance;
             $metadata['workloads'][] = app(NativeRouteWorkloadPreparation::class)->capture($target->instance, $route, $candidate, $removing);
-            if ($preparedWorkloads && ! $removing && new DevelopmentHibernationPolicy()->appliesToInstance($target->instance)) {
+            if ($preparedWorkloads && $wakePreparedWorkloads && ! $removing && new DevelopmentHibernationPolicy()->appliesToInstance($target->instance)) {
                 $metadata['awake'][] = ['node_id' => $target->instance->node_id, 'instance_id' => $target->instance_id,
                     'path' => RuntimeHibernation::awakePath(RuntimeHibernation::key($target->instance_id))];
             }

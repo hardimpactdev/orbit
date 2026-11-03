@@ -338,8 +338,30 @@ it('keeps completed development Processes when a registration Route fails', func
     expect($process->status->value)->toBe('active')->and($process->desired_state->value)->toBe('running')
         ->and(Instance::query()->findOrFail($operation->target_id)->status->value)->toBe('reserved');
     $retry = app(RegisterInstanceAction::class)->execute($this->node, $data);
-    expect($retry->input['members'])->toBe([])->and(Process::query()->count())->toBe(1);
-    app(InstanceRegisterResult::class)->apply($retry, register_terminal('succeeded', ['steps' => ['Create the Route' => ['status' => 'succeeded']]]));
+    expect(array_column($retry->input['members'], 'id'))->toBe([$process->id])->and(Process::query()->count())->toBe(1);
+    app(InstanceRegisterResult::class)->apply($retry, register_terminal('succeeded', ['steps' => [
+        'Create, start Processes-0' => ['status' => 'succeeded'], 'Create the Route' => ['status' => 'succeeded'],
+    ]]));
     expect(Instance::query()->findOrFail($retry->target_id)->status->value)->toBe('active')
         ->and($process->refresh()->status->value)->toBe('active');
 });
+
+it('requires existing Processes to be checked before waking a completed registration on retry', function (bool $setup): void {
+    app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
+    config(['swamp.run_token' => 'native-register-fixture']);
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('fixture-public-root');
+    $this->project->update(['type' => 'laravel-app', 'root' => 'public']);
+    $this->project->processDefinitions()->create(['name' => 'dev-server', 'environments' => ['development'],
+        'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/sleep', '300'], 'restart_policy' => 'never']]);
+    register_report($this->node, '/srv/apps/register-proof/native');
+    $first = app(RegisterInstanceAction::class)->execute($this->node,
+        new RegisterInstanceData('/srv/apps/register-proof/native', false, $this->project->id, 'native', null, 'native.register-proof.test', true));
+    app(InstanceRegisterResult::class)->apply($first, register_terminal('succeeded', ['steps' => [
+        'Create, start Processes-0' => ['status' => 'succeeded'], 'Create the Route' => ['status' => 'succeeded'],
+    ]]));
+    $retry = app(RegisterInstanceAction::class)->execute($this->node,
+        new RegisterInstanceData('/srv/apps/register-proof/native', false, $this->project->id, 'native', null, 'native.register-proof.test', $setup));
+
+    expect($retry->input['members'])->toHaveCount($setup ? 1 : 0)
+        ->and($retry->input['route_create']['awake'])->toHaveCount($setup ? 1 : 0);
+})->with([false, true]);

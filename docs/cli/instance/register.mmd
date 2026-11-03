@@ -33,7 +33,7 @@ sequenceDiagram
       end
       opt --domain
         SW->>N: Create the Route<br/>child route-create
-        %%> The prepared development Instance becomes awake after its site is published.
+        %%> A completed registration needs --setup to check its Processes before marking the runtime awake.
       end
       alt every step passes
         SW-->>GW: Run succeeded
