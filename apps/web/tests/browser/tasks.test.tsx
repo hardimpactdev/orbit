@@ -15,7 +15,6 @@ function group(id: number, status: TaskGroup["status"]): TaskGroup {
         current_recipe: false,
         vm_power: null,
         preview: false,
-        current_recipe: false,
         review_and_merge: null,
         project: "example-project",
         project_code: "EXA",
