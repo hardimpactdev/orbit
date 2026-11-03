@@ -32,10 +32,13 @@ export async function localWorker<T>(repo: NativeRepo, action: (flags: string[])
       "user:fixture",
       "--remote-only",
     ], "serve.log");
+    let exited: Deno.CommandOutput | undefined;
+    void children[0].output.then((result) => { exited = result; });
     let ready = false;
-    for (let attempt = 0; attempt < 100; attempt++) {
+    const deadline = Date.now() + repo.timeoutMs;
+    while (Date.now() < deadline && !exited) {
       try {
-        const response = await fetch(`http://127.0.0.1:${port}/ready`);
+        const response = await fetch(`http://127.0.0.1:${port}/ready`, { signal: AbortSignal.timeout(1000) });
         await response.body?.cancel();
         if (response.ok) {
           ready = true;
@@ -44,7 +47,9 @@ export async function localWorker<T>(repo: NativeRepo, action: (flags: string[])
       } catch { /* starting */ }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    assert(ready, "Loopback serve did not become ready");
+    assert(ready, exited
+      ? `Loopback serve exited before readiness: ${new TextDecoder().decode(exited.stdout)}${new TextDecoder().decode(exited.stderr)}`
+      : `Loopback serve did not become ready within ${repo.timeoutMs}ms`);
     const enrollment = `${repo.dir}/enrollment`;
     await Deno.writeTextFile(
       enrollment,

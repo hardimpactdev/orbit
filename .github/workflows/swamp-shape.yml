@@ -19,7 +19,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: swamp-shape-${{ github.workflow }}-${{ github.ref }}
+  group: swamp-shape-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

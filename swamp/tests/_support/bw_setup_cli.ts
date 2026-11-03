@@ -3,6 +3,9 @@ const env = (key: string) => Deno.env.get(key)!;
 assertEquals(Deno.args.slice(0, 3), ["--yes", "--package=@bitwarden/cli@2026.6.0", "bw"]);
 const args = Deno.args.slice(3), path = env("ORBIT_BW_FIXTURE_STATE");
 assert(!Deno.env.has("ORBIT_VAULT_CONFIGURATION"));
+// The workflow reads status, organizations and collections in parallel.
+using lock = Deno.openSync(path + ".lock", { create: true, write: true });
+lock.lockSync(true);
 const state = JSON.parse(Deno.readTextFileSync(path));
 state.commands.push(args);
 Deno.writeTextFileSync(path, JSON.stringify(state));
