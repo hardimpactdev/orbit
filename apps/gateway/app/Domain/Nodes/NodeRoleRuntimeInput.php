@@ -73,16 +73,18 @@ final readonly class NodeRoleRuntimeInput
     }
 
     /**
-     * The recipe's pinned Swamp release for the swamp role's Linux x86_64 Node: serve and its workers run it from
-     * `/usr/local/bin/swamp`, and the role installs it there by checksum.
+     * The recipe's pinned Swamp release for the swamp role's Linux x86_64 Node. The role installs it by checksum at a
+     * path of its own version, then points `/usr/local/bin/swamp`, which serve and its workers run, at it: a process
+     * started through the link keeps running its version's file while the next pin installs beside it.
      *
-     * @return array{url:string,sha256:string}
+     * @return array{url:string,sha256:string,path:string}
      */
     private static function swampBinary(): array
     {
-        $artifact = new RecipeLoader()->load()->tools['swamp']->artifacts['amd64'];
+        $tool = new RecipeLoader()->load()->tools['swamp'];
+        $artifact = $tool->artifacts['amd64'];
 
-        return ['url' => $artifact->location, 'sha256' => $artifact->digest];
+        return ['url' => $artifact->location, 'sha256' => $artifact->digest, 'path' => '/usr/local/lib/orbit-swamp/'.$tool->version.'/swamp'];
     }
 
     /** @return array<string,mixed>|null */
