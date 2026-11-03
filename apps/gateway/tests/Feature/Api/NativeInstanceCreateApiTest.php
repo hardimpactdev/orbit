@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\DatabaseServers\DatabaseStatements;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
@@ -11,6 +12,7 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseServer;
@@ -117,6 +119,7 @@ it('copies the default Instance\'s SQLite database into the new checkout and att
         ->and($database['sqlite'])->toBe(['source' => $source->path, 'user' => 'orbit',
             'snapshot' => '/tmp/orbit-create-sqlite-'.$instance->id.'.sqlite', 'target' => $copy->path])
         ->and($database['candidate']['ssh_execution']['target']['host'])->toBe('10.44.0.9')
+        ->and(collect($this->socket->sent)->firstWhere('payload.workflowIdOrName', 'operation-instance-create')['payload']['inputs']['intent']['environment_testing'])->toBeFalse()
         ->and(app(InstanceEnvironmentStore::class)->values($instance))->toMatchArray(['DB_CONNECTION' => 'sqlite', 'DB_DATABASE' => $copy->path])
         ->and($operation->input['run_budget_seconds'])->toBe(270);
 
@@ -127,15 +130,77 @@ it('copies the default Instance\'s SQLite database into the new checkout and att
     expect(DatabaseConnection::query()->where('slug', 'native-create-proof')->count())->toBe(1);
 });
 
-it('still refuses a MySQL copy of the default database before reservation', function (): void {
-    $default = Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $this->node->id, 'name' => 'default',
-        'checkout_path' => '/srv/apps/native-create/default', 'status' => 'active', 'branch' => 'main']);
-    $server = DatabaseServer::query()->create(['slug' => 'beast-mysql', 'driver' => 'mysql', 'node_id' => $this->node->id, 'port' => 3306, 'tag' => '8.4', 'root_password' => 'root-secret', 'status' => 'active']);
-    $source = DatabaseConnection::query()->create(['slug' => 'native-create-default', 'driver' => 'mysql', 'node_id' => $this->node->id,
-        'database_server_id' => $server->id, 'database' => 'native_create', 'host' => '10.44.0.9', 'port' => 3306, 'username' => 'native', 'password' => 'secret']);
-    DatabaseConnectionTarget::query()->create(['instance_id' => $default->id, 'database_connection_id' => $source->id, 'prefix' => 'DB']);
-    $this->postJson('/api/v1/instances', $this->payload)->assertStatus(503)->assertJsonPath('error.code', 'operation.kind_unavailable');
-    expect(Instance::query()->where('name', 'proof')->count())->toBe(0);
+it('owns its database on a Database server and copies a MySQL default database into it', function (bool $explicit): void {
+    $server = DatabaseServer::query()->create(['slug' => 'beast-mysql', 'driver' => 'mysql', 'node_id' => $this->node->id, 'port' => 3306,
+        'tag' => '8.4', 'root_password' => 'root-secret', 'status' => 'active']);
+    $process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $this->node->id, 'name' => 'beast-mysql', 'runtime' => 'docker',
+        'runtime_config' => ['image' => 'mysql:8.4'], 'restart_policy' => 'unless-stopped', 'desired_state' => 'running', 'status' => 'active']);
+    $server->update(['process_id' => $process->id]);
+    // A Database server is a Gateway resource, so --database-server needs access to the Gateway Node too.
+    $gateway = Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit', 'platform' => 'linux',
+        'wireguard_ip' => '10.44.0.1', 'status' => 'active']);
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $this->node->accessibleNodes()->attach($gateway);
+    if (! $explicit) {
+        $default = Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $this->node->id, 'name' => 'default',
+            'checkout_path' => '/srv/apps/native-create/default', 'status' => 'active', 'branch' => 'main']);
+        $source = DatabaseConnection::query()->create(['slug' => 'native-create-default', 'driver' => 'mysql', 'node_id' => $this->node->id,
+            'database_server_id' => $server->id, 'database' => 'native_create', 'host' => '10.44.0.9', 'port' => 3306, 'username' => 'native', 'password' => 'secret']);
+        DatabaseConnectionTarget::query()->create(['instance_id' => $default->id, 'database_connection_id' => $source->id, 'prefix' => 'DB']);
+    }
+    $this->withHeader('Idempotency-Key', 'native-create-server-'.(int) $explicit);
+    $this->postJson('/api/v1/instances', [...$this->payload, ...($explicit ? ['database_server' => 'beast-mysql'] : [])])->assertAccepted();
+
+    $instance = Instance::query()->where('name', 'proof')->sole();
+    $operation = Operation::query()->sole();
+    $owned = DatabaseConnection::query()->where('slug', 'native-create-proof')->sole();
+    $admitted = $operation->input['direct_provisioning']['server_database'];
+    expect($owned->database_server_id)->toBe($server->id)->and($owned->owner_instance_id)->toBe($instance->id)
+        ->and($instance->databaseConnectionTargets()->sole()->database_connection_id)->toBe($owned->id)
+        ->and(app(InstanceEnvironmentStore::class)->values($instance))->toMatchArray(['DB_CONNECTION' => 'mysql', 'DB_DATABASE' => $owned->database])
+        ->and($admitted)->toMatchArray(['connection_id' => $owned->id, 'server_id' => $server->id, 'node_id' => $this->node->id,
+            'source' => $explicit ? null : 'native_create'])
+        ->and($operation->input['direct_provisioning']['database'])->toBeNull()
+        ->and($operation->input['run_budget_seconds'])->toBe(270);
+
+    $start = collect($this->socket->sent)->firstWhere('payload.workflowIdOrName', 'operation-instance-create');
+    $inputs = $start['payload']['inputs'];
+    expect($inputs['intent']['server_database']['intent']['owner_client'][3])->toBe(app(DockerProcessRenderer::class)->containerName($process))
+        ->and($inputs['execution_secrets']['server_database_create']['key'])->toBe('database-create-intent-'.$admitted['intent_id'])
+        ->and($inputs['execution_secrets']['server_database_check']['key'])->toBe('database-create-owner-'.$admitted['intent_id'])
+        ->and($inputs['intent']['environment_testing'])->toBeTrue()
+        ->and($inputs['execution_secrets']['environment_testing']['key'])->toBe('instance-create-environment-testing-'.$operation->id)
+        ->and($owned->test_database)->not->toBeNull()
+        ->and($inputs['intent']['server_database']['fill'])->toBe($explicit ? null
+            : DatabaseStatements::copy(app(DockerProcessRenderer::class)->containerName($process), 'native_create', $owned->database));
+
+    // An identical retry records the same owned database again.
+    $operation->update(['status' => 'failed']);
+    $this->withHeader('Idempotency-Key', 'native-create-server-retry-'.(int) $explicit);
+    $this->postJson('/api/v1/instances', [...$this->payload, ...($explicit ? ['database_server' => 'beast-mysql'] : [])])->assertAccepted();
+    expect(DatabaseConnection::query()->where('slug', 'native-create-proof')->count())->toBe(1);
+})->with(['--database-server' => true, 'MySQL default database' => false]);
+
+it('refuses --database-server for an Instance that finished its first setup', function (): void {
+    $gateway = Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit', 'platform' => 'linux',
+        'wireguard_ip' => '10.44.0.1', 'status' => 'active']);
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $this->node->accessibleNodes()->attach($gateway);
+    Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $this->node->id, 'name' => 'proof',
+        'checkout_path' => '/srv/apps/native-create/proof', 'status' => 'active', 'branch' => 'proof', 'first_setup_pending' => false,
+        'starting_commit' => str_repeat('a', 40)]);
+    $this->postJson('/api/v1/instances', [...$this->payload, 'database_server' => 'beast-mysql'])->assertConflict()
+        ->assertJsonPath('error.code', 'instance.database_server_existing');
+    expect(Operation::query()->count())->toBe(0);
+
+    // Once it owns a database on that server, the repeat is the finished create's no-op.
+    $server = DatabaseServer::query()->create(['slug' => 'beast-mysql', 'driver' => 'mysql', 'node_id' => $this->node->id, 'port' => 3306,
+        'tag' => '8.4', 'root_password' => 'root-secret', 'status' => 'active']);
+    DatabaseConnection::query()->create(['slug' => 'native-create-proof', 'driver' => 'mysql', 'node_id' => $this->node->id, 'database_server_id' => $server->id,
+        'owner_instance_id' => Instance::query()->sole()->id, 'database' => 'native_create_proof', 'host' => '10.44.0.9', 'port' => 3306, 'username' => 'u', 'password' => 'p']);
+    $this->withHeader('Idempotency-Key', 'native-create-server-existing-noop');
+    $this->postJson('/api/v1/instances', [...$this->payload, 'database_server' => 'beast-mysql'])->assertAccepted();
+    expect(Operation::query()->sole()->input['direct_provisioning'])->toMatchArray(['already_active' => true, 'server_database' => null]);
 });
 
 it('answers an already active Instance with a database as a no-op', function (): void {

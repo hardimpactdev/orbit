@@ -11,14 +11,15 @@ inputs:
     node_id: {type: integer, minimum: 1}
     kind: {type: string, const: instance.create}
     intent: {type: object}
-    # Names only: git_credential and environment, plus member_<Process id> for each development Process environment.
+    # Names only: git_credential and environment, member_<Process id> for each development Process environment, and
+    # server_database_create and server_database_check for an owned server database.
     execution_secrets:
       type: object
       additionalProperties:
         type: object
         properties:
           vault: {type: string, enum: [orbit-control-inputs]}
-          key: {type: string, pattern: '^(?:instance-(?:git-(?:operation|credential)-|create-environment-input-)[1-9][0-9]*|process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*)$'}
+          key: {type: string, pattern: '^(?:instance-(?:git-(?:operation|credential)-|create-environment-(?:input|testing)-)[1-9][0-9]*|process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*|database-create-(?:intent|owner)-[1-9][0-9]*)$'}
         required: [vault, key]
         additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
@@ -174,6 +175,30 @@ jobs:
             nodePort: '${{ inputs.intent.ssh_execution.target.port }}'
             nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}'
           inputs: {}
+      # .env.testing names the owned test database, written beside .env by the same file behavior.
+      - name: environment-testing
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: environment, condition: {type: succeeded}}]
+        guard: '${{ inputs.intent.already_active || !inputs.intent.environment_testing }}'
+        task:
+          type: behavior
+          behaviorType: '@swamp/cfgmgmt/file'
+          behaviorName: '${{ ("ic-environment-testing-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+          methodName: apply
+          globalArgs:
+            path: '${{ inputs.intent.environment_directory + "/.env.testing" }}'
+            ensure: present
+            owner: '${{ inputs.intent.ssh_execution.target.user }}'
+            group: orbit-env
+            mode: '0640'
+            become: true
+            content: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.intent.environment_testing ? inputs.execution_secrets.environment_testing.key : inputs.execution_secrets.environment.key) }}'
+            nodeHost: '${{ inputs.intent.ssh_execution.target.host }}'
+            nodeUser: '${{ inputs.intent.ssh_execution.target.user }}'
+            nodePort: '${{ inputs.intent.ssh_execution.target.port }}'
+            nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}'
+          inputs: {}
       # Setup: the Project setup list in order, one command per item as the account; the first failure stops it.
       # Database: the default Instance's SQLite file, copied with the same children as instance:clone (ADR 0191).
       - name: database-snapshot
@@ -218,12 +243,81 @@ jobs:
             kind: '${{ inputs.kind }}'
             intent: '${{ inputs.intent.database }}'
             run_id: '${{ run.id }}'
+      # Server database: the Instance's own owner and databases on a Database server, with the child database:create runs.
+      # Swamp evaluates a skipped step's inputs too, so every reference to an absent section falls back to a present one.
+      - name: server-database
+        labels: {role: swamp}
+        dependsOn: [{step: environment, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+        guard: '${{ inputs.intent.already_active || inputs.intent.server_database == null || steps.exists(k, steps[k].status == "failed") }}'
+        task:
+          type: workflow
+          workflowIdOrName: operation-database-create
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.intent.server_database == null ? inputs.node_id : inputs.intent.server_database.node_id }}'
+            kind: database.create
+            intent: '${{ inputs.intent.server_database == null ? {} : inputs.intent.server_database.intent }}'
+            execution_secrets: '${{ inputs.intent.server_database == null ? {} : {"create": inputs.execution_secrets.server_database_create, "check": inputs.execution_secrets.server_database_check} }}'
+      # The child keeps a refused batch as its own outcome, so the owner's login proves the database is usable.
+      - name: server-database-check
+        labels: {role: swamp}
+        dependsOn: [{step: server-database, condition: {type: succeeded}}]
+        guard: '${{ inputs.intent.already_active || inputs.intent.server_database == null }}'
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ ("ic-dbcheck-" + string(inputs.intent.server_database == null ? "none" : inputs.intent.server_database.intent.ssh_execution.target.host)).split(".").join("-") }}'
+          methodName: exec
+          globalArgs:
+            name: '${{ ("ic-dbcheck-" + string(inputs.intent.server_database == null ? "none" : inputs.intent.server_database.intent.ssh_execution.target.host)).split(".").join("-") }}'
+            transport:
+              kind: ssh
+              user: '${{ inputs.intent.server_database == null ? "none" : inputs.intent.server_database.intent.ssh_execution.target.user }}'
+              port: '${{ inputs.intent.server_database == null ? 22 : inputs.intent.server_database.intent.ssh_execution.target.port }}'
+              identityFile: '${{ inputs.intent.server_database == null ? "none" : inputs.intent.server_database.intent.ssh_execution.identity_file }}'
+              hostKeys: '${{ inputs.intent.server_database == null ? [] : inputs.intent.server_database.intent.ssh_execution.target.host_keys }}'
+            hosts: [{name: target, address: '${{ inputs.intent.server_database == null ? "none" : inputs.intent.server_database.intent.ssh_execution.target.host }}'}]
+          inputs:
+            hosts: name:target
+            sudo: true
+            argv: '${{ ["timeout", "60"] + (inputs.intent.server_database == null ? [] : inputs.intent.server_database.intent.owner_client) }}'
+            stdin: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.intent.server_database == null ? inputs.execution_secrets.environment.key : inputs.execution_secrets.server_database_check.key) }}'
+            timeoutSec: 70
+      # A MySQL default database is copied into the new one before setup migrates it (ADR 0191).
+      - name: server-database-fill
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: server-database-check, condition: {type: succeeded}}]
+        guard: '${{ inputs.intent.already_active || inputs.intent.server_database == null || inputs.intent.server_database.fill == null }}'
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ ("ic-dbfill-" + string(inputs.intent.server_database == null ? "none" : inputs.intent.server_database.intent.ssh_execution.target.host)).split(".").join("-") }}'
+          methodName: exec
+          globalArgs:
+            name: '${{ ("ic-dbfill-" + string(inputs.intent.server_database == null ? "none" : inputs.intent.server_database.intent.ssh_execution.target.host)).split(".").join("-") }}'
+            transport:
+              kind: ssh
+              user: '${{ inputs.intent.server_database == null ? "none" : inputs.intent.server_database.intent.ssh_execution.target.user }}'
+              port: '${{ inputs.intent.server_database == null ? 22 : inputs.intent.server_database.intent.ssh_execution.target.port }}'
+              identityFile: '${{ inputs.intent.server_database == null ? "none" : inputs.intent.server_database.intent.ssh_execution.identity_file }}'
+              hostKeys: '${{ inputs.intent.server_database == null ? [] : inputs.intent.server_database.intent.ssh_execution.target.host_keys }}'
+            hosts: [{name: target, address: '${{ inputs.intent.server_database == null ? "none" : inputs.intent.server_database.intent.ssh_execution.target.host }}'}]
+          inputs:
+            hosts: name:target
+            sudo: true
+            argv: '${{ ["timeout", "600"] + (inputs.intent.server_database == null || inputs.intent.server_database.fill == null ? [] : inputs.intent.server_database.fill) }}'
+            stdin: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.intent.server_database == null ? inputs.execution_secrets.environment.key : inputs.execution_secrets.server_database_create.key) }}'
+            timeoutSec: 610
       - name: setup
         labels: {role: swamp}
         writes: true
         dependsOn:
           - {step: environment, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
           - {step: database-install, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+          - {step: server-database-check, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+          - {step: server-database-fill, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+          - {step: environment-testing, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
         guard: '${{ inputs.intent.already_active || steps.exists(k, steps[k].status == "failed") }}'
         forEach: {item: step, in: '${{ inputs.intent.setup_steps }}'}
         concurrency: 1
@@ -294,7 +388,11 @@ jobs:
           - {step: credential-remove, condition: {type: always}}
           - {step: source, condition: {type: always}}
           - {step: environment, condition: {type: always}}
+          - {step: environment-testing, condition: {type: always}}
           - {step: database-cleanup, condition: {type: always}}
+          - {step: server-database, condition: {type: always}}
+          - {step: server-database-check, condition: {type: always}}
+          - {step: server-database-fill, condition: {type: always}}
           - {step: setup, condition: {type: always}}
           - {step: processes, condition: {type: always}}
           - {step: route, condition: {type: always}}
@@ -308,8 +406,8 @@ jobs:
             prepare: '${{ "prepare" in steps ? steps.prepare.status : "skipped" }}'
             fetch: '${{ "fetch" in steps ? steps.fetch.status : "skipped" }}'
             source: '${{ "source" in steps ? steps.source : null }}'
-            environment: '${{ "environment" in steps ? steps.environment.status : "skipped" }}'
-            database: '${{ "database-install" in steps ? steps["database-install"].status : "skipped" }}'
+            environment: '${{ !("environment" in steps) ? "skipped" : (inputs.intent.environment_testing && steps.environment.status == "succeeded" ? ("environment-testing" in steps ? steps["environment-testing"].status : "skipped") : steps.environment.status) }}'
+            database: '${{ inputs.intent.server_database == null ? ("database-install" in steps ? steps["database-install"].status : "skipped") : (inputs.intent.server_database.fill != null ? ("server-database-fill" in steps ? steps["server-database-fill"].status : "skipped") : ("server-database-check" in steps ? steps["server-database-check"].status : "skipped")) }}'
             setup: '${{ inputs.intent.setup_steps.map(p, ("setup-" + string(p.index)) in steps ? steps["setup-" + string(p.index)].status : "skipped") }}'
             processes: '${{ inputs.intent.processes.map(p, ("processes-" + string(p.index)) in steps ? steps["processes-" + string(p.index)].status : "skipped") }}'
             route: '${{ "route" in steps ? steps.route.status : "skipped" }}'

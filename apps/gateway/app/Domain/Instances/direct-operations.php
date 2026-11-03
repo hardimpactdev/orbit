@@ -34,8 +34,10 @@ return [
     'instance.create' => ['workflow' => 'operation-instance-create', 'workflow_inputs' => true,
         'projection' => DevelopmentInstanceCreateProjection::class,
         'terminal_result' => ['job' => 'create', 'step' => 'finish'],
-        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(?:instance-git-(?:operation|credential)-[1-9][0-9]*|instance-create-environment-input-[1-9][0-9]*)$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$'],
-            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$']]],
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(?:instance-git-(?:operation|credential)-[1-9][0-9]*|instance-create-environment-(?:input|testing)-[1-9][0-9]*)$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$'],
+            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$'],
+            // The owned server database: the same copies as database:create.
+            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-create-intent-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-create-owner-[1-9][0-9]*$']]],
     'instance.env_import' => ['workflow' => 'operation-instance-env-import', 'workflow_inputs' => true,
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-env-import\.content\.[1-9][0-9]*$']],
         'terminal_result' => ['job' => 'import', 'step' => 'Read .env into the vault', 'native' => true,

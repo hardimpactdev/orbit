@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
+use App\Domain\DatabaseServers\DatabaseCreateProjection;
+use App\Domain\DatabaseServers\DatabaseStatements;
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
 use App\Domain\Processes\ProcessInstanceOperation;
 use App\Domain\Processes\ProcessLifecycleInput;
 use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Models\DatabaseConnection;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -43,17 +46,46 @@ final readonly class NativeDevelopmentInstanceInput
             }
         }
 
+        $testing = $environment->testing($instance);
+        $server = ($plan['server_database'] ?? null) === null ? null : $this->serverDatabase($operation, ValidatedData::object($plan['server_database']));
+
         // Minting writes the read token's credential line into the vault; the fetch reads it as a 0600 file.
         app(InstanceGitHubReadTokens::class)->start($operation);
 
         return ['intent' => [...$plan, 'ssh_execution' => $input['ssh_execution'],
             'instance_name' => $instance->name, 'name_converted_from' => $input['name_converted_from'] ?? null,
             'processes' => $processes, 'setup_steps' => $steps, 'environment_directory' => $environment->directory($instance),
+            'server_database' => $server === null ? null : array_diff_key($server, ['secrets' => true]),
+            'environment_testing' => $testing !== null,
             // The Route child's own vault references; null when the Project serves no web pages.
             'route_secrets' => ($input['route_create'] ?? null) === null ? null : ValidatedData::object($input['execution_secrets'] ?? [])],
             'execution_secrets' => [...$copies,
                 'git_credential' => InstanceGitHubReadTokens::credentialReference($operation),
                 'environment' => $vault->executionCopy('orbit-control-inputs', 'instance-create-environment-input-'.$operation->id, $environment->content($instance)),
+                ...($testing === null ? [] : ['environment_testing' => $vault->executionCopy('orbit-control-inputs', 'instance-create-environment-testing-'.$operation->id, $testing)]),
+                ...($server === null ? [] : ['server_database_create' => ValidatedData::object(ValidatedData::object($server['secrets'])['create']), 'server_database_check' => ValidatedData::object(ValidatedData::object($server['secrets'])['check'])]),
             ]];
+    }
+
+    /**
+     * The `operation-database-create` child inputs of the owned server database, rendered the way `database:create`
+     * renders them, from an in-memory `database.create` view of its recorded intent; plus the copy of the default
+     * Instance's MySQL database, whose root login is the first line of the create batch.
+     *
+     * @param  array<string,mixed>  $admitted
+     * @return array<string,mixed>
+     */
+    private function serverDatabase(Operation $operation, array $admitted): array
+    {
+        $view = new Operation;
+        $view->forceFill(['id' => $operation->id, 'status' => $operation->status, 'kind' => 'database.create', 'target_type' => 'database_server',
+            'target_id' => ValidatedData::integer($admitted['server_id']), 'node_id' => ValidatedData::integer($admitted['node_id']),
+            'input' => ['intent_id' => ValidatedData::integer($admitted['intent_id']), 'connection_id' => ValidatedData::integer($admitted['connection_id'])]]);
+        $run = app(DatabaseCreateProjection::class)->input($view);
+        $source = ValidatedData::nullableString($admitted['source'] ?? null);
+        $connection = DatabaseConnection::query()->findOrFail(ValidatedData::integer($admitted['connection_id']));
+
+        return ['node_id' => $view->node_id, 'intent' => $run['intent'], 'secrets' => $run['execution_secrets'],
+            'fill' => $source === null ? null : DatabaseStatements::copy(ValidatedData::stringList(ValidatedData::object($run['intent'])['admin_client'])[3], $source, ValidatedData::string($connection->database))];
     }
 }
