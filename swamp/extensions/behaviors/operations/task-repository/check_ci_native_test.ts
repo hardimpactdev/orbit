@@ -1,0 +1,44 @@
+import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
+import { checkCI } from "../../../../tests/_support/task_repository_publication.ts";
+import { write } from "../../../../tests/_support/task_repository.ts";
+
+Deno.test("a pending check reads once each CI tick and stops when settled", async () => {
+  await using t = await checkCI();
+  const { history: root, result: admitted } = await t.execute();
+  assert(admitted.pending);
+  assertEquals(t.api.mints, 1);
+  const count = (method: string) => t.api.calls.filter((c) => c[0] === method).length;
+  assertEquals(count("DELETE"), 1);
+  t.inputs.intent.commit = admitted.commit;
+  t.reading();
+  const { result: pending } = await t.execute("task-check-ci", {});
+  assertEquals(pending.checks.length, 1);
+  assert(pending.checks[0].result.pending);
+  assertEquals(count("GET"), 1);
+  t.reading("completed", "success");
+  const { result: completed } = await t.execute("task-check-ci", {});
+  assertEquals(count("GET"), 2);
+  assertEquals(completed.checks.length, 1);
+  const row = completed.checks[0];
+  assertEquals(row.root_run_id, root.id);
+  assertEquals(row.operation_id, 15);
+  assertEquals(row.result.ci.state, "passed");
+  assertEquals(row.result.commit, admitted.commit);
+  assert(!JSON.stringify(completed).includes("summary"));
+  assertEquals(count("DELETE"), 2);
+  assertEquals((await t.execute("task-check-ci", {})).result, { checks: [] });
+  assertEquals(count("GET"), 2);
+});
+Deno.test("failed push revokes both tokens and leaves no pending CI", async () => {
+  await using t = await checkCI();
+  const hook = `${t.remote}/hooks/pre-receive`;
+  await write(hook, "#!/bin/sh\nexit 1\n");
+  await Deno.chmod(hook, 0o755);
+  const { result } = await t.execute("operation-task-check", t.inputs, false);
+  assert(!result.pending);
+  assertEquals(result.error_code, "tasks.push_failed");
+  assertEquals(t.api.mints, 1);
+  assertEquals(t.api.calls.filter((c) => c[0] === "DELETE").length, 2);
+  assertEquals((await t.execute("task-check-ci", {})).result, { checks: [] });
+  assertEquals(t.api.calls.filter((c) => c[0] === "GET"), []);
+});
