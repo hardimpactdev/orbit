@@ -3,12 +3,12 @@ title: "Projects"
 description: "How a Project records one repository, its type, its source access, and the source defaults that Instances inherit, and how create, update, and removal work."
 covers:
   - "apps/gateway/app/{Actions,Domain,Infrastructure}/Projects/**"
-  - "apps/gateway/app/Domain/SourceControl/{GitRepositoryIdentity,GitRepositoryOrigin,ProjectRoot,RelativeWebRoot,RepositoryDefaultBranchResolver}.php"
-  - "apps/gateway/app/Infrastructure/SourceControl/NativeRepositoryDefaultBranchResolver.php"
+  - "apps/gateway/app/{Domain/SourceControl/{GitRepositoryIdentity,GitRepositoryOrigin,ProjectRoot,RelativeWebRoot,RepositoryDefaultBranchResolver},Infrastructure/SourceControl/NativeRepositoryDefaultBranchResolver}.php"
   - "apps/gateway/app/{Http/{Controllers/Api/ProjectsController.php,Requests/Projects/**},Data/Projects/**}"
   - "apps/gateway/app/Models/{Project,ProjectUpdate,ProjectInspection}.php"
   - "apps/gateway/app/{Domain,Infrastructure}/Instances/*ProductionRepository*.php"
   - "apps/cli/app/Commands/Projects/**"
+  - "swamp/extensions/behaviors/{dependency_scanner.ts,_lib/service_detection.ts,_lib/dependency_results.ts,_lib/maintenance/inspect.ts,operations/project-maintenance/**}"
   - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_13_120000_add_maintenance_to_projects,2027_01_13_130000_create_project_inspections_table}.php"
 ---
 
@@ -250,7 +250,7 @@ A Project with maintenance on also needs a policy module under `swamp/extensions
 
 ### Inspection
 
-An inspection reads GitHub with `curl` on Node 209, with a GitHub App token that may only read contents. The Gateway stores the token's whole `Authorization` header as the run's vault copy, and the step passes it to `curl` on standard input.
+An inspection reads GitHub with `curl` on Node 209, with a GitHub App token that may only read contents. The Gateway stores the token's whole `Authorization` header as the run's vault copy, and the step passes it to `curl` on standard input. The run lists packages by parsing the lockfiles it read; no package manager runs.
 
 ## Remove a Project
 

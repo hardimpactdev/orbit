@@ -4,7 +4,6 @@ import {
 } from "../../operations/_lib/local-worker.ts";
 import { resolve } from "node:path";
 import { z } from "npm:zod@4";
-import { serviceToolPolicy, toolOptions } from "./tool_policy.ts";
 import { cleanEnv } from "./environment.ts";
 
 export class MaintenanceFailure extends Error {
@@ -133,18 +132,7 @@ export async function command(
 ): Promise<CommandResult> {
   try {
     signal?.throwIfAborted();
-    const policy = serviceToolPolicy();
-    if (policy && !["git", "gh"].includes(binary)) {
-      if (!policy.sandboxes) {
-        throw new MaintenanceFailure("package.isolation_unavailable");
-      }
-      return await policy.sandboxes.command(cwd, binary, args, signal);
-    }
-    const options = toolOptions(
-      binary,
-      args,
-      cleanEnv((key) => Deno.env.get(key), extraEnv),
-    );
+    const options = { args, env: cleanEnv((key) => Deno.env.get(key), extraEnv) };
     const candidates = binary.includes("/")
       ? [resolve(cwd, binary)]
       : (options.env.PATH ?? "").split(":").map((p) => resolve(cwd, p, binary));

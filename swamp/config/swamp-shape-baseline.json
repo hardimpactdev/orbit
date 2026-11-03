@@ -42,12 +42,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/_lib/dependency_results.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/_lib/gateway_stage.ts",
       "rule": "gateway-http",
       "count": 13,
@@ -74,26 +68,10 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/_lib/package_sandbox.ts",
-      "rule": "agent-action",
-      "count": 1,
-      "evidence": [
-        "package.session"
-      ]
-    },
-    {
       "file": "extensions/behaviors/_lib/repository_analysis.ts",
       "rule": "custom-control",
       "count": 2,
       "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/_lib/service_workspace.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": [
-        "lock"
-      ]
     },
     {
       "file": "extensions/behaviors/automatic-deploy/development.ts",

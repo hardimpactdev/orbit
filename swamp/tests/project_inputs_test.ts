@@ -1,14 +1,7 @@
 import { assertEquals, assertMatch, assertRejects } from "jsr:@std/assert@1.0.19";
 import { behavior } from "../extensions/behaviors/orbit_gateway.ts";
 import { behavior as metadata } from "../extensions/behaviors/operations/project-maintenance/metadata.ts";
-import { indexName } from "../extensions/behaviors/_lib/dependency_results_schema.ts";
-import { projectFindings } from "../extensions/behaviors/_lib/project_schedule.ts";
-import {
-    fixture,
-    original,
-    reports,
-    seedServicePlan,
-} from "./_support/project_scheduler.ts";
+import { fixture, original } from "./_support/project_scheduler.ts";
 
 Deno.test("Project routine selects a request from admitted time and groups without admitting work", async () => {
     const f = fixture();
@@ -58,76 +51,6 @@ Deno.test("Project routine respects admitted unfinished work and uncertain legac
         assertEquals(result.blocked, [
             "project_has_unfinished_or_uncertain_work",
         ]);
-        assertEquals(f.posts(), 0);
-    } finally {
-        await f.close();
-    }
-});
-
-Deno.test("native scan admission binds the exact run before accepting its current head", async () => {
-    const f = fixture();
-    try {
-        const findings = await seedServicePlan(
-            f,
-            projectFindings(
-                original,
-                "owned-scan",
-                reports,
-                reports.map(() => ({ schema: 1, targets: [], blocked: [] })),
-            ),
-        );
-        await behavior.methods.assert_scan_head.execute({
-            project: original,
-            runId: findings.source,
-            head: "a".repeat(40) + "\trefs/heads/main\n",
-            scan_succeeded: true,
-        }, f.ctx);
-        await assertRejects(
-            () =>
-                behavior.methods.assert_scan_head.execute({
-                    project: original,
-                    runId: "different-scan",
-                    head: "a".repeat(40) + "\trefs/heads/main\n",
-                    scan_succeeded: true,
-                }, f.ctx),
-            Error,
-            "fresh_service_detection_required",
-        );
-        assertEquals(f.posts(), 0);
-        assertEquals(f.starts(), 0);
-    } finally {
-        await f.close();
-    }
-});
-
-Deno.test("changed source head revokes the native plan before Gateway terminal admission", async () => {
-    const f = fixture();
-    try {
-        await seedServicePlan(
-            f,
-            projectFindings(
-                original,
-                "owned-scan",
-                reports,
-                reports.map(() => ({ schema: 1, targets: [], blocked: [] })),
-            ),
-        );
-        await assertRejects(
-            () =>
-                behavior.methods.assert_scan_head.execute({
-                    project: original,
-                    runId: "owned-scan",
-                    head: "b".repeat(40) + "\trefs/heads/main\n",
-                    scan_succeeded: true,
-                }, f.ctx),
-            Error,
-            "source_head_changed_detect_again",
-        );
-        const index = f.data.get(
-            "orbit-gateway/" + await indexName(20, "refs/heads/main"),
-        ) as { last_attempt: { status: string; error_code: string } };
-        assertEquals(index.last_attempt.status, "failed");
-        assertEquals(index.last_attempt.error_code, "source_head_changed");
         assertEquals(f.posts(), 0);
     } finally {
         await f.close();

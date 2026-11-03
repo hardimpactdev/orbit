@@ -1,4 +1,3 @@
-import { serviceToolPolicy } from "../../_lib/maintenance/tool_policy.ts";
 import {
   command,
   decode,
@@ -108,7 +107,7 @@ export async function workspace(place: Place): Promise<Workspace> {
     manifest,
     manager: declared ?? (npm ? "npm" : "bun"),
     direct: deps,
-    vitePlus: !serviceToolPolicy() && "vite-plus" in deps,
+    vitePlus: "vite-plus" in deps,
     expo: "expo" in deps,
   };
 }

@@ -1,10 +1,4 @@
-import {
-    beginScanMethod,
-    finishScanMethod,
-    refreshMethod,
-    scanMethod,
-    scanResources,
-} from "./dependency_scanner.ts";
+import { refreshMethod, scanResources } from "./dependency_scanner.ts";
 import { queryWorkerData } from "./_lib/worker_query.ts";
 import {
     Admission as DependencyMergeAdmission,
@@ -41,7 +35,6 @@ import {
     ReportSchema,
 } from "./_lib/dependency_results_schema.ts";
 import {
-    assertCurrentPlan,
     BatchEvidenceSchema,
     reconcileDependencyIndex,
 } from "./_lib/service_detection.ts";
@@ -267,56 +260,7 @@ export const behavior = {
         },
     },
     methods: {
-        scan: scanMethod,
-        begin_scan: beginScanMethod,
-        finish_scan: finishScanMethod,
         refresh: refreshMethod,
-        assert_scan_head: {
-            description:
-                "Validate the scan's exact source, current remote head and native policy before terminal admission",
-            arguments: z.object({
-                project: DependencyProjectSchema,
-                runId: z.string().min(1),
-                head: z.string(),
-                scan_succeeded: z.boolean(),
-            }).strip(),
-            execute: async (
-                args: {
-                    project: z.infer<typeof DependencyProjectSchema>;
-                    runId: string;
-                    head: string;
-                    scan_succeeded: boolean;
-                },
-                context: StageContext,
-            ) => {
-                if (!args.scan_succeeded) return { dataHandles: [] };
-                const rows = await queryWorkerData(
-                    context,
-                    `modelName == "orbit-gateway" && name == ${
-                        JSON.stringify(`findings-${args.project.projectId}`)
-                    }`,
-                    "attributes",
-                );
-                if (rows.length !== 1) {
-                    throw new Error("fresh_service_detection_required");
-                }
-                const findings = FindingsSchema.parse(rows[0]);
-                if (findings.source !== args.runId) {
-                    throw new Error("fresh_service_detection_required");
-                }
-                const lines = args.head.trim().split(/\r?\n/);
-                if (lines.length !== 1) {
-                    throw new Error("source_head_unavailable");
-                }
-                const [sha, ref, ...extra] = lines[0].split(/\s+/);
-                if (extra.length) throw new Error("source_head_unavailable");
-                await assertCurrentPlan(args.project, findings, context, {
-                    sha,
-                    ref,
-                });
-                return { dataHandles: [] };
-            },
-        },
         prune_dependency_results: {
             outputLifetime: "7d",
             description:
