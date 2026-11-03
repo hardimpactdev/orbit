@@ -14,18 +14,12 @@ use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Operation;
 use Closure;
-use Illuminate\Support\Facades\Http;
-use Throwable;
 
 /**
  * Records one `gateway.swamp_load` intent for the release commit and waits for its native terminal. Swamp checks the
  * commit out in the serve checkout on Node 209 and confirms that serve loaded it. Anything else stops the release
- * before the switch, so the old release stays live.
- *
- * When the commit's manifest additionalFiles differ from those serve started with, the load schedules a serve restart
- * instead, because Swamp's extension reload keeps the lists from serve's start (https://swamp-club.com/lab/4282). Serve
- * drains its runs before it stops. The release waits for a new serve instance and loads again. Remove the restart path
- * when that issue is fixed.
+ * before the switch, so the old release stays live. Serve's reload also re-reads each extension manifest's
+ * additionalFiles, so a newly shipped file needs no serve restart.
  */
 final readonly class NativeGatewayReleaseSwampLoad implements GatewayReleaseSwampLoad
 {
@@ -38,34 +32,16 @@ final readonly class NativeGatewayReleaseSwampLoad implements GatewayReleaseSwam
     /** @var Closure(): float */
     private Closure $clock;
 
-    /** @var Closure(): ?string the serving instance from serve's /ready, or null while it is unavailable */
-    private Closure $instance;
-
     /**
      * @param  (Closure(int): void)|null  $sleep  microseconds
      * @param  (Closure(): float)|null  $clock  monotonic nanoseconds
-     * @param  (Closure(): ?string)|null  $instance
      */
-    public function __construct(private StartOperationAction $operations, private int $waitSeconds = 600, ?Closure $sleep = null, ?Closure $clock = null, ?Closure $instance = null)
+    public function __construct(private StartOperationAction $operations, private int $waitSeconds = 600, ?Closure $sleep = null, ?Closure $clock = null)
     {
         $this->sleep = $sleep ?? static function (int $microseconds): void {
             usleep($microseconds);
         };
         $this->clock = $clock ?? static fn (): float => hrtime(true);
-        $this->instance = $instance ?? static function (): ?string {
-            try {
-                $address = config('swamp.address');
-                if (! is_string($address)) {
-                    return null;
-                }
-                $instance = Http::withOptions(['verify' => config('swamp.ca_path'), 'curl' => [CURLOPT_RESOLVE => ["swamp.orbit:443:{$address}"]]])
-                    ->timeout(5)->get('https://swamp.orbit/ready')->json('instanceId');
-
-                return is_string($instance) ? $instance : null;
-            } catch (Throwable) {
-                return null;
-            }
-        };
     }
 
     public function load(string $sha): array
@@ -76,34 +52,9 @@ final readonly class NativeGatewayReleaseSwampLoad implements GatewayReleaseSwam
         }
         $input = ['sha' => $sha, 'grants' => (new SwampGrantRenderer)->render($release.'/swamp'),
             'ssh' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail(self::SwampNode))];
-        $served = ($this->instance)();
-        $first = $this->run($sha, $input);
-        $restart = $first->result['restart'] ?? null;
-        if (! is_array($restart)) {
-            return ['outcome' => 'loaded', 'operation_id' => $first->id];
-        }
+        $operation = $this->run($sha, $input);
 
-        $restarted = ($this->clock)();
-        $instance = $this->awaitNewInstance($sha, $served);
-        $restart = [...$restart, 'operation_id' => $first->id, 'instance' => $instance,
-            'waited_seconds' => (int) round((($this->clock)() - $restarted) / 1_000_000_000)];
-        $second = $this->run($sha, $input);
-
-        return ['outcome' => 'loaded', 'operation_id' => $second->id, 'restart' => $restart];
-    }
-
-    /** Serve drains for up to 5 minutes before it stops, so its new instance may take that long to answer. */
-    private function awaitNewInstance(string $sha, ?string $previous): string
-    {
-        $deadline = ($this->clock)() + 420 * 1_000_000_000;
-        while (($current = ($this->instance)()) === null || $current === $previous) {
-            if (($this->clock)() >= $deadline) {
-                throw new GatewayReleaseException('swamp', 'gateway.release_swamp_load_failed', "Swamp serve did not come back after the restart for {$sha} within 420 seconds.", sha: $sha);
-            }
-            ($this->sleep)(1_000_000);
-        }
-
-        return $current;
+        return ['outcome' => 'loaded', 'operation_id' => $operation->id];
     }
 
     /** @param array<string, mixed> $input */

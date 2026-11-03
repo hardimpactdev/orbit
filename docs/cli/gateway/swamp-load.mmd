@@ -42,10 +42,11 @@ sequenceDiagram
   %%> - writes the Gateway-rendered `orbit-gateway.yaml` and `orbit-serve.yaml` under `swamp/grants/`
   %%> - uses the admitted SSH target with owner `orbit`, group `orbit` and mode `0640`
   %%> - the two fixed file behaviors run in parallel; a failed write stops the load
-  alt Shipped script lists same
+  alt Load succeeds
     N->>SW: load<br/>swamp serve reload, access reload
     %%> What it does:
     %%> - `swamp serve reload`: serve picks up new and changed workflows and extensions
+    %%> - extensions come with their manifest `additionalFiles`, so a newly shipped file needs no serve restart (Lab #4282, fixed in db3f6373)
     %%> - `swamp access reload`: serve creates, revokes or keeps grants to match the file
     %%> Why:
     %%> - a reload, not a restart: running work keeps going
@@ -57,21 +58,6 @@ sequenceDiagram
     %%> Result:
     %%> - task #5150 succeeded
     %%> - returns the commit, the previous commit and the workflow count
-  else Shipped script lists changed
-    N-->>SW: Restart needed<br/>changed manifests
-    %%> Why:
-    %%> - serve's reload keeps each extension's file list from its start (Lab #4282)
-    %%> - so new shipped scripts reach workers only after a restart
-    %%> Temporary:
-    %%> - remove this branch when Lab #4282 is fixed
-    Note over SW: Serve drains, restarts<br/>--shutdown-drain-timeout 5m
-    %%> What it does:
-    %%> - serve takes no new work and lets running work finish, up to 5 minutes
-    %%> - then a new serve instance starts from the new commit
-    GW->>SW: Wait for new serve, load<br/>https://swamp.orbit/ready
-    %%> What it does:
-    %%> - waits up to 7 minutes for a new serve instance id
-    %%> - then starts the load once more; that run takes the first branch
   else Load fails
     SW--xGW: Load failed<br/>gateway.release_swamp_load_failed
     %%> Result:
