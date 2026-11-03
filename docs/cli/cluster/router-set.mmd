@@ -15,10 +15,13 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant N as Node 7<br/>new Router
   participant M as Member Nodes<br/>incl. old Router 5
-  CLI->>GW: cluster:router:set 3 7<br/>--idempotency-key=KEY
+  CLI->>GW: cluster:router:set 3 7
   %%> Command:
   %%> - `orbit cluster:router:set 3 7`
   %%> - syntax: `<cluster> <node> [--idempotency-key=KEY] [--json]`
+  %%> Options:
+  %%> - `--idempotency-key`: reuses the same Operation admission for a retry with the same key
+  %%> - `--json`: waits for the terminal Operation and renders it as JSON
   %%> Input:
   %%> - the Cluster ID and the Node ID of an active member
   %%> What it does:
