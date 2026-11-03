@@ -397,7 +397,7 @@ Uncertain infrastructure refusals leave the unfinished intent. If a typed pre-st
 
 The repository's tracked `bin/task-analyze` is the only entry point, pinned by content digest and run with no arguments. Callers cannot choose the shell, arguments, environment, path, report location, model, or analyzer. It runs as the workspace owner without model or GitHub credentials, and it writes, commits, pushes, and approves nothing.
 
-It adds no Gateway Node script and no exception to the [script ratchet](/reference/remote-programs#inline-scripts). Other deterministic task steps, and every Node mutation, still need named agent commands or a separately reviewed fixed contract.
+It adds no Gateway Node script. Other deterministic task steps, and every Node mutation, still need named agent commands or a separately reviewed fixed contract.
 
 ### Future Mac session execution
 
