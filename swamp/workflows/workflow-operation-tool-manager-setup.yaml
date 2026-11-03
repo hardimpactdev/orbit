@@ -78,6 +78,7 @@ jobs:
         condition: {type: succeeded}
     steps:
       - name: Prepare manager folders
+        concurrency: 1
         labels: {role: swamp}
         writes: true
         forEach: {item: resource, in: '${{ ((steps["Read manager version"].outputs.exitCode == 127 || (has(inputs.converge) && inputs.converge)) && "setup" in inputs.intent && inputs.intent.setup != null && inputs.intent.platform == "linux") ? steps["Plan pinned manager"].outputs.directories : [] }}'}
@@ -88,6 +89,7 @@ jobs:
         condition: {type: succeeded}
     steps:
       - name: Write manager files
+        concurrency: 1
         labels: {role: swamp}
         writes: true
         forEach: {item: resource, in: '${{ ((steps["Read manager version"].outputs.exitCode == 127 || (has(inputs.converge) && inputs.converge)) && "setup" in inputs.intent && inputs.intent.setup != null && inputs.intent.platform == "linux") ? steps["Plan pinned manager"].outputs.files : [] }}'}

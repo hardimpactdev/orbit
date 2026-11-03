@@ -135,7 +135,15 @@ print('install ok installed '+p.read_text())
                 'algorithm': 'sha256', 'digest': 'a' * 64,
             },
         })
-        self.run_setup()
+        run = self.run_setup()
+        history = json.loads(self.cli('workflow', 'history', 'get', run['id']).stdout)
+        folders = sorted((step for job in history['jobs'] for step in job['steps']
+                          if step['name'].startswith('Prepare manager folders-')),
+                         key=lambda step: step['startedAt'])
+        self.assertGreaterEqual(len(folders), 2)
+        for previous, current in zip(folders, folders[1:]):
+            self.assertLessEqual(previous['completedAt'], current['startedAt'],
+                                 'manager resource dispatches must not exhaust the worker memory')
         self.assertFalse(self.calls.exists(), 'matching pins need no APT refresh or install')
         self.assertEqual(json.loads((self.scope / 'composer.json').read_text()), {'require': {}})
         self.assertTrue((self.scope / 'vendor/bin').is_dir())

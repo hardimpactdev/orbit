@@ -68,7 +68,7 @@ When the apt source cannot be removed, the removal still succeeds and the Tool i
 
 There is no separate manager kind. `Set up the Tool Manager` is one shared child workflow, `operation-tool-manager-setup`: `tool:install` runs it on a Linux first use, and a development deploy runs it for Vite+. Native role add uses that child for Composer and Vite+, with convergence enabled so an existing manager receives the recipe's pinned resources. Ordinary first use still skips a ready manager.
 
-During convergence, official APT checks compare every package with its pin before artifact downloads. Matching packages need no download or installation. Missing pins form one APT transaction; Composer's managed directories and configuration still converge when all packages already match.
+During convergence, official APT checks compare every package with its pin before artifact downloads. Matching packages need no download or installation. Missing pins form one APT transaction; Composer's managed directories and configuration still converge when all packages already match. Folder and file resources within one manager run sequentially to bound cfgmgmt dispatch memory. Separate Node work can still run in parallel.
 
 `node:add` needs no apt setup: when `node.bootstrap_host` succeeds, the Gateway records apt as ready. Project runtime environments belong to the Instances family. Input, ownership and platform refusals happen before admission. Scan returns its discovery report directly and creates no Tool intent. A kind without a native declaration returns `operation.kind_unavailable` (HTTP 503).
 
