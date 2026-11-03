@@ -4,6 +4,7 @@ sequenceDiagram
   %% status: draft
   %% command: metrics:disable
   %% kind: metrics.disable
+  %% Rule 23: 2026-11-03 required-only main path.
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -15,13 +16,15 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant N as Node 12<br/>Prometheus·Grafana
   participant G as Gateway Node<br/>Caddy for Grafana
-  CLI->>GW: metrics:disable<br/>--force --purge-data
+  CLI->>GW: metrics:disable<br/>the one Metrics Node
   %%> Command:
-  %%> - `orbit metrics:disable --force`
+  %%> - `orbit metrics:disable`
   %%> - syntax: `[--force] [--purge-data] [--json]`
   %%> Input:
   %%> - no Node: the role has one holder, here Node 12
-  %%> - `--purge-data` also deletes the Prometheus and Grafana volumes and the stored Grafana passwords
+  %%> - `--purge-data`, optional: also deletes the Prometheus and Grafana volumes and the stored Grafana passwords (the `opt --purge-data` blocks); by default they stay
+  %%> - `--force`, optional: skips the confirmation
+  %%> - `--json`, optional: return the final task as JSON
   %%> Confirmation:
   %%> - in a terminal, the CLI shows what goes and asks; the default is No
   %%> - `--force` is required without a terminal, with `--json`, and with `--purge-data` (`metrics.force_required`)
@@ -102,8 +105,13 @@ sequenceDiagram
     Note over GW: Delete the assignment<br/>role gone · task succeeded
     %%> Result:
     %%> - the `metrics` assignment is deleted, and the exporters are recorded as removed
-    %%> - the stored Grafana password stays, unless `--purge-data`; then the active and pending passwords are deleted
+    %%> - the stored Grafana password stays
     %%> - task #5174 succeeds
+    opt --purge-data
+      Note over GW: Delete the passwords<br/>active · pending
+      %%> Result:
+      %%> - the active and pending Grafana passwords are deleted
+    end
   else a step fails
     N--xSW: exit ≠ 0 or still present
     %%> When:

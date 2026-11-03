@@ -5,6 +5,7 @@ sequenceDiagram
   %% status: draft
   %% command: project:maintenance:inspect
   %% kind: project.detect
+  %% Rule 23: 2026-11-03 required-only main path.
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -16,13 +17,15 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant GH as GitHub<br/>tree · blobs
   participant REG as Registries<br/>Packagist · npm
-  CLI->>GW: maintenance:inspect 4<br/>--open
+  CLI->>GW: maintenance:inspect 4<br/>Project id
   %%> Command:
-  %%> - `orbit project:maintenance:inspect 4 --open`
+  %%> - `orbit project:maintenance:inspect 4`
   %%> - syntax: `project:maintenance:inspect <project> [--open] [--idempotency-key=KEY]`
   %%> Input:
-  %%> - the Project
-  %%> - `--open`: open the update task group for the findings; without it, inspect shows the findings and creates nothing
+  %%> - the Project, required
+  %%> - `--open`, optional: also open the update task group for the findings (the `opt --open` block); by default, inspect shows the findings and creates nothing
+  %%> - `--idempotency-key`, optional: reuse a key to retry the same start
+  %%> - `--json`, optional: return the final task as JSON
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
   %%> - the hourly `maintenance-projects` Schedule admits the same kind with `--open`, for each opted-in Project
@@ -99,10 +102,12 @@ sequenceDiagram
     Note over GW: Store the inspection<br/>SHAs · packages · findings
     %%> Result:
     %%> - the blob SHAs, the package list and the findings stored for Project 4
-    %%> - without `--open`: nothing is created; the result shows the findings
+    %%> - nothing is created; the result shows the findings
     %%> - task #5150 succeeds
-    opt --open, updates eligible
+    opt --open
       Note over GW: Open the update group<br/>task group #812 · tasks.provision
+      %%> When:
+      %%> - the findings hold eligible updates
       %%> Result:
       %%> - task group #812 with one package group, for one pull request
       %%> - the Gateway admits `tasks.provision` for it; Pi turns then run in its task VM (driver `pi`)
