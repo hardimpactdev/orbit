@@ -1,0 +1,293 @@
+id: d2be694e-4085-427c-8492-37f72528d97b
+name: operation-node-role-relocate
+description: Move gateway, websocket or metrics to another Node from 209 with pinned SSH argv, the metrics:enable workflow and the node:role:remove workflow; one native end check.
+vaults: [orbit-control-inputs]
+queueTimeout: 30
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [node.role_relocate]}
+    intent: {type: object}
+    execution_secrets: {type: object, additionalProperties: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^(metrics-role|node-role-relocate)-operation-[1-9][0-9]*$'}}, required: [vault, key], additionalProperties: false}}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+# Every Node step is one official @swamp/ssh exec argument list with the target's recorded host key (rule 22).
+# The Metrics runtime and the source removal are their own typed workflows, shared with metrics:enable and node:role:remove.
+# metrics.disable cannot remove the source: it withdraws metrics.orbit and its Gateway certificate, which the moved role keeps.
+jobs:
+- name: runtime
+  steps:
+  - name: 'Apply the Metrics role'
+    labels: {role: swamp}
+    guard: '${{ inputs.intent.metrics == null }}'
+    task:
+      type: workflow
+      workflowIdOrName: operation-metrics-enable
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.intent.target_node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent.metrics }}', execution_secrets: '${{ inputs.execution_secrets }}'}
+    # The releases folder and the new release, owned by the role's user.
+  - name: 'Make the release folder'
+    labels: {role: swamp}
+    writes: true
+    forEach: {item: ws, in: '${{ inputs.intent.websocket == null ? [] : [inputs.intent.websocket] }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "relocate-release-folder-" + string(inputs.intent.target_node_id) + "-" + string(self._index) }}'
+      methodName: exec
+      globalArgs: &target_ssh
+        name: '${{ "relocate-target-" + string(inputs.intent.target_node_id) }}'
+        transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
+        hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]
+      inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["timeout","60","install","-d","-o",self.ws.user,"-m","0755",self.ws.releases,self.ws.release] }}'}
+    # As the role's user, who is the SSH user; the pinned ref is a commit, so the clone checks out nothing yet.
+  - name: 'Clone the Reverb release'
+    labels: {role: swamp}
+    writes: true
+    forEach: {item: ws, in: '${{ inputs.intent.websocket == null ? [] : [inputs.intent.websocket] }}'}
+    dependsOn: [{step: 'Make the release folder', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "relocate-reverb-clone-" + string(inputs.intent.target_node_id) + "-" + string(self._index) }}'
+      methodName: exec
+      globalArgs: *target_ssh
+      inputs: {hosts: 'name:target', argv: '${{ ["timeout","300","git","clone","--quiet","--no-checkout","--",self.ws.repository,self.ws.release] }}'}
+  - name: 'Check out the Reverb ref'
+    labels: {role: swamp}
+    writes: true
+    forEach: {item: ws, in: '${{ inputs.intent.websocket == null ? [] : [inputs.intent.websocket] }}'}
+    dependsOn: [{step: 'Clone the Reverb release', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "relocate-reverb-checkout-" + string(inputs.intent.target_node_id) + "-" + string(self._index) }}'
+      methodName: exec
+      globalArgs: *target_ssh
+      inputs: {hosts: 'name:target', argv: '${{ ["timeout","60","git","-C",self.ws.release,"checkout","--quiet","--detach",self.ws.ref] }}'}
+  - name: 'Install Reverb packages'
+    labels: {role: swamp}
+    writes: true
+    forEach: {item: ws, in: '${{ inputs.intent.websocket == null ? [] : [inputs.intent.websocket] }}'}
+    dependsOn: [{step: 'Check out the Reverb ref', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "relocate-reverb-composer-" + string(inputs.intent.target_node_id) + "-" + string(self._index) }}'
+      methodName: exec
+      globalArgs: *target_ssh
+      inputs: {hosts: 'name:target', argv: '${{ ["timeout","600","composer","install","--no-dev","--optimize-autoloader","--no-interaction","--no-progress","--working-dir=" + self.ws.release] }}'}
+    # The vault copy arrives on stdin; the value never enters argv or output.
+  - name: 'Write the Reverb .env'
+    labels: {role: swamp}
+    writes: true
+    forEach: {item: ws, in: '${{ inputs.intent.websocket == null ? [] : [inputs.intent.websocket] }}'}
+    dependsOn: [{step: 'Install Reverb packages', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "relocate-reverb-env-" + string(inputs.intent.target_node_id) + "-" + string(self._index) }}'
+      methodName: exec
+      globalArgs: *target_ssh
+      inputs:
+        hosts: 'name:target'
+        argv: '${{ ["timeout","60","install","-m","0600","/dev/stdin",self.ws.release + "/.env"] }}'
+        stdin: '${{ vault.get(inputs.execution_secrets.websocket_env.vault, inputs.execution_secrets.websocket_env.key) }}'
+  - name: 'Write the Reverb unit'
+    labels: {role: swamp}
+    writes: true
+    forEach: {item: ws, in: '${{ inputs.intent.websocket == null ? [] : [inputs.intent.websocket] }}'}
+    dependsOn: [{step: 'Write the Reverb .env', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "relocate-reverb-unit-" + string(inputs.intent.target_node_id) + "-" + string(self._index) }}'
+      methodName: exec
+      globalArgs: *target_ssh
+      inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["timeout","60","install","-m","0644","/dev/stdin",self.ws.unit.path] }}', stdin: '${{ self.ws.unit.content }}'}
+    # -T refuses a real folder at the install path instead of linking inside it.
+  - name: 'Activate the release'
+    labels: {role: swamp}
+    writes: true
+    forEach: {item: ws, in: '${{ inputs.intent.websocket == null ? [] : [inputs.intent.websocket] }}'}
+    dependsOn: [{step: 'Write the Reverb unit', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "relocate-reverb-activate-" + string(inputs.intent.target_node_id) + "-" + string(self._index) }}'
+      methodName: exec
+      globalArgs: *target_ssh
+      inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["timeout","60","ln","-sfnT",self.ws.release,self.ws.install_path] }}'}
+  - name: 'Write the DNS route'
+    labels: {role: swamp}
+    writes: true
+    forEach: {item: gateway, in: '${{ inputs.intent.gateway == null ? [] : [inputs.intent.gateway] }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "relocate-dns-route-" + string(inputs.intent.target_node_id) + "-" + string(self._index) }}'
+      methodName: exec
+      globalArgs: *target_ssh
+      inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["timeout","60","install","-D","-m","0644","/dev/stdin",self.gateway.drop_in.path] }}', stdin: '${{ self.gateway.drop_in.content }}'}
+- name: units
+  dependsOn: [{job: runtime, condition: {type: succeeded}}]
+  steps:
+  - name: 'Reload unit catalogue'
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ inputs.intent.websocket == null && inputs.intent.gateway == null }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "relocate-daemon-reload-" + string(inputs.intent.target_node_id) }}'
+      methodName: exec
+      globalArgs: *target_ssh
+      inputs: {hosts: 'name:target', sudo: true, argv: [timeout, '60', systemctl, daemon-reload]}
+- name: services
+  dependsOn: [{job: units, condition: {type: succeeded}}]
+  steps:
+  - name: 'Enable Reverb'
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ inputs.intent.websocket == null }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "relocate-reverb-enable-" + string(inputs.intent.target_node_id) }}'
+      methodName: exec
+      globalArgs: *target_ssh
+      inputs: {hosts: 'name:target', sudo: true, argv: [timeout, '60', systemctl, enable, orbit-websocket.service]}
+    # A restart also starts a stopped service, so a rerun loads the active release.
+  - name: 'Restart Reverb'
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ inputs.intent.websocket == null }}'
+    dependsOn: [{step: 'Enable Reverb', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "relocate-reverb-restart-" + string(inputs.intent.target_node_id) }}'
+      methodName: exec
+      globalArgs: *target_ssh
+      inputs: {hosts: 'name:target', sudo: true, argv: [timeout, '120', systemctl, restart, orbit-websocket.service]}
+    # Domain and default-route come before the server, so the link never becomes a default DNS route. Best effort: follow_up.
+  - name: 'Route the private domain'
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    concurrency: 1
+    forEach: {item: route, in: '${{ inputs.intent.gateway == null ? [] : inputs.intent.gateway.route }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "relocate-dns-resolver-" + string(inputs.intent.target_node_id) + "-" + string(self._index) }}'
+      methodName: exec
+      globalArgs: *target_ssh
+      inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["timeout","30"] + self.route }}'}
+- name: certificate
+  dependsOn: [{job: services, condition: {type: succeeded}}]
+  steps:
+    # The child makes the key and CSR on the Node and sends only the CSR to operation:direct:certificate-sign.
+  - name: 'Publish the certificate'
+    labels: {role: swamp}
+    forEach: {item: leaf, in: '${{ inputs.intent.certificates.leaves }}'}
+    task:
+      type: workflow
+      workflowIdOrName: node-role-certificate-publish
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ self.leaf.node_id }}', kind: '${{ inputs.kind }}', parent_run_id: '${{ run.id }}', leaf: '${{ self.leaf }}', ssh: '${{ self.leaf.ssh }}'}
+- name: ports
+  dependsOn: [{job: certificate, condition: {type: succeeded}}]
+  steps:
+  - name: 'Open the role ports'
+    labels: {role: swamp}
+    writes: true
+    concurrency: 1
+    forEach: {item: rule, in: '${{ inputs.intent.firewall.desired }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "relocate-firewall-open-" + string(inputs.intent.target_node_id) + "-" + string(self._index) }}'
+      methodName: exec
+      globalArgs: *target_ssh
+      inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["timeout","60"] + self.rule }}'}
+    # An active role closes public SSH recovery; UFW exits 1 for a rule that is already gone.
+  - name: 'Close retired ports'
+    labels: {role: swamp}
+    writes: true
+    concurrency: 1
+    dependsOn: [{step: 'Open the role ports', condition: {type: succeeded}}]
+    forEach: {item: rule, in: '${{ inputs.intent.firewall.remove }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "relocate-firewall-close-" + string(inputs.intent.target_node_id) + "-" + string(self._index) }}'
+      methodName: exec
+      globalArgs: *target_ssh
+      inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["timeout","60"] + self.rule }}', okExitCodes: [0, 1]}
+- name: caddy
+  dependsOn: [{job: ports, condition: {type: succeeded}}]
+  steps:
+  - name: 'Publish the Caddy sites'
+    labels: {role: swamp}
+    forEach: {item: publication, in: '${{ inputs.intent.publications.filter(p, p.after.caddy != null) }}'}
+    task:
+      type: workflow
+      workflowIdOrName: operation-route-caddy
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: {caddy_publication: {node_id: '${{ self.publication.node_id }}', user: '${{ self.publication.connection.nodeUser }}', control_node_id: 209, host_keys: '${{ self.publication.host_keys }}', connection: '${{ self.publication.connection }}', caddy: '${{ self.publication.after.caddy }}'}}, execution_secrets: {}}
+- name: dns
+  dependsOn: [{job: caddy, condition: {type: succeeded}}]
+  steps:
+    # Node 12 serves before private DNS names it.
+  - name: 'Publish the role DNS'
+    labels: {role: swamp}
+    forEach: {item: publication, in: '${{ inputs.intent.publications.filter(p, p.after.dns != null) }}'}
+    task:
+      type: workflow
+      workflowIdOrName: route-dns-publish
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: {node_id: '${{ self.publication.node_id }}', connection: '${{ self.publication.connection }}', host_keys: '${{ self.publication.host_keys }}', before: '${{ self.publication.before.dns }}', after: '${{ self.publication.after.dns }}', alternatives: []}, execution_secrets: {}}
+- name: check
+  dependsOn: [{job: dns, condition: {type: succeeded}}]
+  steps:
+    # Q-WAIT: one bounded wait; a restarted Reverb refuses connections until it listens.
+  - name: 'Check Reverb'
+    labels: {role: swamp}
+    forEach: {item: ws, in: '${{ inputs.intent.websocket == null ? [] : [inputs.intent.websocket] }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "relocate-reverb-check-" + string(inputs.intent.target_node_id) + "-" + string(self._index) }}'
+      methodName: exec
+      globalArgs: *target_ssh
+      inputs: {hosts: 'name:target', argv: '${{ ["timeout","70","curl","--silent","--retry","30","--retry-connrefused","--retry-delay","2","--output","/dev/null","--write-out","%{http_code}","http://127.0.0.1:" + string(self.ws.port) + "/"] }}'}
+- name: grace
+  dependsOn: [{job: check, condition: {type: succeeded}}]
+  steps:
+    # Resolvers that honor the TTL stop answering with the source before it withdraws (route-dns-grace).
+  - name: 'Let DNS answers expire'
+    labels: {role: swamp}
+    forEach: {item: wait, in: '${{ inputs.intent.grace }}'}
+    task:
+      type: workflow
+      workflowIdOrName: route-dns-grace
+      inputs: {}
+- name: source
+  dependsOn: [{job: grace, condition: {type: succeeded}}]
+  steps:
+    # The node:role:remove workflow with the intent it builds for the source; its own end check proves the removal.
+  - name: 'Remove from the source'
+    labels: {role: swamp}
+    task:
+      type: workflow
+      workflowIdOrName: operation-node-role-remove-direct
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.intent.source_node_id }}', kind: node.role_remove, intent: '${{ inputs.intent.source }}', execution_secrets: {}, offline: false}
+- name: confirm
+  dependsOn: [{job: source, condition: {type: succeeded}}]
+  steps:
+  - name: 'Confirm the move'
+    labels: {role: swamp}
+    task:
+      type: assert
+      severity: high
+      expr: 'steps.filter(k, k.startsWith("Check Reverb")).all(k, steps[k].outputs.stdout != "000") && steps["Remove from the source"].status == "succeeded"'
+      message: node.role_relocate_incomplete

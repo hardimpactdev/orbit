@@ -23,10 +23,12 @@ use App\Support\ValidatedData;
 /** Reusable public contract for node-role-remove; role policy stays in the canonical capture. */
 final readonly class NativeNodeRoleRemovalInput
 {
-    /** @return list<array<string,mixed>> */
-    public function publications(Node $node, RoleName $role, bool $machineDeleted = false): array
+    /** A source names a relocation: its target publishes the role and the source withdraws it.
+     * @return list<array<string,mixed>>
+     */
+    public function publications(Node $node, RoleName $role, bool $machineDeleted = false, ?Node $source = null): array
     {
-        $duties = app(NodeRolePublicationInput::class)->capture($node, $role);
+        $duties = app(NodeRolePublicationInput::class)->capture($node, $role, $source);
         if ($role === RoleName::Metrics) {
             // The canonical fleet capture owns its membership. Disable both service
             // publication kinds as well as the Gateway site when Metrics leaves.

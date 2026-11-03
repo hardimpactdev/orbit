@@ -12,7 +12,7 @@ covers:
 
 ## Problem
 
-Bootstrap puts `gateway` and `vpn` on one Node. Later you may want the Gateway on a new machine while the WireGuard hub and private DNS stay where they are. [`node:role:relocate`](/cli/node/role-relocate) moves `websocket` and `metrics` with the same command. It refuses `swamp`, because serve on that Node runs the relocation.
+Bootstrap puts `gateway` and `vpn` on one Node. Later you may want the Gateway on a new machine while the WireGuard hub and private DNS stay where they are. [`node:role:relocate`](/cli/node/role-relocate) moves `websocket` and `metrics` with the same command. It refuses `swamp` with `node.role_relocate_swamp_held`, because serve on that Node runs the relocation.
 
 A `websocket` move preserves every [Reverb app](/reference/websocket-apps) in the Gateway database. It copies only the server's Laravel `APP_KEY` when the target lacks one. The target converge renders all apps, so each Project keeps its app credentials after the move.
 
@@ -22,7 +22,7 @@ A `websocket` move preserves every [Reverb app](/reference/websocket-apps) in th
 
 ## Solution
 
-Role relocation requires its native parent workflow. Until that writer is available, the command returns `operation.kind_unavailable` before effects. The steps below describe the retained placement and identity requirements.
+One native run on Node 209 moves the role; [native role relocation](/reference/node-provisioning#native-role-relocation) lists its steps. Both Nodes need recorded SSH management.
 
 Adding a new Gateway assignment uses the native role-add workflow and still grants access to the VPN and Metrics Nodes. Its resolver policy lives in `orbit-gateway-dns.service`. Native role removal disables and removes that unit, together with the WireGuard drop-in from earlier releases. Role add remains subject to the singleton rule; it cannot replace a relocation.
 
@@ -49,7 +49,7 @@ orbit node:role:relocate gateway gateway --force
 
 Relocate opens `orbit:gateway-https` on the target and moves the assignment. It grants the new Gateway access to the `vpn` Node and the `metrics` Node, when they are other Nodes. It publishes private DNS on the `vpn` Node, so `gateway.orbit` answers with the target's WireGuard address. It adds the [private DNS route](/reference/private-dns#the-gateway-machine) on the target, so the new Gateway resolves names such as `reverb.orbit`. Then it removes that route and the firewall rule from the source.
 
-A failed route on the target does not stop the move, and `follow_up` names the retry command. A failed removal on the source leaves the move incomplete. The error names the `--from` command that finishes it.
+A failed route on the target does not stop the move, and `follow_up` names the retry command. A failed removal on the source leaves the move incomplete; rerun the command with `--from` to finish it.
 
 Relocate moves no files. It does not stop Caddy or PHP-FPM on the source, so the old address keeps working during the cutover.
 

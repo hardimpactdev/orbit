@@ -33,6 +33,8 @@ Both containers use pinned official images and host networking. Their logs use `
 
 Each command has its own workflow, `operation-metrics-enable` or `operation-metrics-disable`, whose steps are the chart steps. Enable installs Docker, writes the configuration, starts the containers, adds the fleet exporters, signs the `metrics.orbit` certificate, allows the Gateway Node in and publishes `metrics.orbit`. Its end check waits until `metrics.orbit` answers with its Orbit certificate.
 
+`node:role:relocate` runs `operation-metrics-enable` as a child against the new Metrics Node, with kind `node.role_relocate`. The Gateway keeps its `metrics.orbit` certificate, so the move signs none. The move removes the old Node's runtime with the `node:role:remove` workflow, not `operation-metrics-disable`: disable withdraws `metrics.orbit` and its certificate, which the moved role keeps. [Native role relocation](/reference/node-provisioning#native-role-relocation) has the order.
+
 Disable withdraws `metrics.orbit` first, so nobody reaches Grafana while it goes. Then it removes the containers, so Prometheus stops before any exporter goes, then the fleet exporters, the Grafana rule and the configuration. It preserves named volumes and credentials unless `--purge-data --force` was requested. Its end check, `Check it is gone`, is one command that fails while a Metrics container or the configuration remains. A failed run keeps its desired role state and native step history; recovery resumes the failed step. Nodes consumers retain their existing shared runtime material contract.
 
 The role runs its containers and units itself. They create no `Process` records, and their packages create no `Tool` records.

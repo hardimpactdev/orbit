@@ -92,7 +92,7 @@ final readonly class SignDirectCertificatesAction
             'analytics.enable', 'analytics.disable' => ['tracking.certificates'],
             'metrics.enable' => ['certificates.leaves'],
             'node.role_add', 'node.role_converge' => ['_role.certificates.leaves'],
-            'node.role_relocate' => ['_relocate.certificates.leaves'],
+            'node.role_relocate' => ['intent.certificates.leaves'],
             'node.role_remove' => ['_role_remove.certificates.leaves'],
             'node.remove' => $restoring ? ['_removal.restore_certificates'] : [],
             'instance.transfer' => $restoring ? ['route_publication.route_mutations.restore.certificates']

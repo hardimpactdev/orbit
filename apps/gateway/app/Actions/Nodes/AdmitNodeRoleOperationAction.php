@@ -11,6 +11,7 @@ use App\Domain\Analytics\AnalyticsStorageProcessGuard;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NativeNodeRoleAddInput;
 use App\Domain\Nodes\NativeNodeRoleConvergeInput;
+use App\Domain\Nodes\NativeNodeRoleRelocateInput;
 use App\Domain\Nodes\NativeNodeRoleRemovalInput;
 use App\Domain\Nodes\NodeRoleCertificateInput;
 use App\Domain\Nodes\NodeRoleDirectInput;
@@ -189,9 +190,8 @@ final readonly class AdmitNodeRoleOperationAction
 
         return DB::transaction(function () use ($target, $role, $force, $from, $requestId): Operation {
             $target = Node::query()->lockForUpdate()->findOrFail($target->id);
+            $prepared = app(NodeRoleRelocateInput::class)->prepare($target, $role, $force, $from);
             $this->guardMutable($target, $role);
-            $input = app(NodeRoleRelocateInput::class);
-            $prepared = $input->prepare($target, $role, $force, $from);
             $source = Node::query()->lockForUpdate()->findOrFail($prepared['source']->id);
             $assignment = NodeRole::query()->lockForUpdate()->findOrFail($prepared['assignment']->id);
             $operation = $this->operations->execute('node.role_relocate', 'node', $target->id, $target->id,
@@ -199,6 +199,8 @@ final readonly class AdmitNodeRoleOperationAction
             if (! $operation->wasRecentlyCreated) {
                 return $operation;
             }
+            $native = app(NativeNodeRoleRelocateInput::class);
+            $before = $native->before($target, $source, $role);
             $assignment->update(['node_id' => $target->id]);
             $assignment->claimConvergence();
             app(NodeRoleSettings::class)->copyForTransfer($source->id, $target->id, $role);
@@ -206,19 +208,10 @@ final readonly class AdmitNodeRoleOperationAction
                 app(GrantGatewayRoleAccessAction::class)->execute($target);
             }
             app(NodeRoleRuntimeInput::class)->prepare($target, $assignment);
-            $snapshot = $input->capture($target->refresh(), $source, $assignment);
-            $metrics = $snapshot['metrics_fleet'] === null ? null : ValidatedData::object($snapshot['metrics_fleet']);
-            $owner = $metrics === null ? $target->id : ValidatedData::integer($metrics['metrics_node_id']);
-            $this->store->change($operation, ['input' => [...$operation->input,
-                '_relocate' => $snapshot,
-                'participant_node_ids' => array_values(array_unique([$source->id, $target->id,
-                    ...NodeRolePublicationInput::participants(ValidatedData::object($snapshot['publication'])),
-                    ...NodeRoleCertificateInput::participants(ValidatedData::object($snapshot['certificates'])),
-                    ...NodeRoleMetricsInput::participants($metrics)])),
-                'metrics_runtime' => $metrics === null ? null : ['$secret' => 'metrics.fleet_runtime', 'id' => $owner],
-                'private_bindings' => ['metrics_runtime' => ['owner_node_id' => $owner, 'read_node_ids' => $metrics === null ? [] : [$owner], 'write_node_ids' => []]],
-                'secret_hash' => ['$secret' => 'node.agent_secret_hash', 'id' => $target->id],
-                'runtime_material' => ['$secret' => 'node.role_runtime', 'id' => $target->id]]]);
+            $intent = $native->capture($target->refresh(), $source, $assignment, $before);
+            $this->store->change($operation, ['input' => [...$operation->input, 'intent' => $intent,
+                '_relocate' => ['assignment_id' => $assignment->id, 'role' => $role->value,
+                    'source_node_id' => $source->id, 'target_node_id' => $target->id]]]);
 
             return $operation;
         });

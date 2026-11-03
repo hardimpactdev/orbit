@@ -30,6 +30,7 @@ use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route as OrbitRoute;
 use Illuminate\Routing\Route;
@@ -590,7 +591,7 @@ it('refuses to relocate the gateway role onto an Ingress Node', function (): voi
     $this
         ->postJson("/api/v1/nodes/{$this->node->id}/roles/gateway/relocate", ['force' => true])
         ->assertUnprocessable()
-        ->assertJsonPath('error.code', 'validation.failed')
+        ->assertJsonPath('error.code', 'node.role_conflict')
         ->assertJsonPath('error.message', 'Role [gateway] conflicts with assigned role [ingress].');
 
     expect($assignment->refresh()->node_id)->toBe($this->caller->id)
@@ -616,6 +617,19 @@ it('refuses to relocate a role that is not relocatable', function (): void {
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation.failed')
         ->assertJsonPath('error.message', 'Role [vpn] cannot be relocated.');
+});
+
+it('refuses to relocate the swamp role with its own code', function (): void {
+    NodeRole::query()->create(['node_id' => $this->caller->id, 'role' => RoleName::Swamp, 'status' => LifecycleStatus::Active]);
+
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles/swamp/relocate", ['force' => true])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'node.role_relocate_swamp_held')
+        ->assertJsonPath('error.details.role', 'swamp');
+
+    expect(Operation::query()->where('kind', 'node.role_relocate')->exists())->toBeFalse()
+        ->and(NodeRole::query()->where('role', RoleName::Swamp)->sole()->node_id)->toBe($this->caller->id);
 });
 
 it('includes the same role enum validation details for add and remove', function (): void {

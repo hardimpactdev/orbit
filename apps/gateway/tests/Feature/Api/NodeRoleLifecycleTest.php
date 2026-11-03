@@ -126,18 +126,21 @@ it('captures and completes every mutable role removal without PHP effects', func
     expect($node->roles()->where('role', $role)->exists())->toBeFalse();
 })->with(['gateway', 'app-dev', 'app-prod', 'ingress', 'metrics', 'database', 'websocket', 'analytics', 'ci-runner']);
 
-it('admits both relocation Nodes and confines runtime and hash reads to the target', function (): void {
+it('admits a gateway relocation as one native intent with no private callback', function (): void {
     $target = FleetFixtures::node('relocation-target');
-    $target->forceFill(['agent_secret_hash' => str_repeat('c', 64)])->save();
-    config(['swamp_workers.nodes' => [$target->id, $this->gateway->id]]);
     $assignment = $this->gateway->roles()->where('role', RoleName::Gateway)->sole();
     $operation = app(AdmitNodeRoleOperationAction::class)->relocate($target, RoleName::Gateway, true);
+    $intent = $operation->input['intent'];
     expect($assignment->refresh()->node_id)->toBe($target->id)
         ->and($operation->input['_relocate']['source_node_id'])->toBe($this->gateway->id)
-        ->and($operation->input['participant_node_ids'])->toContain($target->id, $this->gateway->id)
-        ->and(app(NodeAgentHashSource::class)->ownerId($operation))->toBe($target->id);
-    $view = app(NodeRoleDirectProjection::class)->input($operation);
-    expect($view['source_removal']['node_id'])->toBe($this->gateway->id)
-        ->and($view['node_id'])->toBe($target->id)
-        ->and($operation->input['runtime_material']['id'])->toBe($target->id);
+        ->and($operation->input)->not->toHaveKeys(['participant_node_ids', 'runtime_material', 'secret_hash', 'private_bindings'])
+        ->and(app(NodeAgentHashSource::class)->ownerId($operation))->toBeNull()
+        ->and($intent['firewall']['desired'])->not->toBeEmpty()
+        ->and(collect($intent['firewall']['desired'])->flatten()->implode(' '))->toContain('orbit:gateway-https')
+        ->and(array_column($intent['source']['files'], 'path'))->toContain('/etc/systemd/system/wg-quick@orbit.service.d/orbit-gateway-dns.conf')
+        ->and($intent['source']['ssh']['target']['host'])->toBe($this->gateway->wireguard_ip);
+    if ($intent['gateway'] !== null) {
+        expect($intent['gateway']['drop_in']['path'])->toBe('/etc/systemd/system/wg-quick@orbit.service.d/orbit-gateway-dns.conf')
+            ->and($intent['gateway']['route'][0])->toStartWith(['resolvectl', 'domain', 'orbit']);
+    }
 });

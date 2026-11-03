@@ -75,3 +75,4 @@ instance.clone
 instance.deploy
 tasks.park
 tasks.maintenance
+node.role_relocate

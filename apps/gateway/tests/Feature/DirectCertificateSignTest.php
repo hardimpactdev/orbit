@@ -167,7 +167,7 @@ it('reads the existing canonical admitted leaf containers for every issuing fami
 })->with([
     ['route.create', 'route_lifecycle.preparation.certificates'], ['route.target_set', 'route_target.plan.leaves'], ['cluster.router_set', 'certificates'],
     ['analytics.enable', 'tracking.certificates'], ['node.role_add', '_role.certificates.leaves'],
-    ['node.role_converge', '_role.certificates.leaves'], ['node.role_relocate', '_relocate.certificates.leaves'],
+    ['node.role_converge', '_role.certificates.leaves'], ['node.role_relocate', 'intent.certificates.leaves'],
     ['node.remove', '_removal.restore_certificates'], ['instance.transfer', 'route_publication.route_mutations.forward.certificates'],
     ['instance.clone', 'route_lifecycle.preparation.certificates'],
 ]);

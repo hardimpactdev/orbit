@@ -1,0 +1,60 @@
+{
+  "kind": "node.role_relocate",
+  "workflow": "operation-node-role-relocate",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "before_gateway": [
+    [
+      "install",
+      "-D",
+      "-m",
+      "0644",
+      "/home/orbit/.orbit/ca/root.pem",
+      "/etc/orbit/agent/ca.pem"
+    ]
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "metrics",
+      "body": {
+        "node_id": "${node.metrics}"
+      }
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "nodes/${node.peer}/roles/metrics/relocate",
+    "body": {
+      "force": true
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Apply the Metrics role",
+      "job": "runtime",
+      "step": "Apply the Metrics role",
+      "budget_seconds": 900
+    },
+    {
+      "name": "Remove from the source",
+      "job": "source",
+      "step": "Remove from the source",
+      "budget_seconds": 600
+    },
+    {
+      "name": "Confirm the move",
+      "job": "confirm",
+      "step": "Confirm the move",
+      "budget_seconds": 10
+    }
+  ],
+  "parity": [
+    "swamp/proof/node.role_relocate/parity.py"
+  ]
+}

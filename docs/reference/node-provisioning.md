@@ -2,8 +2,8 @@
 title: "Node provisioning"
 description: "How node:add bootstraps or converges a Node, how roles share and lock a Node, how the Orbit CLI and footprint reach it, and how node:remove hands it back."
 covers:
-  - swamp/{extensions/behaviors/operations/{fleet/{cli_converge_local,cli_install,release,release_local,release_native_fixture}.ts,node-removal-command/**,task-vm-lifecycle/destroy.ts,node/{role_removal_workflow,footprint_workflows,role_direct,converge_footprint,converge_local,footprint_local_actions}.ts},workflows/workflow-{operation-node-remove,operation-node-role-remove-direct,node-role-remove,task-vm-destroy,node-caddy-package,node-caddy-sites,node-private-dns,node-php-runtime,node-route-residue,node-cli-install,fleet-release-node}.yaml}
-  - apps/gateway/app/{Domain/Nodes/{NodeRemovalInput,NativeNodeRoleRemovalInput,NodeRemovalResources,NodeRemovalProjection,NodeRoleRemovalProjection,direct-operations}.php,Actions/{Gateway/BootstrapGatewayAction.php,Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,RemoveNodeRoleAction,AssignRoleAction,AdmitNodeRoleOperationAction}.php}}
+  - swamp/{extensions/behaviors/operations/{fleet/{cli_converge_local,cli_install,release,release_local,release_native_fixture}.ts,node-removal-command/**,task-vm-lifecycle/destroy.ts,node/{role_removal_workflow,footprint_workflows,role_direct,converge_footprint,converge_local,footprint_local_actions}.ts},workflows/workflow-{operation-node-remove,operation-node-role-remove-direct,operation-node-role-relocate,node-role-remove,task-vm-destroy,node-caddy-package,node-caddy-sites,node-private-dns,node-php-runtime,node-route-residue,node-cli-install,fleet-release-node}.yaml}
+  - apps/gateway/app/{Domain/Nodes/{NodeRemovalInput,NativeNodeRoleRemovalInput,NativeNodeRoleRelocateInput,NodeRoleRelocateInput,NodeRoleRelocateProjection,NodeRemovalResources,NodeRemovalProjection,NodeRoleRemovalProjection,direct-operations}.php,Actions/{Gateway/BootstrapGatewayAction.php,Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,RemoveNodeRoleAction,AssignRoleAction,AdmitNodeRoleOperationAction}.php}}
   - apps/gateway/app/Infrastructure/{WireGuard/{NativeGatewayPeerProjectionManager,NativeGatewayVpnConverger}.php,Gateway/{NativeGatewayCaddyInstaller,NativeGatewaySelfAccessConverger}.php,Nodes/{Roles/{CiRunnerRoleBaseline,NativeNodeRoleFirewallManager},CiRunnerHostProgram,NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackage*,RemotePhpPackageManager,NodeLocks,NodeLock}.php}
   - apps/gateway/app/Console/Commands/{ProvisionNodeCommand,ConvergeNodeRecipeCommand}.php
   - apps/gateway/{database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,app/{Actions/Fleet/{AdmitNodeRecipeAction,PlanNodeRecipeAction}.php,Domain/Fleet/RecipeDirect*.php,Data/Fleet/NodeRecipePlan.php,Infrastructure/MachineSoftware/NodeRecipe*.php,Domain/Nodes/RoleRegistry.php}}
@@ -536,7 +536,7 @@ Some roles never share a Node. The Gateway refuses a conflicting role before it 
 | `analytics` | `gateway` |
 | `ci-runner` | `gateway`, `vpn` |
 
-`router`, `metrics`, `websocket`, and `swamp` share a Node with any role. `node:role:add` and `node:role:relocate` answer `validation.failed` with `Role [ROLE] conflicts with assigned role [OTHER].` `node:add` answers `node.role_conflict` (HTTP 422), with `Role [ROLE] conflicts with requested role [OTHER].` when one request names both roles.
+`router`, `metrics`, `websocket`, and `swamp` share a Node with any role. `node:role:add` answers `validation.failed` with `Role [ROLE] conflicts with assigned role [OTHER].` `node:role:relocate` answers `node.role_conflict` (HTTP 422) with the same message. `node:add` answers `node.role_conflict` (HTTP 422), with `Role [ROLE] conflicts with requested role [OTHER].` when one request names both roles.
 
 Not every role can be added the same way.
 
@@ -623,7 +623,7 @@ The Gateway runs one role operation per Node at a time. The role lock covers the
 
 Every failed role operation returns its step's own code in `details.error_code`, such as `node_role.tool_manager_locked`, a `metrics.*` code, or `ingress.caddy_config_failed` for a Caddy removal. `node:add` and `node:remove` do the same when a role step failed.
 
-`node:role:relocate` and Cluster Router changes take the lock only around the baseline step. The Metrics fleet reconcile runs inside the lock for `node:role:add`, `node:role:remove`, and `node:add`. It converges exporters on other Nodes without their locks, so two operations can never wait on each other. Operations on different Nodes run in parallel. An offline role removal runs outside the lock, because it changes nothing on the unreachable machine.
+Cluster Router changes take the lock only around the baseline step. `node:role:relocate` holds its operation's target lock on the target Node until the run ends. The Metrics fleet reconcile runs inside the lock for `node:role:add`, `node:role:remove`, and `node:add`. It converges exporters on other Nodes without their locks, so two operations can never wait on each other. Operations on different Nodes run in parallel. An offline role removal runs outside the lock, because it changes nothing on the unreachable machine.
 
 An operation that dies, such as a killed Gateway worker, leaves its role `provisioning` or `removing`. The claim is stale once it is 11 minutes old and no operation holds the lock. That is the role lock's request term plus a 1-minute margin. `node:role:add --converge` and `node:role:remove` then take it over. Doctor reports the inactive role lifecycle.
 
@@ -821,9 +821,30 @@ Execution requires an admitted Node worker or the approved canonical proxy for e
 
 Role convergence uses the same native chain as role addition. Removal first records the assignment as removing, then publishes the remaining PHP, Caddy and DNS state and reconciles the complete Metrics fleet. It removes only the withdrawn role's runtime, certificate and firewall rules. The last role restores public SSH before closing role access. Shared packages and Tool managers remain.
 
-Relocation converges and publishes the target before it withdraws the source. The parent records target readiness immediately. A later source-cleanup failure leaves that target active and reports the cleanup failure. WebSocket source teardown observes the private DNS withdrawal grace period. Source and target work stay in the same native parent run.
+### Native role relocation
 
-The native removal builder accepts the actual replacement assignment when preparing Metrics source cleanup. A move retains fleet exporter services, their exporter footprints and shared service deny rules. Cleanup still removes the old Metrics containers and source-owned firewall access. Removing Metrics without a replacement withdraws the exporters. This removal-only contract does not establish target convergence, a pre-transfer source snapshot, or restore and finalize support for the owning relocation parent.
+`node:role:relocate` moves `gateway`, `websocket` or `metrics` in one native run, `operation-node-role-relocate`, on 209. Its [chart](/cli/node/role-relocate#how-it-works) names every step. The Gateway refuses the `swamp` role before it records anything, with `node.role_relocate_swamp_held` (HTTP 422): serve on that Node runs every Swamp run, so a run cannot move it. A live move of the `swamp` role is still open.
+
+Admission moves the assignment, then captures the whole intent with `NativeNodeRoleRelocateInput`: the target's runtime, its certificate leaves, firewall arguments and publications, and the source removal that `node:role:remove` builds for the same role. It renders the publications as the run leaves them, with the target's certificate published and the source's withdrawn. Both Nodes need recorded SSH management; neither needs a worker.
+
+Every target step is one official `@swamp/ssh exec` argument list with the target's recorded host key. No script ships. Each role has its own target steps:
+
+- `metrics` runs `operation-metrics-enable` against the target. That is the workflow `metrics:enable` runs. The Gateway site keeps its certificate, so the move signs none.
+- `websocket` builds a new Reverb release as the Node's user. The target needs Git, PHP and Composer.
+- Reverb's `.env` comes from the vault copy on stdin. `ln -sfnT` then points the install path at the release.
+- `gateway` writes the private DNS route drop-in and applies the route to the live link. A failed `resolvectl` reports `follow_up`.
+
+Then the run publishes. The `node-role-certificate-publish` child signs each certificate. The Caddy sites and private DNS of every publishing Node but the source follow. A `websocket` move waits the private DNS grace. Then `operation-node-role-remove-direct` removes the role from the source, and its own end check proves the removal.
+
+One native assert, `Confirm the move`, ends the run. The Gateway records the result from it:
+
+- On success the target assignment becomes active. The certificate and serving state follow the move.
+- The Gateway forgets the source's transferred settings.
+- A failed step marks the assignment `failed` with `converge:STEP`, or `remove:Remove from the source`.
+
+Relocation does not reconcile Metrics. When a Metrics role exists and `websocket` or `gateway` moved, `follow_up` names `orbit node:role:add <metrics-node> metrics --converge`.
+
+The native removal builder accepts the actual replacement assignment when preparing source cleanup. A Metrics move retains fleet exporter services, their exporter footprints and shared service deny rules. Cleanup still removes the old Metrics containers and source-owned firewall access. Removing Metrics without a replacement withdraws the exporters.
 
 ### Reuse role lowers in a native parent
 
