@@ -218,20 +218,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/node/converge_dns_program.ts",
-      "rule": "custom-control",
-      "count": 5,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/converge_dns_program.ts",
-      "rule": "inline-script",
-      "count": 182,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/node/network_native_program.ts",
       "rule": "custom-control",
       "count": 5,
@@ -243,96 +229,6 @@
       "file": "extensions/behaviors/operations/node/network_native_program.ts",
       "rule": "inline-script",
       "count": 296,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/role_certificates.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/php/build_program.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/php/build_program.ts",
-      "rule": "inline-script",
-      "count": 289,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/php/common_program.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/php/common_program.ts",
-      "rule": "inline-script",
-      "count": 140,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/php/profile_program.ts",
-      "rule": "inline-script",
-      "count": 66,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/php/runtime_program.ts",
-      "rule": "custom-control",
-      "count": 5,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/php/runtime_program.ts",
-      "rule": "inline-script",
-      "count": 530,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/dns-publication.ts",
-      "rule": "custom-control",
-      "count": 5,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/dns-publication.ts",
-      "rule": "inline-script",
-      "count": 182,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/firewall-program.ts",
-      "rule": "custom-control",
-      "count": 2,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/firewall-program.ts",
-      "rule": "inline-script",
-      "count": 233,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/php-shared-program.ts",
-      "rule": "inline-script",
-      "count": 214,
       "evidence": []
     },
     {
