@@ -12,7 +12,7 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as VM provider<br/>Incus · UpCloud
-  CLI->>GW: tasks:park 42<br/>--idempotency-key=park-1
+  CLI->>GW: tasks:park 42
   %%> Command:
   %%> - `orbit tasks:park 42 --idempotency-key=park-1`
   %%> - syntax: `<group> [--idempotency-key=KEY] [--json]`

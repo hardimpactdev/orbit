@@ -15,7 +15,7 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant VM as Task VM<br/>tvm-88 over ssh
   participant H as Incus host<br/>Node 14 · VM power
-  CLI->>GW: tasks:provision 42<br/>--idempotency-key=KEY
+  CLI->>GW: tasks:provision 42
   %%> Command:
   %%> - `orbit tasks:provision 42 --idempotency-key=feature.42`
   %%> - syntax: `<group> [--idempotency-key=KEY] [--json]`
