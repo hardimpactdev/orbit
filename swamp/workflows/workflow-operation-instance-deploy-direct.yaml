@@ -1549,7 +1549,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/schedule-run-assets'
-      behaviorName: ${{ "instance-deploy-schedules" }}
+      behaviorName: ${{ ("id-schedules-" + self.schedule.id + "-" + string(inputs.node_id)).split(".").join("-") }}
       methodName: lifecycle
       inputs:
         schedule:
