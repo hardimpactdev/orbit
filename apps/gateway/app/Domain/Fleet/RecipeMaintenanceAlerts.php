@@ -79,11 +79,6 @@ final readonly class RecipeMaintenanceAlerts
 
             return new ReleaseIncident('upcloud:'.$build->recipe_identity, (string) $build->id, 'template_unverified');
         }
-        if ($buildId !== null) {
-            $build = TaskVmImageBuild::query()->findOrFail($buildId);
-
-            return new ReleaseIncident('recipe-fleet:'.$build->recipe_identity, $build->recipe_generation.':'.$build->id.':'.$build->attempt, 'convergence_halted');
-        }
 
         throw new InvalidArgumentException('A recipe alert without a build needs an explicit incident.');
     }

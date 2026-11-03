@@ -105,8 +105,6 @@ class BuildTest(unittest.TestCase):
             with self.assertRaises(build.BuildError) as raised:
                 build.verify(recipe(), None, 'ci-runner')
         self.assertIn('Extra extensions: apcu.', str(raised.exception))
-        self.assertIn('for a Node with the ci-runner role', str(raised.exception))
-        self.assertIn('`php artisan node:converge-recipe NODE` on the Gateway', str(raised.exception))
         self.assertIn('`tools/ci-runners/setup.sh container NAME` on its host', str(raised.exception))
         self.assertNotIn('--profile=ci-runner', str(raised.exception))
 

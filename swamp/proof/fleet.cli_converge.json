@@ -44,7 +44,7 @@
       "orbit",
       "--",
       "php",
-      "swamp/proof/fleet.recipe/prepare.php"
+      "swamp/proof/fleet.cli_converge/prepare.php"
     ]
   ]
 }

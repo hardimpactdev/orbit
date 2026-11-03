@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Actions\Fleet\AdmitNodeRecipeAction;
 use App\Actions\Nodes\StartNodeConvergeAction;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Nodes\NodeConvergeInput;
@@ -14,7 +13,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Fleet\Footprint\NetworkFootprintArtifact;
-use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Models\Cluster;
 use App\Models\NodeFootprint;
 use App\Models\Operation;
@@ -89,24 +87,10 @@ it('reserves the Node and shared hub for the whole native converge', function ()
         ->toThrow(ResourceOperationException::class, 'Another Operation owns the Node or VPN hub.');
 });
 
-it('honors a recipe parent holding the same shared hub', function (): void {
-    Operation::query()->create(['kind' => 'fleet.recipe', 'target_type' => 'node', 'target_id' => $this->hub->id,
-        'node_id' => $this->hub->id, 'input' => ['footprint' => ['network' => ['hub_id' => $this->hub->id]]], 'status' => 'running', 'sequence' => 1]);
-    expect(fn () => app(StartNodeConvergeAction::class)->execute($this->node))
-        ->toThrow(ResourceOperationException::class, 'Another Operation owns the Node or VPN hub.');
-});
-
-it('refuses recipe admission while converge holds the shared hub', function (): void {
-    app(StartNodeConvergeAction::class)->execute($this->node);
-    expect(fn () => app(AdmitNodeRecipeAction::class)->execute(
-        FleetFixtures::node('recipe-other-peer'), new RecipeLoader()->load()))
-        ->toThrow(ResourceOperationException::class, 'Another Operation owns the Node or VPN hub.');
-});
-
 it('holds a timed-out native network writer until it settles', function (): void {
-    $expired = Operation::query()->create(['kind' => 'fleet.recipe', 'target_type' => 'node', 'target_id' => $this->hub->id,
-        'node_id' => $this->hub->id, 'input' => ['footprint' => ['network' => ['hub_id' => $this->hub->id]]],
-        'status' => 'failed', 'error_code' => 'operation.timed_out', 'lock_key' => 'recipe:node:'.$this->hub->id, 'sequence' => 1]);
+    $expired = Operation::query()->create(['kind' => 'node.converge', 'target_type' => 'node', 'target_id' => $this->hub->id,
+        'node_id' => $this->hub->id, 'input' => ['_converge' => ['network' => ['hub_id' => $this->hub->id]]],
+        'status' => 'failed', 'error_code' => 'operation.timed_out', 'lock_key' => 'node-converge:node:'.$this->hub->id, 'sequence' => 1]);
     expect(fn () => app(StartNodeConvergeAction::class)->execute($this->node))
         ->toThrow(ResourceOperationException::class, 'Another Operation owns the Node or VPN hub.');
     $expired->update(['lock_key' => null]);

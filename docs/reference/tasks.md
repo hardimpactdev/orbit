@@ -1431,6 +1431,8 @@ The loop reads Doctor, Activity, the Gateway log, and assistance reasons. Waitin
 
 ### A release alert files on its first occurrence
 
+Task VM image build incidents recover after a verified build or a superseding recipe generation.
+
 A failed release is a verdict from deterministic checks, not a noisy signal, so waiting for three windows would only delay it. The release command pushes the alert at that moment, and the next hourly run files it.
 
 The release producer supplies the failing resource, attempt, and fault. The Gateway SHA stays in evidence, so a Gateway update does not create another incident for an unchanged failure. The Activity key lacks that incident identity, and a single Activity row would never be ready. Filing release alerts first keeps a burst of recurring noise from taking the daily cap before them. The webhook, not the task, is the prompt signal, so the filer keeps its hourly run.

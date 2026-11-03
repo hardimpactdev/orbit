@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Infrastructure\MachineSoftware;
 
 use App\Domain\Nodes\RoleName;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use RuntimeException;
@@ -24,33 +23,6 @@ final readonly class NodeRecipeProgram
     }
 
     /** @return array<string, ToolPin> */
-    public function tools(Node $node, MachineRecipe $recipe): array
-    {
-        $architecture = self::architecture($node);
-        $node->load('roles');
-        $names = $node->roles->isEmpty() ? $recipe->profile('operator', $architecture) : [];
-        foreach ($node->roles as $role) {
-            if ($role->status !== LifecycleStatus::Active) {
-                throw new ResourceOperationException('node.recipe_role_inactive', 'Every assigned role must be active before recipe convergence.', 409);
-            }
-            $names = [...$names, ...$recipe->profile($role->role->value, $architecture)];
-        }
-        if (is_array($node->settings['task_vms'] ?? null)) {
-            $names = [...$names, ...RecipeLoader::IncusPackages];
-        }
-        $tools = [];
-        foreach (array_unique($names) as $name) {
-            $pin = $recipe->tools[$name] ?? throw new ResourceOperationException('node.recipe_pin_missing', "The recipe has no pin for role prerequisite [{$name}]. Nothing was changed.", 422);
-            if ($pin->source !== 'ubuntu' && ! isset($pin->artifacts[$architecture])) {
-                throw new ResourceOperationException('node.recipe_artifact_missing', "The recipe has no {$architecture} artifact for [{$name}].", 422);
-            }
-            $tools[$name] = $pin->forArchitecture($architecture);
-        }
-        ksort($tools);
-
-        return $tools;
-    }
-
     /**
      * The PHP versions whose whole set the tools hold.
      *

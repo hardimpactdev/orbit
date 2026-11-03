@@ -17,7 +17,7 @@ The Gateway returns HTTP 202 with an Operation for every admitted target. The CL
 
 The network part has its own desired-state digest. Each run also reads public WireGuard state on the target and hub, resolves a peer endpoint and checks its DNS policy. When the digest and live state match, it writes no WireGuard file and runs no tunnel apply, reload or restart. Drift reuses the native network child and ends with a bounded tunnel probe and a recent handshake check. The ICMP probe is best effort; the handshake decides. A VPN hub publishes the full recorded peer list and accepts a recent handshake from any admitted peer. Admission holds the Node and shared hub against another converge.
 
-This command replaces the separate network and hub converge commands. It changes no role assignment, Tool or package recipe.
+This command replaces the separate network and hub converge commands. It changes no role assignment or Tool.
 
 ```bash
 orbit node:converge beast

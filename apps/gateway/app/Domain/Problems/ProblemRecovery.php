@@ -118,19 +118,6 @@ final readonly class ProblemRecovery
 
             return $build->state === TaskVmImageBuildState::Succeeded && $build->attempt > (int) $attempt ? 'verified_image_build' : null;
         }
-        if (str_starts_with($resource, 'recipe-fleet:')) {
-            $parts = explode(':', $attempt);
-            $generation = (int) $parts[0];
-            $desired = DB::table('task_vm_image_recipe')->where('id', 1)->first();
-            if ($desired !== null && (int) $desired->generation > $generation) {
-                return 'recipe_generation_superseded';
-            }
-            $build = TaskVmImageBuild::query()->find((int) ($parts[1] ?? 0));
-
-            return $build instanceof TaskVmImageBuild && $build->recipe_identity === substr($resource, 13)
-                && ($build->fleet_convergence['generation'] ?? null) === $generation && ($build->fleet_convergence['status'] ?? null) === 'succeeded'
-                ? 'verified_recipe_convergence' : null;
-        }
         if (str_starts_with($resource, 'fleet')) {
             $rollout = FleetRollout::query()->find((int) $attempt);
 

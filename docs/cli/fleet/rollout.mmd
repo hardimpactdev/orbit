@@ -67,7 +67,7 @@ sequenceDiagram
     %%> Today:
     %%> - the Node agent is frozen at its pin, so the fetch changes nothing
     %%> Not included:
-    %%> - Caddy, DNS, PHP and role files; `node.converge` and `fleet.recipe` own those
+    %%> - Caddy, DNS, PHP and role files; `node.converge` owns those
     opt binary changed or stale
       SW->>N: Restart the Node agent<br/>observer_restart · systemctl
       %%> When:

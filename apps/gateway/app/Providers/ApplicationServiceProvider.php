@@ -11,7 +11,6 @@ use App\Console\Commands\CaddyBuildCommand;
 use App\Console\Commands\CheckNodeDnsCommand;
 use App\Console\Commands\CheckSwampReaderCredentialCommand;
 use App\Console\Commands\ConvergeGatewayWebCommand;
-use App\Console\Commands\ConvergeNodeRecipeCommand;
 use App\Console\Commands\FinalizeInterruptedActivitiesCommand;
 use App\Console\Commands\InstallSwampReaderCredentialCommand;
 use App\Console\Commands\MachineRecipeCommand;
@@ -43,7 +42,6 @@ final class ApplicationServiceProvider extends ServiceProvider
             CaddyBuildCommand::class,
             CheckNodeDnsCommand::class,
             ConvergeGatewayWebCommand::class,
-            ConvergeNodeRecipeCommand::class,
             FinalizeInterruptedActivitiesCommand::class,
             MachineRecipeCommand::class,
             ProvisionNodeCommand::class,

@@ -47,10 +47,7 @@ export async function maintenance(
         [
           "operation.target_busy",
           "fleet.rollout_busy",
-          "fleet.window_closed",
-          "fleet.recipe_not_ready",
           "fleet.rollout_not_ready",
-          "node.recipe_docker_provider",
         ].includes(code.data.error.code)
       ) return null;
       throw new Error(
@@ -237,27 +234,6 @@ export async function maintenance(
           `fleet:recipe-pr:${prPlan.date}:${action}:${pull.number}:${digest}`,
         );
       }
-    }
-  });
-  await independently(async () => {
-    const recipe = z.object({
-      status: z.string(),
-      build_id: z.number().optional(),
-      node_id: z.number().optional(),
-      recipe: z.string().optional(),
-    }).parse(await request("GET", "/api/v1/fleet/recipe/plan"));
-    if (recipe.status === "ready" && recipe.node_id) {
-      await admit(
-        `recipe-${recipe.build_id}-${recipe.node_id}`,
-        `/api/v1/fleet/nodes/${recipe.node_id}/recipe`,
-        { automatic: true, build_id: recipe.build_id, recipe: recipe.recipe },
-        false,
-      );
-    } else if (["complete", "interrupted"].includes(recipe.status)) {
-      await request("POST", "/api/v1/fleet/recipe/state", {
-        state: recipe.status,
-        build_id: recipe.build_id,
-      });
     }
   });
   await independently(async () => {

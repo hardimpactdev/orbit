@@ -28,7 +28,7 @@ The repository's machine software recipe is [`apps/gateway/resources/machine-sof
 
 The recipe pins both the Vite+ runtime (`vp`) and CLI (`vp-cli`) to `1.4.0`. Project lockfiles stay independent: [deployment admission](/reference/tools#project-environments-in-the-vite-store) accepts a manager at least as new as the Project's locked Vite+ release, including Projects on `1.2.x`. A recipe update does not update those lockfiles.
 
-The loader and validator define the recipe contract. [Recipe image builds](#build-the-base-image) use that document for a host-local base image. [Node convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) applies its role tools to production Nodes. Claims use the [current recipe](#claims-use-the-current-recipe), or for a day the host's [last promoted image](#image-fallback), and topologies [copy their Nodes from its topology seed](#prepare-the-topology).
+The loader and validator define the recipe contract. [Recipe image builds](#build-the-base-image) use that document for a host-local base image. Claims use the [current recipe](#claims-use-the-current-recipe), or for a day the host's [last promoted image](#image-fallback), and topologies [copy their Nodes from its topology seed](#prepare-the-topology).
 
 ### Recipe schema
 
@@ -63,8 +63,6 @@ Snapshot checks use temporary sources and indexes without changing the system AP
 There is a known fail-closed window between `apt update` and installation. If Ubuntu supersedes a build during that window, the snapshot at its install time can omit it. Convergence then refuses with `snapshot-unproved`, even for a real Ubuntu build. It does not infer provenance from a newer candidate or guess an earlier update time.
 
 Recipe installs use a temporary snapshot source and leave the normal Ubuntu sources in place, so unattended-upgrades can continue installing security updates. Application repairs the exact snapshot source file written by earlier Orbit convergence. It first saves that file beside the APT configuration as `ubuntu.sources.orbit-snapshot-backup`, then restores archive, updates, backports, and security sources with the Ubuntu archive keyring, and logs the repair through `logger` with the `orbit-recipe` tag. Other source content is preserved.
-
-The restored sources use the generic Ubuntu hosts. A regional mirror cannot be recovered because main overwrote the original file without a backup. See [Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) for APT index refresh during application. Dry runs show `repair_ubuntu_sources` in the plan's `actions` and assess the restored sources with temporary indexes; they leave the system sources and indexes unchanged. Without a repair, dry runs use existing indexes.
 
 Node convergence and image installs refuse Ubuntu downgrades. Exact Debian artifacts permit downgrades only after an APT simulation rejects every non-artifact downgrade; installed Ubuntu recipe versions remain explicit install targets. Installation ends with `apt-get check` and `dpkg --audit`; audit output also causes failure. Sury PHP artifacts remain exact: the PHP build installer owns their installation and verification, and the Ubuntu floor rule never applies to them.
 
@@ -194,7 +192,7 @@ The installer owns `/etc/php/<version>/{fpm,cli}/conf.d/99-cve-2026-109618-uploa
 
 A settings-only change validates every active PHP-FPM master, including dedicated production masters, regardless of the caller's FPM scope. It gracefully reloads those that pass. An Instance step reports and logs invalid masters as deferred, keeps the INI, and continues reloading the other masters. Recipe convergence instead fails and restores the previous settings. Rollback uses reload for masters that were reloaded and restart only for masters that were restarted. Images have no active masters, so this reload is a no-op.
 
-Merging this mitigation does not change the recipe identity, so it starts no fleet rollout or image rebuild. A Node receives the file at its next PHP installer run: an Instance PHP step, `node:converge-recipe`, or the rollout after the PHP build bump. Task VM base images and topology seeds receive it at their next rebuild through the same installer.
+Merging this mitigation does not change the recipe identity, so it starts no fleet rollout or image rebuild. A Node receives the file at its next PHP installer run: an Instance PHP step. Task VM base images and topology seeds receive it at their next rebuild through the same installer.
 
 The recipe pins PHP 8.4.27 and 8.5.12, which fix CVE-2026-109618 and CVE-2026-109619. The drop-in stays as defence in depth. Disabling upload progress is not a complete mitigation; installing the fixed builds is required. See the [PHP security release notice](https://www.php.net/archive/2026.php#2026-10-21-5).
 
@@ -299,7 +297,7 @@ The Swamp control worker needs `gpg` and `gpgv`; the standalone recipe CLI also 
 
 1. The [mirror](#the-recipe-artifact-mirror) workflow publishes the new files.
 2. Each task VM host [builds a new base image](#build-the-base-image).
-3. [Nightly recipe maintenance](#nightly-recipe-maintenance) converges each Node, or you run `php artisan node:converge-recipe <node>`. The next [PHP step](/reference/php-runtime#php-build) of an Instance also brings its versions to the recipe.
+3. The next [PHP step](/reference/php-runtime#php-build) of an Instance brings its versions to the recipe.
 4. Hosted CI installs the new build in its next run. See [runner updates](/reference/implementation-loop#one-php-build-in-ci) for the pre-merge operator steps.
 
 ### Recipe identity
@@ -308,7 +306,7 @@ The recipe identity is `sha256:<digest>`, computed from the validated document's
 
 Internal source commits and digests remain in the identity; relocating identical internal bytes does not change it. Canonicalization recursively sorts object keys by byte order, preserves array order, emits no insignificant whitespace, leaves slashes and Unicode unescaped, and adds no final newline. Only JSON integers, strings, arrays, objects, booleans, and null are permitted; schema fields further restrict their types. Duplicate keys are rejected before hashing. The identity is derived, not stored as a self-referential field in the recipe.
 
-Whitespace and object-key order do not change the identity. Changing a snapshot, version pin, external artifact URL, `artifact_mirror`, source commit, digest, role assignment, schema version, or list order does. The identity covers all profiles together; there is no independent version counter for each role and no Git commit SHA masquerading as the recipe version. Git history provides provenance, while the content hash names the exact software intent even when the same recipe appears in another commit. [Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) records this complete identity after verification.
+Whitespace and object-key order do not change the identity. Changing a snapshot, version pin, external artifact URL, `artifact_mirror`, source commit, digest, role assignment, schema version, or list order does. The identity covers all profiles together; there is no independent version counter for each role and no Git commit SHA masquerading as the recipe version. Git history provides provenance, while the content hash names the exact software intent even when the same recipe appears in another commit.
 
 [Base image builds](#build-the-base-image) record the same identity in the image and build row. Schema version `1` and a short display hash are not substitutes.
 
@@ -869,31 +867,16 @@ The bump tests own fixed Incus versions and fake indexes, with distinct builds p
 
 The `ci-runner` role selects the complete Incus package set. Configured task VM hosts also add that set to their role-selected recipe tools. Other roles do not select Incus merely because it is installed; inventory those hosts separately before planning an upgrade.
 
-Fleet convergence applies every non-Incus change while holding Incus. It records the exact held pins in the Node's `settings.machine_recipe_incus_hold` and raises an alert for each Node and held version, requesting a drain and explicit convergence. A partial convergence records `machine_recipe.partial_version`, never the complete recipe `version`. Later snapshots and PHP security builds continue to converge. A successful convergence clears the hold when Incus needs no further change.
-
-The operator drains the host, inspects `php artisan node:converge-recipe NODE --dry-run`, then explicitly runs `php artisan node:converge-recipe NODE`. An Incus change refuses before package mutation when any project has active instances; the error names them. Live task VM rows also refuse convergence. Zabbly hooks restart the daemon directly despite `policy-rc.d`, starting its one-way database migration. A package downgrade alone is not a rollback.
-
 Incus 7.0 requires Linux 6.12, cgroup v2, QEMU 8.2, nftables 1.0, dnsmasq 2.90, and ZFS 2.1 when using ZFS. Ubuntu 26.04 uses kernel 7.0 and cgroup v2. Incus 6.0.5 already uses nftables; 7.0 removes the alternative xtables backend. Orbit's bridge and ACL setup continues to use nftables. The harness's separate iptables rules use Ubuntu's nft backend; its isolation hook precedes either filter chain. Orbit uses neither storage buckets nor OVN.
 
 Orbit uses complete CLI command names and explicit archive destinations, compatible with 7.0's stricter argument parsing. Its regular image archives do not use the changed file-copy behavior. Existing Ubuntu VMs retain their NVRAM filenames. On hosts only, the installer adds firmware aliases in Zabbly's bundled firmware directory. Incus 7.0.1 searches `INCUS_EDK2_PATH` then `/usr/share/OVMF`, while its AppArmor profile permits only `INCUS_EDK2_PATH` when set ([firmware selection](https://github.com/lxc/incus/blob/v7.0.1/internal/server/device/edk2/driver_edk2.go), [AppArmor](https://github.com/lxc/incus/blob/v7.0.1/internal/server/apparmor/instance.go)). Remove the aliases after an upstream release fixes selection and confinement and a VM created on Ubuntu Incus boots without them. Rebuilt images and new VMs do not need these aliases.
 
-Roll out Shark first, then Beast, then Sabre. Services needs a separate maintenance plan if its inventory contains an Incus server; its current roles do not select Incus. Deploying the Incus 7 recipe does not require pausing task VMs or clearing host settings: fleet convergence holds the Incus change for explicit convergence. Recipe convergence skips Docker CE hosts.
-
-Before deploying the Incus 7 recipe, the operator must complete Shark's first convergence with a Gateway release and recipe that still pin Ubuntu Incus, as a separate maintenance operation approved by Nick. Check the recorded recipe with `php artisan node:converge-recipe shark --status` on that Gateway release before merging. Without a recorded `machine_recipe`, its first convergence may include unrelated changes. Resolve those changes from its dry run, converge, and verify Doctor. The Incus 7 dry run must then isolate the Incus upgrade and deliberate pin removals. Automatic Gateway releases make this a pre-merge prerequisite.
-
 1. Drain Shark with the admission procedure below. Inventory every project with `incus list --all-projects`.
 2. Finish live task VM rows through normal lifecycle operations. Save and disable instance autostart with the drain script below, then stop all remaining instances. Take the stopped-state backup below.
-3. Restart Incus 6 with guests stopped. Inspect `php artisan node:converge-recipe shark --dry-run`, then run `php artisan node:converge-recipe shark`.
 4. Verify client and server 7.0.1. Compare project, VM, ZFS, custom volume, and seed inventories with the backup.
 5. Boot an old-image guest and a new disposable guest. Check agent exec, stop/start, bridge isolation, and ACL egress.
 6. Run `php artisan task-vms:build-image shark`. Require base and seed verification and promotion before the topology gate.
 7. Run one complete topology task group explicitly on Shark. Require seed adoption, Node copies, enrollment, checks, teardown, and clone removal.
-
-After Shark passes, upgrade Beast. Confirm that Beast's Docker CE → `docker.io` migration is applied. Merging its code does not prove host convergence. Rebuild and promote Beast's base and seed. Run the same topology gate.
-
-Upgrade Sabre after both task VM hosts pass. Drain every `orbit-ci` runner container. Run the `hold` step below to save and disable autostart in every project before stopping instances. Back up its stopped `dir` pool and Incus database. Converge explicitly. Start and verify one runner before resuming CI. The ZFS backup below applies only to ZFS pools. Preserve Sabre's `dir` data with a separate offline copy.
-
-Handle any Incus server on Services last, in a separately approved maintenance window with its service owners. Its app and database roles do not select Incus. Ordinary recipe convergence will not upgrade that server.
 
 The Shark topology group is the **go/no-go point**. The full host 7.0.1 → task VM 7.0.1 → topology Node chain remains unverified until it passes. Failure stops rollout and invokes the rehearsed rollback below before normal admission resumes.
 
@@ -1242,23 +1225,9 @@ Each admitted merge regenerates its evidence and checks the live PR target, auth
 
 The shared closing rule applies even to a green PR whose merge was refused. Superseded PRs need no further index downloads or merge attempts. A person does not need to push a commit that would invalidate App-only evidence. This reuses the existing App and PR API without Actions secrets or a second publisher.
 
-The Gateway admits recipe maintenance only for the serving release while task VMs are enabled. Merge and deployment have no fixed time. The existing release handoff and per-minute image reconcile build, smoke-test, and promote the base on each configured host. Maintenance adds no build trigger or composed-topology smoke run. Every host must promote the deployed identity and generation before fleet convergence starts.
-
-A failed build keeps convergence waiting for images; it does not halt the sequence. The Incus image build path alerts once per failed attempt that needs operator recovery and names `task-vms:build-recipe --retry` as recovery. After every host promotes the same identity and generation, convergence starts on the next available tick without a new generation. An unacknowledged from-stock submission restarts on its own without an operator alert. An unacknowledged submission to reactivate a verified image set or resume a failed step alerts and needs `task-vms:build-recipe --retry`. Halts caused by Node visits remain unchanged.
+The Incus image build path alerts once per failed attempt that needs operator recovery and names `task-vms:build-recipe --retry` as recovery. An unacknowledged from-stock submission restarts on its own without an operator alert. An unacknowledged submission to reactivate a verified image set or resume a failed step alerts and needs `task-vms:build-recipe --retry`.
 
 The two image-build workers check `builds` before `builds-optional`, so a waiting Incus chain step takes priority over the optional UpCloud job. A running UpCloud build is not interrupted. UpCloud remains one synchronous job, with no new lock. Failures from the recipe installers and recipe verification store their phase, exit status, and bounded, sanitized stderr before deleting the builder. Other stages, including launch, cloud-init, templatize, and smoke checks outside recipe verification, report their stage error without that structured diagnostic. `php artisan task-vms:image-builds` shows the retained diagnostics. The failed-attempt fence remains; only `php artisan task-vms:build-recipe --retry` admits another attempt. This command also retries failed Incus builds.
-
-On the next available minute, Swamp admits one Node recipe Operation. Later ticks visit the next Node only after its predecessor passes. Order is app-dev, services, app-prod, vpn, Gateway last, with Node ID inside a tier and the latest tier for a multi-role Node.
-
-Only Nodes whose roles are all app-dev start as soon as every configured host promotes, at any hour. Shared services, app-prod, vpn, and Gateway start only from 03:00 inclusive to 06:00 exclusive Europe/Amsterdam, in strict tier order after every app-dev-only Node is done. Outside the window, the sequence stays ready until the next night. An effect already running may finish past 06:00. The Gateway refuses each later run after the window closes, using current roles and its own clock. The serving Gateway also goes last.
-
-Only active managed Linux Nodes with roles participate. The `ci-runner` role joins the overnight service tier. Task VMs, macOS, and roleless Nodes are excluded. Each visit uses [Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe), including inventory, health, and Doctor checks. Nodes already verified on that identity need no repeat installation.
-
-The first build row for the current recipe carries `fleet_convergence`, shown by `task-vms:image-builds`: generation, progress, stopping point, per-Node changes, and the alert receipt. This adds no ledger table.
-
-A terminal failed or cancelled Node Operation halts the sequence. An interrupted visit on a restricted Node fails with `fleet.visit_interrupted` instead of resuming effects. Swamp closes its running steps and the Gateway halts the recipe build. App-dev-only visits may recover their keyed receipts. A lost transport reply does not prove that an effect failed.
-
-Release alerts record Activity, file an assistance problem, and send the configured signed webhook. Nodes after the failure stay untouched; earlier changes remain. There is no automatic retry or rollback. Investigate with Doctor and the report, then converge manually or merge a recipe correction. Pinning the previous snapshot through a PR is manual recovery; retained images can be reused. A new desired generation starts a new sequence. Each admission checks the deployed identity so an older release cannot advance it.
 
 ### Claims use the current recipe
 

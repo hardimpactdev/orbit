@@ -359,7 +359,7 @@ A caller sends the Node, the manager, the package name, an optional version cons
 
 The Gateway refuses a package that is already on the Node without a Tool record, with `tool.already_installed_unmanaged` (HTTP 409). Use explicit [adoption](#adopt-a-tool) to take ownership.
 
-When a Tool operation checks whether a package is installed, it uses the manager inventory. An individual version check selects its package from that inventory; it has no separate parser. Nonempty Homebrew version lists are validated one value at a time; a valid installed version remains verifiable during fleet recipe checks. An unmanageable package name is excluded from this inventory. An unreadable version makes only that package unverifiable. Failed or truncated inventory reads remain unverifiable.
+When a Tool operation checks whether a package is installed, it uses the manager inventory. An individual version check selects its package from that inventory; it has no separate parser. Nonempty Homebrew version lists are validated one value at a time. An unmanageable package name is excluded from this inventory. An unreadable version makes only that package unverifiable. Failed or truncated inventory reads remain unverifiable.
 
 A new install records its Operation, installs the package, and reads the installed version. A success records the Tool as `installed` and reports `applied`. A package-phase failure retains a `failed` Tool, so the same command can retry it or removal can drop it. A manager failure creates no Tool. List Tools to find the retained record. Running the same install again retries a Tool whose install failed. An install of a Tool that is already `installed`, with the same constraint, checks the package again. When the package is present, the result is `unchanged`.
 
@@ -530,8 +530,6 @@ Owning every installed package was rejected because a scan is not a request to o
 A readable version that is not SemVer can still be adopted when no constraint is set. A formula revision such as `25.8.1_1` and a cask version such as `3.003` are null in the scan. The Tools page shows `unreadable`, and `tool:scan` shows an em dash. A constraint cannot be checked, so adopt returns `tool.installed_version_unparseable` and install returns `tool.candidate_version_unparseable`. The package stays where it was.
 
 ## Recipe convergence
-
-[Recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) installs exact versions of machine prerequisites. It reuses Tools inspection to check every existing managed Tool after package changes, and rejects conflicting apt constraints before mutation. It does not adopt prerequisite packages or create, remove, or rewrite Tool rows. Role filtering comes from the recipe and the existing role prerequisite catalog. Protected manager and bootstrap packages stay outside public Tool intent. The successful recipe identity is recorded in the Node settings.
 
 ## Signed apt repositories
 

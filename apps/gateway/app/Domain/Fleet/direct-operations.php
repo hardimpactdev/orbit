@@ -4,16 +4,9 @@ declare(strict_types=1);
 
 use App\Domain\Fleet\FleetReleaseProjection;
 use App\Domain\Fleet\PeerDnsProjection;
-use App\Domain\Fleet\RecipeDirectProjection;
 use App\Domain\Fleet\RecipePrProjection;
 
 return [
-    'fleet.recipe' => [
-        'workflow' => 'operation-fleet-recipe-direct',
-        'projection' => RecipeDirectProjection::class,
-        'workflow_inputs' => true,
-        'terminal_result' => ['job' => 'result', 'step' => 'result'],
-    ],
     'fleet.rollout' => [
         'workflow' => 'operation-fleet-rollout',
         'projection' => FleetReleaseProjection::class,
