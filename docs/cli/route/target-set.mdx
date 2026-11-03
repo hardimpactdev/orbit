@@ -26,6 +26,8 @@ orbit route:target:set 9 12 --targets=15 --reassign=18:4 --remove=19
 
 Without pool options, the command sets one target. With them, it sends the complete target set and a disposition for each detached Instance. [Change a production target set](/reference/routes#change-a-production-target-set) lists the rules and error codes. A single-target request that would take an Instance from another Route, or detach an active Instance from its only Route, returns `route.target_conflict` and changes nothing. A production target set can take an Instance from another Route in the same Cluster.
 
+An unpublished development Route changes only its Gateway record. A published development Route also moves its site to the new checkout. For a production pool, Orbit stages and probes the workloads before switching the Router, then restores each workload's final configuration and retires detached targets. Probes use pinned SSH from 209 and verify the Route's hostname and Orbit CA; application HTTP errors do not fail the TLS check. A failed probe leaves the Router pool unchanged. Node changes use official cfgmgmt resources and single SSH argv commands, with no rollback.
+
 ## How it works
 
 <div className="flow-at" data-chart="route/target-set"></div>

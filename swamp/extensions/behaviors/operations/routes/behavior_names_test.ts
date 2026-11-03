@@ -1,7 +1,7 @@
 import { assertNotMatch } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { ROOT } from "../../../../bin/gate-test-support.ts";
-Deno.test("Route child behavior names never contain an unbounded path or domain", async () => {
+Deno.test("Route child behavior names never contain an unbounded path, domain or service", async () => {
   for (
     const name of [
       "operation-route-create",
@@ -21,7 +21,7 @@ Deno.test("Route child behavior names never contain an unbounded path or domain"
     };
     for (const job of flow.jobs) {
       for (const step of job.steps) {
-        assertNotMatch(step.task.behaviorName ?? "", /\.(path|domain)\b/, `${name}: ${step.name}`);
+        assertNotMatch(step.task.behaviorName ?? "", /\.(path|domain|unit)\b/, `${name}: ${step.name}`);
       }
     }
   }

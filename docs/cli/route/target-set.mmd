@@ -1,8 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, DECISIONS R1-R4 + round 2 (target_set single path, R2), Gateway signs CSRs (root-of-trust), single-swamp-node. docs/cli/route.mdx, docs/reference/routes.md (Create and change targets, Change a production target set).
-  %% Tightened: flow-tighten 2026-11-02, rules 2, 3, 22 (instance:create owns web-root access; DNS only outside the TLD; cfgmgmt file/firewall).
-  %% Corrected 2026-11-02: a development target is not record-only. Its site root is the target Instance's checkout, so a published site moves in route:create's one publish step.
-  %% Rule 23: 2026-11-03 required-only main path.
+  %% Target design: Nick 2026-11-03, single-swamp-node, rules 14-25.
   %% status: draft
   %% command: route:target:set
   %% kind: route.target_set
@@ -18,144 +15,36 @@ sequenceDiagram
   participant N as Route Nodes<br/>workload · Router
   participant V as VPN Node<br/>private DNS
   CLI->>GW: route:target:set 9 12
-  %%> Command:
-  %%> - `orbit route:target:set 9 12`
-  %%> - syntax: `<route> <target> [--targets=ID]... [--reassign=ID:ROUTE]... [--remove=ID]...`
-  %%> Input:
-  %%> - Route 9 and Instance 12: the one target of Route 9
-  %%> Optional:
-  %%> - `--targets=15`: the complete ordered production target set, here Instances 12 and 15; it adds the set steps in `opt --targets`
-  %%> - `--reassign=18:4`: a detached Instance 18 moves to Route 4
-  %%> - `--remove=19`: allows removing a detached Instance 19
-  %%> - each detached Instance needs one of these dispositions; `--reassign` and `--remove` also send the request as a target set
-  %%> - `--idempotency-key` and `--json` change no step
   Note over GW: Guard, lock, record intent<br/>targets unchanged · task #5140
-  %%> Requirements:
-  %%> - your Node has an access grant to every target's Node
-  %%> - every target is an active Instance of Route 9's Project (`route.target_app_conflict`, `route.target_inactive`)
-  %%> - no active Instance loses its only Route (`route.target_conflict`)
-  %%> - a single target never takes an Instance from another Route
-  %%> - a target set: an explicit Cluster-scoped Route; each target a production Instance on its own active `app-prod` Node in that Cluster
-  %%> Locks:
-  %%> - the projection lock and the environment owner of every Instance named
-  %%> - a busy lock is waited for up to 30 s, then `app-dev.projection_busy`
-  %%> Result:
-  %%> - task #5140 recorded with the full intent, including the old targets for recovery
-  %%> - Route 9's targets stay as they are until the result
   alt unpublished development Route
     Note over GW: Record the target<br/>R1: no run · Route 9 → 12
-    %%> When:
-    %%> - one development target on a Route whose sites are not published
-    %%> Why no run:
-    %%> - no site serves the Route yet, so nothing changes on a Node; the Route publishes when it converges
-    %%> Result:
-    %%> - Route 9's target becomes Instance 12, and the task has already succeeded
     GW-->>CLI: Target set<br/>task #5140 succeeded
-    %%> What you get:
-    %%> - the final result at once; there is nothing to follow
   else published Route
     GW->>SW: Start run, full intent<br/>operation-route-target-set
-    %%> What it does:
-    %%> - starts one Swamp run on serve (Node 209)
-    %%> When:
-    %%> - Route 9's sites are published; a target set always starts a run
-    %%> Inputs:
-    %%> - each step's whole files, rendered by the Gateway: Caddyfiles, PHP pools, `APP_URL` lines, certificate leaves, LAN rules and probes, per Node
-    %%> - production `.env` material only as vault key names in `orbit-control-inputs` (R3)
-    %%> - each Node's address and SSH host keys; the SSH identity comes from the `swamp` role
     GW-->>CLI: 202 Accepted<br/>task #5140
-    %%> What you get:
-    %%> - the task number, at once
-    %%> Next:
-    %%> - the CLI follows the task with `operation:show`
     SW->>N: Make CSRs on new Nodes<br/>openssl req · key stays on Node
-    %%> How:
-    %%> - Swamp reaches each Node over `@swamp/ssh` from 209
-    %%> What it does:
-    %%> - makes a key and a certificate request for the Route domain on each Node that needs a leaf
-    %%> - a new production target also gets a leaf under a temporary scope, for its staged site
-    %%> - returns only the public CSRs
     SW->>GW: Sign the CSRs<br/>operation:direct:certificate-sign
-    %%> What it does:
-    %%> - sends the CSRs with task #5140 and the run id
-    %%> Why:
-    %%> - the Orbit CA key stays in the Gateway; signing is the one step that calls the Gateway
     GW-->>SW: Signed certificates<br/>Orbit CA key stays in Gateway
-    %%> Returns:
-    %%> - one public certificate bundle per leaf
     SW->>N: Install cert, publish site<br/>route:create's publish step
-    %%> When:
-    %%> - Route 9's sites are published, so its site moves from the previous target's checkout to Instance 12's
-    %%> - with `--targets`, this step has no Node and the set steps below run instead
-    %%> What it does:
-    %%> - runs the same child as `route:create`: installs the certificate, writes each Node's whole Caddyfile, validates it and reloads Caddy
-    %%> - the previous target's Node loses the site; Instance 12's Node gains it
-    %%> Not included:
-    %%> - web-root access: `instance:create` already gave Caddy read access to Instance 12's checkout (rule 2)
-    opt --targets
+    opt --targets, --reassign or --remove
       SW->>N: Stage the new targets<br/>@swamp/cfgmgmt/file · firewall
-      %%> When:
-      %%> - only for a target set: `--targets`, `--reassign` or `--remove`
-      %%> What it does:
-      %%> - per new Node: allows the Router on LAN port 443 with `@swamp/cfgmgmt/firewall`, installs the certificates, and writes the PHP pool, the staged Caddyfile and the production `.env`
-      %%> - the staged Caddyfile adds the new workload site beside the old ones and uses the temporary leaf
-      %%> - validates each Caddyfile, then reloads Caddy; never a restart (rule 7)
-      SW->>N: Probe each new target<br/>openssl s_client · SNI domain
-      %%> What it does:
-      %%> - connects from 209 to each new workload on port 443, with the Route domain as SNI
-      %%> Why:
-      %%> - the Router only sends traffic to targets that serve
+      SW->>N: Probe each new target<br/>@swamp/ssh exec · SNI domain
+      %%> Runs from 209. A failed target probe stops the Router switch.
       SW->>N: Switch the Router pool<br/>Router Caddy · reload
-      %%> What it does:
-      %%> - writes the Router's whole Caddyfile with the pool Instances 12 and 15, in order
-      %%> - validates, then reloads Caddy on the Router
-      %%> Not included:
-      %%> - DNS: the Route domain points at the Router, which does not change
       SW->>N: Retire detached targets<br/>@swamp/cfgmgmt · absent
-      %%> What it does:
-      %%> - writes each other Node's whole desired Caddyfile: old workload sites go, and the new targets move to their lasting leaf
-      %%> - removes LAN rules and temporary certificates no Route needs
-      %%> - Instance 18's site follows it to Route 4
-      %%> Not included:
-      %%> - Instance removal: `--remove` is refused with `route.target_cleanup_unavailable` until the shared Instance removal steps run here
-      opt Node-scoped, outside TLD
-        SW->>V: Move private DNS<br/>records + catalog, then reload
-        %%> When:
-        %%> - a Node-scoped Route whose new target runs on another Node, with a domain outside the Cluster or Node TLD
-        %%> - private DNS answers the whole TLD, so a domain inside it needs no record
-        %%> What it does:
-        %%> - writes the records and the catalog, then restarts dnsmasq
-      end
+    end
+    opt Node-scoped, outside TLD
+      SW->>V: Move private DNS<br/>records + catalog, then reload
     end
     alt every step succeeds
       SW-->>GW: Run succeeded<br/>Swamp's run data
-      %%> How the Gateway learns it:
-      %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-      %%> - the end check is the Router switch, or the publish step of a development target
       Note over GW: Write the new targets<br/>from result · task succeeded
-      %%> Result:
-      %%> - Route 9 targets Instances 12 and 15
-      %%> - Instance 18 belongs to Route 4
-      %%> - task #5140 succeeds, and the Gateway broadcasts `route.updated`
     else a step fails
       SW--xGW: Run failed<br/>error_code, failed step
-      %%> The Gateway reads:
-      %%> - which step failed, and so whether the Router pool had switched
       Note over GW: Mark the change failed<br/>targets from failed step
-      %%> Result before the Router switch:
-      %%> - Route 9 keeps its old targets; staged sites serve no traffic, so they stay
-      %%> Result after the Router switch:
-      %%> - the new pool serves, so the Gateway records the new targets and keeps the recorded set
-      %%> - task #5140 fails, with `failed_step` and `error_code` on Route 9
-      %%> Retry:
-      %%> - run the same command again after fixing the cause; after the switch, the rerun retires what is left
     end
     loop every 2 s until terminal
       CLI->>GW: operation:show #5140
-      %%> What it does:
-      %%> - asks for the task's status every 2 seconds until it has ended
       GW-->>CLI: status + result
-      %%> Returns:
-      %%> - the current status, and the result once the task has ended
     end
   end

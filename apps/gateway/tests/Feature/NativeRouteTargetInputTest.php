@@ -21,6 +21,10 @@ use App\Models\Route;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
+    Node::query()->forceCreate(['id' => 209, 'name' => 'swamp-control', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'user' => 'orbit', 'wireguard_ip' => '10.44.0.209', 'public_ssh_host' => '192.0.2.209', 'status' => 'active',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'control-host-key']);
+
     $this->manifest = tempnam(sys_get_temp_dir(), 'target-input-agent-');
     file_put_contents($this->manifest, json_encode(['commit' => str_repeat('b', 40), 'version' => '0.5.0', 'artifacts' => ['linux-x86_64' => ['sha256' => str_repeat('a', 64), 'url' => 'https://example.test/agent']]], JSON_THROW_ON_ERROR));
     app()->instance(AgentDelivery::class, new AgentDelivery($this->manifest, sys_get_temp_dir()));
@@ -72,7 +76,8 @@ it('splits the change into staged, Router and retire Caddyfiles without changing
     $new = $this->nodes['new']->id;
 
     // The staged file keeps the old site beside the new one, under the temporary leaf; the retire file is the lasting state.
-    expect(target_input_caddy($plan['stage'], $new))->toContain('source.target.test', 'pool.target.test', '-hostname-change')
+    expect($plan['probe_ssh']['target'])->toMatchArray(['host' => '10.44.0.209', 'host_keys' => ['ssh-ed25519 control-host-key']])
+        ->and(target_input_caddy($plan['stage'], $new))->toContain('source.target.test', 'pool.target.test', '-hostname-change')
         ->and(target_input_caddy($plan['retire'], $new))->toContain('pool.target.test')->not->toContain('source.target.test', '-hostname-change')
         ->and($plan['router']['site_nodes'])->toBe([$this->nodes['router']->id])
         ->and(target_input_caddy($plan['router'], $this->nodes['router']->id))->toContain('pool.target.test', 'destination.target.test')
@@ -85,6 +90,18 @@ it('splits the change into staged, Router and retire Caddyfiles without changing
         ->and($this->routes['destination']->targets()->count())->toBe(0)
         ->and($this->routes['destination']->fresh()->sites_published)->toBeFalse()
         ->and(Operation::query()->count())->toBe(0);
+});
+
+it('restores the final Caddyfile of a retained workload before removing its staged certificate', function (): void {
+    $proposal = ['mode' => 'targets', 'targets' => [$this->instances['old']->id, $this->instances['new']->id], 'dispositions' => []];
+    $plan = app(NativeRouteTargetInput::class)->capture($this->routes['pool']->fresh(), $proposal)['intent']['plan'];
+    $old = $this->nodes['old']->id;
+
+    expect(target_input_caddy($plan['stage'], $old))->toContain('app-instance-'.$this->instances['old']->id.'-hostname-change')
+        ->and(target_input_caddy($plan['retire'], $old))->toBeString()->toContain('pool.target.test', 'app-instance-'.$this->instances['old']->id.'/current/')
+        ->not->toContain('-hostname-change')
+        ->and($plan['retire']['site_nodes'])->toContain($old)
+        ->and($this->routes['pool']->targets()->pluck('instance_id')->all())->toBe([$this->instances['old']->id]);
 });
 
 it('freezes environment values in execution copies with the proposed and original domains', function (): void {
@@ -175,6 +192,23 @@ it('writes the new targets when a step after the Router switch fails, and keeps 
         ->and($route->target_set_intent['targets'])->toBe([$this->instances['new']->id])
         ->and($route->failed_step)->toBe('Retire detached targets')
         ->and($route->error_code)->toBe('route.target_retire_failed');
+});
+
+it('captures the control SSH definition for a development change with no workload probes', function (): void {
+    $node = $this->nodes['old'];
+    $node->roles()->delete();
+    $node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
+    $node->update(['cluster_id' => null]);
+    $instance = $this->instances['old'];
+    $instance->update(['environment' => 'development', 'production_user' => null, 'production_home' => null]);
+    $route = $this->routes['pool'];
+    $route->update(['node_id' => $node->id, 'cluster_id' => null, 'web_root' => 'public']);
+
+    $plan = app(NativeRouteTargetInput::class)->capture($route->fresh(), ['mode' => 'target', 'instance_id' => $instance->id,
+        'previous_target_instance_ids' => [$instance->id]])['intent']['plan'];
+
+    expect($plan['probes'])->toBe([])
+        ->and($plan['probe_ssh']['target'])->toMatchArray(['host' => '10.44.0.209', 'host_keys' => ['ssh-ed25519 control-host-key']]);
 });
 
 it('captures a completed no-op without effects or private-material bindings', function (): void {
