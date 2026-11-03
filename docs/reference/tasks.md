@@ -134,7 +134,7 @@ Full capacity, or no usable promoted image, returns HTTP 409 `tasks.capacity_una
 
 Admission captures the workspace's runtime with the same actions as `instance:create`. A Project that serves a web root with `task_workspace_routed` on gets a private Route on the development Cluster. Development Process definitions become Instance Processes. Development Schedule definitions become disabled copies; the VM never fires them until `schedule:enable` turns one on. The guest's host key is unknown at admission, so the Gateway captures the guest's SSH targets with `host_keys: null`.
 
-`Bind the workspace keys` fills those keys from the VM step's pinned key and refuses any other Node. The run uses the child-observed SSH host key and the captured Node 209 identity; it issues no guest worker credentials. Success activates the Route and completes the Processes; a failure marks them failed.
+`Bind the workspace keys` fills those keys from the VM step's pinned key and refuses any other Node. The run uses the child-observed SSH host key and the captured Node 209 identity; it issues no guest worker credentials. Success activates the Route and completes the Processes; a failure marks them failed. The projection reads the admitted Process members only when the receipt reports Process outcomes.
 
 Task VMs reuse WireGuard addresses. Official `@swamp/ssh` pins the observed host key per step, but the official cfgmgmt behaviors check keys against the 209 worker account's `known_hosts`. So enrollment first replaces any entry for the guest's address with its observed key, and destroy removes the address again.
 

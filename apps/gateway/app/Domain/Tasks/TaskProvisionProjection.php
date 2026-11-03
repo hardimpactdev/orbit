@@ -134,7 +134,8 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
                 $statuses[$step] = $status;
             }
         }
-        foreach (ProcessInstanceOperation::members($operation) as $index => $member) {
+        // Only a receipt that reports Process outcomes has members to complete.
+        foreach ($statuses === [] ? [] : ProcessInstanceOperation::members($operation) as $index => $member) {
             $status = $statuses['Create, start Processes-'.$index] ?? null;
             if (! in_array($status, ['succeeded', 'failed'], true)) {
                 continue;

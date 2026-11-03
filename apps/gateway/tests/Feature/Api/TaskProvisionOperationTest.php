@@ -36,6 +36,7 @@ use App\Models\Schedule;
 use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskWorkspaceLeaseRecord;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Tests\Support\FakeRoutePublicationSocket;
@@ -236,6 +237,19 @@ it('records the workspace Route and Processes from the end check receipt', funct
         ->and($route->failed_step)->toBe($outcome === 'failed' ? 'native-create' : null)
         ->and($this->group->fresh()->status->value)->toBe($outcome === 'succeeded' ? 'running' : 'failed');
 })->with(['succeeded', 'failed']);
+
+it('settles a receipt without Process results when the admitted input has no runtime members', function (): void {
+    $operation = app(StartTaskProvisionAction::class)->execute($this->group, 'fixture', null);
+    $operation->update(['input' => Arr::except($operation->input, ['members', 'route', 'route_id'])]);
+    $source = ['branch' => 'task-'.$this->group->id, 'commit' => str_repeat('a', 40), 'php_version' => null, 'laravel' => false];
+    app(TaskProvisionProjection::class)->apply($operation->fresh(), ['run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded',
+        'started_at' => '2026-11-03T00:00:00.000Z', 'finished_at' => '2026-11-03T00:01:00.000Z', 'error_code' => null,
+        'result' => ['source' => $source, 'instance_id' => $operation->input['instance_id'], 'starting_commit' => $source['commit'],
+            'analysis_base' => ['base' => $source['commit'], 'instance_id' => $operation->input['instance_id'], 'repository' => $this->project->repository_url, 'branch' => $source['branch']],
+            ...taskProvisionVmReceipt($operation)]]);
+    expect($operation->fresh()->status)->toBe(OperationStatus::Succeeded)
+        ->and($this->group->fresh()->status->value)->toBe('running');
+});
 
 it('refuses a non-todo group without placement or a native run', function (string $status): void {
     $this->group->update(['status' => $status]);
