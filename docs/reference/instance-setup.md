@@ -16,6 +16,8 @@ covers:
 
 A Project stores two ordered lists of named commands: setup steps and teardown steps. Orbit runs the setup list before it activates a new development Instance, and the teardown list before it removes an active development Instance. Setup does not require a Route: an unrouted monorepo `default` becomes `active` and runs the same list. Its setup commands can install dependencies in each subproject without application metadata inspection at the repository root.
 
+[Registration](/cli/instance/register) runs this list only with `--setup`, followed by its development Processes. It uses the same frozen list digest and command checks. Setup runs with a private umask, so a command that creates `.env` does not expose it to other accounts. An empty list with no Processes or other Node work starts no run.
+
 Native create passes stored environment values as a JSON object, including `{}` when the Instance has no stored configuration. Environment capture can seed the template and reach setup without requiring a previous environment import.
 
 Native create expands Gateway-owned setup commands such as `@orbit/ci-caches` through the same supplier as explicit setup. Each command runs as one `@swamp/ssh exec` step, `bash -eu -c <command>` in the checkout as the account, and keeps its exit code and stderr for failure diagnosis. Command stdout is discarded on the Node.

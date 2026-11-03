@@ -34,6 +34,24 @@ it('permits activation only after one Route association exists', function (): vo
     expect($instance->refresh()->status)->toBe(InstanceState::Active);
 });
 
+it('allows an in-place registered Laravel checkout to become active without a Route', function (): void {
+    [$instance] = app_instance_route_constraint_fixture();
+    $instance->update(['registration_request_id' => (string) Str::uuid()]);
+    $instance->update(['status' => InstanceState::Active]);
+    expect($instance->refresh()->status)->toBe(InstanceState::Active)
+        ->and($instance->routes()->count())->toBe(0);
+});
+
+it('keeps a registered Instance reserved until its requested Route is authoritative', function (): void {
+    [$instance, $route] = app_instance_route_constraint_fixture();
+    $instance->update(['registration_request_id' => (string) Str::uuid()]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    expect(fn () => $instance->update(['status' => InstanceState::Active]))->toThrow(QueryException::class);
+    $route->update(['status' => RouteStatus::Active]);
+    $instance->update(['status' => InstanceState::Active]);
+    expect($instance->refresh()->status)->toBe(InstanceState::Active);
+});
+
 it('enforces global Instance Route uniqueness at the database boundary', function (): void {
     [$instance, $first] = app_instance_route_constraint_fixture();
     $first->targets()->create(['instance_id' => $instance->id, 'position' => 0]);

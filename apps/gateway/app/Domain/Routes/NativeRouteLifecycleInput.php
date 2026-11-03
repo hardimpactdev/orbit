@@ -21,7 +21,7 @@ final readonly class NativeRouteLifecycleInput
     /** @param array<string,mixed> $input
      * @return array{intent:array<string,mixed>,certificates:list<array<string,mixed>>,participant_node_ids:list<int>,execution_secrets:array<string,array{vault:string,key:string}>}
      */
-    public function capture(Route $route, array $input, bool $removing = false, ?int $deletedWorkloadNodeId = null, bool $restorable = true): array
+    public function capture(Route $route, array $input, bool $removing = false, ?int $deletedWorkloadNodeId = null, bool $restorable = true, bool $preserveEnvironment = false): array
     {
         $route->loadMissing(['targets.instance.node', 'targets.instance.project', 'cluster.routerAssignment.node', 'cluster.ingressAssignment.node']);
         $metadata = ['route_id' => $route->id, 'result_route_id' => $route->id, 'effectful' => $removing || ($input['mode'] ?? null) !== 'state_only',
@@ -47,14 +47,14 @@ final readonly class NativeRouteLifecycleInput
                 continue;
             }
             foreach (app(NativeRouteConvergenceEnvironmentMaterial::class)->forRoute($route, $target->instance->node_id,
-                ['workloads' => [['instance_id' => $target->instance_id, 'node_id' => $target->instance->node_id, 'production' => $target->instance->placedOnAppProd()]]], false, urlsOnly: $removing) as $write) {
+                ['workloads' => [['instance_id' => $target->instance_id, 'node_id' => $target->instance->node_id, 'production' => $target->instance->placedOnAppProd()]]], false, urlsOnly: $removing || $preserveEnvironment) as $write) {
                 $prior['url_writes'][] = ['node_id' => $target->instance->node_id, ...$write];
             }
         }
         $candidate = clone $route;
         $candidate->forceFill(['status' => $removing ? RouteStatus::Retiring : RouteStatus::Active, 'sites_published' => ! $removing,
             'replacement_step' => $metadata['public_activated'] ? RouteReplacementStep::Cleanup : null]);
-        $desired = $removing ? [] : [$this->mutations->route($candidate, [$route->id => $candidate])];
+        $desired = $removing ? [] : [$this->mutations->route($candidate, [$route->id => $candidate], urlsOnly: $preserveEnvironment)];
         if ($removing) {
             // The empty desired Route still carries URL selection from the remaining stored Routes.
             $row = $prior;
