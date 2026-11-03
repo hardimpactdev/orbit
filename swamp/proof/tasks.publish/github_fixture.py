@@ -18,6 +18,7 @@ STATE = Path('/home/orbit/.orbit/swamp-proof/task-publication')
 DATA = STATE / 'state.json'
 WORKSPACE = '/home/orbit/task-publish-proof'
 TITLE = 'Keep $title `literal`'
+LISTEN_HOST = '127.0.0.2'
 BODY = 'First line\n\nKeep $(literal) and `prose` unchanged.\n'
 
 
@@ -123,7 +124,7 @@ def serve():
             self.end_headers()
             self.wfile.write(body)
 
-    server = ThreadingHTTPServer(('127.0.0.2', 443), Handler)
+    server = ThreadingHTTPServer((LISTEN_HOST, 443), Handler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(STATE / 'tls/cert.pem', STATE / 'tls/key.pem')
     server.socket = context.wrap_socket(server.socket, server_side=True)

@@ -19,6 +19,7 @@ spec = importlib.util.spec_from_file_location('github', Path(__file__).resolve()
 github = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(github)
 github.STATE, github.DATA = STATE, DATA
+github.LISTEN_HOST = '10.231.0.3'
 
 
 def command(argv, **kwargs):
@@ -78,13 +79,12 @@ def setup(node, run, case):
     (tls / 'extensions').write_text('subjectAltName=DNS:github.com,DNS:api.github.com\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n')
     command(['openssl', 'x509', '-req', '-in', str(tls / 'request.pem'), '-CA', str(ca / 'root.pem'), '-CAkey', str(ca / 'root.key'), '-CAcreateserial', '-days', '1', '-extfile', str(tls / 'extensions'), '-out', str(tls / 'cert.pem')])
     hosts = Path('/etc/hosts')
-    hosts.write_text('\n'.join(line for line in hosts.read_text().splitlines() if not line.startswith('127.0.0.2 ')) + '\n127.0.0.2 github.com api.github.com\n')
-    # A fixture-only loopback proxy lets the real Node Git client reach this disposable HTTPS origin.
-    subprocess.run(['incus', 'config', 'device', 'remove', 'peer', 'proof-github'], capture_output=True, check=False)
-    command(['incus', 'config', 'device', 'add', 'peer', 'proof-github', 'proxy', 'listen=tcp:127.0.0.2:443', 'connect=tcp:127.0.0.2:443', 'bind=instance'])
+    hosts.write_text('\n'.join(line for line in hosts.read_text().splitlines() if not line.startswith(('127.0.0.2 ', '10.231.0.3 '))) + '\n10.231.0.3 github.com api.github.com\n')
+    # The shared Nodes are VMs. A fixture-only host address serves their local HTTPS origin.
+    command(['ip', 'address', 'replace', '10.231.0.3/32', 'dev', 'lo'])
     command(['incus', 'file', 'push', str(ca / 'root.pem'), 'peer/usr/local/share/ca-certificates/orbit-proof-fixture.crt'])
     peer('update-ca-certificates')
-    peer('sh', '-c', "sed -i '/127.0.0.2 github.com/d' /etc/hosts; printf '\n127.0.0.2 github.com\n' >> /etc/hosts")
+    peer('sh', '-c', "sed -i '/github.com/d' /etc/hosts; printf '\n10.231.0.3 github.com\n' >> /etc/hosts")
     peer('sh', '-c', 'if ! test -x /usr/sbin/php-fpm8.5 || ! command -v setfacl >/dev/null; then apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -q php8.5-fpm acl >/dev/null; fi')
     peer('sh', '-c', 'id caddy >/dev/null 2>&1 || useradd -r -M -s /usr/sbin/nologin caddy; id orbit-app-9002 >/dev/null 2>&1 || useradd -r -m -s /usr/sbin/nologin orbit-app-9002')
     peer('sh', '-c', "systemctl stop 'orbit-process-*-proof-deploy.service' 2>/dev/null || true; systemctl stop " + SERVICE + ' 2>/dev/null || true')
