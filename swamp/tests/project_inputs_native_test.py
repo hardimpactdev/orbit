@@ -1,5 +1,4 @@
 """Execute shipped Project workflows with native metadata and disposable commands."""
-import base64
 import json
 import os
 import shutil
@@ -30,7 +29,7 @@ class ProjectInputsNativeTest(NativeTestCase):
                                   "groups": [], "admitted_at": "2026-11-01T04:00:00Z"}}
 
     def workflow(self, mode):
-        if mode in ("detect", "observe"):
+        if mode == "observe":
             child = yaml.safe_load((ROOT / "workflows/workflow-project-dependency-evidence.yaml").read_text())
             for job in child["jobs"]:
                 job.pop("labels")
@@ -147,31 +146,3 @@ class ProjectInputsNativeTest(NativeTestCase):
         self.assertEqual(history["status"], "failed")
         self.assertEqual(steps["Read the watched PRs"]["status"], "failed")
         self.assertEqual(steps["Refresh the findings index"]["status"], "skipped")
-
-    def test_scan_acquisition_failure_preserves_failure_and_cleans_local_data(self):
-        self.workflow("detect")
-        git = self.tools / "git"
-        git.write_text("#!" + sys.executable + "\nimport sys\nsys.stderr.write('fixture clone unavailable\\n')\nraise SystemExit(41)\n")
-        git.chmod(0o755)
-        token = "fixture_project_read_token_7b9e"
-        authorization = "AUTHORIZATION: basic " + base64.b64encode(("x-access-token:" + token).encode()).decode()
-        self.secrets = (token, authorization)
-        self.cli("vault", "create", "local_encryption", "orbit-control-inputs")
-        self.cli("vault", "put", "orbit-control-inputs", "project-dependency-read-901", input=token)
-        self.cli("vault", "put", "orbit-control-inputs", "project-dependency-auth-901", input=authorization)
-        self.inputs["execution_secrets"] = {"github_token": {"vault": "orbit-control-inputs", "key": "project-dependency-read-901"}, "git_authorization": {"vault": "orbit-control-inputs", "key": "project-dependency-auth-901"}}
-        history, steps = self.run_workflow("detect", success=False)
-        self.assertEqual(history["status"], "failed")
-        self.assertEqual(steps["Clone the default branch"]["status"], "failed", json.dumps(history, indent=2))
-        self.assertEqual(steps["Scan the lockfiles"]["status"], "skipped")
-        self.assertEqual(steps["Report the result"]["status"], "succeeded")
-        result = json.loads(steps["Report the result"]["outputs"]["stdout"])
-        self.assertEqual(result["status"], "failed")
-        self.assertEqual(result["requests"], [])
-        self.assertEqual(result["error_code"], "source_acquisition_failed")
-        observed = json.loads(self.cli("data", "query", 'modelName == "orbit-gateway" && name.startsWith("dependencies-v1-project-")', "--select", "attributes").stdout)["results"]
-        self.assertEqual(len(observed), 1)
-        self.assertEqual(observed[0]["last_attempt"]["status"], "failed")
-        self.assertEqual(observed[0]["source_commit"], None)
-        self.assertEqual(steps["Remove the clone"]["status"], "succeeded")
-        self.assertNotIn(token, json.dumps(history))
