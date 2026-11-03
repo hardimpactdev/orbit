@@ -8,6 +8,7 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\DirectInstanceDestroyIntent;
 use App\Domain\Instances\InstanceCreationRecovery;
 use App\Domain\Instances\InstanceDestroyKind;
+use App\Domain\Instances\InstanceLifecycleInput;
 use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
@@ -17,6 +18,7 @@ use App\Domain\Nodes\Storage\ProtectedPathCatalog;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Projects\LifecyclePhase;
+use App\Domain\Projects\LifecycleStep;
 use App\Domain\Projects\ProjectLifecycleStepStore;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Routes\RouteStatus;
@@ -65,6 +67,7 @@ final readonly class StartInstanceDestroyAction
                 return $replay;
             }
             $input = app(DirectInstanceDestroyIntent::class)->record($snapshot);
+            $input['run_budget_seconds'] = $this->budget($input);
 
             return $this->operations->execute($kind, 'instance', $instance->id, $instance->node_id, $input, $caller, $requestId);
         });
@@ -132,6 +135,33 @@ final readonly class StartInstanceDestroyAction
             'repository' => $instance->project->repository_url, 'repository_identity' => $instance->project->repository_identity,
             'members' => $snapshots, 'additional_route_ids' => $additional, 'additional_routes' => array_map(fn (int $id): array => ['route_id' => $id, 'node_id' => $this->routeNode(Route::query()->findOrFail($id))], $additional),
         ];
+    }
+
+    /**
+     * 60 s for the removal steps, the teardown timeouts of each member that runs its list (at most 540 s), 180 s for
+     * each Route it withdraws (CSR-free withdrawal, the 31 s private DNS grace, Caddy and PHP publication), and 180 s
+     * when it removes owned databases. A fixed or history budget misses a routed removal (op 9603).
+     *
+     * @param  array<string,mixed>  $input
+     */
+    private function budget(array $input): int
+    {
+        $teardown = 0;
+        $routes = 0;
+        foreach (InstanceLifecycleInput::members($input) as $member) {
+            $member = ValidatedData::object($member);
+            if (($member['run_teardown'] ?? false) === true) {
+                $project = Project::query()->findOrFail(ValidatedData::integer($member['project_id']));
+                $teardown += array_sum(array_map(static fn (LifecycleStep $step): int => $step->timeoutSeconds,
+                    app(ProjectLifecycleStepStore::class)->ordered($project, LifecyclePhase::Teardown)));
+            }
+            $routes += ($member['route_id'] ?? null) === null ? 0 : 1;
+        }
+        $routes += count(is_array($input['additional_route_ids'] ?? null) ? $input['additional_route_ids'] : []);
+        $database = ValidatedData::object(ValidatedData::object($input['direct_destroy'] ?? [])['database'] ?? []);
+        $databases = ($database['servers'] ?? []) !== [] || ($database['sqlite'] ?? []) !== [] || ($database['connection_ids'] ?? []) !== [];
+
+        return 60 + min(LifecycleStep::MaxTotalTimeoutSeconds, $teardown) + 180 * $routes + ($databases ? 180 : 0);
     }
 
     private function teardownDigest(Project $project): string
