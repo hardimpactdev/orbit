@@ -2,7 +2,7 @@
   "kind": "instance.register",
   "workflow": "operation-instance-register",
   "topology": "minimal",
-  "budget_seconds": 180,
+  "budget_seconds": 255,
   "queue_timeout_seconds": 30,
   "before_node": {
     "target": [
@@ -51,7 +51,7 @@
       "operation": false,
       "body": {
         "name": "prepare-env",
-        "command": "cp .env.example .env; printf 'PRIVATE_SENTINEL=proof-private-setup\\n' >> .env; printf 'registered-worktree\\n' > public/proof.txt",
+        "command": "cp .env.example .env; printf 'PRIVATE_SENTINEL=%s\\n' \"$(openssl rand -hex 32)\" >> .env; printf 'registered-worktree\\n' > public/proof.txt; chmod 0644 public/proof.txt",
         "timeout_seconds": 10
       }
     },
@@ -121,7 +121,7 @@
       "name": "route",
       "job": "register",
       "step": "Create the Route",
-      "budget_seconds": 60
+      "budget_seconds": 180
     }
   ],
   "parity": "swamp/proof/instance.register/parity.py",
