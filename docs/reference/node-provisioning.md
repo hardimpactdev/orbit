@@ -856,7 +856,7 @@ After checking its admitted publication participant, the parent uses `NodeRolePu
 
 ## Native role convergence
 
-`node:role:add NODE ROLE --converge` requires an existing assignment. It uses the same native resource graph as role addition for every mutable role, including Nodes with several roles and fleets with Metrics. It applies role-owned packages, files, runtime and publication from the frozen intent. It installs no observer or CLI and needs no observer secret.
+`node:role:add NODE ROLE --converge` requires an existing assignment. It keeps that assignment's identity throughout the run. It uses the same native resource graph as role addition for every mutable role, including Nodes with several roles and fleets with Metrics. It applies role-owned packages, files, runtime and publication from the frozen intent. It installs no observer or CLI and needs no observer secret.
 
 Matching Reverb inputs skip its restart, while an inactive service starts. Matching Metrics containers keep running. Prometheus configuration is validated, copied onto the existing bind-mounted file and reloaded with SIGHUP. Analytics convergence repairs role-owned configuration and checks its existing Process; it creates no Process and runs no database migration.
 
