@@ -11,6 +11,8 @@ The task page reads Swamp history through `GET /api/v1/task-groups/{group}/swamp
 
 `bin/docs-openapi` writes `docs/openapi.json`, the OpenAPI document for the Gateway API. The documentation site renders that document on the [API tab](/api/overview). The same run rewrites the generated API groups in `docs/docs.json` so the sidebar lists those operations.
 
+Optional lists keep their declared item schema. The Operation `steps` list references `OperationStep`, which exposes only native step names, jobs, statuses and timestamps. [Operations](/reference/operations#the-record) defines when that field is present.
+
 Run the generator from the repository root:
 
 ```bash

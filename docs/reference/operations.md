@@ -128,6 +128,8 @@ A direct Operation may admit immutable `input.participant_node_ids`. A foreign p
 
 ## The record
 
+The optional `steps` list uses typed `OperationStep` metadata. Start and list responses can omit it; show and cancel responses include it.
+
 `operation:show`, `operation:cancel` and `tasks:cancel` return a summary of `input`: top-level scalars and strings of at most 512 bytes. Nested execution plans, scripts, SSH configuration and vault references stay in the stored Operation. The workflow still receives its full admitted intent. Empty summaries serialize as `[]`. Domain results, including bounded analysis reports, remain available. `steps` contains only recorded names, jobs, statuses and times, with no nested payload or command output.
 
 Every operation has the same fields, whatever its kind.

@@ -58,6 +58,8 @@ The generated API types model Gateway rollback as a code switch without a `force
 
 The generated API types include [Reverb app](/reference/websocket-apps) create, list, show, and destroy operations, plus Instance attachments. App responses carry the app ID, public key, and attached Instance IDs. Attachment responses carry key names and stored key counts. Both omit the secret and environment values. These types add no web controls.
 
+Operation start and list responses can omit `steps`. The web app accepts those records; `operation:show` supplies recorded step summaries without execution plans or command output. See [the Operation record](/reference/operations#the-record).
+
 ## Open the app
 
 Open `https://gateway.orbit` from a machine on the Orbit WireGuard network. The browser must trust the Orbit root certificate, which `orbit gateway:trust` installs. The Gateway identifies the browser by its WireGuard address, so there is no login. Pages on other origins cannot call the API, as [Browser access to the Gateway](/reference/browser-access) describes.
