@@ -1,0 +1,105 @@
+{
+  "kind": "instance.run_steps",
+  "workflow": "operation-instance-setup-direct",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 90,
+  "queue_timeout_seconds": 30,
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "projects",
+      "operation": false,
+      "bind": "project",
+      "body": {
+        "slug": "proof-run-steps",
+        "name": "Proof run steps",
+        "type": "node-package",
+        "root": ".",
+        "repository_url": "https://github.com/octocat/Spoon-Knife.git",
+        "default_branch": "main"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "projects/${project.id}/setup-steps",
+      "operation": false,
+      "body": {
+        "name": "marker",
+        "command": "printf x >> .git/orbit-proof-steps; printf 'proof-private-%s-output' step",
+        "timeout_seconds": 10
+      }
+    },
+    {
+      "method": "POST",
+      "path": "instances",
+      "bind": "instance",
+      "body": {
+        "project_id": "${project.id}",
+        "node_id": "${node.target}",
+        "name": "s-${proof.run}"
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "instances/${instance.id}/environment/PROOF_TOKEN_A",
+      "operation": false,
+      "body": {
+        "value": "abcdefgh"
+      }
+    },
+    {
+      "method": "PUT",
+      "path": "instances/${instance.id}/environment/PROOF_TOKEN_B",
+      "operation": false,
+      "body": {
+        "value": "fghijklm"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "projects/${project.id}/setup-steps",
+      "operation": false,
+      "body": {
+        "name": "redaction",
+        "command": "printf proof-private-step-output; printf '\\nabcdefghijklm\\nsafe-diagnostic\\n' >&2; exit 3",
+        "timeout_seconds": 10
+      }
+    },
+    {
+      "method": "POST",
+      "path": "projects/${project.id}/setup-steps",
+      "operation": false,
+      "body": {
+        "name": "must-skip",
+        "command": "touch .git/proof-must-not-run",
+        "timeout_seconds": 10
+      }
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "path": "instances/${instance.id}/setup"
+  },
+  "expect": {
+    "status": "failed"
+  },
+  "phases": [
+    {
+      "name": "Run the failing setup step",
+      "job": "setup",
+      "step": "Run the setup steps-1",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Check every step passed",
+      "job": "setup",
+      "step": "Check every step passed",
+      "budget_seconds": 10
+    }
+  ],
+  "parity": [
+    "swamp/proof/instance.run_steps/parity.py",
+    "redaction"
+  ]
+}
