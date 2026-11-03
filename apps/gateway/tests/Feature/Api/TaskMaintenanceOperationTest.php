@@ -65,6 +65,17 @@ it('settles an existing root while disabled Tasks refuses any downstream admissi
         ->and($this->group->fresh()->assistance_requested)->toBeTrue();
 });
 
+it('sends both empty and configured path policies as native JSON maps', function (array $policy): void {
+    $intent = $this->operation->input;
+    $intent['maintenance']['project']['worker']['policy'] = $policy;
+    $this->operation->update(['input' => $intent]);
+    $input = app(TaskMaintenanceProjection::class)->input($this->operation);
+
+    $wire = json_decode(json_encode($input, JSON_THROW_ON_ERROR), flags: JSON_THROW_ON_ERROR);
+    expect($wire->intent->maintenance->project->worker->policy)->toBeInstanceOf(stdClass::class)
+        ->and((array) $input['intent']['maintenance']['project']['worker']['policy'])->toBe($policy);
+})->with([['policy' => []], ['policy' => ['.' => ['minimumReleaseAgeDays' => 7]]]]);
+
 it('captures the producer through native history without a reporting step', function (bool $produced): void {
     app(TaskExtensionState::class)->disable();
     config(['swamp.read_token' => 'native-reader']);

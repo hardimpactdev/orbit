@@ -9,6 +9,7 @@ use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
 /** Native maintenance metadata, followed by normal guarded Tasks admission. */
@@ -16,7 +17,10 @@ final readonly class TaskMaintenanceProjection implements DirectOperationProject
 {
     public function input(Operation $operation): array
     {
-        return ['intent' => $operation->input, 'execution_secrets' => []];
+        $intent = $operation->input;
+        Arr::set($intent, 'maintenance.project.worker.policy', (object) Arr::array($intent, 'maintenance.project.worker.policy'));
+
+        return ['intent' => $intent, 'execution_secrets' => []];
     }
 
     public function apply(Operation $operation, array $data): Operation
