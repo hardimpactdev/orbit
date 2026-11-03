@@ -37,7 +37,7 @@ final readonly class NativeDevelopmentInstanceInput
         $processes = $copies = [];
         foreach (ProcessInstanceOperation::members($operation) as $index => $member) {
             $native = app(ProcessLifecycleInput::class)->forInstanceMember($operation, $member);
-            $processes[] = ['index' => $index, 'id' => $member['id'], 'intent' => $native['intent']];
+            $processes[] = ['index' => $index, 'id' => $member['id'], 'kind' => $native['kind'], 'intent' => $native['intent']];
             if (isset($native['execution_secrets']['environment'])) {
                 $copies['member_'.$member['id']] = $native['execution_secrets']['environment'];
             }

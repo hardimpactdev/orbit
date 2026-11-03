@@ -159,6 +159,21 @@ it('marks a web Instance awake only when the run starts every one of its Process
         ->and($rerun->input['route_create']['awake'])->toHaveCount($covered ? 1 : 0);
 })->with(['every Process is covered' => true, 'a Process is not covered' => false]);
 
+it('starts an active container again on a rerun instead of creating it', function (): void {
+    $this->project->processDefinitions()->create(['name' => 'cache', 'environments' => ['development'],
+        'spec' => ['runtime' => 'docker', 'image' => 'redis:7', 'command' => ['redis-server'], 'restart_policy' => 'unless-stopped']]);
+    $this->withHeader('Idempotency-Key', 'native-create-docker-first');
+    $this->postJson('/api/v1/instances', $this->payload)->assertAccepted();
+    Process::query()->update(['status' => 'active']);
+    Instance::query()->update(['failed_step' => 'processes', 'error_code' => 'instance.create_processes_failed']);
+    Operation::query()->update(['status' => 'failed']);
+    $this->withHeader('Idempotency-Key', 'native-create-docker-rerun');
+    $this->postJson('/api/v1/instances', $this->payload)->assertAccepted();
+
+    $start = collect($this->socket->sent)->where('payload.workflowIdOrName', 'operation-instance-create')->last();
+    expect(array_column($start['payload']['inputs']['intent']['processes'], 'kind'))->toBe(['process.start']);
+});
+
 it('reserves no Route for an already active web-serving Instance, which runs no phase', function (): void {
     $this->node->update(['tld' => 'test']);
     $this->project->update(['type' => 'laravel-app', 'root' => 'public']);
@@ -215,7 +230,7 @@ it('creates the development Processes after setup and records them from the term
     $inputs = $start['payload']['inputs'];
     expect($process->name)->toBe('dev-server')->and($process->desired_state->value)->toBe('running')
         ->and($operation->input['members'])->toHaveCount(1)
-        ->and($inputs['intent']['processes'][0])->toMatchArray(['index' => 0, 'id' => $process->id])
+        ->and($inputs['intent']['processes'][0])->toMatchArray(['index' => 0, 'id' => $process->id, 'kind' => 'process.create'])
         ->and($inputs['intent']['processes'][0]['intent']['control']['name'])->toBe('orbit-process-'.$process->id.'-dev-server.service')
         ->and($inputs['intent']['processes'][0]['intent']['installation']['unit'])->toContain('http.server');
 
