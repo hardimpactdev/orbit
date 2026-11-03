@@ -126,7 +126,9 @@ sequenceDiagram
   SW->>N: Verify managed SSH<br/>SSH argv
   opt Linux Node
   SW->>N: Verify passwordless sudo<br/>SSH argv
+  opt eligible CLI plan
   SW->>N: Publish the Orbit CLI<br/>native child workflow
+  end
   end
   opt roles need convergence
   SW->>N: Converge each role<br/>native child workflow

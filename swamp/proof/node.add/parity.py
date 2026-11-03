@@ -27,4 +27,7 @@ check(hashlib.sha256(run('cat', '/etc/orbit/agent/secret').encode()).hexdigest()
 check(run('sha256sum', '/usr/local/bin/orbit-agent').split()[0] == intent['agent']['sha256'], 'agent binary matches its pin')
 handshakes = run('wg', 'show', 'orbit', 'latest-handshakes').splitlines()
 check(any(len(line.split()) == 2 and int(line.split()[1]) > 0 for line in handshakes), 'real tunnel handshake succeeded')
-print('parity: node.add real WireGuard enrollment')
+catalog = subprocess.run(['incus', 'exec', 'target', '--', 'cat', '/var/lib/orbit/private-dns/catalog.json'],
+                         capture_output=True, text=True, check=True, timeout=30).stdout
+check(json.loads(catalog)['requesters'].get(intent['address']) == operation['target_id'], 'DNS accepts the enrolled Node identity')
+print('parity: node.add real WireGuard enrollment and DNS publication')

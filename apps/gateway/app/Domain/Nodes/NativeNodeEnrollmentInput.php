@@ -80,13 +80,14 @@ final readonly class NativeNodeEnrollmentInput
             $requested = ['vpn', ...array_values(array_diff($requested, ['vpn']))];
         }
         $participants = [209, $node->id];
+        $beforeDns = app(NodeConvergeInput::class)->dns();
         $agentSecret = bin2hex(random_bytes(32));
         $copies['agent_secret'] = app(SwampCommandStep::class)->executionCopy(
             'orbit-control-inputs', 'agent-secret-node-'.$node->id, $agentSecret);
         try {
             $node->forceFill([...$candidate, 'status' => LifecycleStatus::Active,
                 'architecture' => $candidate['architecture'] ?? 'x86_64',
-                'ssh_host_key_type' => self::AlgorithmMark, 'ssh_host_key' => self::KeyMark,
+                'ssh_host_key_type' => self::AlgorithmMark, 'ssh_host_key' => self::KeyMark, 'ssh_host_fingerprint' => $spec['fingerprint'],
                 'wireguard_public_key' => $node->wireguard_public_key ?? '@ORBIT_ENROLLMENT_WIREGUARD_PUBLIC_KEY@',
                 ...($request->settingsProvided ? ['settings' => app(NodeSettingsNormalizer::class)->storedOver($node->settings, $request->settings)] : [])])->saveQuietly();
             $base = app(NodeBootstrapCommandFactory::class)->input($node, $node->user, $spec['roleless_operator'] === true);
@@ -109,8 +110,6 @@ final readonly class NativeNodeEnrollmentInput
                     ['path' => NodeAgentFootprint::CertificatePath, 'content' => $agent['certificate']]]];
             $recovery = app(NodeFirewallRuleCatalog::class)->publicSshRecovery($node);
             $intent['public_ssh_argv'] = ['timeout', '60', 'ufw', ...array_slice($recovery->arguments, 2)];
-            $intent['cli'] = ['ssh' => app(SwampSshExecutionInput::class)->forNode($node),
-                'cli' => app(CliConvergePlan::class)->input($node)];
             foreach ($requested as $roleName) {
                 $role = RoleName::from($roleName);
                 $before = app(NativeNodeRoleRemovalInput::class)->publications($node, $role);
@@ -128,6 +127,8 @@ final readonly class NativeNodeEnrollmentInput
                     ...NodeRolePublicationInput::participants(ValidatedData::object($snapshot['publication'])),
                     ...NodeRoleCertificateInput::participants(ValidatedData::object($snapshot['certificates']))];
             }
+            $intent['cli'] = ['ssh' => app(SwampSshExecutionInput::class)->forNode($node),
+                'cli' => app(CliConvergePlan::class)->input($node)];
             $intent['network'] = $this->network($node, $spec['roleless_operator'] === true);
             $publicPath = rtrim(Config::string('orbit.home'), '/').'/wireguard/public.key';
             $hubKey = is_file($publicPath) ? trim((string) file_get_contents($publicPath)) : '';
@@ -151,7 +152,7 @@ final readonly class NativeNodeEnrollmentInput
                 }
                 if ($publication['dns'] !== null) {
                     $intent['dns'][] = ['node_id' => $publication['node_id'], 'connection' => $publication['connection'],
-                        'host_keys' => $publication['host_keys'], 'before' => null, 'after' => $publication['dns'], 'alternatives' => []];
+                        'host_keys' => $publication['host_keys'], 'before' => $beforeDns, 'after' => $publication['dns'], 'alternatives' => []];
                 }
             }
         } finally {

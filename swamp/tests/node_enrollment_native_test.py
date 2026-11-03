@@ -90,6 +90,23 @@ class NodeEnrollmentNative(NativeTestCase):
         self.assertEqual(steps['Bind the Node identity']['status'], 'failed')
         self.assertNotEqual(steps.get('Install base packages-0', {}).get('status'), 'succeeded')
 
+    def test_roleless_enrollment_does_not_call_cli_publication_with_a_null_release(self):
+        self.input['intent'].update(platform='linux', cli={'cli': {'release': None, 'skip_reason': 'roleless', 'plan_error': None}})
+        parent = yaml.safe_load((ROOT / 'workflows/workflow-operation-node-add.yaml').read_text())
+        job = next(job for job in parent['jobs'] if job['name'] == 'cli')
+        job.pop('dependsOn')
+        job.pop('labels')
+        job['steps'][0].pop('labels')
+        # A called child fails. A correctly excluded plan creates no child step at all.
+        child = {'id': '49b21cc9-4bdd-437f-8c16-77d49aaefea2', 'name': 'node-cli-install',
+                 'jobs': [{'name': 'unexpected', 'steps': [{'name': 'must not run', 'task': {'type': 'assert', 'expr': 'false'}}]}]}
+        (self.repo / 'workflows/workflow-cli.yaml').write_text(yaml.safe_dump(child))
+        parent.update(id='3254f534-980b-4653-b718-4ca943678ace', name='cli-exclusion-test', jobs=[job])
+        (self.repo / 'workflows/workflow-node-add.yaml').write_text(yaml.safe_dump(parent, sort_keys=False))
+        result = json.loads(self.cli('workflow', 'run', parent['name'], '--input', json.dumps(self.input)).stdout)
+        history = json.loads(self.cli('workflow', 'history', 'get', result['id']).stdout)
+        self.assertEqual(history['jobs'][0]['steps'], [])
+
     def test_hub_sync_keeps_the_file_key_without_returning_it_in_run_data(self):
         self.check_peer_sync(hub=True)
 

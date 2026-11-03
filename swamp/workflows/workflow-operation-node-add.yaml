@@ -871,7 +871,7 @@ jobs:
     allowFailure: true
     forEach:
       item: linux
-      in: '${{ inputs.intent.platform == "linux" ? [0] : [] }}'
+      in: '${{ inputs.intent.platform == "linux" && inputs.intent.cli != null && inputs.intent.cli.cli.skip_reason == null && inputs.intent.cli.cli.plan_error == null ? [0] : [] }}'
     task: {type: workflow, workflowIdOrName: node-cli-install, inputs: {node_id: '${{ inputs.node_id }}', intent: '${{ steps["Bind the Node identity"].outputs.cli }}'}}
   dependsOn:
   - {job: phase_32, condition: {type: succeeded}}

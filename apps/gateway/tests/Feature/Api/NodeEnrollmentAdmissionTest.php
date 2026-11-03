@@ -161,6 +161,8 @@ it('freezes a roleless Linux baseline without committing its host-key placeholde
         ->and($input['intent']['network']['hubs'][0]['private_key_file'])->toBe('/etc/wireguard/orbit.key')
         ->and($input['intent']['network']['hubs'][0]['sync_body'])->toContain('[Peer]')
         ->and($input['intent']['network']['hubs'][0]['public_key'])->not->toBeEmpty()
+        ->and(json_decode($input['intent']['dns'][0]['before']['catalog'], true, flags: JSON_THROW_ON_ERROR)['requesters'])->not->toHaveKey('10.44.0.43')
+        ->and(json_decode($input['intent']['dns'][0]['after']['catalog'], true, flags: JSON_THROW_ON_ERROR)['requesters']['10.44.0.43'])->toBe($node->id)
         ->and($input['intent']['agent']['sha256'])->toBe(str_repeat('b', 64))
         ->and($input['execution_secrets']['agent_secret']['key'])->toBe('agent-secret-node-'.$node->id)
         ->and($node->ssh_host_key)->toBeNull()
@@ -175,7 +177,9 @@ it('captures requested roles and the observer scope without committing an observ
         name: 'new-role', publicSshHost: '192.0.2.70', user: 'root', orbitUser: 'managed', wireguardIp: '10.44.0.70',
         expectedSshHostFingerprint: $this->fingerprint, roles: [RoleName::AppDev], tld: 'enrollment.test'));
     $node = Node::query()->findOrFail($operation->node_id);
-    expect($operation->input['intent']['bootstrap']['user'])->toBe('root')
+    expect($operation->input['intent']['cli']['cli']['skip_reason'])->toBeNull()
+        ->and($operation->input['intent']['cli']['cli']['release'])->not->toBeNull()
+        ->and($operation->input['intent']['bootstrap']['user'])->toBe('root')
         ->and($operation->input['intent']['managed_user'])->toBe('managed')
         ->and($operation->input['intent']['roles'][0]['kind'])->toBe('node.role_add')
         ->and($operation->input['intent']['roles'][0]['intent']['role'])->toBe('app-dev')
