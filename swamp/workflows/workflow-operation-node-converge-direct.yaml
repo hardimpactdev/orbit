@@ -260,11 +260,11 @@ jobs:
     guard: '${{ inputs.intent.network == null || inputs.intent.network.mode != "peer" }}'
     task:
       <<: *network_read
-      behaviorName: '${{ ("node-net-read-" + string(inputs.intent.network.hub_id)).split(".").join("-") }}'
+      behaviorName: '${{ ("node-net-read-" + string(inputs.intent.network != null ? inputs.intent.network.hub_id : inputs.node_id)).split(".").join("-") }}'
       globalArgs:
-        name: '${{ ("node-net-read-" + string(inputs.intent.network.hub_id)).split(".").join("-") }}'
-        transport: {kind: ssh, user: '${{ inputs.intent.network.apply.hub.ssh.target.user }}', port: '${{ inputs.intent.network.apply.hub.ssh.target.port }}', identityFile: '${{ inputs.intent.network.apply.hub.ssh.identity_file }}'}
-        hosts: [{name: target, address: '${{ inputs.intent.network.apply.hub.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.network.apply.hub.ssh.target.host_keys }}'}}]
+        name: '${{ ("node-net-read-" + string(inputs.intent.network != null ? inputs.intent.network.hub_id : inputs.node_id)).split(".").join("-") }}'
+        transport: {kind: ssh, user: '${{ inputs.intent.network != null && inputs.intent.network.mode == "peer" ? inputs.intent.network.apply.hub.ssh.target.user : inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.network != null && inputs.intent.network.mode == "peer" ? inputs.intent.network.apply.hub.ssh.target.port : inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.network != null && inputs.intent.network.mode == "peer" ? inputs.intent.network.apply.hub.ssh.identity_file : inputs.intent.ssh.identity_file }}'}
+        hosts: [{name: target, address: '${{ inputs.intent.network != null && inputs.intent.network.mode == "peer" ? inputs.intent.network.apply.hub.ssh.target.host : inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.network != null && inputs.intent.network.mode == "peer" ? inputs.intent.network.apply.hub.ssh.target.host_keys : inputs.intent.ssh.target.host_keys }}'}}]
       inputs: {hosts: 'name:target', sudo: true, timeoutSec: 20, argv: [timeout, '15', env, LC_ALL=C, WG_HIDE_KEYS=always, wg, show, all]}
   - name: Resolve WireGuard endpoint
     labels: {role: swamp}
@@ -312,12 +312,12 @@ jobs:
     guard: '${{ inputs.intent.network == null || !("Decide the network change" in steps) || !steps["Decide the network change"].outputs.changed }}'
     task:
       type: workflow
-      workflowIdOrName: '${{ inputs.intent.network.mode == "hub" ? "node-network-hub" : "node-network-peer" }}'
+      workflowIdOrName: '${{ inputs.intent.network != null && inputs.intent.network.mode == "hub" ? "node-network-hub" : "node-network-peer" }}'
       inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent.network.apply }}', execution_secrets: {}}
   - name: Read the tunnel key
     labels: {role: swamp}
     dependsOn: [{step: Apply recorded network, condition: {type: succeeded}}]
-    guard: '${{ inputs.intent.network.mode != "peer" || inputs.intent.network.apply.existing_key != null }}'
+    guard: '${{ inputs.intent.network == null || inputs.intent.network.mode != "peer" || inputs.intent.network.apply.existing_key != null }}'
     task:
       <<: *network_read
       inputs: {hosts: 'name:target', sudo: true, timeoutSec: 20, argv: [timeout, '15', wg, show, orbit, public-key]}
@@ -325,7 +325,7 @@ jobs:
     labels: {role: swamp}
     allowFailure: true
     dependsOn: [{step: Apply recorded network, condition: {type: succeeded}}]
-    guard: '${{ inputs.intent.network.probe_ip == null }}'
+    guard: '${{ inputs.intent.network == null || inputs.intent.network.probe_ip == null }}'
     task:
       <<: *network_read
       inputs: {hosts: 'name:target', timeoutSec: 65, argv: [timeout, '60', ping, -c, '1', -W, '50', '${{ inputs.intent.network.probe_ip }}']}
