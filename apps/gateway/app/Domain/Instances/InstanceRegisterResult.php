@@ -82,7 +82,7 @@ final readonly class InstanceRegisterResult implements DirectOperationProjection
                 $this->assertCompleted($operation, $native);
             }
             $facts = RegistrationFacts::recorded(ValidatedData::object($operation->input['facts']));
-            $result = $status === OperationStatus::Succeeded ? $facts : ($status->terminal() ? ['error_code' => $code, 'failed_step' => $step] : []);
+            $result = $status === OperationStatus::Succeeded ? $facts : ($status->terminal() ? ['failed_step' => $step, 'error_code' => $code] : []);
             $projected = $this->direct->project($operation, [...$data, 'error_code' => $code], $result);
             if ($terminal || ! $status->terminal()) {
                 return $projected;
