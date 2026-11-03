@@ -17,11 +17,18 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Support\ValidatedData;
+use Illuminate\Support\Facades\DB;
 
 /** Terminal results alone request the next normal guarded maintenance admission. */
 final readonly class TaskMaintenanceContinuation
 {
     public function apply(Operation $operation): void
+    {
+        DB::afterCommit(fn () => $this->advance($operation->refresh()));
+    }
+
+    /** Downstream admission may mint GitHub tokens before opening its own short transaction. */
+    private function advance(Operation $operation): void
     {
         if (! $operation->status->terminal() || ($operation->state['maintenance_continued'] ?? false)) {
             return;

@@ -20,6 +20,7 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
+use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
@@ -116,3 +117,26 @@ it('requires the exact published PR to end before maintenance cleanup', function
         expect(fn () => TaskCancelIntent::eligible($this->group->fresh(), 'tasks.maintenance_finish'))->toThrow(ResourceOperationException::class);
     }
 })->with([['open', true], ['closed', true], ['merged', true], ['merged', false]]);
+
+it('commits the terminal projection before admitting a maintenance continuation', function (): void {
+    DB::transaction(function (): void {
+        app(TaskMaintenanceProjection::class)->apply($this->operation, [...$this->data, 'status' => 'failed', 'error_code' => 'operation.native_failed', 'result' => []]);
+        expect($this->operation->fresh()->status)->toBe(OperationStatus::Failed)
+            ->and($this->operation->fresh()->state['maintenance_continued'] ?? false)->toBeFalse()
+            ->and($this->group->fresh()->assistance_requested)->toBeFalse();
+    });
+
+    expect($this->operation->fresh()->state['maintenance_continued'])->toBeTrue()
+        ->and($this->group->fresh()->assistance_requested)->toBeTrue();
+});
+
+it('discards a maintenance continuation when the parent projection rolls back', function (): void {
+    expect(fn () => DB::transaction(function (): void {
+        app(TaskMaintenanceProjection::class)->apply($this->operation, [...$this->data, 'status' => 'failed', 'error_code' => 'operation.native_failed', 'result' => []]);
+        throw new RuntimeException('Projection rollback');
+    }))->toThrow(RuntimeException::class, 'Projection rollback');
+
+    expect($this->operation->fresh()->status)->toBe(OperationStatus::Running)
+        ->and($this->operation->fresh()->state['maintenance_continued'] ?? false)->toBeFalse()
+        ->and($this->group->fresh()->assistance_requested)->toBeFalse();
+});
