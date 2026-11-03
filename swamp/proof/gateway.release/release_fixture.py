@@ -93,8 +93,14 @@ def layout(gateway_node):
     staged = orbit('git', '-C', str(SOURCE), 'rev-parse', 'HEAD')
     current = staged[:12]
     shared = HOME / 'shared'
-    # The Gateway's private runtime directory, which the scheduler's document cleanup gate needs.
-    command(['install', '-d', '-m', '0755', '-o', 'orbit', '-g', 'orbit', '/run/orbit'])
+    # The document cleanup runtime, as the Gateway's Documents start hook prepares it: a root /run/orbit, and the
+    # Gateway account's private directory and lock in it. The scheduler and the PHP-FPM handoff both check it.
+    command(['install', '-d', '-m', '0755', '-o', 'root', '-g', 'root', '/run/orbit'])
+    command(['install', '-d', '-m', '0700', '-o', 'orbit', '-g', 'orbit', '/run/orbit/project-documents'])
+    lock = Path('/run/orbit/project-documents/execution.lock')
+    lock.touch()
+    os.chown(lock, account.pw_uid, account.pw_gid)
+    lock.chmod(0o600)
     for path in [shared, HOME / 'releases', HOME / 'web', HOME / 'web/releases']:
         path.mkdir(parents=True, exist_ok=True)
         os.chown(path, account.pw_uid, account.pw_gid)
