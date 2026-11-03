@@ -84,21 +84,13 @@ jobs:
             env:
               RELEASE_SHA: '${{ inputs.intent.sha }}'
               PREVIOUS_SHA: '${{ steps.checkout.outputs.stdout.trim() }}'
-            # https://swamp-club.com/lab/4282 alone needs the checkout script: serve drains and restarts for newly shipped files.
-            # Otherwise reload workflows and grants, then compare served workflows with the target commit.
+            # Reload workflows, extensions (with their additionalFiles) and grants, then compare served workflows with the
+            # target commit.
             run: |
               set -eu
               export HOME=/home/orbit SWAMP_HOME=/home/orbit/.swamp SWAMP_CONFIG_DIR=/home/orbit/.config/swamp
               export SWAMP_API_KEY_FILE=/home/orbit/.config/swamp/api-key SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1
               cd /home/orbit/apps/orbit-monorepo-staging/checkout
-              previous=$PREVIOUS_SHA
-              role=swamp/extensions/behaviors/operations/fleet-recipe/scripts/swamp_workers.py
-              restart=$(python3 -I "$role" release-restart "$RELEASE_SHA")
-              if [ "$restart" != '{}' ]; then
-                jq -cn --arg sha "$RELEASE_SHA" --arg previous "$previous" --argjson restart "$restart" \
-                  '{sha: $sha, previous: $previous} + $restart'
-                exit 0
-              fi
               timeout 120 /usr/local/bin/swamp serve reload --server ws://127.0.0.1:9418 \
                 --token-file /home/orbit/.config/swamp/serve-driver-token --json \
                 | jq -e '.success == true and ((.errors // []) | length) == 0' >/dev/null
@@ -110,5 +102,5 @@ jobs:
               live=$(timeout 60 /usr/local/bin/swamp workflow list --server ws://127.0.0.1:9418 \
                 --token-file /home/orbit/.config/swamp/serve-driver-token --json | jq -ec "$tracked")
               test "$disk" = "$live"
-              jq -cn --arg sha "$RELEASE_SHA" --arg previous "$previous" --argjson workflows "$(printf '%s' "$live" | jq length)" \
+              jq -cn --arg sha "$RELEASE_SHA" --arg previous "$PREVIOUS_SHA" --argjson workflows "$(printf '%s' "$live" | jq length)" \
                 '{sha: $sha, previous: $previous, workflows: $workflows}'

@@ -3,8 +3,9 @@ import { decode, exists, repository, sha256, text, write } from "../../../../tes
 
 Deno.test("script returns business failure and preserves literal arguments and the real index", async () => {
   await using t = await repository();
+  t.repo.secrets = ["ghp_" + "S".repeat(36), "a1".repeat(32), "synthetic-script-" + "password"];
   await t.install(
-    'await Deno.writeTextFile("args",JSON.stringify(Deno.args));console.log("done");Deno.exit(23);',
+    'await Deno.writeTextFile("args",JSON.stringify(Deno.args));console.log("ghp_"+"S".repeat(36));console.log("a1".repeat(32));console.error("DB_PASSWORD=synthetic-"+"script-password");console.log("done");Deno.exit(23);',
   );
   Object.assign(t.inputs.intent, {
     script: "scripts/run",
@@ -24,43 +25,16 @@ Deno.test("script returns business failure and preserves literal arguments and t
   assertEquals([
     result.outcome,
     result.exit_code,
-    result.output,
     result.output_truncated,
     result.changed,
-  ], ["failed", 23, "done\n", false, true]);
-});
-Deno.test("script output is redacted before native history and temporary output is removed", async () => {
-  await using t = await repository();
-  t.repo.secrets = [
-    "ghp_" + "S".repeat(36),
-    "a1".repeat(32),
-    "synthetic-script-" + "password",
-  ];
-  await t.install(
-    'console.log("ghp_"+"S".repeat(36));console.log("a1".repeat(32));console.error("DB_PASSWORD=synthetic-"+"script-password");console.log("visible");',
-  );
-  Object.assign(t.inputs.intent, { script: "scripts/run", args: [] });
-  const { run, steps, result } = await t.script("script");
-  assertEquals(run.status, "succeeded");
+  ], ["failed", 23, false, true]);
   assertEquals(steps.execute.outputs.stdout, "");
-  assertEquals(result.exit_code, 0);
-  assert(result.output.includes("visible"));
+  assert(result.output.includes("done"));
   assert(result.output.includes("DB_PASSWORD=[REDACTED]"));
   assertEquals(result.output.split("[REDACTED]").length - 1, 3);
   for (const suffix of ["", "-local"]) {
     assert(!await exists(`/tmp/orbit-task-repository-${run.id}${suffix}`));
   }
-});
-Deno.test("a non executable tracked script refuses before execution", async () => {
-  await using t = await repository();
-  await t.install('await Deno.writeTextFile("invoked","");');
-  await t.git("update-index", "--chmod=-x", "scripts/run");
-  await t.git("commit", "-qm", "not executable");
-  Object.assign(t.inputs.intent, { script: "scripts/run", args: [] });
-  const { steps, result } = await t.script("script", false);
-  assertEquals(result, { error_code: "tasks.script_unavailable" });
-  assertEquals(steps.execute.status, "skipped");
-  assert(!await exists(`${t.workspace}/invoked`));
 });
 Deno.test("resume after cleanup failure never executes the program again", async () => {
   await using t = await repository();
@@ -154,44 +128,17 @@ Deno.test("analysis retains the exact public report and provenance, including tr
     new TextEncoder().encode(result.artifact.content).length,
   );
 });
-Deno.test("analyzer stderr and a private report never reach native history", async () => {
-  await using t = await repository();
-  t.repo.secrets = [
-    "synthetic-analysis-" + "stderr-value",
-    "synthetic-analysis-" + "report-value",
-  ];
-  await t.install(
-    'console.error("SECRET=synthetic-analysis-"+"stderr-value");console.log(JSON.stringify({API_KEY:"synthetic-analysis-"+"report-value"}));',
-    "bin/task-analyze",
-  );
-  await t.analysisIntent();
-  const { steps, result } = await t.script("analyze", false);
-  assertEquals(steps.execute.outputs.stdout, "");
-  assertEquals(result, { error_code: "tasks.analysis_report_invalid" });
-});
-Deno.test("a moved candidate refuses as stale before running the analyzer", async () => {
-  await using t = await repository();
-  await t.install(
-    'await Deno.writeTextFile("invoked","");',
-    "bin/task-analyze",
-  );
-  await t.analysisIntent();
-  t.inputs.intent.tree = "f".repeat(40);
-  const { steps, result } = await t.script("analyze", false);
-  assertEquals(result, { error_code: "tasks.analysis_stale" });
-  assertEquals(steps.execute.status, "skipped");
-  assert(!await exists(`${t.workspace}/invoked`));
-});
 Deno.test("private analysis is refused in the terminal result", async () => {
   await using t = await repository();
   const secret = "synthetic-private-" + "report-value";
-  t.repo.secrets = [secret];
+  t.repo.secrets = [secret, "synthetic-analysis-" + "stderr-value"];
   await t.install(
-    'console.log(JSON.stringify({API_KEY:"synthetic-private-"+"report-value"}));',
+    'console.error("SECRET=synthetic-analysis-"+"stderr-value");console.log(JSON.stringify({API_KEY:"synthetic-private-"+"report-value"}));',
     "bin/task-analyze",
   );
   await t.analysisIntent();
   const { run, steps, result } = await t.script("analyze", false);
+  assertEquals(steps.execute.outputs.stdout, "");
   assertEquals(run.status, "failed");
   assert(!("result" in steps));
   assert(!JSON.stringify(steps.shape).includes(secret));

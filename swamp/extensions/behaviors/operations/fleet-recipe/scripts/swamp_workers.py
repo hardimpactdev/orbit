@@ -1,7 +1,7 @@
 """Release-only serve restart for new manifest additionalFiles (https://swamp-club.com/lab/4282).
 
-Gateway renders grants; the release workflow writes them with official cfgmgmt file resources.
-Run only `release-restart <commit>` from the serve checkout. Remove this helper when Lab #4282 is fixed.
+Lab #4282 is fixed in Swamp 20261103.000636.0-sha.db3f6373, and the release load no longer calls this file. It stays
+for one release, because the load runs the previously served workflow against the new checkout. Delete it next.
 """
 
 import json

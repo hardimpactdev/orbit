@@ -1,7 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R1-R4 + 1 (certificate signing is the one step call), metrics.exporter_enable decisions (reload, don't restart), single-swamp-node. docs/reference/metrics.md.
-  %% Tightened: flow-tighten 2026-11-02, rules 6, 9, 22 (configuration and Grafana password in one cfgmgmt file step; health read folded into the start; the end check is metrics.orbit; ordered Grafana rules use firewall.py).
-  %% status: draft
+  %% Tightened: flow-tighten 2026-11-02, rules 6, 9, 22 (configuration and Grafana password in one cfgmgmt file step; health read folded into the start; the end check is metrics.orbit; the Grafana allow uses @swamp/cfgmgmt/firewall).
+  %% status: migrated
   %% command: metrics:enable
   %% kind: metrics.enable
   autonumber
