@@ -1,0 +1,46 @@
+sequenceDiagram
+  %% Target design: fleet maintenance redesign 2026-11-04, topology templates plan points 3 and 4. Open: merge path for Pi's PRs (deferred by Nick), nested-VM speed.
+  %% status: draft
+  %% command: none · nightly
+  %% kind: template.build
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane V icon=server pill=target tone=amber
+  %% lane I icon=server pill=target tone=purple
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant V as Task VM<br/>nested topology
+  participant I as Incus host<br/>holds templates
+  Note over GW: Nightly build<br/>task group #812
+  %%> When:
+  %%> - once a night, for the running release
+  %%> Why a task group:
+  %%> - it gets a task VM, a workspace and Pi the normal way, and the morning result shows on the task board
+  GW->>SW: Start run, full intent<br/>operation-template-build
+  SW->>V: Provision the task VM<br/>tasks:provision
+  SW->>V: Build from stock Ubuntu<br/>nested Gateway · dev · prod
+  %%> Why from stock:
+  %%> - proves a new Node reaches the release from nothing, which the templates never do again
+  SW->>V: Run every case<br/>test cases · all
+  SW->>V: Compare with the templates<br/>doctor · fresh vs converged
+  %%> Why:
+  %%> - any difference is converge drift: the upgrade path and the fresh path ended in different states
+  alt build passes
+    SW->>I: Replace the templates<br/>fresh snapshots · publish image
+    %%> Why:
+    %%> - templates do not slowly drift away from a fresh install
+  else a step fails
+    SW->>V: Start Pi on the failure<br/>step · logs · diff
+    %%> Pi decides by cause:
+    %%> - an Orbit bug: fix it, prove it in the VM, open a PR
+    %%> - an upstream break: pin the last working version and exclude it in `renovate.json`, PR with the reason
+    %%> - infrastructure: rerun once, then report
+    %%> Templates:
+    %%> - the current templates stay
+  end
+  SW->>V: Destroy the task VM
+  %%> When:
+  %%> - always, after Pi ends
+  SW-->>GW: Run ended
+  Note over GW: Morning result<br/>passed · fix PR · report

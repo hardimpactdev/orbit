@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 247,
+      "pages": [
+        "decisions/0247-keep-fleet-software-current-through-tested-recipe-changes"
+      ]
+    }
+  ]
+}

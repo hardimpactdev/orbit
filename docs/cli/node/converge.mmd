@@ -1,5 +1,6 @@
 sequenceDiagram
-  %% status: migrated
+  %% Target design: fleet maintenance redesign 2026-11-03 (recipe.json read by Ansible, Tools phase last, recipe packages held). docs/reference/node-provisioning.md#converge-the-orbit-footprint.
+  %% status: draft
   %% command: node:converge
   %% kind: node.converge
   autonumber
@@ -7,57 +8,59 @@ sequenceDiagram
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
   %% lane N icon=server pill=target tone=amber
-  participant CLI as CLI / MCP
-  participant GW as Gateway
-  participant SW as Swamp
-  participant N as Target Node
+  %% lane H icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Node 12<br/>reached over ssh
+  participant H as VPN hub<br/>WireGuard peers
   CLI->>GW: node:converge 12
-  Note over GW: Render recorded state<br/>digest per part
-  GW->>SW: Start run, full intent
-  GW-->>CLI: 202 Task accepted
-  SW->>N: Install the Node agent
-  SW->>N: Configure the Node agent
-  SW->>N: Create the orbit-env group
-  SW->>N: Start the Node agent
-  SW->>N: Restart the Node agent
-  SW->>N: Close Instance .env files
-  SW->>N: Let the agent reach homes
-  opt role part drift
-    SW->>N: Install Caddy
-    SW->>N: Publish Caddy sites
-    SW->>N: Install private DNS
-    SW->>N: Configure PHP-FPM
-    SW->>N: Write the tmpfiles rule
-    SW->>N: Clear Route residue
-    %%> Residue cleanup is best effort.
+  %%> Command:
+  %%> - `orbit node:converge 12`
+  %%> - syntax: `<node> [--idempotency-key=KEY] [--json]`
+  Note over GW: Validate, lock Node + hub<br/>task #5180
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12
+  %%> - Node 12 is an active, managed Linux Node
+  %%> Builds:
+  %%> - targets only: Node 12, its active roles, its Tools, its recorded network, and the hub
+  %%> - no versions: the playbooks read them from the release's recipe.json
+  GW->>SW: Start run, full intent<br/>operation-node-converge
+  GW-->>CLI: 202 Accepted<br/>task #5180
+  SW->>SW: Write the playbook input<br/>inventory · vars · known_hosts
+  %%> Why:
+  %%> - the intent is too large for one environment value, so it goes to a 0600 run file
+  SW->>N: Install Orbit binaries<br/>ansible · tags binaries
+  %%> Why first:
+  %%> - later phases and Doctor rely on the agent's facts and the orbit-env group
+  %%> - the CLI comes with it, so one converge brings a Node fully to the release
+  SW->>N: Install role software<br/>ansible · tags software
+  %%> Why:
+  %%> - installs the recipe's common and role tools at their pins, then holds them
+  %%> - the hold keeps Tools from moving tested software; Ubuntu `-security` updates still pass
+  SW->>N: Configure the roles<br/>ansible · tags roles
+  opt Node 12 has Tools
+    SW->>N: Install Tools<br/>ansible · tags tools
+    %%> Why last:
+    %%> - a Tool that needs another version of a held package fails alone; role software stays as tested
+    %%> On a Tool failure:
+    %%> - the phase goes on with the other Tools and returns each Tool's result; the Gateway marks only that Tool failed
   end
-  SW->>N: Check the footprint
-  SW->>N: Read WireGuard state<br/>SSH argv · wg show
-  opt peer Node
-    SW->>N: Read hub WireGuard state
-    SW->>N: Resolve WireGuard endpoint
-    SW->>N: Read network DNS policy
-  end
-  Note over SW: Decide the network change
-  alt network matches the record
-    Note over N: Leave WireGuard alone
-  else network drift
-    SW->>N: Apply recorded network<br/>network-command child
-    %%> Holds the Node and hub locks; the VPN Node publishes all recorded peers.
-    opt peer public key not recorded
-      SW->>N: Read the tunnel key
-    end
-    SW->>N: Probe the tunnel<br/>bounded check
-    %%> Peer ICMP is best effort; the handshake decides. The hub skips ICMP.
-    SW->>N: Read the handshake
-    Note over SW: Check the handshake
-  end
-  alt every required part passes
+  SW->>H: Apply the network<br/>ansible · network · Node + hub
+  %%> Why one phase on both Nodes:
+  %%> - the peer and the hub change together; Ansible runs them in parallel
+  %%> - no drift writes no file and reloads nothing
+  SW->>N: Check the Node<br/>ansible · tags check
+  %%> Why:
+  %%> - the one end check: role software, units, sites and a recent handshake
+  alt check passes
     SW-->>GW: Run succeeded
-    Note over GW: Record footprint digests
+    Note over GW: Record converged state
     GW-->>CLI: Operation succeeded
-  else a required part fails
+  else a phase fails
     SW--xGW: Run failed
-    Note over GW: Record finished parts
+    %%> On failure:
+    %%> - nothing is rolled back; a rerun starts from the first phase and skips what matches
+    Note over GW: Mark the task failed
     GW--xCLI: Operation failed
   end
