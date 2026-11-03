@@ -169,24 +169,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/analytics/clickhouse.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "/usr/bin/sudo",
-        "/usr/bin/test"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/analytics/initialization.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "/usr/bin/docker",
-        "/usr/bin/sudo"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/dependency-merge/admission.ts",
       "rule": "gateway-http",
       "count": 2,

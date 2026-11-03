@@ -2,10 +2,9 @@
 title: "Analytics role"
 description: "How the analytics role runs Plausible Community Edition, where it keeps its data, and how an Instance publishes a tracking host."
 covers:
-  - apps/gateway/{app/Domain/Analytics,app/Infrastructure/Analytics,app/Actions/Analytics,extensions/analytics}/**
+  - apps/gateway/app/{Domain,Infrastructure,Actions}/Analytics/**
   - apps/gateway/app/Actions/Routes/ConvergeRouteAction.php
-  - apps/gateway/resources/analytics/**
-  - apps/gateway/tests/{Feature/Infrastructure/Analytics,Feature/Extensions/Analytics,Unit/Extensions/Analytics}/**
+  - swamp/extensions/behaviors/operations/analytics/**
   - apps/cli/app/Commands/Analytics/**
   - apps/cli/app/Commands/Instances/*InstanceAnalyticsCommand.php
 ---
@@ -77,7 +76,7 @@ The current lifecycle identifies Plausible by its Node and the name `plausible`,
 
 ClickHouse's defaults assume a large server. On a small Node, its system log tables grow and its background merges run out of memory. So each role convergence applies the four ClickHouse files that Plausible Community Edition ships, unchanged.
 
-The native Node footprint publishes Plausible's four ClickHouse files as root with mode `0644` on the Node that runs the ClickHouse Process. It refuses symlinks, foreign ownership, and writable shared paths before publication. It writes a file only when its content differs and restores earlier files if a later publication fails. Failed restoration reports `analytics.clickhouse_recovery_failed`.
+Role add writes Plausible's four ClickHouse files as root with mode `0644` on the Node that runs the ClickHouse Process. Each file is one `@swamp/cfgmgmt/file` apply in its own folder, so an unchanged file stays untouched.
 
 | Host file | Container path |
 | --- | --- |
