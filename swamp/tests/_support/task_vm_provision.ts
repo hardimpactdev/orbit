@@ -8,14 +8,14 @@
  */
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { parse, stringify } from "jsr:@std/yaml@1.0.12";
-import { type History, type NativeRepo, nativeRepo, ROOT, type Run } from "../../../../tests/_support/native_harness.ts";
-import { readCalls } from "../../../../tests/_support/fake_tool.ts";
-import { HostKey } from "../../../../tests/_support/task_vm_lifecycle.ts";
+import { type History, type NativeRepo, nativeRepo, ROOT, type Run } from "./native_harness.ts";
+import { readCalls } from "./fake_tool.ts";
+import { HostKey } from "./task_vm_lifecycle.ts";
 
 // deno-lint-ignore no-explicit-any
 type Json = Record<string, any>;
 
-const tool = new URL("../../../../tests/_support/fake_tool.ts", import.meta.url).href;
+const tool = new URL("./fake_tool.ts", import.meta.url).href;
 export const Peer = "A".repeat(43) + "=";
 
 type Step = { labels?: unknown; task: Record<string, unknown> & { globalArgs?: Record<string, unknown> } };

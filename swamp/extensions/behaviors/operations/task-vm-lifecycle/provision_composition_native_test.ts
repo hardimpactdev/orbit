@@ -2,7 +2,7 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { ROOT } from "../../../../tests/_support/native_harness.ts";
-import { assertSwampLabels, Peer, provisionComposition, resultOf, stub } from "./provision_native_fixture.ts";
+import { assertSwampLabels, Peer, provisionComposition, resultOf, stub } from "../../../../tests/_support/task_vm_provision.ts";
 
 const ForeignRuntime = { task_vm_id: 43, guest_node_id: 142, process_id: 33, ready: true };
 const hasRun = (argv: string[], run: string[]) =>

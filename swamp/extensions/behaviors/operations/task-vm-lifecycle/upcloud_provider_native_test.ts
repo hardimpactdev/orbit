@@ -2,7 +2,7 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { nativeRepo } from "../../../../tests/_support/native_harness.ts";
 import { HostKey } from "../../../../tests/_support/task_vm_lifecycle.ts";
-import { ProviderId, upcloudApi } from "./provision_native_fixture.ts";
+import { ProviderId, upcloudApi } from "../../../../tests/_support/task_vm_provision.ts";
 
 async function fixture() {
   const repo = await nativeRepo();

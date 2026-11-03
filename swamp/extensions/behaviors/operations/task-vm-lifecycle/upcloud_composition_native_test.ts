@@ -1,7 +1,7 @@
 /** UpCloud provision on the actual native graphs with disposable SSH, runtime and UpCloud API boundaries. */
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { HostKey } from "../../../../tests/_support/task_vm_lifecycle.ts";
-import { ForeignId, provisionComposition, ProviderId, resultOf, sshTo, stub, upcloudApi } from "./provision_native_fixture.ts";
+import { ForeignId, provisionComposition, ProviderId, resultOf, sshTo, stub, upcloudApi } from "../../../../tests/_support/task_vm_provision.ts";
 
 const ForeignRuntime = { task_vm_id: 43, guest_node_id: 142, process_id: 33, ready: true };
 
