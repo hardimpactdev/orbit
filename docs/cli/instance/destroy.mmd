@@ -147,6 +147,9 @@ sequenceDiagram
     %%> Not included:
     %%> - registered external databases; their records go with the Instance, nothing on their host changes
   end
+  SW->>N: Remove hibernation files<br/>@swamp/cfgmgmt/file absent
+  %%> Why:
+  %%> - the awake and cold markers and the Caddy access log outlive the Instance otherwise
   SW->>N: Remove the source<br/>@swamp/ssh exec · worktree, rm
   %%> What it does:
   %%> - `git worktree remove --force` per linked worktree, then `rm -rf` of the checkout
