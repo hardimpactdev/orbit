@@ -91,7 +91,7 @@ final readonly class ProjectMaintenanceProjection implements DirectOperationProj
 
                 return app(DirectOperation::class)->project($operation, $data, $this->admit($operation, $result, $data['status'] === 'succeeded'));
             }
-            if ($operation->kind === 'project.observe') {
+            if (in_array($operation->kind, ['project.observe', 'project.routine'], true)) {
                 $result = ValidatedData::object($result['maintenance'] ?? []);
             }
             if ($data['status'] === 'succeeded' && ($result['project_id'] ?? null) !== $operation->target_id) {

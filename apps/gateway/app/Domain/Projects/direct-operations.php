@@ -20,5 +20,7 @@ return [
         ]], 'projection' => ProjectMaintenanceProjection::class,
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^project-dependency-read-[1-9][0-9]*$']]],
     'project.routine' => ['workflow' => 'project-routine', 'workflow_inputs' => true,
-        'terminal_result' => ['job' => 'routine', 'step' => 'Report the result'], 'projection' => ProjectMaintenanceProjection::class],
+        'terminal_result' => ['job' => 'routine', 'step' => "Select this week's routine", 'native' => true,
+            'captures' => ['maintenance' => ['job' => 'routine', 'step' => "Select this week's routine", 'field' => 'result']]],
+        'projection' => ProjectMaintenanceProjection::class],
 ];

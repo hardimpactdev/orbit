@@ -1,60 +1,81 @@
 import { assertEquals, assertMatch, assertRejects } from "jsr:@std/assert@1.0.19";
-import { behavior } from "../extensions/behaviors/orbit_gateway.ts";
 import { behavior as metadata } from "../extensions/behaviors/operations/project-maintenance/metadata.ts";
 import { fixture, original } from "./_support/project_scheduler.ts";
 
-Deno.test("Project routine selects a request from admitted time and groups without admitting work", async () => {
-    const f = fixture();
-    try {
-        await behavior.methods.schedule_project.execute({
-            project: original,
-            groups: [],
-            admitted_at: "2026-11-01T04:00:00Z",
+const routineInput = {
+    project: {
+        id: original.projectId,
+        repository: original.repository,
+        default_branch: original.defaultBranch,
+        check: original.check,
+    },
+    groups: [] as Record<string, unknown>[],
+    admitted_at: "2026-11-01T04:00:00Z",
+};
+function routineFixture() {
+    let saved: Record<string, unknown> = {};
+    return {
+        ctx: {
+            queryData: () => Promise.resolve([]),
+            writeResource: (
+                _spec: string,
+                name: string,
+                value: Record<string, unknown>,
+            ) => {
+                saved = value;
+                return Promise.resolve({ name });
+            },
+        },
+        result: () =>
+            saved.result as {
+                key: string;
+                requests: { input: { project_id: number; brief: string } }[];
+                blocked: string[];
+            },
+    };
+}
+
+Deno.test("Project routine selects this week's request from the captured intent alone", async () => {
+    const f = routineFixture();
+    await metadata.methods.routine.execute(routineInput, f.ctx);
+    assertEquals(f.result().key, "20-routine-2026-10-26");
+    assertEquals(f.result().requests.length, 1);
+    assertEquals(f.result().requests[0].input.project_id, 20);
+    assertEquals(f.result().blocked, []);
+});
+
+Deno.test("Project routine leaves unfinished captured Project work blocked", async () => {
+    for (
+        const group of [
+            { status: "running", taskable_id: null },
+            { status: "completed", taskable_id: 745 },
+        ]
+    ) {
+        const f = routineFixture();
+        await metadata.methods.routine.execute({
+            ...routineInput,
+            groups: [{ id: 10, project_id: 20, brief: "other work", ...group }],
         }, f.ctx);
-        const result = JSON.parse(
-            (f.data.get("orbit-gateway/routine-result") as {
-                result_json: string;
-            }).result_json,
-        );
-        assertEquals(result.key, "20-routine-2026-10-26");
-        assertEquals(result.requests.length, 1);
-        assertEquals(result.requests[0].input.project_id, 20);
-        assertEquals(f.posts(), 0);
-        assertEquals(f.starts(), 0);
-        assertEquals(f.groups.size, 0);
-    } finally {
-        await f.close();
+        assertEquals(f.result().requests, []);
+        assertEquals(f.result().blocked, ["project_has_unfinished_work"]);
     }
 });
 
-Deno.test("Project routine respects admitted unfinished work and uncertain legacy creation", async () => {
-    const f = fixture();
-    try {
-        const input = {
-            project: original,
-            groups: [{
-                id: 10,
-                project_id: 20,
-                status: "running",
-                brief: "other work",
-                taskable_id: 745,
-            }],
-            admitted_at: "2026-11-01T04:00:00Z",
-        };
-        await behavior.methods.schedule_project.execute(input, f.ctx);
-        const result = JSON.parse(
-            (f.data.get("orbit-gateway/routine-result") as {
-                result_json: string;
-            }).result_json,
-        );
-        assertEquals(result.requests, []);
-        assertEquals(result.blocked, [
-            "project_has_unfinished_or_uncertain_work",
-        ]);
-        assertEquals(f.posts(), 0);
-    } finally {
-        await f.close();
-    }
+Deno.test("Project routine asks again for its own group, which the Gateway reuses by brief", async () => {
+    const first = routineFixture();
+    await metadata.methods.routine.execute(routineInput, first.ctx);
+    const retry = routineFixture();
+    await metadata.methods.routine.execute({
+        ...routineInput,
+        groups: [{
+            id: 11,
+            project_id: 20,
+            status: "running",
+            brief: first.result().requests[0].input.brief,
+            taskable_id: 745,
+        }],
+    }, retry.ctx);
+    assertEquals(retry.result().requests, first.result().requests);
 });
 
 Deno.test("native PR reads reject a different repository before exposing the vault credential", async () => {

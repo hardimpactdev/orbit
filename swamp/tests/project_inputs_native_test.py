@@ -67,7 +67,7 @@ class ProjectInputsNativeTest(NativeTestCase):
         self.workflow("routine")
         history, steps = self.run_workflow("routine")
         self.assertEqual(history["status"], "succeeded")
-        result = json.loads(steps["Report the result"]["outputs"]["stdout"])
+        result = steps["Select this week's routine"]["outputs"]["result"]
         self.assertEqual(result["project_id"], 32)
         self.assertEqual(len(result["requests"]), 1)
         self.assertEqual(result["requests"][0]["action"], "create_group")
@@ -79,7 +79,7 @@ class ProjectInputsNativeTest(NativeTestCase):
         self.workflow("routine")
         self.inputs["intent"]["project"] = {"id": 999, "repository": "https://github.com/example/unknown.git", "default_branch": "main", "check": "composer check"}
         _history, steps = self.run_workflow("routine", success=False)
-        self.assertIn("project.maintenance_not_configured", steps["Read the admitted input"]["error"])
+        self.assertIn("project.maintenance_not_configured", steps["Select this week's routine"]["error"])
 
     def test_orbit_routine_reads_its_policy(self):
         self.workflow("routine")
@@ -88,23 +88,21 @@ class ProjectInputsNativeTest(NativeTestCase):
         self.inputs["intent"]["groups"] = [{"id": 1, "project_id": 46, "status": "completed", "pr_url": "https://github.com/nckrtl/orbit/pull/1025", "watched_pr_url": None},
                                            {"id": 2, "project_id": 46, "status": "backlog", "pr_url": "https://github.com/hardimpactdev/orbit/pull/2450", "watched_pr_url": None}]
         _history, steps = self.run_workflow("routine")
-        self.assertEqual(steps["Read the admitted input"]["status"], "succeeded")
-        self.assertEqual(json.loads(steps["Report the result"]["outputs"]["stdout"])["project_id"], 46)
+        self.assertEqual(steps["Select this week's routine"]["status"], "succeeded")
+        self.assertEqual(steps["Select this week's routine"]["outputs"]["result"]["project_id"], 46)
 
-    def test_an_open_group_with_a_foreign_pull_request_is_refused(self):
+    def test_routine_keeps_an_unfinished_group_blocked_without_reading_its_pr(self):
         self.workflow("routine")
         self.inputs["intent"]["groups"] = [{"id": 1, "project_id": 32, "status": "running", "pr_url": "https://github.com/someone/else/pull/1", "watched_pr_url": None}]
-        _, steps = self.run_workflow("routine", success=False)
-        self.assertIn("pr_identity_mismatch", steps["Read the admitted input"]["error"])
+        _, steps = self.run_workflow("routine")
+        self.assertEqual(steps["Select this week's routine"]["outputs"]["result"]["requests"], [])
 
     def test_project_mismatch_fails_before_any_downstream_request(self):
         self.workflow("routine")
         self.inputs["intent"]["project"]["check"] = "a different check"
         history, steps = self.run_workflow("routine", success=False)
         self.assertEqual(history["status"], "failed")
-        self.assertEqual(steps["Read the admitted input"]["status"], "failed")
-        self.assertEqual(steps["Select this week's routine"]["status"], "skipped")
-        self.assertEqual(steps["Report the result"]["status"], "skipped")
+        self.assertEqual(steps["Select this week's routine"]["status"], "failed")
 
     def test_observe_returns_public_evidence_without_gateway_calls(self):
         self.workflow("observe")

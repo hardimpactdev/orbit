@@ -52,7 +52,7 @@ const projects = [
     p18,
     p19,
 ];
-import { scheduleKey } from "../../_lib/project_schedule.ts";
+import { scheduleKey, scheduleReceipt } from "../../_lib/project_schedule.ts";
 
 export const Snapshot = z.object({
     id: z.number().int().positive(),
@@ -156,11 +156,52 @@ export async function configuredProject(
 /** Metadata only: source-owned Project policy and admitted public Gateway state. */
 export const behavior = {
     type: "@nckrtl/project-maintenance-input",
-    version: "2026.11.01.2",
+    version: "2026.11.03.1",
     resources: {
         public: { schema: Public, lifetime: "infinite", garbageCollection: 1 },
     },
     methods: {
+        routine: {
+            description:
+                "Select this week's routine group from the captured Project and its task groups",
+            arguments: ProjectIntent,
+            async execute(raw: z.infer<typeof ProjectIntent>, ctx: Context) {
+                const args = ProjectIntent.parse(raw);
+                const project = await configuredProject(args.project, ctx);
+                const desired = scheduleReceipt(
+                    project,
+                    "routine",
+                    new Date(args.admitted_at),
+                );
+                // An earlier attempt needs no record here: the Gateway admits one project.* task at a time and reuses
+                // the group whose brief carries this key, so a retry can never create a second group.
+                const blocked = args.groups.some((group) =>
+                    group.project_id === project.projectId &&
+                    group.brief !== desired.request.brief &&
+                    (!["completed", "cancelled", "failed"].includes(
+                        String(group.status),
+                    ) || group.taskable_id != null)
+                );
+                return await output(ctx, {
+                    result: {
+                        project_id: project.projectId,
+                        key: desired.key,
+                        requests: blocked ? [] : [{
+                            action: "create_group",
+                            project_id: project.projectId,
+                            key: desired.key,
+                            input: desired.request,
+                            maintenance: {
+                                mode: "routine",
+                                project,
+                                targets: [],
+                            },
+                        }],
+                        blocked: blocked ? ["project_has_unfinished_work"] : [],
+                    },
+                });
+            },
+        },
         schedule: {
             description:
                 "Select daily detection and weekly routines from full captured Gateway state",

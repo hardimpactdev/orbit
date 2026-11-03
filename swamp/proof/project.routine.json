@@ -23,23 +23,18 @@
   },
   "phases": [
     {
-      "name": "Read the admitted input",
-      "job": "routine",
-      "step": "Read the admitted input",
-      "budget_seconds": 20
-    },
-    {
       "name": "Select this week's routine",
       "job": "routine",
       "step": "Select this week's routine",
       "budget_seconds": 20
-    },
-    {
-      "name": "Report the result",
-      "job": "routine",
-      "step": "Report the result",
-      "budget_seconds": 10
     }
   ],
-  "parity": "swamp/proof/project.routine/parity.py"
+  "parity": "swamp/proof/project.routine/parity.py",
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "projects/32/maintenance/enable",
+      "operation": false
+    }
+  ]
 }

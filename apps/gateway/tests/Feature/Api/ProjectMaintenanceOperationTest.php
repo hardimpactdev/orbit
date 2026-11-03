@@ -44,7 +44,8 @@ it('captures Project settings and the complete group snapshot without executing 
         // Swamp validates admitted_at as a Zulu ISO datetime; an offset fails the run's first step.
         ->and($operation->input['admitted_at'])->toMatch('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/')
         ->and(Task::topLevel()->count())->toBe(1)
-        ->and(app(DirectOperation::class)->definition('project.routine')['terminal_result'])->toBe(['job' => 'routine', 'step' => 'Report the result']);
+        ->and(app(DirectOperation::class)->definition('project.routine')['terminal_result'])->toEqual(['job' => 'routine', 'step' => "Select this week's routine", 'native' => true,
+            'captures' => ['maintenance' => ['job' => 'routine', 'step' => "Select this week's routine", 'field' => 'result']]]);
     $this->project->update(['task_check' => 'new check']);
     $this->postJson($url, [])->assertAccepted()->assertJsonPath('data.id', $operation->id);
     expect($this->socket->sent)->toHaveCount(1);
@@ -66,7 +67,7 @@ it('admits one group only after the bound terminal result and makes replay a noo
         'maintenance' => ['mode' => 'routine', 'project' => ['projectId' => $this->project->id, 'repository' => $this->project->repository_url], 'targets' => []],
         'input' => ['title' => 'Routine', 'brief' => 'Swamp schedule: native-fixture', 'tasks' => [['title' => 'Routine', 'brief' => 'Maintain dependencies.', 'deliverables' => [['id' => 'review', 'type' => 'review', 'description' => 'Review the changes.']]]]],
     ]]];
-    $data = ['run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null, 'result' => $result];
+    $data = ['run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null, 'result' => ['maintenance' => $result]];
     $projection = app(ProjectMaintenanceProjection::class);
     $projection->apply($operation, $data);
     $projection->apply($operation, $data);
@@ -86,7 +87,7 @@ it('starts the admitted group provision after the projection commits, so its sou
     ]]];
     $level = DB::transactionLevel();
     app(ProjectMaintenanceProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded',
-        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null, 'result' => $result]);
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null, 'result' => ['maintenance' => $result]]);
     expect($start->transactionLevels)->toBe([$level]);
 });
 
@@ -130,7 +131,7 @@ it('rechecks current Project work before admitting two different captured reques
             'maintenance' => ['mode' => 'routine', 'project' => ['projectId' => $this->project->id, 'repository' => $this->project->repository_url], 'targets' => []],
             'input' => ['title' => 'Routine', 'brief' => 'Swamp schedule: race-'.$index, 'tasks' => []],
         ]]];
-        app(ProjectMaintenanceProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null, 'result' => $result]);
+        app(ProjectMaintenanceProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null, 'result' => ['maintenance' => $result]]);
     }
     expect(Task::topLevel()->count())->toBe(1)
         ->and($operations[1]->fresh()->result['admission_blocked'])->toBe('project_has_unfinished_work')
@@ -145,7 +146,7 @@ it('does not admit work from a snapshot after the Project repository changes', f
         'maintenance' => ['mode' => 'routine', 'project' => ['projectId' => $this->project->id, 'repository' => $this->project->repository_url], 'targets' => []],
         'input' => ['title' => 'Routine', 'brief' => 'Swamp schedule: original-repository', 'tasks' => []],
     ]]];
-    app(ProjectMaintenanceProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null, 'result' => $result]);
+    app(ProjectMaintenanceProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null, 'result' => ['maintenance' => $result]]);
     expect(Task::topLevel()->count())->toBe(0)
         ->and($operation->fresh()->result['admission_blocked'])->toBe('project_settings_changed');
 });
@@ -164,7 +165,7 @@ it('retains prior maintenance capacity until PR and assistance evidence settle',
         'input' => ['title' => 'Next', 'brief' => 'Swamp schedule: next', 'tasks' => []],
     ]]];
     app(ProjectMaintenanceProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded',
-        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null, 'result' => $result]);
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null, 'result' => ['maintenance' => $result]]);
     expect(Task::topLevel()->count())->toBe($blocked ? 1 : 2)
         ->and($operation->fresh()->result['admission_blocked'] ?? null)->toBe($blocked ? 'project_has_unfinished_work' : null);
 })->with([

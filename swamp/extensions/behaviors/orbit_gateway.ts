@@ -1,43 +1,14 @@
 import { refreshMethod, scanResources } from "./dependency_scanner.ts";
 import { queryWorkerData } from "./_lib/worker_query.ts";
-import {
-    Admission as DependencyMergeAdmission,
-    admitBatchMerge,
-} from "./operations/dependency-merge/admission.ts";
+import { Admission as DependencyMergeAdmission } from "./operations/dependency-merge/admission.ts";
 import {
     pruneDependencyResults,
     type RetentionContext,
 } from "./_lib/dependency_retention.ts";
-import {
-    batchReceipt,
-    cleanedCancelledGroup,
-    FindingsSchema,
-    isolateScheduleRow,
-    type ScheduleReceipt,
-    scheduleReceipt,
-    ScheduleReceiptSchema,
-    SchedulerIssueSchema,
-    SchedulerSkipSchema,
-} from "./_lib/project_schedule.ts";
-import {
-    projectConfigurations,
-    ProjectExtensionsSchema,
-} from "./_lib/project_config.ts";
-import {
-    assertProjectSettings,
-    DependencyProjectSchema,
-    DependencyProjectsSchema,
-} from "./_lib/dependency_projects.ts";
-import {
-    indexName,
-    IndexSchema,
-    reportName,
-    ReportSchema,
-} from "./_lib/dependency_results_schema.ts";
-import {
-    BatchEvidenceSchema,
-    reconcileDependencyIndex,
-} from "./_lib/service_detection.ts";
+import { FindingsSchema, ScheduleReceiptSchema } from "./_lib/project_schedule.ts";
+import { ProjectExtensionsSchema } from "./_lib/project_config.ts";
+import { DependencyProjectSchema, DependencyProjectsSchema } from "./_lib/dependency_projects.ts";
+import { IndexSchema, ReportSchema } from "./_lib/dependency_results_schema.ts";
 // @nckrtl/orbit-gateway — the stage work of the orbit-groups factory.
 // `stage` ensures one Gateway task operation per driver key and never waits:
 // see _lib/gateway_stage.ts. The Gateway authenticates this Node by its
@@ -274,69 +245,6 @@ export const behavior = {
                 return { dataHandles: [] };
             },
         },
-        schedule_project: {
-            description:
-                "Select a routine group from captured Project and Gateway state; never admit it from a step",
-            arguments: z.object({
-                project: DependencyProjectSchema,
-                groups: z.array(z.record(z.string(), z.unknown())),
-                admitted_at: z.iso.datetime(),
-            }).strip(),
-            execute: async (
-                args: {
-                    project: z.infer<typeof DependencyProjectSchema>;
-                    groups: Record<string, unknown>[];
-                    admitted_at: string;
-                },
-                context: StageContext,
-            ) => {
-                const desired = scheduleReceipt(
-                    args.project,
-                    "routine",
-                    new Date(args.admitted_at),
-                );
-                const prior = (await scheduleRows(context)).find((row) =>
-                    row.key === desired.key
-                );
-                const blockers = args.groups.filter((group) =>
-                    group.project_id === args.project.projectId &&
-                    group.brief !== desired.request.brief &&
-                    (!["completed", "cancelled", "failed"].includes(
-                        String(group.status),
-                    ) || group.taskable_id != null)
-                );
-                const blocked = blockers.length > 0 ||
-                    Boolean(prior?.attempted && !prior.workItem);
-                return {
-                    dataHandles: [
-                        await context.writeResource(
-                            "scanResult",
-                            "routine-result",
-                            {
-                                result_json: JSON.stringify({
-                                    project_id: args.project.projectId,
-                                    key: desired.key,
-                                    requests: blocked ? [] : [{
-                                        action: "create_group",
-                                        project_id: args.project.projectId,
-                                        key: desired.key,
-                                        input: desired.request,
-                                        maintenance: {
-                                            mode: "routine",
-                                            project: args.project,
-                                            targets: [],
-                                        },
-                                    }],
-                                    blocked: blocked
-                                        ? ["project_has_unfinished_or_uncertain_work"]
-                                        : [],
-                                }),
-                            },
-                        ),
-                    ],
-                };
-            },
-        },
         assistance: {
             outputLifetime: "7d",
             description:
@@ -523,12 +431,4 @@ async function executeStage(args: StageArgs, context: StageContext) {
         err: job.lastError ?? "",
     });
     return { dataHandles: handle ? [handle] : [] };
-}
-
-async function scheduleRows(context: StageContext) {
-    return (await queryWorkerData(
-        context,
-        'modelName == "orbit-gateway" && name.startsWith("schedule-")',
-        "attributes",
-    )).map((row) => ScheduleReceiptSchema.parse(row));
 }

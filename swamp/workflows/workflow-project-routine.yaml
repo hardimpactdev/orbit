@@ -1,6 +1,6 @@
 id: eefb6690-519c-4416-a89c-c43c1c34ec97
 name: project-routine
-description: Select a routine from admitted Gateway state and return its group request.
+description: Select this week's routine from the admitted Project and task groups; the Gateway admits the group from the step output.
 inputs:
   type: object
   additionalProperties: false
@@ -32,46 +32,14 @@ jobs:
 - name: routine
   labels: {role: swamp}
   steps:
-  - name: Read the admitted input
+  - name: Select this week's routine
     labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/project-maintenance-input'
-      behaviorName: project-input
-      methodName: read
+      behaviorName: ${{ "project-maintenance-input-" + string(inputs.intent.project.id) }}
+      methodName: routine
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        intent: ${{ inputs.intent }}
-  - name: Select this week's routine
-    labels: {role: swamp}
-    dependsOn:
-    - step: Read the admitted input
-      condition:
-        type: succeeded
-    task:
-      type: model_method
-      modelIdOrName: orbit-gateway
-      methodName: schedule_project
-      inputs:
-        project: ${{ steps["Read the admitted input"].outputs.project }}
+        project: ${{ inputs.intent.project }}
         groups: ${{ inputs.intent.groups }}
         admitted_at: ${{ inputs.intent.admitted_at }}
-  - name: Report the result
-    labels: {role: swamp}
-    dependsOn:
-    - step: Select this week's routine
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: project-routine-result
-      methodName: execute
-      inputs:
-        run: 'printf ''%s\n'' "$ORBIT_RESULT"
-
-          '
-        env:
-          ORBIT_RESULT: ${{ steps["Select this week's routine"].outputs.result_json }}
