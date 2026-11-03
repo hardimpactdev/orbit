@@ -85,18 +85,24 @@ jobs:
         guard: ${{ !inputs.intent.cascade }}
         task:
           type: behavior
-          behaviorType: '@swamp/cfgmgmt/systemd'
-          behaviorName: '${{ ("schedule-stop_service-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
-          methodName: apply
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ ("sch-stop-svc-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+          methodName: exec
           globalArgs:
-            nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
-            nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
-            nodePort: ${{ inputs.intent.ssh_execution.target.port }}
-            nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-            become: true
-            service: ${{ "orbit-schedule-" + inputs.intent.schedule.id + ".service" }}
-            ensure: stopped
-          inputs: {}
+            name: '${{ ("sch-stop-svc-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+            transport:
+              kind: ssh
+              user: ${{ inputs.intent.ssh_execution.target.user }}
+              port: ${{ inputs.intent.ssh_execution.target.port }}
+              identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+            hosts:
+              - name: target
+                address: ${{ inputs.intent.ssh_execution.target.host }}
+                transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}
+          inputs:
+            hosts: name:target
+            sudo: true
+            argv: [timeout, '60', systemctl, stop, '${{ "orbit-schedule-" + inputs.intent.schedule.id + ".service" }}']
       - name: remove_files
         writes: true
         labels: {role: swamp}

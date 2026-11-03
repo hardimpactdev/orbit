@@ -685,3 +685,7 @@ Seven native enrollment cases pass in 108.014 seconds. Gateway tests pass 154 ca
 Before the receipt index and retro, this batch adds 1210 net Orbit lines. The new native DAG, typed admission/projection and client contract replace the synchronous public endpoint. Swamp grows by 1624 lines: behaviors +127, configuration +2, proof fixtures +113, tests +280, workflows +1102. The DAG exposes native resources; typed behaviors only bind public observations and frozen plans. It ships no script.
 
 The cleanup deletes the unused Node, certificate and route executor chain.
+
+## 2026-11-03: Schedule lifecycle tests read native completion
+
+The newly ported lifecycle suite still looked for the deleted destroy printer. It now reads `Check the removal`, as creation and enable read their own native checks. Cascade service stop uses one bounded SSH argv: official systemd `ensure: stopped` compares only the `active` state and leaves an activating oneshot alone. The explicit stop preserves the previous cascade behavior without a shell. End checks remain official file and systemd checks plus the native assertion.

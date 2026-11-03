@@ -11,5 +11,5 @@ $app = require getcwd().'/bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
 $copy = Schedule::findOrFail($argv[1]);
 $operation = app(StartOperationAction::class)->execute('schedule.destroy', 'instance_schedules', $copy->target_id, $copy->host_node_id,
-    ['id' => $copy->id, 'cascade' => false], 'operator', null);
+    ['id' => $copy->id, 'cascade' => ($argv[2] ?? 'false') === 'true'], 'operator', null);
 echo json_encode(['bindings' => ['destroy' => $operation->id]]), PHP_EOL;

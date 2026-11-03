@@ -150,12 +150,10 @@ save();
       await f.runWorkflow("operation-schedule-control", inputs, success);
     },
     history,
-    /** Destroy prints the public result; create and enable end with a native compliance check. */
+    /** Every lifecycle workflow ends with its native resource check. */
     result: async () => {
       const steps = (await history()).jobs[0].steps;
-      const result = steps.find((step) => step.name === "result");
-      if (result) return JSON.parse(result.outputs?.stdout ?? "{}");
-      const check = steps.find((step) => ["Check the installation", "Check the timer"].includes(step.name));
+      const check = steps.find((step) => ["Check the installation", "Check the timer", "Check the removal"].includes(step.name));
       return check?.status === "succeeded" ? { ready: true } : {};
     },
     async [Symbol.asyncDispose]() {

@@ -48,7 +48,7 @@ sequenceDiagram
     opt Instance cascade
       SW->>N: stop_service
       %%> What it does:
-      %%> - official systemd stops the running service; standalone removal skips this step
+      %%> - one bounded SSH argv stops the service, including an activating oneshot; standalone removal skips this step
     end
     SW->>N: remove_files
     %%> What it does:
