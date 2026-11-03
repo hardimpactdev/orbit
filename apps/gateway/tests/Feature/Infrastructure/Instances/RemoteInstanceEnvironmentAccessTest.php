@@ -25,19 +25,6 @@ function environment_access_context(bool $production = false): InstanceEnvironme
     );
 }
 
-it('checks writability as the file user, and asks a production home to be the user home', function (bool $production): void {
-    $agents = new FakeAgentCommandRunner()->answer('instance.read-environment', ['state' => 'ok', 'installed' => false]);
-    $context = environment_access_context($production);
-
-    new RemoteInstanceEnvironmentAccess($agents)->assertEnvironmentWritable($context, 4096);
-
-    expect($agents->calls)->toHaveCount(1)
-        ->and($agents->calls[0]['input'])->toBe([
-            'mode' => 'write-check', 'base' => $context->path, 'user' => $context->executionUser,
-            'maximum' => InstanceEnvironmentValidator::MaximumFileBytes, 'require_home' => $production, 'required_capacity' => 4096,
-        ]);
-})->with(['development' => false, 'production' => true]);
-
 it('checks writability and reads the workload file in one command before synchronization', function (bool $production): void {
     $agents = new FakeAgentCommandRunner()->answer('instance.inspect-environment-sync', [
         'preflight' => ['state' => 'ok', 'installed' => false],
@@ -72,13 +59,6 @@ it('preserves distinct write and read refusals from a synchronization inspection
     'invalid encoding' => [['preflight' => ['state' => 'ok'], 'existing' => ['state' => 'ok', 'content' => '!']], 'env.import_preflight_failed'],
     'oversized content' => [['preflight' => ['state' => 'ok'], 'existing' => ['state' => 'ok', 'content' => base64_encode(str_repeat('x', InstanceEnvironmentValidator::MaximumFileBytes + 1))]], 'env.import_preflight_failed'],
 ]);
-
-it('refuses a write destination the agent cannot confirm', function (): void {
-    $agents = new FakeAgentCommandRunner()->answer('instance.read-environment', ['state' => 'refused', 'installed' => false]);
-
-    expect(fn () => new RemoteInstanceEnvironmentAccess($agents)->assertEnvironmentWritable(environment_access_context(), 0))
-        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('env.write_preflight_failed'));
-});
 
 it('reads each write outcome, and an outcome after the rename as unconfirmed', function (array $outcome, string $expected): void {
     $agents = new FakeAgentCommandRunner()->answer('instance.write-environment', $outcome);

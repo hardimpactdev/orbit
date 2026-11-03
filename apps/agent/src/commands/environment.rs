@@ -1,4 +1,4 @@
-//! `instance.read-environment` and `instance.write-environment`: reads and replaces an Instance's `.env`, and merges Orbit's keys into
+//! Retained synchronization inspection and environment writes replace an Instance's `.env`, and merge Orbit's keys into
 //! `.env.testing`, inside its checkout or production home. The walk to the directory follows no link, the file must be
 //! the Instance user's regular file, and a write publishes a private candidate with one rename after it checked that
 //! neither the directory nor the file changed. This replaces the Python of `RemoteInstanceEnvironmentAccess`, check for
@@ -620,36 +620,6 @@ impl Command for InspectEnvironmentSync {
 
     fn run(input: SyncInput, _: &Context) -> Result<SyncInspection, EnvironmentError> {
         Ok(inspect_sync(input))
-    }
-}
-
-pub struct ReadEnvironment;
-
-impl Command for ReadEnvironment {
-    const NAME: &'static str = "instance.read-environment";
-    const SUMMARY: &'static str =
-        "Read an Instance's .env, or check that it can be read or replaced.";
-    const MUTATES: bool = false;
-    const TIMEOUT: Duration = Duration::from_secs(60);
-    type Input = EnvironmentInput;
-    type Output = Outcome;
-    type Error = EnvironmentError;
-
-    /// Root opens a production home that only its user may enter.
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Owner)
-    }
-
-    fn run(input: EnvironmentInput, _: &Context) -> Result<Outcome, EnvironmentError> {
-        if !matches!(
-            input.mode,
-            Operation::ReadCheck | Operation::Read | Operation::WriteCheck
-        ) {
-            return Err(EnvironmentError::Invalid {
-                check: "a read names a read or a check".into(),
-            });
-        }
-        Ok(access(&input))
     }
 }
 

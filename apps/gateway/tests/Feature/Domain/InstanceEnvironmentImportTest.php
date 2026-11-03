@@ -198,7 +198,7 @@ it('rejects duplicate unresolved invalid and oversized dotenv input atomically',
     'oversized' => [str_repeat('x', 1_048_577)],
 ]);
 
-it('stores nothing when the vault copy differs from what the run read', function (): void {
+it('stores nothing when the vault copy differs from the reported hash or size', function (bool $wrongSize): void {
     $instance = empty_app_key_import_fixture(false);
     config(['swamp.address' => 'swamp.orbit', 'swamp.ca_path' => '/tmp/ca.pem', 'swamp.run_token' => 'synthetic-token']);
     $socket = new FakeRoutePublicationSocket;
@@ -213,12 +213,12 @@ it('stores nothing when the vault copy differs from what the run read', function
             'direct_import' => ['node_id' => $instance->node_id, 'base' => '/unused', 'user' => 'orbit']], 'state' => ['swamp_run_id' => $run]]);
     app(NativeInstanceEnvironmentImportProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'succeeded',
         'started_at' => now()->subSecond()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null,
-        'result' => ['steps' => [], 'sha256' => hash('sha256', "ORIGINAL=1\n"), 'size' => 11]]);
+        'result' => ['steps' => [], 'sha256' => hash('sha256', $wrongSize ? "CHANGED=1\n" : "ORIGINAL=1\n"), 'size' => $wrongSize ? 9 : 11]]);
 
     expect($operation->refresh()->error_code)->toBe('env.import_unconfirmed')
         ->and($instance->environmentValues()->count())->toBe(0)
         ->and(collect($socket->sent)->pluck('type')->last())->toBe('vault.delete');
-});
+})->with([false, true]);
 
 it('maps a refused staging step to env.import_source_missing and deletes the vault key', function (): void {
     $instance = empty_app_key_import_fixture(false);

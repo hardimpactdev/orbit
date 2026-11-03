@@ -10,9 +10,4 @@ interface InstanceOperationPreflight
         InstanceEnvironmentContext $context,
         int $requiredCapacityBytes,
     ): string;
-
-    public function assertEnvironmentWritable(
-        InstanceEnvironmentContext $context,
-        int $requiredCapacityBytes,
-    ): void;
 }

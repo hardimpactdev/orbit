@@ -14,6 +14,8 @@ orbit env:import --instance=SELECTOR [--replace] [--json]
 
 The Gateway answers at once with the started `instance.env_import` Operation. The CLI follows it until it ends and prints the outcome, the failed step and error code if any, the Operation ID, and the request ID. With `--json`, it prints only the final Operation. The command exits nonzero unless the Operation succeeds. Ctrl-C stops following; the Operation keeps running, and `orbit operation:show ID` shows it.
 
+Swamp reads the file through official SSH, stores its private bytes in a one-shot vault key, and returns only its size and hash. The Gateway reads that key, checks both fields, imports the values, and deletes the key. Cleanup removes temporary copies after success or failure. The Node agent reports key names only; import reads no values through it.
+
 Without `--replace`, a file key that is already stored fails the Operation with `env.import_conflict`, and nothing is stored. For a Laravel Instance, import stores `APP_URL` as `https://{{instance.domain}}`.
 
 ```bash

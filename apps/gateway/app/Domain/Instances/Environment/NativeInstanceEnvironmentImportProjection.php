@@ -84,8 +84,8 @@ final readonly class NativeInstanceEnvironmentImportProjection implements Direct
     private function import(Operation $operation, array $run): array
     {
         $contents = app(SwampVaultExecutionCopy::class)->readSecret(self::Vault, self::key($operation));
-        if (! is_string($run['sha256'] ?? null) || hash('sha256', $contents) !== $run['sha256']) {
-            throw new ResourceOperationException('env.import_unconfirmed', 'The imported file does not match what the run read.', 409);
+        if (($run['size'] ?? null) !== strlen($contents) || ! is_string($run['sha256'] ?? null) || hash('sha256', $contents) !== $run['sha256']) {
+            throw new ResourceOperationException('env.import_unconfirmed', 'The imported file does not match the size and hash the run reported.', 409);
         }
         $instance = Instance::query()->findOrFail($operation->target_id);
 

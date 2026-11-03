@@ -307,7 +307,6 @@ pub fn all() -> Vec<Entry> {
         entry::<deploy_step::RunDeployStep>(),
         entry::<application_log::ReadApplicationLog>(),
         entry::<instances::CheckPathFree>(),
-        entry::<environment::ReadEnvironment>(),
         entry::<environment::InspectEnvironmentSync>(),
         entry::<environment::WriteEnvironment>(),
         entry::<laravel::InspectProfile>(),

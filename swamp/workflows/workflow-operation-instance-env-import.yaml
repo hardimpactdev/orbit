@@ -27,13 +27,14 @@ jobs:
     # A private copy owned by the SSH account; the file must be the account's regular file up to 1 MiB.
   - name: 'Stage .env for the copy'
     labels: {role: swamp}
+    writes: true
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("instance-env-import-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      behaviorName: ${{ "env-imp-" + string(inputs.node_id) }}
       methodName: exec
       globalArgs: &ssh
-        name: ${{ ("instance-env-import-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        name: ${{ "env-imp-" + string(inputs.node_id) }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -50,28 +51,32 @@ jobs:
           '${{ "/tmp/orbit-env-import-" + run.id + "-node" }}', '${{ inputs.intent.ssh_execution.target.user }}', '${{ inputs.intent.user }}']
   - name: 'Copy .env to 209'
     labels: {role: swamp}
+    writes: true
     dependsOn: [{step: 'Stage .env for the copy', condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("instance-env-import-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      behaviorName: ${{ "env-imp-" + string(inputs.node_id) }}
       methodName: copy
       globalArgs: *ssh
       inputs: {hosts: 'name:target', src: '${{ "/tmp/orbit-env-import-" + run.id + "-node" }}', dst: '${{ "/tmp/orbit-env-import-" + run.id }}', direction: from}
   - name: 'Remove the staged copy'
     labels: {role: swamp}
-    dependsOn: [{step: 'Copy .env to 209', condition: {type: always}}]
-    guard: '${{ !("Stage .env for the copy" in steps) || steps["Stage .env for the copy"].status != "succeeded" }}'
+    writes: true
+    dependsOn:
+    - {step: Stage .env for the copy, condition: {type: always}}
+    - {step: Copy .env to 209, condition: {type: always}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("instance-env-import-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      behaviorName: ${{ "env-imp-" + string(inputs.node_id) }}
       methodName: exec
       globalArgs: *ssh
-      inputs: {hosts: 'name:target', timeoutSec: 20, argv: [/usr/bin/rm, -f, --, '${{ "/tmp/orbit-env-import-" + run.id + "-node" }}']}
+      inputs: {hosts: 'name:target', timeoutSec: 20, argv: [/usr/bin/sudo, -n, --, /usr/bin/rm, -f, --, '${{ "/tmp/orbit-env-import-" + run.id + "-node" }}']}
     # The end check: the bytes go to the vault as instance-env-import.content.<operation>; only size and sha256 come back.
   - name: 'Read .env into the vault'
     labels: {role: swamp}
+    writes: true
     dependsOn: [{step: 'Copy .env to 209', condition: {type: succeeded}}]
     task:
       type: behavior
@@ -79,3 +84,15 @@ jobs:
       behaviorName: ${{ "instance-env-import-store-" + string(inputs.node_id) }}
       methodName: store
       inputs: {path: '${{ "/tmp/orbit-env-import-" + run.id }}', operation: '${{ inputs.operation_id }}'}
+  - name: Remove the local copy
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: Copy .env to 209, condition: {type: always}}
+    - {step: Read .env into the vault, condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "env-imp-clean-" + string(inputs.node_id) }}'
+      methodName: execute
+      inputs: {run: '/usr/bin/rm -f -- /tmp/orbit-env-import-${{ run.id }}'}
