@@ -31,11 +31,12 @@
     }
   },
   "expect": {
-    "status": "succeeded"
+    "http_status": 422,
+    "error_code": "node.removal_owner_required"
   },
   "parity": [
     "swamp/proof/node.remove/parity.py",
-    "guest"
+    "guest-refused"
   ],
   "before_gateway": [
     [

@@ -19,6 +19,12 @@ def check(ok, message):
         sys.exit('parity: ' + message)
 
 
+if mode == 'guest-refused':
+    check(operation is None and os.environ['PROOF_NATIVE_RUN'] == '', 'guest removal refusal starts no Operation or run')
+    check(run('cat', '/srv/proof-retained/user-data').stdout.strip() == 'keep', 'refusal preserves user data')
+    check(run('test', '-f', '/usr/local/bin/orbit-agent').returncode == 0, 'refusal leaves the observer untouched')
+    print('parity: TaskVM guest removal requires its owning native workflow and starts no run')
+    sys.exit(0)
 check(operation['status'] == 'succeeded', 'the native removal succeeded')
 check(run('cat', '/srv/proof-retained/user-data').stdout.strip() == 'keep', 'user data remains')
 if mode == 'role':
@@ -31,13 +37,10 @@ elif mode == 'ci':
     rules = run('ufw', 'status').stdout
     check('orbit:public-ssh-recovery' in rules, 'last-role removal keeps public SSH access')
     check('orbit-ci-runners' not in rules, 'the CI forwarding rule is removed')
-elif mode in ('online', 'guest'):
+elif mode == 'online':
     check(operation['result'].get('removed') is True and operation['result'].get('offline') is False, 'online removal is projected')
     check(run('test', '-e', '/usr/local/bin/orbit-agent').returncode == 1, 'observer binary is absent')
     check(run('test', '-e', '/etc/orbit/agent').returncode == 1, 'observer config is absent')
-    if mode == 'guest':
-        check(operation['input']['intent']['task_vm_guest'] is True, 'the removed Node is a task VM guest')
-        check(operation['input']['_node_removal']['task_vm_id'] is not None, 'the guest marker is captured')
     keys = run('cat', '/home/orbit/.ssh/authorized_keys').stdout
     check('ssh-ed25519 AAAAProofUnrelated operator' in keys.splitlines(), 'the unrelated SSH key remains')
     remaining = {' '.join(line.split()[:2]) for line in keys.splitlines()}
