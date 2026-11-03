@@ -173,7 +173,7 @@ else:shutil.copyfile(src,dst/src.name if dst.is_dir() else dst)
 
     def result(self, run):
         steps = self.steps(run)
-        return json.loads(steps["shape"]["outputs"]["result_json"] if self.inputs["kind"] == "tasks.analyze" else steps["result"]["outputs"]["stdout"])
+        return json.loads(steps["shape"]["outputs"]["result_json"])
 
     def analysis_intent(self):
         head = self.git("rev-parse", "HEAD")
@@ -209,9 +209,10 @@ else:shutil.copyfile(src,dst/src.name if dst.is_dir() else dst)
         history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
         result = json.loads(
             next(
-                step for step in history["jobs"][0]["steps"] if step["name"] == "result"
-            )["outputs"]["stdout"]
+                step for step in history["jobs"][0]["steps"] if step["name"] == "shape"
+            )["outputs"]["result_json"]
         )
+        self.assertNotIn("result", self.steps(run))
         self.assertEqual(result["outcome"], "failed")
         self.assertEqual(result["exit_code"], 23)
         self.assertEqual(result["output"], "done\n")
@@ -251,28 +252,28 @@ else:shutil.copyfile(src,dst/src.name if dst.is_dir() else dst)
         run = self.run_workflow(success=False)
         steps = self.steps(run)
         self.assertEqual(
-            json.loads(steps["result"]["outputs"]["stdout"]),
+            json.loads(steps["shape"]["outputs"]["result_json"]),
             {"error_code": "tasks.script_unavailable"},
         )
         self.assertEqual(steps["execute"]["status"], "skipped")
         self.assertFalse((self.workspace / "invoked").exists())
 
-    def test_native_resume_after_result_failure_never_reexecutes_program(self):
+    def test_native_resume_after_cleanup_failure_never_reexecutes_program(self):
         self.install(
             '#!/usr/bin/python3\nfrom pathlib import Path\np=Path(".git/count")\np.write_text(str(int(p.read_text())+1) if p.exists() else "1")\n'
         )
         self.inputs["intent"].update(script="scripts/run", args=[])
         self.workflow("script")
-        result = next(
-            step for step in self.flow["jobs"][0]["steps"] if step["name"] == "result"
+        cleanup = next(
+            step for step in self.flow["jobs"][0]["steps"] if step["name"] == "cleanup-local"
         )
-        result["task"]["inputs"]["run"] = (
-            'test -f "$ORBIT_TEST_READY"\n' + result["task"]["inputs"]["run"]
+        marker = self.repo / "cleanup-ready"
+        # Make cleanup required in this fixture and fail it once after evidence is retained.
+        cleanup["allowFailure"] = False
+        cleanup["task"]["inputs"]["env"]["ORBIT_TEST_READY"] = str(marker)
+        cleanup["task"]["inputs"]["run"] = (
+            'set -e\ntest -f "$ORBIT_TEST_READY"\n' + cleanup["task"]["inputs"]["run"]
         )
-        marker = self.repo / "result-ready"
-        result["task"]["inputs"]["env"]["ORBIT_TEST_READY"] = str(marker)
-        # Native shell uses explicit shell failure rather than a hidden application retry.
-        result["task"]["inputs"]["run"] = "set -e\n" + result["task"]["inputs"]["run"]
         self.write_workflow()
         run = self.run_workflow(success=False)
         marker.touch()

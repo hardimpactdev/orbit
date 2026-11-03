@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Swamp\SwampCommandStep;
@@ -57,27 +58,37 @@ it('admits the exact VM and literal arguments without a workspace lease', functi
     expect(count($this->socket->sent))->toBe(1);
 });
 
-it('records a nonzero script result without changing board state', function (): void {
+it('records script outcomes and native failures without changing board state', function (?string $failure): void {
     [$group, $task] = script_operation_group();
     $id = $this->withHeader('Idempotency-Key', 'native-result')->postJson('/api/v1/task-groups/'.$group->id.'/script', ['subtask' => $task->id, 'script' => 'scripts/dependencies', 'args' => []])->assertAccepted()->json('data.id');
-    $result = ['outcome' => 'failed', 'exit_code' => 23, 'output' => 'Script failed', 'output_truncated' => false, 'changed' => true, 'head' => str_repeat('a', 40), 'tree' => str_repeat('b', 40)];
-    $body = ['run_id' => $this->run, 'status' => 'succeeded', 'started_at' => '2026-10-31T08:00:00.000Z', 'finished_at' => '2026-10-31T08:01:00.000Z', 'result' => $result, 'error_code' => null];
+    $result = $failure === null
+        ? ['outcome' => 'failed', 'exit_code' => 23, 'output' => str_repeat('Script failed', 400), 'output_truncated' => false, 'changed' => true, 'head' => str_repeat('a', 40), 'tree' => str_repeat('b', 40)]
+        : ($failure === 'unavailable' ? ['error_code' => 'tasks.script_unavailable'] : []);
+    $producerFailed = $failure === 'producer';
+    $status = $failure === null ? 'succeeded' : 'failed';
+    $body = ['run_id' => $this->run, 'status' => $status, 'started_at' => '2026-10-31T08:00:00.000Z', 'finished_at' => '2026-10-31T08:01:00.000Z'];
 
     config(['swamp.read_token' => 'native-reader', 'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/dev/null']);
     $this->socket->reply = fn (array $message): array => [['type' => 'workflow.history.get', 'id' => $message['id'], 'payload' => ['data' => [
-        'id' => $this->run, 'workflowName' => 'operation-task-script', 'status' => 'succeeded',
+        'id' => $this->run, 'workflowName' => 'operation-task-script', 'status' => $status,
         'inputs' => ['operation_id' => $id, 'node_id' => $group->taskable->node_id, 'kind' => 'tasks.script'],
         'startedAt' => $body['started_at'], 'completedAt' => $body['finished_at'],
-        'jobs' => [['name' => 'script', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => json_encode($result, JSON_THROW_ON_ERROR)]]]]],
+        'jobs' => [['name' => 'script', 'steps' => [
+            ['name' => 'shape', 'status' => $producerFailed ? 'failed' : 'succeeded', 'outputs' => $producerFailed ? [] : ['result_json' => json_encode($result, JSON_THROW_ON_ERROR)]],
+            ['name' => 'outcome', 'status' => $producerFailed ? 'skipped' : $status],
+        ]]],
     ]]]];
     $projection = app(SwampCommandStep::class);
     $operation = Operation::findOrFail($id);
-    $projection->projectTerminal($operation, ['id' => $this->run, 'status' => 'succeeded'], ['job' => 'script', 'step' => 'result']);
-    $projection->projectTerminal($operation, ['id' => $this->run, 'status' => 'succeeded'], ['job' => 'script', 'step' => 'result']);
-    expect($operation->fresh()->result)->toBe($result);
+    $selector = app(DirectOperation::class)->definition('tasks.script')['terminal_result'];
+    $projection->projectTerminal($operation, ['id' => $this->run, 'status' => $status], $selector);
+    $projection->projectTerminal($operation, ['id' => $this->run, 'status' => $status], $selector);
+    expect($operation->fresh()->result)->toBe($result)
+        ->and($operation->fresh()->status->value)->toBe($status)
+        ->and($operation->fresh()->error_code)->toBe($producerFailed ? 'operation.native_failed' : ($result['error_code'] ?? null));
     expect(count($this->socket->sent))->toBe(2);
     expect($group->fresh()->status->value)->toBe('running');
-});
+})->with([null, 'unavailable', 'producer']);
 
 it('refuses an unowned workspace before starting a native run', function (): void {
     [$group, $task] = script_operation_group();

@@ -250,7 +250,7 @@ The steps read the entrypoint mode, take the workspace snapshots and run the pro
 
 A snapshot runs `git read-tree HEAD`, `git add --all` and `git write-tree` against a temporary index at `/tmp/orbit-task-index-<run>`, and `git rev-parse HEAD`; the real index is untouched, and a best-effort step removes the temporary index. TypeScript on Node 209 refuses an unavailable entrypoint or a moved candidate before the program runs, and shapes the public result.
 
-The program's output stays out of native history ([command output](#keep-command-output-out-of-run-history)). The Gateway records only the shaped result through the shared subscriber; execution steps make no Gateway requests.
+The program's output stays out of native history ([command output](#keep-command-output-out-of-run-history)). The Gateway captures the public producer output through the shared subscriber in its terminal history read. Native `assert` checks execution availability; a nonzero script exit keeps its successful Operation completion. No shell step prints the result again, and execution steps make no Gateway requests.
 
 Cancellation uses native Swamp cancel and official SSH session teardown. It does not track or confirm remote descendant termination. A remaining process is removed by normal group cleanup or VM destruction. Native resume does not repeat a successful execution step when later evidence collection resumes. An unavailable tracked executable fails as `tasks.script_unavailable`. Execution keeps its existing limit of one hour; native SSH owns its timeout and connection handling. Repository programs receive no operational credentials.
 

@@ -67,3 +67,4 @@ node.role_add
 tasks.analyze
 metrics.disable
 metrics.enable
+tasks.script

@@ -100,12 +100,6 @@
       "job": "script",
       "step": "shape",
       "budget_seconds": 10
-    },
-    {
-      "name": "result",
-      "job": "script",
-      "step": "result",
-      "budget_seconds": 10
     }
   ],
   "parity": "swamp/proof/tasks.script/parity.py"
