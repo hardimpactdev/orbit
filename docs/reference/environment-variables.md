@@ -80,7 +80,11 @@ Import, update, and synchronization use the Instance's recorded owning Node. A R
 
 `instance.sync_environment` records one Instance intent and starts one Swamp run on Node 209 ([flow](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/env/sync.mmd)). At admission the Gateway renders the files and records the key names and the sha256 of each file, never a value.
 
-When the run starts, it pushes `.env` into the vault key `instance-environment-<operation>` and `.env.testing` into `instance-environment-testing-<operation>`. The steps reach the owning Node from Node 209. One `@swamp/ssh` command reads the file hashes and key names, never a value, and an assert checks for foreign keys. The official `@swamp/cfgmgmt/file` behavior writes each file from `vault.get`. An assert compares the sha256 it records with the rendered one. No step calls the Gateway, and no per-Node worker takes part.
+Admission also checks the file on the Node from the [Node agent's](/reference/node-agent#environment-key-names) `env_keys` fact; no run reads the Node. A key that stored configuration lacks and Orbit never wrote refuses with `env.sync_would_drop_keys`, and the details name the keys. A file whose key names the agent has not observed refuses with `env.keys_not_observed`: a 0600 `.env`, a link, a missing file, no report yet, or a silent agent. An agent that can't reach the directory also sees no file, so a missing file proves nothing.
+
+Both refusals are HTTP 409 and start no task. `--force` (`"force": true`) skips both checks and replaces the file. When the agent reports that Git tracks `.env.testing`, the plan writes no `.env.testing`, and the result says `skipped_tracked` when one would have been written. A forced sync without the agent's report writes none either and says `skipped_unobserved`.
+
+When the run starts, it pushes `.env` into the vault key `instance-environment-<operation>` and `.env.testing` into `instance-environment-testing-<operation>`. The steps reach the owning Node from Node 209. The official `@swamp/cfgmgmt/group` behavior creates the `orbit-env` group when the Node lacks it. The official `@swamp/cfgmgmt/file` behavior writes each file from `vault.get` as the Instance account, with mode 0640. Then root runs `chgrp -h orbit-env` on them, which never follows a link. The agent reads only `.env`. An assert compares the sha256 it records with the rendered one. The file behavior's status of each file, `compliant` or `applied`, gives `environment_changed` and `testing_status`. No step calls the Gateway, and no per-Node worker takes part.
 
 The Gateway records the result and the admitted key names from the terminal run. If the stored values change between admission and run start, the run does not start and the task fails with `env.configuration_changed`.
 
@@ -149,17 +153,17 @@ The Gateway checks the complete result before it stores any part of an import or
 
 Synchronization takes one snapshot of the Instance, any authoritative Route, and the stored configuration. It resolves `{{instance.domain}}` to the Route's domain when one is present and resolves `{{instance.environment}}` to `development` on `app-dev` or `production` on `app-prod`. Only a stored domain placeholder requires a Route. A leftover `{{` or `}}` after rendering returns `env.reference_unavailable` (409) before the file changes.
 
-The Gateway resolves stored placement and renders the protected values without contacting the Node. It renders every stored key in sorted order, as a quoted value. The file behavior writes the result with mode `0600` as the runtime user. A file that already matches stays in place, and the result reports `changed: false`. Stored configuration is the only input. Edits to stored keys disappear.
+The Gateway resolves stored placement and renders the protected values without contacting the Node. It renders every stored key in sorted order, as a quoted value. The runtime user writes the result with mode `0640`, and root gives it group `orbit-env`, so the Node agent can report its key names. A file that already matches stays in place, and the result reports `changed: false`. Stored configuration is the only input. Edits to stored keys disappear.
 
-Before it writes, Swamp reads the file's key names on the Node. This check stays in the run until the Node agent reports the key names to admission.
+Admission checks the file's key names from the Node agent's report; the run does not read them.
 
-A key that stored configuration lacks fails the Operation with `env.sync_would_drop_keys`, and the file stays unchanged. Orbit owns, and so may remove, only the keys its last synchronization wrote and the keys a detach removed since. To keep the other keys, store them with `env:update`, or import the file with `replace` when its other keys are already stored. Otherwise remove them from the file. A Route transition on a production Instance skips this check, because deploys already own that file.
+A key that stored configuration lacks refuses the sync with `env.sync_would_drop_keys`, and the file stays unchanged. Orbit owns, and so may remove, only the keys its last synchronization wrote and the keys a detach removed since. To keep the other keys, store them with `env:update`, or import the file with `replace` when its other keys are already stored. Otherwise remove them from the file. A Route transition on a production Instance skips this check, because deploys already own that file.
 
 When the written file's sha256 differs from the rendered one, the end check fails the Operation with `operation.native_failed` and names the step. Repeat synchronization: it writes the file again.
 
 A stored Database attachment keeps its explicit network choice when synchronization projects environment values. [LAN selection](/reference/database-connections#choose-lan-for-an-instance) requires an active peer and a current managed publication; WireGuard is the default. Transfer and clone reattachment reset the choice to WireGuard.
 
-For an Instance that owns its MySQL or PostgreSQL `DB` database, synchronization also writes `.env.testing` in the same step and mode. The Gateway renders the whole file: the values of `.env`, with `APP_ENV=testing` and the `DB_*` keys of the [test database](/reference/database-connections#test-databases). The write replaces the file; Orbit merges nothing. A file that Git tracks in the checkout stays unchanged. The Operation result records the test database name and testing status: `written`, `unchanged` or `skipped_tracked`.
+For an Instance that owns its MySQL or PostgreSQL `DB` database, synchronization also writes `.env.testing` in the same step and mode. The Gateway renders the whole file: the values of `.env`, with `APP_ENV=testing` and the `DB_*` keys of the [test database](/reference/database-connections#test-databases). The write replaces the file; Orbit merges nothing. A file that Git tracks in the checkout stays unchanged. The Operation result records the test database name and testing status: `written`, `unchanged`, `skipped_tracked` or `skipped_unobserved`.
 
 Laravel loads `.env.testing` instead of `.env` when `APP_ENV` is `testing`. So the file holds every key of `.env`, such as `APP_KEY`. Orbit never deletes `.env.testing`. The file stays after the Instance stops owning its `DB` database.
 
@@ -238,7 +242,8 @@ Update and the start of import or synchronization return these codes in the Orbi
 | `env.configuration_changed` | Operation | Stored values changed between admission and the run start. The run does not start. Repeat synchronization. |
 | `operation.kind_unavailable` | 409 | Native synchronization is not registered. No Operation or file change is admitted. |
 | `env.runtime_refresh_failed` | Operation | The config cache, the PHP-FPM reload or a Process restart failed. No application output is returned. Repeat synchronization. |
-| `env.sync_would_drop_keys` | Operation | The file has keys that stored configuration lacks and Orbit never wrote. Store or import them, or remove them from the file. |
+| `env.sync_would_drop_keys` | 409 | The agent reports keys in the file that stored configuration lacks and Orbit never wrote. `details.keys` names them. Import them, or pass `--force`. |
+| `env.keys_not_observed` | 409 | The Node agent has not reported the file's key names. Run `env:import`, then `env:sync --force`. For a missing `.env`, `--force` alone. |
 | `env.testing_tracking_unknown` | Operation | Git cannot report whether the checkout tracks `.env.testing`. `.env` is written; `.env.testing` stays unchanged. |
 
 ## Why it works this way

@@ -902,7 +902,7 @@ Deno.test("Route private DNS grace allows only the approved file, step and liter
 const officialSshFixture = Deno.readTextFileSync(
   new URL("../tests/fixtures/shape/official-ssh-vault.yaml", import.meta.url),
 );
-Deno.test("a vault value may be the whole content of a 0600 cfgmgmt file on a 209 worker, and nothing else", () => {
+Deno.test("a vault value may be the whole content of a 0600, or 0640 Instance .env, cfgmgmt file on a 209 worker, and nothing else", () => {
   const vault = "${{ vault.get(inputs.execution_secrets.login.vault, inputs.execution_secrets.login.key) }}";
   const workflow = {
     name: "database-login",
@@ -952,8 +952,18 @@ Deno.test("a vault value may be the whole content of a 0600 cfgmgmt file on a 20
   for (const method of ["apply", "check"]) {
     const resource = source.replace('"methodName":"apply"', '"methodName":"' + method + '"');
     assertEquals(analyzeYaml(file, resource).findings.filter((f) => f.rule === "vault-placement"), []);
+    // An Instance .env that only the Node agent's orbit-env group may also read.
+    const group = resource.replace('"mode":"0600"', '"mode":"0640","group":"orbit-env"');
+    assertEquals(analyzeYaml(file, group).findings.filter((f) => f.rule === "vault-placement"), []);
+    // The Instance account writes it in its own group; a root chgrp -h then hands it to orbit-env.
+    const account = resource.replace('"mode":"0600"', '"mode":"0640","becomeUser":"${{ inputs.intent.user }}"');
+    assertEquals(analyzeYaml(file, account).findings.filter((f) => f.rule === "vault-placement"), []);
     for (const changed of [
+      resource.replace('"mode":"0600"', '"mode":"0640","becomeUser":"root"'),
+      resource.replace('"mode":"0600"', '"mode":"0640","becomeUser":"${{ inputs.intent.user }}","group":"staff"'),
       resource.replace('"mode":"0600"', '"mode":"0644"'),
+      resource.replace('"mode":"0600"', '"mode":"0640"'),
+      resource.replace('"mode":"0600"', '"mode":"0640","group":"staff"'),
       resource.replace(vault, "prefix " + vault),
       resource.replace('"role":"swamp"', '"role":"untrusted"'),
     ]) {

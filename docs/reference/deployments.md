@@ -208,7 +208,7 @@ One native run on Node 209 then runs the [chart](/cli/instance/deploy)'s steps o
 | --- | --- | --- |
 | `Write release credential`, `Prepare the release`, `Remove release credential`, `Read the release commit`, `Prepare shared paths`, `Link the release` | Clones the repository into the new release and checks out the frozen commit or branch head. Seeds and links the shared paths and each `.env` | `deployment.source_failed` |
 | `Read first-parent chain`, `Check the branch commit` | A pinned commit only: checks that it is on the branch's first-parent chain | `deployment.commit_not_on_branch` |
-| `Read the key names`, `Check for foreign keys`, `Write .env` | Refuses keys of `<home>/.env` that Orbit does not manage, then writes the rendered `.env` from the vault | `env.sync_unconfirmed`, `env.sync_would_drop_keys` |
+| `Read the key names`, `Check for foreign keys`, `Create the orbit-env group`, `Write .env`, `Set the group orbit-env` | Refuses keys of `<home>/.env` that Orbit does not manage. The Instance account writes the rendered `.env` from the vault with mode 0640; root then runs `chgrp -h orbit-env` | `env.sync_unconfirmed`, `env.sync_would_drop_keys` |
 | `dev-vp-*`, `Read Vite manager home`, `Read Vite manager CLI`, `Publish public Vite CLI`, `Prepare Vite cache` | The shared [Vite+ steps](#vite-store-prerequisite), when a step needs Vite+ | `deployment.vp_requirements_invalid`, `deployment.vp_store_failed` |
 | `Run before steps` | Each `before_activation` step in order; a failed step skips the rest | `deployment.step_failed` |
 | `Grant Caddy access`, `Activate release`, `Swap current` | Grants Caddy access to each served web root, writes `current.next`, and renames it over `current` in one atomic rename | `deployment.selection_invalid` |

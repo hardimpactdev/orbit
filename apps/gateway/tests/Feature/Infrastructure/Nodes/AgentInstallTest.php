@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Instances\Environment\InstanceEnvironmentFiles;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -117,6 +118,21 @@ it('binds back the state of every Tool Manager under home, read-only, recorded o
         ->not->toContain('BindReadOnlyPaths=-/opt', 'BindReadOnlyPaths=-/var/lib/dpkg');
 });
 
+it('binds back each production home, whose .env the orbit-env group reads', function (): void {
+    $runner = nodeAgentConfigured();
+    $node = nodeAgentNode();
+    $node->forceFill(['status' => LifecycleStatus::Active, 'public_ssh_host' => '192.0.2.4'])->save();
+    $node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    $project = Project::query()->create(['name' => 'Live', 'slug' => 'live', 'type' => 'monorepo', 'repository_url' => 'https://example.test/live.git']);
+    Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'live', 'source_layout' => 'checkout', 'branch' => 'main',
+        'status' => 'active', 'environment' => 'production', 'production_user' => 'orbit-app-7', 'production_home' => '/home/orbit-app-7',
+        'checkout_path' => '/home/orbit-app-7/releases/r1']);
+
+    nodeAgentExecutor($runner)->converge($node);
+
+    expect($runner->calls[0]['input']['unit'])->toContain('SupplementaryGroups=orbit-env', 'BindReadOnlyPaths=-/home/orbit-app-7');
+});
+
 it('binds back only the Instance root and Homebrew under an empty home', function (?ManagedUserAccount $account, array $settings, array $present, array $absent): void {
     $runner = nodeAgentConfigured();
     $node = nodeAgentNode();
@@ -127,9 +143,9 @@ it('binds back only the Instance root and Homebrew under an empty home', functio
     expect($runner->calls[0]['input']['unit'])->toContain('CapabilityBoundingSet=', ...$present)
         ->not->toContain(...$absent);
 })->with([
-    'default root' => [new ManagedUserAccount('deploy', 'deploy', '/home/deploy'), [], ['ProtectHome=tmpfs', 'BindReadOnlyPaths=-/home/deploy/apps'], ['ProtectHome=read-only', 'ProtectHome=yes', 'SupplementaryGroups=']],
+    'default root' => [new ManagedUserAccount('deploy', 'deploy', '/home/deploy'), [], ['ProtectHome=tmpfs', 'BindReadOnlyPaths=-/home/deploy/apps', 'SupplementaryGroups=orbit-env'], ['ProtectHome=read-only', 'ProtectHome=yes']],
     'unsafe home' => [new ManagedUserAccount('orbit', 'orbit', '/home/orbit dir'), [], ['ProtectHome=tmpfs', 'BindReadOnlyPaths=-/home/linuxbrew/.linuxbrew'], ['BindReadOnlyPaths=-/home/orbit dir']],
-    'unknown account' => [null, [], ['ProtectHome=tmpfs', 'BindReadOnlyPaths=-/home/linuxbrew/.linuxbrew'], ['SupplementaryGroups=', 'BindReadOnlyPaths=-/home/orbit']],
+    'unknown account' => [null, [], ['ProtectHome=tmpfs', 'BindReadOnlyPaths=-/home/linuxbrew/.linuxbrew'], ['BindReadOnlyPaths=-/home/orbit/apps']],
 ]);
 
 it('writes the Gateway address while the gateway role itself converges', function (): void {
@@ -358,7 +374,8 @@ function nodeAgentExecutor(FakeAgentCommandRunner $runner, ?ManagedUserAccount $
         app(StorageRootResolver::class),
         app(NodeSettingsNormalizer::class),
         $runner,
-        new NodeToolScopes($accounts),
+        new NodeToolScopes,
+        app(InstanceEnvironmentFiles::class),
         app(NodeLocks::class),
         $lockWaitSeconds,
     );

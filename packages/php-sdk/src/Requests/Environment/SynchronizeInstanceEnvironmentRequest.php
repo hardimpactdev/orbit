@@ -14,13 +14,15 @@ final class SynchronizeInstanceEnvironmentRequest extends StartInstanceOperation
     #[\Override]
     protected Method $method = Method::POST;
 
+    /** @param  bool  $force  replace a `.env` whose key names the Node agent has not reported, or that holds keys stored configuration lacks */
     public function __construct(
         private readonly int|string $instance,
+        private readonly bool $force = false,
     ) {
         parent::__construct();
     }
 
-    /** Synchronization takes an empty JSON object body. */
+    /** Synchronization takes a JSON object body: empty, or `force`. */
     #[\Override]
     public function body(): JsonBodyRepository
     {
@@ -32,9 +34,9 @@ final class SynchronizeInstanceEnvironmentRequest extends StartInstanceOperation
         return '/api/v1/instances/'.rawurlencode((string) $this->instance).'/environment/sync';
     }
 
-    /** @return array<never, never> */
+    /** @return array{force?: true} */
     protected function defaultBody(): array
     {
-        return [];
+        return $this->force ? ['force' => true] : [];
     }
 }

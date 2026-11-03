@@ -18,10 +18,11 @@ Deno.test("production deploy prepares, activates, restarts and cleans up without
   assertEquals(await Deno.readTextFile(`${home}/storage/app/kept.txt`), "kept\n");
   assertFalse(exists(`${home}/storage/app/new.txt`));
   assertEquals(await Deno.readTextFile(`${home}/.env`), `APP_KEY="${sentinel}"\n`);
-  assertEquals((await Deno.stat(`${home}/.env`)).mode! & 0o777, 0o600);
+  // The Instance account writes .env 0640; root only gives it the orbit-env group, and -h never follows a link.
+  assertEquals((await Deno.stat(`${home}/.env`)).mode! & 0o777, 0o640);
   assertEquals(await Deno.readTextFile(`${f.node}/before-ran`), directory);
   assertEquals((await Deno.readTextFile(`${f.node}/after-saw`)).trim(), `releases/${release}`);
-  assertEquals(calls(), [["setfacl", "-m", "u:caddy:--x", "--", directory], [
+  assertEquals(calls(), [["chgrp", "-h", "orbit-env", "--", `${home}/.env`], ["setfacl", "-m", "u:caddy:--x", "--", directory], [
     "setfacl", "-P", "-R", "-m", "u:caddy:r-X", "--",
     `${directory}/public`,
   ], ["systemctl", "reload-or-restart", "orbit-process-3-horizon.service"]]);

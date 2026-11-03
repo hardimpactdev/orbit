@@ -118,11 +118,12 @@ sequenceDiagram
     SW->>N: Read the default branch<br/>git for-each-ref · interim
     %%> What it reads:
     %%> - the remote default branch
-    SW->>N: Protect the .env file<br/>@swamp/ssh exec · go-rwx
+    SW->>N: Create the orbit-env group<br/>cfgmgmt/group apply
+    SW->>N: Protect the .env file<br/>@swamp/ssh exec · 0640 orbit-env
     %%> How:
-    %%> - one `chmod go-rwx` argv on a regular `.env`, safe to repeat
+    %%> - on a regular `.env`, root runs `chgrp -h orbit-env`, which never follows a link, then the account sets mode 0640; safe to repeat
     %%> What it does:
-    %%> - removes group and public access from `.env`
+    %%> - lets only the Node agent's group read `.env`, so the agent can report its key names; removes public access
     %%> Interim:
     %%> - runs after the reads, before the Gateway checks them; a refused source keeps the tighter mode
     %%> Not included:

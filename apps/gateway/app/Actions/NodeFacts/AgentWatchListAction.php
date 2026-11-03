@@ -7,6 +7,7 @@ namespace App\Actions\NodeFacts;
 use App\Actions\Doctor\Intent\RuntimeDoctorIntent;
 use App\Actions\Tasks\ListAgentWorkspacesAction;
 use App\Data\Tasks\AgentWorkspaceData;
+use App\Domain\Instances\Environment\InstanceEnvironmentFiles;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\SourceControl\ApplicationDirectory;
@@ -19,13 +20,13 @@ use App\Models\Project;
  * What one Node's agent watches, at start and every 60 seconds. It opens only what this list names: the services
  * of the Node's roles and the units of its systemd Processes, in addition to the `orbit-process-*` units it always
  * watches, the awake markers of its hibernating Processes, the task checkouts, and on an app-dev Node the apps root
- * whose `<project>/<name>` checkouts it reports.
+ * whose `<project>/<name>` checkouts it reports, and the `.env` of each Instance, whose key names it reports.
  */
 final readonly class AgentWatchListAction
 {
-    public function __construct(private NodeRoleServiceCatalog $services, private ListAgentWorkspacesAction $workspaces, private NodeToolScopes $tools, private RuntimeDoctorIntent $processes) {}
+    public function __construct(private NodeRoleServiceCatalog $services, private ListAgentWorkspacesAction $workspaces, private NodeToolScopes $tools, private RuntimeDoctorIntent $processes, private InstanceEnvironmentFiles $environments) {}
 
-    /** @return array{services: list<string>, awake_markers: list<string>, workspaces: list<array<string, mixed>>, apps_root: ?string, applications: array<string, string>, tools: list<array{manager: string, paths: list<string>}>} */
+    /** @return array{services: list<string>, awake_markers: list<string>, workspaces: list<array<string, mixed>>, apps_root: ?string, applications: array<string, string>, tools: list<array{manager: string, paths: list<string>}>, environments: list<string>} */
     public function execute(Node $node): array
     {
         $services = [];
@@ -56,6 +57,7 @@ final readonly class AgentWatchListAction
             'apps_root' => $root = $this->appsRoot($node),
             'applications' => $root === null ? [] : $this->applications(),
             'tools' => $this->tools->forNode($node),
+            'environments' => $this->environments->forNode($node),
         ];
     }
 

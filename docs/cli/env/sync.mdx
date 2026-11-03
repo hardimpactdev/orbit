@@ -1,16 +1,18 @@
 ---
 title: "orbit env:sync"
 sidebarTitle: "env:sync"
-description: "Replace the Instance's `.env` with the complete stored configuration. Edits to stored keys disappear. A key that exists only in the file stops the sync with `env.sync_would_drop_keys`, unless Orbit wrote or detached that key itself. To keep such keys, store them with `env:update`, or run `env:import` (with `--replace` when the file's other keys are already stored). Otherwise remove them from the file."
+description: "Replace the Instance's `.env` with the complete stored configuration. Edits to stored keys disappear. The Gateway checks the key names the Node agent reports: a key that exists only in the file stops the sync with `env.sync_would_drop_keys`, unless Orbit wrote or detached that key itself, and a file whose names the agent has not observed stops it with `env.keys_not_observed`. Run `env:import` first (with `--replace` when the file's other keys are already stored), or pass `--force` to replace the file."
 ---
 
 ```bash
-orbit env:sync --instance=SELECTOR [--json]
+orbit env:sync --instance=SELECTOR [--force] [--json]
 ```
 
 ```bash
 orbit env:sync --instance=12
 ```
+
+Both refusals come at admission, before any task starts, and name the keys when the file has them. The agent reads the key names only, never values, and only from a `.env` that Orbit wrote: 0640 with group `orbit-env`. A hand-made 0600 `.env`, a link, a missing file, or a Node whose agent is silent leaves the names not observed. A `.env` written before Orbit used this mode is 0600 too. For such a file, run `env:import`, then `env:sync --force`: the import stores the file's keys, so the forced sync drops none and writes the file as 0640. `--force` alone replaces the file; the keys only it held are gone.
 
 The Gateway answers at once with the started Operation. The CLI follows it until it ends and prints the outcome, the failed step and error code if any, the Operation ID, and the request ID. With `--json`, it prints only the final Operation, whose `result` holds the [synchronization result](/reference/environment-variables#operations). The command exits nonzero unless the Operation succeeds. Ctrl-C stops following; the Operation keeps running, and `orbit operation:show ID` shows it.
 

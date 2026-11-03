@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tools;
 
-use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Models\Node;
-use Throwable;
 
 /**
  * Where each Tool Manager a Linux Node can run keeps its state, the files the Node agent reads for its `packages`
@@ -16,18 +14,14 @@ use Throwable;
  */
 final readonly class NodeToolScopes
 {
-    public function __construct(private ManagedUserAccountResolver $accounts) {}
-
     /** @return list<array{manager: string, paths: list<string>}> */
     public function forNode(Node $node): array
     {
-        try {
-            $home = $this->accounts->resolve($node)->home;
-        } catch (Throwable) {
-            $home = null;
-        }
+        // The account Orbit creates has this home, as the converge assumes for its apps root; reading it from the Node
+        // would cost an SSH call on every watch-list request.
+        $home = $node->user === 'root' ? '/root' : '/home/'.$node->user;
         // A home that is not a plain path, such as one with a space, can't name a unit bind; its candidates go.
-        if ($home !== null && preg_match('#\A(/[A-Za-z0-9._-]+)+\z#D', $home) !== 1) {
+        if (preg_match('#\A(/[A-Za-z0-9._-]+)+\z#D', $home) !== 1) {
             $home = null;
         }
         if ($node->platform !== 'linux') {

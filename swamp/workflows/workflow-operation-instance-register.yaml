@@ -242,11 +242,35 @@ jobs:
         - for-each-ref
         - --format=%(symref)
         - refs/remotes/origin/HEAD
-  - name: 'Protect the .env file'
+    # A .env becomes 0640 with group orbit-env, so the Node agent can report its key names and no other user reads it.
+  - name: 'Create the orbit-env group'
     labels:
       role: swamp
     dependsOn:
     - step: 'Read the default branch'
+      condition:
+        type: succeeded
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/group'
+      behaviorName: ${{ ("reg-env-group-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: apply
+      globalArgs:
+        groupname: orbit-env
+        ensure: present
+        system: true
+        become: true
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+      inputs: {}
+  - name: 'Protect the .env file'
+    labels:
+      role: swamp
+    dependsOn:
+    - step: 'Create the orbit-env group'
       condition:
         type: succeeded
     writes: true
@@ -258,11 +282,12 @@ jobs:
       globalArgs: *id001
       inputs:
         hosts: name:target
+        # Only the group change runs as root, and -h never follows a link; the account sets its own file's mode.
         argv:
         - /usr/bin/timeout
         - '60'
         - /bin/sh
         - -c
-        - '[ ! -f "$1/.env" ] || [ -L "$1/.env" ] || chmod go-rwx -- "$1/.env"'
+        - '[ ! -f "$1/.env" ] || [ -L "$1/.env" ] || { /usr/bin/sudo -n -- /usr/bin/chgrp -h orbit-env -- "$1/.env" && chmod 0640 -- "$1/.env"; }'
         - sh
         - ${{ inputs.intent.application }}

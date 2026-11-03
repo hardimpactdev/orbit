@@ -1150,3 +1150,8 @@ it('leaves validation details to the field messages', function (): void {
         ->toBe(GatewayFailureRenderer::fieldDetails($details))
         ->toBe($details);
 });
+
+it('keeps only well-formed key names on a sync that would drop keys', function (): void {
+    expect(GatewayFailureRenderer::safeDetails('env.sync_would_drop_keys', ['keys' => 'FOREIGN,mail.from', 'value' => 'secret']))->toBe(['keys' => 'FOREIGN,mail.from'])
+        ->and(GatewayFailureRenderer::safeDetails('env.sync_would_drop_keys', ['keys' => "FOREIGN=secret\n"]))->toBe([]);
+});

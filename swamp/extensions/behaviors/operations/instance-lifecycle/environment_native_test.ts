@@ -1,6 +1,6 @@
-import { assertEquals, assertFalse, assertStringIncludes } from "jsr:@std/assert@1.0.19";
+import { assertEquals, assertFalse } from "jsr:@std/assert@1.0.19";
 import { readCalls } from "../../../../tests/_support/fake_tool.ts";
-import { type Data, exists, git, instanceFixture, sha256 } from "../../../../tests/_support/instance_fixture.ts";
+import { type Data, instanceFixture, sha256 } from "../../../../tests/_support/instance_fixture.ts";
 const NAME = "operation-instance-environment";
 async function fixture() {
   const f = await instanceFixture();
@@ -38,38 +38,35 @@ async function fixture() {
   };
   return { f, secret, inputs, render, sync: (success = true) => f.run(NAME, inputs, success) };
 }
-Deno.test("development environment writes a private file and reads only key names on rerun", async () => {
+const chgrps = (file: string) => readCalls<string[]>(file).filter((call) => call[0] === "chgrp");
+Deno.test("development environment writes a group-readable file as the account and is compliant on rerun", async () => {
   const { f, secret, render, sync } = await fixture();
   await using _ = f;
   const [content] = await render({ APP_KEY: secret, APP_ENV: "local" });
   const { steps } = await sync();
   assertEquals(await Deno.readTextFile(`${f.node}/.env`), content);
-  assertEquals((await Deno.stat(`${f.node}/.env`)).mode! & 0o777, 0o600);
+  assertEquals((await Deno.stat(`${f.node}/.env`)).mode! & 0o777, 0o640);
+  assertEquals(steps["Create the orbit-env group"].status, "succeeded");
   assertEquals(steps["Check the written file"].status, "succeeded");
-  assertFalse(exists(f.calls));
+  // The Gateway's terminal capture reads the file behavior's status: applied, then compliant on a repeat.
+  assertEquals(steps["Write .env, .env.testing-0"].outputs.status, "applied");
+  // The account wrote the file; root only gives it the orbit-env group, and -h never follows a link.
+  assertEquals(chgrps(f.calls), [["chgrp", "-h", "orbit-env", "--", `${f.node}/.env`]]);
   const again = await sync();
-  assertEquals(
-    again.steps["Read the key names"].outputs.stdout.split("\n").filter((s: string) => s && !s.startsWith("#")),
-    ["APP_ENV", "APP_KEY"],
-  );
+  assertEquals(again.steps["Write .env, .env.testing-0"].outputs.status, "compliant");
 });
-Deno.test("a foreign environment key refuses before writing", async () => {
+Deno.test("the run reads nothing on the Node before the write", async () => {
   const { f, secret, render, sync } = await fixture();
   await using _ = f;
-  const original = "APP_ENV=old\nOLD=1\nexport FOREIGN=kept\n";
-  await Deno.writeTextFile(`${f.node}/.env`, original);
-  await render({ APP_KEY: secret, APP_ENV: "local" });
-  const { steps } = await sync(false);
-  assertEquals(steps["Check for foreign keys"].status, "failed");
-  assertStringIncludes(steps["Read the key names"].outputs.stdout, "FOREIGN");
-  assertFalse(
-    Object.entries(steps).some(([name, step]) =>
-      name.startsWith("Write .env, .env.testing") && step.status === "succeeded"
-    ),
-  );
-  assertEquals(await Deno.readTextFile(`${f.node}/.env`), original);
+  // Admission checked the key names the Node agent reported; the run replaces the file.
+  await Deno.writeTextFile(`${f.node}/.env`, "APP_ENV=old\nOLD=1\nexport FOREIGN=kept\n");
+  const [content] = await render({ APP_KEY: secret, APP_ENV: "local" });
+  const { steps } = await sync();
+  assertFalse("Read the key names" in steps);
+  assertFalse("Check for foreign keys" in steps);
+  assertEquals(await Deno.readTextFile(`${f.node}/.env`), content);
 });
-Deno.test("testing environment replaces the file unless Git tracks it", async () => {
+Deno.test("testing environment replaces the whole file and stays untouched without one", async () => {
   const { f, secret, render, sync } = await fixture();
   await using _ = f;
   await Deno.writeTextFile(`${f.node}/.env.testing`, "KEEP=1\n");
@@ -78,12 +75,12 @@ Deno.test("testing environment replaces the file unless Git tracks it", async ()
   });
   await sync();
   assertEquals(await Deno.readTextFile(`${f.node}/.env.testing`), test);
-  assertEquals((await Deno.stat(`${f.node}/.env.testing`)).mode! & 0o777, 0o600);
+  assertEquals((await Deno.stat(`${f.node}/.env.testing`)).mode! & 0o777, 0o640);
+  assertEquals(chgrps(f.calls), [["chgrp", "-h", "orbit-env", "--", `${f.node}/.env`, `${f.node}/.env.testing`]]);
+  // When the agent reports that Git tracks .env.testing, the Gateway plans none, and the file stays.
   await Deno.writeTextFile(`${f.node}/.env.testing`, "TRACKED=1\n");
-  git(f.node, "init", "-q");
-  git(f.node, "add", ".env.testing");
-  git(f.node, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "t");
-  assertStringIncludes((await sync()).steps["Read the key names"].outputs.stdout, "#tracked");
+  await render({ APP_KEY: secret });
+  await sync();
   assertEquals(await Deno.readTextFile(`${f.node}/.env.testing`), "TRACKED=1\n");
 });
 Deno.test("a different environment hash fails the end check", async () => {
@@ -115,7 +112,7 @@ Deno.test("production environment refreshes config, FPM and Processes in order",
   await render({ APP_KEY: secret });
   await sync();
   assertEquals(await Deno.readTextFile(`${f.node}/artisan-call`), "artisan config:cache --no-interaction");
-  assertEquals(readCalls(f.calls), [["systemctl", "reload", "php8.4-fpm-orbit-app-7.service"], [
+  assertEquals(readCalls<string[]>(f.calls).filter((call) => call[0] !== "chgrp"), [["systemctl", "reload", "php8.4-fpm-orbit-app-7.service"], [
     "systemctl", "restart", "orbit-process-5-worker.service",
   ], ["docker", "restart", "orbit-process-6"]]);
 });

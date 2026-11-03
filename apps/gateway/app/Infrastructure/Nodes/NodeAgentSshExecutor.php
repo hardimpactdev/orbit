@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Nodes;
 
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Instances\Environment\InstanceEnvironmentFiles;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\RoleName;
@@ -33,6 +34,9 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
      */
     private const int LockSeconds = 420;
 
+    /** The group of the `.env` files Orbit writes; `agent.configure` and the Node converge create it before the unit starts. */
+    public const string EnvGroup = 'orbit-env';
+
     public function __construct(
         private LeafCertificateSigner $certificates,
         private ManagedUserAccountResolver $accounts,
@@ -40,6 +44,7 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
         private NodeSettingsNormalizer $nodeSettings,
         private AgentCommandRunner $agents,
         private NodeToolScopes $tools,
+        private InstanceEnvironmentFiles $environments,
         private ?NodeLocks $locks = null,
         /** How long a converge waits for another converge of the same Node agent. */
         private int $lockWaitSeconds = 120,
@@ -65,8 +70,8 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
     }
 
     /**
-     * The unit lines that let the agent read the Node's task checkouts and Tool Manager state and nothing else under
-     * `/home` or `/root` (ADR 0151). `/home` and `/root` become empty, and only the Instance root and the managers'
+     * The unit lines that let the agent read the Node's task checkouts, Tool Manager state and production `.env` homes
+     * and nothing else under `/home` or `/root` (ADR 0151). `/home` and `/root` become empty, and only the Instance root and the managers'
      * state paths are bound back read-only. Root without capabilities reads there only what other users may read.
      * Without a resolvable root or a manager there, the agent sees no home directory at all.
      *
@@ -140,10 +145,12 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
             'RestartSec=2',
             'User=root',
             'Group=root',
+            // The group of the `.env` files Orbit writes as 0640; the agent reads their key names and nothing else.
+            'SupplementaryGroups='.self::EnvGroup,
             'CapabilityBoundingSet=',
             'NoNewPrivileges=yes',
             'ProtectSystem=strict',
-            ...$this->checkoutAccess($root, $this->tools->homePaths($node)),
+            ...$this->checkoutAccess($root, [...$this->tools->homePaths($node), ...$this->environments->homes($node)]),
             'PrivateTmp=yes',
             'MemoryMax=128M',
             'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6',

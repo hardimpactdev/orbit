@@ -1554,8 +1554,14 @@ export function analyzeYaml(
     const steps = object(jobs[Number(path[1])]).steps;
     const task = object(object(Array.isArray(steps) ? steps[Number(path[3])] : undefined).task);
     return task.type === "behavior" && task.behaviorType === "@swamp/cfgmgmt/file" &&
-      ["apply", "check"].includes(String(task.methodName)) && object(task.globalArgs).mode === "0600" && worker209(path);
+      ["apply", "check"].includes(String(task.methodName)) && worker209(path) &&
+      // Private to its owner, or an Instance .env that only the Node agent's orbit-env group may also read: written by
+      // root with that group, or by the Instance account in its own group, which a root `chgrp -h orbit-env` then replaces.
+      (globalArgs(task).mode === "0600" || globalArgs(task).mode === "0640" && (globalArgs(task).group === "orbit-env" ||
+        globalArgs(task).group === undefined && typeof globalArgs(task).becomeUser === "string" &&
+          !["", "root"].includes(String(globalArgs(task).becomeUser))));
   };
+  const globalArgs = (task: Record<string, unknown>) => object(task.globalArgs);
   const wholeVault = (value: unknown) => {
     if (typeof value !== "string") return false;
     const call = /^\s*\$\{\{\s*vault\.get\(([\s\S]*)\)\s*\}\}\s*$/.exec(value);

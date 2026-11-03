@@ -275,11 +275,36 @@ jobs:
         okExitCodes:
         - 0
         - 5
-  - name: Write .env
+    # The .env is group orbit-env, so the Node agent can report its key names.
+  - name: Create the orbit-env group
     labels:
       role: swamp
     dependsOn:
     - step: Drop the worktree config
+      condition:
+        type: always
+    guard: ${{ steps.exists(n, steps[n].status == "failed") }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/group'
+      behaviorName: ${{ ("itr-env-group-" + string(inputs.intent.destination.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: apply
+      globalArgs:
+        groupname: orbit-env
+        ensure: present
+        system: true
+        become: true
+        nodeHost: ${{ inputs.intent.destination.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.destination.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.destination.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.destination.ssh_execution.identity_file }}
+      inputs: {}
+  - name: Write .env
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Create the orbit-env group
       condition:
         type: always
     guard: ${{ steps.exists(n, steps[n].status == "failed") }}
@@ -292,7 +317,10 @@ jobs:
       globalArgs:
         path: ${{ inputs.intent.destination.environment }}
         ensure: present
-        mode: '0600'
+        owner: ${{ inputs.intent.destination.ssh_execution.target.user }}
+        group: orbit-env
+        mode: '0640'
+        become: true
         content: ${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}
         nodeHost: ${{ inputs.intent.destination.ssh_execution.target.host }}
         nodeUser: ${{ inputs.intent.destination.ssh_execution.target.user }}

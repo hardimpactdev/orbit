@@ -82,6 +82,7 @@ sequenceDiagram
   SW->>VM: Start the Node agent<br/>observer · cfgmgmt file · systemd
   %%> What it does:
   %%> - `@swamp/cfgmgmt/file` writes the agent identity, `config.toml` and `ca.pem`; `@swamp/cfgmgmt/systemd` installs and starts `orbit-agent`
+  %%> - today the steps are `observer-group` (one `groupadd -f --system orbit-env` argv, since the unit names that group) and `observer-unit`
   %%> - runs beside the Pi install
   %%> Replaces:
   %%> - `observer-identity`, `observer-configuration`, `observer-ca`, `observer-unit`, `observer-reload` and `observer-start` (inline Python writes)

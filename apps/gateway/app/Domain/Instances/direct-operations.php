@@ -42,7 +42,10 @@ return [
                 'sha256' => ['job' => 'import', 'step' => 'Read .env into the vault', 'field' => 'sha256']]],
         'projection' => NativeInstanceEnvironmentImportProjection::class],
     'instance.sync_environment' => ['workflow' => 'operation-instance-environment', 'workflow_inputs' => true,
-        'terminal_result' => ['job' => 'environment', 'step' => 'Check the written file', 'native' => true],
+        // The file behavior reports `compliant` for a file it left in place and `applied` for one it wrote.
+        'terminal_result' => ['job' => 'environment', 'step' => 'Check the written file', 'native' => true, 'captures' => [
+            'environment_write' => ['job' => 'environment', 'step' => 'Write .env, .env.testing-0', 'field' => 'status'],
+            'testing_write' => ['job' => 'environment', 'step' => 'Write .env, .env.testing-1', 'field' => 'status']]],
         'projection' => NativeInstanceEnvironmentProjection::class,
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-environment-(?:testing-)?[1-9][0-9]*$']]],
     'instance.register' => ['workflow' => 'operation-instance-register', 'workflow_inputs' => true, 'projection' => InstanceRegisterResult::class,

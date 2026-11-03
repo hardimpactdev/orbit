@@ -112,6 +112,11 @@ describe('Instance environment requests', function (): void {
             ->and($operation->requestId)->toBe('11111111-1111-4111-8111-111111111111');
     });
 
+    it('sends force only when asked', function (): void {
+        expect((string) json_encode(new SynchronizeInstanceEnvironmentRequest('app.example.test', force: true)->body()->all()))->toBe('{"force":true}')
+            ->and(new SynchronizeInstanceEnvironmentRequest('app.example.test')->body()->all())->toBe([]);
+    });
+
     it('encodes selector and key segments exactly once without resolving either input', function (): void {
         expect(new ImportInstanceEnvironmentRequest('blue/green.example.test')->resolveEndpoint())
             ->toBe('/api/v1/instances/blue%2Fgreen.example.test/environment/import')

@@ -17,6 +17,7 @@ final class SynchronizeEnvironmentCommand extends EnvironmentCommand
     #[\Override]
     protected $signature = 'env:sync
         {--instance= : Positive Instance ID or exact Route domain}
+        {--force : Replace a .env whose key names the Node agent has not reported, or that holds keys Orbit does not store}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -42,7 +43,7 @@ final class SynchronizeEnvironmentCommand extends EnvironmentCommand
             return self::FAILURE;
         }
 
-        $operation = $this->send($connector, new SynchronizeInstanceEnvironmentRequest($selector), OperationResponse::class);
+        $operation = $this->send($connector, new SynchronizeInstanceEnvironmentRequest($selector, $this->option('force') === true), OperationResponse::class);
 
         return $operation instanceof OperationResponse
             ? $this->followOperation($connector, $profile, $operation, 'Synchronize environment', 'Environment synchronization')

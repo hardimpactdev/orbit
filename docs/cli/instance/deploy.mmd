@@ -91,7 +91,13 @@ sequenceDiagram
     SW->>N: Link the release<br/>cfgmgmt/link apply
     SW->>N: Read the key names<br/>ssh exec argv
     Note over SW: Check for foreign keys<br/>native assert
+    SW->>N: Create the orbit-env group<br/>cfgmgmt/group apply
     SW->>N: Write .env<br/>cfgmgmt/file apply
+    %%> What it does:
+    %%> - the Instance account writes `.env` as `0640` in its home, so no root write follows a link it placed
+    SW->>N: Set the group orbit-env<br/>ssh exec argv
+    %%> What it does:
+    %%> - root runs `chgrp -h orbit-env` on the written files, which never follows a link, so the Node agent may read the key names
   end
   opt Deploy steps need Vite+
     SW->>N: dev-vp-read-package<br/>ssh exec argv

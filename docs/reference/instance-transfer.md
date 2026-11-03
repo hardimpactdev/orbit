@@ -34,7 +34,7 @@ A linked worktree becomes an independent checkout. Its committed history, branch
 
 Extraction rejects paths and links that escape the checkout. Local staging directories have private permissions and are removed when the action ends. Native steps retain only public archive metadata.
 
-The Gateway renders the destination `.env` from the Instance's stored configuration for the new placement and passes it as a vault execution copy. The run writes it with the official file behavior, mode 0600. An Instance without stored configuration refuses admission with `env.configuration_missing`; import its `.env` first with [`env:import`](/cli/env/import). The run then runs the Project setup steps in the destination checkout, as a development create does. The first failing step restores the source.
+The Gateway renders the destination `.env` from the Instance's stored configuration for the new placement and passes it as a vault execution copy. The run writes it with the official file behavior, mode 0640 with group `orbit-env`, so the Node agent can report its key names. An Instance without stored configuration refuses admission with `env.configuration_missing`; import its `.env` first with [`env:import`](/cli/env/import). The run then runs the Project setup steps in the destination checkout, as a development create does. The first failing step restores the source.
 
 ## Placement and publication
 

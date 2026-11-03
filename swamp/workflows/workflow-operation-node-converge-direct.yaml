@@ -45,11 +45,24 @@ jobs:
         nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
         nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
       inputs: {}
+    # The unit names the group in SupplementaryGroups, and a unit that names a missing group does not start.
+  - name: 'Create the orbit-env group'
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Configure the Node agent', condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/group'
+      behaviorName: ${{ "node-converge-env-group-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs: {groupname: orbit-env, ensure: present, system: true, nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}',
+        nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}
+      inputs: {}
     # The unit, enabled and running.
   - name: 'Start the Node agent'
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: 'Configure the Node agent', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Create the orbit-env group', condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/systemd'
@@ -98,6 +111,23 @@ jobs:
         hosts: name:target
         sudo: true
         argv: '${{ ["timeout", "60", "/usr/bin/find"] + inputs.intent.agent.checkouts + ["-maxdepth", "1", "-name", ".env", "-type", "f", "-perm", "/o=rwx", "-exec", "chmod", "o-rwx", "{}", "+"] }}'
+        timeoutSec: 70
+    # Like Caddy's traverse on a release: the agent's group may pass through each production home to its .env.
+  - name: 'Let the agent reach homes'
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: 'Restart the Node agent', condition: {type: succeeded}}]
+    guard: '${{ size(inputs.intent.agent.homes) == 0 }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "node-converge-ssh-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: '${{ ["timeout", "60", "/usr/bin/setfacl", "-m", "g:orbit-env:--x"] + inputs.intent.agent.homes }}'
         timeoutSec: 70
   - name: 'Apply private DNS policy'
     labels: {role: swamp}

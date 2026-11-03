@@ -70,13 +70,15 @@ async function fixture(edit: (workflow: Workflow) => void = () => {}) {
   repo.timeoutMs = 120_000;
   await repo.pull("@swamp/ssh");
   await repo.pull("@swamp/cfgmgmt");
-  // The official file behavior runs ssh, scp, chown and chgrp from PATH; these fakes act locally.
+  // The official file and group behaviors run ssh, scp, chown, chgrp and groupadd from PATH; these fakes act locally.
   await Deno.mkdir(`${repo.dir}/tools`);
   await repo.fakeBinary("tools/ssh", PATH_SSH);
   await repo.fakeBinary("tools/scp", PATH_SCP);
-  for (const name of ["chown", "chgrp"]) {
+  for (const name of ["chown", "chgrp", "groupadd"]) {
     await Deno.writeTextFile(`${repo.dir}/tools/${name}`, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
   }
+  // Writing .env with group orbit-env takes root: a fake sudo runs the command after "--" as is, with these fakes on PATH.
+  await Deno.writeTextFile(`${repo.dir}/tools/sudo`, '#!/bin/sh\nwhile [ "$#" -gt 0 ] && [ "$1" != "--" ]; do shift; done\nshift\nexec "$@"\n', { mode: 0o755 });
   repo.env.PATH = `${repo.dir}/tools:${Deno.env.get("PATH")}`;
   await repo.cli(["vault", "create", "local_encryption", "orbit-control-inputs"]);
   await repo.cli(["vault", "put", "orbit-control-inputs", "environment", "RENDERED_SENTINEL=from-gateway\n"]);
@@ -190,7 +192,7 @@ Deno.test("transfer keeps private archive bytes out of results and retires only 
   assert((await Deno.stat(`${destination}/.git`)).isDirectory);
   // The Gateway-rendered file, never the source's: the archive leaves the source .env out.
   assertEquals(await Deno.readTextFile(`${destination}/.env`), "RENDERED_SENTINEL=from-gateway\n");
-  assertEquals((await Deno.stat(`${destination}/.env`)).mode! & 0o777, 0o600);
+  assertEquals((await Deno.stat(`${destination}/.env`)).mode! & 0o777, 0o640);
   assertFalse(JSON.stringify(history).includes("PRIVATE_SENTINEL"));
   assertFalse(JSON.stringify(history).includes("from-gateway"));
   assert(moved(history, "Publish the Route"));

@@ -38,6 +38,6 @@ The uutils problem affects only `/dev/stdin` sources. `install -d`, mode changes
 
 ## Verification
 
-The agent unit that converge writes binds the Instance root and each Tool Manager's state under `/home` read-only, so the agent can read [package state](/reference/node-agent#packages) without write access.
+The agent unit that converge writes binds the Instance root, each Tool Manager's state and each production home under `/home` read-only, so the agent can read [package state](/reference/node-agent#packages) and [`.env` key names](/reference/node-agent#environment-key-names) without write access. It names the `orbit-env` group, which `agent.configure` creates before it writes the unit.
 
 Converge the same role twice over existing configuration, which is the case that failed. The Rust Metrics runtime and exporter tests use temporary filesystems and cover repeated publication, ownership refusals, modes, and rollback. The `processes` tests check candidate verification and atomic unit publication. Gateway tests fake the agent runner and check intent rather than file-write arguments.

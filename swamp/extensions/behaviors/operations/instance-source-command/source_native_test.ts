@@ -5,12 +5,33 @@ import { type NativeRepo, nativeRepo } from "../../../../tests/_support/native_h
 const tool = new URL("../../../../tests/_support/fake_tool.ts", import.meta.url).href;
 const KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG";
 
-/** Run the remote argv locally with the caller's stdin. */
-const SSH = `
+/** Run the remote argv locally with the caller's stdin; sudo goes to the fake beside it. */
+const SSH = (sudo: string) => `
 import { shellSplit } from ${JSON.stringify(tool)};
-const [program, ...args] = shellSplit(Deno.args.at(-1)!);
+const [program, ...args] = shellSplit(Deno.args.at(-1)!).map((part) => part.replaceAll("/usr/bin/sudo", ${JSON.stringify(sudo)}));
 const child = new Deno.Command(program, { args, stdin: "inherit", stdout: "inherit", stderr: "inherit" }).spawn();
 Deno.exit((await child.status).code);
+`;
+
+/** The official group behavior's own SSH, from PATH: runs its shell command locally, with sudo going to the fake. */
+const PATH_SSH = (sudo: string) => `
+import { passThrough, readStdinBytes } from ${JSON.stringify(tool)};
+if (Deno.args.some((a) => ["-M", "-O", "-N", "-MNf"].includes(a))) Deno.exit(0);
+const command = Deno.args.at(-1)!.replace(/(?<![\\w/])'?(?:[/]usr[/]bin[/])?sudo'?(?= )/g, ${JSON.stringify(sudo)});
+await passThrough(["/bin/sh", "-c", command], await readStdinBytes());
+`;
+
+/** Drops sudo's options; records chgrp, which needs root, and runs anything else as is. */
+const SUDO = (calls: string) => `
+import { logCall, passThrough, readStdinBytes } from ${JSON.stringify(tool)};
+let args = Deno.args;
+while (args[0]?.startsWith("-") && args[0] !== "--") args = args.slice(["-u", "--user", "-g"].includes(args[0]) ? 2 : 1);
+if (args[0] === "--") args = args.slice(1);
+if (["chgrp", "groupadd"].includes(args[0]?.split("/").at(-1)!)) {
+  logCall(${JSON.stringify(calls)}, [args[0].split("/").at(-1), ...args.slice(1)]);
+  Deno.exit(0);
+}
+await passThrough(args, await readStdinBytes());
 `;
 
 type Step = { name: string; status: string; outputs?: { stdout?: string } };
@@ -23,8 +44,14 @@ async function fixture() {
   const repo = await nativeRepo();
   repo.timeoutMs = 120_000;
   await repo.pull("@swamp/ssh");
+  await repo.pull("@swamp/cfgmgmt");
   await repo.copyBehaviors("operations/instance-source-command", "operations/instance-lifecycle", "operations/tools");
-  const ssh = await repo.fakeBinary("ssh", SSH);
+  const calls = `${repo.dir}/calls.jsonl`;
+  await Deno.mkdir(`${repo.dir}/tools`);
+  const sudo = await repo.fakeBinary("tools/sudo", SUDO(calls));
+  await repo.fakeBinary("tools/ssh", PATH_SSH(sudo));
+  repo.env.PATH = `${repo.dir}/tools:${Deno.env.get("PATH")}`;
+  const ssh = await repo.fakeBinary("ssh", SSH(sudo));
   const checkout = `${repo.dir}/checkout`;
   await Deno.mkdir(checkout);
   git(checkout, "init", "-q");
@@ -58,7 +85,7 @@ async function fixture() {
       target: { host: "192.0.2.9", user: "orbit", port: 22, host_keys: [KEY] },
     },
   };
-  return { repo, checkout, intent };
+  return { repo, checkout, intent, calls };
 }
 
 async function register(repo: NativeRepo, intent: Record<string, unknown>, success = true) {
@@ -72,7 +99,7 @@ const stdout = (history: History, name: string) =>
 const mode = async (path: string) => (await Deno.stat(path)).mode! & 0o777;
 
 Deno.test("register reads public facts and protects the environment file", async () => {
-  const { repo, checkout, intent } = await fixture();
+  const { repo, checkout, intent, calls } = await fixture();
   await using _ = repo;
   const { run, history } = await register(repo, intent);
   assertEquals(run.status, "succeeded");
@@ -80,7 +107,11 @@ Deno.test("register reads public facts and protects the environment file", async
   assertEquals(stdout(history, "Read the Git top level").trim(), checkout);
   assertEquals(stdout(history, "Read the branch").trim(), "main");
   assertFalse(JSON.stringify(history).includes("PRIVATE_SENTINEL"));
-  assertEquals(await mode(`${checkout}/.env`), 0o600);
+  // Only the group change runs as root, and -h never follows a link; the account sets the mode.
+  assertEquals(await mode(`${checkout}/.env`), 0o640);
+  const chgrp = Deno.readTextFileSync(calls).split("\n").filter(Boolean).map((line) => JSON.parse(line))
+    .filter((call) => call[0] === "chgrp");
+  assertEquals(chgrp, [["chgrp", "-h", "orbit-env", "--", `${checkout}/.env`]]);
 });
 
 Deno.test("an authenticated origin is masked before it enters history", async () => {

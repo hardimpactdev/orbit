@@ -13,6 +13,9 @@ final readonly class InstanceTestEnvironmentOutcome
 
     public const string SkippedTracked = 'skipped_tracked';
 
+    /** A forced sync without the Node agent's report: whether Git tracks the file is not known. */
+    public const string SkippedUnobserved = 'skipped_unobserved';
+
     public function __construct(
         public string $status,
         public string $testDatabase,

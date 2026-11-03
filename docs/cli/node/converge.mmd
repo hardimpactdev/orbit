@@ -64,9 +64,14 @@ sequenceDiagram
   %%> - writes `config.toml` and `ca.pem` in `/etc/orbit/agent`, one official `file` behavior each
   %%> Keeps the key:
   %%> - never writes `/etc/orbit/agent/secret`; the end check compares it with the recorded verifier
+  SW->>N: Create the orbit-env group<br/>@swamp/cfgmgmt/group
+  %%> What it does:
+  %%> - creates the `orbit-env` system group when the Node lacks it
+  %%> Why first:
+  %%> - the unit names the group in `SupplementaryGroups`, and a unit that names a missing group does not start
   SW->>N: Start the Node agent<br/>@swamp/cfgmgmt/systemd apply
   %%> What it does:
-  %%> - writes the `orbit-agent.service` unit the Gateway rendered, with access to the apps root, then enables and starts it
+  %%> - writes the `orbit-agent.service` unit the Gateway rendered, with access to the apps root and the production homes, and the `orbit-env` group, then enables and starts it
   SW->>N: Restart the Node agent<br/>@swamp/cfgmgmt/systemd restart
   %%> What it does:
   %%> - restarts the agent so it reads its new binary and files
@@ -77,6 +82,11 @@ sequenceDiagram
   %%> - removes the world bits from `.env` in each Instance checkout under the apps root, in one `find`
   %%> On failure:
   %%> - best effort: a checkout that is gone does not fail the converge
+  SW->>N: Let the agent reach homes<br/>@swamp/ssh exec · setfacl
+  %%> What it does:
+  %%> - gives the `orbit-env` group traverse on each production home, `g:orbit-env:--x`, in one `setfacl` argv, as Caddy has traverse on a release
+  %%> When:
+  %%> - only on a Node with production Instances
   opt Node 12 is a DNS peer
     SW->>N: Apply private DNS policy<br/>resolver for .orbit domains
     %%> When:

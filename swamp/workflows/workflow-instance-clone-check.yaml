@@ -140,7 +140,7 @@ jobs:
         - '20'
         - /bin/sh
         - -c
-        - stat -c '%U %a' -- "$1/.env" && readlink -f -- "$2/.env"
+        - stat -c '%U %G %a' -- "$1/.env" && readlink -f -- "$2/.env"
         - sh
         - ${{ inputs.intent.environment_path }}
         - ${{ inputs.intent.application }}
@@ -155,8 +155,8 @@ jobs:
     task:
       type: assert
       expr: steps.commit.outputs.stdout.trim() == inputs.source.commit && steps.environment.outputs.stdout.trim() == inputs.intent.user
-        + " 600\n" + inputs.intent.environment_path + "/.env"
-      message: The clone is not on its fetched commit, or its .env is not the account's private home file that the release links to.
+        + " orbit-env 640\n" + inputs.intent.environment_path + "/.env"
+      message: The clone is not on its fetched commit, or its .env is not the account's home file, readable by orbit-env only, that the release links to.
       severity: high
     dependsOn:
     - step: environment

@@ -401,6 +401,14 @@ describe('environment synchronization', function (): void {
         $mock->assertSent(ShowOperationRequest::class);
     })->with(['Route domain' => 'app.com', 'Instance ID' => '17']);
 
+    it('sends force when asked', function (): void {
+        $mock = environment_cli_sync_mock('succeeded');
+
+        expect(Artisan::call('env:sync', ['--instance' => '17', '--force' => true, '--json' => true, '--no-interaction' => true]))->toBe(0);
+        $mock->assertSent(fn ($request, $response): bool => $request instanceof SynchronizeInstanceEnvironmentRequest
+            && (string) $response->getPendingRequest()->body() === '{"force":true}');
+    });
+
     it('reports the outcome in human output', function (string $status, int $exitCode, string $message): void {
         environment_cli_sync_mock($status);
 

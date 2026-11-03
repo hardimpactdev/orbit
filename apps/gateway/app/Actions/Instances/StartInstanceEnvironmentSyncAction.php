@@ -7,6 +7,7 @@ namespace App\Actions\Instances;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentSync;
+use App\Domain\Instances\Environment\ObservedInstanceEnvironment;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
@@ -17,9 +18,10 @@ use Illuminate\Support\Facades\DB;
 final readonly class StartInstanceEnvironmentSyncAction
 {
     public function __construct(private StartOperationAction $operations, private OperationIdempotency $idempotency,
-        private InstanceEnvironmentContextResolver $contexts, private NativeInstanceEnvironmentSync $sync) {}
+        private InstanceEnvironmentContextResolver $contexts, private NativeInstanceEnvironmentSync $sync, private ObservedInstanceEnvironment $observed) {}
 
-    public function execute(Instance $instance, ?string $caller = null, ?string $requestId = null): Operation
+    /** `$force` replaces a file whose keys the Node agent has not reported, or that holds keys stored configuration lacks. */
+    public function execute(Instance $instance, ?string $caller = null, ?string $requestId = null, bool $force = false): Operation
     {
         if (($replay = $this->idempotency->replay('instance.sync_environment')) !== null) {
             return $replay;
@@ -28,12 +30,13 @@ final readonly class StartInstanceEnvironmentSyncAction
             throw new ResourceOperationException('operation.kind_unavailable', 'Native environment synchronization is unavailable.', 409);
         }
 
-        return DB::transaction(function () use ($instance, $caller, $requestId): Operation {
+        return DB::transaction(function () use ($instance, $caller, $requestId, $force): Operation {
             $context = $this->contexts->resolve($instance->refresh(), true);
             if (! $instance->environmentValues()->exists()) {
                 throw new ResourceOperationException('env.configuration_missing', 'Import or store environment configuration before synchronization.', 409);
             }
-            $input = ['instance_id' => $instance->id, 'direct_environment' => $this->sync->plan($context)];
+            $testingSkip = $this->observed->admit($instance, $context, $force);
+            $input = ['instance_id' => $instance->id, 'direct_environment' => $this->sync->plan($context, testingSkip: $testingSkip)];
 
             return $this->operations->execute('instance.sync_environment', 'instance', $instance->id, $instance->node_id,
                 $input, $caller, $requestId);

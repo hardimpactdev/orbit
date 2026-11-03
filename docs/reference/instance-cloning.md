@@ -60,7 +60,9 @@ The release's application `.env` is a link to the home `.env`, as in every deplo
 
 The target receives independently encrypted copies of the candidate's stored values. `DB_*` values and WebSocket app credentials are not copied. The Gateway forces production mode: `APP_ENV=production` and `APP_DEBUG=false`.
 
-The Gateway publishes the rendered file as a named vault execution copy. `@swamp/cfgmgmt/file` writes it as the account's home `.env` with mode `0600`. Private values never enter workflow inputs or public results. The shared native VP jobs then prepare the checkout's pinned Vite+ runtime as the account. A project without VP requirements skips them.
+The Gateway publishes the rendered file as a named vault execution copy. `@swamp/cfgmgmt/file` writes it as the account's home `.env` with mode `0640` and group `orbit-env`.
+
+Before the write, the run creates that group when the Node lacks it and gives it traverse on the home with `setfacl -m g:orbit-env:--x`, as Caddy has traverse on a release. The Node agent's unit holds the group and binds the home back read-only, so it can report the file's key names, never values. Private values never enter workflow inputs or public results. The shared native VP jobs then prepare the checkout's pinned Vite+ runtime as the account. A project without VP requirements skips them.
 
 ### Database
 

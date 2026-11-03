@@ -81,9 +81,63 @@ jobs:
   labels:
     role: swamp
   steps:
+    # The .env is group orbit-env, and the agent's group may pass through the home to it, as Caddy may to a release.
+  - name: environment-group
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/group'
+      behaviorName: ${{ ("instance-clone-environment-group-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: apply
+      globalArgs:
+        groupname: orbit-env
+        ensure: present
+        system: true
+        become: true
+        nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+        nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+        nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+        nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+      inputs: {}
+    writes: true
+  - name: environment-home
+    labels:
+      role: swamp
+    dependsOn:
+    - step: environment-group
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("instance-clone-environment-home-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("instance-clone-environment-home-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: ${{ ["timeout", "30", "/usr/bin/setfacl", "-m", "g:orbit-env:--x", inputs.intent.environment_path] }}
+        timeoutSec: 40
+    writes: true
   - name: environment
     labels:
       role: swamp
+    dependsOn:
+    - step: environment-home
+      condition:
+        type: succeeded
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
@@ -93,14 +147,14 @@ jobs:
       globalArgs:
         path: ${{ inputs.intent.environment_path + "/.env" }}
         ensure: present
-        mode: '0600'
+        mode: '0640'
         content: ${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}
         nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
         nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
         nodePort: ${{ inputs.intent.ssh_execution.target.port }}
         nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
         owner: ${{ inputs.intent.user }}
-        group: ${{ inputs.intent.user }}
+        group: orbit-env
         become: true
       inputs: {}
     writes: true

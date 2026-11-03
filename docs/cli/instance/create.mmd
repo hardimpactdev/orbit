@@ -89,9 +89,10 @@ sequenceDiagram
   %%> - a one-time Instance setup; every Route of Instance 42 then serves without touching the checkout
   %%> Runs as:
   %%> - the Node's managed user; root only above every checkout
-  SW->>N: Write .env<br/>@swamp/cfgmgmt/file · 0600
+  SW->>N: Write .env<br/>cfgmgmt/file · 0640 orbit-env
   %%> What it does:
-  %%> - writes the rendered `.env` from `vault.get env-5121` into the checkout, owned by the Node user, mode 0600
+  %%> - creates the `orbit-env` group when the Node lacks it, with `@swamp/cfgmgmt/group`
+  %%> - writes the rendered `.env` from `vault.get env-5121` into the checkout as root, owned by the Node user with group `orbit-env`, mode 0640, so the Node agent can report its key names
   %%> - with an owned MySQL or PostgreSQL database, also writes `.env.testing` in the same `file` step, replacing its content; a Git-tracked `.env.testing` stays untouched
   %%> - selects the Node's Vite+ store for this Project (`VP_HOME`), so `vp` works in the setup steps
   %%> Not included:

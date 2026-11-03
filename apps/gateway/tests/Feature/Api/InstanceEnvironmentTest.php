@@ -367,6 +367,15 @@ it('returns 409 when a retained terminal step carries failed activation evidence
         ->assertJsonPath('error.code', 'env.owner_unavailable');
 });
 
+it('refuses over HTTP a .env whose key names the agent has not reported, and admits it with force', function (): void {
+    $this->instance->environmentValues()->create(['env_key' => 'KEY', 'env_value' => 'synthetic-private-value']);
+
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call('POST', "/api/v1/instances/{$this->instance->id}/environment/sync", server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
+        ->assertConflict()->assertJsonPath('error.code', 'env.keys_not_observed');
+    expect(Operation::query()->count())->toBe(0);
+});
+
 it('returns one native Operation without reading or writing the workload during admission', function (): void {
     $this->instance->node->update(['architecture' => 'x86_64', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-host-key']);
     $this->instance->environmentValues()->create(['env_key' => 'KEY', 'env_value' => 'synthetic-private-value']);
@@ -377,7 +386,7 @@ it('returns one native Operation without reading or writing the workload during 
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'synthetic-shared-run-token']);
     $response = $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
-        ->call('POST', "/api/v1/instances/{$this->instance->id}/environment/sync", server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
+        ->call('POST', "/api/v1/instances/{$this->instance->id}/environment/sync", server: ['CONTENT_TYPE' => 'application/json'], content: '{"force":true}')
         ->assertStatus(202)->assertJsonPath('data.kind', 'instance.sync_environment');
     expect($response->getContent())->not->toContain('synthetic-private-value')
         ->and($this->access->writePreflights)->toBe(0)->and($this->access->writes)->toBe([])
@@ -386,7 +395,7 @@ it('returns one native Operation without reading or writing the workload during 
         ->and(json_encode($socket->sent[1]))->not->toContain('synthetic-private-value');
 });
 
-it('requires exactly an empty JSON object before synchronization work', function (string $body): void {
+it('requires a JSON object with at most a boolean force before synchronization work', function (string $body): void {
     $this->instance->environmentValues()->create(['env_key' => 'KEY', 'env_value' => 'value']);
 
     $this
@@ -406,6 +415,7 @@ it('requires exactly an empty JSON object before synchronization work', function
     'array' => '[]',
     'null' => 'null',
     'unknown member' => '{"replace":true}',
+    'a force that is not a boolean' => '{"force":"yes"}',
     'malformed' => '{',
 ]);
 

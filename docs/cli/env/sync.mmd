@@ -3,7 +3,7 @@ sequenceDiagram
   %% Tightened: flow-tighten 2026-11-02, rules 14, 22 (cfgmgmt file for both files, its check as the end check; no script read, foreign-key check, report or assert step).
   %% Decided: Nick 2026-11-02, foreign-key protection at admission from the key names the Node agent reports; .env.testing only for an owned MySQL/PostgreSQL database, in the same file step.
   %% status: migrated
-  %% Interim: until the Node agent reports .env key names, the run reads them and checks for foreign keys before the write (Nick 2026-11-02).
+  %% Decided: Nick 2026-11-03, option 1: Orbit writes a managed .env as 0640 with group orbit-env, the agent's unit holds that group and reports key names only; a .env the agent can't read is not observed.
   %% command: env:sync
   %% kind: instance.sync_environment
   autonumber
@@ -33,6 +33,9 @@ sequenceDiagram
   %%> - no other task holds Instance 42; the Gateway holds one lock per Instance and waits briefly for a busy one
   %%> Checks foreign keys:
   %%> - compares the `.env` key names the Node agent reported with the stored and owned keys; no values are read
+  %%> - Orbit writes a managed `.env` as 0640 with group `orbit-env`, which the agent's unit holds
+  %%> - a `.env` the agent can't read, such as a hand-made 0600 file or a link, or a silent agent, leaves the names not observed
+  %%> - when the agent reports that Git tracks `.env.testing`, the plan writes none
   %%> Renders .env:
   %%> - every stored key in sorted order, as a quoted value
   %%> - `{{instance.domain}}` from the Route, `{{instance.environment}}` from the Node role
@@ -43,16 +46,16 @@ sequenceDiagram
   %%> Result:
   %%> - task #5131 recorded with the full intent and the sha256 of each rendered file
   %%> - nothing has happened on the Node yet
-  opt .env holds foreign keys (target)
-    GW--xCLI: Refused, key names<br/>env.sync_would_drop_keys
+  opt keys not observed, or .env holds foreign keys
+    GW--xCLI: Refused<br/>keys not observed or foreign
     %%> When:
-    %%> - the Node's `.env` holds keys that Orbit neither stores nor wrote, and `--force` is not set
+    %%> - `env.keys_not_observed`: the Node agent has not reported the `.env` key names, and `--force` is not set
+    %%> - `env.sync_would_drop_keys`: the Node's `.env` holds keys that Orbit neither stores nor wrote, and `--force` is not set
     %%> Result:
     %%> - the refusal names the keys; no task and no run start
     %%> Next:
-    %%> - `env:import` adopts the keys first, or `env:sync --force` overwrites them
-    %%> Today:
-    %%> - the Node agent does not report `.env` key names yet, so the run checks them in its first two steps
+    %%> - foreign keys: `env:import` adopts them first, or `env:sync --force` replaces the file
+    %%> - not observed, as for a `.env` written 0600 before this mode: `env:import`, then `env:sync --force`, which drops nothing and writes the file 0640
   end
   GW->>SW: Push .env to the vault<br/>vault: env-5131, env-testing-5131
   %%> Why:
@@ -75,30 +78,25 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  SW->>N: Read the key names<br/>@swamp/ssh exec · interim
+  SW->>N: Create the orbit-env group<br/>@swamp/cfgmgmt/group
   %%> What it does:
-  %%> - prints the sha256 of `.env` and `.env.testing`, whether Git tracks `.env.testing`, and the key names of `.env`
-  %%> Not returned:
-  %%> - no values
-  %%> Why:
-  %%> - interim, until the Node agent reports the key names to admission
-  Note over SW: Check for foreign keys<br/>assert · interim
-  %%> What it does:
-  %%> - fails when `.env` holds a key that Orbit neither stores nor wrote; the files stay unchanged
-  %%> Result:
-  %%> - the Gateway names the keys with `env.sync_would_drop_keys`
-  SW->>N: Write .env, .env.testing<br/>@swamp/cfgmgmt/file · 0600
+  %%> - creates the system group when the Node lacks it; the Node agent's unit holds it
+  SW->>N: Write .env, .env.testing<br/>@swamp/cfgmgmt/file · 0640
   %%> How:
   %%> - Swamp reaches Node 12 over SSH from 209 with `@swamp/ssh` and the official `@swamp/cfgmgmt/file` behavior; nothing is copied to the Node
   %%> What it does:
-  %%> - writes the rendered `.env` from `vault.get env-5131`, mode `0600`, owned by the Instance account
+  %%> - writes the rendered `.env` from `vault.get env-5131`, mode `0640`
   %%> - with an owned MySQL or PostgreSQL database, writes `.env.testing` in the same step, replacing its content; no merge
-  %%> - a Git-tracked `.env.testing` stays untouched
+  %%> - a Git-tracked `.env.testing` stays untouched: admission planned none
   %%> - leaves a file that already matches in place
   %%> Runs as:
-  %%> - the Instance account named in the intent, not root
+  %%> - the Instance account, in its own directory, so no root write follows a link the account placed
   %%> Not included:
   %%> - renders nothing; the Gateway already rendered the files
+  SW->>N: Set the group orbit-env<br/>@swamp/ssh exec · chgrp -h
+  %%> What it does:
+  %%> - root runs `chgrp -h orbit-env` on the written files; `-h` never follows a link
+  %%> - the Node agent's unit holds `orbit-env`, so it may read the `.env` key names; it never reads `.env.testing`
   Note over SW: Check the written file<br/>assert · file state
   %%> What it does:
   %%> - compares the sha256 the file behavior recorded for each file with the rendered one

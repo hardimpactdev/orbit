@@ -297,6 +297,19 @@ final readonly class InstanceEnvironmentContextResolver
             nodeStatus: $node->status->value, node: $node, routeDomainSource: $domain);
     }
 
+    /**
+     * The `.env` that Orbit writes for the Instance on its Node, or null when its placement has none: the application
+     * directory of a development checkout, or the home of a production account.
+     */
+    public function file(Instance $instance): ?string
+    {
+        try {
+            return $this->placement($instance, $instance->node)[0].'/.env';
+        } catch (ResourceOperationException) {
+            return null;
+        }
+    }
+
     /** @return array{string, string} */
     private function placement(Instance $instance, Node $node): array
     {

@@ -126,11 +126,13 @@ The watch list's `environments` names the `.env` of each Instance on the Node. F
 
 | Field | Meaning |
 | --- | --- |
-| `kind` | `absent`, `regular`, `symlink` or `other`. The agent follows no link. |
+| `kind` | `absent`, `regular`, `symlink` or `other`. The agent follows no link. A directory the agent can't reach also reads `absent`, so the Gateway counts only a `regular` file with `keys` as observed. |
 | `keys` | The names of the `NAME=value` and `export NAME=value` lines, sorted, at most 2,000. Null when the agent may not read the file, or the file is a link or larger than 1 MiB. |
 | `testing_tracked` | Whether the Git work tree that holds the file tracks `.env.testing` beside it. |
 
-The agent never sends a value, and the Gateway stores no other field. Orbit writes a managed `.env` as mode 0640 with group `orbit-env`. The agent's unit holds that group, so it can read those files and no others. A hand-made 0600 `.env` reports `keys` as null: Orbit has not observed its keys. `agent.configure` creates the `orbit-env` system group before it writes the unit, because a unit that names a missing group does not start. Agents before 0.11.0 send no `env_keys` facts.
+The agent never sends a value, and the Gateway stores no other field. Orbit writes a managed `.env` as mode 0640 with group `orbit-env`. The agent's unit holds that group, so it can read those files and no others.
+
+A production `.env` lives in its account's 0710 home: the unit binds each production home back read-only, and Orbit gives `orbit-env` traverse on it with an ACL (`g:orbit-env:--x`), as it gives Caddy traverse on a release. [`env:sync`](/cli/env/sync) checks these names at admission. A production Instance cloned after the agent's last converge is observed once the next converge binds its home. A hand-made 0600 `.env` reports `keys` as null: Orbit has not observed its keys. `agent.configure` creates the `orbit-env` system group before it writes the unit, because a unit that names a missing group does not start. Agents before 0.11.0 send no `env_keys` facts.
 
 ### Checkouts
 
@@ -168,6 +170,7 @@ The agent asks `GET /api/v1/agent/watch` what to watch, at start and every 60 se
     "apps_root": "/home/orbit/apps",
     "applications": { "operator": "server/web" },
     "tools": [{ "manager": "apt", "paths": ["/var/lib/dpkg/status"] }],
+    "environments": ["/home/orbit/apps/operator/default/server/web/.env", "/home/orbit-app-16/.env"],
     "workspaces": [
       {
         "instance_id": 31,
@@ -183,7 +186,9 @@ The agent asks `GET /api/v1/agent/watch` what to watch, at start and every 60 se
 
 `services` are the services of the Node's roles and the units of its systemd Processes, which the agent reports as [facts](#facts). A named unit is read even when systemd has unloaded it. `awake_markers` are the awake markers of its hibernating Processes, all below `/dev/shm/orbit/hibernation/`.
 
-`apps_root` is the apps path of an active app-dev Node, whose [checkouts](#checkouts) the agent reports; it is null on other Nodes. `applications` names, by Project slug, the application directory inside a checkout when the Project's `root` puts it below the checkout root. `tools` lists every Tool Manager a Linux Node can run, recorded or not, with the candidate paths of its [package](#packages) state. Only plain unit names ending in `.service` are accepted. Agents released before the observer pass still ask `GET /api/v1/agent/workspaces`, which returns only the `workspaces` list. The Gateway serves it until every Node runs the new agent.
+`apps_root` is the apps path of an active app-dev Node, whose [checkouts](#checkouts) the agent reports; it is null on other Nodes. `applications` names, by Project slug, the application directory inside a checkout when the Project's `root` puts it below the checkout root. `tools` lists every Tool Manager a Linux Node can run, recorded or not, with the candidate paths of its [package](#packages) state.
+
+`environments` names the `.env` of each Instance on the Node: the application directory of a development checkout, or the home of a production account; the agent reports their [key names](#environment-key-names). Only plain unit names ending in `.service` are accepted. Agents released before the observer pass still ask `GET /api/v1/agent/workspaces`, which returns only the `workspaces` list. The Gateway serves it until every Node runs the new agent.
 
 `workspaces` holds the Instances on the caller's Node that hold the workspace of an unfinished task: `backlog` or `todo` with an Instance, `reserved`, `running`, `reviewing`, or `settling`. `base` is the Project's default branch. `start` is the Instance's starting commit, or null. The list is empty while Tasks is disabled, and it holds at most 64 entries.
 
@@ -256,7 +261,7 @@ Gateway bootstrap configures its own observer after its web service and private 
 
 ## Commands
 
-Gateway releases and desired fleet state use the pinned `cli-v0.9033.0` delivery, the observer pass agent release that reports checkouts, `.env` stat, packages and UFW. Its `orbit-agent contract` output is stored beside the pinned manifest in `apps/gateway/resources/agent`. The Gateway reads that contract at runtime. `bin/check-frozen-agent-commands` checks production Gateway and `swamp/` call sites and agent descriptors against it. The PHP job runs it with the published binary's digest check, and the Swamp shape gate runs it for `swamp/` changes. Missing commands must move to native Swamp code; changing the Rust registry does not change the pinned delivery until a reviewed commit moves the pin.
+Gateway releases and desired fleet state use the pinned `cli-v0.9128.0` delivery, the observer pass agent release that reports checkouts, `.env` stat and key names, packages and UFW. Its `orbit-agent contract` output is stored beside the pinned manifest in `apps/gateway/resources/agent`. The Gateway reads that contract at runtime. `bin/check-frozen-agent-commands` checks production Gateway and `swamp/` call sites and agent descriptors against it. The PHP job runs it with the published binary's digest check, and the Swamp shape gate runs it for `swamp/` changes. Missing commands must move to native Swamp code; changing the Rust registry does not change the pinned delivery until a reviewed commit moves the pin.
 
 `instance.inspect-deploy-step` is a Linux root read that checks the public Operation/run/step runner identity in `/proc`. It returns only that identity and whether the runner is gone. Hidden process visibility, unreadable or oversized data, or an incomplete scan refuses proof. It starts no process, sends no signal, and changes no Node state. Development deploy recovery uses it only after operator cancellation; absence proves no step result.
 
@@ -600,7 +605,7 @@ The subscriber accepts `client-log` and `client-log-end` only from `agent.{id}` 
 
 ## Delivery
 
-Every Gateway release uses the pinned `cli-v0.9033.0` agent delivery. CI builds no agent; an agent release carries it. The pinned manifest records the published source commit, platform digests and URLs; Gateway commits need no agent publication. Its shape is:
+Every Gateway release uses the pinned `cli-v0.9128.0` agent delivery. CI builds no agent; an agent release carries it. The pinned manifest records the published source commit, platform digests and URLs; Gateway commits need no agent publication. Its shape is:
 
 ```json
 {
@@ -646,7 +651,7 @@ The `ai-router` part on the collector Node has no step: it only versions that No
 
 The converge never writes the secret. Its end check is one `sha256sum --check` against the Gateway's hashes: the pinned binary, the recorded verifier and the agent's files. A missing or mismatched secret fails the converge with the agent part unapplied; [`orbit:node-agent-rekey`](#make-a-new-agent-key) makes a new one. A passing converge clears the Node's recorded failed pin. The role parts run beside the agent part in their own steps, and the Gateway reads each one's outcome from Swamp's run data; [Converge the Orbit footprint](/reference/node-provisioning#converge-the-orbit-footprint) lists them. `agent.remove` stops the agent and removes its unit, binary, and directory.
 
-The unit runs the agent as `root` with `Restart=always` and `RestartSec=2`. It grants no capabilities and sets `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=tmpfs`, `BindReadOnlyPaths=-{Instance root}` and one read-only bind for each Tool Manager state path under `/home` (the Vite+ home and `/home/linuxbrew/.linuxbrew`), `PrivateTmp=yes`, `MemoryMax=128M`, and `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`. The memory limit also covers the `journalctl` processes of live journal streams.
+The unit runs the agent as `root` with `Restart=always` and `RestartSec=2`. It grants no capabilities and sets `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=tmpfs`, `BindReadOnlyPaths=-{Instance root}`, one read-only bind for each Tool Manager state path under `/home` (the Vite+ home and `/home/linuxbrew/.linuxbrew`) and one for each production home, `SupplementaryGroups=orbit-env`, `PrivateTmp=yes`, `MemoryMax=128M`, and `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`. The memory limit also covers the `journalctl` processes of live journal streams.
 
 The Instance root is the Node's [apps root](/reference/node-settings#derive-the-effective-root). The bind line appears only when the root lies under `/home` or `/root`. When the Gateway cannot resolve the managed user, or the root has characters other than letters, digits, `.`, `_`, `-`, and `/`, the unit sets `ProtectHome=yes`, and the Gateway reads that Node's checkouts over SSH.
 

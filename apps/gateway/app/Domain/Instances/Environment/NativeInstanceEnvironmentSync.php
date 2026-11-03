@@ -27,20 +27,26 @@ final readonly class NativeInstanceEnvironmentSync
         private SwampCommandStep $steps,
     ) {}
 
-    /** Placement, key names and the sha256 of each rendered file; no values.
+    /** Placement, key names and the sha256 of each rendered file; no values. With `$testingSkip`, as when Git tracks
+     * `.env.testing` on the Node, the plan writes no `.env.testing` and records that status for the one it skipped.
+     *
      * @return array<string,mixed>
      */
-    public function plan(InstanceEnvironmentContext $context, bool $includeRuntime = true): array
+    public function plan(InstanceEnvironmentContext $context, bool $includeRuntime = true, ?string $testingSkip = null): array
     {
         $instance = Instance::query()->findOrFail($context->instanceId);
-        $files = $this->render($context);
+        $files = $this->render($context, true);
+        $skipped = $testingSkip !== null && $files['testing'] !== null ? $testingSkip : null;
+        if ($skipped !== null) {
+            $files['testing'] = null;
+        }
 
         return ['instance_id' => $context->instanceId, 'node_id' => $context->nodeId,
             'environment' => $context->environment, 'base' => $context->path, 'user' => $context->executionUser,
             'keys' => $files['keys'], 'owned_keys' => $instance->environment_owned_keys ?? [],
             'sha256' => hash('sha256', $files['content']),
             'testing' => $files['testing'] === null ? null : ['sha256' => hash('sha256', $files['testing']['content']),
-                'test_database' => $files['testing']['test_database']],
+                'test_database' => $files['testing']['test_database']], 'testing_skipped' => $skipped,
             'runtime' => $context->environment === 'production' && $includeRuntime ? $this->runtime($instance) : null];
     }
 
@@ -54,7 +60,7 @@ final readonly class NativeInstanceEnvironmentSync
             || $plan['user'] !== $context->executionUser || $plan['environment'] !== $context->environment) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The Instance environment placement changed after admission.', 422);
         }
-        $files = $this->render($context);
+        $files = $this->render($context, ($plan['testing_skipped'] ?? null) === null);
         $testing = $files['testing'] === null ? null : hash('sha256', $files['testing']['content']);
         $planned = $plan['testing'] === null ? null : ValidatedData::object($plan['testing'])['sha256'];
         if (hash('sha256', $files['content']) !== $plan['sha256'] || $testing !== $planned) {
@@ -66,16 +72,16 @@ final readonly class NativeInstanceEnvironmentSync
             $secrets['testing'] = $this->steps->executionCopy('orbit-control-inputs', 'instance-environment-testing-'.$operation->id, $files['testing']['content']);
         }
 
-        return ['intent' => ['environment' => Arr::except($plan, ['node_id', 'runtime']), 'runtime' => $plan['runtime'],
+        return ['intent' => ['environment' => Arr::except($plan, ['node_id', 'runtime', 'testing_skipped']), 'runtime' => $plan['runtime'],
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node)],
             'execution_secrets' => $secrets];
     }
 
     /** @return array{content:string,keys:list<string>,testing:array{content:string,test_database:string}|null} */
-    private function render(InstanceEnvironmentContext $context): array
+    private function render(InstanceEnvironmentContext $context, bool $writeTesting): array
     {
         $values = $this->store->synchronizationSnapshot($context)->values();
-        $testing = $this->testing->plan($context->instanceId, $values);
+        $testing = $writeTesting ? $this->testing->plan($context->instanceId, $values) : null;
 
         return ['content' => $this->renderer->render($context, $values), 'keys' => array_keys($values),
             'testing' => $testing === null ? null : ['content' => $this->renderer->render($context, $testing->values),

@@ -33,17 +33,34 @@ inputs:
 jobs:
 - name: environment
   steps:
-    # The whole production or development .env from the vault, 0600 for its account; only a whole write has material.
+    # A .env is group orbit-env, so the Node agent can report its key names.
+  - name: 'Create the orbit-env group'
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ !has(inputs.execution_secrets.material) }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/group'
+      behaviorName: '${{ ("route-env-group-" + inputs.intent.connection.nodeHost).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {groupname: orbit-env, ensure: present, system: true, become: true,
+        nodeHost: '${{ inputs.intent.connection.nodeHost }}', nodeUser: '${{ inputs.intent.connection.nodeUser }}', nodePort: '${{ inputs.intent.connection.nodePort }}',
+        nodeIdentityFile: '${{ inputs.intent.connection.nodeIdentityFile }}'}
+      inputs: {}
+    # The whole production or development .env from the vault for its account, 0640 with group orbit-env; only a whole
+    # write has material.
   - name: 'Write the environment'
     labels: {role: swamp}
     writes: true
+    dependsOn: [{step: 'Create the orbit-env group', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     forEach: {item: material, in: '${{ has(inputs.execution_secrets.material) ? [inputs.execution_secrets.material] : [] }}'}
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
       behaviorName: '${{ ("route-env-" + inputs.intent.connection.nodeHost + "-" + string(self._index)).split(".").join("-") }}'
       methodName: apply
-      globalArgs: {path: '${{ inputs.intent.write.input.base + "/" + inputs.intent.write.input.file }}', owner: '${{ inputs.intent.write.input.user }}', mode: '0600', ensure: present,
+      globalArgs: {path: '${{ inputs.intent.write.input.base + "/" + inputs.intent.write.input.file }}', owner: '${{ inputs.intent.write.input.user }}',
+        group: orbit-env, mode: '0640', ensure: present,
         content: '${{ vault.get(inputs.execution_secrets.material.vault, inputs.execution_secrets.material.key) }}',
         nodeHost: '${{ inputs.intent.connection.nodeHost }}', nodeUser: '${{ inputs.intent.connection.nodeUser }}', nodePort: '${{ inputs.intent.connection.nodePort }}',
         nodeIdentityFile: '${{ inputs.intent.connection.nodeIdentityFile }}', become: true}

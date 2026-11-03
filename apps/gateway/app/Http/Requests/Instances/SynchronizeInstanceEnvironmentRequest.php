@@ -14,7 +14,13 @@ final class SynchronizeInstanceEnvironmentRequest extends FormRequest
     /** @return array<string, list<mixed>> */
     public function rules(): array
     {
-        return [];
+        // `force` replaces a file whose keys the Node agent has not reported, or that holds keys stored configuration lacks.
+        return ['force' => ['sometimes', 'boolean:strict']];
+    }
+
+    public function force(): bool
+    {
+        return $this->validated('force', false) === true;
     }
 
     /** @return array<string, mixed> */
@@ -23,13 +29,13 @@ final class SynchronizeInstanceEnvironmentRequest extends FormRequest
         $content = $this->getContent();
 
         if (trim($content) === '') {
-            throw ValidationException::withMessages(['body' => ['The request body must be an empty JSON object.']]);
+            throw ValidationException::withMessages(['body' => ['The request body must be a JSON object with at most `force`.']]);
         }
 
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($content, []);
+            return app(TopLevelJsonObjectInspector::class)->inspect($content, ['force']);
         } catch (UnexpectedValueException) {
-            throw ValidationException::withMessages(['body' => ['The request body must be an empty JSON object.']]);
+            throw ValidationException::withMessages(['body' => ['The request body must be a JSON object with at most `force`.']]);
         }
     }
 }

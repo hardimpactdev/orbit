@@ -25,7 +25,7 @@ final class InstanceEnvironmentSynchronizationsController extends Controller
         $instance = $request->route('instance');
         assert($instance instanceof Instance);
 
-        $operation = $action->execute($instance, requestId: $request->attributes->getString('orbit.request_id'));
+        $operation = $action->execute($instance, requestId: $request->attributes->getString('orbit.request_id'), force: $request->force());
 
         return response()->json([
             'data' => OperationData::fromModel($operation)->toArray(),

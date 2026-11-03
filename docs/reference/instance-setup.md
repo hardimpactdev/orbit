@@ -104,7 +104,7 @@ The development `instance:create` root runs from control Node209 through officia
 
 Prepare refuses a branch that another worktree of the seed repository holds, then makes the checkout and its origin. When a fetch is needed, the GitHub read token is written as a 0600 credential file, Git fetches with it, and the next step removes the file. Source checks out the admitted branch and prints only its commit.
 
-Environment writes the `.env` the Gateway rendered at admission from the Project environment template, with mode 0600; the Gateway pushes it to the vault after the admission commits. Setup runs one step per command, then one step creates and starts the development Processes through the shared Process create workflow. Nothing about `.env` comes back from the Node. The Gateway mints the GitHub read token when the run starts.
+Environment writes the `.env` the Gateway rendered at admission from the Project environment template, with mode 0640 and group `orbit-env`, so the Node agent can report its key names; the Gateway pushes it to the vault after the admission commits. Setup runs one step per command, then one step creates and starts the development Processes through the shared Process create workflow. Nothing about `.env` comes back from the Node. The Gateway mints the GitHub read token when the run starts.
 
 Admission stores the rendered environment values. The terminal result carries only the checked-out commit; from it the Gateway records the source identity, the managed keys and activation.
 

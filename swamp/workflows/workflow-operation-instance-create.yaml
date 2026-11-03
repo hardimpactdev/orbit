@@ -129,11 +129,32 @@ jobs:
             argv: [/usr/bin/timeout, '60', /bin/sh, -c, 'set -e; g() { /usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$t" "$@"; }; t="$1"; b="$2"; commit="$3"; def="$4"; retained="$5"; if [ -n "$retained" ]; then [ "$(g rev-parse --abbrev-ref HEAD)" = "$b" ] && [ "$(g rev-parse HEAD)" = "$retained" ] || { echo instance.source_identity_changed >&2; exit 3; }; else if [ -n "$commit" ]; then ref="$commit"; elif g rev-parse -q --verify "refs/remotes/origin/$b" >/dev/null; then ref="refs/remotes/origin/$b"; elif g rev-parse -q --verify "refs/heads/$b" >/dev/null; then ref="refs/heads/$b"; else ref="refs/remotes/origin/$def"; fi; g checkout --quiet --no-track -B "$b" "$ref"; [ -z "$commit" ] || g update-ref refs/worktree/orbit/ci-baseline "$commit"; fi; g rev-parse --verify "HEAD^{commit}"', sh, '${{ inputs.intent.source.checkout }}', '${{ inputs.intent.resolve.branch }}',
               '${{ inputs.intent.resolve.seed_commit == null ? "" : inputs.intent.resolve.seed_commit }}', '${{ inputs.intent.resolve.default_branch }}',
               '${{ inputs.intent.retained_source == null ? "" : inputs.intent.retained_source.commit }}']
-      # Environment: the .env the Gateway rendered at admission, in the application directory.
-      - name: environment
+      # The .env is group orbit-env, so the Node agent can report its key names.
+      - name: environment-group
         labels: {role: swamp}
         writes: true
         dependsOn: [{step: source, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+        guard: '${{ inputs.intent.already_active || steps.exists(k, steps[k].status == "failed") }}'
+        task:
+          type: behavior
+          behaviorType: '@swamp/cfgmgmt/group'
+          behaviorName: '${{ ("ic-environment-group-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}'
+          methodName: apply
+          globalArgs:
+            groupname: orbit-env
+            ensure: present
+            system: true
+            become: true
+            nodeHost: '${{ inputs.intent.ssh_execution.target.host }}'
+            nodeUser: '${{ inputs.intent.ssh_execution.target.user }}'
+            nodePort: '${{ inputs.intent.ssh_execution.target.port }}'
+            nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}'
+          inputs: {}
+      # Environment: the .env the Gateway rendered at admission, in the application directory, 0640 with group orbit-env.
+      - name: environment
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: environment-group, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
         guard: '${{ inputs.intent.already_active || steps.exists(k, steps[k].status == "failed") }}'
         task:
           type: behavior
@@ -143,7 +164,10 @@ jobs:
           globalArgs:
             path: '${{ inputs.intent.environment_directory + "/.env" }}'
             ensure: present
-            mode: '0600'
+            owner: '${{ inputs.intent.ssh_execution.target.user }}'
+            group: orbit-env
+            mode: '0640'
+            become: true
             content: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}'
             nodeHost: '${{ inputs.intent.ssh_execution.target.host }}'
             nodeUser: '${{ inputs.intent.ssh_execution.target.user }}'

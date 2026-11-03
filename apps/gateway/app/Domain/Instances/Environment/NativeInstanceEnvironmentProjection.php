@@ -7,7 +7,6 @@ namespace App\Domain\Instances\Environment;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationStatus;
-use App\Infrastructure\Swamp\NativeRunResult;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -41,7 +40,7 @@ final readonly class NativeInstanceEnvironmentProjection implements DirectOperat
         });
     }
 
-    /** The public result and error code. Key names come from the run; values never do.
+    /** The public result and error code, from the plan and the file behavior's status of each file; never a value.
      * @param  array<string,mixed>  $data
      * @return array{0:?string,1:array<string,mixed>}
      */
@@ -51,16 +50,7 @@ final readonly class NativeInstanceEnvironmentProjection implements DirectOperat
         $plan = ValidatedData::object($operation->input['direct_environment']);
         $status = $data['status'] ?? null;
         $steps = is_array($run['steps'] ?? null) ? $run['steps'] : [];
-        $keyNames = is_array($steps['Read the key names'] ?? null) ? $steps['Read the key names'] : [];
-        $read = is_string($keyNames['stdout'] ?? null) ? explode("\n", $keyNames['stdout']) : [];
         if (in_array($status, [OperationStatus::Failed->value, OperationStatus::Interrupted->value], true)) {
-            if (NativeRunResult::stepStatus($run, 'Check for foreign keys') === 'failed') {
-                $known = [...ValidatedData::stringList($plan['keys']), ...ValidatedData::stringList($plan['owned_keys'])];
-                $foreign = array_values(array_unique(array_filter($read, static fn (string $key): bool => $key !== '' && ! str_starts_with($key, '#') && ! in_array($key, $known, true))));
-                sort($foreign, SORT_STRING);
-
-                return ['env.sync_would_drop_keys', ['error_code' => 'env.sync_would_drop_keys', 'foreign_keys' => $foreign]];
-            }
             $refresh = array_filter($steps, static fn (mixed $step, int|string $name): bool => str_starts_with((string) $name, 'Refresh the runtime')
                 && is_array($step) && ($step['status'] ?? null) === 'failed', ARRAY_FILTER_USE_BOTH);
             $code = $refresh !== [] ? 'env.runtime_refresh_failed'
@@ -74,15 +64,9 @@ final readonly class NativeInstanceEnvironmentProjection implements DirectOperat
         $keys = ValidatedData::stringList($plan['keys']);
         $testing = $plan['testing'] === null ? null : ValidatedData::object($plan['testing']);
         $runtime = $plan['runtime'] === null ? null : ValidatedData::object($plan['runtime']);
-        $before = [];
-        foreach ($read as $line) {
-            if (preg_match('/\A#sha ([a-f0-9]{64})  (\.env(?:\.testing)?)\z/D', $line, $match) === 1) {
-                $before[$match[2]] = $match[1];
-            }
-        }
-        $environmentChanged = ($before['.env'] ?? null) !== $plan['sha256'];
-        $testingStatus = $testing === null ? null : (in_array('#tracked', $read, true) ? 'skipped_tracked'
-            : (($before['.env.testing'] ?? null) === $testing['sha256'] ? 'unchanged' : 'written'));
+        $environmentChanged = ($run['environment_write'] ?? null) !== 'compliant';
+        $testingStatus = is_string($plan['testing_skipped'] ?? null) ? $plan['testing_skipped']
+            : ($testing === null ? null : (($run['testing_write'] ?? null) === 'compliant' ? 'unchanged' : 'written'));
 
         return [null, ['instance_id' => $operation->target_id, 'changed' => $environmentChanged || $testingStatus === 'written',
             'keys' => $keys, 'key_count' => count($keys), 'test_database' => $testing['test_database'] ?? null,

@@ -70,6 +70,13 @@ final class GatewayFailureRenderer
             return self::environmentConfigurationDetails($details);
         }
 
+        if ($code === 'env.sync_would_drop_keys') {
+            // The key names only the Node's .env holds; names, never values.
+            $keys = $details['keys'] ?? null;
+
+            return is_string($keys) && strlen($keys) <= 65_536 && preg_match('/\A[A-Za-z_][A-Za-z0-9_.]*(?:,[A-Za-z_][A-Za-z0-9_.]*)*\z/D', $keys) === 1 ? ['keys' => $keys] : [];
+        }
+
         if (in_array($code, ['operation.target_busy', 'operation.dispatch_failed'], true)) {
             // The operation that holds the target, or the one that could not be queued, so the caller can follow or cancel it.
             $operationId = $details['operation_id'] ?? null;

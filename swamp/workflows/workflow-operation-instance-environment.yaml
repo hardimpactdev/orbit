@@ -1,6 +1,6 @@
 id: 1aa9bc3f-6c22-4b27-8742-e0a8620da06b
 name: operation-instance-environment
-description: Write one Instance's Gateway-rendered .env and .env.testing from the vault with the official file behavior, check them, and refresh a production runtime.
+description: Write one Instance's Gateway-rendered .env (0640, group orbit-env) and .env.testing from the vault with the official file behavior, check them, and refresh a production runtime.
 vaults: [orbit-control-inputs]
 queueTimeout: 30
 inputs:
@@ -44,54 +44,31 @@ inputs:
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
-- name: inspect
-  labels: {role: swamp}
-  steps:
-    # Interim until the Node agent reports .env key names to admission (decision 2): key names and hashes only, never values.
-  - name: 'Read the key names'
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "instance-environment-ssh-" + string(inputs.node_id) }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "instance-environment-ssh-" + string(inputs.node_id) }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}
-      inputs:
-        hosts: name:target
-        # "#sha <sha256>  <file>" for each file, "#tracked" when Git tracks .env.testing, then each .env key name; the public result reads the first 4 KiB.
-        argv: [/usr/bin/sudo, -n, --user, '${{ inputs.intent.environment.user }}', --, /usr/bin/timeout, '30', /bin/sh, -c,
-          'cd -- "$1" || exit 1; sha256sum -- .env .env.testing 2>/dev/null | sed "s/^/#sha /"; ! git ls-files --error-unmatch -- .env.testing >/dev/null 2>&1 || echo "#tracked"; [ ! -f .env ] || sed -n -E "s/^[ \t]*(export[ \t]+)?([A-Za-z_][A-Za-z0-9_.]*)[ \t]*=.*/\2/p" .env',
-          sh, '${{ inputs.intent.environment.base }}']
-        timeoutSec: 40
-  - name: 'Check for foreign keys'
-    labels: {role: swamp}
-    dependsOn: [{step: 'Read the key names', condition: {type: succeeded}}]
-    task:
-      type: assert
-      expr: '!steps["Read the key names"].outputs.stdout.split("\n").exists(k, k != "" && !k.startsWith("#") && !(k in inputs.intent.environment.keys) && !(k in inputs.intent.environment.owned_keys))'
-      message: The .env holds keys Orbit does not manage; a sync would drop them.
-      severity: high
 - name: environment
   labels: {role: swamp}
-  dependsOn: [{job: inspect, condition: {type: succeeded}}]
   steps:
-    # .env always; .env.testing when the Gateway rendered one and Git does not track it.
+    # The .env is group orbit-env, so the Node agent can report its key names; Swamp checks for foreign keys no more,
+    # because admission did from those names.
+  - name: 'Create the orbit-env group'
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/group'
+      behaviorName: ${{ "instance-environment-group-" + string(inputs.node_id) }}
+      methodName: apply
+      globalArgs: {groupname: orbit-env, ensure: present, system: true, nodeHost: '${{ inputs.intent.ssh_execution.target.host }}', nodeUser: '${{ inputs.intent.ssh_execution.target.user }}',
+        nodePort: '${{ inputs.intent.ssh_execution.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh_execution.identity_file }}', become: true}
+      inputs: {}
+    # .env always; .env.testing when the Gateway rendered one: Git does not track it. The account writes each 0640 in
+    # its own directory, so no root write follows a link the account placed.
   - name: 'Write .env, .env.testing'
     labels: {role: swamp}
     writes: true
+    dependsOn: [{step: 'Create the orbit-env group', condition: {type: succeeded}}]
     forEach:
       item: file
-      in: '${{ [{"name": ".env", "secret": inputs.execution_secrets.environment}] + ("testing" in inputs.execution_secrets && !steps["Read the key names"].outputs.stdout.contains("#tracked") ? [{"name": ".env.testing", "secret": inputs.execution_secrets.testing}] : []) }}'
+      in: '${{ [{"name": ".env", "secret": inputs.execution_secrets.environment}] + ("testing" in inputs.execution_secrets ? [{"name": ".env.testing", "secret": inputs.execution_secrets.testing}] : []) }}'
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
@@ -106,15 +83,40 @@ jobs:
         becomeUser: ${{ inputs.intent.environment.user }}
         path: ${{ inputs.intent.environment.base + "/" + self.file.name }}
         ensure: present
-        mode: '0600'
+        mode: '0640'
         content: ${{ vault.get(self.file.secret.vault, self.file.secret.key) }}
       inputs: {}
-  - name: 'Check the written file'
+    # Root changes only the group, and -h never follows a link, so the Node agent's orbit-env group may read the key names.
+  - name: 'Set the group orbit-env'
     labels: {role: swamp}
+    writes: true
     dependsOn: [{step: 'Write .env, .env.testing', condition: {type: succeeded}}]
     task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "instance-environment-group-file-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "instance-environment-group-file-" + string(inputs.node_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}
+      inputs:
+        hosts: name:target
+        argv: '${{ ["/usr/bin/sudo", "-n", "--", "/usr/bin/timeout", "30", "/usr/bin/chgrp", "-h", "orbit-env", "--", inputs.intent.environment.base + "/.env"] + ("testing" in inputs.execution_secrets ? [inputs.intent.environment.base + "/.env.testing"] : []) }}'
+        timeoutSec: 40
+  - name: 'Check the written file'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Set the group orbit-env', condition: {type: succeeded}}]
+    task:
       type: assert
-      expr: 'data.latest("instance-environment-file-" + string(inputs.node_id) + "-0", inputs.intent.ssh_execution.target.host).attributes.current.contentSha256 == inputs.intent.environment.sha256 && (inputs.intent.environment.testing == null || steps["Read the key names"].outputs.stdout.contains("#tracked") || data.latest("instance-environment-file-" + string(inputs.node_id) + "-1", inputs.intent.ssh_execution.target.host).attributes.current.contentSha256 == inputs.intent.environment.testing.sha256)'
+      expr: 'data.latest("instance-environment-file-" + string(inputs.node_id) + "-0", inputs.intent.ssh_execution.target.host).attributes.current.contentSha256 == inputs.intent.environment.sha256 && (inputs.intent.environment.testing == null || data.latest("instance-environment-file-" + string(inputs.node_id) + "-1", inputs.intent.ssh_execution.target.host).attributes.current.contentSha256 == inputs.intent.environment.testing.sha256)'
       message: A written file differs from the rendered one.
       severity: high
     # Production only, in order: the config cache when the release has one, the PHP-FPM reload, then each Process that restarts on deploy.

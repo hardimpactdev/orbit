@@ -6,6 +6,7 @@ namespace App\Domain\Nodes;
 
 use App\Domain\Fleet\NodeFootprint;
 use App\Domain\Fleet\NodeFootprintArtifact;
+use App\Domain\Instances\Environment\InstanceEnvironmentFiles;
 use App\Domain\Routes\CaddyPublicationPlan;
 use App\Domain\Routes\NativeRouteLanInput;
 use App\Domain\Routes\PrivateDnsPublicationNodes;
@@ -71,7 +72,8 @@ final readonly class NodeConvergeInput
      * Orbit creates (`/home/<user>`), and the Instance checkouts under that root whose `.env` loses its world bits.
      *
      * @param  array<string,mixed>  $payloads
-     * @return array{url:?string,files:list<array{path:string,content:string}>,unit:string,checkouts:list<string>}|null
+     *                                         The production homes on the Node, on which the `orbit-env` group gets traverse so the agent reaches each `.env`.
+     * @return array{url:?string,files:list<array{path:string,content:string}>,unit:string,checkouts:list<string>,homes:list<string>}|null
      */
     private function agentFiles(Node $node, array $payloads): ?array
     {
@@ -87,7 +89,7 @@ final readonly class NodeConvergeInput
         return ['url' => is_string($agent['url'] ?? null) ? $agent['url'] : null,
             'files' => [['path' => NodeAgentFootprint::ConfigurationPath, 'content' => $configuration['configuration']],
                 ['path' => NodeAgentFootprint::CertificatePath, 'content' => $configuration['certificate']]],
-            'unit' => $configuration['unit'], 'checkouts' => $checkouts];
+            'unit' => $configuration['unit'], 'checkouts' => $checkouts, 'homes' => app(InstanceEnvironmentFiles::class)->homes($node)];
     }
 
     /**

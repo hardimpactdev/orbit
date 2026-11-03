@@ -88,9 +88,10 @@ sequenceDiagram
   SW->>D: Drop the worktree config<br/>git config --unset-all
   %%> Why:
   %%> - a linked worktree becomes an independent checkout on Node 15
-  SW->>D: Write .env<br/>@swamp/cfgmgmt/file · 0600
+  SW->>D: Create the orbit-env group<br/>cfgmgmt/group apply
+  SW->>D: Write .env<br/>cfgmgmt/file · 0640 orbit-env
   %%> What it does:
-  %%> - writes the `.env` the Gateway rendered from Instance 42's stored configuration for Node 15, from `vault.get`
+  %%> - writes the `.env` the Gateway rendered from Instance 42's stored configuration for Node 15, from `vault.get`, as root: owned by the Node user with group `orbit-env`, mode 0640
   %%> Requires:
   %%> - stored configuration; admission refuses an Instance without it (`env.configuration_missing`)
   SW->>D: Run Project setup steps<br/>@swamp/ssh exec · in order

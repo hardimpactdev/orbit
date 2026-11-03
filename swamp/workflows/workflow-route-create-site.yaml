@@ -491,6 +491,37 @@ jobs:
         nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
         nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
       inputs: {}
+    # A .env is group orbit-env, so the Node agent can report its key names.
+  - name: 'environment-group'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'account', condition: {type: always}}
+    - {step: 'web-root', condition: {type: always}}
+    - {step: 'links', condition: {type: always}}
+    - {step: 'pools', condition: {type: always}}
+    - {step: 'pools-test', condition: {type: always}}
+    - {step: 'pools-reload', condition: {type: always}}
+    - {step: 'certificate', condition: {type: always}}
+    - {step: 'certificate-current', condition: {type: always}}
+    - {step: 'account-pair', condition: {type: always}}
+    - {step: 'account-pair-current', condition: {type: always}}
+    - {step: 'trust', condition: {type: always}}
+    - {step: 'trust-store', condition: {type: always}}
+    - {step: 'caddyfile', condition: {type: always}}
+    - {step: 'caddy-validate', condition: {type: always}}
+    - {step: 'caddy-reload', condition: {type: always}}
+    - {step: 'app-url', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status == "failed") || size(inputs.intent.env_files.filter(e, string(e.node_id) == string(inputs.node_id))) == 0 }}'
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/group'
+      behaviorName: '${{ ("route-env-group-" + string(inputs.node_id)).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {groupname: orbit-env, ensure: present, system: true, become: true,
+        nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
+        nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}'}
+      inputs: {}
     # Production: the whole rendered .env from the vault.
   - name: 'environment'
     labels: {role: swamp}
@@ -511,6 +542,7 @@ jobs:
     - {step: 'caddy-validate', condition: {type: always}}
     - {step: 'caddy-reload', condition: {type: always}}
     - {step: 'app-url', condition: {type: always}}
+    - {step: 'environment-group', condition: {type: always}}
     guard: '${{ steps.exists(k, steps[k].status == "failed") }}'
     writes: true
     forEach: {item: env, in: '${{ inputs.intent.env_files.filter(e, string(e.node_id) == string(inputs.node_id)) }}'}
@@ -519,7 +551,8 @@ jobs:
       behaviorType: '@swamp/cfgmgmt/file'
       behaviorName: '${{ ("route-env-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: apply
-      globalArgs: {path: '${{ self.env.path }}', content: '${{ vault.get(inputs.execution_secrets[self.env.secret_field].vault, inputs.execution_secrets[self.env.secret_field].key) }}', owner: '${{ self.env.owner }}', mode: '0600', ensure: present,
+      globalArgs: {path: '${{ self.env.path }}', content: '${{ vault.get(inputs.execution_secrets[self.env.secret_field].vault, inputs.execution_secrets[self.env.secret_field].key) }}', owner: '${{ self.env.owner }}',
+        group: orbit-env, mode: '0640', ensure: present,
         nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
         nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
       inputs: {}

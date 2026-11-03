@@ -37,7 +37,7 @@ while (args[0]?.startsWith("-") && args[0] !== "--") args = args.slice(["-u", "-
 if (args[0] === "--") args = args.slice(1);
 if (args[0]?.split("/").at(-1) === "timeout") args = args.slice(2);
 const name = args[0]?.split("/").at(-1);
-if (["systemctl", "docker", "setfacl"].includes(name!)) {
+if (["systemctl", "docker", "setfacl", "chgrp"].includes(name!)) {
   logCall(${JSON.stringify(calls)}, [name, ...args.slice(1)]);
   if (args[1] === "show") console.log("LoadState=loaded\\nActiveState=active\\nUnitFileState=enabled");
   if (["is-active", "is-enabled"].includes(args[1])) console.log(args[1] === "is-active" ? "active" : "enabled");
