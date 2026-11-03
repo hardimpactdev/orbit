@@ -161,6 +161,9 @@ def setup(gateway_node):
     hosts = Path('/etc/hosts')
     hosts.write_text('\n'.join(line for line in hosts.read_text().splitlines() if not line.startswith(LISTEN + ' ')) + '\n')
     tag = pinned_assets()
+    # The release installs both Composer projects; their packages download from GitHub, so warm the cache first.
+    for project in ('apps/cli', 'apps/gateway'):
+        orbit('composer', 'install', '--no-interaction', '--no-progress', '--prefer-dist', '--no-dev', '--no-scripts', '--quiet', cwd=SOURCE / project)
     staged = layout(gateway_node)
     # The serve checkout, its loopback API and grants paths, exactly as the load proof prepares them. After the layout:
     # its Caddy site joins the Caddyfile the layout rendered.
