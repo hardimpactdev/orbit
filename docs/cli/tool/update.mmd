@@ -1,8 +1,6 @@
 sequenceDiagram
-  %% Tightened: Decision 7 (2026-11-02), worker-side key verification before Node contact.
-  %% Pass 3: native operation boundaries retained; see the chart-step table in the commit.
-  %% Target design: ADR 0244 task, DECISIONS R1-R4 (process.stop shape, R2 state from the result), ADR 0242 signed apt sources. Same shape as tool.install.
-  %% status: reviewed
+  %% Target design: fleet maintenance redesign 2026-11-03 (one Tools phase shared with node:converge; 24 h / CVE version rule). Same shape as tool.install. docs/reference/tools.md#update-a-tool.
+  %% status: draft
   %% command: tool:update
   %% kind: tool.update
   autonumber
@@ -13,122 +11,38 @@ sequenceDiagram
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant N as Target Node<br/>reached over ssh
+  participant N as Node 12<br/>reached over ssh
   CLI->>GW: tool:update 31
   %%> Command:
   %%> - `orbit tool:update 31`
-  %%> - syntax: `<tool> [--repository=JSON]`
-  %%> Input:
-  %%> - the Tool's id, as `tool:list --node=ID` shows it
-  %%> - optionally a changed signed apt repository, which replaces the stored one
-  %%> Who can call it:
-  %%> - the `orbit` CLI and the MCP tool send the same request
-  Note over GW: Validate, lock the manager<br/>task #5134 · ripgrep on Node 12
+  %%> - syntax: `<tool> [--repository=JSON] [--idempotency-key=KEY] [--json]`
+  Note over GW: Validate, lock the Tool<br/>task #5134 · ripgrep on Node 12
   %%> Requirements:
   %%> - your Node has an access grant to Node 12
-  %%> - Tool 31 exists and is installed
-  %%> - no other change runs for this Tool Manager on Node 12; the Gateway holds one lock per Node and Tool Manager
-  %%> Result:
-  %%> - task #5134 recorded with the full intent, including the Tool's stored constraint
-  %%> - the Tool record stays as it is until the run ends
-  %%> - nothing has happened on the Node yet
   GW->>SW: Start run, full intent<br/>operation-tool-write
-  %%> What it does:
-  %%> - starts one Swamp run on serve (Node 209)
-  %%> Inputs:
-  %%> - the package, Tool Manager, installed version, constraint and repository definition
-  %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
   GW-->>CLI: 202 Accepted<br/>task #5134
-  %%> What you get:
-  %%> - the task number, at once
-  %%> Next:
-  %%> - the CLI follows the task with `operation:show`
-  Note over SW: Prepare package commands<br/>typed argv, no script reads
+  SW->>SW: Write the playbook input<br/>inventory · vars · known_hosts
   opt --repository
-    Note over SW: Fetch the signing key<br/>bounded download on 209
-    Note over SW: Read the key fingerprint<br/>gpg show-keys on 209
-    Note over SW: Assert the key fingerprint<br/>stop before the Node
+    SW->>SW: Verify the signing key<br/>fetch · fingerprint on 209
+    %%> Why on 209:
+    %%> - a wrong key stops the run before Node 12 is touched
   end
-  opt --repository
-    Note over SW: Dearmor the signing key<br/>binary key on 209
-    SW->>N: Prepare apt keyrings<br/>cfgmgmt directory
-    SW->>N: Publish the signing key<br/>cfgmgmt copy_file
-    SW->>N: Pin repository packages<br/>only admitted packages
-    SW->>N: Write the apt source<br/>cfgmgmt file · deb822 source
-    %%> When:
-    %%> - only for `apt` with `--repository`
-    %%> What it does:
-    %%> - the signing key was downloaded and checked on 209 before any Node contact
-    %%> - replaces the apt source with the new definition
-  end
-  opt signed apt repository
-    SW->>N: Refresh apt source<br/>bounded update of this source
-  end
-  SW->>N: Read manager version<br/>one manager command
-  SW->>N: Read installed package<br/>one package query
-  opt macOS Homebrew
-    SW->>N: Read macOS version<br/>bottle compatibility
-  end
-  SW->>N: Check the candidate<br/>version vs constraint
-  %%> What it does:
-  %%> - asks the Tool Manager which version it would install now
-  %%> - compares it with the installed version and the stored constraint
-  %%> Outcomes:
-  %%> - same version: nothing to do, outcome `unchanged`
-  %%> - outside the constraint: stop here, outcome `blocked_by_constraint`
-  %%> - newer and allowed: go on to the upgrade
-  Note over SW: Choose package action<br/>candidate and constraint
-  SW->>N: Apply the package<br/>apt-get install --no-remove
-  %%> When:
-  %%> - only when the candidate is newer and inside the constraint
-  %%> What it does:
-  %%> - upgrades the package with the Tool Manager
-  %%> - for `apt`, never removes other packages to make room
-  %%> Busy apt lock:
-  %%> - when Ubuntu's automatic updates hold the apt lock, it waits within the run's time budget, then fails
-  opt apt
-    SW->>N: Check apt package<br/>official package check
-  end
-  opt other Tool Managers
-    SW->>N: Check the package<br/>one manager query
-  end
-  Note over SW: Decode package state<br/>typed package observation
-  Note over SW: Assert package state<br/>native end check
-  opt --repository
-    Note over SW: Remove the staged key<br/>local cleanup, also on failure
-  end
-  alt the run ends normally
-    N-->>SW: ripgrep 14.1.1, applied
-    %%> Returns:
-    %%> - the installed version, read back from the Tool Manager
-    %%> - the outcome: `applied`, `unchanged` or `blocked_by_constraint`
-    SW-->>GW: Run succeeded<br/>terminal event
-    %%> How the Gateway learns it:
-    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-    Note over GW: Record result<br/>version · outcome · task succeeded
-    %%> Result:
-    %%> - the Tool's version is updated when the outcome is `applied`
-    %%> - `unchanged` and `blocked_by_constraint` leave the Tool as it is; both are a success
-    %%> - a new repository definition is recorded, when one was given
-    %%> - task #5134 succeeds
-  else a step fails
-    N--xSW: exit ≠ 0
-    %%> When:
-    %%> - the Tool Manager can't upgrade, the key doesn't match, or SSH fails
-    SW--xGW: Run failed<br/>error_code, failed step
-    %%> The Gateway reads:
-    %%> - which step failed and its error code
-    Note over GW: Mark the Tool failed<br/>keeps 14.1.0 · rerun after a fix
-    %%> Result:
-    %%> - the Tool is marked failed, with its last known version 14.1.0
-    %%> - the stored repository definition stays the old one
-    %%> - task #5134 fails
+  SW->>N: Install Tools<br/>ansible · tags tools
+  %%> Why the converge phase:
+  %%> - an update is the same phase as an install, limited to this Tool
+  %%> Version:
+  %%> - the newest in the constraint that is at least 24 hours old, or fixes a known CVE
+  SW->>N: Check the Tool<br/>ansible · tags check
+  alt check passes
+    SW-->>GW: Run succeeded
+    Note over GW: Record the version<br/>applied · unchanged
+  else the update fails
+    SW--xGW: Run failed<br/>error_code
+    %%> On failure:
+    %%> - the Tool keeps its old version when the package manager did not change it
+    Note over GW: Mark the Tool failed
   end
   loop every 2 s until terminal
     CLI->>GW: operation:show #5134
-    %%> What it does:
-    %%> - asks for the task's status every 2 seconds until it has ended
     GW-->>CLI: status + result
-    %%> Returns:
-    %%> - the current status, and the result once the task has ended
   end

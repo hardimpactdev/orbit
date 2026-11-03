@@ -12,6 +12,8 @@ The Gateway builds the task VM base image with a chain of small queued jobs. One
 
 In progress.
 
+[ADR 0247](/decisions/0247-keep-fleet-software-current-through-tested-recipe-changes) replaces this image build: task VMs will boot from the app-dev topology template.
+
 Principle: [Lean](/mission#principles). The image build keeps its result and drops the parts that only made one long job survive: the manifest, the host locks with expiry times, the stage budgets, and the cleanup of a job that was killed halfway. It also serves [Deterministic first](/mission#principles): the build row, not a log search, says where a build stopped.
 
 ## Context

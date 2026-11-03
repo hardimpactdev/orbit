@@ -1,0 +1,40 @@
+sequenceDiagram
+  %% Target design: fleet maintenance redesign 2026-11-04, topology templates plan points 1 and 2. Replaces the task VM image build.
+  %% status: draft
+  %% command: none · after a release that changes Node state
+  %% kind: template.refresh
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane I icon=server pill=target tone=amber
+  %% lane T icon=server pill=target tone=purple
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant I as Incus host<br/>holds templates
+  participant T as Templates<br/>Gateway, dev, prod
+  Note over GW: Release changed Node state<br/>task #5210
+  %%> When:
+  %%> - the release run ended verified, and its commit changed workflows, playbooks, role definitions, `recipe.json` or the release itself
+  %%> - off the merge path: one refresh at a time; a newer release replaces a waiting one, so skipped commits never run
+  GW->>SW: Start run, full intent<br/>operation-template-refresh
+  SW->>T: Release onto the templates<br/>gateway:release:deploy · load
+  SW->>T: Converge each Node<br/>node:converge · dev · prod
+  %%> Why the normal commands:
+  %%> - the templates get the release the same way the fleet does, so a refresh also tests the rollout path
+  SW->>T: Check with Doctor<br/>doctor · zero drift
+  SW->>I: Snapshot the templates<br/>incus snapshot · keep previous
+  %%> Why only now:
+  %%> - a failed refresh leaves the last good snapshots in place; clones and task VMs keep using them
+  SW->>I: Publish the task VM image<br/>app-dev → hosts · UpCloud
+  %%> Why:
+  %%> - task VMs boot from the app-dev template; there is no separate image build
+  %%> - one template set lives on one Incus host; the other hosts and UpCloud get a copy of the image, a few minutes later
+  alt refresh succeeds
+    SW-->>GW: Run succeeded
+    Note over GW: Record template release
+  else a step fails
+    SW--xGW: Run failed<br/>error_code
+    Note over GW: Keep the last snapshots<br/>alert template_refresh_failed
+    %%> Retry:
+    %%> - the next release refreshes again; the nightly build reports the cause
+  end

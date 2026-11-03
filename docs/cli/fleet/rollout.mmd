@@ -1,7 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, DECISIONS R1-R4, agent-frozen-until-swamp-port, single-swamp-node. docs/reference/gateway-recovery.md#fleet-rollout.
-  %% Tightened: flow-tighten 2026-11-02, rule 22 (cfgmgmt fetch and link name the install steps).
-  %% Real steps 2026-11-02: prepare, node-N (fleet-release-node: gate, cli, record, observer_fetch, observer_read, observer_restart, observer_check, observer), finish.
+  %% Target design: fleet maintenance redesign 2026-11-03 (each Node visit runs node:converge; release after R3 starts the rollout). docs/reference/gateway-recovery.md#fleet-rollout.
   %% status: draft
   %% command: none · after each verified Gateway release
   %% kind: fleet.rollout
@@ -14,97 +12,32 @@ sequenceDiagram
   participant N as Target Node<br/>reached over ssh
   Note over GW: Release verified<br/>desired state · task #5160
   %%> When:
-  %%> - right after the Gateway verified a release, while `ORBIT_FLEET_ROLLOUT=true`
-  %%> - again when CI publishes a CLI release that was missing, or after `fleet:rollout:resume`
-  %%> Not included:
-  %%> - no command starts it; `fleet:rollout:status` shows it, `fleet:rollout:resume` resumes it after a halt
-  %%> - no per-minute Swamp poll admits it; the release itself is the trigger
+  %%> - the Swamp release run ended verified, while `ORBIT_FLEET_ROLLOUT=true`
+  %%> - again after `fleet:rollout:resume`
   %%> Requirements:
   %%> - no other rollout is running or halted
-  %%> - the CLI release of the commit is published, or an ancestor's release stands in after 30 minutes
-  %%> Input:
-  %%> - optional API field `node_ids` limits the run to those pending rollout members in their planned order
-  %%> - optional API field `rollout_id` must name the current rollout, or the run is refused
-  %%> - an ineligible listed Node is refused with `fleet.rollout_not_ready`
-  %%> What it decides:
-  %%> - the desired state: the CLI release with the SHA-256 of each binary, and the Node agent pin with its digests
-  %%> - the rollout set and order: active managed Linux Nodes with roles; task sandboxes, macOS Nodes, roleless Nodes and the Gateway's own Node stay out
-  %%> Result:
-  %%> - task #5160 recorded with the full intent; nothing has happened on a Node yet
+  %%> Builds:
+  %%> - the rollout set in risk order: `app-dev`, then `ci-runner` `metrics` `analytics`, then `database` `websocket` `vpn` `router`, then `app-prod` `ingress`
+  %%> - for each Node the same targets-only intent as `node:converge`
   GW->>SW: Start run, full intent<br/>operation-fleet-rollout
-  %%> What it does:
-  %%> - starts one Swamp run on serve (Node 209) for the admitted rollout set
-  %%> Inputs:
-  %%> - the Nodes in order, each with its address and SSH host keys; the SSH identity comes from the `swamp` role
-  %%> - the CLI release URL and digests, and the Node agent pin
-  Note over SW: Freeze the Node list<br/>prepare
-  %%> What it does:
-  %%> - reads the admitted intent once and records the Nodes in order
-  %%> Runs as:
-  %%> - a step on Node 209
-  loop each Node, one at a time
-    Note over SW: Check the Node may publish<br/>fleet-release-node · gate
-    %%> What it does:
-    %%> - the `fleet-release-node` child starts on Node 209; its `gate` step checks that every earlier Node succeeded, that the task is not cancelled, and that the Node's window is open
-    %%> - a skipped Node, a planning error or a closed window records the outcome without touching the Node
+  loop each Node, in risk order
+    Note over SW: Wait for the Node's window<br/>gate
     %%> Why:
-    %%> - the loop runs one Node at a time, so a failed Node stops every later one
-    SW->>N: Install the CLI release<br/>cli · node-cli-install · record
-    %%> How:
-    %%> - Swamp reaches Node 12 over SSH from 209, with `@swamp/ssh` and the admitted host keys
-    %%> What it does:
-    %%> - reads `orbit --version`; a Node that runs this release, a newer one, or a commit build keeps it
-    %%> - otherwise downloads the release with `@swamp/cfgmgmt/fetch` and its `checksum`, checks the new file reports the release version, and switches the link with `@swamp/cfgmgmt/link`
-    %%> - a file that does not report a valid Orbit version is replaced by the admitted release
-    %%> - writes root's profile, 0600, with `@swamp/cfgmgmt/file`
-    %%> - the `record` step on Node 209 then records `converged` or `unchanged` with the CLI version, or `cli.install_failed`
-    SW->>N: Install the Node agent<br/>observer_fetch · observer_read
-    %%> When:
-    %%> - only in a rollout, and only after the Node's CLI succeeded
-    %%> What it does:
-    %%> - `observer_fetch` writes the pinned agent to `/usr/local/bin/orbit-agent` with `@swamp/cfgmgmt/fetch` and its `checksum`, only when its SHA-256 differs
-    %%> - beside it, `observer_read` prints the running service's binary digest with one `@swamp/ssh exec`
-    %%> Today:
-    %%> - the Node agent is frozen at its pin, so the fetch changes nothing
-    %%> Not included:
-    %%> - Caddy, DNS, PHP and role files; `node.converge` owns those
-    opt binary changed or stale
-      SW->>N: Restart the Node agent<br/>observer_restart · systemctl
-      %%> When:
-      %%> - the fetch wrote a new binary, or the running digest differs from the pin
-      %%> What it does:
-      %%> - `systemctl restart orbit-agent.service`
-    end
-    SW->>N: Check the Node agent<br/>observer_check · observer
-    %%> What it does:
-    %%> - `observer_check` reads the running digest again; `observer` on Node 209 records the agent version when the pinned digest runs on an active unit
-    %%> Result:
-    %%> - `agent.download_failed`, `agent.restart_failed` or `agent.observer_unhealthy` names the failed part
+    %%> - `app-dev`-only Nodes go at any hour; others only 03:00–06:00 Europe/Amsterdam
+    %%> - a closed window defers the Node to the catch-up; it is not a failure
+    SW->>N: Converge the Node<br/>operation-node-converge
+    %%> Why the same workflow:
+    %%> - one way to bring a Node to the release
+    %%> - a failed Tool does not fail the Node; Doctor shows it
   end
-  Note over SW: Report each Node<br/>finish
-  %%> What it does:
-  %%> - reads each Node's `observer` output, or its `record` output when no observer ran, and returns one bounded result per Node
   alt every Node converged
-    SW-->>GW: Run succeeded<br/>terminal event · per Node
-    %%> How the Gateway learns it:
-    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-    Note over GW: Record each Node<br/>rollout completed · task done
-    %%> Result:
-    %%> - each Node's outcome on the rollout record; `fleet:rollout:status` shows it
-    %%> - unreachable Nodes changed nothing; they stay `pending` for the next catch-up
-    %%> - task #5160 succeeds
+    SW-->>GW: Run succeeded
+    Note over GW: Record each Node<br/>rollout completed
   else a Node fails
-    N--xSW: install or check failed
-    %%> When:
-    %%> - a download, checksum, version check, link or observer publish fails on Node 12
     SW--xGW: Run failed<br/>Node 12 · error_code
-    %%> What it does:
-    %%> - Swamp visits no later Node, so one bad release breaks at most one Node
-    Note over GW: Halt the rollout<br/>Node 12 · alert rollout_halted
-    %%> Result:
-    %%> - the rollout is `halted` at Node 12 and raises `rollout_halted`; task #5160 fails
-    %%> On the Node:
-    %%> - the old CLI link stays when the switch did not happen; there is no rollback
+    %%> Why stop:
+    %%> - later Nodes are not visited, so one bad release breaks at most one Node
+    Note over GW: Halt the rollout<br/>alert rollout_halted
     %%> Retry:
-    %%> - fix the cause, then `fleet:rollout:resume` (Node 12 first) or `fleet:rollout:resume --skip=12`; it is a new task
+    %%> - fix the cause, then `fleet:rollout:resume` (Node 12 first) or `--skip=12`
   end
