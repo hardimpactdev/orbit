@@ -1,0 +1,54 @@
+{
+  "kind": "node.converge",
+  "workflow": "operation-node-converge-direct",
+  "topology": "minimal",
+  "budget_seconds": 600,
+  "queue_timeout_seconds": 30,
+  "request": {
+    "method": "POST",
+    "path": "nodes/${node.peer}/converge"
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "Read WireGuard state",
+      "job": "network",
+      "step": "Read WireGuard state",
+      "budget_seconds": 25
+    },
+    {
+      "name": "Decide the network change",
+      "job": "network",
+      "step": "Decide the network change",
+      "budget_seconds": 15
+    },
+    {
+      "name": "Apply recorded network",
+      "job": "network",
+      "step": "Apply recorded network",
+      "budget_seconds": 240
+    },
+    {
+      "name": "Check the handshake",
+      "job": "network",
+      "step": "Check the handshake",
+      "budget_seconds": 15
+    }
+  ],
+  "parity": [
+    "swamp/proof/node.converge.network/parity.py",
+    "applied"
+  ],
+  "clean": true,
+  "before_gateway": [
+    [
+      "python3",
+      "tools/swamp-proof-guest/converge-network-proof.py",
+      "prepare",
+      "${node.target}",
+      "${node.peer}"
+    ]
+  ]
+}

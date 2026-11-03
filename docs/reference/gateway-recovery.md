@@ -16,6 +16,8 @@ covers:
 
 This guide helps an operator keep Gateway state safe during a source update and recover when an update fails. It uses the installation layout from the [Quickstart](/quickstart). Test the procedure on a disposable copy before you rely on it for important data.
 
+Node convergence applies its recorded network part after the other footprint parts. A matching network digest and live state leave WireGuard untouched; software recipe and image rollout remain separate.
+
 ## Gateway request logs
 
 The manual `orbit:gateway-web` command returns `gateway.web_unavailable` before any checkout, certificate, PHP-FPM, Caddy, or service change. Its native parent workflow is not installed. Normal Gateway releases use the [runtime handoff](#runtime-handoff).

@@ -5,14 +5,12 @@ declare(strict_types=1);
 use App\Domain\Nodes\NativeNodeEnrollmentProjection;
 use App\Domain\Nodes\NodeAgentRekeyProjection;
 use App\Domain\Nodes\NodeConvergeProjection;
-use App\Domain\Nodes\NodeNetworkProjection;
 use App\Domain\Nodes\NodeRemovalProjection;
 use App\Domain\Nodes\NodeRoleDirectProjection;
 use App\Domain\Nodes\NodeRoleRelocateProjection;
 use App\Domain\Nodes\NodeRoleRemovalProjection;
 use App\Domain\Nodes\NodeSettingsProjection;
 use App\Domain\Nodes\NodeSshAccessProjection;
-use App\Domain\Nodes\NodeWireGuardHubProjection;
 use App\Domain\Nodes\WorkerKnownHostsProjection;
 
 return ['node.add' => [
@@ -36,20 +34,10 @@ return ['node.add' => [
     'workflow_inputs' => true,
     'terminal_result' => ['job' => 'ssh_access', 'step' => 'Log in with Swamp identity', 'native' => true],
     'projection' => NodeSshAccessProjection::class,
-], 'node.wireguard_hub_converge' => [
-    'workflow' => 'operation-node-wireguard-hub-converge',
-    'projection' => NodeWireGuardHubProjection::class,
-    'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'check', 'step' => 'Confirm the hub', 'native' => true],
 ], 'node.remove' => [
     'workflow' => 'operation-node-remove', 'projection' => NodeRemovalProjection::class,
     'workflow_inputs' => true,
     'terminal_result' => ['job' => 'remove', 'step' => 'Confirm Node removal', 'native' => true],
-], 'node.network_converge' => [
-    'workflow' => 'operation-node-network-converge',
-    'projection' => NodeNetworkProjection::class,
-    'workflow_inputs' => true,
-    'terminal_result' => ['job' => 'network', 'step' => 'Check the network'],
 ], 'node.agent_rekey' => [
     'workflow' => 'operation-node-agent-rekey',
     'projection' => NodeAgentRekeyProjection::class,

@@ -55,7 +55,6 @@ final class OperationRunBudgets
         // No native run yet. Basis: the legacy rollback deadline of 900 s (docs/reference/deployments.md#deploy) and the chart's
         // budget. Replace with the 14-day p95 after the first success.
         'instance.rollback' => 900,
-        'node.network_converge' => 1500,
         'node.prepare_php_packages' => 3600,
         'node.remove' => 2100,
         'node.role_add' => 2700,

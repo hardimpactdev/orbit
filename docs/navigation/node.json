@@ -1,33 +1,31 @@
 {
-  "navigation": [
-    {
-      "tab": "CLI",
-      "group": "Fleet",
-      "order": 1,
-      "pages": [
+    "navigation": [
         {
-          "group": "node",
-          "pages": [
-            "cli/node/index",
-            "cli/node/add",
-            "cli/node/list",
-            "cli/node/show",
-            "cli/node/metrics",
-            "cli/node/converge",
-            "cli/node/update",
-            "cli/node/wireguard-key",
-            "cli/node/role-add",
-            "cli/node/role-list",
-            "cli/node/role-relocate",
-            "cli/node/role-remove",
-            "cli/node/access-add",
-            "cli/node/access-remove",
-            "cli/node/remove",
-            "cli/node/network-converge",
-            "cli/node/wireguard-hub-converge"
-          ]
+            "tab": "CLI",
+            "group": "Fleet",
+            "order": 1,
+            "pages": [
+                {
+                    "group": "node",
+                    "pages": [
+                        "cli/node/index",
+                        "cli/node/add",
+                        "cli/node/list",
+                        "cli/node/show",
+                        "cli/node/metrics",
+                        "cli/node/converge",
+                        "cli/node/update",
+                        "cli/node/wireguard-key",
+                        "cli/node/role-add",
+                        "cli/node/role-list",
+                        "cli/node/role-relocate",
+                        "cli/node/role-remove",
+                        "cli/node/access-add",
+                        "cli/node/access-remove",
+                        "cli/node/remove"
+                    ]
+                }
+            ]
         }
-      ]
-    }
-  ]
+    ]
 }

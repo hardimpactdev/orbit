@@ -375,8 +375,6 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Fleet\\ShowFleetRolloutRequest',
             'Orbit\\Sdk\\Requests\\Fleet\\ResumeFleetRolloutRequest',
             'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeRequest',
-            'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeNetworkRequest',
-            'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeWireGuardHubRequest',
         ];
         $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($lifecycleRequests) + count($enableRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($webSocketRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 18;
         $expectedRequests = [
@@ -590,7 +588,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain('- ai-router: setup, teardown, status, provider list, provider show, account enable and disable, and model list.')
             ->toContain('- Vault: status, setup, sync, and teardown.')
             ->toContain(
-                '- Node: list, show, add, rename, settings update, WireGuard key set, standalone WireGuard hub converge, platform set, remove, access add, access remove, role list, role add, role relocate, role remove, and metrics.',
+                '- Node: list, show, add, rename, settings update, WireGuard key set, converge, platform set, remove, access add, access remove, role list, role add, role relocate, role remove, and metrics.',
             )
             ->toContain(
                 '- Cluster: list, show, create, update, activate, deactivate, remove, Node attach, Node detach, Router set, and Router clear.',

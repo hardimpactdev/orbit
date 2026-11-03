@@ -255,7 +255,7 @@ Each failure reports one code without remote command output. The agent refuses w
 | `vpn.peer_dns_uplink_missing` | The previous DNS state stays or is restored. Configure a non-Orbit per-link or global DNS server, then retry. |
 | `vpn.peer_dns_repair_failed`, `vpn.configuration_invalid` | The command reports no success. Fix SSH reachability, the agent, or the Gateway VPN configuration, then retry. |
 
-Native peer convergence (`node.network_converge`) and `fleet.peer_dns` keep no snapshot. They write Gateway-rendered files with official cfgmgmt behaviors and stop on the first failed step. A rerun writes the same files again.
+The network part of `node.converge` and `fleet.peer_dns` keep no snapshot. They write Gateway-rendered files with official cfgmgmt behaviors and stop on the first failed step. A rerun writes the same files again.
 
 Agent-run repair saves the live WireGuard configuration, DNS state, and service state before it publishes. The native publication command restores that state when it fails, without resetting unrelated link settings. Recoverable admission retains a successful publication until its continuation commits; a failed continuation requests rollback over its last verified connection. A lost publication result fails for inspection and is not retried. Recovery files under `/etc/wireguard` mean the last operation did not finish. Keep them for diagnosis. Do not edit `/etc/wireguard/orbit.key`, replace a private key, or restart the tunnel to repair DNS.
 

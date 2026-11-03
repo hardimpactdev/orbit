@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Http\Controllers\Api\NodeAccessController;
 use App\Http\Controllers\Api\NodeFootprintsController;
 use App\Http\Controllers\Api\NodeMetricsController;
-use App\Http\Controllers\Api\NodeNetworksController;
 use App\Http\Controllers\Api\NodeRolesController;
 use App\Http\Controllers\Api\NodesController;
 use App\Http\Controllers\Api\NodeSshHostKeysController;
@@ -30,12 +29,6 @@ Route::middleware([
     Route::post('nodes/{node}/converge', [NodeFootprintsController::class, 'converge'])
         ->whereNumber('node')
         ->name('node:converge');
-    Route::post('nodes/{node}/network/converge', [NodeNetworksController::class, 'converge'])
-        ->whereNumber('node')
-        ->name('node:network:converge');
-    Route::post('nodes/{node}/wireguard-hub/converge', [NodeNetworksController::class, 'hub'])
-        ->whereNumber('node')
-        ->name('node:wireguard-hub:converge');
     Route::get('nodes/{node}/roles', [NodeRolesController::class, 'index'])
         ->whereNumber('node')
         ->name('node:role:list');

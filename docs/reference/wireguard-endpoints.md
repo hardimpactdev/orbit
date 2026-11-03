@@ -44,7 +44,7 @@ The selected value must pass the same check before the Gateway renders the peer 
 
 ## Native peer convergence
 
-The Gateway records the full public `node.network_converge` intent, including pinned SSH connections for the peer and the VPN owner. It renders every WireGuard file, and none holds a private key:
+The Gateway records the full public `node.converge` network intent, including pinned SSH connections for the peer and the VPN owner. It renders every WireGuard file, and none holds a private key:
 
 - the peer's `orbit.conf`, the wg-quick file. Its `PostUp` lines load the key file and set split DNS;
 - the peer's `orbit-peers.conf`: only that `[Peer]`;
@@ -77,7 +77,7 @@ Before that restoration checkpoint, an exact `node.add` parent renders its conte
 
 ## Converge the hub
 
-`node:wireguard-hub:converge <node>` admits one `node.wireguard_hub_converge` Operation for the active VPN owner. The Gateway records the full intent: one peer file per Node that has a key and is not being removed, the files to keep, and the hub's SSH target. The hub's private key never leaves the hub; the run carries no secret.
+`node:converge <node>` publishes the full peer list when its target is the active VPN owner. The Gateway records the full intent: one peer file per Node that has a key and is not being removed, the files to keep, and the hub's SSH target. The hub's private key never leaves the hub; the run carries no secret.
 
 The hub's private key never leaves the Node (Nick, 2026-11-02). The Gateway renders public files only:
 
@@ -103,5 +103,4 @@ The run ends with the official `@swamp/cfgmgmt/systemd` check that `wg-quick@orb
 
 When a step fails, the run stops and the hub stays as it is; there is no rollback, and a rerun writes and loads the same files again. The command changes no peer key, address, role or credential. The hub must already run its own `wg-quick@orbit`; the role's bootstrap creates it.
 
-The API is `POST /api/v1/nodes/{node}/wireguard-hub/converge` with an empty body. It returns HTTP 202 and an Operation, which the Gateway closes from the run's terminal result. The CLI follows the same Operation and accepts `--idempotency-key=KEY` and `--json`.
-
+Use `POST /api/v1/nodes/{node}/converge` or [`node:converge`](/cli/node/converge). Its network part runs last. The recorded digest and live public WireGuard state guard the apply; a matching run touches no WireGuard file or service. The Gateway reserves the Node and shared hub against another converge, and records the network digest only when the repair and handshake check pass.

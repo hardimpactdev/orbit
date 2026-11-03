@@ -26,7 +26,7 @@ class Refresh(unittest.TestCase):
         return state, calls
 
     def test_fixture_and_driver_changes_restage_in_place(self):
-        state, calls = self.run_refresh(['swamp/proof/firewall.allow.json', 'tools/swamp-proof-guest/gateway.php', 'tools/test_swamp_proof_guest.py'])
+        state, calls = self.run_refresh(['swamp/proof/firewall.allow.json', 'tools/swamp-proof-guest/gateway.php', 'tools/swamp-proof-guest/converge-network-proof.py', 'tools/test_swamp_proof_guest.py'])
         self.assertEqual(state['commit'], 'new')
         self.assertEqual(state['refreshed'][0]['from'], 'old')
         self.assertIn(['runuser', '-u', 'orbit', '--', 'git', '-C', swamp_proof.SOURCE, 'checkout', '-q', '--detach', 'new'], calls)

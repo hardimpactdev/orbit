@@ -1,5 +1,5 @@
 id: be0fb735-5420-4c04-aa82-b33a8a9ce8fa
-name: operation-node-wireguard-hub-converge
+name: node-network-hub
 description: Write the Gateway-rendered hub file and one file per peer with cfgmgmt, prune stale peer files and load them with wg syncconf over official SSH from 209; the hub private key never leaves the Node.
 vaults: []
 queueTimeout: 30
@@ -8,7 +8,7 @@ inputs:
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, const: node.wireguard_hub_converge}
+    kind: {type: string}
     intent:
       type: object
       properties:

@@ -7,6 +7,9 @@ namespace App\Domain\Nodes;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\WireGuard\VpnConfigurationRepository;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
@@ -38,6 +41,20 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
             if ($wasTerminal || ($artifacts === [] && ! isset($result['failed_artifact']))) {
                 return $projected;
             }
+            $snapshot = ValidatedData::object($operation->input['_converge']);
+            $network = $snapshot['network'] ?? null;
+            if (is_array($network) && ($network['mode'] ?? null) === 'peer'
+                && isset($artifacts['network']) && $artifacts['network']['status'] === 'applied') {
+                $apply = ValidatedData::object($network['apply']);
+                $native = ValidatedData::object($data['result'] ?? []);
+                $steps = ValidatedData::object($native['steps'] ?? []);
+                $keyStep = ValidatedData::object($steps['Read the tunnel key'] ?? []);
+                $key = ValidatedData::nullableString($apply['existing_key'] ?? null) ?? trim(ValidatedData::string($keyStep['stdout'] ?? ''));
+                if (preg_match('/\A[A-Za-z0-9+\/]{43}=\z/D', $key) !== 1) {
+                    throw new ResourceOperationException('operation.result_invalid', 'The network result has no public key.', 422);
+                }
+                app(VpnConfigurationRepository::class)->assignPeerKey(Node::query()->findOrFail($operation->node_id), $key);
+            }
             app(NodeFootprintProjection::class)->record($operation, ValidatedData::object($operation->input['_converge']), $result, $artifacts);
 
             return $projected;
@@ -67,7 +84,8 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
         $proven = [
             'agent' => $status('Restart the Node agent') === 'succeeded' && $status('Check the footprint') === 'succeeded',
             'ai-router' => $status('Restart the Node agent') === 'succeeded' && $status('Check the footprint') === 'succeeded',
-            'peer-dns' => $status('Apply private DNS policy') === 'succeeded',
+            'network' => $status('Decide the network change') === 'succeeded'
+                && ($status('Apply recorded network') === 'skipped' || $status('Check the handshake') === 'succeeded'),
             'caddy-package' => $status('Install Caddy') === 'succeeded',
             'caddy' => $status('Publish Caddy sites') === 'succeeded',
             'private-dns' => $status('Install private DNS') === 'succeeded',
@@ -87,7 +105,7 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
                 $artifacts[] = $role[$name];
                 $caddyFirstVisit = $caddyFirstVisit || ($name === 'caddy' && ($snapshot['first_visit'] ?? false) === true && ($artifact['repair'] ?? false) !== true);
             } elseif (! $required || ($proven[$name] ?? false)) {
-                $artifacts[] = ['name' => $name, 'status' => $required ? 'applied' : 'unchanged'];
+                $artifacts[] = ['name' => $name, 'status' => $required && ! ($name === 'network' && $status('Apply recorded network') === 'skipped') ? 'applied' : 'unchanged'];
             } elseif ($name === 'route-residue') {
                 $artifacts[] = ['name' => $name, 'status' => 'skipped', 'reason' => 'route_residue_cleanup_failed'];
             } else {

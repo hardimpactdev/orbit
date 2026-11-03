@@ -76,7 +76,7 @@ final readonly class NodeFootprintProjection
                 }
             }
         }
-        if (is_string($result['failed_artifact'] ?? null)) {
+        if (is_string($result['failed_artifact'] ?? null) && $result['failed_artifact'] !== 'network') {
             unset($digests[$result['failed_artifact']]);
         }
         $plan = NodeFootprintPlan::of($digests);

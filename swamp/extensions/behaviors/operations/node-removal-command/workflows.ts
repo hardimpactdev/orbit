@@ -421,10 +421,10 @@ export function nodeRemovalWorkflow(): ReturnType<typeof workflow> {
         [
             child(
                 "Remove hub peer",
-                "operation-node-wireguard-hub-converge",
+                "node-network-hub",
                 "inputs.intent.hub",
                 ex("self.publication"),
-                "node.wireguard_hub_converge",
+                "node.remove",
             ),
             ssh(
                 "Remove router ingress",

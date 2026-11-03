@@ -154,7 +154,7 @@ jobs:
       - name: Remove hub peer
         labels: *ref_0
         forEach: {item: publication, in: '${{ inputs.intent.hub }}'}
-        task: {type: workflow, workflowIdOrName: operation-node-wireguard-hub-converge, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: node.wireguard_hub_converge, intent: '${{ self.publication }}', execution_secrets: {}}}
+        task: {type: workflow, workflowIdOrName: node-network-hub, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: node.remove, intent: '${{ self.publication }}', execution_secrets: {}}}
       - name: Remove router ingress
         labels: *ref_0
         writes: true
