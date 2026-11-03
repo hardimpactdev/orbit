@@ -11,10 +11,7 @@ inputs:
     node_id:
       type: integer
       minimum: 1
-    kind:
-      type: string
-      enum:
-      - tasks.turn
+    kind: {type: string, enum: [tasks.turn]}
     intent:
       type: object
     execution_secrets:
@@ -960,7 +957,7 @@ jobs:
         env:
           ORBIT_DIRECTORY: ${{ "/tmp/orbit-task-turn-local-" + run.id }}
       behaviorName: task-turn-delete-local-artifacts
-  - name: result
+  - name: outcome
     labels: {role: swamp}
     dependsOn:
     - step: shape_result
@@ -972,23 +969,6 @@ jobs:
         conditions:
         - type: succeeded
         - type: skipped
-    task:
-      type: behavior
-      behaviorType: command/shell
-      methodName: execute
-      inputs:
-        run: 'printf ''%s\n'' "$ORBIT_RESULT"
-
-          '
-        env:
-          ORBIT_RESULT: ${{ steps.shape_result.outputs.result_json }}
-      behaviorName: ${{ "task-turn-result" }}
-  - name: outcome
-    labels: {role: swamp}
-    dependsOn:
-    - step: result
-      condition:
-        type: succeeded
     task:
       type: assert
       expr: steps.shape_result.outputs.successful

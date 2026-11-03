@@ -30,6 +30,8 @@
   },
   "phases": [
     {"name": "outcome", "job": "turn", "step": "outcome", "budget_seconds": 30},
+    {"name": "shape_result", "job": "turn", "step": "shape_result", "budget_seconds": 30},
+    {"name": "delete_local_artifacts", "job": "turn", "step": "delete_local_artifacts", "budget_seconds": 30},
     {
       "name": "snapshot_before_add",
       "job": "turn",

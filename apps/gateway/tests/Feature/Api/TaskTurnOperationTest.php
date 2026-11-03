@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskTurnProjection;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -67,27 +68,44 @@ it('admits one native Pi session without sending a Pi or agent command', functio
     expect(AgentThread::query()->count())->toBe(1)->and(count($this->socket->sent))->toBe(2);
 });
 
-it('records the native result in the existing board thread', function (): void {
+it('records the producer evidence and native failure in the existing board thread', function (?string $failure): void {
     [$group, $task] = turn_operation_group();
     $id = $this->withHeader('Idempotency-Key', 'native-result')->postJson('/api/v1/task-groups/'.$group->id.'/turn', turn_operation_input($task))->assertAccepted()->json('data.id');
     $operation = Operation::findOrFail($id);
-    $result = ['thread' => $operation->input['thread_id'], 'state' => 'done', 'receipt' => ['outcome' => 'ready_for_review', 'summary' => 'Updated the task'], 'metrics' => ['tokens' => 42, 'input_tokens' => 30, 'output_tokens' => 12]];
-    $body = ['run_id' => $this->run, 'status' => 'succeeded', 'started_at' => '2026-10-31T08:00:00.000Z', 'finished_at' => '2026-10-31T08:01:00.000Z', 'result' => $result, 'error_code' => null];
+    $result = match ($failure) {
+        'producer' => [],
+        'refusal' => ['thread' => $operation->input['thread_id'], 'state' => 'failed', 'error_code' => 'tasks.analysis_prompt_too_large', 'error' => 'The complete prompt exceeds the limit.'],
+        default => ['thread' => $operation->input['thread_id'], 'state' => 'done', 'receipt' => ['outcome' => 'ready_for_review', 'summary' => str_repeat('Updated the task ', 400)], 'metrics' => ['tokens' => 42, 'input_tokens' => 30, 'output_tokens' => 12]],
+    };
+    $status = $failure === null ? 'succeeded' : 'failed';
+    $steps = [
+        ['name' => 'shape_result', 'status' => $failure === 'producer' ? 'failed' : 'succeeded', 'outputs' => $failure === 'producer' ? [] : ['result_json' => json_encode($result, JSON_THROW_ON_ERROR)]],
+        ['name' => 'delete_local_artifacts', 'status' => $failure === 'cleanup' ? 'failed' : 'succeeded'],
+        ['name' => 'outcome', 'status' => in_array($failure, ['producer', 'cleanup'], true) ? 'skipped' : $status],
+    ];
     config(['swamp.read_token' => 'native-reader']);
     $this->socket->reply = fn (array $message): array => [['type' => 'workflow.history.get', 'id' => $message['id'], 'payload' => ['data' => [
-        'id' => $this->run, 'workflowName' => 'operation-task-turn', 'status' => 'succeeded',
+        'id' => $this->run, 'workflowName' => 'operation-task-turn', 'status' => $status,
         'inputs' => ['operation_id' => $id, 'node_id' => $operation->node_id, 'kind' => 'tasks.turn'],
-        'startedAt' => $body['started_at'], 'completedAt' => $body['finished_at'],
-        'jobs' => [['name' => 'turn', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => json_encode($result, JSON_THROW_ON_ERROR)]]]]],
+        'startedAt' => '2026-10-31T08:00:00.000Z', 'completedAt' => '2026-10-31T08:01:00.000Z',
+        'jobs' => [['name' => 'turn', 'steps' => $steps]],
     ]]]];
     $projection = app(SwampCommandStep::class);
-    $projection->projectTerminal($operation, ['id' => $this->run, 'status' => 'succeeded'], ['job' => 'turn', 'step' => 'result']);
-    expect($operation->fresh()->result)->toBe($result);
-    expect(AgentThread::findOrFail($operation->input['thread_id'])->state->value)->toBe('done')
-        ->and(AgentThread::findOrFail($operation->input['thread_id'])->tokens)->toBe(42);
-    $projection->projectTerminal($operation, ['id' => $this->run, 'status' => 'succeeded'], ['job' => 'turn', 'step' => 'result']);
+    $selector = app(DirectOperation::class)->definition('tasks.turn')['terminal_result'];
+
+    $projection->projectTerminal($operation, ['id' => $this->run, 'status' => $status], $selector);
+    $projection->projectTerminal($operation, ['id' => $this->run, 'status' => $status], $selector);
+
+    expect($operation->fresh()->result)->toBe($result)
+        ->and($operation->fresh()->status->value)->toBe($status)
+        ->and($operation->fresh()->error_code)->toBe($failure === null ? null : ($result['error_code'] ?? 'operation.native_failed'));
+    $thread = AgentThread::findOrFail($operation->input['thread_id']);
+    expect($thread->state->value)->toBe($result['state'] ?? 'failed')
+        ->and($thread->error)->toBe($result['error'] ?? null)
+        ->and($thread->tokens)->toBe($result['metrics']['tokens'] ?? null);
     expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'workflow.run', 'workflow.history.get']);
-});
+    expect($group->fresh()->status->value)->toBe('running');
+})->with([null, 'refusal', 'producer', 'cleanup']);
 
 it('refuses an unowned workspace before creating a session', function (): void {
     [$group, $task] = turn_operation_group();

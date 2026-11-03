@@ -388,7 +388,7 @@ Pi HTTP actions run as bounded native curl commands on the Swamp worker. curl re
 
 Receipt and diff files are downloaded to the same directory, and TypeScript readers redact them with the repository redaction rule before they enter native history. Parser errors can quote private input, so a failed step reports only one fixed code, such as `tasks.pi_event_invalid` or `tasks.difference_invalid`.
 
-The final `outcome` step uses a native assert over the typed turn result. A failed Pi turn fails the run while preserving its public result and failure code.
+The final `outcome` step uses a native assert over the typed turn result after required cleanup. The Gateway captures the complete public output of `shape_result` in the same terminal history read, without a shell step that prints it again. A failed Pi turn retains its public evidence and refusal code. A later cleanup failure keeps the Operation failed while retaining the completed Pi observation on the thread.
 
 | Input | Rule |
 | --- | --- |

@@ -24,7 +24,13 @@ final readonly class TaskTurnProjection implements DirectOperationProjection
     {
         return DB::transaction(function () use ($operation, $data): Operation {
             $terminal = $operation->status->terminal();
-            $result = ValidatedData::object($data['result'] ?? []);
+            $native = ValidatedData::object($data['result'] ?? []);
+            $result = isset($native['turn'])
+                ? ValidatedData::object(json_decode(ValidatedData::string($native['turn']), true, flags: JSON_THROW_ON_ERROR))
+                : [];
+            if (in_array($data['status'] ?? null, ['failed', 'interrupted'], true) && isset($result['error_code'])) {
+                $data['error_code'] = $result['error_code'];
+            }
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if (! $terminal && $projected->status->terminal()) {
                 $thread = AgentThread::query()->where('task_group_id', $operation->target_id)->findOrFail(ValidatedData::integer($operation->input['thread_id']));

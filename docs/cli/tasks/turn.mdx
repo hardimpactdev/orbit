@@ -13,3 +13,7 @@ orbit tasks:turn 42 --subtask=43 --role=reviewer --prompt="Review the checked co
 `--model` selects a new thread's model. A continued thread keeps its model. A consult uses a reviewer thread and preserves the working tree.
 
 Pair `--analysis=<operation-id>` with `--analysis-plan-sha256=<digest>` to attach complete usable [analysis evidence](/cli/tasks/analyze). Neither option is valid alone. Freshness is checked under the workspace lease before the first accepted send; accepted-send recovery retains the exact combined prompt and original send key. A reviewer still needs an eligible ordinary `--check` on that candidate.
+
+## How it works
+
+<div className="flow-at" data-chart="tasks/turn"></div>

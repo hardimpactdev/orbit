@@ -227,9 +227,9 @@ else:shutil.copyfile(src,dst/src.name if dst.is_dir() else dst)
     def result(self, run):
         history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
         result = next(
-            step for step in history["jobs"][0]["steps"] if step["name"] == "result"
+            step for step in history["jobs"][0]["steps"] if step["name"] == "shape_result"
         )
-        return json.loads(result["outputs"]["stdout"])
+        return json.loads(result["outputs"]["result_json"])
 
     def test_native_turn_uses_ssh_workspace_and_one_pi_send(self):
         run = self.run_workflow()
@@ -361,16 +361,18 @@ else:shutil.copyfile(src,dst/src.name if dst.is_dir() else dst)
         self.assertEqual(self.git("diff", "--cached", "--name-only"), "")
 
     def test_native_resume_reuses_completed_message_send(self):
-        marker = self.repo / "result-ready"
-        result_step = next(
-            step for step in self.flow["jobs"][0]["steps"] if step["name"] == "result"
+        marker = self.repo / "cleanup-ready"
+        cleanup = next(
+            step for step in self.flow["jobs"][0]["steps"]
+            if step["name"] == "delete_local_artifacts"
         )
-        inputs = result_step["task"]["inputs"]
+        inputs = cleanup["task"]["inputs"]
         inputs["env"]["ORBIT_READY"] = str(marker)
         inputs["run"] = 'set -e\ntest -f "$ORBIT_READY"\n' + inputs["run"]
         self.write_workflow()
         run = self.run_workflow(success=False)
         self.assertEqual(run["status"], "failed")
+        self.assertEqual(self.result(run)["state"], "done")
         marker.touch()
         resumed = self.decode(
             self.cli(
