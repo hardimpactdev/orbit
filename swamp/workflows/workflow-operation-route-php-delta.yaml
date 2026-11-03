@@ -130,8 +130,6 @@ jobs:
         - -c
         - '/usr/bin/python3 -B - <<''PYTHON''
 
-          import grp
-
           import json
 
           import os
@@ -141,7 +139,7 @@ jobs:
 
           account = pwd.getpwnam(os.environ["ORBIT_NODE_USER"])
 
-          print(json.dumps({"user": account.pw_name, "home": account.pw_dir, "group": grp.getgrgid(account.pw_gid).gr_name}))
+          print(json.dumps({"user": account.pw_name, "home": account.pw_dir, "group": str(account.pw_gid)}))
 
           PYTHON
 

@@ -764,6 +764,8 @@ Production publication prepares PHP and served web roots as native steps on the 
 
 Shared native Route publication artifacts contain only affected Caddy groups, PHP pools and DNS entries. A Caddy artifact's `unserved` flag means it contains no affected blocks. Its `had_served_groups` flag records whether the full source snapshot had served groups, including unaffected sites. If that flag is true and `/etc/caddy/Caddyfile` is missing, forward or restore refuses with `caddy.current_config_missing` before publication. A genuinely empty Node may create its first file. Marker text inside a comment does not split the global Caddy header; only a complete Orbit marker at the start of a line does.
 
+Every PHP pool names the account's primary group by its numeric gid, so the site step that writes a pool and the delta that later withdraws it compare the same text.
+
 The Gateway captures `target_instance_ids`, `previous_target_instance_ids`, and `removed_instance_ids` at admission. The plan retains every admitted placement in `placements` and removed target snapshots in `detached_instances`, with `instance_id`, `node_id`, and `checkout_path` captured before association changes. A target disposition retains its previous ownership proof after associations change. Recovery preserves these snapshots after a removed Instance disappears. A replacement also records `candidate_route_id`. Secret environment values remain Gateway references.
 
 An analytics tracking host is published and withdrawn with its Instance's analytics enable and disable runs; it has no Operation kind of its own. Public Ingress keeps Caddy automatic HTTPS.
