@@ -170,7 +170,7 @@ export async function settleGroupRun(
 
 export const behavior = {
   type: "@nckrtl/orbit-group-run",
-  version: "2026.11.02.2",
+  version: "2026.11.03.1",
   globalArguments: GlobalArgsSchema,
   resources: {
     ...driver.resources,
@@ -356,7 +356,7 @@ export const behavior = {
         let item: { waiting: string | null; error?: string };
         try {
           await driver.methods.tick.execute({
-            workItems: [request.workItem],
+            workItem: request.workItem,
             maxSteps: ctx.globalArgs.maxSteps,
           }, ctx);
           const tick = await read<{ items: typeof item[] }>(ctx, "tick");

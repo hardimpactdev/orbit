@@ -319,11 +319,11 @@ Deno.test("board resolution through driver reconciliation never approves or disp
     writeResource: (_spec: string, name: string, _data: Record<string, unknown>) => Promise.resolve({ name }),
     logger: { info: () => {}, warning: () => {} },
   };
-  await driver.methods.tick.execute({ workItems: ["tg-7"], maxSteps: 1 }, context);
+  await driver.methods.tick.execute({ workItem: "tg-7", maxSteps: 1 }, context);
   h.apply("resolution", "Context only; not permission to retry", "nick");
   h.forget();
-  await driver.methods.tick.execute({ workItems: ["tg-7"], maxSteps: 1 }, context);
-  await driver.methods.tick.execute({ workItems: ["tg-7"], maxSteps: 1 }, context);
+  await driver.methods.tick.execute({ workItem: "tg-7", maxSteps: 1 }, context);
+  await driver.methods.tick.execute({ workItem: "tg-7", maxSteps: 1 }, context);
   assertEquals(calls, Array(3).fill(["orbit-groups.status", "orbit-gateway.assistance"]).flat());
   assertEquals(h.posts().length, 1);
   assertEquals(h.group.assistance_requested, false);

@@ -26,20 +26,13 @@ const GlobalArgsSchema = z.object({
   // Per-group workflows retain approvals saved on the original fleet driver.
   preapprovalModel: z.string().optional(),
   // swamp caps cross-behavior calls per execution (100). A tick stops starting new
-  // steps before it would reach this budget; the next tick resumes with the work
-  // items it deferred.
+  // steps before it would reach this budget; the next tick continues the work item.
   maxCallsPerTick: z.number().int().min(20).default(90),
 });
 
 /** The most calls one guarded step makes (status, dispatch, stage, artifacts, evidence, advance, approve), plus the assistance update. */
 const STEP_CALL_RESERVE = 10;
 
-/** Work items in tick order: starting at the first one the last tick deferred, so none starves. */
-export function tickOrder(items: string[], offset: number): string[] {
-  if (items.length === 0) return items;
-  const o = ((offset % items.length) + items.length) % items.length;
-  return [...items.slice(o), ...items.slice(0, o)];
-}
 type GlobalArgs = z.infer<typeof GlobalArgsSchema>;
 
 
@@ -107,8 +100,6 @@ export function recordedThisEntry(
 
 const TickSchema = z.object({
   at: z.string(),
-  deferred: z.array(z.string()).default([]),
-  nextOffset: z.number().int().default(0),
   items: z.array(z.object({
     workItem: z.string(),
     stage: z.string().nullable(),
@@ -269,7 +260,7 @@ async function step(ctx: Ctx, workItem: string): Promise<{ status: Status; actio
 
 export const behavior = {
   type: "@nckrtl/orbit-driver",
-  version: "2026.11.03.1",
+  version: "2026.11.03.2",
   globalArguments: GlobalArgsSchema,
   resources: {
     tick: { description: "What one tick did per work item", schema: TickSchema, lifetime: "30d", garbageCollection: 1 },
@@ -344,50 +335,27 @@ export const behavior = {
     },
     tick: {
       outputLifetime: "7d",
-      description: "Take each work item one guarded step (dispatch, poll, record, or advance)",
+      description: "Take one work item up to maxSteps guarded steps (dispatch, poll, record, or advance)",
       arguments: z.object({
-        workItems: z.array(z.string()).nullish().describe("Default: every active run of the factory"),
+        workItem: z.string(),
         maxSteps: z.number().int().min(1).default(1),
       }),
       execute: async (
-        args: { workItems?: string[] | null; maxSteps: number },
+        args: { workItem: string; maxSteps: number },
         rawCtx: Omit<Ctx, "definitionName"> & { definition: { name: string } },
       ) => {
         const ctx = Object.assign(rawCtx, { definitionName: rawCtx.definition.name }) as unknown as Ctx;
-        const f = ctx.globalArgs.factory;
-        const items = args.workItems ?? ((await queryWorkerData(ctx,
-          `modelName == "${f}" && name.startsWith("state-") && attributes.status == "active"`,
-          "attributes.workItem",
-        )) as string[]);
-        const prev = await latest<{ nextOffset?: number }>(ctx, ctx.definitionName, "tick");
-        const order = tickOrder(items, prev?.nextOffset ?? 0);
+        const workItem = args.workItem;
         const budgetLeft = () => ctx.globalArgs.maxCallsPerTick - (ctx.calls ?? 0) >= STEP_CALL_RESERVE;
-        const out = [];
-        const deferred: string[] = [];
-        for (const workItem of order) {
-          if (!budgetLeft()) {
-            deferred.push(workItem);
-            continue;
-          }
-          const actions: string[] = [];
-          let last: Awaited<ReturnType<typeof step>> | null = null;
-          try {
-            for (let i = 0; i < args.maxSteps; i++) {
-              if (i > 0 && !budgetLeft()) break;
-              last = await step(ctx, workItem);
-              if (last.action) actions.push(last.action);
-              if (last.waiting) break;
-            }
-          } catch (e) {
-            // Leave this group's receipts and factory state intact. Its next
-            // invocation reconciles the same entry; siblings can still advance.
-            const error = String(e);
-            ctx.logger.warning("{wi}: guarded step failed: {err}", { wi: workItem, err: error });
-            out.push({
-              workItem, stage: last?.status.stage.id ?? null, cycle: last?.status.stage.cycle ?? null,
-              actions, waiting: null, error,
-            });
-            continue;
+        const actions: string[] = [];
+        let last: Awaited<ReturnType<typeof step>> | null = null;
+        let entry;
+        try {
+          for (let i = 0; i < args.maxSteps; i++) {
+            if (i > 0 && !budgetLeft()) break;
+            last = await step(ctx, workItem);
+            if (last.action) actions.push(last.action);
+            if (last.waiting) break;
           }
           if (ctx.globalArgs.assistanceModel && last) {
             // Tell the target system whether this work item now waits for a person.
@@ -402,19 +370,14 @@ export const behavior = {
             acts: actions.join(", ") || "-",
             wait: last?.waiting ? `[${last.waiting}]` : "",
           });
-          out.push({
-            workItem,
-            stage: last!.status.stage.id,
-            cycle: last!.status.stage.cycle,
-            actions,
-            waiting: last!.waiting,
-          });
+          entry = { workItem, stage: last!.status.stage.id, cycle: last!.status.stage.cycle, actions, waiting: last!.waiting };
+        } catch (e) {
+          // Leave this group's receipts and factory state intact. Its next invocation reconciles the same entry.
+          const error = String(e);
+          ctx.logger.warning("{wi}: guarded step failed: {err}", { wi: workItem, err: error });
+          entry = { workItem, stage: last?.status.stage.id ?? null, cycle: last?.status.stage.cycle ?? null, actions, waiting: null, error };
         }
-        if (deferred.length > 0) {
-          ctx.logger.info("deferred {n} work item(s) to the next tick: call budget used", { n: deferred.length });
-        }
-        const nextOffset = deferred.length > 0 ? items.indexOf(deferred[0]) : 0;
-        const handle = await ctx.writeResource("tick", "tick", { at: new Date().toISOString(), items: out, deferred, nextOffset });
+        const handle = await ctx.writeResource("tick", "tick", { at: new Date().toISOString(), items: [entry] });
         return { dataHandles: [handle] };
       },
     },
