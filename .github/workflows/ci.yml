@@ -220,7 +220,7 @@ jobs:
         if: steps.scope.outputs.selected == 'true'
         run: bun run build && test -s dist/index.html && test -s dist/version.json
       - name: Publish web build
-        if: steps.scope.outputs.selected == 'true' && (github.event_name == 'merge_group' || github.ref == 'refs/heads/main' && github.event_name != 'pull_request')
+        if: steps.scope.outputs.selected == 'true' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.event.merge_group.base_ref == 'refs/heads/main')
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: web-dist-${{ github.sha }}
@@ -252,7 +252,7 @@ jobs:
         id: plan
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before || 'HEAD^' }}
-          MAIN: ${{ github.ref == 'refs/heads/main' }}
+          MAIN: ${{ github.ref == 'refs/heads/main' || github.event.merge_group.base_ref == 'refs/heads/main' }}
         run: |
           if [[ "$BASE" =~ ^0+$ ]]; then BASE=HEAD^; fi
           args=()
