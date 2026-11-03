@@ -85,7 +85,7 @@ from pathlib import Path
 nodes = json.loads(os.environ['PROOF_NODES'])
 doctor = subprocess.run(['runuser', '-u', 'orbit', '--', 'php', 'tools/swamp-proof-guest/gateway.php', 'request'],
                         input=json.dumps({'method': 'POST', 'path': 'doctor', 'body': {
-                            'node_id': nodes[target]['id'], 'families': ['role']},
+                            'node_id': nodes[target], 'families': ['role']},
                             'caller': '10.231.0.2', 'key': 'role-doctor-' + os.environ['PROOF_RUN'], 'operation': False}),
                         capture_output=True, text=True, check=False)
 check(doctor.returncode == 0, 'Doctor request succeeded: ' + doctor.stderr)
