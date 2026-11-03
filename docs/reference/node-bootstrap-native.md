@@ -53,10 +53,14 @@ The tracked SSH-access key step runs as the authenticated managed account withou
 
 ## Publish worker known-hosts
 
-The Gateway admits `node.worker_known_hosts` after a Node pin is recorded or changed. It captures the complete set of recorded WireGuard addresses and full public host keys through `SwampWorkerKnownHostsInput`; incomplete pins are omitted. New pinned enrollment records and native bootstrap or TaskVM pin observations use the same publisher. An identical pin API repeat reuses an unfinished or identical terminal publication, including a failed publication. It never replays an unchanged failed snapshot.
+The Gateway admits `node.worker_known_hosts` after a Node pin is recorded or changed. It captures the complete set of recorded WireGuard addresses and full public host keys through `SwampWorkerKnownHostsInput`; incomplete pins are omitted. New pinned enrollment records and TaskVM pin observations use the same publisher. An identical pin API repeat changes no Node pin and admits no publication.
 
 The fixed `operation-node-worker-known-hosts` workflow runs on209. Its one step, `Write known hosts`, runs one local `install` command through Swamp core `command/shell`, without SSH. It writes `/home/$USER/.ssh/known_hosts` with mode 0600, creating a missing `.ssh` directory. The Gateway reads the step status from Swamp's run data; public terminal metadata contains `known_hosts_ready` and `digest`.
 
-Admissions serialize the public snapshot on the control Node record. One unfinished publication coalesces pin changes; its first terminal projection admits the latest snapshot when its content changed during the run. The pin caller's HTTP idempotency scope stays separate. Swamp owns execution and terminal history; the Gateway adds no host transport, retry loop or worker maintenance.
+Each committed pin change admits its complete current snapshot. Publications can overlap; the Gateway neither coalesces them nor starts another publication during terminal projection. The pin caller's HTTP idempotency scope stays separate. Swamp owns execution and terminal history.
 
 Official cfgmgmt version `2026.10.27.1` has no host-key connection input or local file target. Its runner known-hosts file must be seeded before its documented `accept-new` connection policy is used. This shared writer supplies that prerequisite from stored pins. Families add no keyscan, first-contact trust, localhost SSH or trust adapter. A source merge or an official SSH own-key proof does not prove this file was seeded: consumers require the successful publication's actual snapshot and Node pin. Native workflow publication, exact Gateway run/read authority, Gateway uptake, current health and execution guards remain separate live gates. The workflow changes no identity, grant or worker unit.
+
+### Topology proof
+
+The [topology receipt](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/receipts/node-worker-known-hosts.json) proves the writer repairs an empty mode-0644 file to the exact admitted public pins at mode 0600, owned by the worker account. The Gateway records the matching digest and successful native step. It makes no production uptake or concurrent-publication claim.
