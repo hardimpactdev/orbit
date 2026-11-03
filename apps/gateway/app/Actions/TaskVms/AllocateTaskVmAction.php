@@ -95,7 +95,7 @@ final readonly class AllocateTaskVmAction
             }
             $recipe = $this->images->currentRecipe();
             $hosts = $this->capacity->activeHosts();
-            $free = $this->policy->eligibleSlots($group, $this->capacity->freeSlots($hosts));
+            $free = $this->capacity->freeSlots($hosts);
             $images = [];
             $waiting = [];
             foreach ($hosts as [$host, $node]) {

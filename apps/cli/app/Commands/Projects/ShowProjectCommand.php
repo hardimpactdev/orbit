@@ -69,9 +69,6 @@ final class ShowProjectCommand extends GatewayCommand
             'Task workspace routed' => $project->taskWorkspaceRouted,
             ...($project->reviewAndMerge === null ? [] : ['Review and merge' => $project->reviewAndMerge, 'Merge check' => $project->mergeCheck]),
             ...($project->maintenance === null ? [] : ['Maintenance' => $project->maintenance]),
-            ...($project->excludedNodes === null ? [] : [
-                'Excluded nodes' => array_map(static fn (array $exclusion): string => $exclusion['node_name'], $project->excludedNodes) ?: null,
-            ]),
         ]));
 
         $headers = ['ID', 'Name', 'Node', 'Domain', 'Status'];

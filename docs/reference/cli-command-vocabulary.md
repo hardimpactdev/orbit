@@ -63,10 +63,8 @@ Use `create` and `destroy` when the Gateway owns the resource lifecycle. Use `ad
 | `instance:teardown-step` | `create` and `destroy` | A named [teardown step](/reference/instance-setup) on a Project |
 | `node` | `add` and `remove` | A Node in the fleet |
 | `node:access` | `add` and `remove` | An access grant between Nodes |
-| `node:excluded-project` | `add` and `remove` | A [development exclusion](/reference/development-node-exclusions) of one Project on a Node |
 | `node:role` | `add` and `remove` | A role on a Node |
 | `project:dev-deploy-step` | `create` and `destroy` | A named [development deploy step](/reference/deployments#development-deploy-steps) on a Project |
-| `project:excluded-node` | `add` and `remove` | A [development exclusion](/reference/development-node-exclusions) of one app-dev Node for a Project |
 | `process` | `create` and `destroy` | A [Process](/reference/processes-and-schedules), or a Project Process definition with `--project` |
 | `route` | `create` and `destroy` | A [Route](/reference/routes) |
 | `schedule` | `create` and `destroy` | A [Schedule](/reference/schedules), or a Project Schedule definition with `--project` |

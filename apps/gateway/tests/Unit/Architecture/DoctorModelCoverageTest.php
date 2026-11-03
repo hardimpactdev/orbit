@@ -39,7 +39,6 @@ use App\Models\ProcessDefinition;
 use App\Models\Project;
 use App\Models\ProjectDevelopmentDeployStep;
 use App\Models\ProjectLifecycleStep;
-use App\Models\ProjectNodeExclusion;
 use App\Models\ProjectUpdate;
 use App\Models\Route;
 use App\Models\RouteAnalyticsTracking;
@@ -135,7 +134,6 @@ it('partitions every persisted model across doctor dispositions', function (): v
         InstanceDeployStep::class,
         ProjectLifecycleStep::class,
         ProjectDevelopmentDeployStep::class,
-        ProjectNodeExclusion::class,
         InstanceRemoval::class,
         InstanceRemovalMember::class,
         InstanceTransfer::class,

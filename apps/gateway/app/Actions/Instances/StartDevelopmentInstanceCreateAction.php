@@ -19,7 +19,6 @@ use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Processes\ProcessInstanceOperation;
-use App\Domain\Projects\DevelopmentNodeExclusion;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\LifecycleStep;
 use App\Domain\Projects\ProjectLifecycleStepStore;
@@ -46,7 +45,6 @@ final readonly class StartDevelopmentInstanceCreateAction
         private NodeSettingsNormalizer $nodeSettings,
         private ManagedCheckoutOverlap $overlap,
         private InstanceDatabaseClonePlanner $databases,
-        private DevelopmentNodeExclusion $exclusions,
     ) {}
 
     public function execute(CreateInstanceData $data, ?string $caller, ?string $requestId): Operation
@@ -93,7 +91,6 @@ final readonly class StartDevelopmentInstanceCreateAction
                 throw new ResourceOperationException('instance.setup_step_failed', 'Setup is incomplete. Run instance:setup before using this Instance.', 409);
             }
             if (! $instance instanceof Instance) {
-                $this->exclusions->assertAvailable($project, $node);
                 $checkout = StoragePath::parse($sourceRoot)->append($project->slug, $name);
                 $this->overlap->assertAvailable($node->id, $checkout,
                     $name === 'default' ? 'instance.default_path_occupied' : 'instance.path_taken');

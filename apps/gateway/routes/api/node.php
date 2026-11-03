@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\NodeAccessController;
-use App\Http\Controllers\Api\NodeExcludedProjectsController;
 use App\Http\Controllers\Api\NodeFootprintsController;
 use App\Http\Controllers\Api\NodeMetricsController;
 use App\Http\Controllers\Api\NodeNetworksController;
@@ -51,17 +50,6 @@ Route::middleware([
         ->name('node:role:remove');
     Route::get('nodes/{node}/metrics', [NodeMetricsController::class, 'show'])
         ->name('node:metrics');
-    Route::get('nodes/{node}/excluded-projects', [NodeExcludedProjectsController::class, 'index'])
-        ->whereNumber('node')
-        ->name('node:excluded-project:list');
-    Route::post('nodes/{node}/excluded-projects/{project}', [NodeExcludedProjectsController::class, 'store'])
-        ->whereNumber('node')
-        ->whereNumber('project')
-        ->name('node:excluded-project:add');
-    Route::delete('nodes/{node}/excluded-projects/{project}', [NodeExcludedProjectsController::class, 'destroy'])
-        ->whereNumber('node')
-        ->whereNumber('project')
-        ->name('node:excluded-project:remove');
     Route::post('nodes', [NodesController::class, 'store'])
         ->name('node:add');
     Route::patch('nodes/{node}', [NodesController::class, 'update'])

@@ -26,7 +26,6 @@
         "Tests\\Feature\\Api\\DatabaseServersTest": 1.5545,
         "Tests\\Feature\\Api\\DatabaseUsersTest": 0.3754,
         "Tests\\Feature\\Api\\DevelopmentDeploymentsTest": 0.2044,
-        "Tests\\Feature\\Api\\DevelopmentNodeExclusionTest": 0.5355,
         "Tests\\Feature\\Api\\DoctorResponseFixturesTest": 0.625,
         "Tests\\Feature\\Api\\DoctorTest": 2.5182,
         "Tests\\Feature\\Api\\EnrollMacOsNodeTest": 0.4333,

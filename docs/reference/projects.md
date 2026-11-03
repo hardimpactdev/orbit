@@ -9,7 +9,7 @@ covers:
   - "apps/gateway/app/{Domain,Infrastructure}/Instances/*ProductionRepository*.php"
   - "apps/cli/app/Commands/Projects/**"
   - "swamp/extensions/behaviors/{dependency_scanner.ts,_lib/service_detection.ts,_lib/dependency_results.ts,_lib/maintenance/inspect.ts,operations/project-maintenance/**}"
-  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_13_120000_add_maintenance_to_projects,2027_01_13_130000_create_project_inspections_table}.php"
+  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_13_120000_add_maintenance_to_projects,2027_01_13_130000_create_project_inspections_table,2027_01_14_120000_drop_project_node_exclusions_table}.php"
 ---
 
 # Projects
@@ -260,7 +260,9 @@ An inspection reads GitHub with `curl` on Node 209, with a GitHub App token that
 
 ## Remove a Project
 
-`project:destroy` removes a Project that has no Instances and no Routes. It deletes the Project's process and Schedule definitions, setup and teardown steps, Node exclusions, and update records.
+`project:destroy` removes a Project that has no Instances and no Routes. It deletes the Project's process and Schedule definitions, setup and teardown steps, and update records.
+
+A Project has no per-Node exclusions. The development Node exclusion feature was removed on 2026-11-03, and its table was dropped. `instance:create` names its Node, and task VM placement uses only hosts with a `task_vms` setting, so nothing places a Project on an `app-dev` Node by itself.
 
 A Project can be removed when all its task groups are `cancelled` or `completed`, every associated task VM row is `destroyed`, and every associated workspace lease is `released` or `cancelled`. The Gateway deletes those groups, their subtasks, comments, questions, agent thread rows, check records, review records, workspace leases and operations, Jev decisions, linked problem records, and task VM records in the same transaction as the Project.
 

@@ -25,9 +25,7 @@ Fetching Instances...
 │
 ├  Merge check             —
 │
-├  Maintenance             no
-│
-└  Excluded nodes          —
+└  Maintenance             no
 
  ┌────┬──────┬─────────┬───────────────┬────────┐
  │ ID │ NAME │ NODE    │ DOMAIN        │ STATUS │

@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Http\Controllers\Api\ProjectDependenciesController;
 use App\Http\Controllers\Api\ProjectDependencyReadTokenController;
 use App\Http\Controllers\Api\ProjectDevelopmentDeployStepsController;
-use App\Http\Controllers\Api\ProjectExcludedNodesController;
 use App\Http\Controllers\Api\ProjectMaintenanceController;
 use App\Http\Controllers\Api\ProjectRuntimeDefinitionsController;
 use App\Http\Controllers\Api\ProjectsController;
@@ -35,17 +34,6 @@ Route::middleware([
     Route::post('projects/{project}/review-and-merge/enable', [ProjectsController::class, 'enableReviewAndMerge'])->name('project:review-and-merge:enable');
     Route::post('projects/{project}/review-and-merge/disable', [ProjectsController::class, 'disableReviewAndMerge'])->name('project:review-and-merge:disable');
     Route::delete('projects/{project}', [ProjectsController::class, 'destroy'])->name('project:destroy');
-    Route::get('projects/{project}/excluded-nodes', [ProjectExcludedNodesController::class, 'index'])
-        ->whereNumber('project')
-        ->name('project:excluded-node:list');
-    Route::post('projects/{project}/excluded-nodes/{node}', [ProjectExcludedNodesController::class, 'store'])
-        ->whereNumber('project')
-        ->whereNumber('node')
-        ->name('project:excluded-node:add');
-    Route::delete('projects/{project}/excluded-nodes/{node}', [ProjectExcludedNodesController::class, 'destroy'])
-        ->whereNumber('project')
-        ->whereNumber('node')
-        ->name('project:excluded-node:remove');
     Route::get('projects/{project}/dev-deploy-steps', [ProjectDevelopmentDeployStepsController::class, 'index'])->name('project:dev-deploy-step:list');
     Route::post('projects/{project}/dev-deploy-steps', [ProjectDevelopmentDeployStepsController::class, 'store'])->name('project:dev-deploy-step:create');
     Route::patch('projects/{project}/dev-deploy-steps/{step}', [ProjectDevelopmentDeployStepsController::class, 'update'])

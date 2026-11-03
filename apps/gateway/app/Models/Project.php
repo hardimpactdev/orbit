@@ -117,12 +117,6 @@ final class Project extends Model
         return $this->hasMany(Task::class)->topLevel();
     }
 
-    /** @return HasMany<ProjectNodeExclusion, $this> */
-    public function nodeExclusions(): HasMany
-    {
-        return $this->hasMany(ProjectNodeExclusion::class);
-    }
-
     public function isWebServing(): bool
     {
         return $this->type->isWebServing();
