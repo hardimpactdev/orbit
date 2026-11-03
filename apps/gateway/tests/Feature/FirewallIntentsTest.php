@@ -80,7 +80,7 @@ it('binds the normal start before the own Node can read and records no agent dig
     expect($operation->input)->not->toHaveKey('agent_sha256');
     expect($socket->sent)->toHaveCount(1);
     $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->runId)->assertOk();
-    expect(app(DirectOperation::class)->definition('firewall.allow'))->toBe(['workflow' => 'operation-firewall-direct', 'projection' => FirewallIntentProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'firewall', 'step' => 'apply']]);
+    expect(app(DirectOperation::class)->definition('firewall.allow'))->toBe(['workflow' => 'operation-firewall-direct', 'projection' => FirewallIntentProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'firewall', 'step' => 'Check the rules']]);
 });
 
 it('refuses another native root without changing the managed rule', function (): void {
@@ -124,7 +124,7 @@ it('projects each kind from the fixed native history stdout without a Gateway ca
         'id' => $this->runId, 'workflowName' => 'operation-firewall-direct', 'status' => 'succeeded',
         'inputs' => ['operation_id' => $this->operation->id, 'node_id' => $this->node->id, 'kind' => $kind],
         'startedAt' => '2026-11-01T06:00:00Z', 'completedAt' => '2026-11-01T06:00:01Z',
-        'jobs' => [['name' => 'firewall', 'steps' => [['name' => 'apply', 'outputs' => ['stdout' => json_encode(['backend' => $backend], JSON_THROW_ON_ERROR), 'exitCode' => 0]]]]],
+        'jobs' => [['name' => 'firewall', 'steps' => [['name' => 'Check the rules', 'outputs' => ['stdout' => json_encode(['backend' => $backend], JSON_THROW_ON_ERROR), 'ok' => true]]]]],
     ]]]];
     app()->instance(WebSocketClient::class, $socket);
 
