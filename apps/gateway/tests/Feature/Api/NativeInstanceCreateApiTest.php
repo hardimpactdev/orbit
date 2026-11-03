@@ -120,10 +120,25 @@ it('reserves the derived Route of a web-serving Project and creates it in the sa
         'result' => ['instance_id' => $operation->target_id, 'ready' => $status === 'succeeded', 'commit' => str_repeat('a', 40),
             ...($status === 'failed' ? ['failed_step' => 'route', 'error_code' => 'instance.create_route_failed'] : [])]]);
     $route->refresh();
+    expect(Instance::query()->sole()->environment_owned_keys)->toBe($operation->input['environment_keys']);
     expect($route->status->value)->toBe($status === 'succeeded' ? 'active' : $route->getOriginal('status')->value)
         ->and($route->sites_published)->toBe($status === 'succeeded')
         ->and($route->error_code)->toBe($status === 'succeeded' ? null : 'instance.create_route_failed');
 })->with(['succeeded', 'failed']);
+
+it('reserves no Route for an already active web-serving Instance, which runs no phase', function (): void {
+    $this->node->update(['tld' => 'test']);
+    $this->project->update(['type' => 'laravel-app', 'root' => 'public']);
+    Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $this->node->id, 'name' => 'proof',
+        'checkout_path' => '/srv/apps/native-create/proof', 'status' => InstanceState::Active, 'branch' => 'proof',
+        'first_setup_pending' => false, 'starting_commit' => str_repeat('a', 40)]);
+    $this->withHeader('Idempotency-Key', 'native-create-web-active');
+    $this->postJson('/api/v1/instances', $this->payload)->assertAccepted();
+
+    $operation = Operation::query()->sole();
+    expect(Route::query()->count())->toBe(0)->and($operation->input)->not->toHaveKey('route_create')
+        ->and($operation->input['direct_provisioning']['route'])->toBeNull();
+});
 
 it('refuses a web-serving Project before reservation when its Node has no TLD for the derived Route', function (): void {
     $this->project->update(['type' => 'laravel-app', 'root' => 'public']);

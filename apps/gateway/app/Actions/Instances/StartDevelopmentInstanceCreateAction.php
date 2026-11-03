@@ -131,7 +131,8 @@ final readonly class StartDevelopmentInstanceCreateAction
             $input['ssh_execution'] = app(SwampSshExecutionInput::class)->forNode($node);
             // A web-serving Project gets its Route, the derived <name>.<project-slug>.<tld> or --domain. It is reserved
             // before the environment and the Processes are captured, because its domain changes both.
-            if ($instance->requiresRoute()) {
+            // An already active Instance runs no phase, so it reserves no Route either.
+            if ($instance->requiresRoute() && ! ($instance->status === InstanceState::Active && ! $instance->first_setup_pending)) {
                 $route = app(CreateRouteAction::class)->ensureForInstance($instance, $data->domain);
                 $input = [...$input, 'route_id' => $route->id, 'route_domain' => $route->domain,
                     ...app(NativeRouteAdmission::class)->capture('route.create', $route, ['mode' => 'converge'], $node->id)];

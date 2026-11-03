@@ -48,7 +48,7 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
                         'selected_php_version' => ValidatedData::nullableString($input['php_version'] ?? null), 'source_is_laravel' => ($input['laravel'] ?? false) === true,
                         ...(($input['seed_commit'] ?? null) !== null ? ['source_layout' => InstanceSourceLayout::Worktree] : [])]);
                 }
-                if ($data['status'] === 'succeeded' || in_array($result['failed_step'] ?? null, ['setup', 'processes'], true)) {
+                if ($data['status'] === 'succeeded' || in_array($result['failed_step'] ?? null, ['setup', 'processes', 'route'], true)) {
                     $instance->forceFill(['environment_owned_keys' => ValidatedData::stringList($input['environment_keys'] ?? [])])->save();
                 }
                 $route = ($input['route_id'] ?? null) === null ? null : Route::query()->findOrFail(ValidatedData::integer($input['route_id']));
