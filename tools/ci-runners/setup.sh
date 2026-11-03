@@ -6,6 +6,7 @@
 #
 #   tools/ci-runners/setup.sh container NAME [AGENT SHA256] # optional source-built agent for rollout
 #   tools/ci-runners/setup.sh register NAME [TOKEN]  # ORBIT_RUNNER_TOKEN in the environment, or TOKEN
+#   tools/ci-runners/setup.sh actions NAME           # cache pinned actions; restart the service only when idle
 #   tools/ci-runners/setup.sh verify NAME            # egress and loopback probes from inside the container
 #
 # A registration token comes from `gh api -X POST orgs/hardimpactdev/actions/runners/registration-token --jq .token`
@@ -175,7 +176,45 @@ if [ ! -x /home/runner/actions-runner/config.sh ]; then
   chown -R runner:runner /home/runner/actions-runner
 fi
 SH
+  actions "$name"
 }
+
+# GitHub images use this runner-native cache, which survives the per-job _actions cleanup:
+# https://github.com/actions/runner-images/blob/main/images/ubuntu/scripts/build/install-actions-cache.sh
+actions() (
+  local name=$1 action sha archive scratch
+  mkdir -p "$REPOSITORY/.orbit-artifacts/runner-actions"
+  scratch=$(mktemp -d "$REPOSITORY/.orbit-artifacts/runner-actions/cache.XXXXXX")
+  trap 'rm -rf "$scratch"' EXIT
+  while read -r action sha <&3; do
+    archive="/opt/actionarchivecache/${action//\//_}/$sha.tar.gz"
+    if in_ct "$name" test -s "$archive"; then
+      in_ct "$name" chown root:root "${archive%/*}" "$archive"
+      continue
+    fi
+    git init --bare --quiet "$scratch/source"
+    # Fetch the immutable commit over Git, never the rate-limited codeload archive endpoint.
+    git -C "$scratch/source" fetch --quiet --depth=1 "https://github.com/$action.git" "$sha"
+    [ "$(git -C "$scratch/source" rev-parse FETCH_HEAD)" = "$sha" ]
+    git -C "$scratch/source" archive --format=tar --prefix=action/ "$sha" | gzip > "$scratch/action.tar.gz"
+    in_ct "$name" install -d -m 0755 "${archive%/*}"
+    incus file push "$scratch/action.tar.gz" "$name$archive.tmp" --project "$PROJECT" --quiet
+    in_ct "$name" chown root:root "${archive%/*}" "$archive.tmp"
+    in_ct "$name" chmod 0644 "$archive.tmp"
+    in_ct "$name" mv "$archive.tmp" "$archive"
+    rm -rf "$scratch/source"
+  done 3< <(git -C "$REPOSITORY" grep -h 'uses: ' -- .github/workflows .github/actions |
+    sed -nE 's/^[[:space:]-]*uses: ([^./ ][^/ ]*\/[^/@ ]+)(\/[^@ ]+)?@([0-9a-f]{40}).*/\1 \3/p' | sort -u)
+  # shellcheck disable=SC2016
+  in_ct "$name" bash -euo pipefail -c '
+    env_file=/home/runner/actions-runner/.env
+    touch "$env_file"
+    sed -i "/^ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE=/d" "$env_file"
+    echo "ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE=/opt/actionarchivecache" >> "$env_file"
+    chown runner:runner "$env_file"
+  '
+  echo "$name: pinned actions cached; restart its runner service when idle to load the cache setting"
+)
 
 register() {
   local name=$1 token=${2:-${ORBIT_RUNNER_TOKEN:-}} labels=$LABELS
@@ -217,6 +256,6 @@ verify() {
 }
 
 case "${1:-}" in
-  container | register | verify) "$@" ;;
+  container | actions | register | verify) "$@" ;;
   *) sed -n '2,17p' "$0" >&2; exit 2 ;;
 esac
