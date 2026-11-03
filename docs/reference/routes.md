@@ -384,7 +384,7 @@ Route parents withdraw LAN tuples through the shared `route-lan-apply` child on 
 
 Before publication, `route.verify-certificate` checks the admitted workload or Router endpoint from the control worker. It connects to the selected address on port 443, sends the Route domain as TLS SNI, and requires a chain trusted by the control worker. This preserves the existing OpenSSL chain check; it does not add a separate hostname check. The Gateway records the validated placement and public error mapping; Swamp drives the activation order. Router replacement uses the same commands.
 
-The `route.workload_verify` and `route.public_verify` kinds use the direct Swamp path. Their direct path records a required TLS or HTTP probe and agent pin at admission, then starts `operation-route-verification`. The Node 209 migration worker uses the shared bounded Node runner without sudo to call the typed read-only agent command against the stored workload or Router WireGuard address. The Operation Node records the owning Router or Ingress. Colocated placements require the same probe; there is no skip mode. Public Process checks keep their validated published listener.
+Native Route parents run their captured TLS or HTTP probes inside their own workflow. A failed probe fails its parent run; verification starts no separate Operation. The admitted protocol, endpoint and Route domain stay fixed for that run.
 
 Caddy and private DNS publication use direct workflows. The direct kinds expose no `/operation-executor` run allowlist. Caddy runs locally on its exact admitted Node; private DNS retains its existing publication primitive. Residue and Instance cleanup still use the shared transports until their owning cutover. The old `/route-publications` relay URLs are removed; callers use the shared bound Operation API.
 
@@ -796,7 +796,7 @@ Route Operations retain their admitted Instance environment owners until complet
 
 ### Direct dispatch
 
-`route.caddy_converge`, `route.workload_verify` and `route.public_verify` each have one direct dispatch path. The Gateway starts the owning native workflow after intent commits. Their polled discovery entries, executor contracts and writer choices are removed. New Operations default to direct; selecting `polled` refuses admission. Rollback is a revert PR.
+`route.caddy_converge` has one direct dispatch path. The Gateway starts the owning native workflow after intent commits. Their polled discovery entries, executor contracts and writer choices are removed. New Operations default to direct; selecting `polled` refuses admission. Rollback is a revert PR.
 
 These kinds use the shared `swamp.direct_writers` configuration and retain their recorded writer identity. The separate publication settings and their environment variables are removed. No direct kind exposes a Gateway execution contract, even for an old unstamped row. The remaining Route and Certificate kinds retain their family discovery entries until their owning native cutover.
 

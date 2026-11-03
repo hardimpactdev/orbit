@@ -6,7 +6,6 @@ use App\Domain\Routes\NativeRouteConvergenceProjection;
 use App\Domain\Routes\NativeRouteRemovalProjection;
 use App\Domain\Routes\NativeRouteTargetProjection;
 use App\Domain\Routes\NativeRouteUpdateProjection;
-use App\Domain\Routes\RouteOperationProjection;
 
 return [
     'route.update' => [
@@ -39,9 +38,4 @@ return [
         'workflow_inputs' => true, 'terminal_result' => ['job' => 'publication', 'step' => NativeCaddyPublicationProjection::EndCheck, 'native' => true,
             'captures' => ['caddy' => ['job' => 'publication', 'step' => 'Read the input', 'field' => 'caddy']]],
     ],
-    ...array_fill_keys(RouteOperationProjection::Kinds, [
-        'workflow' => 'operation-route-verification',
-        'projection' => RouteOperationProjection::class, 'workflow_inputs' => true,
-        'terminal_result' => ['job' => 'verification', 'step' => 'result'],
-    ]),
 ];

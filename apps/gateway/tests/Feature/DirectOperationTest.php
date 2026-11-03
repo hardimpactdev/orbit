@@ -6,7 +6,6 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Routes\RouteOperationProjection;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -16,6 +15,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Tests\Support\FakeDirectOperationProjection;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
@@ -23,7 +23,7 @@ beforeEach(function (): void {
     {
         public function definitions(): array
         {
-            return ['test.direct' => ['workflow' => 'operation-test-direct', 'projection' => RouteOperationProjection::class]];
+            return ['test.direct' => ['workflow' => 'operation-test-direct', 'projection' => FakeDirectOperationProjection::class]];
         }
     };
     app()->instance(DirectOperation::class, new DirectOperation([$definition]));
