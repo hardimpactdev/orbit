@@ -64,6 +64,7 @@ class DenoShards(unittest.TestCase):
             # Native workflow tests need the account-gated runtime; the shards skip them.
             for path, _count in groups:
                 (files / path / "zz_native_test.ts").write_text('Deno.test("native", () => { throw new Error("ran"); });\n')
+                (files / path / "native_test.ts").write_text('Deno.test("native", () => { throw new Error("ran"); });\n')
             for shard in shards:
                 result = run(shard)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

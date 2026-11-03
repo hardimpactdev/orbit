@@ -301,7 +301,8 @@ export async function nativeRepo() {
   return new NativeRepo(dir);
 }
 
-/** CI's credentialed pull job: `deno run -A tests/_support/native_harness.ts`. Test code never sees credentials. */
+/** CI's native tests job pulls every pinned extension once, then prints the runtime path for SWAMP_BIN. */
 if (import.meta.main) {
   for (const name of Object.keys(upstream)) console.log(await pullExtension(name));
+  console.log(await swampBinary());
 }

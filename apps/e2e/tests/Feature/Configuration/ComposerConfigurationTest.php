@@ -417,7 +417,7 @@ it('sets up PHP 8.5 through the one pinned setup-php action in every PHP job of 
         'ci.yml:php', 'ci.yml:gateway-static', 'ci.yml:docs', 'ci.yml:project-check', 'ci.yml:api-reference', 'ci.yml:web',
         'dependency-audit.yml:audit', 'docs-site.yml:publish', 'orbit-cli-binary.yml:build',
     ])
-        ->and($directJobs)->toBe(['swamp-shape.yml:validate', 'swamp-shape.yml:test-shards']);
+        ->and($directJobs)->toBe(['swamp-shape.yml:validate', 'swamp-shape.yml:native-tests', 'swamp-shape.yml:test-shards']);
     // The shared action installs PHP and Composer only; it compiles no agent and installs no recipe PHP build.
     $actionRuns = implode("\n", array_column($action['runs']['steps'], 'run'));
     expect($setup['uses'])->toMatch('/^shivammathur\/setup-php@[0-9a-f]{40}$/')
