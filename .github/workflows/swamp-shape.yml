@@ -142,8 +142,12 @@ jobs:
   native-tests:
     # The pinned runtime refuses every command without an account, so native workflow
     # tests run here with the same event-scoped read token as validation.
-    name: Swamp native tests
+    name: Swamp native tests ${{ matrix.shard }}
     runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1/4, 2/4, 3/4, 4/4]
     defaults:
       run:
         working-directory: ${{ inputs.working-directory || '.' }}
@@ -176,11 +180,12 @@ jobs:
         env:
           SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_API_KEY || '' }}
           SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_SIGNIN_TOKEN || '' }}
+          NATIVE_SHARD: ${{ matrix.shard }}
         run: |
           SWAMP_BIN=$(deno run -A tests/_support/native_harness.ts | tail -n 1)
           export SWAMP_BIN
           mapfile -t files < <(git ls-files -- 'extensions/*native_test.ts')
-          DENO_JOBS=4 deno test --parallel -A "${files[@]}"
+          DENO_JOBS=4 deno test --parallel -A --shard="$NATIVE_SHARD" "${files[@]}"
 
   tests:
     name: Swamp Deno tests
