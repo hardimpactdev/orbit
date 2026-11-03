@@ -185,6 +185,7 @@ return [
     '0179' => ['0179-gate-all-extension-surfaces-with-one-gateway-switch'],
     '0180' => ['0180-absorb-built-decisions-into-the-docs'],
     '0181' => ['0181-name-the-domain-project-and-instance-everywhere'],
+    '0182' => ['0182-start-tasks-from-project-task-definitions'],
     '0183' => ['0183-manage-macos-tools-without-service-roles'],
     '0184' => ['0184-adopt-selected-tools-from-existing-managers'],
     '0185' => ['0185-report-informational-tool-discoveries-in-doctor'],
@@ -223,5 +224,7 @@ return [
     '0235' => ['0235-verify-release-provenance-on-the-gateway'],
     '0236' => ['0236-measure-task-delivery-from-recorded-lifecycle-times'],
     '0237' => ['0237-read-swamp-task-output-through-the-gateway'],
+    '0238' => ['0238-trial-two-swamp-slices-before-a-wider-move'],
     '0239' => ['0239-let-swamp-own-dependency-maintenance'],
+    '0241' => ['0241-firewall-source-allowlists'],
 ];

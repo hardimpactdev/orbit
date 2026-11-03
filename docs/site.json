@@ -1080,6 +1080,18 @@
     {
       "source": "/decisions/0237-read-swamp-task-output-through-the-gateway",
       "destination": "/reference/tasks#swamp-output-stays-a-read"
+    },
+    {
+      "source": "/decisions/0182-start-tasks-from-project-task-definitions",
+      "destination": "/reference/tasks#model"
+    },
+    {
+      "source": "/decisions/0238-trial-two-swamp-slices-before-a-wider-move",
+      "destination": "/swamp/porting"
+    },
+    {
+      "source": "/decisions/0241-firewall-source-allowlists",
+      "destination": "/decisions/0245-identify-firewall-rules-by-port-protocol-and-source"
     }
   ]
 }

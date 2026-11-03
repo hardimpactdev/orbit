@@ -24,7 +24,6 @@ Permanent ADRs made the current rule hard to find: amendments spread it across h
 
 | Record | Decision | Status |
 | --- | --- | --- |
-| [0182](/decisions/0182-start-tasks-from-project-task-definitions) | Start tasks from Project task definitions | Withdrawn on 2026-10-15; never executed |
 | [0190](/decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password) | Run MySQL servers with a Gateway-held admin password | In progress |
 | [0196](/decisions/0196-derive-application-directory-from-web-root) | Derive the application directory from the web root; serve more web roots through Routes | In progress |
 | [0206](/decisions/0206-build-task-vm-images-as-chains-of-small-jobs) | Build task VM images as chains of small jobs | In progress; changes [task VM image builds](/reference/compute-drivers#build-the-base-image) |
@@ -41,15 +40,13 @@ Permanent ADRs made the current rule hard to find: amendments spread it across h
 | [0224](/decisions/0224-give-each-task-group-one-holder-and-one-sender) | Give each task group one workspace holder and one sender | In progress; approved on 2026-10-18; built after [0223](/decisions/0223-run-one-gate-from-handoff-to-merge) and before the Tasks extension move; supersedes the scope of backlog group 1758 |
 | [0226](/decisions/0226-split-private-dns-on-managed-peers) | Split private DNS on managed peers | In progress; approved on 2026-10-19; amends [0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router) |
 | [0229](/decisions/0229-let-an-orchestrator-drive-task-work-through-gateway-operations) | Let an orchestrator drive task work through Gateway operations | In progress; decided on 2026-10-22; amends [0209](/decisions/0209-run-long-operations-as-durable-queued-operations), [0218](/decisions/0218-take-long-commands-off-the-request-path), [0224](/decisions/0224-give-each-task-group-one-holder-and-one-sender), and [Node commands](/reference/node-agent#commands) |
-| [0238](/decisions/0238-trial-two-swamp-slices-before-a-wider-move) | Trial two Swamp slices before a wider move | In progress; thresholds accepted on 2026-10-27 and amended on 2026-10-28: Orbit shrinks after each slice's cutover, orbit-swamp growth is reported, and every cutover follows read-only shadow comparison; Slice 1 prerequisites are merged; limits [0209](/decisions/0209-run-long-operations-as-durable-queued-operations), [0218](/decisions/0218-take-long-commands-off-the-request-path), and [0229](/decisions/0229-let-an-orchestrator-drive-task-work-through-gateway-operations) for the trials; supersedes none |
 | [0240](/decisions/0240-bound-environment-import-private-output) | Bound environment import private output | In progress; one-store proposal only, no runtime change |
 | [0242](/decisions/0242-signed-apt-tool-repositories) | Signed apt repositories for Tools | In progress |
 | [0243](/decisions/0243-serve-swamp-through-a-swamp-role) | Serve Swamp through a swamp role | In progress |
-| [0244](/decisions/0244-track-every-action-as-one-task) | Track every action as one task | In progress; open questions resolved on 2026-11-01; changes [0209](/decisions/0209-run-long-operations-as-durable-queued-operations), [0218](/decisions/0218-take-long-commands-off-the-request-path), [0229](/decisions/0229-let-an-orchestrator-drive-task-work-through-gateway-operations) and [0238](/decisions/0238-trial-two-swamp-slices-before-a-wider-move) |
-| [0245](/decisions/0245-identify-firewall-rules-by-port-protocol-and-source) | Identify firewall rules by port, protocol and source | In progress; supersedes [0241](/decisions/0241-firewall-source-allowlists) |
+| [0244](/decisions/0244-track-every-action-as-one-task) | Track every action as one task | In progress; open questions resolved on 2026-11-01; changes [0209](/decisions/0209-run-long-operations-as-durable-queued-operations), [0218](/decisions/0218-take-long-commands-off-the-request-path), [0229](/decisions/0229-let-an-orchestrator-drive-task-work-through-gateway-operations) and 0238 |
+| [0245](/decisions/0245-identify-firewall-rules-by-port-protocol-and-source) | Identify firewall rules by port, protocol and source | In progress; supersedes 0241 |
 | [0246](/decisions/0246-show-task-progress-through-one-resumable-read) | Show task progress through one resumable read | In progress; builds on [0244](/decisions/0244-track-every-action-as-one-task) |
 
-| [0241](/decisions/0241-firewall-source-allowlists) | Firewall source allowlists | Superseded on 2026-11-01 by [0245](/decisions/0245-identify-firewall-rules-by-port-protocol-and-source) |
 
 ## Retired decisions
 
@@ -237,6 +234,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0179 | Gate every extension surface with one Gateway switch | [extension: Why it works this way](/cli/extension#why-it-works-this-way) |
 | 0180 | Absorb built decisions into the documentation | [Architecture decisions: Why it works this way](/decisions/overview#why-it-works-this-way) |
 | 0181 | Name the domain Project and Instance everywhere | [Projects: Project and Instance](/reference/projects#project-and-instance) |
+| 0182 | Start tasks from Project task definitions (withdrawn) | [Tasks: Model](/reference/tasks#model) |
 | 0183 | Manage macOS tools without service roles | [Node provisioning: A Mac needs no service role](/reference/node-provisioning#a-mac-needs-no-service-role) |
 | 0184 | Adopt selected tools from existing managers | [Tools: Selected adoption](/reference/tools#selected-adoption) |
 | 0185 | Report informational tool discoveries in Doctor | [doctor: Informational findings stay healthy](/cli/doctor#informational-findings-stay-healthy) |
@@ -275,4 +273,6 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0235 | Verify release provenance on the Gateway | [Update and recover a Gateway: Release provenance](/reference/gateway-recovery#release-provenance); [Update and recover a Gateway: One small verifier for one bundle shape](/reference/gateway-recovery#one-small-verifier-for-one-bundle-shape); [CLI binaries: Provenance from the workflow identity](/reference/cli-binaries#provenance-from-the-workflow-identity); [Orbit self-update: The CLI trusts the Gateway's provenance check](/reference/self-update#the-cli-trusts-the-gateways-provenance-check) |
 | 0236 | Measure task delivery from recorded lifecycle times | [Tasks: Task insights](/reference/tasks#task-insights); [Tasks: Insights come from recorded times](/reference/tasks#insights-come-from-recorded-times) |
 | 0237 | Read Swamp task output through the Gateway | [Tasks: Swamp output stays a read](/reference/tasks#swamp-output-stays-a-read) |
+| 0238 | Trial two Swamp slices before a wider move | [Build a Swamp flow](/swamp/porting) |
 | 0239 | Let Swamp own dependency maintenance | [Instance dependencies: Why it works this way](/reference/instance-dependencies#why-it-works-this-way) |
+| 0241 | Firewall source allowlists (superseded by 0245) | [ADR 0245](/decisions/0245-identify-firewall-rules-by-port-protocol-and-source) |
