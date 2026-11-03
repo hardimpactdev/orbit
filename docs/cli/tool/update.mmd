@@ -14,7 +14,7 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
-  CLI->>GW: tool:update 31<br/>Tool id · --repository optional
+  CLI->>GW: tool:update 31
   %%> Command:
   %%> - `orbit tool:update 31`
   %%> - syntax: `<tool> [--repository=JSON]`
@@ -44,12 +44,12 @@ sequenceDiagram
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
   Note over SW: Prepare package commands<br/>typed argv, no script reads
-  opt --repository given
+  opt --repository
     Note over SW: Fetch the signing key<br/>bounded download on 209
     Note over SW: Read the key fingerprint<br/>gpg show-keys on 209
     Note over SW: Assert the key fingerprint<br/>stop before the Node
   end
-  opt --repository given
+  opt --repository
     Note over SW: Dearmor the signing key<br/>binary key on 209
     SW->>N: Prepare apt keyrings<br/>cfgmgmt directory
     SW->>N: Publish the signing key<br/>cfgmgmt copy_file
@@ -94,7 +94,7 @@ sequenceDiagram
   end
   Note over SW: Decode package state<br/>typed package observation
   Note over SW: Assert package state<br/>native end check
-  opt signing key staged
+  opt --repository
     Note over SW: Remove the staged key<br/>local cleanup, also on failure
   end
   alt the run ends normally

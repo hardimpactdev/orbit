@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 native Swamp schedules, one Swamp workflow per Schedule (Nick 2026-11-02), retained production Node timers use official resources; R1-R3 and rule 14.
+  %% Rule 23: 2026-11-03 required-only main path.
   %% status: migrated
   %% command: schedule:create
   %% kind: schedule.create
@@ -14,17 +15,20 @@ sequenceDiagram
   participant N as Target Node<br/>reached over ssh
   CLI->>GW: schedule:create report<br/>--instance=42 --calendar=@daily
   %%> Command:
-  %%> - `orbit schedule:create report --instance=42 --calendar='0 3 * * *' --command='php artisan report:send' --timeout=600`
+  %%> - `orbit schedule:create report --instance=42 --calendar='0 3 * * *' --command='php artisan report:send'`
   %%> - syntax: `<name> (--node=ID | --instance=ID | --project=ID --for=production) --calendar=CALENDAR --command=COMMAND [--timeout=SECONDS] [--no-start] [--idempotency-key=KEY]`
   %%> Input:
   %%> - the name as the argument, unique for its Node or Instance
   %%> - exactly one owner: a Node, an Instance, or a Project definition
-  %%> - the calendar, the command line and the timeout (default 3,600 seconds)
+  %%> - the calendar and the command line
   %%> Calendar:
   %%> - a cron expression, the format Swamp schedules use, for example `0 3 * * *`, a 6-field form with seconds such as `20 * * * * *`, or a shorthand such as `@hourly` or `@daily`
   %%> - it fires in serve's time zone (UTC); a Swamp trigger carries no time zone
   %%> - existing systemd calendars are converted once during the migration
-  %%> - optionally `--no-start`, to create a Node or Instance Schedule disabled
+  %%> Optional:
+  %%> - `--timeout=SECONDS`: the execution timeout; the default is 3,600 seconds; it adds no step
+  %%> - `--no-start`: create a Node or Instance Schedule disabled; it removes the trigger instead of setting it
+  %%> - `--idempotency-key` and `--json` change no step
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
   Note over GW: Validate, record Schedule<br/>Schedule 7f3c… · Instance 42
@@ -92,12 +96,16 @@ sequenceDiagram
     %%> Stored:
     %%> - in serve's `workflows/` directory beside the checked-in workflows; a release load keeps it
     %%> - the Gateway's Schedule record stays the source; an identical create writes it again
-    opt not created disabled
-      GW->>SW: Set its trigger<br/>workflow.trigger.set
+    GW->>SW: Set its trigger<br/>workflow.trigger.set
+    %%> What it does:
+    %%> - sets the cron trigger of `schedule-7f3c…` on serve
+    %%> When:
+    %%> - always, unless `--no-start` replaces it with the next step
+    opt --no-start
+      GW->>SW: Remove the trigger<br/>workflow.trigger.remove
       %%> What it does:
-      %%> - sets the cron trigger of `schedule-7f3c…` on serve
-      %%> When:
-      %%> - skipped with `--no-start`; `schedule:enable` sets it later
+      %%> - replaces "Set its trigger": removes any trigger of `schedule-7f3c…` on serve
+      %%> - the Schedule is recorded `disabled`; `schedule:enable` sets the trigger later
     end
     alt Swamp confirms
       SW-->>GW: workflow and trigger set<br/>next fire 03:00

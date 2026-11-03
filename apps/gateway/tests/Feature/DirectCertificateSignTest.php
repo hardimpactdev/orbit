@@ -6,7 +6,6 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Routes\RouteOperationProjection;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Certificates\FilesystemRootCertificate;
 use App\Infrastructure\Processes\CommandResult;
@@ -17,6 +16,7 @@ use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Filesystem\Filesystem;
+use Tests\Support\FakeDirectOperationProjection;
 use Tests\Support\RootCaFixture;
 
 beforeAll(function (): void {
@@ -320,7 +320,7 @@ function direct_sign_websocket_parent(string $kind, array $input): void
 
             public function definitions(): array
             {
-                return [$this->kind => ['workflow' => 'test-websocket-signing', 'projection' => RouteOperationProjection::class]];
+                return [$this->kind => ['workflow' => 'test-websocket-signing', 'projection' => FakeDirectOperationProjection::class]];
             }
         }]));
     }

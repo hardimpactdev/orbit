@@ -4,6 +4,7 @@ sequenceDiagram
   %% status: draft
   %% command: node:role:relocate
   %% kind: node.role_relocate
+  %% Rule 23: 2026-11-03 required-only main path.
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -15,14 +16,17 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant N as Node 12<br/>gets the role
   participant S as Node 7<br/>gives up the role
-  CLI->>GW: node:role:relocate 12<br/>websocket --from=7 --force
+  CLI->>GW: node:role:relocate 12<br/>websocket
   %%> Command:
-  %%> - `orbit node:role:relocate 12 websocket --from=7 --force`
+  %%> - `orbit node:role:relocate 12 websocket`
   %%> - syntax: `<node> <role> [--from=NODE] [--force] [--idempotency-key=KEY] [--json]`
   %%> Input:
   %%> - the target Node, by id or exact name, and the role: `gateway`, `websocket` or `metrics`
-  %%> - `--from`: the source Node; omit it to use the current holder
+  %%> - the source is the current holder of the role, here Node 7
+  %%> Optional flags:
+  %%> - `--from=NODE` names the source Node; it adds no steps
   %%> - `--force` confirms the move; it is required without a terminal and with `--json`
+  %%> - `--idempotency-key=KEY` reuses a key to retry the start
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
   opt role is swamp

@@ -22,6 +22,10 @@ sequenceDiagram
   %%> Requirements:
   %%> - no other rollout is running or halted
   %%> - the CLI release of the commit is published, or an ancestor's release stands in after 30 minutes
+  %%> Input:
+  %%> - optional API field `node_ids` limits the run to those pending rollout members in their planned order
+  %%> - optional API field `rollout_id` must name the current rollout, or the run is refused
+  %%> - an ineligible listed Node is refused with `fleet.rollout_not_ready`
   %%> What it decides:
   %%> - the desired state: the CLI release with the SHA-256 of each binary, and the Node agent pin with its digests
   %%> - the rollout set and order: active managed Linux Nodes with roles; task sandboxes, macOS Nodes, roleless Nodes and the Gateway's own Node stay out
@@ -29,7 +33,7 @@ sequenceDiagram
   %%> - task #5160 recorded with the full intent; nothing has happened on a Node yet
   GW->>SW: Start run, full intent<br/>operation-fleet-rollout
   %%> What it does:
-  %%> - starts one Swamp run on serve (Node 209) for the whole rollout set
+  %%> - starts one Swamp run on serve (Node 209) for the admitted rollout set
   %%> Inputs:
   %%> - the Nodes in order, each with its address and SSH host keys; the SSH identity comes from the `swamp` role
   %%> - the CLI release URL and digests, and the Node agent pin

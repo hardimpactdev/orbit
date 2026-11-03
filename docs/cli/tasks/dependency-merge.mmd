@@ -2,14 +2,14 @@ sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS 1 (tokens minted at admission, vault; no private-material callback) and R2-R3. docs/reference/tasks.md#dependency-batch-squash-admission.
   %% Tightened: flow-tighten 2026-11-02; native command boundaries remain visible, independent reads and content requests fan out.
   %% status: migrated
-  %% command: none · Services API (tasks-dependency-merge)
+  %% command: none · API / MCP (tasks-dependency-merge)
   %% kind: tasks.dependency_merge
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
   %% lane GH icon=server pill=target tone=purple
-  participant CLI as Services Node<br/>dependency batches
+  participant CLI as API / MCP<br/>typed API request
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant GH as GitHub<br/>repository · PRs

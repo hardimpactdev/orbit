@@ -737,3 +737,16 @@ The [receipt index](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof
 Five Caddy native cases cover symlink replacement, reruns, validation and reload failures, drift after reload and wrong-pin refusal before writes. Together with LAN, DNS and publication delta coverage, 27 native cases pass in 91 seconds. Eleven Gateway cases pass with 70 assertions. PHP static checks, docs, shape, placement, names, flow parity and registry checks pass. The flow checker resolves this shared workflow through its exact Gateway declaration; it rejects a changed chart label without restricting the child's parent-kind inputs.
 
 Normal cancellation 9228 destroyed VM 481 at 09:02:15Z. Source adds 164 net Orbit lines, mainly a missing chart, real proof fixture and regression coverage. Custom behavior code stays unchanged. No shipped script is deleted and no new script gap is named. The evaluation records the separate pinned operations and the host-pin and fail-on-drift questions without adding a wrapper.
+
+## 2026-11-03: remove the unused standalone private DNS wrapper
+
+`route.private_dns_publish` has no production admission caller. Node, Route, Metrics and analytics parents already capture their DNS contribution and invoke `route-dns-publish` within their own native run. This cut deletes the unused standalone workflow, including its reporting shell and rollback chain, its direct declaration and its projector branch. It removes the tests of that wrapper; live DNS and publication delta coverage remains. Shared submission tests use a test contribution instead of relying on an unused production kind. The legacy unconverted-envelope test is removed with its unused caller.
+
+Eleven native DNS and publication delta cases pass in 75 seconds; 40 Gateway cases pass with 174 assertions. Static, docs, flow and registry checks pass. No live receipt applies to deleting this unused kind, and no `rule 22 done` claim is made. Source removes 239 net Orbit lines before this retro. No shipped script is deleted, and no new gap is named. The shared DNS child is unchanged.
+
+
+## 2026-11-03: remove unused standalone Route verification kinds
+
+`route.workload_verify` and `route.public_verify` had only test callers. Native Route parents already own their captured endpoint probes. This cut removes the unused admission action, probe planner, projector, direct declarations, workflow and dedicated tests. The workflow's result printer disappears with it. Shared native probes and parent workflows stay unchanged. Dispatch and certificate-signing tests use a test-only projection, so their coverage does not depend on an unused Route kind.
+
+The four Route workflow cases and 104 Gateway cases pass, including 676 Gateway assertions. This deletes unused code and starts no replacement workflow; no new live receipt or `rule 22 done` claim applies. No shipped script is deleted, and no new gap is named.

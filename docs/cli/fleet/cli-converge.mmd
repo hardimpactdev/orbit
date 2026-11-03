@@ -11,11 +11,12 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
-  Note over GW: Converge the CLI<br/>node_ids [12] · task #5170
+  Note over GW: Converge the CLI<br/>task #5170
   %%> When:
-  %%> - an operator or a tool calls `POST /api/v1/fleet/cli/converge`, for the whole rollout set or the listed Nodes
-  %%> Requirements:
-  %%> - every listed Node is in the rollout set; an ineligible Node is rejected before any task
+  %%> - an operator or a tool calls `POST /api/v1/fleet/cli/converge`, for the whole rollout set
+  %%> Input:
+  %%> - optional API field `node_ids`, for example `[12]`, limits convergence to those eligible Nodes
+  %%> - without it, the whole rollout set is selected; an ineligible listed Node is rejected before admission
   %%> What it decides:
   %%> - per Node: the CLI release with its SHA-256, the root profile, and the public SSH descriptor of each Node that installs
   %%> - a Node whose release is unpublished is skipped; it needs no SSH target

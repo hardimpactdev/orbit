@@ -13,9 +13,9 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
-  CLI->>GW: database:server:create<br/>app-mysql --node=12 --driver=mysql
+  CLI->>GW: database:server:create<br/>app-mysql --node=12
   %%> Command:
-  %%> - `orbit database:server:create app-mysql --node=12 --driver=mysql`
+  %%> - `orbit database:server:create app-mysql --node=12`
   %%> - syntax: `<slug> --node=NODE [--driver=mysql|pgsql|redis] [--tag=TAG] [--port=PORT] [--idempotency-key=KEY] [--json]`
   %%> Input:
   %%> - the slug of the Database server as the argument, lowercase kebab, at most 63 characters
@@ -26,6 +26,16 @@ sequenceDiagram
   %%> - port `3306`, `5432` or `6379`
   %%> Not included:
   %%> - adopting an existing Valkey Process with `--process` and `--connection`; both adoptions are done, so the option is removed
+  opt --tag
+    Note over GW: Set the image tag
+    %%> What it changes:
+    %%> - Replace the selected driver's default image tag.
+  end
+  opt --port
+    Note over GW: Set the private port
+    %%> What it changes:
+    %%> - Replace the selected driver's default published port.
+  end
   Note over GW: Validate, record server<br/>app-mysql: provisioning · #5150
   %%> Requirements:
   %%> - your Node has an access grant to Node 12
@@ -67,15 +77,21 @@ sequenceDiagram
   %%> - Swamp reaches Node 12 from 209 with the official `@swamp/cfgmgmt/docker_image` behavior, `ensure: present`
   %%> What it does:
   %%> - pulls `mysql:8.4`; an image that is already present is kept
-  opt driver is redis
-    SW->>N: Write the ACL file<br/>@swamp/cfgmgmt/file · 0600
-    %%> What it does:
-    %%> - writes `users.acl` into the data volume with one line for the user `default` and the SHA-256 hash of the admin password
-    %%> - it holds only hashes
-    %%> Why:
-    %%> - Valkey starts only from this file; without it Valkey refuses to start, so a damaged server stays closed
-    %%> Repair:
-    %%> - on an active Valkey server, the same command rebuilds the file from the records, with every ACL user
+  opt --driver
+    Note over GW: Select the server driver
+    %%> What it changes:
+    %%> - replace default mysql with pgsql or redis; choose that driver's image, port and login check
+    %%> - Valkey writes the ACL file and skips the first-start environment and its removal
+    opt selected driver is redis
+      SW->>N: Write the ACL file<br/>@swamp/cfgmgmt/file · 0600
+      %%> What it does:
+      %%> - writes `users.acl` into the data volume with one line for the user `default` and the SHA-256 hash of the admin password
+      %%> - it holds only hashes
+      %%> Why:
+      %%> - Valkey starts only from this file; without it Valkey refuses to start, so a damaged server stays closed
+      %%> Repair:
+      %%> - on an active Valkey server, the same command rebuilds the file from the records, with every ACL user
+    end
   end
   SW->>N: Start the container<br/>stdin env · docker run
   %%> What it does:
@@ -98,14 +114,14 @@ sequenceDiagram
   %%> - the Gateway checks the answer, `1` or `PONG`, in the run's native result
   %%> Why:
   %%> - only the final server accepts this login, so the next step never recreates a container that is still initializing
-  opt driver is mysql or pgsql
-    SW->>N: Remove the first-start env<br/>recreate · wait again
-    %%> What it does:
-    %%> - one bounded command removes `app-mysql` and starts it again without `--env-file`; the data volume keeps the password
-    %%> - waits for Docker to report it healthy again; this is the end check for mysql and pgsql
-    %%> Result:
-    %%> - the password is absent from the container environment and `docker inspect`
-  end
+  SW->>N: Remove the first-start env<br/>recreate · wait again
+  %%> When:
+  %%> - the default MySQL create, or PostgreSQL initialization; skipped for Valkey and an active SQL server retry
+  %%> What it does:
+  %%> - one bounded command removes `app-mysql` and starts it again without `--env-file`; the data volume keeps the password
+  %%> - waits for Docker to report it healthy again; this is the end check for mysql and pgsql
+  %%> Result:
+  %%> - the password is absent from the container environment and `docker inspect`
   alt every step succeeds
     N-->>SW: healthy, login works
     %%> Returns:

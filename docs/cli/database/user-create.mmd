@@ -13,10 +13,10 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Node 12<br/>beast-mysql server
-  CLI->>GW: database:user:create shop<br/>--username=reporting --read-only
+  CLI->>GW: database:user:create shop<br/>--username=reporting
   %%> Command:
-  %%> - `printf '%s' "$PASSWORD" | orbit database:user:create shop --username=reporting --read-only`
-  %%> - syntax: `<slug> --username=USER [--read-only] [--replication] [--idempotency-key=KEY]`
+  %%> - `printf '%s' "$PASSWORD" | orbit database:user:create shop --username=reporting`
+  %%> - syntax: `<slug> --username=USER [--read-only] [--replication] [--idempotency-key=KEY] [--json]`
   %%> Input:
   %%> - the connection slug of a database on a MySQL or PostgreSQL server
   %%> - the username: a 1-32 character identifier
@@ -35,6 +35,11 @@ sequenceDiagram
   %%> Result:
   %%> - task #5123 recorded with the database, owner, username and grant policy
   %%> - the password stored encrypted; nothing has happened on the Node yet
+  opt --read-only
+    Note over GW: Select reader grants
+    %%> What it changes:
+    %%> - Replace default write grants with reader grants in the apply batch; the end check verifies them.
+  end
   GW->>SW: Store the batches<br/>database-user-create-apply-5123
   %%> What it does:
   %%> - puts three whole values into the Swamp vault on Node 209 (R3)
@@ -46,14 +51,18 @@ sequenceDiagram
   %%> - starts one Swamp run on serve (Node 209)
   %%> Inputs:
   %%> - the driver, database, owner, username, grant policy and replication flag
-  %%> - the vault key names `database-user-create-intent-5123` and `database-server-3-admin`
+  %%> - the vault key names `database-user-create-wal-5123`, `database-user-create-apply-5123` and `database-user-create-check-5123`
   %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
   GW-->>CLI: 202 Accepted<br/>task #5123
   %%> What you get:
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  opt --replication on PostgreSQL
+  opt --replication
+    Note over GW: Select replication grants
+    %%> What it changes:
+    %%> - PostgreSQL only: set LOGIN REPLICATION and reader grants, including owner defaults for future public tables.
+    %%> - Require logical WAL before applying the batch; without the flag, PostgreSQL gets NOREPLICATION.
     SW->>N: Check logical WAL<br/>docker exec -i · SHOW
     %%> How:
     %%> - Swamp reaches Node 12 over SSH from 209 with `@swamp/ssh` and the `swamp` role's SSH identity; nothing is copied to the Node
@@ -76,7 +85,6 @@ sequenceDiagram
   %%> Refuses:
   %%> - an existing PostgreSQL role outside this connection (`database.name_conflict`); the batch stops before any change and prints the code for the Gateway
   %%> - MySQL: escapes underscores, so the grant covers only `shop`
-  %%> - PostgreSQL replication: also owner defaults for future public tables
   %%> Not included:
   %%> - Orbit never changes the server configuration or creates publications
   SW->>N: Check the user<br/>docker exec -i · login, grants
@@ -93,7 +101,7 @@ sequenceDiagram
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
     %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-    Note over GW: Record the user<br/>read-only · task succeeded
+    Note over GW: Record the user<br/>grants · task succeeded
     %%> Result:
     %%> - user `reporting` recorded for `shop`, with its privileges and encrypted password
     %%> - `database:user:list shop` shows it; `vault:sync` can publish its password to Vaultwarden

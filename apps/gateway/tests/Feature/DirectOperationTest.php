@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
@@ -14,11 +15,20 @@ use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Tests\Support\FakeDirectOperationProjection;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
+    $definition = new class implements DirectOperationContribution
+    {
+        public function definitions(): array
+        {
+            return ['test.direct' => ['workflow' => 'operation-test-direct', 'projection' => FakeDirectOperationProjection::class]];
+        }
+    };
+    app()->instance(DirectOperation::class, new DirectOperation([$definition]));
     $node = Node::query()->create(['name' => 'private-dev', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
-    $this->operation = Operation::query()->create(['kind' => 'route.private_dns_publish', 'target_type' => 'node_route_projection',
+    $this->operation = Operation::query()->create(['kind' => 'test.direct', 'target_type' => 'node_route_projection',
         'target_id' => $node->id, 'node_id' => $node->id, 'status' => OperationStatus::Queued, 'sequence' => 1,
         'state' => ['route_publication_writer' => 'direct'], 'input' => []]);
 });
@@ -31,8 +41,8 @@ it('uses only the fixed workflow and shared token rather than Operation input', 
     app(StartSwampRun::class)->start($this->operation);
 
     expect($socket->endpoint->bearerToken)->toBe('private.scoped.fixture');
-    expect($socket->sent[0]['payload'])->toBe(['workflowIdOrName' => 'operation-route-publication',
-        'inputs' => ['operation_id' => $this->operation->id, 'kind' => 'route.private_dns_publish', 'node_id' => $this->operation->node_id],
+    expect($socket->sent[0]['payload'])->toBe(['workflowIdOrName' => 'operation-test-direct',
+        'inputs' => ['operation_id' => $this->operation->id, 'kind' => 'test.direct', 'node_id' => $this->operation->node_id],
         'runtimeTags' => ['orbit_start_key' => 'operation:'.$this->operation->id]]);
     expect($socket->connections)->toBe([15.0]);
     expect(json_encode($this->operation->fresh()->toArray()))->not->toContain('private.scoped.fixture');
@@ -59,7 +69,7 @@ it('refuses undeclared intents and registers direct declarations without writer 
     expect(fn () => app(StartSwampRun::class)->start($this->operation))->toThrow(ResourceOperationException::class);
     expect(fn () => app(DirectOperation::class)->writer('unknown.intent'))->toThrow(ResourceOperationException::class);
     expect($socket->sent)->toBe([]);
-    $this->operation->update(['kind' => 'route.private_dns_publish', 'state' => [], 'status' => OperationStatus::Queued]);
+    $this->operation->update(['kind' => 'test.direct', 'state' => [], 'status' => OperationStatus::Queued]);
     app(StartSwampRun::class)->start($this->operation);
     expect($this->operation->fresh()->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676');
 });
@@ -76,7 +86,7 @@ it('fails closed without a configured scoped credential before sending intent', 
 it('records only the matching root run and closes its single submission connection', function (): void {
     $socket = new FakeRoutePublicationSocket;
     $socket->reply = static function (array $request): array {
-        $event = ['kind' => 'started', 'workflowName' => 'operation-route-publication', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676'];
+        $event = ['kind' => 'started', 'workflowName' => 'operation-test-direct', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676'];
 
         return [
             ['type' => 'event', 'id' => 'foreign', 'event' => $event],
@@ -162,7 +172,7 @@ it('does not resubmit a lost response even when a later response would succeed',
         }
 
         return [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started',
-            'workflowName' => 'operation-route-publication', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+            'workflowName' => 'operation-test-direct', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
     };
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'private.scoped.fixture']);

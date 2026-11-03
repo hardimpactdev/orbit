@@ -17,9 +17,20 @@ Deno.test("remote refusal is resolved by a separate native child, with a fake sy
       "extensions/behaviors/orbit_group_runs.ts",
     ]
   ) await copy(repo, path);
+  // The native child reads its account from HOME/.config/swamp/api-key. CI provides the key only as
+  // SWAMP_API_KEY, so the child gets a scratch HOME holding that key, or this host's own Swamp config.
+  const home = `${repo.dir}/host-home`;
+  await Deno.mkdir(`${home}/.config`, { recursive: true });
+  const key = Deno.env.get("SWAMP_API_KEY");
+  if (key) {
+    await Deno.mkdir(`${home}/.config/swamp`);
+    await Deno.writeTextFile(`${home}/.config/swamp/api-key`, key, { mode: 0o600 });
+  } else {
+    await Deno.symlink(`${Deno.env.get("HOME")}/.config/swamp`, `${home}/.config/swamp`);
+  }
   const source = (await Deno.readTextFile(`${ROOT}/extensions/behaviors/native_host_method.ts`))
     .replace('"/home/orbit/apps/orbit-monorepo-staging/checkout/swamp"', JSON.stringify(repo.dir))
-    .replace('const HOME = "/home/orbit"', `const HOME = ${JSON.stringify(Deno.env.get("HOME"))}`)
+    .replace('const HOME = "/home/orbit"', `const HOME = ${JSON.stringify(home)}`)
     .replace("executable: `${HOME}/.local/bin/swamp`", `executable: ${JSON.stringify(await swampBinary())}`)
     .replace('"./operations/_lib/local-worker.ts"', '"./fixture_host_tools.ts"');
   await Deno.writeTextFile(`${repo.dir}/extensions/behaviors/native_host_method.ts`, source);

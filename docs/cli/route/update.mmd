@@ -1,6 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R1-R4, firewall.allow shape, Gateway signs CSRs (root-of-trust), single-swamp-node. docs/cli/route.mdx, docs/reference/routes.md (Change an existing Route).
   %% Tightened: flow-tighten 2026-11-02, rules 3, 17, 22 (cert install folded into the publish step as in route:create; DNS and its grace only outside the TLD; cfgmgmt file/line).
+  %% Rule 23: 2026-11-03 required-only main path.
   %% status: draft
   %% command: route:update
   %% kind: route.update
@@ -15,17 +16,18 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant N as Route Nodes<br/>workload · Router
   participant V as VPN Node<br/>private DNS
-  CLI->>GW: route:update 14<br/>--domain=shop.example.test
+  CLI->>GW: route:update 14<br/>at least one option
   %%> Command:
   %%> - `orbit route:update 14 --domain=shop.example.test`
   %%> - syntax: `<route> [--domain=DOMAIN] [--publication=private|public] [--web-root=PATH]`
   %%> Input:
-  %%> - Route 14, with at least one option
+  %%> - Route 14 and at least one option; without one, the CLI refuses with `route.update_required`
+  %%> Optional, each its own change:
+  %%> - `--domain=shop.example.test`: a replacement Route takes over, so you get a new Route ID
+  %%> - `--publication=private|public`: the public edge opens or closes; the Route ID stays
+  %%> - `--web-root=PATH`: the Caddy site serves another directory; the Route ID stays; it adds no step
   %%> - `--web-root` goes on its own; `--web-root=` clears it
-  %%> Three changes:
-  %%> - domain: a replacement Route takes over, so you get a new Route ID
-  %%> - publication: the public edge opens or closes; the Route ID stays
-  %%> - web root: the Caddy site serves another directory; the Route ID stays
+  %%> - `--idempotency-key` and `--json` change no step
   Note over GW: Validate, lock, record<br/>Route 15 pending · task #5160
   %%> Requirements:
   %%> - your Node has an access grant to Node 7, the Node of the Route's target
@@ -53,7 +55,7 @@ sequenceDiagram
   %%> - the task number, at once
   %%> Next:
   %%> - the CLI follows the task with `operation:show`
-  opt domain changes
+  opt --domain
     SW->>N: Make a CSR on the Node<br/>openssl req · key stays on Node
     %%> How:
     %%> - Swamp reaches Node 7, and the Router for a Cluster Route, over `@swamp/ssh` from 209
@@ -78,13 +80,15 @@ sequenceDiagram
   %%> - validates the whole Caddyfile, then reloads Caddy; never a restart (rule 7)
   %%> Refuses:
   %%> - a validation error; the old Caddyfile stays in place
-  opt Laravel target, new URL
-    SW->>N: Write the new APP_URL<br/>@swamp/cfgmgmt/line
-    %%> What it does:
-    %%> - development: sets the `APP_URL=` line in `.env` with `@swamp/cfgmgmt/line`, and refreshes the cached configuration
-    %%> - production: renders the stored environment against the new Route and replaces only the home's `.env`
-    %%> Not included:
-    %%> - Composer, Artisan, deploy or restart commands
+  opt --domain
+    opt Laravel target
+      SW->>N: Write the new APP_URL<br/>@swamp/cfgmgmt/line
+      %%> What it does:
+      %%> - development: sets the `APP_URL=` line in `.env` with `@swamp/cfgmgmt/line`, and refreshes the cached configuration
+      %%> - production: renders the stored environment against the new Route and replaces only the home's `.env`
+      %%> Not included:
+      %%> - Composer, Artisan, deploy or restart commands
+    end
   end
   SW->>N: Probe the site over TLS<br/>openssl s_client · SNI domain
   %%> What it does:
@@ -92,7 +96,7 @@ sequenceDiagram
   %%> - requires a chain the Orbit root trusts
   %%> Why:
   %%> - nothing moves to the new state before the site serves
-  opt publication changes
+  opt --publication
     SW->>N: Open or close the edge<br/>Ingress Caddy · ufw 80/443
     %%> What it does:
     %%> - public: publishes the Ingress site, then opens `orbit:ingress-http` and `orbit:ingress-https`
@@ -100,7 +104,7 @@ sequenceDiagram
     %%> Not included:
     %%> - the public DNS record and Let's Encrypt issuance; Caddy retries issuance on its own
   end
-  opt domain changes
+  opt --domain
     opt domain outside the TLD
     SW->>V: Move private DNS<br/>records + catalog, then reload
     %%> When:

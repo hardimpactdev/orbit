@@ -13,9 +13,9 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
-  CLI->>GW: firewall:allow 5432<br/>--node=7 --from=CIDR --label=…
+  CLI->>GW: firewall:allow 5432<br/>--node=7
   %%> Command:
-  %%> - `orbit firewall:allow 5432 --node=7 --from=10.6.0.0/24 --label="office postgres"`
+  %%> - `orbit firewall:allow 5432 --node=7`
   %%> - syntax: `<port> --node=ID [--from=SOURCE] [--protocol=tcp|udp] [--label=TEXT]`
   %%> Input:
   %%> - the port as the argument: a number such as `5432`, or a range such as `8000:8100`

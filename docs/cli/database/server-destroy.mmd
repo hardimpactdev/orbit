@@ -13,7 +13,7 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
-  CLI->>GW: database:server:destroy<br/>app-mysql --force
+  CLI->>GW: database:server:destroy<br/>app-mysql
   %%> Command:
   %%> - `orbit database:server:destroy app-mysql --force`
   %%> - syntax: `<slug> [--force] [--idempotency-key=KEY] [--json]`
@@ -22,6 +22,9 @@ sequenceDiagram
   %%> Confirmation:
   %%> - without `--force`, the CLI asks first; the default is No
   %%> - a JSON or non-interactive call without `--force` returns `database.confirmation_required`
+  Note over CLI: Confirm destruction<br/>default No
+  %%> What it does:
+  %%> - ask on a terminal before sending the request; decline cancels
   Note over GW: Validate, mark removing<br/>app-mysql · task #5160
   %%> Requirements:
   %%> - your Node has an access grant to Node 12, which runs app-mysql

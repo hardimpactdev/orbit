@@ -2,32 +2,38 @@ sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R1 (an external API call is an effect, so it is a run), R2-R4. docs/reference/conn.md#native-pairing-revocation.
   %% Tightened: flow-tighten 2026-11-02, rule 16 (the session list only picks the targets, so it folds into the revoke step).
   %% status: migrated
-  %% command: none · Conn API (conn-pairing-revoke)
+  %% command: none · API (conn-pairing-revoke)
   %% kind: conn.pairing_revoke
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
   %% lane T3 icon=server pill=target tone=purple
-  participant CLI as Conn / MCP<br/>Conn app · MCP
+  participant CLI as CLI / MCP<br/>API callers
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant T3 as T3 server<br/>T3 auth API
-  CLI->>GW: Revoke Node 4, env-beast<br/>POST …/env-beast/pairings/revoke
+  CLI->>GW: Revoke own pairings<br/>POST …/env-beast/pairings/revoke
   %%> Command:
-  %%> - `POST /api/v1/conn/environments/env-beast/pairings/revoke` with `node_id` 4
+  %%> - `POST /api/v1/conn/environments/env-beast/pairings/revoke`
   %%> - syntax: the MCP tool `conn-pairing-revoke` with `environment` and an optional `node_id`
   %%> Input:
   %%> - the T3 server, and the Node whose pairings go; without `node_id` it is the caller
   %%> Not included:
   %%> - there is no `orbit` command; WireGuard access does not change
+  opt node_id (API)
+    Note over GW: Select another Node<br/>node_id: 4
+    %%> Input:
+    %%> - `node_id` selects Node 4 instead of the caller
+    %%> - the caller remains the owner of the revocation Operation
+  end
   Note over GW: Select the pairings<br/>task #5171 · session to vault
   %%> Requirements:
   %%> - the `conn` extension is on; the caller is an active Node
   %%> - env-beast is registered and the Gateway's admin session there has not expired
   %%> - no other revocation runs for env-beast; the Gateway holds one lock per server
   %%> What it does:
-  %%> - captures Node 4's open pairings on env-beast: their client labels and link IDs
+  %%> - captures the subject Node's open pairings on env-beast: their client labels and link IDs; the subject defaults to the caller
   %%> - pushes the admin session to the Swamp vault as `conn-session-5171` after commit (R3)
   %%> Why a run:
   %%> - calling T3's API is an effect; the Gateway's only execution primitives are mint and sign
@@ -80,7 +86,7 @@ sequenceDiagram
     %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
     Note over GW: Mark pairings revoked<br/>revoked_at · task done
     %%> Result:
-    %%> - Node 4's pairings on env-beast get `revoked_at`, and their stored links are removed
+    %%> - the subject Node's pairings on env-beast get `revoked_at`, and their stored links are removed
     %%> - the device loses env-beast at once; its other servers and Orbit access stay
     %%> - task #5171 succeeds
   else listing or a revoke fails
@@ -97,7 +103,7 @@ sequenceDiagram
     %%> - safe: run it again; it lists the sessions again and skips those already gone
   end
   loop wait with progress until terminal
-    CLI->>GW: operation:show #5171
+    CLI->>GW: Read Operation #5171<br/>GET conn/operations/5171
     %%> What it does:
     %%> - waits on the task and shows each step label as progress
     GW-->>CLI: progress + result

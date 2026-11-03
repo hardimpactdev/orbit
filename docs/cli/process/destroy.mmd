@@ -1,6 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS 4 + R1-R4 (process.stop shape: 209, @swamp/ssh, full intent as inputs).
   %% Tightened: flow-tighten 2026-11-02, rules 1-22 (cfgmgmt absent applies, mirror of process:create, no shipped scripts, no report step).
+  %% Rule 23: 2026-11-03 required-only main path.
   %% status: migrated
   %% command: process:destroy
   %% kind: process.destroy
@@ -13,12 +14,14 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
-  CLI->>GW: process:destroy 417<br/>--yes
+  CLI->>GW: process:destroy 417
   %%> Command:
-  %%> - `orbit process:destroy 417 --yes`
+  %%> - `orbit process:destroy 417`
   %%> - syntax: `process:destroy <process> [--project=ID] [--yes] [--idempotency-key=KEY] [--json]`
   %%> Input:
-  %%> - the numeric Process ID; `--yes` skips the confirmation
+  %%> - the numeric Process ID; the CLI asks for confirmation first
+  %%> Optional:
+  %%> - `--yes` skips the confirmation; `--idempotency-key` reuses a task start; `--json` returns JSON; none adds a step
   %%> Not handled here:
   %%> - `--project` removes a Project definition only; it starts no run (R1)
   %%> Who can call it:

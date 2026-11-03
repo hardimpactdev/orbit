@@ -59,7 +59,7 @@ Every composing workflow that forwards an environment execution copy declares `o
 
 Withdrawal captures remaining application URL writes at admission. Public write inputs and pinned target connections stay in the run intent; environment material uses names-only `orbit-control-inputs` execution-copy descriptors. The existing `route-environment-write` child resolves the whole vault value through official SSH stdin from Node 209. Removal declares no private-material callback. Offline selection skips writes for retained Nodes.
 
-Private DNS publication still uses `operation-route-publication` and its existing named primitive. Neither direct workflow uses scheduled discovery, claims, leases or Gateway execution locks. Follow the Swamp run before retrying an uncertain admission. The remaining Route lifecycle kinds refuse admission until their native conversion is available.
+Private DNS publication runs as `route-dns-publish` inside its owning native parent. Neither direct workflow uses scheduled discovery, claims, leases or Gateway execution locks. Follow the Swamp run before retrying an uncertain admission. The remaining Route lifecycle kinds refuse admission until their native conversion is available.
 
 A Route has one of three kinds. The kind never changes.
 
@@ -384,7 +384,7 @@ Route parents withdraw LAN tuples through the shared `route-lan-apply` child on 
 
 Before publication, `route.verify-certificate` checks the admitted workload or Router endpoint from the control worker. It connects to the selected address on port 443, sends the Route domain as TLS SNI, and requires a chain trusted by the control worker. This preserves the existing OpenSSL chain check; it does not add a separate hostname check. The Gateway records the validated placement and public error mapping; Swamp drives the activation order. Router replacement uses the same commands.
 
-The `route.workload_verify` and `route.public_verify` kinds use the direct Swamp path. Their direct path records a required TLS or HTTP probe and agent pin at admission, then starts `operation-route-verification`. The Node 209 migration worker uses the shared bounded Node runner without sudo to call the typed read-only agent command against the stored workload or Router WireGuard address. The Operation Node records the owning Router or Ingress. Colocated placements require the same probe; there is no skip mode. Public Process checks keep their validated published listener.
+Native Route parents run their captured TLS or HTTP probes inside their own workflow. A failed probe fails its parent run; verification starts no separate Operation. The admitted protocol, endpoint and Route domain stay fixed for that run.
 
 Caddy and private DNS publication use direct workflows. The direct kinds expose no `/operation-executor` run allowlist. Caddy runs locally on its exact admitted Node; private DNS retains its existing publication primitive. Residue and Instance cleanup still use the shared transports until their owning cutover. The old `/route-publications` relay URLs are removed; callers use the shared bound Operation API.
 
@@ -762,7 +762,7 @@ A `node.add` parent may update a generated Route domain with exactly `{route_id,
 
 A child `route.destroy` request uses `{route_id, offline: false}`. The shared child admission boundary calls `AdmitRouteOperationAction::destroy` when the parent requests the child. This runs the Route guards and captures its intent before the child becomes runnable. An AI takeover requests destruction after its collector health proof.
 
-`route.private_dns_publish` requires an active VPN role and uses the listener release and socket unit installed by Node convergence. It validates and replaces the catalog before enabling and starting an inactive socket. Publication requires the loaded catalog digest and a DNS reply. Before rollout, verify that each serving listener release writes catalog confirmation; a missing listener must first be installed by Node convergence. Node enrollment and Cluster changes commit their stored placement before starting DNS publication. A failed first publication restores the previous data and inactive socket state. An existing socket stays open during publication and recovery.
+Private DNS publication inside Node and Route parents uses the captured records and requester catalog through the shared `route-dns-publish` child. Node convergence installs the serving listener before publication. Its parent owns terminal failure and task state; publication starts no separate Operation.
 
 Each parent prepares exact `{stage, key}` child entries. Child-phase and residue result lists allow at most 4,096 entries and use the shared kit's string and whole-result limits. Opening a phase makes only those children eligible. A commit checks each child's stamped parent, admission snapshot and successful result through the shared child proof. Final proof checks the required phases and children again. The parent completion must match that recorded result.
 
@@ -796,7 +796,7 @@ Route Operations retain their admitted Instance environment owners until complet
 
 ### Direct dispatch
 
-`route.caddy_converge`, `route.private_dns_publish`, `route.workload_verify` and `route.public_verify` each have one direct dispatch path. The Gateway starts the owning native workflow after intent commits. Their polled discovery entries, executor contracts and writer choices are removed. New Operations default to direct; selecting `polled` refuses admission. Rollback is a revert PR.
+`route.caddy_converge` has one direct dispatch path. The Gateway starts the owning native workflow after intent commits. Their polled discovery entries, executor contracts and writer choices are removed. New Operations default to direct; selecting `polled` refuses admission. Rollback is a revert PR.
 
 These kinds use the shared `swamp.direct_writers` configuration and retain their recorded writer identity. The separate publication settings and their environment variables are removed. No direct kind exposes a Gateway execution contract, even for an old unstamped row. The remaining Route and Certificate kinds retain their family discovery entries until their owning native cutover.
 

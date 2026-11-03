@@ -21,7 +21,12 @@ sequenceDiagram
     A->>GW: Report observations<br/>with observed_at
     Note over GW: Store latest facts<br/>per Node, per check
   end
-  CLI->>GW: doctor --node=7<br/>{families: [node, firewall]}
+  CLI->>GW: doctor
+  %%> Command:
+  %%> - `orbit doctor`
+  %%> - syntax: `doctor [--node=ID] [--family=FAMILY] [--json]`
+  %%> Input:
+  %%> - without filters, checks all accessible registered Nodes and all families
   Note over GW: Compare facts with intent<br/>exact, drift, missing
   %%> Doctor always answers from the Gateway's state:
   %%> - it never starts a run and never SSHes into the Node

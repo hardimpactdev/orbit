@@ -10,7 +10,7 @@ sequenceDiagram
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant N as Reverb<br/>on websocket Node
-  CLI->>GW: websocket:app:destroy<br/>hauzer --force
+  CLI->>GW: websocket:app:destroy<br/>hauzer
   %%> Command:
   %%> - `orbit websocket:app:destroy hauzer --force`
   %%> - syntax: `<name> [--force] [--operation-key=KEY] [--json]`

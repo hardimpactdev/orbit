@@ -13,15 +13,18 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Node 12<br/>beast-mysql server
-  CLI->>GW: database:destroy shop<br/>--force
+  CLI->>GW: database:destroy shop
   %%> Command:
   %%> - `orbit database:destroy shop --force`
-  %%> - syntax: `<slug> [--force] [--idempotency-key=KEY]`
+  %%> - syntax: `<slug> [--force] [--idempotency-key=KEY] [--json]`
   %%> Input:
   %%> - the connection slug, as `database:list` shows it
   %%> Confirmation:
   %%> - without `--force`, the CLI asks first; the default is No
   %%> - with `--json` or without a terminal, `--force` is required (`database.confirmation_required`)
+  Note over CLI: Confirm destruction<br/>default No
+  %%> What it does:
+  %%> - ask on a terminal before sending the request; decline cancels
   Note over GW: Check, plan the removal<br/>task #5124 · lock beast-mysql
   %%> Requirements:
   %%> - your Node has an access grant to Node 12
@@ -29,7 +32,7 @@ sequenceDiagram
   %%> - AI router setup and Analytics do not use it
   %%> - no database creation or other removal runs on `beast-mysql`; the Gateway holds one lock per Database server
   %%> Plans:
-  %%> - the databases: `shop`, its test database and, on PostgreSQL, the recorded test pool
+  %%> - the databases: `shop`, its test database and the recorded test pool on MySQL or PostgreSQL
   %%> - the users Orbit created for `shop` that no other connection on the server uses
   %%> - system databases such as `mysql` or `postgres` are refused before any run
   %%> Decides:
@@ -37,7 +40,7 @@ sequenceDiagram
   alt connection without a server
     Note over GW: Delete only the record<br/>R1: no run, database stays
     %%> When:
-    %%> - a registered external database or SQLite file, or a Valkey connection that logs in as `default`
+    %%> - a registered external database or SQLite file
     %%> Result:
     %%> - connection `shop` is deleted
     %%> - the database itself stays where it is; Orbit never created it
@@ -80,6 +83,7 @@ sequenceDiagram
     %%> Per driver:
     %%> - admin login: the admin password as the first stdin line, from the vault, read inside the container
     %%> - Valkey: no database; `ACL DELUSER`, then `ACL SAVE`; the user's keys stay
+    %%> - Valkey default login: the removal plan excludes `default`; its credentials and keys stay
     %%> Not included:
     %%> - no ownership read first: the plan comes from the Gateway's records
     SW->>N: Check they are gone<br/>docker exec -i · SELECT
@@ -114,9 +118,9 @@ sequenceDiagram
       SW--xGW: Run failed<br/>error_code, failed step
       %%> The Gateway reads:
       %%> - which step failed and its error code, for example `database.in_use`
-      Note over GW: Mark the connection failed<br/>task failed · rerun after a fix
+      Note over GW: Keep the connection<br/>task failed · rerun after a fix
       %%> Result:
-      %%> - connection `shop` stays, marked failed, with its users and attachments
+      %%> - connection `shop` stays with its users and attachments; the task records the failure
       %%> - task #5124 fails
       %%> On the Node:
       %%> - after a blocker, nothing was dropped

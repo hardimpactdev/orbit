@@ -47,8 +47,7 @@ final readonly class RouteOfflineSelection
             }
         }
         foreach ($stages as $stage => $children) {
-            $stages[$stage] = array_values(array_filter(RouteExecutionProof::objects($children), static fn (array $child): bool => $child['kind'] === 'route.private_dns_publish'
-                || ! isset($retained[ValidatedData::integer($child['node_id'])])));
+            $stages[$stage] = array_values(array_filter(RouteExecutionProof::objects($children), static fn (array $child): bool => ! isset($retained[ValidatedData::integer($child['node_id'])])));
         }
         $plan['stages'] = $stages;
         $plan['retained_on_nodes'] = array_values($retained);

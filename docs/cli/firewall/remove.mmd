@@ -12,13 +12,15 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
-  CLI->>GW: firewall:remove 5432<br/>--node=7 --from=CIDR
+  CLI->>GW: firewall:remove 5432<br/>--node=7
   %%> Command:
-  %%> - `orbit firewall:remove 5432 --node=7 --from=10.6.0.0/24`
+  %%> - `orbit firewall:remove 5432 --node=7`
   %%> - syntax: `<port> --node=ID [--from=SOURCE] [--protocol=tcp|udp]`
   %%> Input:
   %%> - the port as the argument, and the Node
   %%> - `--from` and `--protocol` only when several rules share the port
+  %%> Confirmation:
+  %%> - the CLI asks before removal; `--yes` confirms without a prompt
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
   Note over GW: Validate, mark removing<br/>rule: removing · task #5131

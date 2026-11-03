@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0244 native Swamp schedules, one Swamp workflow per Schedule (Nick 2026-11-02), nothing installed on Nodes; R1-R3.
+  %% Rule 23: 2026-11-03 required-only main path.
   %% status: migrated
   %% command: schedule:destroy
   %% kind: schedule.destroy
@@ -12,12 +13,16 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Target Node<br/>reached over ssh
-  CLI->>GW: schedule:destroy 7f3c…<br/>Schedule UUID · --yes
+  CLI->>GW: schedule:destroy 7f3c…<br/>Schedule UUID
   %%> Command:
-  %%> - `orbit schedule:destroy 7f3c9a2e-41d0-4b8a-9c11-2f6e0d5b7a10 --yes`
+  %%> - `orbit schedule:destroy 7f3c9a2e-41d0-4b8a-9c11-2f6e0d5b7a10`
   %%> - syntax: `<schedule> [--project=ID] [--yes] [--idempotency-key=KEY] [--json]`
   %%> Input:
-  %%> - the UUID of the Schedule, or a definition name with `--project`
+  %%> - the UUID of the Schedule
+  %%> Other form:
+  %%> - `<name> --project=ID` deletes a Project Schedule definition; see below
+  %%> Optional:
+  %%> - `--yes` skips the prompt; `--idempotency-key` and `--json` change no step
   %%> Confirmation:
   %%> - without `--yes`, the CLI asks first; the default is No
   %%> - without a terminal, or with `--json`, `--yes` is required
