@@ -703,3 +703,13 @@ The [receipt index](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof
 The two `role_files_native_test.ts` cases are deleted with the old workflow they load. The native parent receipts cover the resource path.
 
 Before its receipt and retro, the cleanup removes 8319 net Orbit lines. It deletes 46 files and changes five more. The Node enrollment push adds 1268 lines including its evidence; together the two batches reduce Orbit by 7051 lines before this cleanup evidence.
+
+## 2026-11-03: automatic deployment policy captures its own events
+
+The retained scheduled policy drops its result shell. Its existing failure assertion now depends directly on the typed policy producer. The Gateway captures full `fire_json` in the same history request and decodes it before recording events, including partial events from a failed fire. No policy, admission or deployment behavior changes. Native tests cover success and a failed assertion with a producer receipt larger than 6 KiB. Gateway tests cover complete receipts larger than the stdout summary limit, failed fires and replay.
+
+The [receipt index](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/receipts/automatic-production-deploy-rule14.json) records source `4d4f963eb3`, minimal@16 and native run `b3580230-961d-4c32-bca9-54b1b18879cd`. Native steps took 1.124 seconds; run and projection took 3.7 seconds, and the fixture took 4.7 seconds (one sample; budget 180 seconds; queue timeout 30 seconds). The registered root was started manually against empty real Gateway discovery. The production subscriber and queue recorded its exact run ID. There was no deployment Operation, GitHub request, production Node, model provider or calendar timing test.
+
+The proof runner now accepts a scheduled root without fabricating an Operation. `scheduled_run` supplies public inputs, and `after_run` drives the existing production subscriber. Phase budgets and native history remain shared with Operation proofs. Parity still reads `PROOF_OPERATION_FILE`, containing null here, and receives the exact native ID through `PROOF_NATIVE_RUN`.
+
+Source adds 156 net Orbit lines. Production removes eight net lines; shared proof support adds 25, native tests add 45, Gateway tests add 24, proof fixtures add 60 and charts and references add ten. Custom behavior code stays unchanged. Five Gateway cases pass with 28 assertions; two native cases pass in 15 seconds. No shipped script is deleted and no new script gap is named. The retained fleet policy architecture remains outside this reporting-step cleanup.

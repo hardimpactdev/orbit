@@ -1,0 +1,19 @@
+{
+  "workflow": "automatic-production-deploy",
+  "related_kind": "instance.deploy",
+  "rule": 14,
+  "topology": "minimal",
+  "topology_version": 16,
+  "source_commit": "4d4f963eb39d346d6420b0c9102576fd4b17f684",
+  "receipt": "/home/nckrtl/swamp-execution/evidence/proof/automatic-production-deploy/20261103T074829Z-minimal.json",
+  "proof_pass": true,
+  "native_seconds": 1.124,
+  "run_and_projection_seconds": 3.7,
+  "fixture_seconds": 4.7,
+  "budget_seconds": 180,
+  "queue_timeout_seconds": 30,
+  "swamp_run_id": "b3580230-961d-4c32-bca9-54b1b18879cd",
+  "reporting_steps_removed": 1,
+  "scripts_deleted": 0,
+  "limits": "Manual start of the registered scheduled root, empty real Gateway discovery, actual native producer/assertion and production shared subscriber/queue. No deployment Operation, GitHub request, production Node, model provider, nonempty policy selection or cron timing is exercised. Native and Gateway tests cover nonempty receipts larger than 4 KiB and partial events on a failed fire. This is rule 14 cleanup of the retained policy, not a new per-Instance schedule port."
+}
