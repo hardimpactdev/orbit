@@ -14,6 +14,7 @@ instance.register
 instance.transfer
 instance.run_steps
 instance.sync_environment
+node.add
 node.agent_rekey
 node.converge
 node.network_converge

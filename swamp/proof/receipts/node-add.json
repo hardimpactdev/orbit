@@ -1,0 +1,40 @@
+{
+  "kind": "node.add",
+  "source_commit": "e6df5ceb0c142b91579c9f7918c28fbd4a9ebb17",
+  "rebased_execution_files_identical": true,
+  "topology": "minimal",
+  "topology_version": 16,
+  "scripts_deleted": 0,
+  "retained_script_gaps": [],
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "samples": 1,
+  "p95_seconds": 75.35,
+  "cases": [
+    {
+      "kind": "node.add",
+      "receipt": "/home/nckrtl/swamp-execution/evidence/proof/node.add/20261103T071123Z-minimal.json",
+      "fixture_seconds": 75.35,
+      "run_id": "f652a884-a46b-4b6c-8d79-397c0f9b54b2",
+      "operation_id": 5,
+      "parity": "parity: node.add real WireGuard enrollment and DNS publication"
+    }
+  ],
+  "scope_note": "Real roleless Linux enrollment, WireGuard handshake, pinned managed SSH, observer resources and DNS requester publication. Optional role children are covered by their separate role-add/convergence receipts. Mac trust/refusal and CLI exclusion use native tests; no physical Mac, production data or scale is exercised.",
+  "outer_vm": {
+    "group_id": 3012,
+    "provision_operation_id": 9150,
+    "task_vm_id": 475,
+    "node_id": 503,
+    "name": "tvm-475",
+    "host_node_id": 13,
+    "seed": "6ddde33590a9160df3dd75a2a79376af329a757297a702cd348eec699782c55a",
+    "provisioned_at": "2026-11-03T07:03:34Z",
+    "cancel_operation_id": 9171,
+    "destroyed": true,
+    "destroyed_at": "2026-11-03T07:16:28Z",
+    "memory": "12GiB",
+    "cpus": 6,
+    "teardown": "succeeded"
+  }
+}

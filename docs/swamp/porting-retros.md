@@ -668,3 +668,20 @@ The [receipt index](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof
 Gateway tests pass 29 cases with 221 assertions. Three native cases pass in 27.635 seconds: active and activating service refusal before writes, standalone and cascade completion, and file, timer or loaded-unit drift. Source adds 270 net Orbit lines: production adds 50, charts and references add 41, native tests add 65 and proof fixtures add 93; Gateway tests add 21. Custom behavior code stays unchanged. No shipped script is deleted and no new script gap is named. The receipt index and this retro add evidence.
 
 Final parity review caught that systemd exit 3 also covers services that are starting or stopping. The first positive proof had passed, but accepting that code alone widened the idle allowlist. The separate native assertion preserves the previous refusal during activation. A fresh topology proved the corrected source.
+
+
+## Native Node enrollment
+
+`node.add` admits one native enrollment Operation through the public API with HTTP 202. The SDK returns that Operation, the CLI follows its terminal record, and the web form follows it before loading the Node. Trust and architecture checks precede mutations. Official resources apply the baseline, tunnel, observer and optional roles. The native Node assertion determines completion. No script ships and no script gap is retained.
+
+The minimal@16 proof on Shark passes in 75.35 seconds at `e6df5ceb0c`, with a 12 GiB, six-CPU outer VM. The [receipt index](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/receipts/node-add.json) records its native run and teardown. Real parity checks managed SSH, the WireGuard handshake, the observer binary and private secret, and DNS requester publication.
+
+This is one roleless Linux sample; Mac branches use native tests, and role children have separate receipts. It exercises no production data or scale. The observed p95 is 75.35 seconds. The full enrollment budget remains 1800 seconds, including optional roles; queue timeout is 30 seconds.
+
+Failed proofs exposed two real defects. A peer-only `wg syncconf` clears the interface key, so both Nodes compose the full sync configuration from their existing private-key file and public peer plan before applying it. The key stays on its Node; native tests scan data and logs. DNS publication requires captured before and after states. CLI publication runs only for an eligible captured plan, after role assignment. The charts show these native steps, and `swamp-evaluation.md` records the remote key-file composition question.
+
+Seven native enrollment cases pass in 108.014 seconds. Gateway tests pass 154 cases with 1106 assertions, CLI tests 27 cases with 141 assertions, SDK tests five cases with 19 assertions, and typed-plan tests six cases. Four browser form tests, ten demo cases, web checks and build pass. Phone and desktop screenshots have no clipping or overlap; console errors are empty. WebKit emulation does not prove physical iOS behavior. The batch removes tests of synchronous HTTP host effects. Native transport, admission, projection and real-topology checks cover that path.
+
+Before the receipt index and retro, this batch adds 1210 net Orbit lines. The new native DAG, typed admission/projection and client contract replace the synchronous public endpoint. Swamp grows by 1624 lines: behaviors +127, configuration +2, proof fixtures +113, tests +280, workflows +1102. The DAG exposes native resources; typed behaviors only bind public observations and frozen plans. It ships no script.
+
+The cleanup deletes the unused Node, certificate and route executor chain.
