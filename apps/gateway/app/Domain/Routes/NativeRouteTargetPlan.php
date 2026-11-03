@@ -36,6 +36,8 @@ final readonly class NativeRouteTargetPlan
         $empty = array_fill_keys(self::SiteLists, []) + ['trust' => [], 'lan' => [], 'site_nodes' => []];
         $result = ['leaves' => $plan['leaves'], 'leaf_indexes' => $plan['leaf_indexes'], 'nodes' => $plan['nodes'], 'probes' => [], 'dns' => $plan['dns'], 'cleanup' => [], 'lan_absent' => []];
         $nodeOf = static fn (array $row): int => ValidatedData::integer($row['node_id']);
+        // Swamp evaluates task definitions even when the probe forEach is empty.
+        $result['probe_ssh'] = app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail(209));
         if ($development) {
             // instance:create already gave Caddy access to the web root, so no access commands run here.
             $publish = ['trust' => ValidatedData::integerList($plan['trust']), 'lan' => [], 'acl' => []];
@@ -87,7 +89,6 @@ final readonly class NativeRouteTargetPlan
                 $result['probes'][] = ['node_id' => $target['node_id'], 'address' => $address, 'domain' => $target['domain']];
             }
         }
-        $result['probe_ssh'] = $result['probes'] === [] ? (object) [] : app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail(209));
         $mutations = ValidatedData::object(ValidatedData::object($lifecycle['route_mutations'])['forward']);
         foreach (RouteExecutionProof::objects($mutations['cleanup']) as $leaf) {
             $result['cleanup'][] = ['node_id' => ValidatedData::integer($leaf['node_id']), 'leaf' => array_intersect_key($leaf, array_flip(['user', 'scope']))];

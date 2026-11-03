@@ -194,6 +194,23 @@ it('writes the new targets when a step after the Router switch fails, and keeps 
         ->and($route->error_code)->toBe('route.target_retire_failed');
 });
 
+it('captures the control SSH definition for a development change with no workload probes', function (): void {
+    $node = $this->nodes['old'];
+    $node->roles()->delete();
+    $node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
+    $node->update(['cluster_id' => null]);
+    $instance = $this->instances['old'];
+    $instance->update(['environment' => 'development', 'production_user' => null, 'production_home' => null]);
+    $route = $this->routes['pool'];
+    $route->update(['node_id' => $node->id, 'cluster_id' => null, 'web_root' => 'public']);
+
+    $plan = app(NativeRouteTargetInput::class)->capture($route->fresh(), ['mode' => 'target', 'instance_id' => $instance->id,
+        'previous_target_instance_ids' => [$instance->id]])['intent']['plan'];
+
+    expect($plan['probes'])->toBe([])
+        ->and($plan['probe_ssh']['target'])->toMatchArray(['host' => '10.44.0.209', 'host_keys' => ['ssh-ed25519 control-host-key']]);
+});
+
 it('captures a completed no-op without effects or private-material bindings', function (): void {
     $capture = app(NativeRouteTargetInput::class)->capture($this->routes['pool']->fresh(), ['mode' => 'state_only', 'targets' => [$this->instances['old']->id], 'dispositions' => []]);
 
