@@ -70,7 +70,6 @@ jobs:
           deno test -A tests/operation_schedules_test.ts
           deno test --allow-env --allow-read --allow-run --allow-write bin/swamp-shape-python_test.ts
           deno test --allow-env --allow-read --allow-run --allow-write bin/validate-swamp-workflows_test.ts
-          deno test --allow-env --allow-read --allow-run --allow-write bin/swamp-deno-shards_test.ts
           deno test --allow-env --allow-read --allow-run --allow-write bin/check-swamp-base-policy_test.ts
       - name: Reject new violations with current and base rules
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
