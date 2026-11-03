@@ -148,10 +148,10 @@ final readonly class StartDevelopmentInstanceCreateAction
                 $input['members'] = app(ProcessInstanceOperation::class)->capture($instance, 'process.install_instance_definitions')['members'];
             }
             // F8: 60 s for the create phases, the admitted setup timeouts (the setup phase runs within 540 s),
-            // 30 s for the Process phase, and 120 s for the Route child: CSR, signing, install, publication and its TLS probe.
+            // 30 s for the Process phase, and 180 s for the Route child: CSR, signing, install, publication and its TLS probe (117 s measured cold).
             $input['run_budget_seconds'] = 60 + min(LifecycleStep::MaxTotalTimeoutSeconds, array_sum(array_map(
                 static fn (LifecycleStep $step): int => $step->timeoutSeconds, app(ProjectLifecycleStepStore::class)->ordered($project, LifecyclePhase::Setup)))) + 30
-                + (isset($input['route_create']) ? 120 : 0);
+                + (isset($input['route_create']) ? 180 : 0);
 
             return $this->operations->execute('instance.create', 'instance', $instance->id, $node->id, $input, $caller, $requestId);
         });

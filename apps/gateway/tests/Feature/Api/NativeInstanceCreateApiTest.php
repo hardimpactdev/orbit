@@ -109,7 +109,7 @@ it('reserves the derived Route of a web-serving Project and creates it in the sa
     $intent = $start['payload']['inputs']['intent'];
     expect($route->domain)->toBe('proof.native-create.test')
         ->and($operation->input['route_id'])->toBe($route->id)
-        ->and($operation->input['run_budget_seconds'])->toBe(210)
+        ->and($operation->input['run_budget_seconds'])->toBe(270)
         ->and($intent['route'])->toBe($operation->input['route_create'])
         ->and($intent['route_secrets'])->toBe($operation->input['execution_secrets']);
 

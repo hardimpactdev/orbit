@@ -31,7 +31,7 @@ Create runs these steps on the Node, in order:
 5. Create and start the Processes from the Project's development Process definitions.
 6. For a web-serving Project, create its Route the way [`route:create`](/cli/route/create) does, and probe the site over TLS.
 
-The run has 60 seconds, plus the setup step timeouts, 30 seconds for the Processes, and 120 seconds for the Route.
+The run has 60 seconds, plus the setup step timeouts, 30 seconds for the Processes, and 180 seconds for the Route.
 
 A task VM Node returns `instance.task_vm_node`: a task VM gets its workspace from [`tasks:provision`](/reference/tasks#provision-an-external-group).
 
