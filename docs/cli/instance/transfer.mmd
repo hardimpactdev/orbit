@@ -32,11 +32,6 @@ sequenceDiagram
   Note over CLI: Confirm the downtime
   %%> What it does:
   %%> - asks for default-No consent naming the source, destination and old-placement deletion
-  opt --force
-    Note over CLI: Skip the downtime prompt
-    %%> What it changes:
-    %%> - supplies consent for downtime and old-placement deletion without the default-No prompt
-  end
   opt --name
     Note over GW: Set destination name
     %%> What it changes:

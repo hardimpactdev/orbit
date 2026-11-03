@@ -25,11 +25,6 @@ sequenceDiagram
   Note over CLI: Confirm host removal
   %%> What it does:
   %%> - asks for default-No consent before sending the disable request
-  opt --yes
-    Note over CLI: Skip the removal prompt
-    %%> What it changes:
-    %%> - supplies consent without the default-No prompt; required for noninteractive or JSON calls
-  end
   Note over GW: Validate, find the hosts<br/>Instance lock
   %%> Requirements:
   %%> - your Node has an access grant to Node 12

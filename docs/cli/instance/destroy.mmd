@@ -29,11 +29,7 @@ sequenceDiagram
   Note over CLI: Confirm removal
   %%> What it does:
   %%> - asks for default-No consent before sending the removal request
-  opt --yes
-    Note over CLI: Skip the removal prompt
-    %%> What it changes:
-    %%> - supplies consent without the default-No prompt; required for noninteractive or JSON calls
-  end
+  %%> - `--yes` supplies that consent without the prompt; noninteractive and JSON calls require it
   opt --force
     Note over GW: Skip pushed-source checks
     %%> What it changes:
