@@ -22,6 +22,10 @@ orbit route:update 14 --web-root=apps/admin/public
 
 A domain change creates a replacement Route and returns its ID. The current Route stays authoritative until cutover. A publication-only change keeps the Route ID. See [Change an explicit domain](/reference/routes#change-an-explicit-domain) and [Publish the public edge](/reference/routes#publish-the-public-edge).
 
+Your caller needs access to every target Node. Public publication needs production targets and a serving Ingress. Orbit waits up to 30 seconds for a busy projection lock before returning `app-dev.projection_busy`.
+
+Orbit uses official cfgmgmt resources and pinned SSH commands for Node changes. It publishes and probes the replacement before moving private DNS and withdrawing the old site. The probe verifies the hostname and Orbit CA from 209; an application HTTP error does not fail it. Caddy reloads after validation. A failed validation leaves the candidate file and stops the reload; there is no rollback. Outside the TLD, the old DNS answer has 31 seconds to expire before withdrawal.
+
 <Note>
 During a domain change, `route:show` shows both Routes, `replacement_step`, `failed_step`, and `error_code`. Repeat the same request to resume. A different domain or publication request changes nothing.
 </Note>

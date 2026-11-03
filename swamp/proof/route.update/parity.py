@@ -3,6 +3,7 @@ the Orbit root, the temporary leaf is gone, and the new domain answers TLS."""
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -26,6 +27,9 @@ def check(condition, message):
 
 
 caddyfile = target("cat", "/etc/caddy/Caddyfile").stdout
+roots = re.findall(r"(?m)^\s*root \* (.+)/public\s*$", caddyfile)
+check(bool(roots) and "php_fastcgi" in caddyfile, "the Route serves a PHP application")
+check(any("laravel/framework" in json.loads(target("cat", root + "/composer.json").stdout).get("require", {}) for root in roots), "the checkout is a Laravel application")
 check(f"https://{new} {{" in caddyfile, "the Caddy site serves the new domain")
 check(f"https://{old} {{" not in caddyfile, "the old site is withdrawn")
 check(target("sh", "-c", "ls -d /etc/caddy/orbit-certificates/*-hostname-change").returncode != 0, "the temporary leaf is removed")

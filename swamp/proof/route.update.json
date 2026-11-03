@@ -14,7 +14,7 @@
       "body": {
         "slug": "proof-update",
         "name": "Proof update",
-        "type": "monorepo",
+        "type": "node-package",
         "root": "public",
         "repository_url": "https://github.com/laravel/laravel.git",
         "default_branch": "13.x"
@@ -27,7 +27,8 @@
       "body": {
         "project_id": "${project.id}",
         "node_id": "${node.target}",
-        "name": "r-${proof.run}"
+        "name": "r-${proof.run}",
+        "branch": "13.x"
       }
     },
     {
@@ -37,6 +38,14 @@
       "body": {
         "instance_id": "${instance.id}",
         "domain": "r-${proof.run}.proof.test"
+      }
+    },
+    {
+      "method": "PATCH",
+      "path": "projects/${project.id}",
+      "operation": false,
+      "body": {
+        "type": "laravel-app"
       }
     }
   ],
