@@ -39,10 +39,11 @@ check(
     f"https://{domain} {{" in caddyfile,
     "the Caddy site serves the domain",
 )
-roots = re.findall(r"(?m)^\s*root \* (.+)/public\s*$", caddyfile)
-check(bool(roots) and "php_fastcgi" in caddyfile, "the Route serves a PHP application")
+site = caddyfile.split(f"https://{domain} {{", 1)[1].split("\n# orbit: ", 1)[0]
+roots = re.findall(r"(?m)^\s*root \* (.+)/public\s*$", site)
+check(len(roots) == 1 and "php_fastcgi" in site, "the requested Route serves a PHP application")
 check(
-    any("laravel/framework" in json.loads(target("cat", root + "/composer.json").stdout).get("require", {}) for root in roots),
+    all("laravel/framework" in json.loads(target("cat", root + "/composer.json").stdout).get("require", {}) for root in roots),
     "the Route's checkout is a Laravel application",
 )
 leaves = target(
