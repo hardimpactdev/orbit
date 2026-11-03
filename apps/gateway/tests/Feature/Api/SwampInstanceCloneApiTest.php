@@ -153,7 +153,7 @@ it('returns 404 for a missing candidate before clone execution', function (): vo
 });
 
 it('returns a replayable native clone Operation without any source effects', function (): void {
-    $this->destinationNode->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    $this->destinationNode->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $agents = Mockery::mock(AgentCommandRunner::class);
     $agents->shouldNotReceive('run');
     app()->instance(AgentCommandRunner::class, $agents);
@@ -175,12 +175,12 @@ it('returns a replayable native clone Operation without any source effects', fun
     expect($operation->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676');
 });
 
-it('refuses unavailable publication composition before reserving a clone', function (): void {
+it('refuses a web Project clone to a Node without a TLD before reserving it', function (): void {
     $this->candidate->project->update(['type' => 'laravel-app', 'root' => 'public']);
     $this->destinationNode->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])->postJson($this->cloneUrl, [
         'node_id' => $this->destinationNode->id, 'name' => 'preview', 'preview_name' => 'shop.com',
-    ])->assertStatus(503)->assertJsonPath('error.code', 'operation.kind_unavailable');
+    ])->assertConflict()->assertJsonPath('error.code', 'route.tld_required');
     expect(Instance::query()->count())->toBe(1)->and(Operation::query()->count())->toBe(0);
 });
 

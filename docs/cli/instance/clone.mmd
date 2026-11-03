@@ -125,6 +125,11 @@ sequenceDiagram
     %%> Failure:
     %%> - a failed cleanup is a warning; the leftover is harmless
   end
+  Note over SW: Report the result<br/>commit · warnings · error code
+  %%> What it does:
+  %%> - prints the clone's public result: the checked-out commit and key-only warnings, or the error code
+  %%> Why a step of its own:
+  %%> - each chart step above is a child workflow, and a failed step keeps no output; the Gateway reads the result from this parent step
   alt all steps pass
     N-->>SW: commit, warnings
     %%> Returns:

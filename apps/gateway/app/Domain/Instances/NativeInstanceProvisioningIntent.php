@@ -8,6 +8,7 @@ use App\Actions\Instances\StartInstanceStepListAction;
 use App\Domain\Nodes\MachineArchitecture;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
 use App\Domain\Tools\ToolManagerIntent;
@@ -30,9 +31,8 @@ final readonly class NativeInstanceProvisioningIntent
 
     public function assertCloneSupported(Instance $candidate, Node $node, ?string $sqliteSource): void
     {
-        if ($candidate->requiresRoute() || $sqliteSource !== null || TaskVm::forNode($node) !== null
-            || TaskVm::forNode($candidate->node) !== null || $candidate->databaseConnectionTargets()->exists()
-            || $candidate->project->processDefinitions()->exists() || $candidate->project->scheduleDefinitions()->exists()) {
+        if (TaskVm::forNode($node) !== null
+            || TaskVm::forNode($candidate->node) !== null || $candidate->databaseConnectionTargets()->exists()) {
             $this->unavailable();
         }
     }
@@ -73,18 +73,29 @@ final readonly class NativeInstanceProvisioningIntent
     public function clone(Instance $instance, array $input): array
     {
         $instance->loadMissing(['node', 'project']);
-        $user = $instance->node->user;
-        if (! $instance->placedOnAppDev() || $instance->routes()->exists()) {
+        $user = $instance->production_user;
+        $home = $instance->production_home;
+        // Only the clone's own pending preview Route may target it.
+        if (! $instance->placedOnAppProd() || $instance->routes()->where(fn ($query) => $query->where('routes.status', '!=', RouteStatus::Pending)
+            ->orWhere('routes.domain', '!=', $instance->clone_preview_domain))->exists() || ! is_string($user) || ! is_string($home)
+            || $user !== 'orbit-app-'.$instance->project_id || $home !== '/home/'.$user) {
             $this->unavailable();
         }
 
-        return [...$this->common($instance, 'development', $user),
+        $suffix = substr(ApplicationDirectory::resolve($instance->checkout_path, $instance->root ?? $instance->project->root), strlen(rtrim($instance->checkout_path, '/')));
+
+        return [...$this->common($instance, 'production', $user),
             'vp_setup' => app(ToolManagerIntent::class)->nativeInput($instance->node, ToolManagerName::Vp),
+            // Production deploy refuses a home without this root-owned marker (instance-deploy deploy_local.ts).
+            'home' => ['path' => $home, 'state' => '/var/lib/orbit/app-instance-sources/'.$instance->id,
+                'release_layout' => base64_encode($instance->project->repository_url."\0".$user."\0".$home."\0initial\0"),
+                // The release's application .env links to the home .env, as a deploy's release does.
+                'environment_link' => str_repeat('../', 2 + substr_count($suffix, '/')).'.env'],
             'source' => ['repository' => $input['repository'], 'checkout' => $instance->checkout_path,
-                'root' => $input['source_root'], 'user' => $user, 'seed_repository' => null, 'prepare_id' => $instance->source_prepare_id],
+                'root' => $home.'/releases', 'user' => $user, 'seed_repository' => null, 'prepare_id' => $instance->source_prepare_id],
             'resolve' => ['instance_name' => $instance->name, 'default_branch' => $instance->project->default_branch,
                 'branch_override' => $input['branch'], 'require_branch' => true, 'seed_commit' => null, 'network' => true],
-            'candidate' => $input['candidate'], 'already_active' => $instance->clone_completed_at !== null,
+            'candidate' => $input['candidate'], 'sqlite' => $input['sqlite'] ?? null, 'route' => $input['route_create'] ?? null, 'already_active' => $instance->clone_completed_at !== null,
             'retained_source' => $instance->clone_completed_at !== null ? ['branch' => $instance->branch,
                 'commit' => $instance->starting_commit, 'php_version' => $instance->selected_php_version,
                 'laravel' => $instance->source_is_laravel] : null];

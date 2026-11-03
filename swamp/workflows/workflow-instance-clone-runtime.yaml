@@ -1,0 +1,116 @@
+id: 330596d6-541a-5c1b-9b4b-11841084c558
+name: instance-clone-runtime
+description: Install the clone's production Process and Schedule records through their shared create workflows; Processes
+  stay stopped until the first deploy.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      properties:
+        git_read:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+        environment:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+        git_credential:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      required:
+      - git_read
+      - environment
+      - git_credential
+      additionalProperties: false
+    kind:
+      type: string
+    run_id:
+      type: string
+  required:
+  - operation_id
+  - node_id
+  - intent
+  - execution_secrets
+  - kind
+  - run_id
+  additionalProperties: false
+jobs:
+- name: runtime
+  labels:
+    role: swamp
+  steps:
+  - name: processes
+    labels:
+      role: swamp
+    forEach:
+      item: member
+      in: ${{ inputs.intent.processes }}
+    task:
+      type: workflow
+      workflowIdOrName: operation-process-create
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: process.create
+        intent: ${{ self.member.intent }}
+        execution_secrets: '${{ "member_" + string(self.member.id) in inputs.execution_secrets ? {"environment": inputs.execution_secrets["member_"
+          + string(self.member.id)]} : {} }}'
+  - name: schedules
+    labels:
+      role: swamp
+    forEach:
+      item: member
+      in: ${{ inputs.intent.schedules }}
+    task:
+      type: workflow
+      workflowIdOrName: operation-schedule-create
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: schedule.create
+        intent: ${{ self.member.intent }}
+        execution_secrets: {}
+queueTimeout: 60

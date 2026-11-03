@@ -97,9 +97,9 @@ it('records one unpublished Route intent then starts its exact native create wor
         ->and($plan['caddy'][0]['node_id'])->toBe($node->id)
         ->and($plan['caddy'][0]['content'])->toStartWith('# Managed by Orbit: Node Caddy build')->toContain('https://created.private.test {')
         // The ordered grants: deny the checkout first, then passage above the root, then the root itself.
-        ->and($plan['acl'][1]['argv'])->toBe(['/usr/sbin/runuser', '-u', 'orbit', '--', '/usr/bin/setfacl', '-P', '-R', '-n', '-m', 'u:caddy:---', '--', '/srv/create'])
+        ->and($plan['acl'][1]['argv'])->toBe(['/usr/sbin/runuser', '-u', 'orbit', '--', '/usr/bin/env', '-C', '/', '/usr/bin/setfacl', '-P', '-R', '-n', '-m', 'u:caddy:---', '--', '/srv/create'])
         ->and(array_column(array_slice($plan['acl'], 2, 2), 'argv'))->toBe([['/usr/bin/setfacl', '-m', 'u:caddy:--x', '--', '/srv/create'], ['/usr/bin/setfacl', '-m', 'u:caddy:--x', '--', '/srv']])
-        ->and(end($plan['acl'])['argv'])->toBe(['/usr/sbin/runuser', '-u', 'orbit', '--', '/usr/bin/setfacl', '-P', '-R', '-n', '-m', 'u:caddy:r-X', '--', '/srv/create/public']);
+        ->and(end($plan['acl'])['argv'])->toBe(['/usr/sbin/runuser', '-u', 'orbit', '--', '/usr/bin/env', '-C', '/', '/usr/bin/setfacl', '-P', '-R', '-n', '-m', 'u:caddy:r-X', '--', '/srv/create/public']);
 });
 
 it('refuses executor callbacks without publishing or deleting admitted Route intent', function (string $status): void {

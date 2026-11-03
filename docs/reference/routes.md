@@ -135,6 +135,8 @@ The workflow, `operation-route-create`, has the seven steps of the [route:create
 
 Every Node change is an official `@swamp/cfgmgmt` behavior or one `@swamp/ssh exec` command. A failed step leaves the Route `pending` with its `failed_step` and `error_code`. There is no rollback.
 
+[Instance cloning](/reference/instance-cloning#preview-route) runs the same CSR, sign and site children for its pending preview Route inside the clone run. The clone writes the whole `.env` itself, so the preview Route's site step writes no second copy. The clone's success activates the Route.
+
 ```bash
 orbit route:create 12 shop.example.test
 orbit route:create 12 shop.example.com --publication=public

@@ -82,7 +82,7 @@ final readonly class SignDirectCertificatesAction
             throw new ResourceOperationException('operation.finished', 'This intent no longer permits certificate signing.', 409);
         }
         $paths = match ($operation->kind) {
-            'route.create', 'route.destroy', 'route.withdraw' => $restoring
+            'route.create', 'route.destroy', 'route.withdraw', 'instance.clone' => $restoring
                 ? ['route_lifecycle.route_mutations.restore.certificates']
                 : ['route_lifecycle.preparation.certificates', 'route_lifecycle.route_mutations.forward.certificates'],
             // route.update and route.target_set never restore; they sign only their plan's leaves.

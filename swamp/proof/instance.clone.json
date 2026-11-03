@@ -14,9 +14,27 @@
         "slug": "proof-clone",
         "name": "Proof clone",
         "type": "node-package",
-        "root": ".",
+        "root": "public",
         "repository_url": "https://github.com/laravel/laravel.git",
         "default_branch": "12.x"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "projects/${project.id}/process-definitions",
+      "operation": false,
+      "body": {
+        "name": "proof-worker",
+        "environments": [
+          "production"
+        ],
+        "spec": {
+          "runtime": "systemd",
+          "command": [
+            "/bin/sleep",
+            "3600"
+          ]
+        }
       }
     },
     {
@@ -26,8 +44,24 @@
       "body": {
         "project_id": "${project.id}",
         "node_id": "${node.target}",
-        "name": "c-${proof.run}",
+        "name": "cand",
         "branch": "12.x"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "routes",
+      "body": {
+        "instance_id": "${candidate.id}",
+        "domain": "cand.proof.test"
+      }
+    },
+    {
+      "method": "PATCH",
+      "path": "projects/${project.id}",
+      "operation": false,
+      "body": {
+        "type": "laravel-app"
       }
     },
     {
@@ -43,9 +77,10 @@
     "method": "POST",
     "path": "instances/${candidate.id}/clone",
     "body": {
-      "node_id": "${node.target}",
+      "node_id": "${node.peer}",
       "name": "k-${proof.run}",
-      "preview_name": "k-${proof.run}"
+      "preview_name": "k-${proof.run}",
+      "sqlite_source_path": "/home/orbit/proof-clone.sqlite"
     }
   },
   "expect": {
@@ -53,47 +88,98 @@
   },
   "phases": [
     {
-      "name": "source-prepare-read",
-      "job": "prepare",
-      "step": "source-prepare-read",
-      "budget_seconds": 10
+      "name": "Check candidate source",
+      "job": "clone",
+      "step": "Check candidate source",
+      "budget_seconds": 30
     },
     {
-      "name": "source-origin-read",
-      "job": "prepare",
-      "step": "source-origin-read",
-      "budget_seconds": 10
+      "name": "Fetch the source",
+      "job": "clone",
+      "step": "Fetch the source",
+      "budget_seconds": 90
     },
     {
-      "name": "source-credential",
-      "job": "prepare",
-      "step": "source-credential",
-      "budget_seconds": 15
+      "name": "Write .env, prepare Vite+",
+      "job": "clone",
+      "step": "Write .env, prepare Vite+",
+      "budget_seconds": 60
     },
     {
-      "name": "source-fetch",
-      "job": "prepare",
-      "step": "source-fetch",
-      "budget_seconds": 120
+      "name": "Snapshot the database",
+      "job": "clone",
+      "step": "Snapshot the database",
+      "budget_seconds": 30
     },
     {
-      "name": "source-credential-remove",
-      "job": "prepare",
-      "step": "source-credential-remove",
-      "budget_seconds": 15
+      "name": "Install the database",
+      "job": "clone",
+      "step": "Install the database",
+      "budget_seconds": 30
     },
     {
-      "name": "source-profile-read",
-      "job": "prepare",
-      "step": "source-profile-read",
-      "budget_seconds": 10
+      "name": "Add Processes, Schedules",
+      "job": "clone",
+      "step": "Add Processes, Schedules",
+      "budget_seconds": 60
     },
     {
-      "name": "environment",
-      "job": "prepare",
-      "step": "environment",
+      "name": "Make a CSR on the Node",
+      "job": "clone",
+      "step": "Make a CSR on the Node-0",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Sign the CSR",
+      "job": "clone",
+      "step": "Sign the CSR-0",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Publish preview Route",
+      "job": "clone",
+      "step": "Publish preview Route",
+      "budget_seconds": 60
+    },
+    {
+      "name": "Check the clone",
+      "job": "clone",
+      "step": "Check the clone",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Remove the snapshot",
+      "job": "clone",
+      "step": "Remove the snapshot",
+      "budget_seconds": 30
+    },
+    {
+      "name": "Report the result",
+      "job": "clone",
+      "step": "Report the result",
       "budget_seconds": 15
     }
   ],
-  "parity": "swamp/proof/instance.clone/parity.py"
+  "parity": "swamp/proof/instance.clone/parity.py",
+  "before_gateway": [
+    [
+      "sh",
+      "-c",
+      "printf '%s' \"$1\" | runuser -u orbit -- env -C apps/gateway php ../../tools/swamp-proof-guest/gateway.php fixture",
+      "sh",
+      "{\"replace_roles\": {\"${node.peer}\": [\"app-prod\"]}, \"node_updates\": [{\"id\": \"${node.peer}\", \"attributes\": {\"tld\": \"prod.test\"}}]}"
+    ]
+  ],
+  "before_target": [
+    [
+      "runuser",
+      "-u",
+      "orbit",
+      "--",
+      "python3",
+      "-I",
+      "-c",
+      "import sqlite3; c = sqlite3.connect('/home/orbit/proof-clone.sqlite'); c.execute('create table if not exists proof (v text)'); c.execute('delete from proof'); c.execute(\"insert into proof values ('proof-row')\"); c.commit()"
+    ]
+  ]
 }

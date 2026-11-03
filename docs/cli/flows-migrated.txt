@@ -71,3 +71,4 @@ tasks.script
 analytics.enable
 analytics.disable
 tasks.turn
+instance.clone

@@ -183,6 +183,8 @@ A [clone](/reference/instance-cloning) onto `app-prod` copies the candidate's st
 
 When the clone seeds a SQLite snapshot, it registers an owned connection on the target Node, attaches it under `DB`, and synchronizes `DB_CONNECTION=sqlite` and `DB_DATABASE=<production_home>/database.sqlite` into the production `.env`. This provisioning step uses the pending clone's placement and Route checks; public environment operations still require an active Instance. An identical retry reuses the connection and attachment. Without a SQLite snapshot, the clone has no candidate `DB_*` values. Other application settings, such as `QUEUE_CONNECTION`, copy unchanged.
 
+While a clone is in progress, its run owns the production `.env`. The `Write .env` step writes the whole file, with `APP_URL` from the pending preview Route, and the release's `.env` links to it.
+
 ## Other writers
 
 Other operations also change stored keys, and never the file itself:

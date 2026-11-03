@@ -60,7 +60,8 @@ final readonly class NativeRouteConvergenceEnvironmentMaterial
                 throw new ResourceOperationException('operation.execution_forbidden', 'The environment workload moved from its admitted Node.', 403);
             }
             $urlsOnly = $urlsOnly || $route->hasWebRoot();
-            if (! $urlsOnly && $instance->source_is_laravel) {
+            // A clone in progress writes its whole .env itself, with the preview Route's APP_URL (instance.clone).
+            if (! $urlsOnly && $instance->source_is_laravel && ! $instance->cloneInProgress()) {
                 $context = $this->contexts->resolveForBoundRoute($instance, $rollingBack ? $instance->authoritativeRoute() : $route, $rollingBack ? InstanceEnvironmentRouteDomain::Authoritative : InstanceEnvironmentRouteDomain::Candidate);
                 $values = $this->store->values($instance);
                 if ($values === []) {

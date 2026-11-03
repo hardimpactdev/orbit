@@ -20,7 +20,8 @@ final readonly class RouteWebRootCommands
     public static function access(int $nodeId, array $access, Instance $instance): array
     {
         $rows = [];
-        $as = ['/usr/sbin/runuser', '-u', ValidatedData::string($access['user']), '--'];
+        // From /: the login user's working directory may be closed to a production account, and find returns to it.
+        $as = ['/usr/sbin/runuser', '-u', ValidatedData::string($access['user']), '--', '/usr/bin/env', '-C', '/'];
         $sites = RouteExecutionProof::objects($access['sites']);
         foreach (array_values(array_unique(array_map(static fn (array $site): string => rtrim(ValidatedData::string($site['checkout']), '/'), $sites))) as $checkout) {
             $rows[] = ['node_id' => $nodeId, 'argv' => [...$as, '/usr/bin/find', '-P', $checkout, '-type', 'd', '-exec', '/usr/bin/setfacl', '-m', 'd:u:caddy:---', '--', '{}', '+']];

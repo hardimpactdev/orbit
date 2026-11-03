@@ -48,6 +48,8 @@ Only environment bytes use native execution copies. Each key includes the parent
 
 The shared terminal reader projects the parent result into the captured set. Success marks the set active and records the admitted activation generation. Failure or interruption marks the captured set failed and retains applied files for normal convergence. Cancellation preserves the records. No rollback runs. Restart controls keep their separate paths. Deploy and transfer installation use the native children below.
 
+[Instance cloning](/reference/instance-cloning#processes-and-schedules) installs the same members inside its own run. Its `Add Processes, Schedules` step runs the Process-create and Schedule-create children for the production definitions copied at admission, enabled but not started. The clone's terminal result completes the members as this kind does.
+
 ### Deploy and transfer installation
 
 Deploy and transfer compose the existing Process-create workflow as native children on Node 209. Each member supplies its public unit or container definition, desired state, content or specification hash, and pinned SSH target at root submission. Only environment bytes enter execution copies. Copy keys include the parent Operation, placement Node and member Process, so source and destination cannot overwrite each other.

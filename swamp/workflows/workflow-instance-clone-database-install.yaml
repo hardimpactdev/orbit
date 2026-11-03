@@ -1,0 +1,152 @@
+id: a2418c05-68f1-58c9-aa57-f921c507fd16
+name: instance-clone-database-install
+description: Copy the snapshot to the app-prod Node and install it as the account's private database.sqlite.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      properties:
+        git_read:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+        environment:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+        git_credential:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      required:
+      - git_read
+      - environment
+      - git_credential
+      additionalProperties: false
+    kind:
+      type: string
+    run_id:
+      type: string
+    digest:
+      type: string
+  required:
+  - operation_id
+  - node_id
+  - intent
+  - execution_secrets
+  - kind
+  - run_id
+  - digest
+  additionalProperties: false
+jobs:
+- name: database
+  labels:
+    role: swamp
+  steps:
+  - name: copy
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("icl-db-inst-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: copy
+      globalArgs:
+        name: ${{ ("icl-db-inst-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        src: ${{ "/tmp/orbit-clone-sqlite-" + inputs.run_id + ".sqlite" }}
+        dst: ${{ inputs.intent.sqlite.snapshot }}
+        direction: to
+  - name: install
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("icl-db-inst-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("icl-db-inst-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv:
+        - /usr/bin/timeout
+        - '60'
+        - /bin/sh
+        - -c
+        - set -eu; test "$(sha256sum < "$1" | cut -d" " -f1)" = "$2"; if [ ! -e "$3" ]; then install -m 0600 -o "$4" -g "$4"
+          -- "$1" "$3"; fi
+        - sh
+        - ${{ inputs.intent.sqlite.snapshot }}
+        - ${{ inputs.digest }}
+        - ${{ inputs.intent.sqlite.target }}
+        - ${{ inputs.intent.user }}
+    dependsOn:
+    - step: copy
+      condition:
+        type: succeeded
+    writes: true
+queueTimeout: 60

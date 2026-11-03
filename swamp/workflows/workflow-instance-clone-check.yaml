@@ -1,0 +1,188 @@
+id: e8b5f0f8-e494-54e6-ab01-148c1a7dbdba
+name: instance-clone-check
+description: 'Check the clone on the Node: the checked-out commit and the account''s private .env.'
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      properties:
+        git_read:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+        environment:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+        git_credential:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      required:
+      - git_read
+      - environment
+      - git_credential
+      additionalProperties: false
+    kind:
+      type: string
+    run_id:
+      type: string
+    source:
+      type: object
+  required:
+  - operation_id
+  - node_id
+  - intent
+  - execution_secrets
+  - kind
+  - run_id
+  - source
+  additionalProperties: false
+jobs:
+- name: check
+  labels:
+    role: swamp
+  steps:
+  - name: commit
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("instance-clone-check-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: &id001
+        name: ${{ ("instance-clone-check-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/sudo
+        - -n
+        - -u
+        - ${{ inputs.intent.user }}
+        - --
+        - /usr/bin/git
+        - -c
+        - core.hooksPath=/dev/null
+        - -C
+        - ${{ inputs.intent.checkout }}
+        - rev-parse
+        - --verify
+        - HEAD^{commit}
+        timeoutSec: 30
+  - name: environment
+    labels:
+      role: swamp
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("instance-clone-check-" + string(inputs.intent.ssh_execution.target.host)).split(".").join("-") }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/sudo
+        - -n
+        - --
+        - /usr/bin/timeout
+        - '20'
+        - /bin/sh
+        - -c
+        - stat -c '%U %a' -- "$1/.env" && readlink -f -- "$2/.env"
+        - sh
+        - ${{ inputs.intent.environment_path }}
+        - ${{ inputs.intent.application }}
+        timeoutSec: 30
+    dependsOn:
+    - step: commit
+      condition:
+        type: succeeded
+  - name: checked
+    labels:
+      role: swamp
+    task:
+      type: assert
+      expr: steps.commit.outputs.stdout.trim() == inputs.source.commit && steps.environment.outputs.stdout.trim() == inputs.intent.user
+        + " 600\n" + inputs.intent.environment_path + "/.env"
+      message: The clone is not on its fetched commit, or its .env is not the account's private home file that the release links to.
+      severity: high
+    dependsOn:
+    - step: environment
+      condition:
+        type: succeeded
+    # From 209 to the clone Node on 443 with the preview domain as SNI; a failed chain fails the check.
+  - name: preview
+    labels:
+      role: swamp
+    forEach:
+      item: probe
+      in: '${{ inputs.intent.route == null ? [] : inputs.intent.route.probes }}'
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ ("instance-clone-probe-" + string(self.probe.node_id)).split(".").join("-") }}
+      methodName: execute
+      inputs:
+        run: timeout 20 openssl s_client -connect "$ORBIT_PROBE_ADDRESS:443" -servername "$ORBIT_PROBE_DOMAIN" -verify_hostname
+          "$ORBIT_PROBE_DOMAIN" -verify_return_error -CAfile /usr/local/share/ca-certificates/orbit-managed-root-ca.crt </dev/null
+        env:
+          ORBIT_PROBE_ADDRESS: ${{ self.probe.address }}
+          ORBIT_PROBE_DOMAIN: ${{ self.probe.domain }}
+    dependsOn:
+    - step: checked
+      condition:
+        type: succeeded
+    guard: ${{ inputs.intent.route == null }}
+queueTimeout: 60

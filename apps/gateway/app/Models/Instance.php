@@ -326,6 +326,12 @@ final class Instance extends Model
         return $this->placementEnvironment() === 'development';
     }
 
+    /** A reserved clone target before its first success; the clone run owns its source and .env. */
+    public function cloneInProgress(): bool
+    {
+        return $this->clone_candidate_id !== null && $this->clone_completed_at === null;
+    }
+
     public function requiresRoute(): bool
     {
         $this->loadMissing('project');

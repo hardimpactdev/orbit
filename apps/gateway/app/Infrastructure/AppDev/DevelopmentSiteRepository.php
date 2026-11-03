@@ -275,11 +275,12 @@ final readonly class DevelopmentSiteRepository
             ->filter(
                 static fn (Instance $target): bool => (
                     is_string(app(RouteRenderContext::class)->wireguardIp($target->node))
-                    && in_array(
+                    // A clone publishes its preview Route before its first success (instance.clone).
+                    && (in_array(
                         $target->status,
                         [InstanceState::SourceResolved, InstanceState::Active],
                         true,
-                    )
+                    ) || $target->cloneInProgress())
                 ),
             )
             ->values();
