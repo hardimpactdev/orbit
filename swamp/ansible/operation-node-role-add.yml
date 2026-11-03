@@ -335,7 +335,7 @@
           - status=none
         stdin: "{{ prom.configuration }}"
         stdin_add_newline: false
-      when: prometheus_file.stat.checksum != prom.configuration | hash('sha256')
+      when: prometheus_file.stat.checksum | default('') != prom.configuration | hash('sha256')
       changed_when: true
     - { name: Reload Prometheus before checking, ansible.builtin.meta: flush_handlers }
     - name: Check Prometheus and every exporter endpoint

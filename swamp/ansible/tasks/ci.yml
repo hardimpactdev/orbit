@@ -96,6 +96,11 @@
       - /1.0/network-acls/{{ plans.ci.acl }}
   register: ci_acl
   changed_when: false
+- name: Normalize CI egress rules
+  ansible.builtin.set_fact:
+    ci_egress: >-
+      {{ (ci_acl.stdout | from_json).egress | map('dict2items') |
+      map('rejectattr', 'value', 'equalto', '') | map('list') | map('items2dict') | list }}
 - name: Apply CI egress rules
   vars:
     desired_acl:
@@ -113,9 +118,9 @@
     stdin: "{{ desired_acl | to_json }}"
   when:
     - not ci_check_only
-    - (ci_acl.stdout | from_json).egress | map(attribute='action') | list != plans.ci.egress | map(attribute='action') | list or (ci_acl.stdout |
-      from_json).egress | map(attribute='destination') | list != plans.ci.egress | map(attribute='destination') | list or (ci_acl.stdout | from_json).egress |
-      map(attribute='state') | list != plans.ci.egress | map(attribute='state') | list or (ci_acl.stdout | from_json).ingress != []
+    - >-
+      ci_egress != plans.ci.egress or (ci_acl.stdout | from_json).ingress != [] or
+      (ci_acl.stdout | from_json).config != {} or (ci_acl.stdout | from_json).description != desired_acl.description
   changed_when: true
 - name: Check CI resources
   when: ci_check_only
@@ -131,13 +136,14 @@
     that:
       - (ci_profile.stdout | from_json).config == plans.ci.profile.config
       - (ci_profile.stdout | from_json).devices == plans.ci.profile.devices
+      - (ci_profile.stdout | from_json).description == plans.ci.profile.description
     quiet: true
 - name: Check CI egress
   when: ci_check_only
   ansible.builtin.assert:
     that:
-      - (ci_acl.stdout | from_json).egress | map(attribute='action') | list == plans.ci.egress | map(attribute='action') | list
-      - (ci_acl.stdout | from_json).egress | map(attribute='destination') | list == plans.ci.egress | map(attribute='destination') | list
-      - (ci_acl.stdout | from_json).egress | map(attribute='state') | list == plans.ci.egress | map(attribute='state') | list
+      - ci_egress == plans.ci.egress
       - (ci_acl.stdout | from_json).ingress == []
+      - (ci_acl.stdout | from_json).config == {}
+      - (ci_acl.stdout | from_json).description == 'Orbit CI runner boundary'
     quiet: true
