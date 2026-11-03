@@ -143,7 +143,8 @@ it('keeps the current caller name on automatic admission, replay, receipt and ca
     config(['swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/fixture-ca.pem']);
     Http::fake(['https://swamp.orbit/api/v1/cancel/workflow-run/*' => Http::response([], 200)]);
     $this->call('POST', '/api/v1/operations/'.$id.'/cancel', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')->assertOk()
-        ->assertJsonPath('data.status', 'cancelled')->assertJsonPath('data.caller_node_name', 'renamed-policy-peer');
+        ->assertJsonPath('data.status', 'running')->assertJsonPath('data.caller_node_name', 'renamed-policy-peer');
+    Http::assertSent(fn ($request): bool => str_ends_with($request->url(), Operation::findOrFail($id)->state['swamp_run_id']));
 });
 
 it('loads deployment caller names in one batch for the list', function (): void {
