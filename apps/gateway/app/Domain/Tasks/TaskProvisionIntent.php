@@ -95,7 +95,6 @@ final readonly class TaskProvisionIntent
             [$route, $routeInput, $members] = app(PendingSshHostKey::class)->during($node->id, function () use ($instance, $routed, $node): array {
                 $route = $routed ? app(CreateRouteAction::class)->ensureForInstance($instance, null) : null;
                 app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment($instance);
-                app(InstantiateProjectRuntimeDefinitionsAction::class)->captureSchedulesForDevelopment($instance);
 
                 return [$route, $route === null ? null : app(NativeRouteAdmission::class)->capture('route.create', $route, ['mode' => 'converge'], $node->id),
                     app(ProcessInstanceOperation::class)->capture($instance, 'process.install_instance_definitions')['members']];

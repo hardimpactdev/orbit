@@ -1,0 +1,35 @@
+{
+  "kind": "tasks.provision",
+  "workflow": "operation-task-provision",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 120,
+  "before_gateway": [
+    [
+      "bash",
+      "swamp/proof/tasks.provision-runtime/prepare.sh",
+      "${node.target}",
+      "${node.metrics}",
+      "${node.peer}",
+      "${node.gateway}"
+    ]
+  ],
+  "request": {
+    "method": "POST",
+    "path": "task-groups/920/provision",
+    "body": {}
+  },
+  "expect": {
+    "status": "failed"
+  },
+  "phases": [
+    {
+      "name": "Create and prepare the VM",
+      "job": "provision",
+      "step": "Create and prepare the VM",
+      "budget_seconds": 60
+    }
+  ],
+  "parity": "swamp/proof/tasks.provision-runtime/parity.py",
+  "limits": "Admission is the proof, as in tasks.provision-image-fallback: the minimal topology cannot run a nested Incus task VM, so the run fails at 'Create and prepare the VM'. Parity proves that admission captured the workspace Route, the development Process with only the guest's host keys unpinned, and that the failed run settles. The bind, Route and Process steps are covered by provision_native_test.ts."
+}
