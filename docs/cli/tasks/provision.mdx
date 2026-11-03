@@ -15,7 +15,6 @@ The workspace gets the Project's runtime through the same children as `instance:
 | --- | --- |
 | A web root and `task_workspace_routed` on | A private Route on the development Cluster, created by the `operation-route-create` child |
 | Development Process definitions | One Instance Process per definition, created and started by `operation-process-create` |
-| Development Schedule definitions | Disabled copies. A task VM fires no scheduled work until `schedule:enable` turns one on |
 
 No host with room or a usable image makes the task wait with `capacity`; it starts when a VM is destroyed or an image is promoted. A failed step leaves the VM and its checkout; `tasks:cancel` ends the group and removes the VM.
 

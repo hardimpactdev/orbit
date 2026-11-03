@@ -1,7 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 (a task group is one root task; Pi turns use the pi driver), Recall swamp-tasks-swamp-orchestrates-pi + task-vms-swamp-via-ssh, DECISIONS R1-R4.
   %% Tightened: flow-tighten 2026-11-02, rule 22. Cut 2026-11-02 (orchestrator): provision creates the VM and the workspace only; the group-run driver composes tasks.check, tasks.turn, tasks.publish, tasks.park and tasks.cancel.
-  %% Reviewed: Nick 2026-11-03 (P1): the workspace gets the Project's Route, Processes and Schedules through the same children as instance:create; rules 23 and 25. What it covers, capacity and image fallback are on the docs page.
+  %% Reviewed: Nick 2026-11-03 (P1): the workspace gets the Project's Route and Processes through the same children as instance:create; rules 23 and 25. What it covers, capacity and image fallback are on the docs page.
   %% status: reviewed
   %% command: tasks:provision
   %% kind: tasks.provision
@@ -27,11 +27,6 @@ sequenceDiagram
   end
   opt Project has Process definitions
     Note over GW: Capture the Processes<br/>dev definitions
-  end
-  opt Project has Schedule definitions
-    Note over GW: Capture the Schedules<br/>disabled copies
-    %%> Why no Node work:
-    %%> - a definition copy starts disabled, so a task VM never fires scheduled work; `schedule:enable` turns one on
   end
   GW->>SW: Push the VM secrets<br/>vault: model key, Pi token
   %%> Why:

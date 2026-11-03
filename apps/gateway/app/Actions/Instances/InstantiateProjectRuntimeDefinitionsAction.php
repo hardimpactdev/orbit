@@ -104,20 +104,6 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
         $instance->update(['runtime_definitions_captured_at' => now()]);
     }
 
-    /**
-     * Record a task workspace's Schedules from the Project's development definitions. A definition copy starts
-     * disabled and needs no Node work; `schedule:enable` turns one on.
-     */
-    public function captureSchedulesForDevelopment(Instance $instance): void
-    {
-        $definitions = ScheduleDefinition::query()->where('project_id', $instance->project_id)
-            ->orderBy('name')->orderBy('id')->lockForUpdate()->get()
-            ->filter(static fn (ScheduleDefinition $definition): bool => in_array(DefinitionEnvironment::Development->value, $definition->environments, strict: true));
-        foreach ($definitions as $definition) {
-            $this->captureSchedule($instance, $definition);
-        }
-    }
-
     private function assertProductionTarget(Instance $instance): void
     {
         if ($instance->placedOnAppProd()) {

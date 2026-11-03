@@ -12,7 +12,6 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\RouteStatus;
-use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskAnalysisIntent;
@@ -186,9 +185,9 @@ it('replays before group validation and starts no second native run', function (
         ->and(Instance::query()->count())->toBe(1)->and(collect($this->socket->sent)->where('type', 'workflow.run')->count())->toBe(1);
 });
 
-it('captures the workspace Route, Processes and disabled Schedules with the guest host key left for the run to bind', function (): void {
+it('captures the workspace Route and Processes with the guest host key left for the run to bind, and no Schedule', function (): void {
     taskProvisionRoutedProject($this);
-    $this->project->scheduleDefinitions()->create(['name' => 'report', 'environments' => ['development'],
+    $this->project->scheduleDefinitions()->create(['name' => 'report', 'environments' => ['production'],
         'spec' => ['calendar' => 'daily', 'command' => 'php artisan report', 'timeout_seconds' => 60]]);
     $operation = app(StartTaskProvisionAction::class)->execute($this->group, 'fixture', null);
     $instance = Instance::query()->sole();
@@ -210,7 +209,7 @@ it('captures the workspace Route, Processes and disabled Schedules with the gues
         ->and($intent['processes'][0]['intent']['ssh_execution']['target']['host_keys'])->toBeNull()
         ->and($unpinned($envelope['execution_secrets']))->toBe(0)
         ->and(Node::query()->findOrFail($guest)->ssh_host_key)->toBeNull()
-        ->and(Schedule::query()->sole()->desired_timer_state)->toBe(DesiredTimerState::Disabled)
+        ->and(Schedule::query()->count())->toBe(0)
         ->and(app(DirectOperation::class)->definition('tasks.provision')['execution_copies'])->toContain(
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$']);
 });
