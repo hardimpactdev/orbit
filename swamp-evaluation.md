@@ -99,3 +99,5 @@ The official SSH control socket adds a random suffix below `/tmp/swamp-ssh/<name
 
 Production commands also need an explicit working directory when sudo changes from the SSH account to a private app account. `sudo -H` changes HOME but leaves the old cwd; GNU find can fail restoring that inaccessible directory. Public argv now uses `env -C <app-home>` before source and runtime preparation.
 Role convergence uses official apply results to avoid restarting matching Reverb inputs. Docker check exposes public compliance while its observed state remains in the execution vault. Prometheus config needs an in-place copy before SIGHUP because replacing a bind-mounted file leaves the running container on the old inode. Could the file resource offer an in-place mode for such mounts?
+
+WireGuard enrollment keeps private keys in Node files. The official exec and debug_exec resources redirect `wg genkey` output and `wg pubkey` input there, since those commands lack file options and SSH exec accepts only literal stdin. Could a WireGuard key resource, or remote stdin/stdout file options on SSH exec, remove these two shell leaves without bringing private keys into run data?
