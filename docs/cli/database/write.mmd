@@ -12,7 +12,7 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as Database host<br/>WireGuard or ssh
-  CLI->>GW: database:query shop<br/>"DELETE FROM users …" --write
+  CLI->>GW: database:query shop<br/>"SELECT id FROM users"
   %%> Command:
   %%> - `orbit database:query shop "DELETE FROM users WHERE id = 1" --write`
   %%> - syntax: `<slug> <sql> [--write] [--idempotency-key=KEY] [--json]`
@@ -21,77 +21,82 @@ sequenceDiagram
   %%> - `--write` allows a write statement; it is permission, not proof that rows changed
   %%> Lost answer:
   %%> - repeat with the same `--idempotency-key`; the Gateway returns the same task and doesn't write again
-  Note over GW: Validate, record the write<br/>receipt · task #5171
-  %%> Requirements:
-  %%> - your Node has an access grant to Node 12, which runs Database server app-mysql
-  %%> - `--write` is set; write SQL without it is refused with `database.write_required`
-  %%> - exactly one statement (`database.sql_multiple_statements`)
-  %%> - the driver is mysql, pgsql or sqlite; redis has no SQL
-  %%> - for sqlite: the connection has a Node, or the Gateway refuses with `database.sqlite_node_required`
-  %%> Where the credential lives:
-  %%> - the Gateway stores the connection's password encrypted; at start it copies the password line and the statement into the Swamp vault as one value, `database-write-intent-5171` (R3)
-  %%> - SQLite has no credential
+  Note over GW: Use the read flow<br/>database.read
   %%> Result:
-  %%> - the idempotency receipt is recorded before anything is sent
-  %%> - task #5171 recorded with the full intent; the lock for connection shop, so two writes don't overlap
-  GW->>SW: Start run, full intent<br/>operation-database-write
-  %%> What it does:
-  %%> - starts one Swamp run on serve (Node 209)
-  %%> Inputs:
-  %%> - the client argv the Gateway built for the driver, and the host's address and SSH host keys
-  %%> - the vault key name of the password and statement, never the value
-  GW-->>CLI: 202 Accepted<br/>task #5171
-  %%> What you get:
-  %%> - the task number, at once
-  %%> Next:
-  %%> - the CLI waits with progress, as for other tasks; a write is a short run, usually a few seconds
-  alt a Database server or SQLite
-    SW->>N: Run the statement<br/>@swamp/ssh · one client
-    %%> How:
-    %%> - Swamp reaches the host over SSH from 209 with the official `@swamp/ssh` behavior; the SSH identity comes from the `swamp` role
-    %%> - stdin is one vault value: the password as the first line, then the statement (Q-DBAUTH); SQLite has no password line
-    %%> Where it runs:
-    %%> - on a Database server: one `docker exec -i` into its container on Node 12, as the connection's own user, never root
-    %%> - on SQLite: `sqlite3 -safe` on the file's Node, as the file's owner; it cannot attach, write other files or run shell commands
-  else a registered external database
-    SW->>N: Run the statement on 209<br/>mysql or psql client
-    %%> How:
-    %%> - the `mysql` or `psql` client on 209, which the `swamp` role installs; 209 reaches the host directly, with no SSH hop
-  end
-  %%> Both:
-  %%> - a 30 s limit; the client prints the affected row count after the statement, and its output stops at 64 KiB
-  alt the statement succeeds
-    N-->>SW: affected row count
-    %%> Returns:
-    %%> - the number of rows the server reports; no result rows
-    SW-->>GW: Run succeeded<br/>terminal event + row count
-    %%> How the Gateway learns it:
-    %%> - the row count comes back as the run's terminal result; its shared run reader sees it; Swamp never calls the Gateway
-    Note over GW: Record the write<br/>Activity · task succeeded
+  %%> - without write permission, use the read chart; a write statement is refused with `database.write_required`
+  opt --write
+    Note over GW: Validate, record the write<br/>receipt · task #5171
+    %%> Requirements:
+    %%> - your Node has an access grant to Node 12, which runs Database server app-mysql
+    %%> - `--write` is set; write SQL without it is refused with `database.write_required`
+    %%> - exactly one statement (`database.sql_multiple_statements`)
+    %%> - the driver is mysql, pgsql or sqlite; redis has no SQL
+    %%> - for sqlite: the connection has a Node, or the Gateway refuses with `database.sqlite_node_required`
+    %%> Where the credential lives:
+    %%> - the Gateway stores the connection's password encrypted; at start it copies the password line and the statement into the Swamp vault as one value, `database-write-intent-5171` (R3)
+    %%> - SQLite has no credential
     %%> Result:
-    %%> - task #5171 succeeds with `write: true` and the row count
-    %%> - an Activity entry with the connection, your Node, the leading verb, the statement's SHA-256 and the row count
-    %%> - the SQL text is not stored, because it can hold data or secrets
-  else it fails or times out
-    N--xSW: SQL error or no answer
-    %%> When:
-    %%> - the server refuses the statement, or gives no answer within 30 s
-    SW--xGW: Run failed<br/>error_code
-    %%> The Gateway reads:
-    %%> - a bounded error code, without SQL output or the password
-    Note over GW: Mark the task failed<br/>Activity · receipt: failed
-    %%> Result:
-    %%> - `database.query_failed` when the server refused it; nothing changed
-    %%> - `database.write_outcome_unknown` after a timeout or a lost connection; the write may have happened
-    %%> Retry:
-    %%> - Swamp never repeats a write by itself
-    %%> - check the data first after an unknown outcome; a new key runs the statement again
-  end
-  loop every 2 s until terminal
-    CLI->>GW: operation:show #5171
+    %%> - the idempotency receipt is recorded before anything is sent
+    %%> - task #5171 recorded with the full intent; the lock for connection shop, so two writes don't overlap
+    GW->>SW: Start run, full intent<br/>operation-database-write
     %%> What it does:
-    %%> - asks for the task's status every 2 seconds until it has ended
-    GW-->>CLI: status + row count
-    %%> Returns:
-    %%> - the current status, and the row count once the task has ended
+    %%> - starts one Swamp run on serve (Node 209)
+    %%> Inputs:
+    %%> - the client argv the Gateway built for the driver, and the host's address and SSH host keys
+    %%> - the vault key name of the password and statement, never the value
+    GW-->>CLI: 202 Accepted<br/>task #5171
+    %%> What you get:
+    %%> - the task number, at once
+    %%> Next:
+    %%> - the CLI waits with progress, as for other tasks; a write is a short run, usually a few seconds
+    alt a Database server or SQLite
+      SW->>N: Run the statement<br/>@swamp/ssh · one client
+      %%> How:
+      %%> - Swamp reaches the host over SSH from 209 with the official `@swamp/ssh` behavior; the SSH identity comes from the `swamp` role
+      %%> - stdin is one vault value: the password as the first line, then the statement (Q-DBAUTH); SQLite has no password line
+      %%> Where it runs:
+      %%> - on a Database server: one `docker exec -i` into its container on Node 12, as the connection's own user, never root
+      %%> - on SQLite: `sqlite3 -safe` on the file's Node, as the file's owner; it cannot attach, write other files or run shell commands
+    else a registered external database
+      SW->>N: Run the statement on 209<br/>mysql or psql client
+      %%> How:
+      %%> - the `mysql` or `psql` client on 209, which the `swamp` role installs; 209 reaches the host directly, with no SSH hop
+    end
+    %%> Both:
+    %%> - a 30 s limit; the client prints the affected row count after the statement, and its output stops at 64 KiB
+    alt the statement succeeds
+      N-->>SW: affected row count
+      %%> Returns:
+      %%> - the number of rows the server reports; no result rows
+      SW-->>GW: Run succeeded<br/>terminal event + row count
+      %%> How the Gateway learns it:
+      %%> - the row count comes back as the run's terminal result; its shared run reader sees it; Swamp never calls the Gateway
+      Note over GW: Record the write<br/>Activity · task succeeded
+      %%> Result:
+      %%> - task #5171 succeeds with `write: true` and the row count
+      %%> - an Activity entry with the connection, your Node, the leading verb, the statement's SHA-256 and the row count
+      %%> - the SQL text is not stored, because it can hold data or secrets
+    else it fails or times out
+      N--xSW: SQL error or no answer
+      %%> When:
+      %%> - the server refuses the statement, or gives no answer within 30 s
+      SW--xGW: Run failed<br/>error_code
+      %%> The Gateway reads:
+      %%> - a bounded error code, without SQL output or the password
+      Note over GW: Mark the task failed<br/>Activity · receipt: failed
+      %%> Result:
+      %%> - `database.query_failed` when the server refused it; nothing changed
+      %%> - `database.write_outcome_unknown` after a timeout or a lost connection; the write may have happened
+      %%> Retry:
+      %%> - Swamp never repeats a write by itself
+      %%> - check the data first after an unknown outcome; a new key runs the statement again
+    end
+    loop every 2 s until terminal
+      CLI->>GW: operation:show #5171
+      %%> What it does:
+      %%> - asks for the task's status every 2 seconds until it has ended
+      GW-->>CLI: status + row count
+      %%> Returns:
+      %%> - the current status, and the row count once the task has ended
+    end
   end
