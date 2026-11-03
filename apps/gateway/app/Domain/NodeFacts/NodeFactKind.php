@@ -22,6 +22,9 @@ enum NodeFactKind: string
     /** The paths of every checkout the agent found; a checkout row whose path it no longer names is deleted. */
     case Checkouts = 'checkouts';
 
+    /** The packages one Tool Manager holds, named by the manager in `subject`, read from its own state files. */
+    case Packages = 'packages';
+
     /** Free space is stored in whole steps of this size, so ordinary disk use is not a change to write. */
     public const int FreeStepBytes = 268_435_456;
 
@@ -68,13 +71,52 @@ enum NodeFactKind: string
                 'paths' => ['present', 'array', 'list', 'max:4096'],
                 'paths.*' => ['required', 'string', 'starts_with:/', 'max:1024'],
             ],
+            self::Packages => [
+                'scope' => ['present', 'nullable', 'string', 'starts_with:/', 'max:4096'],
+                'packages' => ['sometimes', 'array', 'list', 'max:20000'],
+                'packages.*.name' => ['required', 'string', 'max:255'],
+                'packages.*.version' => ['required', 'string', 'max:255'],
+                'roots' => ['sometimes', 'array', 'list', 'max:1000'],
+                'roots.*' => ['required', 'string', 'max:255'],
+                'sources' => ['sometimes', 'array', 'list', 'max:256'],
+                'keys' => ['sometimes', 'array', 'list', 'max:256'],
+                'sources.*.path' => ['required', 'string', 'starts_with:/', 'max:4096'],
+                'keys.*.path' => ['required', 'string', 'starts_with:/', 'max:4096'],
+                'sources.*.sha256' => ['required', 'string', 'regex:/\\A[a-f0-9]{64}\\z/'],
+                'keys.*.sha256' => ['required', 'string', 'regex:/\\A[a-f0-9]{64}\\z/'],
+                'sources.*.content' => ['required', 'string', 'max:87384'],
+                'keys.*.content' => ['required', 'string', 'max:87384'],
+                'formulae' => ['sometimes', 'array', 'list', 'max:5000'],
+                'formulae.*.name' => ['required', 'string', 'max:255'],
+                'formulae.*.versions' => ['present', 'array', 'list', 'max:64'],
+                'formulae.*.tap' => ['present', 'nullable', 'string', 'max:255'],
+                'formulae.*.on_request' => ['present', 'nullable', 'boolean'],
+                'formulae.*.dependencies' => ['present', 'array', 'list', 'max:1000'],
+                'casks' => ['sometimes', 'array', 'list', 'max:5000'],
+                'casks.*.name' => ['required', 'string', 'max:255'],
+                'casks.*.versions' => ['present', 'array', 'list', 'max:64'],
+            ],
         };
     }
 
     /** Whether a fact of this kind names its item in `subject`. */
     public function hasSubject(): bool
     {
-        return $this === self::Checkout;
+        return $this->subjectRules() !== ['prohibited'];
+    }
+
+    /**
+     * The rules of `subject`: a checkout's path, a Tool Manager's name, or none.
+     *
+     * @return list<string>
+     */
+    public function subjectRules(): array
+    {
+        return match ($this) {
+            self::Checkout => ['required', 'string', 'starts_with:/', 'max:1024'],
+            self::Packages => ['required', 'string', 'regex:/\\A[a-z][a-z0-9-]{0,31}\\z/'],
+            default => ['prohibited'],
+        };
     }
 
     /**

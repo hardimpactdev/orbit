@@ -91,10 +91,24 @@ The agent reports facts the Gateway stores and answers reads from, such as Docto
 | `units` | `docker` (`available` or `absent`), and each `orbit-process-*` unit, each Process container, and each role service from the [watch list](#watch-list), with its `runtime` and `state`. A role service that is not installed reads `not-found`. | every 10 seconds |
 | `checkout` | One Git checkout at `<apps_root>/<project>/<name>`, named by its path in `subject`. See [Checkouts](#checkouts). | on change |
 | `checkouts` | `paths`: the path of every checkout the agent found under the apps root | on change |
+| `packages` | One Tool Manager's packages, named by the manager in `subject`. See [Packages](#packages). | every 60 seconds |
 
 The Gateway stores a host's `free` bytes rounded down to 256 MiB. Free space moves with every log line, so without the rounding each `host` report would write a row.
 
 The agent sends a fact when it changed, and again every 10 minutes. The Gateway answers `204`. It stores one row per Node, kind and `subject` in `node_facts`. Only `checkout` has a subject; the other kinds refuse one and store `''`. Each row keeps the agent's `observed_at` and the Gateway's own `received_at`. A report whose content is unchanged reads one row and writes nothing. A change compares and writes in one short transaction with no remote call inside. A request over 1 MiB fails with `agent.fact_too_large` (413), and invalid data fails with `validation.failed` (422).
+
+### Packages
+
+The [watch list](#watch-list) names each active Tool Manager with the candidate paths of its state. The agent reads the first path that exists and never runs the manager:
+
+| Manager | State it reads | Data |
+| --- | --- | --- |
+| `apt` | `/var/lib/dpkg/status`, `/etc/apt/sources.list` and `sources.list.d/*.list` and `*.sources`, keys in `/etc/apt/keyrings` and `/usr/share/keyrings` | `packages` with `install ok installed`; `sources` and `keys` as `path`, `sha256` and base64 `content`, each file at most 64 KiB |
+| `composer` | `composer.json` and `vendor/composer/installed.json` of the global scope | `roots` it requires, and every installed package |
+| `vp` | `bins/*.json` of the Vite+ home | each global package once |
+| `brew` | `Cellar/<formula>/<version>/INSTALL_RECEIPT.json` and `Caskroom/<cask>/<version>` | `formulae` with `versions`, `tap`, `on_request` and `dependencies`; `casks` with `versions` |
+
+Each fact also names its `scope`, the path it read. On beast the apt fact is about 270 KB.
 
 ### Checkouts
 
@@ -130,6 +144,7 @@ The agent asks `GET /api/v1/agent/watch` what to watch, at start and every 60 se
     "services": ["caddy.service", "docker.service"],
     "apps_root": "/home/orbit/apps",
     "applications": { "operator": "server/web" },
+    "tools": [{ "manager": "apt", "paths": ["/var/lib/dpkg/status"] }],
     "workspaces": [
       {
         "instance_id": 31,
@@ -143,7 +158,7 @@ The agent asks `GET /api/v1/agent/watch` what to watch, at start and every 60 se
 }
 ```
 
-`services` are the services of the Node's roles, which the agent reports as [facts](#facts). `apps_root` is the apps path of an active app-dev Node, whose [checkouts](#checkouts) the agent reports; it is null on other Nodes. `applications` names, by Project slug, the application directory inside a checkout when the Project's `root` puts it below the checkout root. Only plain unit names ending in `.service` are accepted. Agents released before the observer pass still ask `GET /api/v1/agent/workspaces`, which returns only the `workspaces` list. The Gateway serves it until every Node runs the new agent.
+`services` are the services of the Node's roles, which the agent reports as [facts](#facts). `apps_root` is the apps path of an active app-dev Node, whose [checkouts](#checkouts) the agent reports; it is null on other Nodes. `applications` names, by Project slug, the application directory inside a checkout when the Project's `root` puts it below the checkout root. `tools` lists each active Tool Manager with the candidate paths of its [package](#packages) state. Only plain unit names ending in `.service` are accepted. Agents released before the observer pass still ask `GET /api/v1/agent/workspaces`, which returns only the `workspaces` list. The Gateway serves it until every Node runs the new agent.
 
 `workspaces` holds the Instances on the caller's Node that hold the workspace of an unfinished task: `backlog` or `todo` with an Instance, `reserved`, `running`, `reviewing`, or `settling`. `base` is the Project's default branch. `start` is the Instance's starting commit, or null. The list is empty while Tasks is disabled, and it holds at most 64 entries.
 
@@ -603,7 +618,7 @@ The `ai-router` part on the collector Node has no step: it only versions that No
 
 The converge never writes the secret. Its end check is one `sha256sum --check` against the Gateway's hashes: the pinned binary, the recorded verifier and the agent's files. A missing or mismatched secret fails the converge with the agent part unapplied; [`orbit:node-agent-rekey`](#make-a-new-agent-key) makes a new one. A passing converge clears the Node's recorded failed pin. The role parts run beside the agent part in their own steps, and the Gateway reads each one's outcome from Swamp's run data; [Converge the Orbit footprint](/reference/node-provisioning#converge-the-orbit-footprint) lists them. `agent.remove` stops the agent and removes its unit, binary, and directory.
 
-The unit runs the agent as `root` with `Restart=always` and `RestartSec=2`. It grants no capabilities and sets `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=tmpfs`, `BindReadOnlyPaths=-{Instance root}`, `PrivateTmp=yes`, `MemoryMax=128M`, and `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`. The memory limit also covers the `journalctl` processes of live journal streams.
+The unit runs the agent as `root` with `Restart=always` and `RestartSec=2`. It grants no capabilities and sets `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=tmpfs`, `BindReadOnlyPaths=-{Instance root}` and one read-only bind for each Tool Manager state path under `/home` (the Vite+ home and `/home/linuxbrew/.linuxbrew`), `PrivateTmp=yes`, `MemoryMax=128M`, and `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`. The memory limit also covers the `journalctl` processes of live journal streams.
 
 The Instance root is the Node's [apps root](/reference/node-settings#derive-the-effective-root). The bind line appears only when the root lies under `/home` or `/root`. When the Gateway cannot resolve the managed user, or the root has characters other than letters, digits, `.`, `_`, `-`, and `/`, the unit sets `ProtectHome=yes`, and the Gateway reads that Node's checkouts over SSH.
 

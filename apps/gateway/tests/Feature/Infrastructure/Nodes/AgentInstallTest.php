@@ -12,6 +12,7 @@ use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tools\NodeToolScopes;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Nodes\NodeAgentRoleConverger;
@@ -20,6 +21,7 @@ use App\Infrastructure\Nodes\NodeLocks;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
+use App\Models\ToolManagerRecord;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Log;
 use Tests\Support\FakeAgentCommandRunner;
@@ -58,7 +60,7 @@ it('keeps the role converge going when the agent install fails', function (): vo
     $node->platform = 'linux';
     $node->ssh_host_fingerprint = 'SHA256:'.str_repeat('A', 43);
 
-    expect(fn () => (new NodeAgentRoleConverger($agent, new ManagedNodeEligibility))->converge($node))
+    expect(fn () => new NodeAgentRoleConverger($agent, new ManagedNodeEligibility)->converge($node))
         ->not->toThrow(Throwable::class);
 
     Log::shouldHaveReceived('warning')->once();
@@ -102,6 +104,21 @@ it('sends the configuration, Gateway CA, and narrowed unit to the agent', functi
         ->and($input['certificate'])->toContain('-----BEGIN CERTIFICATE-----')
         ->and($input['unit'])->toContain(NodeAgentFootprint::Marker, 'Restart=always', 'RestartSec=2', 'CapabilityBoundingSet=', 'NoNewPrivileges=yes', 'ProtectSystem=strict', 'ProtectHome=tmpfs', 'BindReadOnlyPaths=-/home/orbit/apps', 'PrivateTmp=yes', 'MemoryMax=128M', 'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6')
         ->and($input['binary_changed'])->toBeFalse();
+});
+
+it('binds back the state of the active Tool Managers that live under home, read-only', function (): void {
+    $runner = nodeAgentConfigured();
+    $node = nodeAgentNode();
+    $node->forceFill(['public_ssh_host' => '192.0.2.4'])->save();
+    foreach (['apt' => 'active', 'vp' => 'active', 'brew' => 'active', 'composer' => 'removing'] as $name => $status) {
+        ToolManagerRecord::query()->create(['node_id' => $node->id, 'name' => $name, 'status' => $status]);
+    }
+
+    nodeAgentExecutor($runner)->converge($node);
+
+    expect($runner->calls[0]['input']['unit'])->toContain('ProtectHome=tmpfs', 'BindReadOnlyPaths=-/home/orbit/apps',
+        'BindReadOnlyPaths=-/home/orbit/.vite-plus', 'BindReadOnlyPaths=-/home/orbit/.local/share/vite-plus', 'BindReadOnlyPaths=-/home/linuxbrew/.linuxbrew')
+        ->not->toContain('BindReadOnlyPaths=-/opt', 'BindReadOnlyPaths=-/var/lib/dpkg');
 });
 
 it('binds back only the Instance root under an empty home', function (?ManagedUserAccount $account, array $settings, array $present, array $absent): void {
@@ -329,20 +346,23 @@ function nodeAgentExecutor(FakeAgentCommandRunner $runner, ?ManagedUserAccount $
         $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
     }
 
+    $accounts = new readonly class($account) implements ManagedUserAccountResolver
+    {
+        public function __construct(private ?ManagedUserAccount $account) {}
+
+        public function resolve(Node $node): ManagedUserAccount
+        {
+            return $this->account ?? throw new RuntimeException('getent failed');
+        }
+    };
+
     return new NodeAgentSshExecutor(
         new AgentInstallCertificates,
-        new readonly class($account) implements ManagedUserAccountResolver
-        {
-            public function __construct(private ?ManagedUserAccount $account) {}
-
-            public function resolve(Node $node): ManagedUserAccount
-            {
-                return $this->account ?? throw new RuntimeException('getent failed');
-            }
-        },
+        $accounts,
         app(StorageRootResolver::class),
         app(NodeSettingsNormalizer::class),
         $runner,
+        new NodeToolScopes($accounts),
         app(NodeLocks::class),
         $lockWaitSeconds,
     );

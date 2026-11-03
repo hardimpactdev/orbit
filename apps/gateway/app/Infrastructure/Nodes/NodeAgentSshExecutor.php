@@ -12,6 +12,7 @@ use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tools\NodeToolScopes;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
@@ -38,6 +39,7 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
         private StorageRootResolver $storageRoots,
         private NodeSettingsNormalizer $nodeSettings,
         private AgentCommandRunner $agents,
+        private NodeToolScopes $tools,
         private ?NodeLocks $locks = null,
         /** How long a converge waits for another converge of the same Node agent. */
         private int $lockWaitSeconds = 120,
@@ -63,22 +65,24 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
     }
 
     /**
-     * The unit lines that let the agent read the Node's task checkouts and nothing else under `/home` or
-     * `/root` (ADR 0151). `/home` and `/root` become empty, and only the Instance root is bound back
-     * read-only. Root without capabilities reads there only what other users may read. Without a
-     * resolvable root, the agent sees no home directory at all.
+     * The unit lines that let the agent read the Node's task checkouts and Tool Manager state and nothing else under
+     * `/home` or `/root` (ADR 0151). `/home` and `/root` become empty, and only the Instance root and the managers'
+     * state paths are bound back read-only. Root without capabilities reads there only what other users may read.
+     * Without a resolvable root or a manager there, the agent sees no home directory at all.
      *
+     * @param  list<string>  $toolPaths
      * @return list<string>
      */
-    private function checkoutAccess(?string $root): array
+    private function checkoutAccess(?string $root, array $toolPaths = []): array
     {
+        $binds = array_map(static fn (string $path): string => 'BindReadOnlyPaths=-'.$path, $toolPaths);
         if ($root === null) {
-            return ['ProtectHome=yes'];
+            return $binds === [] ? ['ProtectHome=yes'] : ['ProtectHome=tmpfs', ...$binds];
         }
 
         $underHome = str_starts_with($root.'/', '/home/') || str_starts_with($root.'/', '/root/');
 
-        return ['ProtectHome=tmpfs', ...($underHome ? ['BindReadOnlyPaths=-'.$root] : [])];
+        return ['ProtectHome=tmpfs', ...($underHome ? ['BindReadOnlyPaths=-'.$root] : []), ...$binds];
     }
 
     /**
@@ -139,7 +143,7 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
             'CapabilityBoundingSet=',
             'NoNewPrivileges=yes',
             'ProtectSystem=strict',
-            ...$this->checkoutAccess($root),
+            ...$this->checkoutAccess($root, $this->tools->homePaths($node)),
             'PrivateTmp=yes',
             'MemoryMax=128M',
             'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6',

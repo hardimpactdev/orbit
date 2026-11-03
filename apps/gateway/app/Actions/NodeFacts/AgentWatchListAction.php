@@ -9,6 +9,7 @@ use App\Data\Tasks\AgentWorkspaceData;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\SourceControl\ApplicationDirectory;
+use App\Domain\Tools\NodeToolScopes;
 use App\Infrastructure\Nodes\NodeRoleServiceCatalog;
 use App\Models\Node;
 use App\Models\Project;
@@ -20,9 +21,9 @@ use App\Models\Project;
  */
 final readonly class AgentWatchListAction
 {
-    public function __construct(private NodeRoleServiceCatalog $services, private ListAgentWorkspacesAction $workspaces) {}
+    public function __construct(private NodeRoleServiceCatalog $services, private ListAgentWorkspacesAction $workspaces, private NodeToolScopes $tools) {}
 
-    /** @return array{services: list<string>, workspaces: list<array<string, mixed>>, apps_root: ?string, applications: array<string, string>} */
+    /** @return array{services: list<string>, workspaces: list<array<string, mixed>>, apps_root: ?string, applications: array<string, string>, tools: list<array{manager: string, paths: list<string>}>} */
     public function execute(Node $node): array
     {
         $services = [];
@@ -39,6 +40,7 @@ final readonly class AgentWatchListAction
             'workspaces' => array_map(static fn (AgentWorkspaceData $workspace): array => $workspace->toArray(), $this->workspaces->execute($node)),
             'apps_root' => $root = $this->appsRoot($node),
             'applications' => $root === null ? [] : $this->applications(),
+            'tools' => $this->tools->forNode($node),
         ];
     }
 

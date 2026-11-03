@@ -704,7 +704,23 @@ async fn report_facts(
                     }
                 }
             },
-            _ = host_tick.tick() => ("host", facts::host_data(std::env::consts::OS, std::env::consts::ARCH, &observed_filesystems())),
+            _ = host_tick.tick() => {
+                // Package facts ride the host tick; each is sent only when it changed or at the resync.
+                let tools = listed.borrow().tools.clone();
+                let read = tokio::task::spawn_blocking(move || {
+                    tools.iter().filter_map(|(manager, paths)| Some((manager.clone(), orbit_agent::packages::observe(manager, paths)?))).collect::<Vec<_>>()
+                }).await.unwrap_or_default();
+                for (manager, data) in read {
+                    let now = std::time::Instant::now();
+                    if let Some(body) = sender.body("packages", Some(&manager), &data, &facts::observed_at(), now) {
+                        match facts::post(&client, &url, &body).await {
+                            Ok(()) => sender.sent("packages", Some(&manager), &data, now),
+                            Err(error) => eprintln!("orbit-agent: {manager} packages fact report failed: {error}"),
+                        }
+                    }
+                }
+                ("host", facts::host_data(std::env::consts::OS, std::env::consts::ARCH, &observed_filesystems()))
+            },
         };
         let now = std::time::Instant::now();
         let Some(body) = sender.body(kind, None, &data, &facts::observed_at(), now) else {

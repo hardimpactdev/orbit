@@ -13,6 +13,7 @@ pub mod command;
 pub mod commands;
 pub mod facts;
 pub mod logs;
+pub mod packages;
 pub mod realtime;
 #[cfg(test)]
 #[path = "../tests/support/executable.rs"]

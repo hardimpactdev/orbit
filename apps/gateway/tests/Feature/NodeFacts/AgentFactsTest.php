@@ -9,6 +9,7 @@ use App\Domain\Nodes\RoleName;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Models\NodeFact;
 use App\Models\Project;
+use App\Models\ToolManagerRecord;
 use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -132,6 +133,31 @@ describe('agent facts and liveness', function (): void {
         $this->postJson('/api/v1/agent/facts', $bad)->assertUnprocessable();
 
         expect(NodeFact::query()->where('subject', '/fast/apps/acme/default')->sole()->data['env']['mode'])->toBe('0600');
+    });
+
+    it('stores one packages fact per Tool Manager and names the managers in the watch list', function (): void {
+        ToolManagerRecord::query()->create(['node_id' => $this->node->id, 'name' => 'apt', 'status' => 'active']);
+        ToolManagerRecord::query()->create(['node_id' => $this->node->id, 'name' => 'composer', 'status' => 'active']);
+        $this->getJson('/api/v1/agent/watch')->assertOk()->assertJsonPath('data.tools', [
+            ['manager' => 'apt', 'paths' => ['/var/lib/dpkg/status']],
+            ['manager' => 'composer', 'paths' => ['/opt/orbit/composer']],
+        ]);
+        $apt = ['kind' => 'packages', 'subject' => 'apt', 'observed_at' => '2026-11-03T00:00:00Z', 'data' => ['scope' => '/var/lib/dpkg/status',
+            'packages' => [['name' => 'jq', 'version' => '1.7']], 'sources' => [],
+            'keys' => [['path' => '/etc/apt/keyrings/docker.asc', 'sha256' => str_repeat('a', 64), 'content' => base64_encode('key')]]]];
+
+        $this->postJson('/api/v1/agent/facts', $apt)->assertNoContent();
+        $this->postJson('/api/v1/agent/facts', [...$apt, 'subject' => 'composer', 'data' => ['scope' => '/opt/orbit/composer', 'roots' => ['laravel/installer'],
+            'packages' => [['name' => 'laravel/installer', 'version' => 'v5.32.0']]]])->assertNoContent();
+        $bad = $apt;
+        $bad['data']['keys'][0]['sha256'] = 'nope';
+        $this->postJson('/api/v1/agent/facts', $bad)->assertUnprocessable();
+        $missing = $apt;
+        unset($missing['subject']);
+        $this->postJson('/api/v1/agent/facts', $missing)->assertUnprocessable();
+
+        expect(NodeFact::query()->where('kind', 'packages')->orderBy('subject')->pluck('subject')->all())->toBe(['apt', 'composer'])
+            ->and(NodeFact::query()->where('subject', 'apt')->sole()->data['packages'])->toBe([['name' => 'jq', 'version' => '1.7']]);
     });
 
     it('requires a subject for a checkout and refuses one for other kinds', function () use ($checkout, $host): void {

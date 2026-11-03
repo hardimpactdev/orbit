@@ -90,7 +90,7 @@ final class AgentRealtimeController extends Controller
         $kind = NodeFactKind::from(ValidatedData::string(
             Validator::make($request->all(), ['kind' => ['required', 'string', Rule::enum(NodeFactKind::class)]])->validate()['kind']));
         $rules = ['observed_at' => ['required', 'date_format:Y-m-d\\TH:i:s.v\\Z,Y-m-d\\TH:i:s\\Z'], 'data' => ['required', 'array'],
-            'subject' => $kind->hasSubject() ? ['required', 'string', 'starts_with:/', 'max:1024'] : ['prohibited']];
+            'subject' => $kind->subjectRules()];
         foreach ($kind->rules() as $field => $rule) {
             $rules['data.'.$field] = $rule;
         }

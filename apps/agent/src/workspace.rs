@@ -127,6 +127,37 @@ pub struct WatchFacts {
     pub services: Vec<String>,
     pub apps_root: Option<String>,
     pub applications: BTreeMap<String, String>,
+    /// Each Tool Manager with the candidate paths of its state; the agent reads the first that exists.
+    pub tools: Vec<(String, Vec<String>)>,
+}
+
+/// Parses the `tools` of `GET /api/v1/agent/watch`: plain manager names with normalized absolute candidate paths.
+pub fn parse_watch_tools(body: &Value) -> Vec<(String, Vec<String>)> {
+    body.pointer("/data/tools")
+        .and_then(Value::as_array)
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| {
+                    let manager = row.get("manager")?.as_str()?;
+                    let valid = !manager.is_empty()
+                        && manager.len() <= 32
+                        && manager.bytes().all(|byte| {
+                            byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-'
+                        });
+                    let paths: Vec<String> = row
+                        .get("paths")?
+                        .as_array()?
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .filter(|path| valid_checkout_path(path))
+                        .map(str::to_owned)
+                        .collect();
+                    valid.then(|| (manager.to_owned(), paths))
+                })
+                .take(16)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Parses the `apps_root` and `applications` of `GET /api/v1/agent/watch`. An apps root must be a normalized absolute
@@ -440,6 +471,7 @@ async fn fetch_watch_list(
         services: parse_watch_services(&body)?,
         apps_root,
         applications,
+        tools: parse_watch_tools(&body),
     };
     Ok((parse_watch_list(&body)?, facts))
 }
@@ -827,6 +859,23 @@ mod tests {
             vec!["caddy.service".to_owned(), "docker.service".to_owned()]
         );
         assert!(parse_watch_services(&json!({"data": {}})).is_err());
+    }
+
+    #[test]
+    fn watch_tools_keep_plain_managers_with_normalized_paths() {
+        let body = json!({"data": {"tools": [
+            {"manager": "vp", "paths": ["/opt/orbit/vite-plus", "/home/orbit/../etc", "relative"]},
+            {"manager": "Bad Name", "paths": ["/x"]},
+            {"manager": "apt", "paths": ["/var/lib/dpkg/status"]}
+        ]}});
+
+        assert_eq!(
+            parse_watch_tools(&body),
+            vec![
+                ("vp".to_owned(), vec!["/opt/orbit/vite-plus".to_owned()]),
+                ("apt".to_owned(), vec!["/var/lib/dpkg/status".to_owned()])
+            ]
+        );
     }
 
     #[test]
