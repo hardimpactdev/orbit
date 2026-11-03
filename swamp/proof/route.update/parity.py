@@ -27,10 +27,11 @@ def check(condition, message):
 
 
 caddyfile = target("cat", "/etc/caddy/Caddyfile").stdout
-roots = re.findall(r"(?m)^\s*root \* (.+)/public\s*$", caddyfile)
-check(bool(roots) and "php_fastcgi" in caddyfile, "the Route serves a PHP application")
-check(any("laravel/framework" in json.loads(target("cat", root + "/composer.json").stdout).get("require", {}) for root in roots), "the checkout is a Laravel application")
 check(f"https://{new} {{" in caddyfile, "the Caddy site serves the new domain")
+site = caddyfile.split(f"https://{new} {{", 1)[1].split("\n# orbit: ", 1)[0]
+roots = re.findall(r"(?m)^\s*root \* (.+)/public\s*$", site)
+check(len(roots) == 1 and "php_fastcgi" in site, "the updated Route serves a PHP application")
+check(all("laravel/framework" in json.loads(target("cat", root + "/composer.json").stdout).get("require", {}) for root in roots), "the updated Route's checkout is a Laravel application")
 check(f"https://{old} {{" not in caddyfile, "the old site is withdrawn")
 check(target("sh", "-c", "ls -d /etc/caddy/orbit-certificates/*-hostname-change").returncode != 0, "the temporary leaf is removed")
 listen = target("ss", "-ltnH", "sport = :443").stdout.split()[3]
