@@ -72,7 +72,16 @@ Ansible is approved for Node work: one Swamp step per phase, each phase an idemp
 - The app-dev snapshot is the task VM image. It is copied to the other Incus hosts and to UpCloud.
 - A nightly task builds the topology from stock Ubuntu in a task VM, runs every case, and compares the result with the templates through Doctor.
   - On a pass, the fresh build replaces the templates.
-  - On a failure, Pi works in that VM. It fixes an Orbit bug with a PR, pins and excludes a broken upstream version with a PR, or reruns once and then reports.
+  - On a failure, Pi works in that VM, on Codex Sol 6.1 at High effort. It fixes an Orbit bug with a PR, pins and excludes a broken upstream version with a PR, or reruns once and then reports.
+  - A pin PR touches only `recipe.json` and `renovate.json`, and merges automatically when its required check passes. A fix PR changes Orbit code and goes through normal review: an independent review, then Nick's approval.
+
+**Python.**
+
+- Ansible needs Python on each Node, so Python comes with the agent.
+- Linux Nodes keep the system `python3`, which Ubuntu always ships and Ansible's `apt` module needs.
+- A macOS Node gets its Python where it gets its agent: `node:add` installs a pinned python-build-standalone build into Orbit's own prefix, with one `raw` task that needs no Python. The Tool commands then run on it. `node:converge` and the rollout stay Linux-only.
+- The build is a `recipe.json` artifact, which Renovate keeps current.
+- Orbit installs no Xcode and no Command Line Tools. Homebrew's own need for them stays Homebrew's.
 
 ## Rejected alternatives
 
@@ -84,10 +93,11 @@ Ansible is approved for Node work: one Swamp step per phase, each phase an idemp
 
 ## Consequences
 
+- `recipe.json` gains one artifact: the python-build-standalone build for macOS Nodes.
 - No recipe version reaches a Node untested. Two exceptions remain: Ubuntu security patches, which the next test confirms after the fact, and Tool versions, which follow their constraint and the 24-hour rule without a test, isolated by the recipe hold.
 - The task VM image build, `fleet.recipe_pr`, the agent image phases, the Tool candidate and decision steps, and the footprint digests are removed.
 - Every rollout visits every Node. A visit with no changes takes about a minute.
-- Open: the merge path for Pi's PRs, nested-VM speed, setting up Python on macOS when a Node is added, and how long a release onto an existing topology takes.
+- Open: two timings, to be measured on the shared proof topology: a release onto an existing topology (release, Swamp load, converge on both Nodes), and one nested Node from stock to `app-dev`.
 
 ## Affects
 
