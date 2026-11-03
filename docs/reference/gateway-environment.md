@@ -67,7 +67,7 @@ The Gateway operator owns rotation. Swamp requires admin authority to mint or re
    ssh -i /home/orbit/.orbit/ssh/id_ed25519 \
      -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
      -o UserKnownHostsFile=/home/orbit/.orbit/ssh/known_hosts \
-     "orbit@$swamp_host" /home/orbit/.local/bin/swamp \
+     "orbit@$swamp_host" /usr/local/bin/swamp \
        access token reveal "$replacement" \
        --repo-dir /home/orbit/apps/orbit-swamp/default --yes --json | \
      php /home/orbit/orbit/apps/gateway/artisan \

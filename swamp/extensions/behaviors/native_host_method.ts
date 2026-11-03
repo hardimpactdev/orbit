@@ -22,7 +22,7 @@ export async function invokeNativeModel(
     runtime = {
         repo: SWAMP_REPOSITORY,
         home: HOME,
-        executable: `${HOME}/.local/bin/swamp`,
+        executable: "/usr/local/bin/swamp",
         graceMs: 10_000,
     },
 ) {

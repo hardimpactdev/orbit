@@ -31,7 +31,7 @@ Deno.test("remote refusal is resolved by a separate native child, with a fake sy
   const source = (await Deno.readTextFile(`${ROOT}/extensions/behaviors/native_host_method.ts`))
     .replace('"/home/orbit/apps/orbit-monorepo-staging/checkout/swamp"', JSON.stringify(repo.dir))
     .replace('const HOME = "/home/orbit"', `const HOME = ${JSON.stringify(home)}`)
-    .replace("executable: `${HOME}/.local/bin/swamp`", `executable: ${JSON.stringify(await swampBinary())}`)
+    .replace("executable: \"/usr/local/bin/swamp\"", `executable: ${JSON.stringify(await swampBinary())}`)
     .replace('"./operations/_lib/local-worker.ts"', '"./fixture_host_tools.ts"');
   await Deno.writeTextFile(`${repo.dir}/extensions/behaviors/native_host_method.ts`, source);
   // Intercept the privileged process boundary. No sudo or systemd command is executed.

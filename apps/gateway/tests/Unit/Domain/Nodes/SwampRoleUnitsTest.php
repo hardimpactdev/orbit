@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\SwampRoleUnits;
 
-// The exact text the Python runtime wrote on Node 209, so the first cfgmgmt converge there changes no unit.
-it('renders serve exactly as it runs on the swamp Node, with its scheduled run limit and drain', function (): void {
+// The exact text serve runs from on Node 209; serve runs the role-installed /usr/local/bin/swamp, as the workers do.
+it('renders serve exactly, from the role-installed binary, with its scheduled run limit and drain', function (): void {
     expect(SwampRoleUnits::for('orbit', 209)['serve'])->toBe(<<<'UNIT_TEXT'
 [Unit]
 Description=Orbit swamp role serve
@@ -18,7 +18,7 @@ Type=simple
 User=orbit
 WorkingDirectory=/home/orbit/apps/orbit-monorepo-staging/checkout/swamp
 Environment=HOME=/home/orbit PATH=/home/orbit/.local/bin:/usr/local/bin:/usr/bin:/bin SWAMP_HOME=/home/orbit/.swamp SWAMP_CONFIG_DIR=/home/orbit/.config/swamp SWAMP_API_KEY_FILE=/home/orbit/.config/swamp/api-key SWAMP_SERVER_TOKEN_FILE=/home/orbit/.config/swamp/serve-driver-token SWAMP_REMOTE_ONLY=1 NODE_USE_SYSTEM_CA=1 SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1
-ExecStart=/home/orbit/.local/bin/swamp serve --repo-dir /home/orbit/apps/orbit-monorepo-staging/checkout/swamp --port 9418 --host 127.0.0.1 --auth-mode token --admins user:nckrtl --club-api-key-file /home/orbit/.config/swamp/api-key --trusted-hosts swamp.orbit --trust-proxy --dispatch-env-allow=, --max-concurrent-scheduled-runs 4 --shutdown-drain-timeout 5m --remote-only --hot-reload
+ExecStart=/usr/local/bin/swamp serve --repo-dir /home/orbit/apps/orbit-monorepo-staging/checkout/swamp --port 9418 --host 127.0.0.1 --auth-mode token --admins user:nckrtl --club-api-key-file /home/orbit/.config/swamp/api-key --trusted-hosts swamp.orbit --trust-proxy --dispatch-env-allow=, --max-concurrent-scheduled-runs 4 --shutdown-drain-timeout 5m --remote-only --hot-reload
 Restart=on-failure
 RestartSec=2
 TimeoutStopSec=360

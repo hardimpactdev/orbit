@@ -20,6 +20,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Metrics\ServiceMetricsProjection;
 use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
@@ -71,6 +72,19 @@ final readonly class NodeRoleRuntimeInput
         }
     }
 
+    /**
+     * The recipe's pinned Swamp release for the swamp role's Linux x86_64 Node: serve and its workers run it from
+     * `/usr/local/bin/swamp`, and the role installs it there by checksum.
+     *
+     * @return array{url:string,sha256:string}
+     */
+    private static function swampBinary(): array
+    {
+        $artifact = new RecipeLoader()->load()->tools['swamp']->artifacts['amd64'];
+
+        return ['url' => $artifact->location, 'sha256' => $artifact->digest];
+    }
+
     /** @return array<string,mixed>|null */
     public function capture(Node $node, NodeRole $assignment): ?array
     {
@@ -78,7 +92,7 @@ final readonly class NodeRoleRuntimeInput
         if ($assignment->role === RoleName::Swamp) {
             return ['role' => $assignment->role->value, 'node_id' => $node->id, 'assignment_id' => $assignment->id,
                 'agent_sha256' => $this->agents->pin($node), 'user' => $node->user, 'workers' => self::SwampWorkers,
-                'units' => SwampRoleUnits::for($node->user, $node->id), 'ssh_execution' => $this->ssh->forNode($node)];
+                'units' => SwampRoleUnits::for($node->user, $node->id), 'binary' => self::swampBinary(), 'ssh_execution' => $this->ssh->forNode($node)];
         }
         if (! in_array($assignment->role, [RoleName::Metrics, RoleName::Analytics, RoleName::WebSocket], true)) {
             return null;
