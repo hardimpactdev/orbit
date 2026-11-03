@@ -10,6 +10,7 @@ const phases = {
     fetch: "succeeded",
     source: { status: "succeeded", outputs: { stdout: "a".repeat(40) + "\n" } },
     environment: "succeeded",
+    database: "skipped",
     setup: ["succeeded", "succeeded"],
     processes: ["succeeded"],
     route: "skipped",
@@ -75,4 +76,11 @@ Deno.test("VP preparation uses stock CLI environment installation and discrete o
         ),
         true,
     );
+});
+Deno.test("a create that copies the default database needs that copy; others skip it", () => {
+    const copy = { ...intent, database: { sqlite: { target: "/srv/apps/p/blog/database/database.sqlite" } } };
+    const failed = JSON.parse(createResult(copy, { ...phases, database: "failed" }).stdout);
+    assertEquals([failed.ready, failed.failed_step, failed.error_code], [false, "database", "instance.create_database_failed"]);
+    assertEquals(JSON.parse(createResult(copy, { ...phases, database: "succeeded" }).stdout).ready, true);
+    assertEquals(JSON.parse(createResult(intent, phases).stdout).ready, true);
 });

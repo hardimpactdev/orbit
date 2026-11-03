@@ -31,6 +31,9 @@ sequenceDiagram
   %%> Why the file:
   %%> - git reads the token from it, so the token never enters argv
   SW->>N: Write .env<br/>cfgmgmt/file · 0640 orbit-env
+  SW->>N: Copy the default database<br/>child instance-clone-database-*
+  %%> When:
+  %%> - only when the default Instance has a SQLite database under DB; the copy lands before setup migrates it
   opt --database-server
     SW->>N: Create owner and databases<br/>child operation-database-create
   end

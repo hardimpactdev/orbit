@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
+use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Models\DatabaseConnection;
+use App\Models\DatabaseConnectionTarget;
+use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\InstanceEnvironmentValue;
 use App\Models\Node;
@@ -91,6 +95,58 @@ it('freezes the selected default source seed in the first native admission', fun
         ->and($input['direct_provisioning']['source']['seed_repository'])->toBe($seed->checkout_path)
         ->and($input['direct_provisioning']['setup']['execution']['seed_path'])->toBe($seed->seed_path)
         ->and($input['direct_provisioning']['setup']['execution']['seed_commit'])->toBe($seed->seed_commit);
+});
+
+it('copies the default Instance\'s SQLite database into the new checkout and attaches it under DB', function (): void {
+    $default = Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $this->node->id, 'name' => 'default',
+        'checkout_path' => '/srv/apps/native-create/default', 'status' => 'active', 'branch' => 'main']);
+    $source = DatabaseConnection::query()->create(['slug' => 'native-create-default', 'driver' => 'sqlite', 'node_id' => $this->node->id,
+        'owner_instance_id' => $default->id, 'path' => '/srv/apps/native-create/default/database/database.sqlite']);
+    DatabaseConnectionTarget::query()->create(['instance_id' => $default->id, 'database_connection_id' => $source->id, 'prefix' => 'DB']);
+    $this->withHeader('Idempotency-Key', 'native-create-sqlite-copy');
+    $this->postJson('/api/v1/instances', $this->payload)->assertAccepted();
+
+    $instance = Instance::query()->where('name', 'proof')->sole();
+    $operation = Operation::query()->sole();
+    $copy = DatabaseConnection::query()->where('slug', 'native-create-proof')->sole();
+    $database = $operation->input['direct_provisioning']['database'];
+    expect($copy->path)->toBe('/srv/apps/native-create/proof/database/database.sqlite')
+        ->and($copy->owner_instance_id)->toBe($instance->id)
+        ->and($instance->databaseConnectionTargets()->sole()->database_connection_id)->toBe($copy->id)
+        ->and($database['sqlite'])->toBe(['source' => $source->path, 'user' => 'orbit',
+            'snapshot' => '/tmp/orbit-create-sqlite-'.$instance->id.'.sqlite', 'target' => $copy->path])
+        ->and($database['candidate']['ssh_execution']['target']['host'])->toBe('10.44.0.9')
+        ->and(app(InstanceEnvironmentStore::class)->values($instance))->toMatchArray(['DB_CONNECTION' => 'sqlite', 'DB_DATABASE' => $copy->path])
+        ->and($operation->input['run_budget_seconds'])->toBe(270);
+
+    // An identical retry reuses the copy this create owns.
+    $operation->update(['status' => 'failed']);
+    $this->withHeader('Idempotency-Key', 'native-create-sqlite-copy-retry');
+    $this->postJson('/api/v1/instances', $this->payload)->assertAccepted();
+    expect(DatabaseConnection::query()->where('slug', 'native-create-proof')->count())->toBe(1);
+});
+
+it('still refuses a MySQL copy of the default database before reservation', function (): void {
+    $default = Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $this->node->id, 'name' => 'default',
+        'checkout_path' => '/srv/apps/native-create/default', 'status' => 'active', 'branch' => 'main']);
+    $server = DatabaseServer::query()->create(['slug' => 'beast-mysql', 'driver' => 'mysql', 'node_id' => $this->node->id, 'port' => 3306, 'tag' => '8.4', 'root_password' => 'root-secret', 'status' => 'active']);
+    $source = DatabaseConnection::query()->create(['slug' => 'native-create-default', 'driver' => 'mysql', 'node_id' => $this->node->id,
+        'database_server_id' => $server->id, 'database' => 'native_create', 'host' => '10.44.0.9', 'port' => 3306, 'username' => 'native', 'password' => 'secret']);
+    DatabaseConnectionTarget::query()->create(['instance_id' => $default->id, 'database_connection_id' => $source->id, 'prefix' => 'DB']);
+    $this->postJson('/api/v1/instances', $this->payload)->assertStatus(503)->assertJsonPath('error.code', 'operation.kind_unavailable');
+    expect(Instance::query()->where('name', 'proof')->count())->toBe(0);
+});
+
+it('answers an already active Instance with a database as a no-op', function (): void {
+    $instance = Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $this->node->id, 'name' => 'proof',
+        'checkout_path' => '/srv/apps/native-create/proof', 'status' => 'active', 'branch' => 'proof', 'first_setup_pending' => false,
+        'starting_commit' => str_repeat('a', 40)]);
+    $connection = DatabaseConnection::query()->create(['slug' => 'native-create-proof', 'driver' => 'sqlite', 'node_id' => $this->node->id,
+        'owner_instance_id' => $instance->id, 'path' => '/srv/apps/native-create/proof/database/database.sqlite']);
+    DatabaseConnectionTarget::query()->create(['instance_id' => $instance->id, 'database_connection_id' => $connection->id, 'prefix' => 'DB']);
+    $this->withHeader('Idempotency-Key', 'native-create-active-database');
+    $this->postJson('/api/v1/instances', $this->payload)->assertAccepted();
+    expect(Operation::query()->sole()->input['direct_provisioning'])->toMatchArray(['already_active' => true, 'database' => null]);
 });
 
 it('refuses immutable placement changes on retry', function (): void {

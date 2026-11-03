@@ -20,6 +20,7 @@ export const behavior = {
                 fetch: z.string(),
                 source: Step.nullable(),
                 environment: z.string(),
+                database: z.string(),
                 setup: z.array(z.string()),
                 processes: z.array(z.string()),
                 route: z.string(),
@@ -31,6 +32,7 @@ export const behavior = {
                     fetch: string;
                     source: z.infer<typeof Step> | null;
                     environment: string;
+                    database: string;
                     setup: string[];
                     processes: string[];
                     route: string;

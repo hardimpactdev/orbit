@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Environment;
 
+use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
 use App\Domain\SourceControl\ApplicationDirectory;
+use App\Models\DatabaseConnection;
 use App\Models\Instance;
 use App\Models\Project;
 
@@ -22,7 +24,7 @@ final readonly class DevelopmentCreateEnvironment
      *
      * @return list<string> the environment keys
      */
-    public function admit(Instance $instance, Project $project): array
+    public function admit(Instance $instance, Project $project, ?DatabaseConnection $database = null): array
     {
         $template = [];
         foreach ($project->environmentTemplate()->first()->entries ?? [] as $entry) {
@@ -31,6 +33,11 @@ final readonly class DevelopmentCreateEnvironment
             }
         }
         $values = [...$template, ...$this->store->values($instance)];
+        if ($database !== null) {
+            // The Instance's own database copy, attached under DB, replaces the template's database keys.
+            $projected = app(DatabaseConnectionEnvProjection::class)->project($database, 'DB', 'wireguard', $instance->node);
+            $values = [...array_diff_key($values, array_flip($projected['forget'])), ...$projected['values']];
+        }
         $values['APP_NAME'] ??= $project->name;
         $values['APP_ENV'] ??= 'development';
         $values['APP_DEBUG'] ??= 'true';
