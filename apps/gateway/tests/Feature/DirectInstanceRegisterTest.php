@@ -28,6 +28,10 @@ use App\Models\Route;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
+    // The Route's TLS probe runs from Node 209 (route.create).
+    Node::query()->forceCreate(['id' => 209, 'name' => 'swamp-control', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'user' => 'orbit', 'wireguard_ip' => '10.44.0.209', 'public_ssh_host' => '192.0.2.209', 'status' => 'active',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'control-host-key']);
     $this->project = Project::query()->create(['name' => 'Register proof', 'slug' => 'register-proof', 'repository_url' => 'https://github.com/example/proof.git', 'type' => 'node-package', 'root' => '.']);
     $this->node = Node::query()->create(['name' => 'register-dev', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit', 'tld' => 'test', 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => '10.44.0.9', 'ssh_host_fingerprint' => 'SHA256:register', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG', 'settings' => ['apps' => ['path' => '/srv/apps']]]);
     orbit_test_set_app_placement_role($this->node, false);
@@ -248,7 +252,14 @@ it('reserves a Route for a Laravel registration without replacing its user envir
 
     expect($operation->input['route_id'])->toBeInt()->and($operation->input['route_create']['env_files'])->toBe([])
         ->and(Route::query()->findOrFail($operation->input['route_id'])->domain)->toBe('native.register-proof.test');
-    expect(Instance::query()->where('name', 'native')->sole()->source_is_laravel)->toBeTrue();
+    $instance = Instance::query()->where('name', 'native')->sole();
+    expect($instance->source_is_laravel)->toBeTrue()->and($instance->status->value)->toBe('reserved');
+    expect($operation->input['route_create']['caddy'])->toHaveCount(1)
+        ->and($operation->input['route_create']['caddy'][0]['content'])->toContain('native.register-proof.test')
+        ->and($operation->input['route_create']['php_files'][0]['content'])->toContain('/srv/apps/register-proof/native')
+        ->and(array_column($operation->input['route_create']['probes'], 'domain'))->toContain('native.register-proof.test');
+    expect($operation->input['route_create']['awake'])->toBe([['node_id' => $this->node->id, 'instance_id' => $instance->id,
+        'path' => '/dev/shm/orbit/hibernation/app-instance-'.$instance->id.'.awake']]);
 });
 
 it('records setup with no steps or Processes without an empty run', function (): void {
@@ -331,8 +342,39 @@ it('keeps completed development Processes when a registration Route fails', func
     expect($process->status->value)->toBe('active')->and($process->desired_state->value)->toBe('running')
         ->and(Instance::query()->findOrFail($operation->target_id)->status->value)->toBe('reserved');
     $retry = app(RegisterInstanceAction::class)->execute($this->node, $data);
-    expect($retry->input['members'])->toBe([])->and(Process::query()->count())->toBe(1);
-    app(InstanceRegisterResult::class)->apply($retry, register_terminal('succeeded', ['steps' => ['Create the Route' => ['status' => 'succeeded']]]));
+    expect(array_column($retry->input['members'], 'id'))->toBe([$process->id])->and(Process::query()->count())->toBe(1);
+    app(InstanceRegisterResult::class)->apply($retry, register_terminal('succeeded', ['steps' => [
+        'Create, start Processes-0' => ['status' => 'succeeded'], 'Create the Route' => ['status' => 'succeeded'],
+    ]]));
     expect(Instance::query()->findOrFail($retry->target_id)->status->value)->toBe('active')
         ->and($process->refresh()->status->value)->toBe('active');
 });
+
+it('requires existing Processes to be checked before waking a completed registration on retry', function (bool $setup, string $runtime): void {
+    app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
+    config(['swamp.run_token' => 'native-register-fixture']);
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('fixture-public-root');
+    $this->project->update(['type' => 'laravel-app', 'root' => 'public']);
+    $spec = $runtime === 'docker' ? ['runtime' => 'docker', 'image' => 'example:1', 'command' => ['/bin/sleep', '300']]
+        : ['runtime' => 'systemd', 'command' => ['/usr/bin/sleep', '300'], 'restart_policy' => 'never'];
+    $this->project->processDefinitions()->create(['name' => 'dev-server', 'environments' => ['development'], 'spec' => $spec]);
+    register_report($this->node, '/srv/apps/register-proof/native');
+    $first = app(RegisterInstanceAction::class)->execute($this->node,
+        new RegisterInstanceData('/srv/apps/register-proof/native', false, $this->project->id, 'native', null, 'native.register-proof.test', true));
+    app(InstanceRegisterResult::class)->apply($first, register_terminal('succeeded', ['steps' => [
+        'Create, start Processes-0' => ['status' => 'succeeded'], 'Create the Route' => ['status' => 'succeeded'],
+    ]]));
+    $retry = app(RegisterInstanceAction::class)->execute($this->node,
+        new RegisterInstanceData('/srv/apps/register-proof/native', false, $this->project->id, 'native', null, 'native.register-proof.test', $setup));
+
+    expect($retry->input['members'])->toHaveCount($setup ? 1 : 0)
+        ->and($retry->input['route_create']['awake'])->toHaveCount($setup ? 1 : 0);
+    if ($setup) {
+        $processes = app(InstanceRegisterResult::class)->input($retry)['intent']['processes'];
+        expect($processes[0]['kind'])->toBe($runtime === 'docker' ? 'process.start' : 'process.create');
+        if ($runtime === 'docker') {
+            expect($processes[0]['intent']['control']['image'])->toBe('example:1')
+                ->and($processes[0]['intent'])->not->toHaveKey('installation');
+        }
+    }
+})->with([[false, 'systemd'], [true, 'systemd'], [false, 'docker'], [true, 'docker']]);

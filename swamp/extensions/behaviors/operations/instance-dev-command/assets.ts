@@ -22,6 +22,7 @@ export const behavior = {
                 environment: z.string(),
                 setup: z.array(z.string()),
                 processes: z.array(z.string()),
+                route: z.string(),
             }),
             execute: async (
                 args: {
@@ -32,6 +33,7 @@ export const behavior = {
                     environment: string;
                     setup: string[];
                     processes: string[];
+                    route: string;
                 },
                 ctx: Context,
             ) => {

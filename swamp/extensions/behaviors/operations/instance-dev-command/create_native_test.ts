@@ -116,3 +116,25 @@ Deno.test("failed setup skips later commands and a fresh run converges", async (
   await run();
   assert(exists(`${application}/.git/third`));
 });
+Deno.test("a web-serving create runs its Route child last and fails the create when the Route fails", async () => {
+  for (const [command, ready] of [["true", true], ["false", false]] as const) {
+    const { f, inputs, run } = await createFixture();
+    await using _ = f;
+    await f.repo.stubWorkflow("operation-route-create", command);
+    Object.assign(inputs.intent, {
+      project_type: "laravel-app",
+      route: { route_id: 5, domain: "proof.project.test" },
+      route_secrets: {},
+    });
+    const { steps, result } = await run(ready);
+    assertEquals(steps.route.status, ready ? "succeeded" : "failed");
+    assertEquals(result.ready, ready);
+    if (!ready) assertEquals([result.failed_step, result.error_code], ["route", "instance.create_route_failed"]);
+  }
+});
+Deno.test("a create without a Route skips the Route child", async () => {
+  const { f, run } = await createFixture();
+  await using _ = f;
+  const { steps } = await run();
+  assertEquals(steps.route.status, "skipped");
+});

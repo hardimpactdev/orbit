@@ -55,7 +55,7 @@ export function skipped(steps: Record<string, Step>, prefix: string) {
   assertEquals([...new Set(Object.entries(steps).filter(([n]) => n.startsWith(prefix)).map(([, s]) => s.status))], ["skipped"]);
 }
 const SITE =
-  "acl links php_files php_tests php_reloads caddy url_lines env_files trust lan leaf_indexes leaves site_nodes".split(
+  "acl links php_files php_tests php_reloads caddy url_lines env_files trust lan leaf_indexes leaves site_nodes awake".split(
     " ",
   );
 export async function routeFixture(kind: "create" | "update" | "target-set" | "removal" | "cluster") {

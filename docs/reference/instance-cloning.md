@@ -44,6 +44,8 @@ The Gateway refuses before it reserves anything:
 | `route.domain_conflict` | Another Route owns the preview domain. |
 | `operation.kind_unavailable` | The Node is a task VM or in an active Cluster, or the candidate has an attached Database connection. |
 
+Development [`instance:create`](/cli/instance/create) uses the same Route child, but answers a task VM Node with `instance.task_vm_node`.
+
 One account and home serve one Project per Node. A candidate with an attached Database connection needs its own native composition. Seed SQLite with `sqlite_source_path` instead.
 
 ## What the clone gets

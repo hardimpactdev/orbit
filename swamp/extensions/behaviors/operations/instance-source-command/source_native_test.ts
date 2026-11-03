@@ -75,6 +75,8 @@ async function fixture() {
       }
     });
   }
+  await workflow("operation-process-create");
+  await workflow("operation-process-start");
   await workflow("operation-instance-register");
   const intent = { checkout, application: checkout, user: "orbit", protect_environment: true, run_setup: false,
     setup_steps: [] as Record<string, unknown>[], processes: [], route: null, route_secrets: {},
@@ -139,4 +141,27 @@ Deno.test("registration guards every Node effect when none was requested", async
   assertEquals(await mode(checkout + "/.env"), 0o644);
   assertEquals(history.jobs[0].steps.map((step) => step.status), ["skipped", "skipped"]);
   assertFalse(await Deno.stat(calls).then(() => true, () => false));
+});
+
+Deno.test("registration dispatches new Processes to create and existing containers to start", async () => {
+  const { repo, intent } = await fixture();
+  await using _ = repo;
+  for (const [kind, processId] of [["create", 41], ["start", 42]] as const) {
+    await repo.workflow(`operation-process-${kind}`, (definition) => {
+      definition.inputs = { type: "object", additionalProperties: true };
+      definition.jobs = definition.jobs.slice(0, 1);
+      definition.jobs[0].steps = [{
+        name: "Check member dispatch",
+        task: { type: "assert", expr: `inputs.kind == "process.${kind}" && inputs.intent.control.process_id == ${processId}`,
+          message: "Process was sent to the wrong lifecycle child" },
+      }];
+    });
+  }
+  const { history } = await register(repo, { ...intent, protect_environment: false, run_setup: true,
+    processes: [
+      { id: 41, kind: "process.create", intent: { control: { process_id: 41 } } },
+      { id: 42, kind: "process.start", intent: { control: { process_id: 42 } } },
+    ] });
+  assertEquals(history.jobs[0].steps.filter((step) => step.name.startsWith("Create, start Processes-")).map((step) => step.status),
+    ["succeeded", "succeeded"]);
 });

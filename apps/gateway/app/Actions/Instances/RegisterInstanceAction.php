@@ -126,7 +126,7 @@ final readonly class RegisterInstanceAction
                     'configuration_digest' => $lists->configurationDigest($project, LifecyclePhase::Setup),
                     ...$lists->appStepAdmission($instance, LifecyclePhase::Setup)];
                 app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment($instance);
-                $members = app(ProcessInstanceOperation::class)->capture($instance, 'process.install_instance_definitions')['members'];
+                $members = app(ProcessInstanceOperation::class)->capture($instance, 'process.install_instance_definitions', includeActive: true)['members'];
             }
             if (! $protectEnvironment && ($setup['steps'] ?? []) === [] && $members === [] && $data->domain === null) {
                 RegistrationFacts::activate($instance, $facts, $project->repository_url, $project->repository_identity);
@@ -134,7 +134,10 @@ final readonly class RegisterInstanceAction
 
                 return $instance->refresh();
             }
-            $routeInput = $route === null ? [] : app(NativeRouteAdmission::class)->capture('route.create', $route, ['mode' => 'converge'], $caller->id, preserveEnvironment: true);
+            $routeInput = $route === null ? [] : app(NativeRouteAdmission::class)->capture('route.create', $route, ['mode' => 'converge'], $caller->id,
+                preserveEnvironment: true, preparedWorkloads: true,
+                wakePreparedWorkloads: ($data->runSetup || $instance->registration_completed_at === null)
+                    && ! $instance->processes()->whereNotIn('id', array_column($members, 'id'))->exists());
 
             return $this->operations->execute('instance.register', 'instance', $instance->id, $caller->id, [
                 'instance_id' => $instance->id, 'project_id' => $project->id, 'node_id' => $caller->id,

@@ -24,7 +24,10 @@ final readonly class NativeInstanceProvisioningIntent
 {
     public function assertCreateSupported(Project $project, Node $node, bool $database): void
     {
-        if ($database || $project->type->isWebServing() || TaskVm::forNode($node) !== null) {
+        if (TaskVm::forNode($node) !== null) {
+            throw new ResourceOperationException('instance.task_vm_node', 'A task VM gets its workspace from tasks:provision, not instance:create.', 409);
+        }
+        if ($database) {
             $this->unavailable();
         }
     }
@@ -44,7 +47,7 @@ final readonly class NativeInstanceProvisioningIntent
     {
         $instance->loadMissing(['node', 'project']);
         $this->assertCreateSupported($instance->project, $instance->node, false);
-        if ($instance->routes()->exists() || $instance->requiresRoute() || $instance->databaseConnectionTargets()->exists()) {
+        if ($instance->databaseConnectionTargets()->exists()) {
             $this->unavailable();
         }
         if (($input['user'] ?? null) !== $instance->node->user) {

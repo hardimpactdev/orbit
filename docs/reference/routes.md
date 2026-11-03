@@ -139,7 +139,11 @@ Every Node change is an official `@swamp/cfgmgmt` behavior or one `@swamp/ssh ex
 
 A Laravel Instance registered in place can be active without a Route. If registration reserves a Route, that Route must become authoritative before the Instance activates. Other Laravel activation and Route ownership constraints still apply.
 
+[`instance:create`](/cli/instance/create) of a web-serving Project runs `operation-route-create` last in its native run. Its Instance is still `reserved` when the Gateway captures the Route plan, so the capture renders that prepared Instance as its site: the Caddy site, the PHP pool, and the TLS probe.
+
 [Registration](/cli/instance/register) with `--domain` runs `operation-route-create` inside its native run. Instance child workflows bind certificate signing to the parent Operation and its run. Create and registration may sign only their admitted forward Route leaves, never restoration leaves. [`tasks.provision`](/reference/tasks#provision-an-external-group) runs the same child for a routed task workspace and signs under the same rule. The Route preserves the checkout's `.env` and changes only application URL lines when needed. An identical registration retry reuses its reserved Route; another owner's domain is refused.
+
+Registration captures the pending Instance's prospective site, PHP pool and TLS probe without activating its stored record. The ordinary site catalog excludes reserved Instances. The Route must answer over TLS before registration activates the Instance. The owning Instance parent can ask the site child to mark a newly prepared development runtime awake after publication. Standalone Route creation preserves the current awake state. A completed registration retry can mark it awake only after setup verifies all required Processes.
 
 [Instance cloning](/reference/instance-cloning#preview-route) runs the same CSR, sign and site children for its pending preview Route inside the clone run. The clone writes the whole `.env` itself, so the preview Route's site step writes no second copy. The clone's success activates the Route.
 

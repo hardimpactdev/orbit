@@ -751,6 +751,17 @@ Eleven native DNS and publication delta cases pass in 75 seconds; 40 Gateway cas
 
 The four Route workflow cases and 104 Gateway cases pass, including 676 Gateway assertions. This deletes unused code and starts no replacement workflow; no new live receipt or `rule 22 done` claim applies. No shipped script is deleted, and no new gap is named.
 
+## L22-INSTANCE-REGISTER: linked worktrees and opt-in preparation
+
+By default, registration adopts agent checkout facts without a run. Setup and domain inputs use the four reviewed parent steps. The shared Route child renders the prospective target without making the stored Instance active. Route reservation precedes Process capture because the domain changes generated units. Only fully prepared development runtimes get an awake marker, after publication succeeds. Completed retries preserve their awake state unless setup checks every recorded Process. Existing Docker members use the start child. No shipped script or named gap is added.
+
+The [receipt index](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/receipts/instance-register-reviewed.json) records source `89b81849f9`, minimal@16 and native run `7d673c71-8f5d-4219-8e2f-7ec766295e86`. Admission and projection took 96.91 seconds; native steps took 94.301 seconds; the full fixture took 108.3 seconds. The budget is 255 seconds with queue timeout 30 seconds. This is one passing final sample. Normal cancellation 9402 destroyed VM 489 at 13:40:06Z.
+
+Parity preserves a renamed linked Laravel worktree, starts its Process, keeps its setup-created environment private, and serves an ordinary request over verified TLS. Plain registration returns HTTP 201 without an Operation. The native history contains neither the private canary nor its base64 form. No production data or scale is exercised. A later cold-wake cycle is outside this proof.
+
+The proof found product faults in prospective Route rendering and PHP pool capture, then exposed the missing prepared-runtime marker. Native coverage caught an early marker caused by an empty forEach placeholder; its dependencies now name every publication prerequisite. Retry coverage caught incomplete Process checks and existing Docker recreation. The fixture separately needed a readable public test file under setup's private umask. These fixes retain the ordinary HTTPS parity check.
+
+Relative to main base `02b9cc98ef`, this restoration adds 431 net Orbit lines, including this receipt and retro. Swamp workflows shrink by 125 lines. Native tests grow by 150, proof fixtures and the receipt by 117, and Swamp tooling and its guide by 6. The growth restores opt-in registration, shared Route readiness and regression coverage. Custom behavior code does not grow.
 
 ## 2026-11-03: Route create probes through pinned official SSH
 

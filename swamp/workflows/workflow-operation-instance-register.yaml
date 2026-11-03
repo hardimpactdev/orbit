@@ -82,11 +82,11 @@ jobs:
     forEach: {item: member, in: '${{ inputs.intent.processes }}'}
     task:
       type: workflow
-      workflowIdOrName: operation-process-create
+      workflowIdOrName: '${{ self.member.kind == "process.start" ? "operation-process-start" : "operation-process-create" }}'
       inputs:
         operation_id: '${{ inputs.operation_id }}'
         node_id: '${{ inputs.node_id }}'
-        kind: process.create
+        kind: '${{ self.member.kind }}'
         intent: '${{ self.member.intent }}'
         execution_secrets: '${{ "member_" + string(self.member.id) in inputs.execution_secrets ? {"environment": inputs.execution_secrets["member_" + string(self.member.id)]} : {} }}'
   - name: Create the Route

@@ -55,7 +55,7 @@ final readonly class InstanceRegisterResult implements DirectOperationProjection
         $members = [];
         foreach (ProcessInstanceOperation::members($operation) as $member) {
             $native = app(ProcessLifecycleInput::class)->forInstanceMember($operation, $member);
-            $members[] = ['id' => $member['id'], 'intent' => $native['intent']];
+            $members[] = ['id' => $member['id'], 'kind' => $native['kind'], 'intent' => $native['intent']];
             if (isset($native['execution_secrets']['environment'])) {
                 $copies['member_'.$member['id']] = $native['execution_secrets']['environment'];
             }

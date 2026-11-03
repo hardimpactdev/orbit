@@ -282,6 +282,8 @@ The unused Pi bootstrap, synchronous Instance cascade, Swamp agent launcher and 
 
 ## Project definitions
 
+A rerun of [`instance:create`](/cli/instance/create) after a failed create checks the Processes its first run started.
+
 [Registering an existing checkout](/cli/instance/register) with `--setup` creates and starts its development Process definitions after setup succeeds. Plain registration creates no Processes. A later Route failure keeps completed Processes recorded and running.
 
 A Project holds Process definitions and Schedule definitions. A definition has a UUID, a name that is unique within the Project and kind, an `environments` list, and a `spec`.

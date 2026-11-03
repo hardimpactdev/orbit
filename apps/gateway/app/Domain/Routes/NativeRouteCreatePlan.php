@@ -35,7 +35,7 @@ final readonly class NativeRouteCreatePlan
     public function build(Route $route, array $lifecycle): array
     {
         $plan = ['lan' => [], 'ingress_ports' => [], 'acl' => [], 'links' => [], 'php_files' => [], 'php_tests' => [], 'php_reloads' => [],
-            'leaves' => [], 'caddy' => [], 'url_lines' => [], 'env_files' => [], 'probes' => [], 'ingress' => [], 'dns' => []];
+            'leaves' => [], 'caddy' => [], 'url_lines' => [], 'env_files' => [], 'probes' => [], 'ingress' => [], 'dns' => [], 'awake' => []];
         $trust = [];
         $root = '';
         $nodes = [];
@@ -44,10 +44,14 @@ final readonly class NativeRouteCreatePlan
         }
         $route->loadMissing(['cluster.routerAssignment.node', 'cluster.ingressAssignment.node']);
         $forward = ValidatedData::object(ValidatedData::object($lifecycle['route_mutations'])['forward']);
+        $plan['awake'] = RouteExecutionProof::objects($lifecycle['awake'] ?? []);
         $preparation = ValidatedData::object($lifecycle['preparation']);
         $renders = is_array($lifecycle['renders'] ?? null) ? $lifecycle['renders'] : [];
         $ingressId = $lifecycle['public_activated'] ? $route->cluster?->ingressAssignment?->node_id : null;
         $touched = [];
+        foreach ($plan['awake'] as $marker) {
+            $touched[ValidatedData::integer($marker['node_id'])] = true;
+        }
 
         foreach (RouteExecutionProof::objects($lifecycle['workloads']) as $workload) {
             $nodeId = ValidatedData::integer($workload['node_id']);
@@ -202,7 +206,7 @@ final readonly class NativeRouteCreatePlan
 
         // Each Node with certificate, web root, pool, site or environment work gets one "Install cert, publish site" child.
         $sites = $trust;
-        foreach (['leaves', 'acl', 'links', 'php_files', 'caddy', 'url_lines', 'env_files'] as $list) {
+        foreach (['leaves', 'acl', 'links', 'php_files', 'caddy', 'url_lines', 'env_files', 'awake'] as $list) {
             $sites = [...$sites, ...array_map(static fn (array $row): int => ValidatedData::integer($row['node_id']), $plan[$list])];
         }
         $sites = array_values(array_unique($sites));
@@ -221,7 +225,11 @@ final readonly class NativeRouteCreatePlan
      */
     private function sharedPools(array &$plan, int $nodeId, array $php): void
     {
-        foreach (is_array($php['configurations'] ?? null) ? $php['configurations'] : [] as $version => $content) {
+        $configurations = $php['configurations'] ?? null;
+        if (! $configurations instanceof \stdClass) {
+            throw new \LogicException('Shared PHP capture requires a configuration object.');
+        }
+        foreach (ValidatedData::stringMap(get_object_vars($configurations)) as $version => $content) {
             $version = (string) $version;
             $plan['php_files'][] = ['node_id' => $nodeId, 'path' => '/etc/php/'.$version.'/fpm/pool.d/orbit-scopes.conf', 'content' => ValidatedData::string($content), 'owner' => 'root'];
             $plan['php_tests'][] = ['node_id' => $nodeId, 'argv' => ['/usr/sbin/php-fpm'.$version, '-t']];

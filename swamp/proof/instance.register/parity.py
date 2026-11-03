@@ -1,6 +1,8 @@
 """Reviewed registration: renamed linked source, opt-in setup/Process/Route, plain record-only adoption."""
+import base64
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -12,7 +14,7 @@ domain = 'r-' + os.environ['PROOF_RUN'] + '.proof-source.test'
 
 
 def target(*argv):
-    return subprocess.run(['incus', 'exec', os.environ['PROOF_TARGET'], '--', *argv], capture_output=True, text=True, timeout=30)
+    return subprocess.run(['incus', 'exec', os.environ['PROOF_TARGET'], '--', *argv], capture_output=True, text=True, timeout=30, check=False)
 
 
 def check(condition, message):
@@ -27,7 +29,10 @@ def gateway(expression):
     return json.loads(reply.stdout.strip())
 
 
-check('proof-private-' not in outputs and 'PRIVATE KEY-----' not in outputs, 'private content reached native history')
+environment = target('cat', checkout + '/.env').stdout
+sentinel = next((line.partition('=')[2] for line in environment.splitlines() if line.startswith('PRIVATE_SENTINEL=')), '')
+check(re.fullmatch('[a-f0-9]{64}', sentinel) is not None, 'setup generated the private canary on the Node')
+check(sentinel not in outputs and base64.b64encode(sentinel.encode()).decode() not in outputs and 'PRIVATE KEY-----' not in outputs, 'private content reached native history')
 check(target('stat', '-c', '%a %U', checkout + '/.env').stdout.strip() == '600 orbit', 'setup created the private environment')
 check(target('runuser', '-u', 'orbit', '--', 'git', '-C', checkout, 'branch', '--show-current').stdout.strip() == 'renamed-' + os.environ['PROOF_RUN'], 'the renamed worktree branch was preserved')
 check(operation['result']['commit'] == target('runuser', '-u', 'orbit', '--', 'git', '-C', checkout, 'rev-parse', 'HEAD').stdout.strip(), 'the recorded commit matches the checkout')
