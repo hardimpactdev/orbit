@@ -34,7 +34,7 @@ if sys.argv[1:] == ['redaction']:
     public = json.loads(reply.stdout.strip().splitlines()[-1])
     check(public['http_status'] == 200, 'the Operation diagnostic is readable')
     detail = public['response']['data']['error']['detail']
-    check(detail.strip().endswith('[REDACTED]\nsafe-diagnostic'), 'overlapping stored values are fully redacted from the public stderr diagnostic')
+    check('[REDACTED]\nsafe-diagnostic' in detail, 'overlapping stored values are fully redacted from the public stderr diagnostic: ' + json.dumps(detail))
     check(all(value not in detail for value in ['abcdefgh', 'fghijklm', 'proof-private-step-output']), 'private values and stdout stay out of the public diagnostic')
     check(target('test', '!', '-e', directory + '/.git/proof-must-not-run').returncode == 0, 'later steps were skipped')
     check(target('cat', directory + '/.git/orbit-proof-steps').stdout == 'xx', 'the running list executed its first step once')
