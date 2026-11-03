@@ -210,11 +210,15 @@ describe('Composer configuration', function (): void {
         }
     });
 
-    it('installs only dependencies without preparing development state', function (bool $optional): void {
+    it('installs dependencies and the push hook without preparing app state', function (bool $optional): void {
         $root = temporaryPath('orbit-bootstrap-dependencies-', 6);
         mkdir($root.'/bin', 0700, true);
         mkdir($root.'/tooling', 0700);
         copy(base_path('../../bin/bootstrap'), $root.'/bin/bootstrap');
+        mkdir($root.'/.githooks', 0700);
+        copy(base_path('../../.githooks/pre-push'), $root.'/.githooks/pre-push');
+        chmod($root.'/.githooks/pre-push', 0700);
+        new Process(['git', 'init', '--quiet', '--initial-branch=main', $root])->mustRun();
         $log = $root.'/installs.log';
         $projects = ['apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk'];
         foreach ($projects as $project) {
@@ -255,6 +259,40 @@ SH);
         }
 
         expect(file($log, FILE_IGNORE_NEW_LINES))->toBe($expected);
+        $hooks = new Process(['git', 'config', '--local', '--get', 'core.hooksPath'], $root);
+        $hooks->mustRun();
+        expect(trim($hooks->getOutput()))->toBe('.githooks');
+
+        // Real Git must refuse the transfer when the docs gate fails, and allow it when it passes.
+        file_put_contents($root.'/bin/docs-impact', <<<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$PWD" "$@" > "$ORBIT_FIXTURE_GATE_LOG"
+echo 'fixture docs gate' >&2
+exit "$ORBIT_FIXTURE_GATE_EXIT"
+SH);
+        chmod($root.'/bin/docs-impact', 0700);
+        new Process(['git', 'add', 'bin/bootstrap', 'bin/docs-impact', '.githooks/pre-push'], $root)->mustRun();
+        new Process(['git', 'commit', '--quiet', '-m', 'fixture'], $root)->mustRun();
+        $remote = $root.'/remote.git';
+        new Process(['git', 'init', '--bare', '--quiet', $remote])->mustRun();
+        $push = new Process(['git', 'push', $remote, 'HEAD:refs/heads/main'], $root.'/apps/cli', [
+            'ORBIT_FIXTURE_GATE_LOG' => $root.'/gate.log', 'ORBIT_FIXTURE_GATE_EXIT' => '19',
+        ]);
+        $push->run();
+        expect($push->getExitCode())->not->toBe(0)
+            ->and($push->getErrorOutput())->toContain('fixture docs gate')
+            ->and(file($root.'/gate.log', FILE_IGNORE_NEW_LINES))->toBe([$root, '--gate', '--base', 'origin/main']);
+        $ref = new Process(['git', '--git-dir', $remote, 'show-ref', '--verify', '--quiet', 'refs/heads/main']);
+        $ref->run();
+        expect($ref->getExitCode())->not->toBe(0);
+        $linked = $root.'/linked workspace';
+        new Process(['git', 'worktree', 'add', '--quiet', '--detach', $linked, 'HEAD'], $root)->mustRun();
+        $push = new Process(['git', 'push', $remote, 'HEAD:refs/heads/main'], $linked.'/bin', [
+            'ORBIT_FIXTURE_GATE_LOG' => $root.'/gate.log', 'ORBIT_FIXTURE_GATE_EXIT' => '0',
+        ]);
+        $push->mustRun();
+        $ref->mustRun();
+        expect(file($root.'/gate.log', FILE_IGNORE_NEW_LINES))->toBe([$linked, '--gate', '--base', 'origin/main']);
         foreach ($projects as $project) {
             expect(file_get_contents($root.'/'.$project.'/.env'))->toBe('EXAMPLE=1');
         }

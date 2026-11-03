@@ -352,7 +352,9 @@ The command reuses what already exists.
 
 It refuses a path that exists but is not a registered worktree. Then it runs `bin/bootstrap` in the worktree.
 
-`bin/bootstrap` installs all five Composer projects, [seeds the quality caches](#seed-a-checkout), and validates each project's guidance. Then it runs `composer test`, the project's full suite, and `composer check` in each project. Any failed check fails bootstrap. `bin/bootstrap --skip-checks` stops after the guidance validation. `bin/bootstrap --dependencies-only` stops after dependency installation, including any requested Bun and Rust dependencies; it prepares no development state and runs no checks.
+`bin/bootstrap` installs all five Composer projects, [seeds the quality caches](#seed-a-checkout), and validates each project's guidance. Then it runs `composer test`, the project's full suite, and `composer check` in each project. Any failed check fails bootstrap. `bin/bootstrap --skip-checks` stops after the guidance validation.
+
+`bin/bootstrap --dependencies-only` installs dependencies, including any requested Bun and Rust dependencies, and the [pre-push docs gate](/contributor-guide). It prepares no application state and runs no checks.
 
 `bin/worktree-remove ISSUE` refuses a dirty worktree, a branch that `origin/main` does not contain, and a path that exists but is not a registered worktree. It removes the worktree. Then it deletes the merged branch. It releases no topology: a topology runs only in a task VM and goes with it.
 

@@ -4,7 +4,7 @@ sidebarTitle: "Contributor guide"
 description: "Prepare architecture and documentation, build a feature, and submit a complete pull request."
 covers:
   - .agents/skills/reviewing-pull-requests/references/test-*.md
-  - "{composer.json,vet.json,.gitattributes}"
+  - "{composer.json,vet.json,.gitattributes,.githooks/pre-push}"
   - bin/{bootstrap,gateway-app-key,test,pest-plain,review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,docs-merge-check,build-api,docs-navigation,docs-flows,check-flows,dependency-audit}
   - "{apps/*,packages/php-sdk}/{composer,vet}.json"
   - "{apps/*,packages/php-sdk}/phpstan.neon"
@@ -28,6 +28,8 @@ bin/bootstrap
 ```
 
 `bin/bootstrap` installs the five Composer projects and writes the Gateway's application key to `~/.orbit/gateway.app-key`, or to `$ORBIT_HOME/gateway.app-key` when `ORBIT_HOME` is set. It keeps a key that already exists. The web app, the Pi server, the Node agent, and the desktop app use Bun or Cargo; add `--with-bun` or `--with-rust` to install their locked dependencies too. [Bun and Rust projects](/reference/bun-and-rust-projects) shows how to install, run, and check them.
+
+Bootstrap also installs the repository's Git hooks through local `core.hooksPath`, including with `--dependencies-only`. The pre-push hook runs `bin/docs-impact --gate --base origin/main` and refuses a push when it fails. Fetch `origin/main` before preparing a push. Commit the impacted documentation and resolve the gate's findings before pushing again.
 
 ## 1. Check the architecture
 

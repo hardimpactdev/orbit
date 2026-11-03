@@ -105,6 +105,9 @@ if ((with_rust)); then
     done
 fi
 
+# Install the repository hook after dependencies, including in dependencies-only workspaces.
+git -C "$repository_root" config --local core.hooksPath .githooks
+
 if ((dependencies_only)); then
     exit 0
 fi
