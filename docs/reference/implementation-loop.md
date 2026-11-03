@@ -81,7 +81,7 @@ After the merge, keep the review evidence and release the resources allocated to
 
 ## CI
 
-Orbit CI runs builds and static checks. Swamp changes also run the Operation Deno tests. Pull requests, pushes to `main`, task handoff pushes and manual runs use the same fast gate. There is no nightly test run.
+Orbit CI runs builds and static checks. Swamp changes also run the Operation Deno tests. Pull requests, merge queue batches, pushes to `main`, task handoff pushes and manual runs use the same gate. Swamp also runs its full native suite daily.
 
 | Check | Work |
 | --- | --- |
@@ -110,7 +110,15 @@ Swamp checks validate every workflow with the runtime pinned in `swamp/.swamp.ya
 
 The gate requires `passed`, `wouldStart` and the full grant-file count; a refusal or missing account fails Required checks. Changes to that renderer, its typed input helper or its CLI also select Swamp validation. This checks complete CEL conditions and regex safety without starting serve or changing live grants. The native grant-pattern regressions run with the other native tests.
 
-Operation Deno tests run in parallel shards with four workers per job: four general shards and one for process commands. A shard's directory leaves the matrix when its tests go. The shards skip native workflow tests (`*native_test.ts`). Those run the pinned runtime against disposable repos through `swamp/tests/_support/native_harness.ts`. The runtime refuses every command without an account, so they run in four `Swamp native tests` shards, each of which also pulls the pinned registry extensions. Both matrices finish all shards after a failure; the aggregate fails if any shard fails, cancels or skips. `Required checks` remains the single aggregate for all selected jobs.
+Operation Deno unit tests, shape and workflow validation run on every CI change. Unit tests use four general shards and one process shard, with four workers each. They exclude `*native_test.ts`. Native tests run the pinned runtime against disposable repos through `swamp/tests/_support/native_harness.ts`. A pull request selects the changed operation families, their workflow roots and proof fixtures. A merge queue batch uses the same selection against `merge_group.base_sha`.
+
+Both CI workflows accept GitHub’s `merge_group` event; the root CI calls Swamp once and reports `Required checks` for the batch. Shared helpers, harness, pins, CI definitions and unknown runtime inputs select all native files; documentation alone selects none. Removed native files leave the plan automatically.
+
+Native files are assigned to at most four shards by measured per-file case time, longest first. The initial timings come from main CI `41623850432`; new files use 60 seconds until measured. Each shard still uses Deno’s own runner with four workers and writes a JUnit timing artifact. Both matrices finish after a shard fails. The aggregate permits a skipped native matrix only when the plan explicitly selected no native files; a failed plan or selected shard fails Required checks.
+
+A squash push to main can reuse a successful same-repository pull-request CI run. Its `swamp-native-tested-tree` artifact must name the exact landed Git tree and the squash commit’s parent. Main also reuses a successful merge queue run when its artifact names the exact landed tree, including a batch of several PRs. A stale PR base, different tree, missing artifact or unproven run runs the full suite.
+
+Main keeps the cheap Swamp gates and required release builds; it skips the repeated native suite only with this evidence. The standalone Swamp workflow also runs the full native suite daily at 03:17 UTC; its credentials stay split between registry-read validation and native sandbox tests.
 
 Native Swamp CLI suites live beside their operation family under `swamp/extensions/behaviors/operations/` and end in `_native_test.ts`; CI discovers them under `extensions/`. Tests of bin scripts live beside their script. The shape job names the liveness, Node 209 source and Operation schedule suites explicitly. The systemd sandbox test, `swamp-liveness_native_test.ts`, needs a systemd host and passwordless sudo, so it runs on a host, not in CI. Shared test setup ends in `_fixture_test.ts` so documentation impact checks and native behavior copying treat it as test code.
 
