@@ -25,13 +25,18 @@ Parity receives the full Operation through the JSON file named by `PROOF_OPERATI
 
 Topologies are versioned in `swamp/proof/topologies/`. A topology fault fixes the topology in the same PR and bumps its version (F12). Several kinds may share one run, and every receipt names the topology version. A topology dies after 60 minutes without a run, 8 hours at most; a one-shot proof run dies 45 minutes after creation. Known differences from production: test repositories instead of GitHub App installs, the Orbit CA instead of public certificates, and no production data or scale.
 
-A change to a Swamp workflow, behavior or script that a kind runs needs a receipt, even titled "retire" or "remove" (#2257, #2259). So does a Gateway change to a kind's admission, intent, inputs, vault pushes, minting, signing or projection; three of four create bugs were Gateway-only (#2266, #2273, #2304). Other Gateway changes need failing-without tests, docs and an independent review. Only deletion, docs and test PRs fix forward without a receipt, after a deletion-speed review of tests and docs. An outage fix skips the receipt only if its PR body says "merges without a topology receipt" and names the live check that follows the load (#2332).
+A change to a Swamp workflow, behavior or script that a kind runs needs a receipt, even titled "retire" or "remove" (#2257, #2259). So does a Gateway change to a kind's admission, intent, inputs, vault pushes, minting, signing or projection; three of four create bugs were Gateway-only (#2266, #2273, #2304).
+
+Other Gateway changes need failing-without tests, docs and an independent review. Only deletion, docs and test PRs fix forward without a receipt, after a deletion-speed review of tests and docs. An outage fix skips the receipt only if its PR body says "merges without a topology receipt" and names the live check that follows the load (#2332).
 
 ### Map a flow to Swamp
 
 Use these steps in step 4 of the loop.
 1. **Start from the chart.** Its steps and phases are the spec. Keep every edge case the command documents, even values the Gateway rewrites first (#2304).
-2. **One phase, one step.** Each phase becomes one native step on one Node, or one Ansible phase step for larger idempotent Node state (rule 22 of the `flow-tighten` skill). A change to the phase order updates the chart first.
+2. **One phase, one step.** Each phase becomes one native step on one Node.
+
+   Use one Ansible phase step for larger idempotent Node state (rule 22 of the `flow-tighten` skill). A change to the phase order updates the chart first.
+
 3. **Map each phase to Swamp.** Use the [mapping table](#pattern-to-native-feature) and prefer an official model over a script. The PR names what you checked.
 4. **Write the intent.** Every non-secret field the steps need goes under `intent`, frozen at admission. Secrets become `{vault, key}` descriptors under `execution_secrets`.
 5. **Refuse first.** A step checks its preconditions before its first write. Keep a redacted stderr tail.
@@ -146,7 +151,9 @@ A phase script may hold one fixed literal sleep shorter than a literal timeout, 
 
 Step count is the dominant cost of a run: op 6639 took 957 s for 4.6 s of SSH work. Until the extensions lane reports the cause, one script per Node per phase does the reads, precondition checks, writes and result JSON. Never wrap an SSH call in TypeScript envelope and decode steps; #2261 reached 66 steps that way. Use a typed step only for a result the script cannot print, and a separate check only for another Node's read. A typed result step returns `{stdout}` itself, with no `printf` step after it. Resolve assets once, outside `forEach`.
 
-Count the native steps of a typical run against its host calls, where a call is one host command or API request within a phase. More than about two steps per host call needs a written reason in the PR, and each extra step names the Node change or guard it serves. An Ansible phase counts as one step; its tasks are not steps. Do not count on resume as a split reason: pinned e459 loses inline SSH `globalArgs` when it resumes a failed run. Guide rule 3 says "one action group is one step", following PLAN F9 and "How a kind converts" item 2.
+Count the native steps of a typical run against its host calls, where a call is one host command or API request within a phase. More than about two steps per host call needs a written reason in the PR, and each extra step names the Node change or guard it serves. An Ansible phase counts as one step; its tasks are not steps.
+
+Do not count on resume as a split reason: pinned e459 loses inline SSH `globalArgs` when it resumes a failed run. Guide rule 3 says "one action group is one step", following PLAN F9 and "How a kind converts" item 2.
 
 ## Run on the swamp workers
 
@@ -193,11 +200,13 @@ Apply every boundary decision to admission, execution and projection. Atomic sta
 
 Use the native feature in the right column. Custom code is allowed only where the manual has a real gap; send that gap to the orchestrator with evidence before you build.
 
+For external state, use a bounded poll in the phase script, [as above](#set-the-time-budget). An Ansible readiness wait is a bounded `until` inside a phase with a literal `timeout`.
+
 | Pattern | Native replacement | Manual |
 | --- | --- | --- |
 | Many idempotent Node-state actions: packages, files, folders, units, containers, often on several Nodes | An Ansible phase: one `command/shell` step that runs one tagged part of a repository playbook (`ansible-phase` skill) | [Workflows](https://swamp-club.com/manual/reference/workflows) |
 | Gateway reads intent or private material; secret on stdin or argv | Full intent as `inputs`; `{vault, key}` names; whole `${{ vault.get(...) }}` in `task.inputs.env` or `@swamp/ssh` `stdin` | [Inputs](https://swamp-club.com/manual/reference/workflows#inputs), [Environment mounting](https://swamp-club.com/manual/reference/vaults#environment-variable-mounting) |
-| Retry loop, `attempt < N`, or sleep and poll until ready | Retry: an idempotent step that fails when not ready, then a new admission (decision 7) or operator resume. External state: a bounded poll in the phase script, [as above](#set-the-time-budget). An Ansible readiness wait is a bounded `until` inside a phase with a literal `timeout`. | [Guard](https://swamp-club.com/manual/reference/workflows#guard), [Retry failed steps](https://swamp-club.com/manual/reference/workflows#retry-failed-steps) |
+| Retry loop, `attempt < N`, or sleep and poll until ready | Retry: an idempotent step that fails when not ready, then a new admission (decision 7) or operator resume. | [Guard](https://swamp-club.com/manual/reference/workflows#guard), [Retry failed steps](https://swamp-club.com/manual/reference/workflows#retry-failed-steps) |
 | Wait for a free worker, or for a person | Per-kind `queueTimeout` (F8; serve default 600 s); `manual_approval` task | [queueTimeout](https://swamp-club.com/manual/reference/workflows#queuetimeout), [Manual approval](https://swamp-club.com/manual/reference/workflows#manual-approval-manual_approval) |
 | Lock file, `flock`, family busy hold | Per-behavior method lock on one shared `behaviorName`, `concurrency`, or the generic admission `lock_key`. Named apt and UFW tool locks stay | [Method locking](https://swamp-club.com/manual/reference/behavior-definitions#per-behavior-method-locking), [Concurrency](https://swamp-club.com/manual/reference/workflows#concurrency) |
 | "Already done" receipt or marker file | `guard` on public state or prior outputs | [Guard](https://swamp-club.com/manual/reference/workflows#guard) |
