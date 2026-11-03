@@ -39,23 +39,22 @@ final readonly class NodeBootstrapIntent
             $expected = $spec['requested_architecture'];
         }
         if (! in_array($candidate->platform, ['linux', 'macos'], true)
-            || ($kind === 'node.macos_inspect' && $candidate->platform !== 'macos')
+            || $candidate->platform !== 'macos'
             || ! LinuxUserName::isValid($bootstrap) || ! LinuxUserName::isValid($candidate->user)
             || $candidate->public_ssh_host === ''
             || ! is_string($candidate->wireguard_ip) || filter_var($candidate->wireguard_ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false
             || ! is_string($fingerprint) || preg_match('/\ASHA256:[A-Za-z0-9+\/]{43}\z/D', $fingerprint) !== 1) {
             throw $this->invalid();
         }
-        if ($kind === 'node.macos_inspect' && (! is_string($node->ssh_host_key_type) || ! is_string($node->ssh_host_key))) {
+        if (! is_string($node->ssh_host_key_type) || ! is_string($node->ssh_host_key)) {
             throw $this->invalid();
         }
 
         return ['schema_version' => 1, 'node_id' => $node->id, 'platform' => $candidate->platform,
             'target' => ['node_id' => $node->id, 'host' => $candidate->public_ssh_host, 'port' => $candidate->public_ssh_port,
-                'user' => $kind === 'node.macos_inspect' ? $candidate->user : $bootstrap,
+                'user' => $candidate->user,
                 'fingerprint' => $fingerprint,
-                'host_keys' => is_string($node->ssh_host_key_type) && is_string($node->ssh_host_key)
-                    ? [$node->ssh_host_key_type.' '.$node->ssh_host_key] : []],
+                'host_keys' => [$node->ssh_host_key_type.' '.$node->ssh_host_key]],
             'expected_architecture' => $expected, 'address' => $candidate->wireguard_ip];
     }
 
