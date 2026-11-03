@@ -1,0 +1,18 @@
+{
+  "kind": "route.caddy_converge",
+  "workflow": "operation-route-caddy",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 180,
+  "queue_timeout_seconds": 30,
+  "before_gateway": [["sh", "-c", "cd apps/gateway && php ../../swamp/proof/route.caddy_converge/prepare.php \"$1\" \"$2\"", "sh", "${node.target}", "${proof.run}"]],
+  "request": {"method": "GET", "path": "operations/${fixture.operation}", "body": {}},
+  "expect": {"status": "succeeded"},
+  "phases": [
+    {"name": "write", "job": "publication", "step": "Write the Caddyfile", "budget_seconds": 30},
+    {"name": "reload", "job": "publication", "step": "Reload Caddy", "budget_seconds": 60},
+    {"name": "check", "job": "publication", "step": "Check the publication", "budget_seconds": 10}
+  ],
+  "parity": "swamp/proof/route.caddy_converge/parity.py",
+  "limits": "Normal internal admission with the actual captured public Node configuration, official cfgmgmt and pinned SSH, real Caddy validation/reload and production shared projection. No public build CLI, Gateway release switching, populated Route catalog, production Node or production scale is exercised."
+}

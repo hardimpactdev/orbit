@@ -214,15 +214,27 @@ async function localFixture(families: string[] = []) {
     `import {shellSplit,passThrough,readStdinBytes} from ${JSON.stringify(TOOL)};
 const args = Deno.args;
 if (args.includes("-M") || args.includes("-O")) Deno.exit(0);
-if (Deno.env.get("FIXTURE_REQUIRE_PIN") === "1") {
+if (Deno.env.get("FIXTURE_REQUIRE_PIN") === "1" && !(Deno.env.get("FIXTURE_ALLOW_CFGMGMT") === "1" && args.includes("StrictHostKeyChecking=accept-new"))) {
   const known = args.find(a => a.startsWith("UserKnownHostsFile="))?.split("=").slice(1).join("=");
   if (!args.includes("StrictHostKeyChecking=yes") || !known || !Deno.readTextFileSync(known).includes(${
       JSON.stringify(LOCAL_PIN)
     })) throw new Error("admitted pin required");
 }
+if (Deno.env.get("FIXTURE_ALLOW_CFGMGMT") === "1" && args.includes("StrictHostKeyChecking=accept-new")) {
+  const command = args.at(-1)!;
+  if (command.includes("/etc/") || command.includes("sudo")) throw new Error("Fixture refused privileged cfgmgmt command");
+  await passThrough(["/bin/sh", "-c", command], await readStdinBytes());
+  Deno.exit(0);
+}
 let argv = shellSplit(args.at(-1)!);
 if (argv.slice(0,3).join(" ") === "sudo -n --") argv = argv.slice(3);
-if (argv[0] === "sudo") argv = argv.slice(1);
+const sudo = argv.indexOf("sudo");
+if (sudo >= 0) {
+  const end = argv.indexOf("--", sudo);
+  if (end >= 0) argv.splice(sudo, end - sudo + 1);
+  else if (argv[sudo + 1] === "-u") argv.splice(sudo, 3);
+  else argv.splice(sudo, 1);
+}
 if (argv.slice(0,2).join(" ") === "sh -c" && shellSplit(argv.at(-1)!)[0] === "/usr/bin/install") argv = shellSplit(argv.at(-1)!);
 if (argv.includes("/bin/sh") || argv.includes("sh")) {
   argv[argv.length-1] = argv.at(-1)!.replace(/sudo --preserve-env=[A-Z_,]+ /g, "").replaceAll("sudo -u caddy ", "").replace(/sudo /g, "");
@@ -362,6 +374,7 @@ if (args[0] === "status") {
 export async function publicationFixture() {
   const f = await localFixture(["operations/routes/publication-command", "operations/routes/mutation-command"]);
   const { repo } = f;
+  const group = new TextDecoder().decode((await new Deno.Command("id", { args: ["-gn"] }).output()).stdout).trim();
   const host = `${repo.dir}/host`, commands = `${repo.dir}/commands`, audit = `${repo.dir}/audit`;
   await Deno.mkdir(`${host}/php/8.4/fpm/pool.d`, { recursive: true });
   await Deno.mkdir(commands);
@@ -373,6 +386,9 @@ logCall(audit,[name,...Deno.args]);
 const fail = Deno.env.get("FIXTURE_FAIL");
 if (["caddy","php-fpm8.4","dnsmasq"].includes(name) && fail === "validate") Deno.exit(1);
 if (name === "systemctl" && fail === "reload") Deno.exit(1);
+if (name === "systemctl" && Deno.args[0] === "reload" && Deno.env.get("FIXTURE_CADDY_DRIFT")) {
+  Deno.writeTextFileSync(Deno.env.get("FIXTURE_CADDY_DRIFT")!, "# unexpected drift", { append: true });
+}
 if (name === "systemctl" && Deno.args.join(" ") === "restart dnsmasq" && fail === "backend") {
   try { Deno.statSync(audit+".failed"); } catch {Deno.writeTextFileSync(audit+".failed","failed once");Deno.exit(1);}
 }
@@ -403,6 +419,10 @@ if (name === "systemctl" && Deno.args.join(" ") === "restart dnsmasq" && fail ==
     ]
   ) {
     await f.copyWorkflow(name, replacements, (step) => {
+      const task = step.task as { behaviorType?: string; globalArgs?: Record<string, unknown> };
+      if (name === "operation-route-caddy" && task.behaviorType === "@swamp/cfgmgmt/file") {
+        Object.assign(task.globalArgs!, { owner: f.user, group, become: false });
+      }
       if (name === "operation-route-php-delta" && step.name === "apply-pool") {
         // The behavior composes /etc/php paths; redirect only its destination into the fixture host.
         const { argv } = (step.task as { inputs: { argv: string[] } }).inputs;

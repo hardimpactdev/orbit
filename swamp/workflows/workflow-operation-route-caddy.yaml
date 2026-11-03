@@ -83,104 +83,96 @@ jobs:
 - name: publication
   labels: {role: swamp}
   steps:
-  - name: input
+  - name: Read the input
     labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@nckrtl/caddy-public-input'
-      behaviorName: '${{ "input-caddy-public-input" }}'
+      behaviorName: input-caddy-public-input
       methodName: prepare
-      inputs:
-        publication: ${{ inputs.intent.caddy_publication }}
-  - name: apply-config
+      inputs: {publication: '${{ inputs.intent.caddy_publication }}'}
+  - name: Check the connection
     labels: {role: swamp}
+    dependsOn: [{step: Read the input, condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-ssh-apply-config-" + string(inputs.intent.caddy_publication.connection.nodeHost)).split(".").join("-") }}'
+      behaviorName: '${{ ("caddy-pin-" + string(inputs.intent.caddy_publication.connection.nodeHost)).split(".").join("-") }}'
       methodName: exec
-      globalArgs: &id001
-        name: '${{ ("route-ssh-apply-config-" + string(inputs.intent.caddy_publication.connection.nodeHost)).split(".").join("-") }}'
+      globalArgs: &ssh
+        name: '${{ ("caddy-pub-" + string(inputs.intent.caddy_publication.connection.nodeHost)).split(".").join("-") }}'
         transport:
           kind: ssh
-          user: ${{ inputs.intent.caddy_publication.connection.nodeUser }}
-          identityFile: ${{ inputs.intent.caddy_publication.connection.nodeIdentityFile }}
-          port: ${{ inputs.intent.caddy_publication.connection.nodePort }}
+          user: '${{ inputs.intent.caddy_publication.connection.nodeUser }}'
+          identityFile: '${{ inputs.intent.caddy_publication.connection.nodeIdentityFile }}'
+          port: '${{ inputs.intent.caddy_publication.connection.nodePort }}'
         hosts:
         - name: target
-          address: ${{ inputs.intent.caddy_publication.connection.nodeHost }}
-          transport:
-            hostKeys: ${{ inputs.intent.caddy_publication.host_keys }}
+          address: '${{ inputs.intent.caddy_publication.connection.nodeHost }}'
+          transport: {hostKeys: '${{ inputs.intent.caddy_publication.host_keys }}'}
+      inputs: {hosts: 'name:target', argv: ["true"]}
+  - name: Write the Caddyfile
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Check the connection, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ ("caddy-file-" + string(inputs.intent.caddy_publication.connection.nodeHost)).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: &file
+        nodeHost: '${{ inputs.intent.caddy_publication.connection.nodeHost }}'
+        nodeUser: '${{ inputs.intent.caddy_publication.connection.nodeUser }}'
+        nodePort: '${{ inputs.intent.caddy_publication.connection.nodePort }}'
+        nodeIdentityFile: '${{ inputs.intent.caddy_publication.connection.nodeIdentityFile }}'
+        become: true
+        path: /etc/caddy/Caddyfile
+        ensure: present
+        content: '${{ steps["Read the input"].outputs.caddy.content }}'
+        owner: root
+        group: caddy
+        mode: '0640'
+      inputs: {}
+  - name: Validate the Caddyfile
+    labels: {role: swamp}
+    dependsOn: [{step: Write the Caddyfile, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("caddy-test-" + string(inputs.intent.caddy_publication.connection.nodeHost)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh
       inputs:
-        hosts: name:target
-        argv:
-        - /bin/sh
-        - -c
-        - |-
-          set -eu
-          /usr/bin/install -m 0640 -o root -g caddy /dev/null "$1"
-          /usr/bin/cat > "$1"
-        - route-file
-        - /etc/caddy/Caddyfile
-        stdin: ${{ steps.input.outputs.caddy.content }}
+        hosts: 'name:target'
+        argv: [timeout, '60', sudo, -u, caddy, /usr/bin/caddy, validate, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
+  - name: Reload Caddy
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Validate the Caddyfile, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("caddy-reload-" + string(inputs.intent.caddy_publication.connection.nodeHost)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: 'name:target'
+        argv: [timeout, '60', /usr/bin/systemctl, reload, caddy]
         sudo: true
-    dependsOn:
-    - step: input
-      condition:
-        type: succeeded
-  - name: validate
+  - name: Check the Caddyfile
     labels: {role: swamp}
+    dependsOn: [{step: Reload Caddy, condition: {type: succeeded}}]
     task:
       type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-ssh-validate-" + string(inputs.intent.caddy_publication.connection.nodeHost)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv:
-        - env
-        - /bin/sh
-        - -c
-        - sudo -u caddy /usr/bin/caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-    dependsOn:
-    - step: apply-config
-      condition:
-        type: succeeded
-  - name: reload
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ ("caddy-file-" + string(inputs.intent.caddy_publication.connection.nodeHost)).split(".").join("-") }}'
+      methodName: check
+      globalArgs: *file
+      inputs: {}
+  - name: Check the publication
     labels: {role: swamp}
+    dependsOn: [{step: Check the Caddyfile, condition: {type: succeeded}}]
     task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("route-ssh-reload-" + string(inputs.intent.caddy_publication.connection.nodeHost)).split(".").join("-") }}'
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv:
-        - env
-        - /bin/sh
-        - -c
-        - sudo /usr/bin/systemctl reload caddy
-    dependsOn:
-    - step: validate
-      condition:
-        type: succeeded
-- name: completion
-  labels: {role: swamp}
-  dependsOn:
-  - job: publication
-    condition:
-      type: succeeded
-  steps:
-  - name: result
-    labels: {role: swamp}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "result-shell" }}'
-      methodName: execute
-      inputs:
-        run: printf '{"ready":true,"result":"published","version":"%s"}\n' "$ORBIT_CADDY_VERSION"
-        env:
-          ORBIT_CADDY_VERSION: ${{ inputs.intent.caddy_publication.caddy.version }}
+      type: assert
+      expr: 'steps["Check the Caddyfile"].outputs.status == "compliant"'
+      message: Caddy configuration differs after publication.

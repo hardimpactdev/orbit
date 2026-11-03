@@ -69,10 +69,11 @@ it('records shared terminal output without re-reading the current render', funct
     $operation = app(NativeCaddyPublicationProjection::class)->apply($this->operation, [
         'run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'status' => 'succeeded',
         'started_at' => '2026-10-31T13:00:00Z', 'finished_at' => '2026-10-31T13:00:01Z',
-        'result' => ['ready' => true, 'result' => 'unchanged', 'version' => str_repeat('a', 32), 'password' => 'private-caddy-result-sentinel'],
+        'result' => ['steps' => [NativeCaddyPublicationProjection::EndCheck => ['status' => 'succeeded']],
+            'caddy' => ['version' => str_repeat('a', 32), 'content' => 'private-caddy-result-sentinel']],
     ]);
     expect($operation->status)->toBe(OperationStatus::Succeeded)
-        ->and($operation->result)->toBe(['ready' => true, 'result' => 'unchanged', 'version' => str_repeat('a', 32)])
+        ->and($operation->result)->toBe(['ready' => true, 'result' => 'published', 'version' => str_repeat('a', 32)])
         ->and(json_encode($operation->fresh()->toArray(), JSON_THROW_ON_ERROR))->not->toContain('private-caddy-result-sentinel')
         ->and($this->agents->calls)->toBe([]);
 });
@@ -101,7 +102,8 @@ it('dispatches canonical public input through the shared builder with no executi
         ->and($input['node_id'])->toBe($this->node->id)
         ->and($input['kind'])->toBe('route.caddy_converge')
         ->and(json_encode($input['execution_secrets'], JSON_THROW_ON_ERROR))->toBe('{}')
-        ->and(app(DirectOperation::class)->definition('route.caddy_converge')['terminal_result'])->toBe(['job' => 'completion', 'step' => 'result'])
+        ->and(app(DirectOperation::class)->definition('route.caddy_converge')['terminal_result'])->toBe(['job' => 'publication', 'step' => NativeCaddyPublicationProjection::EndCheck,
+            'captures' => ['caddy' => ['job' => 'publication', 'step' => 'Read the input', 'field' => 'caddy']], 'native' => true])
         ->and($this->agents->calls)->toBe([]);
 });
 
@@ -114,3 +116,15 @@ it('requires stored address and pins without a Gateway worker dependency', funct
     $this->node->wireguard_ip = null;
     expect(fn () => app(NativeCaddyPublicationInput::class)->connectionForNode($this->node))->toThrow(ResourceOperationException::class);
 });
+
+it('refuses an unverified publication or a missing captured version', function (array $result): void {
+    expect(fn () => app(NativeCaddyPublicationProjection::class)->apply($this->operation, [
+        'run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'status' => 'succeeded', 'result' => $result,
+        'started_at' => '2026-10-31T13:00:00Z', 'finished_at' => '2026-10-31T13:00:01Z',
+    ]))->toThrow(ResourceOperationException::class);
+    expect($this->operation->fresh()->status)->toBe(OperationStatus::Running);
+})->with([
+    'failed end check' => [['steps' => [NativeCaddyPublicationProjection::EndCheck => ['status' => 'failed']], 'caddy' => ['version' => str_repeat('a', 32)]]],
+    'skipped end check' => [['steps' => [NativeCaddyPublicationProjection::EndCheck => ['status' => 'skipped']], 'caddy' => ['version' => str_repeat('a', 32)]]],
+    'missing version' => [['steps' => [NativeCaddyPublicationProjection::EndCheck => ['status' => 'succeeded']]]],
+]);
