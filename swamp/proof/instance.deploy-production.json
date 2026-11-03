@@ -58,8 +58,7 @@
   ],
   "request": {
     "method": "POST",
-    "path": "instances/9002/deploy",
-    "body": {}
+    "path": "instances/9002/deploy"
   },
   "expect": {
     "status": "succeeded"
