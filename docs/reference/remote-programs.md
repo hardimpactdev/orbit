@@ -1,14 +1,12 @@
 ---
 title: "Remote programs"
-description: "The remaining Tasks workspace program runner, its checks, and the Gateway script ratchet."
+description: "The remaining Tasks workspace program runner and its checks."
 covers:
   - apps/gateway/app/Domain/RemotePrograms/**
   - apps/gateway/app/Infrastructure/RemotePrograms/**
   - apps/gateway/resources/remote/{bootstrap.py,lib/program.py,gateway/task-workspace-owner.py}
   - apps/gateway/ruff.toml
   - apps/gateway/tests/Programs/**
-  - bin/node-scripts-ratchet
-  - tools/test_node_scripts_ratchet.py
   - bin/remote-programs-check
 ---
 
@@ -46,27 +44,13 @@ The Gateway has an [architecture test](/reference/node-agent#commands) that perm
 - ruff 0.17.0 checks Python files and assembled programs with `apps/gateway/ruff.toml`.
 - PHP tests verify that findings name the original template or library line.
 
-Use `bin/remote-programs-check --resources PATH` to lint one resource tree. The default checks the Gateway and extension resources. Pest covers the retained Tasks monitors and program runtime; the checker needs no pytest runtime. The separate repository Python tests use the pins in `tools/test-requirements.txt`.
+Use `bin/remote-programs-check --resources PATH` to lint one resource tree. The default checks the Gateway and extension resources. Pest covers the retained Tasks monitors and program runtime; the checker needs no pytest runtime.
 
 PHP tests cover the retained bootstrap and result protocol. They start each excluded Tasks program in an isolated process through `PythonPrograms`. The PHP helper owns input, output, deadlines, and child cleanup; it runs no Python test host.
 
 Tasks monitors share `tasks/unit-state.py` through `TaskUnitProgram`, which replaces `# ORBIT_TASK_UNIT_STATE` before transport. The check lints the assembled source and maps each finding to its original template or library line. This preserves the workspace scripts while they await the separate Tasks migration.
 
 Each Project check shard installs the pinned linters before running the candidate gate. The shard selected for remote programs runs these checks. The [candidate gate](/reference/implementation-loop#the-candidate-gate) also runs them when a candidate changes Gateway resources, direct program tests, Ruff configuration, or the checker. A missing tool fails the check.
-
-## Inline scripts
-
-`bin/node-scripts-ratchet --base HEAD^1` compares the remaining script totals with a Git revision. It counts every heredoc and nowdoc in all Gateway PHP, identified by extension or a `<?php` opening, outside the excluded roots below, with the fixed data labels in the checker excluded. Unknown labels count. Literal `sh -c`, `bash -c`, `python3 -c`, `php -r`, `perl -e`, and `node -e` calls count too. Combined flags and option values before the code flag count, such as `bash -euo pipefail -c`. A heredoc body counts once. The matcher also counts interpreter calls in comments: `// never use sh -c` raises the inline total.
-
-### Files
-
-The file scan covers the whole Gateway, extensions included. It counts every non-PHP file, and PHP files under any `resources/` directory, except `.json`, `.xml`, `.md`, `.blade.php`, `.pem`, `.crt`, and `.cer` data and blank `.gitkeep` markers. Resource `.json` and `.xml` files must parse to qualify as data. Unknown types count, so renaming a script to `.txt` or `.stub` is neutral. Every shebang counts. Only `apps/gateway/tests/`, `apps/gateway/extensions/*/tests/`, `apps/gateway/vendor/`, and `apps/gateway/node_modules/` are excluded roots. Nested directories named `tests` or `vendor` are scanned.
-
-The fixed `resources/fpm/opcache-reset.php` adapter is excluded. It runs Gateway PHP in the Gateway's own pool, like Artisan, and is outside Node execution. The handoff keeps the [idle check and socket reset](/reference/gateway-recovery#runtime-handoff). Artisan and support files are still counted by the file guard but remain outside the Node migration. Test fixtures are excluded.
-
-### CI comparison
-
-The `Remote programs` CI job runs the guard and its regression tests before program lint. Inline and file totals cannot rise or offset each other. Moving an inline script between files, or moving a resource into an extension, is neutral. Deleting a script lowers the next comparison. A pull request compares its merge ref with its first parent, `HEAD^1`; a main push compares with its previous SHA. Scheduled and manual checks use `HEAD^1`. There is no editable count ceiling or per-script budget. [Node commands](/reference/node-agent#commands) owns the migration and the remaining execution boundary.
 
 ## Why it works this way
 

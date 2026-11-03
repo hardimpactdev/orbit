@@ -212,7 +212,7 @@ def bring_up(guest, state, commit, timings, fresh=False):
     heartbeat(guest)
 
 
-FIXTURE_ONLY = ('swamp/proof/', 'tools/swamp-proof-guest/converge-network-proof.py', 'tools/swamp-proof-guest/run.py', 'tools/swamp-proof-guest/gateway.php', 'tools/swamp_proof.py', 'tools/test_swamp_proof.py', 'tools/test_swamp_proof_guest.py')
+FIXTURE_ONLY = ('swamp/proof/', 'tools/swamp-proof-guest/converge-network-proof.py', 'tools/swamp-proof-guest/run.py', 'tools/swamp-proof-guest/gateway.php', 'tools/swamp_proof.py')
 
 
 def git(*argv):
