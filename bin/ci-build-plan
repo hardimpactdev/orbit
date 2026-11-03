@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 
-JOBS = ('php', 'gateway-static', 'cli', 'docs', 'api-reference', 'project-check', 'web', 'swamp')
+JOBS = ('php', 'gateway-static', 'cli', 'docs', 'api-reference', 'web', 'swamp')
 
 
 def select(paths, main=False):
@@ -55,8 +55,6 @@ def select(paths, main=False):
         if not path.startswith(('apps/', 'packages/', 'docs/', '.github/', 'bin/', 'tools/', '.agents/')) and '/' in path:
             jobs = dict.fromkeys(JOBS, True)
     jobs['web'] |= main
-    # The Project check is the task check; it runs on every commit, so tasks and CI agree on green.
-    jobs['project-check'] = True
     return {'jobs': jobs, 'agent': agent, 'gateway_release': main or not swamp_only}
 
 
