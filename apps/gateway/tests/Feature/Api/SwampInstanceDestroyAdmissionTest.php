@@ -6,6 +6,7 @@ use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
@@ -19,6 +20,8 @@ use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Project;
+use App\Models\ProjectLifecycleStep;
+use App\Models\Route;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Tests\Support\FakeRoutePublicationSocket;
@@ -72,6 +75,22 @@ it('admits stored source intent and one native root without Gateway source or ac
         ->and(InstanceRemoval::query()->count())->toBe(1);
     Queue::assertNothingPushed();
 })->with([false, true]);
+
+it('budgets the run for its teardown steps and each Route it withdraws', function (bool $routed): void {
+    ProjectLifecycleStep::query()->create(['project_id' => $this->instance->project_id, 'phase' => 'teardown', 'position' => 0,
+        'name' => 'stop', 'command' => 'true', 'timeout_seconds' => 30]);
+    if ($routed) {
+        $route = Route::query()->create(['project_id' => $this->instance->project_id, 'node_id' => $this->node->id,
+            'domain' => 'isolated.removal-proof.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+        $route->targets()->create(['instance_id' => $this->instance->id, 'position' => 0]);
+        $route->update(['status' => 'active', 'sites_published' => true]);
+    }
+    $this->withHeader('Idempotency-Key', 'destroy-budget-'.(int) $routed);
+    $id = $this->deleteJson($this->path, ['force' => true])->assertAccepted()->json('data.id');
+    $operation = Operation::query()->findOrFail($id);
+    expect($operation->input['run_budget_seconds'])->toBe(60 + 30 + ($routed ? 180 : 0))
+        ->and(OperationRunBudgets::seconds($operation))->toBe(60 + 30 + ($routed ? 180 : 0));
+})->with(['without a Route' => false, 'with a Route' => true]);
 
 it('admits the same native root when retired executor settings name its Node', function (string $executor): void {
     config($executor === 'services'
