@@ -17,11 +17,11 @@ class BuildPlanTest(unittest.TestCase):
         self.assertEqual({'swamp', 'api-reference', 'web'}, self.selected(paths, True))
 
     def selected(self, paths, main=False):
-        return {k for k, v in plan.select(paths, main)['jobs'].items() if v and k != 'project-check'}
+        return {k for k, v in plan.select(paths, main)['jobs'].items() if v}
 
-    def test_the_project_check_runs_on_every_commit_like_the_task_check(self):
+    def test_project_check_is_not_selected_by_ci(self):
         for paths in ([], ['README.md'], ['swamp/workflows/x.yaml'], ['apps/gateway/app/Thing.php']):
-            self.assertTrue(plan.select(paths)['jobs']['project-check'], paths)
+            self.assertNotIn('project-check', plan.select(paths)['jobs'], paths)
 
     def test_gateway_code_keeps_contracts_php_and_web_but_skips_cli(self):
         self.assertEqual({'php', 'gateway-static', 'api-reference', 'web'}, self.selected(['apps/gateway/app/Thing.php']))
@@ -52,8 +52,8 @@ class BuildPlanTest(unittest.TestCase):
         self.assertEqual({'web'}, self.selected([], main=True))
 
     def test_shared_ci_changes_run_all_builds(self):
-        self.assertEqual(set(plan.JOBS) - {'project-check'}, self.selected(['.github/workflows/ci.yml']))
-        self.assertEqual(set(plan.JOBS) - {'project-check'}, self.selected(['bin/ci-build-plan']))
+        self.assertEqual(set(plan.JOBS), self.selected(['.github/workflows/ci.yml']))
+        self.assertEqual(set(plan.JOBS), self.selected(['bin/ci-build-plan']))
 
     def test_a_test_only_change_checks_syntax(self):
         self.assertEqual({'php', 'gateway-static'}, self.selected(['apps/gateway/tests/Feature/ThingTest.php']))
