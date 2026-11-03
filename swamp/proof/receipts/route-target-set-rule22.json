@@ -13,7 +13,5 @@
   "vm_destroyed": true,
   "scripts_deleted": 0,
   "named_gap": null,
-  "pending_proofs": [
-    "development: swamp.start_uncertain, no native run or history after a fresh retry"
-  ]
+  "development_receipt": "/home/nckrtl/swamp-execution/evidence/proof/route.target_set/20261103T191850Z-minimal.json"
 }
