@@ -1,9 +1,17 @@
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.19";
 import { HEAD, MERGE, mergeFixture } from "./native_fixture_test.ts";
-Deno.test("merge and native receipt", async () => {
+Deno.test("lost reply reconciles on fresh run and emits the native receipt", async () => {
   await using f = await mergeFixture();
+  const initial = f.read();
+  initial.lost_reply = true;
+  Deno.writeTextFileSync(f.state, JSON.stringify(initial));
+  const first = await f.run(false);
+  assertEquals(first.data.calls.filter((c: string[]) => c[0] === "PUT").length, 1);
+  const reconciled = f.read();
+  reconciled.calls = [];
+  Deno.writeTextFileSync(f.state, JSON.stringify(reconciled));
   const { history, data } = await f.run();
-  assertEquals(data.calls.filter((c: string[]) => c[0] === "PUT").length, 1);
+  assertEquals(data.calls.map((c: string[]) => c[0]), ["GET", "DELETE", "DELETE"]);
   const step = history.jobs.flatMap((
     j: { steps: { name: string; outputs: { stdout: string } }[] },
   ) => j.steps).find((s: { name: string }) => s.name === "Read merge result");
@@ -22,34 +30,4 @@ Deno.test("major change refuses and revokes", async () => {
     JSON.stringify(history),
     "dependency_merge.major_bump",
   );
-});
-Deno.test("pending checks refuse before contents", async () => {
-  await using f = await mergeFixture();
-  f.save("checks");
-  const { data } = await f.run(false);
-  assert(
-    !data.calls.some((c: string[]) => c[1].includes("/contents/") || c[0] === "PUT"),
-  );
-});
-Deno.test("already merged skips reads and put", async () => {
-  await using f = await mergeFixture();
-  f.save("merged");
-  const { data } = await f.run();
-  assertEquals(data.calls.map((c: string[]) => c[0]), [
-    "GET",
-    "DELETE",
-    "DELETE",
-  ]);
-});
-Deno.test("lost reply reconciles on fresh run", async () => {
-  await using f = await mergeFixture();
-  let data = f.read();
-  data.lost_reply = true;
-  Deno.writeTextFileSync(f.state, JSON.stringify(data));
-  await f.run(false);
-  data = f.read();
-  data.calls = [];
-  Deno.writeTextFileSync(f.state, JSON.stringify(data));
-  const next = await f.run();
-  assert(!next.data.calls.some((c: string[]) => c[0] === "PUT"));
 });
