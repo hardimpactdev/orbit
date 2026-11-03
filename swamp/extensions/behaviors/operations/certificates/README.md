@@ -10,4 +10,4 @@ Official steps do the rest:
 - `route-certificate-remove` removes a withdrawn scope with `cfgmgmt/directory` `ensure: absent`.
 - `node-role-certificate-publish` installs a fixed role pair. See [Native Node role certificates](../../../../../docs/reference/node-role-certificates.md).
 
-`certificateActions()` keeps scope removal for Node residue cleanup. `retained_role_policy.py` is source text that the inline Caddy and role removal programs import; it is not a shipped file and goes when those programs convert.
+`retained_role_policy.py` is source text that the inline Caddy and role removal programs import; it is not a shipped file and goes when those programs convert.

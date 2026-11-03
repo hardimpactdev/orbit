@@ -193,12 +193,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/certificates/system.ts",
-      "rule": "inline-script",
-      "count": 39,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/dependency-merge/admission.ts",
       "rule": "gateway-http",
       "count": 2,
