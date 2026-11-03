@@ -81,7 +81,7 @@ After the merge, keep the review evidence and release the resources allocated to
 
 ## CI
 
-Orbit CI runs builds and static checks. Swamp changes also run the Operation Deno tests. Pull requests, merge queue batches, pushes to `main`, task handoff pushes and manual runs use the same gate. Swamp also runs its full native suite daily.
+Orbit CI runs builds and static checks. Swamp changes also run the Operation Deno tests. Pull requests, merge queue batches, pushes to `main`, task handoff pushes and manual runs use the same gate.
 
 | Check | Work |
 | --- | --- |
@@ -90,13 +90,12 @@ Orbit CI runs builds and static checks. Swamp changes also run the Operation Den
 | CLI build | Build the existing Linux and macOS CLI binaries through the reusable Orbit CLI Binary workflow |
 | Docs build | Generate the documentation index, check its committed freshness and run strict documentation lint; run `bin/check-flows` on the [flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md) |
 | Generated contracts | Boot the Gateway, load all Operation kinds and check exact workflow run/read intent; check OpenAPI, MCP tools and `apps/web/src/api/schema.d.ts` against their generators |
-| Project check | Run the [candidate gate](#the-candidate-gate), `bin/review-check`, on every commit in three shards; the same gate is the Orbit task check |
 | Web build | Build the web app and require `dist/index.html` and `dist/version.json` |
 | Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only changes |
 | Swamp | Validate every workflow, run the Operation Deno tests, enforce the Swamp-shape gate and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Required checks | Require every selected build and static check to succeed; only an explicitly untouched job may skip |
 
-The three Project checks, four Swamp native shards and five Swamp Deno shards use `[self-hosted, orbit-shard]` when `ORBIT_SABRE_RUNNER=true` on main and same-repository pull requests. Fork pull requests and a false variable use `ubuntu-26.04`. Docs, web, contracts and workflow validation stay hosted. `tools/test_ci_runner_policy.py` pins this routing and the fork guard. Flip `ORBIT_SABRE_RUNNER` to `false` to roll back.
+The five Swamp Deno shards use `[self-hosted, orbit-shard]` when `ORBIT_SABRE_RUNNER=true` on main and same-repository pull requests. Fork pull requests and a false variable use `ubuntu-26.04`. Docs, web, contracts and workflow validation stay hosted. `tools/test_ci_runner_policy.py` pins this routing and the fork guard. Flip `ORBIT_SABRE_RUNNER` to `false` to roll back.
 
 Runner containers are unprivileged. Install or repair their toolchain with `tools/ci-runners/setup.sh container NAME` while idle; jobs verify the managed PHP build and use fake privileged boundaries. Ordinary Deno tests need no sudo or Docker daemon; real Docker proofs run only on disposable proof VMs.
 
@@ -108,19 +107,13 @@ The Swamp shape job runs its gate, Python analyzer, frozen-base policy and valid
 
 Swamp checks validate every workflow with the runtime pinned in `swamp/.swamp.yaml` and enforce the Swamp-shape baseline. The downloaded runtime is cached under a key of the node-worker pin file, `swamp/extensions/behaviors/node-worker/config.ts`, so a pin change downloads the new runtime once. The validation job uses a disposable hosted runner, where the pinned PHP setup action can install PHP without changing a restricted self-hosted runner. It also runs that pinned binary's `serve check-config` against disposable grant files rendered by the Gateway's production `SwampGrantRenderer` through `apps/gateway/bin/render-swamp-grants` (PHP 8.5, no Laravel boot or deployment credentials) from every `swamp/config/*grants*.json` input.
 
-The gate requires `passed`, `wouldStart` and the full grant-file count; a refusal or missing account fails Required checks. Changes to that renderer, its typed input helper or its CLI also select Swamp validation. This checks complete CEL conditions and regex safety without starting serve or changing live grants. The native grant-pattern regressions run with the other native tests.
+The gate requires `passed`, `wouldStart` and the full grant-file count; a refusal or missing account fails Required checks. Changes to that renderer, its typed input helper or its CLI also select Swamp validation. This checks complete CEL conditions and regex safety without starting serve or changing live grants. Run the native tests for grant patterns locally.
 
-Operation Deno unit tests, shape and workflow validation run on every CI change. Unit tests use four general shards and one process shard, with four workers each. They exclude `*native_test.ts`. Native tests run the pinned runtime against disposable repos through `swamp/tests/_support/native_harness.ts`. A pull request selects the changed operation families, their workflow roots and proof fixtures. A merge queue batch uses the same selection against `merge_group.base_sha`.
+Operation Deno unit tests, shape and workflow validation run on every CI change. Unit tests use four general shards and one process shard, with four workers each. They exclude `*native_test.ts`. Both CI workflows accept GitHub’s `merge_group` event; the root CI calls Swamp once and reports `Required checks` for the batch, using `merge_group.base_sha` for its scope.
 
-Both CI workflows accept GitHub’s `merge_group` event; the root CI calls Swamp once and reports `Required checks` for the batch. Shared helpers, harness, pins, CI definitions and unknown runtime inputs select all native files; documentation alone selects none. Removed native files leave the plan automatically.
+Required checks target five minutes. Project checks and native workflow tests are removed from CI for now; Nick decides which checks return. Their local commands and test files remain available. Native tests use the pinned runtime and disposable repos through `swamp/tests/_support/native_harness.ts`. No new nightly workflow replaces these jobs.
 
-Native files are assigned to at most four shards by measured per-file case time, longest first. The initial timings come from main CI `41623850432`; new files use 60 seconds until measured. Each shard still uses Deno’s own runner with four workers and writes a JUnit timing artifact. Both matrices finish after a shard fails. The aggregate permits a skipped native matrix only when the plan explicitly selected no native files; a failed plan or selected shard fails Required checks.
-
-A squash push to main can reuse a successful same-repository pull-request CI run. Its `swamp-native-tested-tree` artifact must name the exact landed Git tree and the squash commit’s parent. Main also reuses a successful merge queue run when its artifact names the exact landed tree, including a batch of several PRs. A stale PR base, different tree, missing artifact or unproven run runs the full suite.
-
-Main keeps the cheap Swamp gates and required release builds; it skips the repeated native suite only with this evidence. The standalone Swamp workflow also runs the full native suite daily at 03:17 UTC; its credentials stay split between registry-read validation and native sandbox tests.
-
-Native Swamp CLI suites live beside their operation family under `swamp/extensions/behaviors/operations/` and end in `_native_test.ts`; CI discovers them under `extensions/`. Tests of bin scripts live beside their script. The shape job names the liveness, Node 209 source and Operation schedule suites explicitly. The systemd sandbox test, `swamp-liveness_native_test.ts`, needs a systemd host and passwordless sudo, so it runs on a host, not in CI. Shared test setup ends in `_fixture_test.ts` so documentation impact checks and native behavior copying treat it as test code.
+Native Swamp CLI suites live beside their operation family under `swamp/extensions/behaviors/operations/` and end in `_native_test.ts`. Tests of bin scripts live beside their script. The shape job names the liveness, Node 209 source and Operation schedule suites explicitly. The systemd sandbox test, `swamp-liveness_native_test.ts`, needs a systemd host and passwordless sudo, so it runs on a host. Shared test setup ends in `_fixture_test.ts` so documentation impact checks and native behavior copying treat it as test code.
 
 Each main SHA has its own concurrency group in both CI and the reusable Swamp workflow. Main runs complete independently. A shared group would replace an older pending run even with `cancel-in-progress: false`; that option protects only the running job. Pull requests share a group and cancel superseded runs.
 
@@ -128,7 +121,7 @@ Two checks guard the flow charts. Generated contracts requires a chart or a `doc
 
 `Gateway release inputs` records whether the whole push includes Orbit inputs; both the Gateway and CLI publisher read that check instead of recomputing the last commit. The initial import ratchets against its retained Swamp source commit, recorded in `swamp/import-source.json`; once the comparison base contains `swamp/`, every run uses its actual Orbit base.
 
-Swamp workflow validation uses the dedicated `orbit-monorepo-ci` collective token with only `extensions:read`. Native shards use a separate `orbit-monorepo-native-ci` collective token with `extensions:read,serve:*` so tests can start loopback serve and workers. Each job receives only its own key and signed sign-in proof, on pull requests and pushes to main. The native pair is stored as `SWAMP_NATIVE_API_KEY` and `SWAMP_NATIVE_SIGNIN_TOKEN` Actions secrets; validation keeps the read-only pair. Shape and ordinary Operation test jobs receive no secret environment.
+Swamp workflow validation uses the dedicated `orbit-monorepo-ci` collective token with only `extensions:read`. Validation keeps its read-only key and signed sign-in proof on pull requests and pushes to main. Shape and ordinary Operation test jobs receive no secret environment. Native sandbox credentials are not used while native CI jobs are paused.
 
 CI never uses `pull_request_target`. The runtime and local extension tree remain pinned; validation, shape, placement and Operation tests are required, including when authentication is absent or refused. No personal key or initial-import validation exception is used.
 

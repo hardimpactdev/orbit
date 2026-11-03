@@ -39,6 +39,7 @@ sequenceDiagram
   %%> - one role operation per Node: the Gateway holds a role lock for Node 12 and waits up to 2 minutes for a busy one, then refuses with `node_role.node_busy`
   %%> Builds:
   %%> - the role plan: packages, files, units, Caddy sites, PHP settings, firewall rules and certificate requests
+  %%> - for the `metrics` role, the Prometheus and Grafana container specifications and their systemd units
   %%> - the Metrics fleet change, when Node 12 becomes a selected exporter
   %%> Secrets:
   %%> - role credentials go to the Swamp vault as execution copies; the inputs hold only their key names
@@ -148,9 +149,6 @@ sequenceDiagram
   end
   opt role plan needs this action
   SW->>N: Start Reverb<br/>cfgmgmt systemd
-  end
-  opt role plan needs this action
-  SW->>SW: Plan Metrics containers<br/>public resource plan
   end
   opt role plan needs this action
   SW->>N: Pull Metrics images<br/>cfgmgmt docker_image

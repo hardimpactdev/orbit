@@ -12,13 +12,9 @@ inputs:
 jobs:
 - name: remove
   steps:
-  - name: plan
-    labels: {role: swamp}
-    task: {type: behavior, behaviorType: '@nckrtl/metrics-role-plan', behaviorName: '${{ "metrics-plan" }}', methodName: plan, inputs: {assignment_id: '${{ inputs.intent.assignment_id }}', address: '${{ inputs.intent.ssh_execution.target.host }}', files: '${{ inputs.intent.files }}'}}
   - name: stopped
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: plan, condition: {type: succeeded}}]
     forEach: {item: service, in: '${{ [0, 1] }}'}
     task:
       type: behavior
@@ -32,7 +28,7 @@ jobs:
         nodePort: ${{ inputs.intent.ssh_execution.target.port }}
         nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
         become: true
-        service: '${{ steps.plan.outputs.services[self.service].name + ".service" }}'
+        service: '${{ inputs.intent.plan.services[self.service].name + ".service" }}'
         ensure: stopped
         enabled: false
   - name: container
@@ -53,8 +49,8 @@ jobs:
         nodePort: ${{ inputs.intent.ssh_execution.target.port }}
         nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
         become: true
-        name: '${{ steps.plan.outputs.services[self.service].name }}'
-        image: '${{ steps.plan.outputs.services[self.service].image }}'
+        name: '${{ inputs.intent.plan.services[self.service].name }}'
+        image: '${{ inputs.intent.plan.services[self.service].image }}'
         ensure: absent
   - name: unit_file
     labels: {role: swamp}
@@ -73,5 +69,5 @@ jobs:
         nodePort: ${{ inputs.intent.ssh_execution.target.port }}
         nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
         become: true
-        path: '${{ "/etc/systemd/system/" + steps.plan.outputs.services[self.service].name + ".service" }}'
+        path: '${{ "/etc/systemd/system/" + inputs.intent.plan.services[self.service].name + ".service" }}'
         ensure: absent
