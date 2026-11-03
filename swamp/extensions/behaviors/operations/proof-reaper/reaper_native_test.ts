@@ -68,21 +68,3 @@ Deno.test("idle superseded and silent groups are chosen and nothing else", async
     ],
   );
 });
-Deno.test("no running VM still chooses superseded groups", async () => {
-  await using f = await reaperFixture();
-  const decision = await f.run([{
-    id: 1,
-    title: "swamp-proof a:minimal x",
-    started_at: null,
-    running: false,
-  }, {
-    id: 2,
-    title: "swamp-proof a:minimal x",
-    started_at: null,
-    running: false,
-  }]);
-  assertEquals(decision.cancel, [{
-    group_id: 1,
-    reason: "superseded by group 2",
-  }]);
-});

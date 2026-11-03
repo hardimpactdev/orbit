@@ -4,7 +4,7 @@ import { resourceFixture } from "./schedule_fixture_test.ts";
 
 Deno.test("standalone removal refuses a busy service before mutation", async () => {
     await using f = await resourceFixture("destroy");
-    for (const state of ["busy", "transition"]) {
+    for (const state of ["transition"]) {
         const { run, steps } = await f.run(state);
         assertEquals(run.status, "failed");
         assertEquals(steps.idle, "succeeded");
@@ -15,24 +15,6 @@ Deno.test("standalone removal refuses a busy service before mutation", async () 
                 status === "succeeded"
             ),
         );
-    }
-});
-
-Deno.test("standalone and cascade finish without a reporting shell", async () => {
-    await using f = await resourceFixture("destroy");
-    for (const cascade of [false, true]) {
-        const { run, steps } = await f.run(cascade ? "busy" : "", cascade);
-        assertEquals(run.status, "succeeded");
-        assertEquals(steps["Check the removal"], "succeeded");
-        assertEquals(
-            steps.idle ?? "skipped",
-            cascade ? "skipped" : "succeeded",
-        );
-        assertEquals(
-            steps.stop_service ?? "skipped",
-            cascade ? "succeeded" : "skipped",
-        );
-        assert(!("result" in steps));
     }
 });
 

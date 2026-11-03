@@ -14,11 +14,14 @@ const test = (name: string, body: (f: Fixture) => Promise<void>) =>
   });
 
 test("all six kinds and safe reruns", async (f) => {
+  await f.tool("docker", "#!/bin/sh\nexit 99\n");
+  f.inputs.intent.installation!.retired = { runtime: "docker", name: "orbit-process-17-worker" };
   await f.runKind("create");
   assertEquals(Deno.readTextFileSync(f.unit), f.content);
   assertEquals(f.current(), { active: "active", enabled: true });
   f.inputs.intent.installation = undefined;
   f.inputs.intent.mounts = undefined;
+  f.save({ units: { [f.unitName]: { active: "activating", enabled: true } } });
   for (const kind of ["stop", "start", "restart"]) {
     await f.runKind(kind);
     assertEquals(f.current().active, kind === "stop" ? "inactive" : "active");
@@ -35,31 +38,6 @@ test("all six kinds and safe reruns", async (f) => {
   await f.runKind("destroy");
   assert(!exists(f.unit));
   assertEquals(f.current(), { active: "inactive", enabled: false });
-});
-
-test("create leaves retirement to update", async (f) => {
-  await f.tool("docker", "#!/bin/sh\nexit 99\n");
-  f.inputs.intent.installation!.retired = { runtime: "docker", name: "orbit-process-17-worker" };
-  await f.runKind("create");
-  assert(exists(f.unit));
-  assertEquals(f.current().active, "active");
-});
-
-test("a start failure keeps its effects, then a rerun converges", async (f) => {
-  f.save({ failures: ["start"] });
-  await f.runKind("create", false);
-  assert(exists(f.unit));
-  await f.runKind("create");
-  assertEquals(f.current().active, "active");
-});
-
-test("stop also stops an activating unit", async (f) => {
-  Deno.writeTextFileSync(f.unit, f.content);
-  f.save({ units: { [f.unitName]: { active: "activating", enabled: true } } });
-  f.inputs.intent.installation = undefined;
-  f.inputs.intent.mounts = undefined;
-  await f.runKind("stop");
-  assertEquals(f.current().active, "inactive");
 });
 
 test("a missing mount prevents the unit write", async (f) => {
@@ -80,7 +58,11 @@ test("the environment uses cfgmgmt file with mode 0600", async (f) => {
   await vault(f, "process-create-operation-17", content);
   f.inputs.execution_secrets = { environment: { vault: "orbit-control-inputs", key: "process-create-operation-17" } };
   f.repo.secrets = [secret];
+  f.save({ failures: ["start"] });
+  await f.runKind("create", false);
+  assert(exists(f.unit));
   await f.runKind("create");
+  assertEquals(f.current().active, "active");
   const path = `${f.host}/${logical.slice("/etc/".length)}`;
   assertEquals(Deno.readTextFileSync(path), content);
   assertEquals(Deno.statSync(path).mode! & 0o777, 0o600);
@@ -258,4 +240,3 @@ Deno.writeTextFileSync(path, JSON.stringify(state));
   assert(exists(f.unit));
   assertEquals(f.current().active, "active");
 });
-

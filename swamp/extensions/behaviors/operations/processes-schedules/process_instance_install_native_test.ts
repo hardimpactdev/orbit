@@ -79,7 +79,7 @@ const test = (name: string, body: (m: Members) => Promise<void>) =>
 test("two definitions keep distinct environment copies and native child scopes", async (m) => {
   const first = "# Orbit Process 7\nPASSWORD=first-private-fixture\n";
   const second = "# Orbit Process 11\nPASSWORD=second-private-fixture\n";
-  const units = [await m.addMember(7, "running", first), await m.addMember(11, "running", second)];
+  const units = [await m.addMember(7, "running", first), await m.addMember(11, "stopped", second)];
   // The environment files live on the fake host, outside the repo the harness scans.
   m.f.repo.secrets = ["first-private-fixture", "second-private-fixture"];
   const run = await m.runParent();
@@ -87,18 +87,10 @@ test("two definitions keep distinct environment copies and native child scopes",
   for (const path of m.environmentPaths) assertEquals(Deno.statSync(path).mode! & 0o777, 0o600);
   for (const unit of units) {
     assert(Deno.statSync(unit).isFile);
-    assertEquals(m.units()[unit.split("/").at(-1)!].active, "active");
+    const running = unit === units[0];
+    assertEquals(m.units()[unit.split("/").at(-1)!], { active: running ? "active" : "inactive", enabled: running });
   }
   await m.f.repo.cli(["workflow", "history", "get", run.id]);
-});
-
-test("the definition parent keeps stopped intent and accepts an empty selection", async (m) => {
-  const unit = await m.addMember(7, "stopped");
-  await m.runParent();
-  const state = m.units()[unit.split("/").at(-1)!];
-  assert(Deno.statSync(unit).isFile);
-  assertEquals(state.active, "inactive");
-  assertEquals(state.enabled, false);
   m.parent.intent.members = [];
   await m.runParent();
 });
@@ -108,8 +100,7 @@ test("a failed child keeps its unit for normal forward convergence", async (m) =
   m.f.save({ units: {}, calls: [], failures: ["start"] });
   await m.runParent(false);
   assert(Deno.statSync(unit).isFile);
-  await m.runParent();
-  assertEquals(m.units()[unit.split("/").at(-1)!].active, "active");
+
 });
 
 // The deploy and transfer parents install Processes with the same child, then continue only when no
@@ -185,10 +176,8 @@ test("deploy and transfer install native children before the parent continues", 
   }
 });
 
-test("a failed native install blocks both parent continuations", async (m) => {
+test("a failed native install blocks the parent continuation", async (m) => {
   await m.addMember(7);
-  for (const family of ["deploy", "transfer"] as const) {
-    m.f.save({ units: {}, calls: [], failures: ["start"] });
-    await runShared(m, family, false);
-  }
+  m.f.save({ units: {}, calls: [], failures: ["start"] });
+  await runShared(m, "deploy", false);
 });

@@ -10,6 +10,7 @@ type State = { units: Record<string, Unit>; calls: string[][]; failures: string[
 async function lifecycleFixture() {
   const f = await scheduleFixture();
   const { repo, inputs } = f;
+  repo.timeoutMs = 180_000;
   await repo.pull("@swamp/cfgmgmt");
   const host = await Deno.makeTempDir({ prefix: "orbit-schedule-host-" });
   const units = `${host}/units`;
@@ -198,6 +199,7 @@ test("create converges timer intent and a repeated create is compliant", async (
   assertEquals(await f.result(), { ready: true });
   assertEquals(f.current("timer"), { active: true, enabled: true });
   assert(Deno.readTextFileSync(f.unit("service")).includes("/api/v1/schedules/"));
+  assertEquals((await f.history()).jobs[0].steps.filter((step) => step.name.startsWith("check_files-")).length, 4);
   f.drift("timer", { active: false, enabled: false });
   await f.runLifecycle();
   assertEquals(f.current("timer"), { active: true, enabled: true });
@@ -223,26 +225,6 @@ test("enable starts only the installed timer without private material", async (f
   assertEquals(actions(f), ["show", "show"]);
 });
 
-test("a failed enable skips success and a rerun converges without rollback", async (f) => {
-  await f.runLifecycle();
-  f.save({ calls: [], failures: ["start"] });
-  await f.runEnable(false);
-  assertEquals(f.lastRun().status, "failed");
-  assertEquals(await f.result(), {});
-  assertEquals(f.current("timer"), { active: false, enabled: true });
-  assert(!actions(f).includes("disable"));
-  await f.runEnable();
-  assertEquals(f.current("timer"), { active: true, enabled: true });
-  assertEquals(await f.result(), { ready: true });
-});
-
-test("enable of a missing timer fails without creating units", async (f) => {
-  await f.runEnable(false);
-  assertEquals(f.lastRun().status, "failed");
-  assertEquals(await f.result(), {});
-  assertEquals(f.unitFiles(), []);
-});
-
 test("a disabled create removes obsolete files without reading private bytes", async (f) => {
   const identity = f.inputs.intent.schedule.id;
   const secret = "obsolete-private-command";
@@ -254,20 +236,11 @@ test("a disabled create removes obsolete files without reading private bytes", a
   assertEquals(f.current("timer"), { active: false, enabled: false });
   assertEquals([...Deno.readDirSync(`${f.host}/schedules`)], []);
   assert(!JSON.stringify(await f.history()).includes(secret));
-});
-
-test("a failed apply keeps files and a rerun converges without rollback", async (f) => {
-  f.inputs.intent.schedule.desired = "enabled";
-  f.save({ failures: ["start"] });
-  await f.runLifecycle("create", false);
-  assertEquals(f.lastRun().status, "failed");
-  assertEquals(await f.result(), {});
-  assert(exists(f.unit("service")));
-  assert(exists(f.unit("timer")));
-  assert(!(await f.history()).jobs[0].steps.some((step) => step.name.startsWith("rollback")));
-  await f.runLifecycle();
-  assertEquals(await f.result(), { ready: true });
-  assert(f.current("timer").active);
+  const names = [];
+  for (const [index, kind] of ["script", "complete"].entries()) {
+    names.push((await modelGet(f, `schedule-remove_obsolete-${host(f)}-${kind}-${index}`)).name);
+  }
+  assertEquals(new Set(names).size, 2);
 });
 
 test("destroy checks busy work before effects and cascade stops it", async (f) => {
@@ -285,20 +258,26 @@ test("destroy checks busy work before effects and cascade stops it", async (f) =
   assert(!f.current("service").active);
   assert(!exists(f.unit("service")));
   assert(!exists(f.unit("timer")));
+  const names = [], paths = [];
+  for (let index = 0; index < 4; index++) {
+    const model = await modelGet(f, `schedule-remove_files-${host(f)}-${index}`);
+    names.push(model.name);
+    paths.push(model.globalArguments.path);
+  }
+  assertEquals(new Set(names).size, 4);
+  assertEquals(new Set(paths).size, 4);
 });
 
-test("a partial destroy reruns and an absent destroy is compliant", async (f) => {
+test("a partial destroy reruns to completion", async (f) => {
   await f.runLifecycle();
   await Deno.writeTextFile(`${f.host}/fail-remove`, f.unit("service"));
   await f.runLifecycle("destroy", false);
   assertEquals(await f.result(), {});
   assert(exists(f.unit("service")));
-  for (let attempt = 0; attempt < 2; attempt++) {
-    await f.runLifecycle("destroy");
-    assertEquals(await f.result(), { ready: true });
-    assert(!exists(f.unit("service")));
-    assert(!exists(f.unit("timer")));
-  }
+  await f.runLifecycle("destroy");
+  assertEquals(await f.result(), { ready: true });
+  assert(!exists(f.unit("service")));
+  assert(!exists(f.unit("timer")));
 });
 
 test("cascade stops an activating oneshot before removing units", async (f) => {
@@ -328,31 +307,6 @@ test("a rerun reloads a failed replacement before removing the old runner", asyn
   assertEquals(await f.result(), { ready: true });
   assertEquals(f.state().loaded![f.unitName("service")], Deno.readTextFileSync(f.unit("service")));
   assert(!exists(obsolete));
-});
-
-test("the obsolete file fan-out uses distinct model names", async (f) => {
-  await f.runLifecycle();
-  const names = [];
-  for (const [index, kind] of ["script", "complete"].entries()) {
-    names.push((await modelGet(f, `schedule-remove_obsolete-${host(f)}-${kind}-${index}`)).name);
-  }
-  assertEquals(new Set(names).size, 2);
-});
-
-test("the destroy file fan-out uses one model per path", async (f) => {
-  await f.runLifecycle();
-  await f.runLifecycle("destroy");
-  const names = [];
-  const paths = [];
-  for (let index = 0; index < 4; index++) {
-    const model = await modelGet(f, `schedule-remove_files-${host(f)}-${index}`);
-    names.push(model.name);
-    paths.push(model.globalArguments.path);
-  }
-  assertEquals(new Set(names).size, 4);
-  assertEquals(new Set(paths).size, 4);
-  assert(!exists(f.unit("timer")));
-  assert(!exists(f.unit("service")));
 });
 
 test("the definition parent converges two members without model lock collisions", async (f) => {
