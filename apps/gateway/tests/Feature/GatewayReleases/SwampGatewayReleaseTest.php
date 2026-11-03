@@ -103,6 +103,20 @@ it('admits one run with the frozen intent and mints the read token only at run s
         ->and(json_encode($start))->not->toContain('release-token-sentinel');
 });
 
+it('ends the record when the run does not start, so the release unit can run again', function (): void {
+    $this->socket->reply = fn (array $m): array => [['type' => 'error', 'id' => $m['id'], 'error' => ['code' => 'vault_write_denied', 'message' => 'denied']]];
+    try {
+        app(AdmitSwampGatewayReleaseAction::class)->execute($this->sha);
+    } catch (Throwable) {
+        // Admission reports the start failure; the record must not stay running.
+    }
+    $record = GatewayRelease::query()->sole();
+
+    expect($record->outcome)->toBe('failed')
+        ->and($record->retryable)->toBeTrue()
+        ->and(app(GatewayReleaseRecorder::class)->swampRunActive())->toBeFalse();
+});
+
 it('refuses a short commit and a second release while one runs', function (): void {
     expect(fn () => app(AdmitSwampGatewayReleaseAction::class)->execute(substr($this->sha, 0, 12)))
         ->toThrow(fn (GatewayReleaseException $e) => expect($e->errorCode)->toBe('gateway.release_commit_invalid'));

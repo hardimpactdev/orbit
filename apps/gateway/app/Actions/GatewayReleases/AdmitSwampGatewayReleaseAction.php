@@ -18,7 +18,10 @@ use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\GatewayRelease;
 use App\Models\Node;
+use App\Models\Operation;
+use App\Models\Process;
 use Illuminate\Support\Facades\Config;
+use Throwable;
 
 /**
  * Admits one Gateway release as the `gateway.release` Swamp run (`gateway:release:deploy --swamp`). The Gateway is
@@ -57,13 +60,35 @@ final readonly class AdmitSwampGatewayReleaseAction
         $web = $this->web->select($commit);
         $horizon = GatewayHorizon::find($gateway);
         $record = $this->recorder->begin('deploy', $commit, null, $force) ?? throw new GatewayReleaseException('deploy', 'gateway.release_record_failed', 'The release record cannot be written.', 500);
-        $operation = $this->operations->execute('gateway.release', 'gateway_release', $record->id, self::SwampNode, [
+        try {
+            $operation = $this->start($record, $commit, $force, $previous, $delivery['manifest'], $web, $horizon, $gateway);
+        } catch (Throwable $exception) {
+            // A run that never started changed nothing; its record must not hold the release unit back.
+            $this->recorder->fail($record, $exception, retryable: true, durationMs: 0, phase: 'run');
+
+            throw $exception;
+        }
+        $this->recorder->progress($record, ['run' => ['operation_id' => $operation->id]], $commit);
+        if ($operation->status->terminal()) {
+            $this->recorder->fail($record, new GatewayReleaseException('run', $operation->error_code ?? 'gateway.release_run_failed',
+                "The Swamp run of Operation {$operation->id} did not start.", 503, sha: $commit), retryable: true, durationMs: 0, phase: 'run');
+        }
+
+        return $record->refresh();
+    }
+
+    /**
+     * @param  array{repository: string, artifact_id: int, size: int, digest: string}  $web
+     */
+    private function start(GatewayRelease $record, string $commit, bool $force, string $previous, string $manifest, array $web, ?Process $horizon, Node $gateway): Operation
+    {
+        return $this->operations->execute('gateway.release', 'gateway_release', $record->id, self::SwampNode, [
             'sha' => $commit,
             'id' => GatewayReleaseCommit::id($commit),
             'force' => $force,
             'previous' => $previous,
             'repository' => $web['repository'],
-            'manifest' => $delivery['manifest'],
+            'manifest' => $manifest,
             'web' => ['artifact_id' => $web['artifact_id'], 'size' => $web['size'], 'digest' => $web['digest']],
             'horizon_unit' => $horizon === null ? '' : new SystemdProcessRenderer()->unitName($horizon),
             'horizon_drain_seconds' => GatewayHorizon::longestJobSeconds() + 30,
@@ -71,8 +96,5 @@ final readonly class AdmitSwampGatewayReleaseAction
             'ssh' => $this->ssh->forNode($gateway),
             'swamp_ssh' => $this->ssh->forNode(Node::query()->findOrFail(self::SwampNode)),
         ], 'gateway-release', null, lockKey: 'gateway-release');
-        $this->recorder->progress($record, ['run' => ['operation_id' => $operation->id]], $commit);
-
-        return $record->refresh();
     }
 }
