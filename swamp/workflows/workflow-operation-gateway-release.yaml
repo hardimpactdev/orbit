@@ -253,7 +253,8 @@ jobs:
             "$app/bootstrap/cache/config.php" "$path.partial" || { rm -f "$path.partial"; echo "gateway.release_snapshot_failed: VACUUM INTO failed" >&2; exit 1; }
           sync "$path.partial" && mv "$path.partial" "$path"
           paused=$(jq -r '.snapshot // empty' /home/orbit/.orbit/gateway-release.paused 2>/dev/null || true)
-          ls -1t "$backups"/pre-*.sqlite | tail -n +4 | grep -vxF -- "${paused:-/}" | xargs -r rm -f --
+          # grep -v exits 1 when it passes no line, as with three snapshots or fewer; that is no failure.
+          ls -1t "$backups"/pre-*.sqlite | tail -n +4 | { grep -vxF -- "${paused:-/}" || true; } | xargs -r rm -f --
           printf '%s\n' "$path"
         - bash
         - ${{ inputs.intent.id }}
