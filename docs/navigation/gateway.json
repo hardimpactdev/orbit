@@ -18,7 +18,6 @@
             "cli/gateway/release-show",
             "cli/gateway/release-deploy",
             "cli/gateway/release-rollback",
-            "cli/gateway/release-smoke",
             "cli/gateway/release-auto-status",
             "cli/gateway/release-auto-enable",
             "cli/gateway/release-auto-disable",

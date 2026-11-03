@@ -7,12 +7,18 @@ namespace App\Domain\Tasks;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\OperationStatus;
+use App\Domain\Processes\ProcessInstanceOperation;
+use App\Domain\Processes\ProcessLifecycleInput;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmEnrollmentProjection;
 use App\Domain\TaskVms\TaskVmProvisionIntent;
 use App\Domain\TaskVms\TaskVmState;
+use App\Infrastructure\Swamp\PendingSshHostKey;
 use App\Models\Instance;
 use App\Models\Operation;
+use App\Models\Route;
 use App\Models\Task;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
@@ -29,8 +35,24 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
         $input = $this->vms->input($operation);
         $intent = ValidatedData::object($input['intent']);
         $group = Task::topLevel()->findOrFail($operation->target_id);
+        $guest = Instance::query()->findOrFail(ValidatedData::integer($operation->input['instance_id']))->node_id;
+        // The guest's targets carry `host_keys: null`; the workflow binds the key its VM step pins.
+        $members = [];
+        $copies = ValidatedData::object($input['execution_secrets'] ?? []);
+        app(PendingSshHostKey::class)->during($guest, function () use ($operation, &$members, &$copies): void {
+            foreach (ProcessInstanceOperation::members($operation) as $member) {
+                $native = app(ProcessLifecycleInput::class)->forInstanceMember($operation, $member);
+                $members[] = ['id' => $member['id'], 'intent' => $native['intent']];
+                if (isset($native['execution_secrets']['environment'])) {
+                    $copies['member_'.$member['id']] = $native['execution_secrets']['environment'];
+                }
+            }
+        });
+        $route = is_array($operation->input['route'] ?? null) ? $operation->input['route'] : null;
 
-        return [...$input, 'intent' => [...$intent, 'eligible' => ($intent['eligible'] ?? false) && $group->status === TaskGroupStatus::Reserved]];
+        return [...$input, 'execution_secrets' => $copies, 'intent' => [...$intent,
+            'eligible' => ($intent['eligible'] ?? false) && $group->status === TaskGroupStatus::Reserved,
+            'processes' => $members, 'route' => $route['route_create'] ?? null, 'route_secrets' => $route['execution_secrets'] ?? (object) []]];
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -52,6 +74,7 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
             $instance = Instance::query()->where('task_workspace_owner_id', $group->id)
                 ->where('node_id', $vm->node_id)->where('project_id', $group->project_id)->findOrFail(ValidatedData::integer($operation->input['instance_id']));
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
+            $this->recordRuntime($operation, $result, $data['error_code'] ?? null);
             $intent = ValidatedData::object($operation->input['enrollment']);
             if (in_array($data['status'], ['succeeded', 'failed', 'interrupted', 'cancelled'], true) && ($result['ready'] ?? false) === true) {
                 $provider = ValidatedData::object($result['provider'] ?? []);
@@ -91,8 +114,41 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
     }
 
     /**
-     * The end check prints the receipt and fails on its error code; a failed step keeps no stdout,
-     * so the receipt then comes from the workspace step, which always ends with it.
+     * The workspace Route and Processes from the receipt's step outcomes, as instance.register records them.
+     *
+     * @param  array<string,mixed>  $result
+     */
+    private function recordRuntime(Operation $operation, array $result, mixed $errorCode): void
+    {
+        $routeId = $operation->input['route_id'] ?? null;
+        if (is_int($routeId) && in_array($result['route'] ?? null, ['succeeded', 'failed'], true)) {
+            $route = Route::query()->findOrFail($routeId);
+            $route->update($result['route'] === 'succeeded'
+                ? ['status' => RouteStatus::Active, 'sites_published' => true, 'failed_step' => null, 'error_code' => null]
+                : ['failed_step' => 'native-create', 'error_code' => is_string($errorCode) ? $errorCode : 'tasks.provision_failed']);
+        }
+        $statuses = [];
+        foreach (is_array($result['processes'] ?? null) ? $result['processes'] : [] as $entry) {
+            if (is_string($entry) && str_contains($entry, '=')) {
+                [$step, $status] = explode('=', $entry, 2);
+                $statuses[$step] = $status;
+            }
+        }
+        foreach (ProcessInstanceOperation::members($operation) as $index => $member) {
+            $status = $statuses['Create, start Processes-'.$index] ?? null;
+            if (! in_array($status, ['succeeded', 'failed'], true)) {
+                continue;
+            }
+            $view = clone $operation;
+            $view->input = [...$operation->input, 'members' => [$member]];
+            app(ProcessInstanceOperation::class)->completeMembers($view, OperationStatus::from($status),
+                $status === 'failed' ? (is_string($errorCode) ? $errorCode : 'tasks.provision_failed') : null, []);
+        }
+    }
+
+    /**
+     * The end check prints the whole receipt, workspace Route and Processes included. When it never ran, the
+     * receipt comes from the workspace step, which always ends with it.
      *
      * @param  array<string,mixed>  $result
      * @return array<string,mixed>

@@ -2,12 +2,16 @@ import { assert, assertEquals, assertFalse, assertNotEquals, assertStringInclude
 import { productionFixture } from "../../../../tests/_support/production_deploy_fixture.ts";
 import { exists, git, TOOL } from "../../../../tests/_support/instance_fixture.ts";
 Deno.test("production deploy prepares, activates, restarts and cleans up without private output", async () => {
-  const { f, home, release, directory, head, sentinel, command, deploy, calls } = await productionFixture();
+  const { f, home, release, directory, head, sentinel, inputs, command, deploy, calls } = await productionFixture();
   await using _ = f;
   await command(`test -z "$(cat)"; printf %s ${sentinel}; printf "$PWD" > ${f.node}/before-ran`);
   await command(`printf %s ${sentinel}; readlink ${home}/current > ${f.node}/after-saw`, "after_activation");
+  inputs.intent.deployment.needs_vp = true;
   const before = (await Deno.lstat(`${home}/current`)).ino;
   const { steps } = await deploy();
+  assertEquals(steps["Read Vite manager CLI"].status, "skipped");
+  assertEquals(steps["Publish public Vite CLI"].status, "skipped");
+  assertEquals(steps["dev-vp-manager-ready"].status, "succeeded");
   assertEquals(git(directory, "rev-parse", "HEAD"), head);
   assertEquals(await Deno.readLink(`${home}/current`), `releases/${release}`);
   assertNotEquals((await Deno.lstat(`${home}/current`)).ino, before);
@@ -43,13 +47,6 @@ Deno.test("a pinned commit off the first-parent chain stops before environment a
   assertEquals(await Deno.readTextFile(`${home}/.env`), "APP_KEY=old\n");
   assertEquals(calls(), []);
 });
-Deno.test("a pinned commit on the first-parent chain deploys exactly that commit", async () => {
-  const { f, directory, first, pin, deploy } = await productionFixture();
-  await using _ = f;
-  pin(first);
-  assertEquals((await deploy()).steps["Check the branch commit"].status, "succeeded");
-  assertEquals(git(directory, "rev-parse", "HEAD"), first);
-});
 Deno.test("a foreign production environment key refuses before writing", async () => {
   const { f, home, deploy } = await productionFixture();
   await using _ = f;
@@ -59,9 +56,9 @@ Deno.test("a foreign production environment key refuses before writing", async (
   assertEquals(await Deno.readLink(`${home}/current`), "releases/initial");
 });
 Deno.test("a failed before step keeps the old release and skips later commands and cleanup", async () => {
-  const { f, home, command, deploy } = await productionFixture();
+  const { f, home, sentinel, command, deploy } = await productionFixture();
   await using _ = f;
-  await command("exit 4");
+  await command(`private_${sentinel} {`);
   await command(`touch ${f.node}/second-ran`);
   const { steps } = await deploy(false);
   assertEquals([steps["Run before steps-0"].status, steps["Run before steps-1"].status, steps["Swap current"].status], [
@@ -71,13 +68,6 @@ Deno.test("a failed before step keeps the old release and skips later commands a
   assertFalse(exists(`${f.node}/second-ran`));
   assert(exists(`${home}/releases/old`));
   assertFalse([...Deno.readDirSync(f.node)].some((e) => e.name.startsWith("step-")));
-});
-Deno.test("a private syntax error fails without echoing the command", async () => {
-  const { f, home, sentinel, command, deploy } = await productionFixture();
-  await using _ = f;
-  await command(`private_${sentinel} {`);
-  assertEquals((await deploy(false)).steps["Run before steps-0"].status, "failed");
-  assertEquals(await Deno.readLink(`${home}/current`), "releases/initial");
 });
 Deno.test("a failed restart keeps the new release and stops after steps", async () => {
   const { f, home, release, command, deploy } = await productionFixture();
@@ -120,8 +110,18 @@ Deno.test("a user step that moves checkout fails the end check", async () => {
   assertEquals((await deploy(false)).steps["Check the deployment"].status, "failed");
   assertEquals(await Deno.readLink(`${home}/current`), `releases/${release}`);
 });
-Deno.test("production deploy installs a captured timer without copying its private command", async () => {
-  const { f, home, inputs, deploy } = await productionFixture();
+Deno.test("an empty persistent directory is seeded once", async () => {
+  const { f, home, directory, first, pin, deploy } = await productionFixture();
+  await using _ = f;
+  pin(first);
+  await Deno.remove(`${home}/storage`, { recursive: true });
+  assertEquals((await deploy()).steps["Check the branch commit"].status, "succeeded");
+  assertEquals(git(directory, "rev-parse", "HEAD"), first);
+  assertEquals(await Deno.readTextFile(`${home}/storage/app/kept.txt`), "from the release\n");
+  assertEquals(await Deno.readTextFile(`${home}/storage/app/new.txt`), "new\n");
+});
+Deno.test("production publishes only manager CLI and uses app-owned Vite cache", async () => {
+  const { f, home, origin, inputs, sentinel, deploy, calls } = await productionFixture();
   await using _ = f;
   const id = "9fd64da7-2e68-4b7c-983a-55707946c795";
   inputs.intent.runtime_definitions.schedules = [{
@@ -130,23 +130,6 @@ Deno.test("production deploy installs a captured timer without copying its priva
     shell: "/bin/bash", login_shell: false, calendar: "*-*-* 03:00:00", command_hash: "a".repeat(64),
     timeout_seconds: 30, desired: "disabled",
   }];
-  assertEquals((await deploy()).steps["Check Schedule timers-0"].status, "succeeded");
-  assertStringIncludes(
-    await Deno.readTextFile(`${f.node}/etc/systemd/system/orbit-schedule-${id}.timer`),
-    "OnCalendar=*-*-* 03:00:00",
-  );
-});
-Deno.test("an empty persistent directory is seeded once", async () => {
-  const { f, home, deploy } = await productionFixture();
-  await using _ = f;
-  await Deno.remove(`${home}/storage`, { recursive: true });
-  await deploy();
-  assertEquals(await Deno.readTextFile(`${home}/storage/app/kept.txt`), "from the release\n");
-  assertEquals(await Deno.readTextFile(`${home}/storage/app/new.txt`), "new\n");
-});
-Deno.test("production publishes only manager CLI and uses app-owned Vite cache", async () => {
-  const { f, home, origin, inputs, sentinel, deploy, calls } = await productionFixture();
-  await using _ = f;
   const manager = `${f.node}/manager/.local/share/vite-plus/bin/vp`;
   await Deno.mkdir(`${f.node}/manager/.local/share/vite-plus/bin`, { recursive: true });
   await Deno.writeTextFile(
@@ -176,6 +159,12 @@ else if (Deno.args.includes("list")) console.log(JSON.stringify({ node: [{ versi
   git(origin, "commit", "-qm", "Vite project");
   inputs.intent.deployment.needs_vp = true;
   const { steps } = await deploy();
+  assertEquals(steps["Check Schedule timers-0"].status, "succeeded");
+  assertStringIncludes(
+    await Deno.readTextFile(`${f.node}/etc/systemd/system/orbit-schedule-${id}.timer`),
+    "OnCalendar=*-*-* 03:00:00",
+  );
+
   const published = `${f.node}/public/bin/vp`;
   assertEquals(await Deno.readFile(published), await Deno.readFile(manager));
   assertEquals((await Deno.stat(published)).mode! & 0o777, 0o755);
@@ -186,13 +175,4 @@ else if (Deno.args.includes("list")) console.log(JSON.stringify({ node: [{ versi
   assert(rows.every((row) => row[1] === `${home}/.local/share/vite-plus`));
   assertEquals(rows[0].slice(2), ["--version"]);
   assert(rows.slice(1).every((row) => row[2] === "-C" && row[3] === f.node));
-});
-Deno.test("a Vite command without Vite dependency needs no manager", async () => {
-  const { f, inputs, deploy } = await productionFixture();
-  await using _ = f;
-  inputs.intent.deployment.needs_vp = true;
-  const { steps } = await deploy();
-  assertEquals(steps["Read Vite manager CLI"].status, "skipped");
-  assertEquals(steps["Publish public Vite CLI"].status, "skipped");
-  assertEquals(steps["dev-vp-manager-ready"].status, "succeeded");
 });

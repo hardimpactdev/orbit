@@ -13,7 +13,7 @@
                 "record": 2,
                 "release": "fedcba987654",
                 "sha": "fedcba9876543210fedcba9876543210fedcba98",
-                "error_code": "gateway.release_smoke_failed",
+                "error_code": "gateway.release_migrate_failed",
                 "snapshot": "/home/orbit/.orbit/backups/pre-fedcba987654.sqlite"
             },
             "current_release": "0123456789ab",

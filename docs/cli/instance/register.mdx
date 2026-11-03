@@ -2,6 +2,9 @@
 title: "orbit instance:register"
 sidebarTitle: "instance:register"
 description: "Adopt an existing Git checkout in place. Run it on the app-dev Node that holds the source."
+covers:
+  - apps/gateway/database/migrations/2027_01_13_150000_allow_unrouted_registered_instances.php
+  - apps/gateway/app/Domain/Instances/{InstanceRegisterResult,RegistrationFacts}.php
 ---
 
 ```bash
@@ -11,22 +14,27 @@ orbit instance:register --project=ID [--idempotency-key=KEY] [options]
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--path=PATH` | the current directory | Checkout already at `<apps-root>/<project-slug>/<name>`. |
-| `--project=ID` | required | Existing numeric Project ID, with no Route. |
+| `--project=ID` | required | Existing numeric Project ID. |
 | `--name=NAME` | directory name | Instance name; an explicit Project default branch name becomes `default`. |
 | `--root=PATH` | the Project root | Valid relative root override. |
 | `--yes` | off | Confirm source ownership transfer without prompting. |
-| `--include-worktrees` | off | Currently unavailable. |
-| `--domain=HOST` | none | Currently unavailable. |
-| `--setup` | off | Currently unavailable. |
+| `--include-worktrees` | off | Reserved for adopting every worktree; unavailable. A single linked worktree needs no flag. |
+| `--domain=HOST` | none | Create a Route in the Node TLD after registration. |
+| `--setup` | off | Run the Project setup steps, then create and start its development Processes. |
 
-The CLI refuses a directory outside Git and an origin with credentials before sending a request. The Gateway then checks the [Node agent's report](/reference/node-agent#checkouts) of the checkout: one plain checkout, not a linked worktree, of the Project's repository, owned by the Node account. It reads nothing on the Node for that check.
+The CLI refuses a directory outside Git and an origin with credentials before sending a request. The Gateway checks the [Node agent's fresh checkout report](/reference/node-agent#checkouts): the source must belong to the Node account and the Project repository. A plain checkout and a linked worktree of that repository are accepted. A branch renamed after the worktree was created is recorded as reported; registration changes no Git metadata.
 
-- When `.env` is absent or only its owner can read it, the Gateway registers the Instance at once and answers HTTP 201 with it. No task runs.
-- When others can read `.env`, or an agent before 0.8.0 did not report it, the Gateway answers HTTP 202 with an Operation. The CLI follows it: Swamp removes group and public access from `.env`, then the Instance becomes active.
+With a private or absent `.env` and no opt-in work, registration answers HTTP 201 with the active Instance. It starts no Operation and reads nothing on the Node. The Gateway records the observed branch, commit, PHP version and Laravel marker.
 
-While the agent is silent or has not reported the checkout, registration refuses with `instance.source_invalid` and says it can't verify; nothing is reserved. Registration never creates a Project. Run [`project:create`](/cli/project/create) first.
+`--setup`, `--domain`, or a publicly readable `.env` starts one native Operation and answers HTTP 202. Its guarded steps protect an existing public `.env` as `0640 orbit-env`, run the Project setup steps in order, start its development Processes, and create the Route through the same child workflow as `route:create`. Each step runs only when requested or needed. The Route must answer over TLS before the Instance becomes active.
 
-Project inference, relocation, linked worktrees, setup, domain requests and web-serving Projects return `operation.kind_unavailable` before reservation. See [Register an existing checkout](/domains/applications#register-an-existing-checkout).
+An unfinished registration marks its prepared development runtime awake after publication, so the first request can use it. Retrying a completed registration without `--setup` preserves its current awake state. With `--setup`, the run checks and starts all Project-defined Processes before it can mark the runtime awake. Existing containers start in place.
+
+Setup uses a private umask for new files. If setup has no steps or Process definitions and no other Node work is needed, registration returns HTTP 201 without a run. Registration preserves the user's `.env`; setup follows the Project's commands, and Route creation may set its `APP_URL`.
+
+A failed step keeps the checkout and the Instance reserved with failure details. Fix the cause and repeat the request. Completed work stays in place. With a silent agent, missing checkout metadata or mismatched ownership or origin, the Gateway refuses before reservation with `instance.source_invalid` or the specific source error.
+
+Registration requires an existing Project and an in-place source under its configured apps directory. Project inference, source relocation and adopting every worktree remain unavailable. See [Register an existing checkout](/domains/applications#register-an-existing-checkout).
 
 In a terminal, the CLI asks for default-No consent that names the source. JSON and noninteractive calls need `--yes`.
 

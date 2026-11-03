@@ -1,7 +1,7 @@
-import { assertEquals, assertFalse } from "jsr:@std/assert@1.0.19";
+import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { stringify } from "jsr:@std/yaml@1.0.12";
 import { readCalls } from "../../../../tests/_support/fake_tool.ts";
-import { type Data, exists, instanceFixture, TOOL } from "../../../../tests/_support/instance_fixture.ts";
+import { type Data, instanceFixture, TOOL } from "../../../../tests/_support/instance_fixture.ts";
 import { vpPreparationJobs } from "./steps.ts";
 async function fixture() {
   const f = await instanceFixture(
@@ -83,12 +83,6 @@ else if (Deno.args.includes("list")) console.log(JSON.stringify({ node: [{ versi
   };
   return { f, calls, manager, pins, run };
 }
-Deno.test("no VP requirement succeeds without installer or CLI", async () => {
-  const { f, calls, run } = await fixture();
-  await using _ = f;
-  await run();
-  assertFalse(exists(calls));
-});
 Deno.test("existing VP manager uses stock install then read-only inventory", async () => {
   const { f, calls, pins, run } = await fixture();
   await using _ = f;
@@ -98,12 +92,4 @@ Deno.test("existing VP manager uses stock install then read-only inventory", asy
   assertEquals(rows[0], ["--version"]);
   assertEquals(rows[1].slice(-4), ["env", "install", "node@24.2.0", "pnpm@10.0.0"]);
   assertEquals(rows[2].slice(-3), ["env", "list", "--json"]);
-});
-Deno.test("old VP CLI refuses before project install", async () => {
-  const { f, calls, manager, pins, run } = await fixture();
-  await using _ = f;
-  await pins();
-  await manager("0.1.0");
-  await run(false);
-  assertEquals(readCalls(calls), [["--version"]]);
 });

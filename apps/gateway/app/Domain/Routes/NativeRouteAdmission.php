@@ -16,18 +16,18 @@ final readonly class NativeRouteAdmission
     /** @param array<string,mixed> $input
      * @return array<string,mixed>
      */
-    public function capture(string $kind, Route $route, array $input, int $rootNodeId): array
+    public function capture(string $kind, Route $route, array $input, int $rootNodeId, bool $preserveEnvironment = false, bool $preparedWorkloads = false, bool $wakePreparedWorkloads = false): array
     {
         $capture = match ($kind) {
             'route.update' => app(NativeRouteUpdateInput::class)->capture($route, $input),
             'route.target_set' => app(NativeRouteTargetInput::class)->capture($route, $input),
-            'route.create' => app(NativeRouteLifecycleInput::class)->capture($route, $input),
+            'route.create' => app(NativeRouteLifecycleInput::class)->capture($route, $input, preserveEnvironment: $preserveEnvironment, preparedWorkloads: $preparedWorkloads, wakePreparedWorkloads: $wakePreparedWorkloads),
             default => throw new ResourceOperationException('operation.kind_unavailable', 'This Route kind has no standalone capture.', 409),
         };
 
         return [...$input, match ($kind) {
             'route.update' => 'route_update', 'route.target_set' => 'route_target', default => 'route_lifecycle'
-        } => $capture['intent'], ...($kind === 'route.create' ? ['route_create' => app(NativeRouteCreatePlan::class)->build($route, $capture['intent'])] : []),
+        } => $capture['intent'], ...($kind === 'route.create' ? ['route_create' => app(NativeRouteCreatePlan::class)->forCreate($route, $capture['intent'])] : []),
             'certificates' => $capture['certificates'],
             'participant_node_ids' => array_values(array_unique([$rootNodeId, ...ValidatedData::integerList($capture['participant_node_ids'])])),
             'execution_secrets' => $capture['execution_secrets']];

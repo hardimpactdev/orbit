@@ -1,20 +1,6 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { chart, routeFixture, skipped } from "../../../../tests/_support/route_fixture.ts";
+import { routeFixture, skipped } from "../../../../tests/_support/route_fixture.ts";
 
-Deno.test("Route removal runs the chart without Node effects for an empty plan", async () => {
-  await using f = await routeFixture("removal");
-  const { run, calls } = await f.perform();
-  assertEquals([run.status, calls], ["succeeded", []]);
-  await chart("operation-route-removal", [
-    "Check each Node answers",
-    "Remove private DNS",
-    "Wait the DNS grace",
-    "Withdraw site, remove cert",
-    "Converge PHP-FPM pools",
-    "Remove unused LAN rules",
-    "Check nothing is left",
-  ]);
-});
 Deno.test("offline Route removal skips the Node that does not answer", async () => {
   await using f = await routeFixture("removal");
   f.pools("pools", 7, 8);

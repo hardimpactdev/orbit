@@ -38,9 +38,9 @@ final readonly class ProcessInstanceOperation implements DirectOperationProjecti
     }
 
     /** Safe record capture, also reusable by an owning parent admission transaction.
-     * @return array<string,mixed>
+     * @return array{instance_id:int,node_id:int,members:list<array{id:int,input:array<string,mixed>}>}
      */
-    public function capture(Instance $instance, string $kind): array
+    public function capture(Instance $instance, string $kind, bool $includeActive = false): array
     {
         if ($kind !== 'process.install_instance_definitions') {
             throw new ResourceOperationException('operation.kind_unavailable', 'This is not an Instance Process kind.', 409);
@@ -48,15 +48,22 @@ final readonly class ProcessInstanceOperation implements DirectOperationProjecti
         if ($instance->placedOnAppProd()) {
             $instance = app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForClone($instance);
         }
+        $excluded = $includeActive ? [LifecycleStatus::Removing] : [LifecycleStatus::Active, LifecycleStatus::Removing];
         $query = Process::query()->whereIn('owner_type', Instance::morphTypes())->where('owner_id', $instance->id)
-            ->whereNotNull('source_definition_id')->whereNotIn('status', [LifecycleStatus::Active, LifecycleStatus::Removing]);
+            ->whereNotNull('source_definition_id')->whereNotIn('status', $excluded);
         $records = $query->orderBy('id')->lockForUpdate()->limit(4097)->get();
         if ($records->count() > 4096) {
             throw new ResourceOperationException('operation.runtime_limit', 'An Instance runtime plan may contain at most 4096 members.', 409);
         }
         $members = [];
         foreach ($records as $record) {
-            $input = $this->admission->inputFor($record, 'create');
+            $startExisting = $record->status === LifecycleStatus::Active && $record->runtime === ProcessRuntime::Docker;
+            $target = $startExisting ? app(ProcessTargetResolver::class)->forPreparation($instance) : null;
+            $input = $this->admission->inputFor($record, $startExisting ? 'start' : 'create', target: $target);
+            if ($startExisting) {
+                $input['start_existing'] = true;
+                $input['desired'] = 'running';
+            }
             if ($input['node_id'] !== $instance->node_id) {
                 throw new ResourceOperationException('operation.execution_forbidden', 'The Process is placed on another Node.', 422);
             }
@@ -82,14 +89,16 @@ final readonly class ProcessInstanceOperation implements DirectOperationProjecti
         return $result;
     }
 
-    /** An in-memory member view; never saved, admitted or dispatched as another Operation.
+    /** An in-memory member view; never saved, admitted or dispatched as another Operation. A parent that does not
+     * run on the member's Node, such as tasks.provision on the task VM host, names the Instance's Node.
+     *
      * @param  array<string,mixed>  $member
      */
-    public static function member(Operation $parent, array $member): Operation
+    public static function member(Operation $parent, array $member, ?int $nodeId = null): Operation
     {
         $view = new Operation;
-        $view->forceFill(['id' => $parent->id, 'status' => $parent->status, 'kind' => 'process.create',
-            'target_type' => 'process', 'target_id' => $member['id'], 'node_id' => $parent->node_id, 'input' => $member['input']]);
+        $view->forceFill(['id' => $parent->id, 'status' => $parent->status, 'kind' => (ValidatedData::object($member['input'])['start_existing'] ?? false) === true ? 'process.start' : 'process.create',
+            'target_type' => 'process', 'target_id' => $member['id'], 'node_id' => $nodeId ?? $parent->node_id, 'input' => $member['input']]);
 
         return $view;
     }

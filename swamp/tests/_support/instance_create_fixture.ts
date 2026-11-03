@@ -34,7 +34,7 @@ export async function createFixture() {
       checkout: application, application, project_type: "node-package", entry_point: "artisan", php_versions: ["8.4"],
       skip_profile: false,
       retained_source: { commit },
-      processes: [], setup_steps: [], environment_directory: application,
+      processes: [], route: null, route_secrets: null, setup_steps: [], environment_directory: application,
     },
   };
   const environment = async (content: string, directory = application) => {

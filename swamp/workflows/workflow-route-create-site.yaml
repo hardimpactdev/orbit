@@ -556,3 +556,61 @@ jobs:
         nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
         nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
       inputs: {}
+  - name: 'Mark the Instance awake'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'account', condition: {type: always}}
+    - {step: 'web-root', condition: {type: always}}
+    - {step: 'links', condition: {type: always}}
+    - {step: 'pools', condition: {type: always}}
+    - {step: 'pools-test', condition: {type: always}}
+    - {step: 'pools-reload', condition: {type: always}}
+    - {step: 'certificate', condition: {type: always}}
+    - {step: 'certificate-current', condition: {type: always}}
+    - {step: 'account-pair', condition: {type: always}}
+    - {step: 'account-pair-current', condition: {type: always}}
+    - {step: 'trust', condition: {type: always}}
+    - {step: 'trust-store', condition: {type: always}}
+    - {step: 'caddyfile', condition: {type: always}}
+    - {step: 'caddy-validate', condition: {type: always}}
+    - {step: 'caddy-reload', condition: {type: always}}
+    - {step: 'app-url', condition: {type: always}}
+    - {step: 'environment-group', condition: {type: always}}
+    - {step: 'environment', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
+    writes: true
+    forEach: {item: marker, in: '${{ has(inputs.intent.awake) ? inputs.intent.awake.filter(m, m.node_id == inputs.node_id) : [] }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ ("route-awake-" + string(inputs.node_id) + "-" + string(self.marker.instance_id)).split(".").join("-") }}'
+      methodName: apply
+      globalArgs: {path: '${{ self.marker.path }}', content: '', ensure: present, owner: root, group: root, mode: '0644',
+        nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
+        nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
+      inputs: {}
+  - name: 'Check the awake marker'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Mark the Instance awake', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
+    forEach: {item: marker, in: '${{ has(inputs.intent.awake) ? inputs.intent.awake.filter(m, m.node_id == inputs.node_id) : [] }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: '${{ ("route-awake-" + string(inputs.node_id) + "-" + string(self.marker.instance_id)).split(".").join("-") }}'
+      methodName: check
+      globalArgs: {path: '${{ self.marker.path }}', content: '', ensure: present, owner: root, group: root, mode: '0644',
+        nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
+        nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
+      inputs: {}
+  - name: 'Verify the awake state'
+    labels: {role: swamp}
+    dependsOn:
+    - {step: 'Check the awake marker', condition: {type: always}}
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
+    task:
+      type: assert
+      expr: 'steps.filter(k, k.startsWith("Check the awake marker-")).all(k, steps[k].outputs.status == "compliant")'
+      message: instance.awake_marker_failed
+      severity: high

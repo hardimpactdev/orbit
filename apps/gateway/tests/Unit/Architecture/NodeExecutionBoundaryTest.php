@@ -148,7 +148,6 @@ it('keeps Node execution inside the agent transports across core and extensions'
         'app/Infrastructure/GitHub/ProcessGitHubCliToken.php',
         'app/Infrastructure/MachineSoftware/AuthenticatedUbuntuSnapshot.php',
         'app/Infrastructure/MachineSoftware/UbuntuReleaseSignature.php',
-        'app/Infrastructure/GatewayReleases/ScriptGatewayReleaseSmoke.php',
         'app/Infrastructure/AgentView/ProcessAgentViewPublisher.php',
         'app/Jobs/RunScheduledCommand.php',
         // Command rendering for image/topology tooling; these classes do not execute the rendered commands.

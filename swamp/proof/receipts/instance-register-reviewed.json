@@ -1,0 +1,26 @@
+{
+  "kind": "instance.register",
+  "topology": "minimal",
+  "topology_version": 16,
+  "source_commit": "89b81849f9cd45995131c8e770a142d41f5f1b28",
+  "receipt": "/home/nckrtl/swamp-execution/evidence/proof/instance.register/20261103T133735Z-minimal.json",
+  "proof_pass": true,
+  "operation_seconds": 96.91,
+  "native_step_seconds": 94.301,
+  "run_seconds": 108.3,
+  "up_seconds": 150.5,
+  "budget_seconds": 255,
+  "queue_timeout_seconds": 30,
+  "swamp_run_id": "7d673c71-8f5d-4219-8e2f-7ec766295e86",
+  "phases": {
+    "setup": 1.999,
+    "processes": 15.055,
+    "route": 77.247
+  },
+  "scripts_deleted": 0,
+  "named_script_gaps": [],
+  "vm_destroyed": true,
+  "destroyed_at": "2026-11-03T13:40:06Z",
+  "cancel_operation_id": 9402,
+  "limits": "One renamed linked Laravel worktree on app-dev, setup-created private environment, one systemd development Process, a real Route and an ordinary HTTPS GET verified by the Orbit CA. Plain registration is HTTP201 with no Operation. Private canary plaintext and base64 are absent from native history. Docker retry dispatch and failure gating are covered by native and Gateway tests. No production data, scale, later cold-wake cycle or live workspace replay."
+}

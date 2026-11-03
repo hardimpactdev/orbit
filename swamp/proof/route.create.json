@@ -11,9 +11,9 @@
       "operation": false,
       "bind": "project",
       "body": {
-        "slug": "proof-route",
+        "slug": "proof-route-${proof.run}",
         "name": "Proof route",
-        "type": "monorepo",
+        "type": "node-package",
         "root": "public",
         "repository_url": "https://github.com/laravel/laravel.git",
         "default_branch": "13.x"
@@ -26,7 +26,25 @@
       "body": {
         "project_id": "${project.id}",
         "node_id": "${node.target}",
-        "name": "r-${proof.run}"
+        "name": "r-${proof.run}",
+        "branch": "13.x"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "routes",
+      "bind": "bootstrap",
+      "body": {
+        "instance_id": "${instance.id}",
+        "domain": "b-${proof.run}.proof.test"
+      }
+    },
+    {
+      "method": "PATCH",
+      "path": "projects/${project.id}",
+      "operation": false,
+      "body": {
+        "type": "laravel-app"
       }
     }
   ],
@@ -35,7 +53,8 @@
     "path": "routes",
     "body": {
       "instance_id": "${instance.id}",
-      "domain": "r-${proof.run}.proof.test"
+      "domain": "r-${proof.run}.proof.test",
+      "web_root": "public"
     }
   },
   "expect": {
@@ -55,5 +74,6 @@
       "budget_seconds": 30
     }
   ],
-  "parity": "swamp/proof/route.create/parity.py"
+  "parity": "swamp/proof/route.create/parity.py",
+  "clean": true
 }

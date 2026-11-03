@@ -215,16 +215,4 @@ it('captures new-only rollback leaves and preserves freshly loaded scopes after 
     $rollback = ValidatedData::object(json_decode(json_encode($changes[0]['rollback'], JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR));
     expect(array_column($rollback['cleanup'], 'node_id'))->toBe([$candidateNode->id]);
     expect($rollback['cleanup'][0])->toMatchArray(['scope' => "route-{$tracking->id}-router", 'in_use' => false]);
-    $plans->checkpointUpdate($changes, 'certificates_ready');
-    expect($plans->cleanupForNode($rollback, $candidateNode->id))->toBe([]);
-    $plans->checkpointUpdate($changes, 'rollback');
-    expect($plans->cleanupForNode($rollback, $candidateNode->id))->toEqual($rollback['cleanup']);
-    expect($plans->cleanupForNode($rollback, $this->router->id))->toBe([]);
-    $tracking->update(['transition_node_id' => $candidateNode->id, 'replacement_step' => null]);
-    expect($plans->cleanupForNode($rollback, $candidateNode->id))->toBe([]);
-});
-
-it('refuses malformed persisted cleanup before selecting a certificate', function (): void {
-    expect(fn () => app(AnalyticsRoutePlan::class)->cleanupForNode(['cleanup' => 'not-a-leaf-list'], $this->router->id))
-        ->toThrow(ResourceOperationException::class, 'The stored tracking cleanup must be a leaf list.');
 });

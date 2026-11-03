@@ -96,7 +96,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `env` | `import`, `sync` | The CLI imports or synchronizes Instance environment values. |
 | `firewall` | `allow`, `deny`, `inspect` | The CLI writes an allow or deny firewall rule. Inspection records a fresh native snapshot. |
 | `fleet` | `resume`, `status` | The CLI shows the [fleet rollout](/reference/gateway-recovery#fleet-rollout) with `fleet:rollout:status`, or resumes a halted one with `fleet:rollout:resume`. |
-| `gateway` | `deploy`, `resume`, `rollback`, `smoke`, `status`, `trust`, `use` | The CLI reports Gateway status, pins the root certificate, or selects a profile. The `gateway:release` commands deploy, roll back, and smoke-test the Gateway itself, and resume paused automatic releases. |
+| `gateway` | `deploy`, `resume`, `rollback`, `status`, `trust`, `use` | The CLI reports Gateway status, pins the root certificate, or selects a profile. The `gateway:release` commands deploy and roll back the Gateway itself, and resume paused automatic releases. |
 | `github` | `sync` | The Gateway reads the [GitHub App installations](/cli/github/app-sync) from GitHub now; no Operation. |
 | `instance` | `clone`, `deploy`, `logs`, `register`, `rename`, `resolve`, `rollback`, `setup`, `transfer` | The CLI operates on Instance source and runtime, reads logs and runs setup. Rename records the checked-out branch and can move its Route. |
 | `metrics` | `status` | The CLI reports Metrics role status. |

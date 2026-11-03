@@ -8,8 +8,10 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\ProcessInstanceOperation;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
+use App\Models\Route;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
@@ -46,13 +48,19 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
                         'selected_php_version' => ValidatedData::nullableString($input['php_version'] ?? null), 'source_is_laravel' => ($input['laravel'] ?? false) === true,
                         ...(($input['seed_commit'] ?? null) !== null ? ['source_layout' => InstanceSourceLayout::Worktree] : [])]);
                 }
-                if ($data['status'] === 'succeeded' || in_array($result['failed_step'] ?? null, ['setup', 'processes'], true)) {
+                if ($data['status'] === 'succeeded' || in_array($result['failed_step'] ?? null, ['setup', 'processes', 'route'], true)) {
                     $instance->forceFill(['environment_owned_keys' => ValidatedData::stringList($input['environment_keys'] ?? [])])->save();
                 }
+                $route = ($input['route_id'] ?? null) === null ? null : Route::query()->findOrFail(ValidatedData::integer($input['route_id']));
                 if ($data['status'] === 'succeeded') {
+                    // An active routed Instance needs its active Route, so the Route turns active first.
+                    $route?->update(['status' => RouteStatus::Active, 'sites_published' => true, 'failed_step' => null, 'error_code' => null]);
                     $instance->update(['status' => InstanceState::Active, 'provisioning_step' => 'active', 'first_setup_pending' => false, 'failed_step' => null, 'error_code' => null]);
                 } elseif (in_array($data['status'], ['failed', 'cancelled'], true)) {
                     $instance->update(['failed_step' => $result['failed_step'] ?? 'source', 'error_code' => $data['error_code'] ?? 'operation.cancelled']);
+                    if (($result['failed_step'] ?? null) === 'route') {
+                        $route?->update(['failed_step' => 'native-create', 'error_code' => $result['error_code'] ?? 'instance.create_route_failed']);
+                    }
                 }
                 app(ProcessInstanceOperation::class)->completeMembers($operation, OperationStatus::from(ValidatedData::string($data['status'])),
                     ValidatedData::nullableString($data['error_code'] ?? null), $result);

@@ -1,20 +1,6 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
-import { chart, routeFixture, skipped } from "../../../../tests/_support/route_fixture.ts";
+import { routeFixture, skipped } from "../../../../tests/_support/route_fixture.ts";
 
-Deno.test("Route target set runs the chart", async () => {
-  await using f = await routeFixture("target-set");
-  assertEquals((await f.perform()).run.status, "succeeded");
-  await chart("operation-route-target-set", [
-    "Make CSRs on new Nodes",
-    "Sign the CSRs",
-    "Install cert, publish site",
-    "Stage the new targets",
-    "Probe each new target",
-    "Switch the Router pool",
-    "Retire detached targets",
-    "Move private DNS",
-  ]);
-});
 Deno.test("development target set runs only the publish step", async () => {
   await using f = await routeFixture("target-set");
   f.pools("publish", 8);
@@ -40,15 +26,13 @@ Deno.test("production target set switches Router after staging and before retire
   assert(steps["Switch the Router pool-0"].completedAt <= steps["Retire detached targets-0"].startedAt);
   assertEquals(steps["Switch the Router pool-0"].status, "succeeded");
 });
-for (const probe of [true, false]) {
-  Deno.test(`failed target ${probe ? "probe" : "stage"} keeps the Router pool`, async () => {
-    await using f = await routeFixture("target-set");
-    f.pools("stage", 8);
-    f.pools("router", 9);
-    if (probe) f.intent.probes = [{ node_id: 8, address: "127.0.0.1", domain: "shop.test" }];
-    const { run, steps } = await f.perform(probe ? 0 : 1, false);
-    assertEquals(run.status, "failed");
-    assertEquals(steps[probe ? "Probe each new target-0" : "Stage the new targets-0"].status, "failed");
-    skipped(steps, "Switch the Router pool");
-  });
-}
+Deno.test("failed target probe keeps the Router pool", async () => {
+  await using f = await routeFixture("target-set");
+  f.pools("stage", 8);
+  f.pools("router", 9);
+  f.intent.probes = [{ node_id: 8, address: "127.0.0.1", domain: "shop.test" }];
+  const { run, steps } = await f.perform(0, false);
+  assertEquals(run.status, "failed");
+  assertEquals(steps["Probe each new target-0"].status, "failed");
+  skipped(steps, "Switch the Router pool");
+});

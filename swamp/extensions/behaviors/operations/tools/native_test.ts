@@ -44,3 +44,13 @@ Deno.test("Linux Vite+ uses the recipe launcher, which selects its installed sto
   assertEquals(c.version.includes("/usr/local/bin/vp"), true);
   assertEquals(c.write.some(arg => arg.startsWith("VP_HOME=")), false);
 });
+
+Deno.test("Homebrew write and remove commands retain the admitted package", () => {
+  for (const platform of ["linux", "macos"]) {
+    const value = WriteInput.parse({ ...input("brew"), platform, architecture: "arm64" });
+    const c = commands(value);
+    assertEquals(c.write.slice(-4), ["install", "--formula", "--force-bottle", "homebrew/core/hello"]);
+    assertEquals(c.remove.slice(-3), ["uninstall", "--formula", "hello"]);
+    assertEquals(c.write.includes("-c") || c.remove.includes("-c"), false);
+  }
+});

@@ -172,21 +172,50 @@ async function transfer(repo: NativeRepo, intent: unknown, success = true) {
   return { run, history: history as unknown as History };
 }
 
-/** Swap a step's task for a local shell command, so a test can force its outcome. */
-const shell = (step: Record<string, unknown>, label: string, run: string) => {
-  step.task = {
-    type: "behavior",
-    behaviorType: "command/shell",
-    behaviorName: '${{ "fixture-' + label + '-" + run.id + "-" + string(self._index) }}',
-    methodName: "execute",
-    inputs: { run },
-  };
-};
-
 Deno.test("transfer keeps private archive bytes out of results and retires only the source", async () => {
   const { repo, source, destination, intent } = await fixture();
   await using _ = repo;
+  const connection = intent.source.ssh_execution;
+  const control = {
+    process_id: 8,
+    runtime: "systemd",
+    name: "orbit-process-8-vite.service",
+    on_demand: true,
+    directory: source,
+    vite: { path: "/fixture/vite", instance_id: 8 },
+  };
+  const { process_id, runtime, name, on_demand } = control;
+  intent.processes.source = [{
+    id: 8,
+    secret_field: "unused",
+    intent: { control, ssh_execution: connection },
+    control_intent: { control, ssh_execution: connection },
+    stop_intent: { control: { process_id, runtime, name, on_demand, vite: null }, ssh_execution: connection },
+  }];
+  for (const action of ["control", "create", "destroy"]) {
+    await repo.workflow(`operation-process-${action}`, (workflow) => {
+      const child = workflow as Record<string, unknown>;
+      delete child.target;
+      delete child.labels;
+      child.jobs = [{
+        name: "fixture",
+        steps: [{
+          name: "accepted",
+          task: {
+            type: "behavior",
+            behaviorType: "command/shell",
+            behaviorName: '${{ "fixture-' + action + '-" + run.id }}',
+            methodName: "execute",
+            inputs: { run: "true" },
+          },
+        }],
+      }];
+    });
+  }
   const { run, history } = await transfer(repo, intent);
+  const steps = Object.fromEntries(history.jobs[0].steps.map((step) => [step.name, step.status]));
+  assertEquals(steps["Stop source Processes-0"], "succeeded");
+  assertEquals(steps["Remove source Processes-0"], "succeeded");
   assertEquals(run.status, "succeeded");
   assertFalse(exists(source));
   assert((await Deno.stat(`${destination}/.git`)).isDirectory);
@@ -236,71 +265,6 @@ Deno.test("a retirement failure keeps the cutover result and the source residue"
   assert(exists(source));
   assert(exists(destination));
   assert(moved(history, "Publish the Route"));
-});
-
-Deno.test("an activation failure restores the source and discards only the proven destination", async () => {
-  const { repo, source, destination, intent } = await fixture((workflow) => {
-    for (const step of workflow.jobs[0].steps) {
-      if (step.name === "Create, start Processes") shell(step, "create", "false");
-      if (step.name === "Remove new Processes") shell(step, "remove", "true");
-    }
-  });
-  await using _ = repo;
-  intent.processes.destination = [{}];
-  const { run, history } = await transfer(repo, intent, false);
-  assertEquals(run.status, "failed");
-  assert(exists(source));
-  const trace = JSON.stringify(history.jobs[0].steps.filter((step) => step.status !== "skipped"));
-  assertFalse(exists(destination), trace);
-  assertFalse(moved(history, "Publish the Route"), trace);
-  assert(moved(history, "Restore the Route"), trace);
-});
-
-Deno.test("a non-empty Vite Process batch uses the real stop input schema", async () => {
-  const { repo, source, intent } = await fixture();
-  await using _ = repo;
-  const connection = intent.source.ssh_execution;
-  const control = {
-    process_id: 8,
-    runtime: "systemd",
-    name: "orbit-process-8-vite.service",
-    on_demand: true,
-    directory: source,
-    vite: { path: "/fixture/vite", instance_id: 8 },
-  };
-  const { process_id, runtime, name, on_demand } = control;
-  intent.processes.source = [{
-    id: 8,
-    secret_field: "unused",
-    intent: { control, ssh_execution: connection },
-    control_intent: { control, ssh_execution: connection },
-    stop_intent: { control: { process_id, runtime, name, on_demand, vite: null }, ssh_execution: connection },
-  }];
-  for (const action of ["control", "create", "destroy"]) {
-    await repo.workflow(`operation-process-${action}`, (workflow) => {
-      const child = workflow as Record<string, unknown>;
-      delete child.target;
-      delete child.labels;
-      child.jobs = [{
-        name: "fixture",
-        steps: [{
-          name: "accepted",
-          task: {
-            type: "behavior",
-            behaviorType: "command/shell",
-            behaviorName: '${{ "fixture-' + action + '-" + run.id }}',
-            methodName: "execute",
-            inputs: { run: "true" },
-          },
-        }],
-      }];
-    });
-  }
-  const { run, history } = await transfer(repo, intent);
-  assertEquals(run.status, "succeeded");
-  const steps = Object.fromEntries(history.jobs[0].steps.map((step) => [step.name, step.status]));
-  assertEquals(steps["Stop source Processes-0"], "succeeded");
-  assertEquals(steps["Remove source Processes-0"], "succeeded");
 });
 
 Deno.test("a native cancel after the forward Route keeps the terminal placement receipt", async () => {

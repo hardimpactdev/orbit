@@ -264,3 +264,13 @@ Deno.test("public text that opens a curl expansion is refused", () => {
         "task_vm.upcloud_invalid",
     );
 });
+
+Deno.test("cloud selection refuses a foreign owner label", () => {
+    const foreign = row();
+    foreign.labels.label[0].value = "43";
+    assertThrows(
+        () => cloudChoice(intent, JSON.stringify({ servers: { server: [foreign] } }), plans),
+        Error,
+        "task_vm.provider_identity_invalid",
+    );
+});

@@ -1,10 +1,9 @@
 ---
 title: "Delivery-line proofs"
-description: "Five repository commands that prove reproduction, task-group shape, pull-request head review, post-merge live state, and a healthy Gateway release, without filing, merging, deploying, or rolling back."
+description: "Four repository commands that prove reproduction, task-group shape, pull-request head review, and post-merge live state, without filing, merging, deploying, or rolling back."
 covers:
-  - bin/{bug-repro,task-group-check,pr-head-check,deploy-verify,gateway-smoke}
-  - apps/e2e/tests/Unit/E2E/{DeliveryLineCommandsTest,GatewaySmokeTest}.php
-  - apps/e2e/tests/Fixtures/gateway-smoke-tests.py
+  - bin/{bug-repro,task-group-check,pr-head-check,deploy-verify}
+  - apps/e2e/tests/Unit/E2E/DeliveryLineCommandsTest.php
   - apps/e2e/tests/Fixtures/delivery-line/**
   - .agents/skills/merging-pull-requests/SKILL.md
   - apps/gateway/app/Http/Requests/Tasks/CreateTaskGroupRequest.php
@@ -12,7 +11,7 @@ covers:
 
 # Delivery-line proofs
 
-Orbit's delivery line uses five repository commands. Each command prints one JSON object on stdout, has `--help`, and exits nonzero on failure. The error text says what to do next. Commands that can run a side effect support `--dry-run` and default to read-only work. They add no proof field on a task or subtask. They reuse the existing task fields and `fails_on_base`.
+Orbit's delivery line uses four repository commands. Each command prints one JSON object on stdout, has `--help`, and exits nonzero on failure. The error text says what to do next. Commands that can run a side effect support `--dry-run` and default to read-only work. They add no proof field on a task or subtask. They reuse the existing task fields and `fails_on_base`.
 
 The style matches [`bin/review-check`](/reference/implementation-loop#the-candidate-gate), the Project [task check](/reference/tasks#prove-a-command-fails-on-the-start-commit), and [`doctor`](/cli/doctor): one structured result, no repair, and a next step on failure.
 
@@ -22,7 +21,6 @@ The style matches [`bin/review-check`](/reference/implementation-loop#the-candid
 | [`bin/task-group-check`](#bintask-group-check) | The payload is one valid ordered group | None. Does not create a group. |
 | [`bin/pr-head-check`](#binpr-head-check) | The current head has a matching review and Required checks that ran with the current main tip, and no named leftover | None. Does not merge. |
 | [`bin/deploy-verify`](#bindeploy-verify) | Live `APP_VERSION` matches the merged SHA, `/up` is up, and gateway status is `ok` | None. Does not deploy or roll back. |
-| [`bin/gateway-smoke`](#bingateway-smoke) | A switched Gateway release serves its version, CLI reads, and its web build, runs its scheduler from the new release with Swamp group execution scheduled, and runs agent view | None by default. `--write-check` creates and removes one Project Document. |
 
 Run every command from the repository root.
 
@@ -183,99 +181,6 @@ Python HTTPS calls need `SSL_CERT_FILE` set to Orbit's root CA, or they fail cer
 | `up_failed` | `/up` is not up. Do not treat the deploy as verified. |
 | `status_failed` | Gateway status is not `ok`. Do not treat the deploy as verified. |
 
-## bin/gateway-smoke
-
-Smoke-test a Gateway release after its switch, on the Gateway host. Each [Gateway release](/reference/gateway-recovery#smoke) runs it after the verify step and the web switch, and stores its JSON on the release record. Operators run it by hand the same way. It does not deploy, switch, restart, or roll back.
-
-```bash
-bin/gateway-smoke --sha SHA [--since TIME] [--wait-for-tick [--tick-within SECONDS]] [--php PATH] [--timeout SECONDS] [--skip CHECK ...] [--write-check --smoke-project PROJECT] [--dry-run]
-```
-
-Run it as the Gateway account from the release under test. It then uses that release's `apps/cli/orbit` with the account's Gateway profile. Python HTTPS calls need `SSL_CERT_FILE`, as for `bin/deploy-verify`.
-
-| Check | Passes when | Skipped when |
-| --- | --- | --- |
-| `deploy_verify` | [`bin/deploy-verify`](#bindeploy-verify) passes for `--sha`. Its JSON is the check's `detail`. | |
-| `node_list` | `orbit node:list --json` succeeds and lists at least one Node. | |
-| `tasks_list` | `orbit tasks:list --json` succeeds. | The tasks extension is disabled. |
-| `web` | `web/current` links to `releases/<sha12>` of `--sha`, and Caddy serves that release's `index.html` and the first hashed `/assets/` file it references, byte for byte. | |
-| `scheduler` | The `orbit-process-*` unit whose command runs `schedule:work` in `--checkout` is `active` and `running`, and its main process runs from the release that `--checkout` links to. With `--since`, it started at or after that time. | |
-| `tasks_tick` | `artisan schedule:list --json` of the release that `--checkout` links to loads and lists Swamp group execution. With `--wait-for-tick`, `orbit tasks:status` reports a recent tick instead. | With `--wait-for-tick`, the tasks extension is disabled. |
-| `agent_view` | `orbit-agent-view.service` is `active` and `running`. With `--since`, it started at or after that time. | |
-| `documents` | Creates one text file in the smoke Project, reads it back, renames it with its revision, and removes it. | Always, unless `--write-check` is set. |
-
-A restarted scheduler starts its first tick on the next full minute, so a release does not pass `--wait-for-tick`. It [confirms the first tick afterwards](/reference/gateway-recovery#post-release-tick-confirmation). `tasks_tick` runs `artisan schedule:list` with only `HOME`, `PATH`, and `LANG`, as the release's own artisan commands do. With `--wait-for-tick`, it reads `orbit tasks:status --json` every 2 seconds until the total limit, and passes once `last_tick_at` is at or after `--since`, or no more than `--tick-within` seconds before the run. It keeps polling while another poll interval fits, without reserving a full read limit. A read cut short by the total limit counts as `tick_stale`, with the last seen tick in `detail.last_tick_at`, not as `timeout`.
-
-`node_list` and `tasks_list` send their command once more when the Gateway answers `gateway.unhandled`, its code for a server error. The first request after the switch can meet a cold Gateway: in release 1159 it failed after 7 seconds, and the same request passed in 2 seconds afterwards. The check's `detail.retried` keeps the first error, and a second failure fails the check.
-
-All checks run at the same time. Each has its own time limit, and `--timeout` bounds the whole run, so a release waits at most that long. A check that does not finish in time is `timeout`. The [`tasks:status`](/cli/tasks/status) tick record comes from the Gateway clock, so compare it on the Gateway host.
-
-| Option | Default | Meaning |
-| --- | --- | --- |
-| `--sha` | required | The released commit, 7 to 40 hexadecimal characters. |
-| `--since` | off | The runtime handoff time, in ISO 8601 with a zone. The scheduler and agent view must have started after it. With `--wait-for-tick`, a tick must have started after it too. |
-| `--wait-for-tick` | off | Wait for a Swamp group execution to start, instead of checking that the release schedules it. This can add up to a minute. |
-| `--tick-within` | `60` | With `--wait-for-tick` and without `--since`, the latest tick may be this many seconds old. |
-| `--php` | `ORBIT_SMOKE_PHP`, else `php8.5` or `php` on `PATH` | The PHP binary for `artisan schedule:list`. |
-| `--timeout` | `60` | Seconds for the whole run. |
-| `--up-url`, `--status-url` | the `bin/deploy-verify` defaults | Passed to `bin/deploy-verify`. |
-| `--web-url` | `ORBIT_SMOKE_WEB_URL` or `https://gateway.orbit/` | The web app URL that Caddy serves. |
-| `--web-dir` | `ORBIT_WEB_DIR` or `/home/orbit/web` | The [web directory](/reference/web-app#web-directory) that holds `current`. |
-| `--checkout` | `ORBIT_GATEWAY_CHECKOUT` or `/home/orbit/orbit` | The Gateway checkout the scheduler unit runs in. |
-| `--orbit` | `ORBIT_SMOKE_ORBIT` or `apps/cli/orbit` in this checkout | The Orbit CLI to run. |
-| `--scheduler-unit` | discovered | Name the scheduler unit when discovery finds none or more than one. |
-| `--agent-view-unit` | `orbit-agent-view.service` | The agent view unit. |
-| `--skip` | none | Skip one check. Repeatable. Skipping every read check is a usage error. |
-| `--write-check`, `--smoke-project` | off | Run `documents` in that Project, by ID or slug. Both or neither. |
-| `--dry-run` | off | Print each check and its target. Call nothing. |
-
-Each check command runs in a session of its own. When the run itself receives `SIGTERM`, `SIGINT`, or `SIGHUP`, it first kills every running check command. Then it prints a result with `error` `terminated` and exits `128` plus the signal number. So a caller that stops smoke leaves no check behind.
-
-The write check is off by default, because it writes to the live Gateway on every release. Use a dedicated Project for it. The file is named `gateway-smoke-<sha12>-<random>.txt`. When a step fails after create, the check removes the file and records `cleanup` as `removed`. When that fails too, `cleanup` is `failed` and the message names the entry to remove.
-
-### Result
-
-The command prints one JSON object and exits `0` when no check failed or timed out. Skipped checks do not fail the run. It exits `1` when a check failed or timed out, and `2` on wrong flags. Store the object as it is: `schema` is `1`, and new fields are added without changing existing ones.
-
-| Field | Meaning |
-| --- | --- |
-| `schema` | `1`. |
-| `passed` | `true` when no check failed or timed out. |
-| `source` | `live`, or `dry-run` with `dry_run: true`. |
-| `expected_sha`, `since` | The inputs. `since` is `null` without `--since`. |
-| `started_at`, `finished_at`, `duration_ms`, `timeout_seconds` | When the run happened and how long it took. |
-| `summary` | The number of checks per status: `passed`, `failed`, `timeout`, `skipped`. |
-| `checks` | One object per check, keyed by check name, in the order above. |
-| `checks.<name>.status` | `passed`, `failed`, `timeout`, or `skipped`. |
-| `checks.<name>.error` | `null`, or a stable token from the table below. |
-| `checks.<name>.message` | One sentence about the result. |
-| `checks.<name>.duration_ms`, `checks.<name>.detail` | The check's time, and what it read: URLs, status codes, units, timestamps, or the deploy-verify JSON. |
-| `error`, `failed_checks`, `message`, `next` | Present on failure. `error` is `checks_failed`, or `terminated` when a signal stopped the run; a terminated result has no `checks` or `failed_checks`. |
-
-| `error` | Check | Meaning |
-| --- | --- | --- |
-| `version_mismatch`, `up_failed`, `status_failed`, `unreachable` | `deploy_verify` | The `bin/deploy-verify` error. |
-| `cli_failed` | CLI checks | The CLI exited nonzero. `detail.cli_error` holds its error envelope. |
-| `cli_unexpected` | CLI checks | The CLI answered without the expected list or entry. |
-| `command_unavailable` | any | The CLI or `systemctl` could not start. |
-| `web_current_missing` | `web` | `web/current/index.html` does not exist. |
-| `web_release_mismatch` | `web` | `web/current` is not the build of `--sha`. |
-| `web_index_failed`, `web_asset_missing`, `web_asset_failed` | `web` | Caddy did not serve an HTML page, the page names no hashed asset, or the asset failed. |
-| `web_not_current` | `web` | Caddy serves other bytes than `web/current`. |
-| `scheduler_missing`, `scheduler_ambiguous` | `scheduler` | Discovery found no unit, or more than one. Pass `--scheduler-unit`. |
-| `unit_missing`, `unit_inactive`, `unit_not_restarted`, `unit_start_unknown` | `scheduler`, `agent_view` | The unit is not installed, not running, older than `--since`, or has no start time. |
-| `systemctl_unavailable`, `systemctl_failed` | `scheduler`, `agent_view` | `systemctl` is missing or failed. Run on the Gateway host. |
-| `scheduler_pid_unknown`, `scheduler_release_unknown` | `scheduler` | The unit reports no main process, or its working directory cannot be read. |
-| `scheduler_old_release` | `scheduler` | The scheduler's main process runs from another directory than the release `--checkout` links to. |
-| `php_unavailable` | `tasks_tick` | No PHP binary was found. Pass `--php`. |
-| `schedule_unreadable` | `tasks_tick` | `artisan schedule:list` failed or printed no JSON list. `detail.stderr` holds its error. |
-| `tick_unscheduled` | `tasks_tick` | The release's schedule does not list Swamp group execution. |
-| `tick_stale` | `tasks_tick` | With `--wait-for-tick`, no tick started in time, including when the total limit cut short a read. |
-| `tick_unreported` | `tasks_tick` | With `--wait-for-tick`, the Gateway does not report `last_tick_at` yet. |
-| `document_mismatch` | `documents` | A step returned other content, name, or result than it wrote. |
-| `timeout` | any | The check did not finish within its limit. |
-| `check_crashed` | any | The check stopped on an unexpected error. |
-
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.
@@ -295,15 +200,3 @@ The Gateway task engine is generic. Orbit's policy lives in the repository skill
 ### A stale head is named, not merged
 
 `bin/pr-head-check` stops when the review or `Required checks` belong to another SHA. The next step is to review the new head. It also stops when those checks never ran with the current main tip. A branch that was green before main moved can still break main without a textual conflict. The next step is to update the branch, wait for green, and review the new head. Auto-merge, `--admin`, and a `tasks:merge` command remain the leftovers the merge skill already forbids.
-
-### A smoke test reads, and writing is opt-in
-
-A release smoke test runs on every main commit against the live Gateway. Read checks prove that the release serves its version, API, web build, scheduler, and agent view without changing state. A document write proves storage too, but it writes on every release, so an operator turns it on for a dedicated Project.
-
-### A release does not wait for the first tick
-
-`schedule:work` runs `schedule:run` only at the start of a minute. After the runtime handoff restarts the scheduler, the first Swamp group execution can come up to a minute later. A drain that ends just after a minute boundary costs nearly that whole minute. Smoke instead proves what can fail at once: the scheduler runs from the new release, and that release loads its schedule with Swamp group execution in it. The first tick itself is [confirmed after the release](/reference/gateway-recovery#post-release-tick-confirmation), where a silent scheduler alerts without holding up the next release.
-
-### The scheduler records its own tick
-
-Swamp group execution writes the time it takes its lock into the Gateway cache, and `tasks:status` reports it. It also records the version of the code that ran it, so a release can tell its own scheduler's tick from the previous one's. The smoke test reads the time through the CLI with `--wait-for-tick`. A journal read depends on log permissions and log wording, and a process list cannot tell an idle scheduler from a stuck one.

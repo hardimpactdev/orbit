@@ -281,7 +281,6 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\GatewayReleases\\EnableGatewayReleaseAutomationRequest',
             'Orbit\\Sdk\\Requests\\GatewayReleases\\DisableGatewayReleaseAutomationRequest',
             'Orbit\\Sdk\\Requests\\GatewayReleases\\ResumeGatewayReleaseAutomationRequest',
-            'Orbit\\Sdk\\Requests\\GatewayReleases\\SmokeGatewayReleaseRequest',
         ];
         $aiRouterRequests = [
             SetupAiRouterRequest::class,
