@@ -401,7 +401,7 @@ it('sets up PHP 8.5 through the one pinned setup-php action in every PHP job of 
                 $phpJobs[] = "{$file}:{$name}";
                 expect(collect($job['steps'])->firstWhere('uses', './.github/actions/php')['with']['coverage'])->toBe('none');
             } elseif ($direct !== null) {
-                // A job that needs extensions the shared action does not load uses the same pin and PHP version.
+                // Native Swamp checks need PHP without Composer; effect tests also load database extensions. Both use the shared pin and version.
                 $directJobs[] = "{$file}:{$name}";
                 expect($direct['uses'])->toBe($setup['uses'])
                     ->and($direct['with']['php-version'])->toBe('8.5');
@@ -417,7 +417,7 @@ it('sets up PHP 8.5 through the one pinned setup-php action in every PHP job of 
         'ci.yml:php', 'ci.yml:gateway-static', 'ci.yml:docs', 'ci.yml:project-check', 'ci.yml:api-reference', 'ci.yml:web',
         'dependency-audit.yml:audit', 'docs-site.yml:publish', 'orbit-cli-binary.yml:build',
     ])
-        ->and($directJobs)->toBe(['swamp-shape.yml:test-shards']);
+        ->and($directJobs)->toBe(['swamp-shape.yml:validate', 'swamp-shape.yml:test-shards']);
     // The shared action installs PHP and Composer only; it compiles no agent and installs no recipe PHP build.
     $actionRuns = implode("\n", array_column($action['runs']['steps'], 'run'));
     expect($setup['uses'])->toMatch('/^shivammathur\/setup-php@[0-9a-f]{40}$/')
