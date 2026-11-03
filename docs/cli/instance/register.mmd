@@ -29,7 +29,7 @@ sequenceDiagram
       %%> Only when an existing .env is publicly readable.
       opt --setup
         SW->>N: Run Project setup steps<br/>@swamp/ssh exec
-        SW->>N: Create, start Processes<br/>child process-create
+        SW->>N: Create, start Processes<br/>child create · start
       end
       opt --domain
         SW->>N: Create the Route<br/>child route-create

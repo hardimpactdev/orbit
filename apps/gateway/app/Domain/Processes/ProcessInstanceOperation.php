@@ -57,7 +57,13 @@ final readonly class ProcessInstanceOperation implements DirectOperationProjecti
         }
         $members = [];
         foreach ($records as $record) {
-            $input = $this->admission->inputFor($record, 'create');
+            $startExisting = $record->status === LifecycleStatus::Active && $record->runtime === ProcessRuntime::Docker;
+            $target = $startExisting ? app(ProcessTargetResolver::class)->forPreparation($instance) : null;
+            $input = $this->admission->inputFor($record, $startExisting ? 'start' : 'create', target: $target);
+            if ($startExisting) {
+                $input['start_existing'] = true;
+                $input['desired'] = 'running';
+            }
             if ($input['node_id'] !== $instance->node_id) {
                 throw new ResourceOperationException('operation.execution_forbidden', 'The Process is placed on another Node.', 422);
             }
@@ -84,12 +90,12 @@ final readonly class ProcessInstanceOperation implements DirectOperationProjecti
     }
 
     /** An in-memory member view; never saved, admitted or dispatched as another Operation.
-     * @param  array<string,mixed>  $member
+     * @param  array{id:int,input:array<string,mixed>}  $member
      */
     public static function member(Operation $parent, array $member): Operation
     {
         $view = new Operation;
-        $view->forceFill(['id' => $parent->id, 'status' => $parent->status, 'kind' => 'process.create',
+        $view->forceFill(['id' => $parent->id, 'status' => $parent->status, 'kind' => ($member['input']['start_existing'] ?? false) === true ? 'process.start' : 'process.create',
             'target_type' => 'process', 'target_id' => $member['id'], 'node_id' => $parent->node_id, 'input' => $member['input']]);
 
         return $view;

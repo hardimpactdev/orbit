@@ -346,13 +346,14 @@ it('keeps completed development Processes when a registration Route fails', func
         ->and($process->refresh()->status->value)->toBe('active');
 });
 
-it('requires existing Processes to be checked before waking a completed registration on retry', function (bool $setup): void {
+it('requires existing Processes to be checked before waking a completed registration on retry', function (bool $setup, string $runtime): void {
     app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
     config(['swamp.run_token' => 'native-register-fixture']);
     $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('fixture-public-root');
     $this->project->update(['type' => 'laravel-app', 'root' => 'public']);
-    $this->project->processDefinitions()->create(['name' => 'dev-server', 'environments' => ['development'],
-        'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/sleep', '300'], 'restart_policy' => 'never']]);
+    $spec = $runtime === 'docker' ? ['runtime' => 'docker', 'image' => 'example:1', 'command' => ['/bin/sleep', '300']]
+        : ['runtime' => 'systemd', 'command' => ['/usr/bin/sleep', '300'], 'restart_policy' => 'never'];
+    $this->project->processDefinitions()->create(['name' => 'dev-server', 'environments' => ['development'], 'spec' => $spec]);
     register_report($this->node, '/srv/apps/register-proof/native');
     $first = app(RegisterInstanceAction::class)->execute($this->node,
         new RegisterInstanceData('/srv/apps/register-proof/native', false, $this->project->id, 'native', null, 'native.register-proof.test', true));
@@ -364,4 +365,12 @@ it('requires existing Processes to be checked before waking a completed registra
 
     expect($retry->input['members'])->toHaveCount($setup ? 1 : 0)
         ->and($retry->input['route_create']['awake'])->toHaveCount($setup ? 1 : 0);
-})->with([false, true]);
+    if ($setup) {
+        $processes = app(InstanceRegisterResult::class)->input($retry)['intent']['processes'];
+        expect($processes[0]['kind'])->toBe($runtime === 'docker' ? 'process.start' : 'process.create');
+        if ($runtime === 'docker') {
+            expect($processes[0]['intent']['control']['image'])->toBe('example:1')
+                ->and($processes[0]['intent'])->not->toHaveKey('installation');
+        }
+    }
+})->with([[false, 'systemd'], [true, 'systemd'], [false, 'docker'], [true, 'docker']]);

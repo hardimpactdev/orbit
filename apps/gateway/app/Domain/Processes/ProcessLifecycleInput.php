@@ -27,7 +27,7 @@ final readonly class ProcessLifecycleInput
     }
 
     /** @param array{id:int,input:array<string,mixed>} $member
-     * @return array{intent:array<string,mixed>,execution_secrets:array<string,array{vault:string,key:string}>}
+     * @return array{kind:string,intent:array<string,mixed>,execution_secrets:array<string,array{vault:string,key:string}>}
      */
     public function forInstanceMember(Operation $parent, array $member): array
     {
@@ -39,7 +39,9 @@ final readonly class ProcessLifecycleInput
             throw new ResourceOperationException('operation.execution_forbidden', 'The runtime member belongs to another owner.', 422);
         }
 
-        return $this->build(ProcessInstanceOperation::member($parent, $member), 'process-instance-operation-'.$parent->id.'-member-'.$member['id']);
+        $view = ProcessInstanceOperation::member($parent, $member);
+
+        return ['kind' => $view->kind, ...$this->build($view, 'process-instance-operation-'.$parent->id.'-member-'.$member['id'])];
     }
 
     /** @return array{intent:array<string,mixed>,execution_secrets:array<string,array{vault:string,key:string}>} */
