@@ -9,6 +9,12 @@ use RuntimeException;
 
 final readonly class DocsImpact
 {
+    /** The machine software recipe; a change to its pins alone needs no prose. */
+    private const string MACHINE_RECIPE = 'apps/gateway/resources/machine-software/recipe.json';
+
+    /** The recipe values the nightly snapshot and artifact flows bump: no page lists them. */
+    private const array RECIPE_PIN_KEYS = ['snapshot', 'version', 'url', 'sha256'];
+
     private const array CLI_FAMILIES = [
         'activity', 'analytics', 'app', 'cluster', 'database', 'dns', 'doctor', 'env', 'extension', 'firewall', 'fleet',
         'gateway', 'github', 'instance', 'internal', 'metrics', 'node', 'operation', 'process', 'profile', 'project', 'ai-router',
@@ -86,6 +92,10 @@ final readonly class DocsImpact
                 $this->extractMcpManifest($path, $base, $surfaces, $impacts, $generators);
             }
             if ($this->extractGeneratedArtifact($path, $surfaces, $impacts, $generators) || str_starts_with($path, 'docs/')) {
+                continue;
+            }
+            // The nightly recipe PRs change only pinned values; the page documents the recipe's shape and rules.
+            if ($path === self::MACHINE_RECIPE && $base !== null && $this->recipePinsOnly($base)) {
                 continue;
             }
             foreach ($pages as $page => $patterns) {
@@ -1731,6 +1741,39 @@ final readonly class DocsImpact
         }
 
         return $result;
+    }
+
+    /**
+     * Whether the recipe differs from the base only in pinned values: the same profiles, tools, roles, artifacts and
+     * order, with only snapshots, versions, URLs and digests changed. Anything else is a change the page describes.
+     */
+    private function recipePinsOnly(string $base): bool
+    {
+        $before = json_decode($this->gitAllowMissing(['show', $base.':'.self::MACHINE_RECIPE]) ?? '', true);
+        $after = json_decode($this->read(self::MACHINE_RECIPE), true);
+
+        return is_array($before) && is_array($after) && $before !== $after
+            && self::withoutRecipePins($before) === self::withoutRecipePins($after);
+    }
+
+    /**
+     * @param  array<mixed>  $value
+     * @return array<mixed>
+     */
+    private static function withoutRecipePins(array $value): array
+    {
+        foreach ($value as $key => $item) {
+            if (is_string($key) && in_array($key, self::RECIPE_PIN_KEYS, true) && (is_string($item) || is_int($item))) {
+                $value[$key] = null;
+            } elseif (is_array($item)) {
+                $value[$key] = self::withoutRecipePins($item);
+            }
+        }
+        if (! array_is_list($value)) {
+            ksort($value, SORT_STRING);
+        }
+
+        return $value;
     }
 
     /** @param list<string> $args */

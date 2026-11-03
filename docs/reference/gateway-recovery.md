@@ -28,6 +28,8 @@ A transaction holds the SQLite write lock from its start, because Gateway transa
 
 Measurement ends before post-commit callbacks from both nested and outer transactions, so broadcast and native-dispatch network time is excluded. Nested commits only release savepoints; timing continues until the outer commit releases the write lock. Task maintenance commits its terminal projection before admitting the next operation, so that admission’s GitHub token calls also run outside the projection transaction.
 
+`swamp.vault_sync_unavailable` alone does not identify a database lock. Its `Swamp execution copy unavailable` warning records the transport `phase`, `http_status` and safe remote code. A failure at `phase=connect` with `http_status=429` means the WebSocket upgrade was throttled before a vault frame was sent. Pinned Swamp limits upgrades to 50 per source IP in a 60-second window. Correlate SQLite errors and long-write warnings separately; restarting serve does not fix the request pattern.
+
 Gateway log files rotate daily and keep 14 days. `LOG_DAILY_DAYS` changes the count.
 
 ### Disk retention
