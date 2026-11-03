@@ -1,0 +1,17 @@
+{
+  "kind": "tasks.check",
+  "rule": 14,
+  "topology": "minimal",
+  "topology_version": 14,
+  "source_commit": "241859d8b40cbca6eab35bfcb2026cdbdd751459",
+  "receipt": "/home/nckrtl/swamp-execution/evidence/proof/tasks.check/20261103T035336Z-minimal.json",
+  "proof_pass": true,
+  "operation_seconds": 22.71,
+  "run_seconds": 25.9,
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "swamp_run_id": "49e394f0-f531-4705-b648-fbfade2ccd9c",
+  "reporting_steps_removed": 2,
+  "scripts_deleted": 0,
+  "limits": "One baseline check over real SSH and Git: setup ordering, public receipt, unchanged real index, no candidate or hosted CI, and private scratch cleanup. Local native fixtures cover handoff, hosted CI, failure, redaction and token cleanup. No production repository or GitHub writes."
+}
