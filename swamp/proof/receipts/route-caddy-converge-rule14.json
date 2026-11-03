@@ -1,0 +1,30 @@
+{
+  "kind": "route.caddy_converge",
+  "rule": 14,
+  "topology": "minimal",
+  "topology_version": 16,
+  "source_commit": "a1cab2ae479326a84e2dfa369f2f7023201d3d27",
+  "receipt": "/home/nckrtl/swamp-execution/evidence/proof/route.caddy_converge/20261103T090006Z-minimal.json",
+  "proof_pass": true,
+  "operation_seconds": 6.33,
+  "fixture_seconds": 9.4,
+  "budget_seconds": 180,
+  "queue_timeout_seconds": 30,
+  "swamp_run_id": "58aab1f7-93bd-4b7f-880f-cc0e8a1e9325",
+  "reporting_steps_removed": 1,
+  "scripts_deleted": 0,
+  "limits": "Normal internal admission and real rendered public Node configuration, official cfgmgmt file, pinned SSH, Caddy validation and reload, shared native terminal projection. One sample; no public build CLI, full Gateway release switching, populated Route catalog, production Node or production scale.",
+  "vm": {
+    "group_id": 3024,
+    "provision_operation_id": 9221,
+    "task_vm_id": 481,
+    "node_id": 509,
+    "name": "tvm-481",
+    "host_node_id": 13,
+    "seed": "6ddde33590a9160df3dd75a2a79376af329a757297a702cd348eec699782c55a",
+    "provisioned_at": "2026-11-03T08:55:59Z",
+    "cancel_operation_id": 9228,
+    "destroyed": true,
+    "destroyed_at": "2026-11-03T09:02:15Z"
+  }
+}

@@ -1,11 +1,14 @@
-import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
+import { assert, assertEquals, assertNotEquals } from "jsr:@std/assert@1.0.19";
 import { LOCAL_PIN, publicationFixture, run, sha256 } from "../../../../tests/_support/route_fixture.ts";
 async function fixture() {
   const f = await publicationFixture();
+  f.repo.env.FIXTURE_REQUIRE_PIN = "1";
+  f.repo.env.FIXTURE_ALLOW_CFGMGMT = "1";
   const content = "# Managed by Orbit: Node Caddy build\n{ admin off }\n";
   const version = (await sha256(content)).slice(0, 32);
-  const caddy = (fail = "", success = true) => {
+  const caddy = (fail = "", success = true, pins = [LOCAL_PIN]) => {
     f.repo.env.FIXTURE_FAIL = fail;
+    f.repo.env.FIXTURE_CADDY_DRIFT = fail === "drift" ? f.live : "";
     return run(
       f.repo,
       "operation-route-caddy",
@@ -14,7 +17,7 @@ async function fixture() {
           node_id: 9,
           user: "orbit",
           control_node_id: 209,
-          host_keys: [LOCAL_PIN],
+          host_keys: pins,
           connection: f.connection,
           caddy: { content, version, listen_addresses: ["10.44.0.9"], unserved: false },
         },
@@ -31,8 +34,11 @@ Deno.test("Caddy publication replaces a symlink and rerun converges", async () =
   await Deno.symlink(`${f.host}/old-config`, f.live);
   const { run, history } = await f.caddy();
   assertEquals(run.status, "succeeded");
-  const terminal = history.jobs.find((j) => j.name === "completion")!.steps.find((s) => s.name === "result")!;
-  assertEquals(JSON.parse(String(terminal.outputs?.stdout)), { ready: true, result: "published", version: f.version });
+  const steps = history.jobs[0].steps;
+  assertEquals(steps.at(-1)!.name, "Check the publication");
+  assertEquals(steps.at(-1)!.status, "succeeded");
+  assertEquals(steps.find((s) => s.name === "Check the Caddyfile")!.outputs?.status, "compliant");
+  assert(!steps.some((s) => s.name === "result"));
   assertEquals(await Deno.readTextFile(f.live), f.content);
   assert(!(await Deno.lstat(f.live)).isSymlink);
   assertEquals(f.calls().map((c) => c[0]), ["caddy", "systemctl"]);
@@ -50,7 +56,24 @@ Deno.test("Caddy validation failure skips reload", async () => {
 });
 Deno.test("Caddy reload failure leaves no journal and rerun succeeds", async () => {
   await using f = await fixture();
-  assertEquals((await f.caddy("reload", false)).run.status, "failed");
+  const failed = await f.caddy("reload", false);
+  assertEquals(failed.run.status, "failed");
+  assertNotEquals(failed.history.jobs[0].steps.find((s) => s.name === "Check the publication")?.status, "succeeded");
   assertEquals([...Deno.readDirSync(f.host)].map((e) => e.name).sort(), ["Caddyfile", "php"]);
   assertEquals((await f.caddy()).run.status, "succeeded");
+});
+
+Deno.test("Caddy drift after reload fails the native end assertion", async () => {
+  await using f = await fixture();
+  const { history } = await f.caddy("drift", false);
+  const steps = history.jobs[0].steps;
+  assertEquals(steps.find((s) => s.name === "Check the Caddyfile")!.outputs?.status, "non_compliant");
+  assertEquals(steps.at(-1)!.status, "failed");
+});
+Deno.test("Caddy refuses a wrong host pin before writing", async () => {
+  await using f = await fixture();
+  const { history } = await f.caddy("", false, [LOCAL_PIN.slice(0, -4) + "AgIC"]);
+  assertEquals(history.jobs[0].steps.find((s) => s.name === "Check the connection")!.status, "failed");
+  assertEquals(f.calls(), []);
+  assert(![...Deno.readDirSync(f.host)].some((entry) => entry.name === "Caddyfile"));
 });

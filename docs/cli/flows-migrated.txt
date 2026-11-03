@@ -79,3 +79,4 @@ tasks.maintenance
 node.role_relocate
 node.role_converge
 schedule.install_instance_definitions
+route.caddy_converge

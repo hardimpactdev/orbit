@@ -1,0 +1,34 @@
+sequenceDiagram
+  %% Target design: complete captured Caddy publication, official cfgmgmt file and pinned SSH argv.
+  %% Tightened: flow-tighten rules 9, 14, 22. No result printer. The official file check feeds the native end assertion.
+  %% status: draft
+  %% command: none · Node Caddy build or Gateway release handoff
+  %% kind: route.caddy_converge
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant GW as Gateway<br/>Laravel
+  participant SW as Swamp<br/>Node 209
+  participant N as Target Node<br/>over SSH
+  Note over GW: Record the Caddy intent<br/>full public configuration
+  GW->>SW: Start run, full intent<br/>operation-route-caddy
+  Note over SW: Read the input
+  %%> Verify the captured content hash before contacting the Node.
+  SW->>N: Check the connection
+  %%> Official SSH verifies the admitted host keys before cfgmgmt changes the file.
+  %%> Enrolled Nodes already have their pinned host keys in the worker's known_hosts.
+  SW->>N: Write the Caddyfile
+  %%> Official cfgmgmt file converges /etc/caddy/Caddyfile, root:caddy, mode 0640, replacing a symlink.
+  SW->>N: Validate the Caddyfile
+  %%> One bounded SSH argv runs caddy validate as the caddy user.
+  SW->>N: Reload Caddy
+  %%> One bounded SSH argv reloads the active service. A failed validation skips this step.
+  SW->>N: Check the Caddyfile
+  %%> The official file check verifies content, owner and mode after reload.
+  Note over SW: Check the publication
+  %%> Native assert requires a compliant file check. No printer or custom failure step.
+  SW-->>GW: Native terminal status<br/>captured publication
+  Note over GW: Record the version<br/>after the end check
+  %%> The Gateway reads one native history response and records ready, published and the captured content version.
+  %%> Failure keeps the captured Operation and file for a safe rerun, with no rollback.

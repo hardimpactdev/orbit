@@ -2636,3 +2636,127 @@ Deno.test("workflows declare vaults read directly or forwarded as bounded execut
   assert(ratchet(aggregate(findings('${{ vault.get("other", "key") }}')), { schema: 1, entries }).length > 0);
   assert(ratchet(aggregate(findings('${{ vault.get("copies", "key") }} ${{ vault.get("other", "key") }}')), { schema: 1, entries }).length > 0);
 });
+
+import { assertStringIncludes } from "jsr:@std/assert@1.0.19";
+import { commit, copyPolicy, git, init, PHP_ACTIONS, PHP_ENTRY, PHP_RUNTIME, root as fixtureRoot, run, script, temporary, write } from "./gate-test-support.ts";
+const gate = (cwd: string, base = "HEAD", extra: string[] = [], env?: Record<string, string>) => run(Deno.execPath(), ["run", "-A", script("check-swamp-shape.ts"), "--base", base, "--python-analyzer", script("swamp-shape-python.py"), ...extra], {cwd, env});
+Deno.test("gate preserves ratchet and metrics when run from Swamp subtree", async () => {
+  await temporary(async root => {
+    await init(root);
+    const swamp = root + "/swamp", source = swamp + "/extensions/behaviors/old.ts", workflow = swamp + "/workflows/clean.yaml";
+    await write(source, "export const behavior={type:'@example/old'};\nawait delay(10);\n");
+    await write(swamp + "/extensions/behaviors/gateway.ts", "await fetch('https://gateway.orbit/api/v1/nodes');\nawait fetch('https://gateway.orbit/api/v1/operations');\n");
+    await write(swamp + "/config/agent-command-kinds.json", '{"agent.status":"observer","cli.install":"action"}');
+    await write(workflow, "name: clean\njobs:\n- steps:\n  - task: {type: behavior, behaviorType: command/shell, inputs: {run: 'true'}}\n");
+    await commit(root, "baseline source");
+    const seeded = await gate(swamp, "HEAD", ["--write-baseline"]);
+    assertEquals(seeded.code, 0, seeded.stderr);
+    const metrics = JSON.parse(seeded.stdout.split("\n")[0]);
+    assertEquals(metrics.workflows.clean, 1);
+    assertEquals(metrics.gateway_client_files, 1);
+    assertEquals(seeded.stdout.split("\n").filter(line => line.startsWith("SHAPE-GATE ")), ["SHAPE-GATE workflows_passing=1/1 grandfathered=2 embedded_lines=0 custom_loops=1 gateway_client_files=1"]);
+    await commit(root, "record explicit baseline");
+    assertEquals((await gate(swamp)).code, 0);
+    await write(source, await Deno.readTextFile(source) + "await delay(20);\n");
+    assert((await gate(swamp)).code !== 0, "Growing existing debt must fail");
+    await write(source, "export const behavior={type:'@example/old'};\n");
+    assert((await gate(swamp)).code !== 0, "Resolved debt must remove its allowance");
+    assertEquals((await gate(swamp, "HEAD", ["--write-baseline"])).code, 0);
+    const native = "python3 - <<'PY'\nimport fcntl\nimport os\n\nfd = os.open('/run/lock/orbit-firewall.lock', os.O_RDWR)\nfcntl.flock(fd, fcntl.LOCK_EX)\nPY\n";
+    await write(workflow, "name: clean\njobs:\n- steps:\n  - task: {type: behavior, behaviorType: command/shell, inputs: {run: " + JSON.stringify(native) + "}}\n");
+    await git(root, "add", ".");
+    assertEquals((await gate(swamp)).code, 0);
+    await write(workflow, (await Deno.readTextFile(workflow)).replaceAll("orbit-firewall", "workflow"));
+    assert((await gate(swamp)).code !== 0);
+    await write(workflow, (await Deno.readTextFile(workflow)).replaceAll("workflow.lock", "orbit-firewall.lock"));
+    await git(root, "add", ".");
+    const scripts = swamp + "/extensions/behaviors/php/scripts";
+    for (const [name, content] of [["runtime_common.py", PHP_RUNTIME], ["monitor_common.py", PHP_ACTIONS], ["stage.py", PHP_ENTRY]]) await write(scripts + "/" + name, content);
+    await git(root, "add", ".");
+    const checked = await gate(swamp);
+    assertEquals(checked.code, 0, checked.stderr);
+    await write(scripts + "/runtime_common.py", PHP_RUNTIME.replaceAll("P('/run/lock')", "P('/tmp')"));
+    assert((await gate(swamp)).code !== 0);
+    await write(scripts + "/runtime_common.py", PHP_RUNTIME);
+    await git(root, "add", ".");
+    const renamed = source.replace("old.ts", "renamed.ts");
+    await Deno.rename(source, renamed);
+    await write(renamed, "await delay(10);\n");
+    await git(root, "add", ".");
+    assert((await gate(swamp)).code !== 0);
+  });
+});
+Deno.test("initial import uses preserved source history and matching repo identity", async () => {
+  await temporary(async root => {
+    await init(root);
+    await Deno.mkdir(root + "/config");
+    await write(root + "/.swamp.yaml", "repoId: fixture-repository\n");
+    await write(root + "/extensions/behaviors/read.ts", "export const value=1;\nawait delay(10);\n");
+    const source = await commit(root, "original Swamp tree");
+    await write(root + "/config/agent-command-kinds.json", '{"agent.status":"observer"}');
+    await write(root + "/config/swamp-shape-baseline.json", JSON.stringify({schema: 1, entries: [{file: "extensions/behaviors/read.ts", rule: "custom-control", count: 1, evidence: ["delay"]}]}));
+    const swamp = root + "/swamp";
+    await Deno.mkdir(swamp);
+    for (const name of ["config", "extensions", ".swamp.yaml"]) await Deno.rename(root + "/" + name, swamp + "/" + name);
+    await commit(root, "preserve source under swamp");
+    for (const event of ["pull_request", "push"]) {
+      const result = await gate(swamp, source, [], {GITHUB_EVENT_NAME: event});
+      assertEquals(result.code, 0, event + ": " + result.stderr);
+    }
+    await write(swamp + "/.swamp.yaml", "repoId: unrelated-repository\n");
+    assert((await gate(swamp, source)).code !== 0);
+  });
+});
+Deno.test("source move initial import uses older unprefixed source, not gate witness", async () => {
+  const fixture = JSON.parse(await Deno.readTextFile(fixtureRoot + "tests/fixtures/shape/proxy-http-source-move.json"));
+  const sourcePath = "extensions/behaviors/operations/_lib/node-proxy.ts", targetPath = sourcePath.replace("node-proxy.ts", "node-proxy-http.ts"), callerPath = "extensions/behaviors/automatic-deploy/gateway.ts";
+  await temporary(async root => {
+    await init(root);
+    for (const [name, content] of [[sourcePath, fixture.from], [callerPath, fixture.caller], [sourcePath.replace("node-proxy.ts", "node-command-process.ts"), "export const commandOutput=()=>{};\n"], [".swamp.yaml", "repoId: source-move-fixture\n"]]) await write(root + "/" + name, content);
+    const original = await commit(root, "retained unprefixed source predating the gate");
+    await write(root + "/bin/check-swamp-shape.ts", "export {};\n");
+    const gatedBase = await commit(root, "root source already carrying a gate");
+    await Deno.remove(root + "/bin", {recursive: true});
+    await write(root + "/config/agent-command-kinds.json", '{"agent.status":"observer"}');
+    await git(root, "add", ".");
+    const seeded = await gate(root, original, ["--write-baseline"]);
+    assertEquals(seeded.code, 0, seeded.stderr);
+    const ledgerBase = await commit(root, "earlier root source already carrying a ledger");
+    await write(root + "/.witness", "immutable code witness\n");
+    const witness = await commit(root, "later immutable source witness with derived ledger");
+    const swamp = root + "/swamp";
+    await Deno.mkdir(swamp);
+    for (const name of ["config", "extensions", ".swamp.yaml"]) await Deno.rename(root + "/" + name, swamp + "/" + name);
+    await copyPolicy(swamp);
+    const helper = swamp + "/bin/swamp-shape-relocations.ts";
+    await write(helper, (await Deno.readTextFile(helper)).replaceAll(fixture.origin, witness));
+    const imported = await commit(root, "history-preserving import with protected source proof");
+    await write(swamp + "/" + sourcePath, "export const proxyLaunch=()=>{};\n");
+    await write(swamp + "/" + targetPath, fixture.target);
+    await write(swamp + "/" + callerPath, fixture.caller.replaceAll('import { proxyGatewayRequest, runtimeNodeProxy } from "../operations/_lib/node-proxy.ts";', 'import { proxyGatewayRequest } from "../operations/_lib/node-proxy-http.ts";\nimport { runtimeNodeProxy } from "../operations/_lib/node-proxy.ts";'));
+    const ledger = swamp + "/config/swamp-shape-baseline.json", baseline = JSON.parse(await Deno.readTextFile(ledger));
+    baseline.entries = baseline.entries.filter((row: {file: string}) => row.file !== sourcePath);
+    await write(ledger, JSON.stringify(baseline));
+    await commit(root, "exact extraction after protected lower");
+    const check = (base: string, event = "pull_request") => run(Deno.execPath(), ["run", "-A", "bin/check-swamp-shape.ts", "--base", base], {cwd: swamp, env: {GITHUB_EVENT_NAME: event}});
+    for (const [base, event] of [[original, "pull_request"], [original, "push"], [imported, "pull_request"]]) {
+      const result = await check(base, event);
+      assertEquals(result.code, 0, base + " " + event + ": " + result.stderr);
+      const report = JSON.parse(result.stdout.split("\n")[0]);
+      assertEquals(report.relocated_allowances.length, 1);
+      assertEquals(report.errors, []);
+    }
+    for (const earlier of [gatedBase, ledgerBase]) assertStringIncludes((await check(earlier)).stderr, "HTTP source move lacks immutable origin ancestry");
+    await git(root, "checkout", "--quiet", "-b", "prefixed-before-origin", original);
+    await Deno.mkdir(root + "/swamp", {recursive: true});
+    for (const name of ["extensions", ".swamp.yaml"]) await Deno.rename(root + "/" + name, root + "/swamp/" + name);
+    const prefixed = await commit(root, "unrelated prefixed source before witness");
+    await git(root, "checkout", "--quiet", "-");
+    assertStringIncludes((await check(prefixed)).stderr, "HTTP source move lacks immutable origin ancestry");
+    const target = swamp + "/" + targetPath;
+    await write(target, (await Deno.readTextFile(target)).replaceAll("timeoutMs + 1000", "timeoutMs + 2000"));
+    const result = await check(original);
+    assert(result.code !== 0);
+    assertStringIncludes(result.stderr, "gateway-http 1 exceeds 0");
+  });
+});

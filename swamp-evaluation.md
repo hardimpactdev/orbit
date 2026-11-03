@@ -105,3 +105,7 @@ WireGuard enrollment keeps private keys in Node files. The official exec and deb
 ## Node enrollment hub key composition
 
 The pinned file resource accepts content from the worker; it cannot compose a remote private-key file into that content. Node enrollment writes the public tunnel configuration and a mode-0600 sync file through `file`, then uses one `sed` argv to write its private header from the existing key file and one `dd` argv to append the public peers on stdin. `wg syncconf` receives the complete configuration in one call. No private key enters Swamp data or logs. A public-key observation and native assertion verify that applying peers preserved the hub identity. The same composition preserves the joining Node key; its end check requires a real tunnel handshake. Could file support protected remote-file content composition?
+
+## Caddy publication
+
+The pinned file behavior separates apply and check; check records drift without failing, so a native assertion enforces compliance after reload. A separate pinned SSH connection check rejects the request's wrong host key before cfgmgmt uses the enrolled Node's known_hosts entry. Could file accept the admitted host-key list directly? Could check optionally fail on drift while retaining its state? Validation and reload remain separate bounded SSH argvs. No wrapper joins these operations.

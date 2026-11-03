@@ -16,6 +16,10 @@ on:
         required: true
       SWAMP_SIGNIN_TOKEN:
         required: true
+      SWAMP_NATIVE_API_KEY:
+        required: true
+      SWAMP_NATIVE_SIGNIN_TOKEN:
+        required: true
 permissions:
   contents: read
 concurrency:
@@ -59,12 +63,14 @@ jobs:
       - name: Check shape regression fixtures
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         run: |
-          deno test --allow-env --allow-read --allow-run bin/check-swamp-shape_test.ts
+          deno test --allow-env --allow-read --allow-run --allow-write bin/check-swamp-shape_test.ts
           deno test --allow-read --allow-run bin/lint-behavior-names_test.ts
-          python3 tests/swamp_shape_gate_test.py
-          python3 tests/swamp_validate_ci_test.py
-          python3 tests/swamp_deno_shards_test.py
-          python3 tests/swamp_base_policy_test.py
+          deno test -A bin/swamp-liveness_test.ts
+          deno test -A bin/swamp-liveness_native_test.ts
+          deno test --allow-env --allow-read --allow-run --allow-write bin/swamp-shape-python_test.ts
+          deno test --allow-env --allow-read --allow-run --allow-write bin/validate-swamp-workflows_test.ts
+          deno test --allow-env --allow-read --allow-run --allow-write bin/swamp-deno-shards_test.ts
+          deno test --allow-env --allow-read --allow-run --allow-write bin/check-swamp-base-policy_test.ts
       - name: Reject new violations with current and base rules
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         env:
@@ -127,7 +133,6 @@ jobs:
           SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_SIGNIN_TOKEN || '' }}
         run: |
           python3 bin/check-grant-patterns.py --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/grant-validation.json"
-          SWAMP_RUNTIME_CACHE="$HOME/.cache/orbit-shape-runtime" python3 tests/grant_patterns_native_test.py
       - name: Check placement on every step
         if: ${{ always() && (!inputs.changed-only || steps.scope.outputs.selected == 'true') }}
         run: deno run --allow-read bin/lint-workflow-placement.ts
@@ -141,7 +146,7 @@ jobs:
 
   native-tests:
     # The pinned runtime refuses every command without an account, so native workflow
-    # tests run here with the same event-scoped read token as validation.
+    # tests use a separate event-scoped token that also permits sandbox serve.
     name: Swamp native tests ${{ matrix.shard }}
     runs-on: ubuntu-26.04
     strategy:
@@ -178,8 +183,8 @@ jobs:
       - name: Run the native workflow tests
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         env:
-          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_API_KEY || '' }}
-          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_SIGNIN_TOKEN || '' }}
+          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_NATIVE_API_KEY || '' }}
+          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_NATIVE_SIGNIN_TOKEN || '' }}
           NATIVE_SHARD: ${{ matrix.shard }}
         run: |
           SWAMP_BIN=$(deno run -A tests/_support/native_harness.ts | tail -n 1)
