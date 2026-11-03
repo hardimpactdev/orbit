@@ -1,6 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R1-R4 + round 2 (route.destroy cleanup runs in the workflow; the Gateway deletes the record on the terminal result), single-swamp-node. docs/cli/route.mdx, docs/reference/routes.md (Remove a Route).
   %% Tightened: flow-tighten 2026-11-02, rules 3, 17, 22 (DNS and its grace only outside the TLD; site and certificate withdrawn in one step, the mirror of route:create; LAN rules in the mirrored opt; cfgmgmt file/firewall).
+  %% Rule 23: 2026-11-03 required-only main path.
   %% status: draft
   %% command: route:destroy
   %% kind: route.destroy
@@ -15,13 +16,15 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant N as Route Nodes<br/>workload · Router
   participant V as VPN Node<br/>private DNS
-  CLI->>GW: route:destroy 14<br/>--yes · --offline optional
+  CLI->>GW: route:destroy 14
   %%> Command:
-  %%> - `orbit route:destroy 14 --yes`
+  %%> - `orbit route:destroy 14`
   %%> - syntax: `<route> [--yes] [--offline]`
   %%> Input:
   %%> - Route 14
+  %%> Optional:
   %%> - `--offline`: skip a Node that does not answer, and list what it still needs
+  %%> - `--yes` skips the prompt; `--idempotency-key` and `--json` change no step
   %%> Replacement:
   %%> - on a `pending` or `failed` replacement that never moved DNS, it abandons the domain change
   %%> - the same steps remove the replacement's site and certificates; the old URL is written back; the replaced Route stays

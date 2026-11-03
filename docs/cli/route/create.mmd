@@ -1,6 +1,7 @@
 sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R1-R4, no DNS hold, TLD-wide private DNS, web root at instance:create, cert+site one step (Nick 2026-11-02), firewall.allow shape, Gateway signs CSRs (root-of-trust), single-swamp-node. docs/cli/route.mdx, docs/reference/routes.md.
   %% Checked: flow-tighten 2026-11-02, rules 14-22 (rule 22: name the cfgmgmt behaviors; no other change).
+  %% Rule 23: 2026-11-03 required-only main path.
   %% status: draft
   %% command: route:create
   %% kind: route.create
@@ -15,9 +16,9 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant N as Route Nodes<br/>workload · Router
   participant V as VPN Node<br/>private DNS
-  CLI->>GW: route:create 12 shop.test<br/>--publication=private
+  CLI->>GW: route:create 12 shop.test
   %%> Command:
-  %%> - `orbit route:create 12 shop.test --publication=private`
+  %%> - `orbit route:create 12 shop.test`
   %%> - syntax: `<instance> <domain> [--publication=private|public] [--web-root=PATH]`
   %%> Other forms:
   %%> - custom proxy: `<domain> --node=NODE --upstream=URL` or `<domain> --node=NODE --process=PROCESS`
@@ -25,7 +26,10 @@ sequenceDiagram
   %%> Input:
   %%> - Instance 12 sets the Project and the scope: its Node, or its active Cluster
   %%> - the domain; the Gateway normalizes it
-  %%> - publication is `private` unless you ask for `public`
+  %%> Optional:
+  %%> - `--publication=public`: also opens the Ingress edge; the default is `private`
+  %%> - `--web-root=PATH`: the site serves that directory of the checkout; it adds no step
+  %%> - `--idempotency-key` and `--json` change no step
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
   Note over GW: Validate, reserve domain<br/>Route 14 pending · task #5120
@@ -111,7 +115,7 @@ sequenceDiagram
   %%> - the Route only counts as served when the probe passes
   %%> Not included:
   %%> - the application's own HTTP answer; a 500 does not fail the Route
-  opt public Route
+  opt --publication=public
     SW->>N: Open the Ingress edge<br/>Ingress Caddy · ufw 80/443
     %%> What it does:
     %%> - publishes the public site on the Ingress, with `tls force_automate` for Let's Encrypt
