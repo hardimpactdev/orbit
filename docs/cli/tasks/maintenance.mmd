@@ -1,0 +1,59 @@
+sequenceDiagram
+  %% Target design: native task maintenance, flow-tighten rule 14. The producer computes the Git observation; no terminal script forwards it.
+  %% status: migrated
+  %% kind: tasks.maintenance
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane VM icon=server pill=target tone=amber
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant VM as Task VM<br/>owned workspace
+  Note over GW: Admit maintenance<br/>captured Project and base
+  %%> Requirements:
+  %%> - the maintenance group owns its ready task VM and unchanged workspace
+  %%> - the captured Project repository and provision commit still match
+  GW->>SW: Start one run<br/>operation-task-maintenance
+  %%> Inputs:
+  %%> - the admitted workspace, package policy, targets and SSH host pins
+  Note over SW: read
+  %%> What it does:
+  %%> - shape the configured paths for the native child workflows
+  SW->>VM: workspace
+  %%> What it does:
+  %%> - prepare the captured directory through the existing workspace child
+  loop each configured path
+    SW->>VM: path-${{ self._index }}
+    %%> What it does:
+    %%> - read manifests, plan the update and run the package manager with official SSH argv
+    %%> - verify locks, advisory policy, release age and preserved declaration ranges
+    %%> - the child ends with native Check the path; no script prints a completion marker
+  end
+  SW->>VM: snapshot-tracked
+  %%> What it does:
+  %%> - compare tracked files against the admitted provision base with Git
+  SW->>VM: snapshot-untracked
+  %%> What it does:
+  %%> - list new files that Git does not ignore
+  Note over SW: shape
+  %%> What it does:
+  %%> - derive the bounded maintenance receipt from both Git observations
+  %%> - retain the admitted identities and whether the workspace changed
+  Note over SW: Check the result
+  %%> What it does:
+  %%> - native assert checks the producer outcome after all configured paths passed
+  alt native run succeeded
+    SW-->>GW: Native terminal result<br/>capture shape.result_json
+    %%> Result:
+    %%> - the existing history read supplies the complete producer receipt
+    Note over GW: Admit the next check<br/>after projection commits
+    %%> Result:
+    %%> - record the observation and request the normal guarded handoff check once
+  else update or verification failed
+    VM--xSW: Native failed step
+    %%> Result:
+    %%> - retain the workspace and completed package changes for investigation
+    SW--xGW: Native failed result<br/>failed step and error code
+    %%> Result:
+    %%> - record failure and request assistance without admitting a handoff check
+  end

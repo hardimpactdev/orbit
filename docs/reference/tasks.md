@@ -437,7 +437,7 @@ A group starts in `backlog` or `todo`. Moving it to `todo` requires at least one
 
 One group uses one task VM and one branch. Subtasks share the workspace in order. The keyed operations enforce workspace ownership and persist results; they never select the next subtask.
 
-Maintenance admits its next operation only after the terminal projection commits. A rolled-back projection starts no continuation. This keeps GitHub token requests outside the SQLite write transaction; see [write-lock diagnostics](/reference/gateway-recovery#gateway-request-logs).
+Maintenance reads the complete receipt from the native `shape.result_json` producer in its terminal history read. Its parent and each path end with native assertions; no reporting script forwards the receipt. Maintenance admits its next operation only after the terminal projection commits. A rolled-back projection starts no continuation. This keeps GitHub token requests outside the SQLite write transaction; see [write-lock diagnostics](/reference/gateway-recovery#gateway-request-logs).
 
 A declared native Operation with the same `task_group` target and a nonterminal status makes the group busy. A new key returns `operation.target_busy`; the original key still replays its Operation. This lookup also finds the group's operation for cancellation. It uses the recorded target, kind and status, without requiring a writer stamp or `lock_key`. Unrelated targets do not block admission. A timed-out `tasks.cancel` or `tasks.maintenance_finish` Operation still holds `task_group:<id>`: another cleanup admission returns `operation.target_busy` until [native settlement](/reference/operations#native-run-budgets) releases that hold. Other terminal Operations do not block admission.
 

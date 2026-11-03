@@ -1,0 +1,18 @@
+{
+  "kind": "tasks.maintenance",
+  "workflow": "operation-task-maintenance",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 180,
+  "queue_timeout_seconds": 30,
+  "before_gateway": [["python3", "-I", "swamp/proof/tasks.maintenance/prepare.py", "${node.target}", "${proof.run}"]],
+  "request": {"method": "GET", "path": "operations/${secret.operation}", "body": {}},
+  "expect": {"status": "succeeded"},
+  "phases": [
+    {"name": "workspace", "job": "prepare", "step": "workspace", "budget_seconds": 30},
+    {"name": "paths", "job": "paths", "step": "path-0", "budget_seconds": 120},
+    {"name": "observation", "job": "maintenance", "step": "shape", "budget_seconds": 10},
+    {"name": "check", "job": "maintenance", "step": "Check the result", "budget_seconds": 10}
+  ],
+  "parity": "swamp/proof/tasks.maintenance/parity.py"
+}

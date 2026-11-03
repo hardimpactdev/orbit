@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Instances\InstanceState;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCancelIntent;
@@ -14,6 +15,7 @@ use App\Domain\Tasks\TaskMaintenanceProjection;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -36,13 +38,13 @@ beforeEach(function (): void {
     $this->group->save();
     TaskVm::query()->create(['group_id' => $this->group->id, 'node_id' => $node->id, 'host_node_id' => $node->id, 'provider' => 'incus', 'name' => 'tvm-maintenance', 'wireguard_ip' => $node->wireguard_ip, 'state' => TaskVmState::Ready]);
     config(['swamp.run_token' => 'fixture.fake', 'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/ca.pem']);
-    $socket = new FakeRoutePublicationSocket;
+    $socket = $this->socket = new FakeRoutePublicationSocket;
     $socket->reply = static fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => ['kind' => 'started', 'workflowName' => $message['payload']['workflowIdOrName'], 'runId' => '005e43f4-02fc-4bca-b43a-5e2456cb4258']]];
     app()->instance(WebSocketClient::class, $socket);
     $this->operation = app(TaskMaintenanceIntent::class)->start($this->group);
     $this->group->update(['maintenance' => [...$this->group->maintenance, 'operation_id' => $this->operation->id]]);
     $this->data = ['run_id' => '005e43f4-02fc-4bca-b43a-5e2456cb4258', 'status' => 'succeeded', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(), 'error_code' => null,
-        'result' => ['group_id' => $this->group->id, 'project_id' => $project->id, 'instance_id' => $instance->id, 'subtask' => $this->child->id, 'outcome' => 'passed', 'changed' => true]];
+        'result' => ['maintenance' => json_encode(['group_id' => $this->group->id, 'project_id' => $project->id, 'instance_id' => $instance->id, 'subtask' => $this->child->id, 'outcome' => 'passed', 'changed' => true], JSON_THROW_ON_ERROR)]];
 });
 
 it('admits exactly one normal handoff check from the terminal maintenance receipt', function (): void {
@@ -62,6 +64,32 @@ it('settles an existing root while disabled Tasks refuses any downstream admissi
         ->and(Operation::query()->where('kind', 'tasks.check')->count())->toBe(0)
         ->and($this->group->fresh()->assistance_requested)->toBeTrue();
 });
+
+it('captures the producer through native history without a reporting step', function (bool $produced): void {
+    app(TaskExtensionState::class)->disable();
+    config(['swamp.read_token' => 'native-reader']);
+    $receipt = json_decode($this->data['result']['maintenance'], true, flags: JSON_THROW_ON_ERROR);
+    $status = $produced ? 'succeeded' : 'failed';
+    $operation = $this->operation;
+    $history = ['id' => $this->data['run_id'], 'workflowName' => 'operation-task-maintenance', 'status' => $status,
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'tasks.maintenance'],
+        'startedAt' => $this->data['started_at'], 'completedAt' => $this->data['finished_at'],
+        'jobs' => [['name' => 'maintenance', 'steps' => [
+            ['name' => 'shape', 'status' => $status, 'outputs' => $produced ? ['result_json' => $this->data['result']['maintenance']] : []],
+            ['name' => 'Check the result', 'status' => $produced ? 'succeeded' : 'skipped'],
+        ]]]];
+    $this->socket->reply = static fn (array $message): array => [['type' => 'workflow.history.get', 'id' => $message['id'], 'payload' => ['data' => $history]]];
+    $selector = app(DirectOperation::class)->definition('tasks.maintenance')['terminal_result'];
+
+    app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $this->data['run_id'], 'status' => $status], $selector);
+    app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $this->data['run_id'], 'status' => $status], $selector);
+
+    expect($operation->fresh()->status->value)->toBe($status)
+        ->and($operation->fresh()->result)->toBe($produced ? $receipt : [])
+        ->and($this->group->fresh()->assistance_requested)->toBeTrue()
+        ->and(Operation::query()->where('kind', 'tasks.check')->count())->toBe(0)
+        ->and(array_column($this->socket->sent, 'type'))->toBe(['workflow.run', 'workflow.history.get']);
+})->with([true, false]);
 
 it('retains the workspace and requests investigation after a failed maintenance root', function (): void {
     $data = [...$this->data, 'status' => 'failed', 'error_code' => 'operation.native_failed', 'result' => []];

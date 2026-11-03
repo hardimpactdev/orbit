@@ -12,10 +12,7 @@ inputs:
     node_id:
       type: integer
       minimum: 1
-    kind:
-      type: string
-      enum:
-      - tasks.maintenance
+    kind: {type: string, enum: [tasks.maintenance]}
     intent:
       type: object
     execution_secrets:
@@ -87,7 +84,7 @@ jobs:
     condition:
       type: succeeded
   steps:
-  # Tracked changes against the provision base; exit 1 means changed.
+    # Tracked changes against the provision base; exit 1 means changed.
   - name: snapshot-tracked
     labels: {role: swamp}
     task:
@@ -122,7 +119,7 @@ jobs:
         - --quiet
         - ${{ inputs.intent.base }}
         - --
-  # New files that .gitignore does not exclude.
+    # New files that .gitignore does not exclude.
   - name: snapshot-untracked
     labels: {role: swamp}
     task:
@@ -163,19 +160,15 @@ jobs:
     - step: snapshot-untracked
       condition:
         type: succeeded
-  - name: result
+  - name: Check the result
     labels: {role: swamp}
     task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "maintenance-result" }}'
-      methodName: execute
-      inputs:
-        run: |
-          printf '%s\n' "$ORBIT_RESULT"
-        env:
-          ORBIT_RESULT: ${{ steps.shape.outputs.result_json }}
+      type: assert
+      expr: 'steps.shape.status == "succeeded" && "result_json" in steps.shape.outputs && steps.shape.outputs.result_json != ""'
+      message: The maintenance producer did not confirm its observation.
+      severity: high
     dependsOn:
     - step: shape
       condition:
         type: succeeded
+queueTimeout: 30

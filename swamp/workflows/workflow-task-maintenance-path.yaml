@@ -524,17 +524,13 @@ jobs:
       condition:
         type: succeeded
     guard: ${{ inputs.place.manager != "js" || inputs.place.mode != "package" }}
-  - name: result
+  - name: Check the path
     labels: {role: swamp}
     task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "maintenance-path-result" }}'
-      methodName: execute
-      inputs:
-        run: 'printf ''%s\n'' ''{"verified":true}''
-
-          '
+      type: assert
+      expr: 'steps.verify.status == "succeeded" && steps["age-verified"].status == "succeeded" && (inputs.place.manager != "js" || inputs.place.mode != "package" || steps.synchronized.status == "succeeded")'
+      message: The maintenance path did not finish its package and policy checks.
+      severity: high
     dependsOn:
     - step: synchronized
       condition:
@@ -546,3 +542,4 @@ jobs:
   - job: changed_releases
     condition:
       type: succeeded
+queueTimeout: 30

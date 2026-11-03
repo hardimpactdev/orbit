@@ -26,7 +26,10 @@ final readonly class TaskMaintenanceProjection implements DirectOperationProject
             if ($operation->status->terminal()) {
                 return $operation;
             }
-            $result = ValidatedData::object($data['result'] ?? []);
+            $native = ValidatedData::object($data['result'] ?? []);
+            $result = isset($native['maintenance'])
+                ? ValidatedData::object(json_decode(ValidatedData::string($native['maintenance']), true, flags: JSON_THROW_ON_ERROR))
+                : [];
             if ($data['status'] === 'succeeded') {
                 foreach (['group_id', 'project_id', 'instance_id', 'subtask'] as $field) {
                     if (($result[$field] ?? null) !== $operation->input[$field]) {

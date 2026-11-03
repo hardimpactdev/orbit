@@ -122,12 +122,27 @@ class NativeMaintenance(fixture.NativeRepository):
             self.cli("workflow", "history", "get", result["id"]).stdout
         )
         output = json.loads(
-            next(s for s in history["jobs"][-1]["steps"] if s["name"] == "result")[
+            next(s for s in history["jobs"][-1]["steps"] if s["name"] == "shape")[
                 "outputs"
-            ]["stdout"]
+            ]["result_json"]
         )
         self.assertFalse(output["changed"])
         self.assertEqual(output["group_id"], 1)
+
+    def test_failed_update_preserves_native_failure_without_a_success_receipt(self):
+        composer = self.repo / "tools/composer"
+        composer.write_text("#!/bin/sh\nif [ \"$1\" = audit ]; then echo '{\"advisories\":{}}'; else exit 7; fi\n")
+        composer.chmod(0o755)
+        result = self.run_workflow(success=False)
+        self.assertEqual(result["status"], "failed")
+        history = json.loads(self.cli("workflow", "history", "get", result["id"]).stdout)
+        steps = {step["name"]: step for job in history["jobs"] for step in job["steps"]}
+        self.assertEqual(steps["shape"]["status"], "skipped")
+        self.assertEqual(steps["Check the result"]["status"], "skipped")
+        child = json.loads(self.cli("workflow", "history", "get", "task-maintenance-path").stdout)
+        checks = {step["name"]: step for job in child["jobs"] for step in job["steps"]}
+        self.assertEqual(checks["update"]["status"], "failed")
+        self.assertEqual(checks["Check the path"]["status"], "skipped")
 
     def test_task_vm_receives_only_plain_argv_and_no_shipped_program(self):
         result = self.run_workflow()
@@ -160,9 +175,9 @@ class NativeMaintenance(fixture.NativeRepository):
             self.cli("workflow", "history", "get", result["id"]).stdout
         )
         output = json.loads(
-            next(s for s in history["jobs"][-1]["steps"] if s["name"] == "result")[
+            next(s for s in history["jobs"][-1]["steps"] if s["name"] == "shape")[
                 "outputs"
-            ]["stdout"]
+            ]["result_json"]
         )
         self.assertTrue(output["changed"])
 

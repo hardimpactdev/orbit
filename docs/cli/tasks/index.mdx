@@ -62,6 +62,12 @@ Human output names a task by its Project code and ID, such as `ORB-13`, as the w
 
 The CLI checks prompted text when you submit it. A title holds 1 to 160 characters, and a brief holds 1 to 8,000 characters. The brief prompt is a multiline text area. Pressing Ctrl-C or reaching the end of input at a prompt stops the command before any change.
 
+## How it works
+
+Project maintenance starts `tasks.maintenance` in its owned workspace. It updates the captured paths and checks the resulting manifests and locks. The Gateway reads the producer receipt from native run history, then admits the normal handoff check after projection commits.
+
+<div className="flow-at" data-chart="tasks/maintenance"></div>
+
 ## Related
 
 - [`project`](/cli/project) lists the Projects that a task can belong to.
