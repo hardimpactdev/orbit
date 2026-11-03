@@ -76,6 +76,38 @@ elif role == 'metrics':
 elif role == 'ci-runner':
     check(run('incus', 'project', 'get', 'orbit-ci', 'restricted').stdout.strip() == 'true', 'CI is restricted')
     check(run('incus', 'network', 'get', 'orbitci0', 'security.acls').stdout.strip() == 'orbit-ci-egress', 'CI egress ACL applies')
+    acl = json.loads(run('incus', 'query', '/1.0/network-acls/orbit-ci-egress').stdout)
+    check(all(not rule.get(field) for rule in acl['egress'] for field in
+              ('source', 'source_port', 'destination_port', 'protocol', 'icmp_type', 'icmp_code')),
+          'CI egress rules retain no foreign selector')
+
+if 'instance' in sys.argv[3:]:
+    pools = [pool for exporter in intent['exporters'] for pool in exporter['service']['pools']]
+    check(bool(pools), 'the Laravel Project exercises a dedicated PHP exporter pool')
+    for pool in pools:
+        runtime = pool['php_runtime']
+        host = next(item['exporter_node_id'] for item in intent['exporters'] if pool in item['service']['pools'])
+        node = next(name for name, identifier in json.loads(os.environ['PROOF_NODES']).items() if identifier == host)
+        def on(*argv, node=node):
+            return subprocess.run(['incus', 'exec', node, '--', *argv], capture_output=True, text=True, check=False)
+        current = on('test', '-e', runtime['home'] + '/current').returncode == 0
+        expected = runtime['configuration']['pool' if current else 'initial_pool']
+        check(on('cat', '/etc/orbit/php-fpm/' + runtime['user'] + '/generated/pool.conf').stdout == expected,
+              'the admitted exporter status pool is installed')
+    checkout = '/home/orbit/apps/proof-role-' + os.environ['PROOF_RUN'] + '/default'
+    check(subprocess.run(['incus', 'exec', 'target', '--', 'test', '-f', checkout + '/.git/orbit-proof-setup'],
+                         check=False).returncode == 0, 'Laravel setup ran')
+    database = subprocess.run(['incus', 'exec', 'target', '--', 'python3', '-c',
+                               'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("select count(*) from migrations").fetchone()[0])',
+                               checkout + '/database/database.sqlite'], capture_output=True, text=True, check=False)
+    check(database.returncode == 0 and int(database.stdout) > 0, 'Laravel migrations ran on the attached database')
+    domain = 'role-' + os.environ['PROOF_RUN'] + '.proof.test'
+    route = subprocess.run(['curl', '--max-time', '15', '--fail', '--silent', '--show-error',
+                            '--cacert', '/home/orbit/.orbit/ca/root.pem', '--resolve',
+                            domain + ':443:10.231.0.10', 'https://' + domain + '/up'],
+                           capture_output=True, text=True, check=False)
+    check(route.returncode == 0, 'the Laravel Route serves: ' + route.stderr)
+    print('parity: Laravel setup, database, Route and dedicated exporter pool')
 print('parity: node.role_add ' + role)
 
 if 'no-drift' in sys.argv[3:]:

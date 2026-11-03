@@ -52,6 +52,15 @@
       "swamp/proof/node.role_add/prepare.php",
       "${node.metrics}",
       "metrics"
+    ],
+    [
+      "runuser",
+      "-u",
+      "orbit",
+      "--",
+      "php",
+      "swamp/proof/node.role_add/prepare.php",
+      "${node.peer}"
     ]
   ],
   "request": {
@@ -110,6 +119,13 @@
     },
     {
       "method": "POST",
+      "path": "nodes/${node.peer}/roles",
+      "body": {
+        "role": "app-prod"
+      }
+    },
+    {
+      "method": "POST",
       "path": "projects",
       "operation": false,
       "bind": "project",
@@ -128,7 +144,7 @@
       "operation": false,
       "body": {
         "name": "prepare-laravel",
-        "command": "composer install --no-interaction --prefer-dist --no-progress && touch database/database.sqlite && php artisan migrate --force",
+        "command": "composer install --no-interaction --prefer-dist --no-progress && touch database/database.sqlite && php artisan migrate --force && touch .git/orbit-proof-setup",
         "timeout_seconds": 300
       }
     },
@@ -141,6 +157,17 @@
         "node_id": "${node.target}",
         "name": "default",
         "domain": "role-${proof.run}.proof.test"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "instances",
+      "bind": "production",
+      "body": {
+        "project_id": "${project.id}",
+        "node_id": "${node.peer}",
+        "name": "production",
+        "domain": "production-${proof.run}.proof.test"
       }
     },
     {
