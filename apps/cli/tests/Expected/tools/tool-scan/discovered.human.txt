@@ -6,26 +6,25 @@ Scanning installed packages...
 │
 └  Scanned installed packages.
 
-Node #2 observed at 2026-04-26T12:00:00+00:00.
- ┌───────────┬─────────────┐
- │ MANAGER   │ SCAN STATE  │
- ├───────────┼─────────────┤
- │ brew      │ complete    │
- │ brew-cask │ complete    │
- │ vp        │ complete    │
- │ apt       │ unsupported │
- └───────────┴─────────────┘
-apt is unsupported, so its package list is not an inventory.
- ┌───────────┬─────────────────┬─────────┬─────────┬────────────┬─────────┬─────────────┬────────────────────────┐
- │ MANAGER   │ PACKAGE         │ KIND    │ VERSION │ DEPENDENCY │ TOOL ID │ ADOPTION    │ BLOCK                  │
- ├───────────┼─────────────────┼─────────┼─────────┼────────────┼─────────┼─────────────┼────────────────────────┤
- │ brew      │ openssl@3       │ formula │ 1.0.0   │ yes        │ —       │ unsupported │ dependency             │
- │ brew      │ ripgrep         │ formula │ 14.1.1  │ no         │ 2       │ supported   │ —                      │
- │ brew      │ wireguard-tools │ formula │ 1.0.0   │ no         │ —       │ unsupported │ protected              │
- │ brew-cask │ docker          │ cask    │ 4.39.0  │ no         │ —       │ unsupported │ authorization_required │
- │ brew-cask │ font-hack       │ cask    │ 2.0.0   │ no         │ —       │ supported   │ —                      │
- │ vp        │ @openai/codex   │ global  │ 0.150.0 │ no         │ 1       │ supported   │ —                      │
- │ vp        │ pnpm            │ global  │ 10.15.1 │ no         │ —       │ unsupported │ protected              │
- │ vp        │ typescript      │ global  │ —       │ no         │ —       │ unsupported │ version_unreadable     │
- └───────────┴─────────────────┴─────────┴─────────┴────────────┴─────────┴─────────────┴────────────────────────┘
+Node #2 observed at 2026-04-26T11:59:00+00:00.
+ ┌───────────┬──────────────────┐
+ │ MANAGER   │ SCAN STATE       │
+ ├───────────┼──────────────────┤
+ │ brew      │ complete         │
+ │ brew-cask │ unsupported      │
+ │ vp        │ complete         │
+ │ apt       │ not observed yet │
+ └───────────┴──────────────────┘
+brew-cask is unsupported, so its package list is not an inventory.
+apt is not observed yet, so its package list is not an inventory.
+ ┌─────────┬─────────────────┬─────────┬──────────────┬────────────┬─────────┬─────────────┬────────────────────┐
+ │ MANAGER │ PACKAGE         │ KIND    │ VERSION      │ DEPENDENCY │ TOOL ID │ ADOPTION    │ BLOCK              │
+ ├─────────┼─────────────────┼─────────┼──────────────┼────────────┼─────────┼─────────────┼────────────────────┤
+ │ brew    │ pcre2           │ formula │ 10.44.0      │ yes        │ —       │ unsupported │ dependency         │
+ │ brew    │ ripgrep         │ formula │ 14.1.0       │ no         │ —       │ supported   │ —                  │
+ │ brew    │ tool            │ formula │ 1.0.0        │ no         │ —       │ unsupported │ unsupported_source │
+ │ brew    │ wireguard-tools │ formula │ 1.0.20250521 │ no         │ —       │ unsupported │ protected          │
+ │ vp      │ @openai/codex   │ global  │ 0.150.0      │ no         │ 1       │ supported   │ —                  │
+ │ vp      │ pnpm            │ global  │ 10.0.0       │ no         │ —       │ unsupported │ protected          │
+ └─────────┴─────────────────┴─────────┴──────────────┴────────────┴─────────┴─────────────┴────────────────────┘
 Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

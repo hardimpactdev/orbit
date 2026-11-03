@@ -9,7 +9,11 @@
             "message": "The Tool request cannot be admitted.",
             "details": {
                 "step": "adopt",
-                "outcome": "constraint_invalid"
+                "outcome": "constraint_invalid",
+                "agent": {
+                    "state": "unknown",
+                    "since": null
+                }
             }
         }
     }

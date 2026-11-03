@@ -1,10 +1,9 @@
 import { z } from "npm:zod@4.4.3";
 import * as native from "./native.ts";
 import { Setup } from "../node-bootstrap/tool_setup_assets.ts";
-import { AdoptInput, type Context, Facts, ManagerFields, platformSupports } from "./adopt.ts";
-import { allows, normalizeVersion, safeVersion, Step, ToolRefusal, verifyInstalled } from "./contract.ts";
-import { homebrewBlock, homebrewCandidateVersion } from "./adopt_homebrew.ts";
-export const WriteInput = AdoptInput.safeExtend({ kind: z.enum(["tool.install", "tool.update"]), setup: Setup.nullable().default(null) });
+import { allows, type Context, Facts, ManagerFields, normalizeVersion, PackageInput, platformSupports, safeVersion, Step, ToolRefusal, verifyInstalled } from "./contract.ts";
+import { homebrewBlock, homebrewCandidateVersion } from "./homebrew.ts";
+export const WriteInput = PackageInput.safeExtend({ kind: z.enum(["tool.install", "tool.update"]), setup: Setup.nullable().default(null) });
 /** The shared Tool Manager setup reads only the manager, for a Tool install or the development deploy. */
 export const ManagerInput = ManagerFields.extend({ architecture: z.string().default("x86_64"), setup: Setup.nullable().default(null) }).refine(platformSupports);
 type Input = z.infer<typeof WriteInput>;
@@ -83,8 +82,8 @@ export const behavior = {
         const value = { ...decide(args.input, phase), version: phase?.candidate ? (phase.candidate as { version?: string }).version ?? "" : "" };
         await ctx.writeResource("decision", "decision", value); return value;
       } },
-    observe: { description: "Decode the package state returned by the official end check", arguments: z.object({ input: AdoptInput, after: Public }),
-      execute: async (args: { input: z.infer<typeof AdoptInput>; after: Record<string, unknown> }, ctx: Context) => {
+    observe: { description: "Decode the package state returned by the official end check", arguments: z.object({ input: PackageInput, after: Public }),
+      execute: async (args: { input: z.infer<typeof PackageInput>; after: Record<string, unknown> }, ctx: Context) => {
         const facts = native.after(args.input, args.after);
         const installed_version = facts.versions.length === 1 ? facts.versions[0] : null;
         if (installed_version !== null && !safeVersion(installed_version)) throw new ToolRefusal("tool.version_probe_failed");

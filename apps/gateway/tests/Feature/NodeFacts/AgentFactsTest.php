@@ -11,7 +11,6 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Models\NodeFact;
 use App\Models\Project;
-use App\Models\ToolManagerRecord;
 use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -162,13 +161,10 @@ describe('agent facts and liveness', function (): void {
         expect(NodeFact::query()->where('subject', '/fast/apps/acme/default')->sole()->data['env']['mode'])->toBe('0600');
     });
 
-    it('stores one packages fact per Tool Manager and names the managers in the watch list', function (): void {
-        ToolManagerRecord::query()->create(['node_id' => $this->node->id, 'name' => 'apt', 'status' => 'active']);
-        ToolManagerRecord::query()->create(['node_id' => $this->node->id, 'name' => 'composer', 'status' => 'active']);
-        $this->getJson('/api/v1/agent/watch')->assertOk()->assertJsonPath('data.tools', [
-            ['manager' => 'apt', 'paths' => ['/var/lib/dpkg/status']],
-            ['manager' => 'composer', 'paths' => ['/opt/orbit/composer']],
-        ]);
+    it('stores one packages fact per Tool Manager and names every Linux manager in the watch list, recorded or not', function (): void {
+        $tools = $this->getJson('/api/v1/agent/watch')->assertOk()->json('data.tools');
+        expect(array_column($tools, 'manager'))->toBe(['apt', 'brew', 'composer', 'vp'])
+            ->and($tools[0]['paths'])->toBe(['/var/lib/dpkg/status'])->and($tools[2]['paths'])->toBe(['/opt/orbit/composer']);
         $apt = ['kind' => 'packages', 'subject' => 'apt', 'observed_at' => '2026-11-03T00:00:00Z', 'data' => ['scope' => '/var/lib/dpkg/status',
             'packages' => [['name' => 'jq', 'version' => '1.7']], 'sources' => [],
             'keys' => [['path' => '/etc/apt/keyrings/docker.asc', 'sha256' => str_repeat('a', 64), 'content' => base64_encode('key')],

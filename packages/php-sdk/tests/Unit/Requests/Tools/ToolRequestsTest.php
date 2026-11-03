@@ -14,6 +14,7 @@ use Orbit\Sdk\Requests\Tools\ScanToolInventoryRequest;
 use Orbit\Sdk\Requests\Tools\ShowToolRequest;
 use Orbit\Sdk\Requests\Tools\UpdateToolRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
+use Orbit\Sdk\Responses\Tools\AdoptedToolResponse;
 use Orbit\Sdk\Responses\Tools\ToolInventoryResponse;
 use Orbit\Sdk\Responses\Tools\ToolManagersResponse;
 use Orbit\Sdk\Responses\Tools\ToolResponse;
@@ -339,9 +340,9 @@ function tool_transport_cases(string $requestId): array
         ],
         [
             'request' => new AdoptToolRequest(2, 'apt', 'jq', '^1.0'),
-            'response' => ['data' => ['id' => 11, 'kind' => 'tool.install', 'target_type' => 'node_tools', 'target_id' => 12, 'status' => 'queued', 'sequence' => 1], 'meta' => ['request_id' => $requestId]],
-            'response_class' => OperationResponse::class,
-            'status' => 202,
+            'response' => ['data' => [...$tool, 'agent' => ['state' => 'online', 'since' => null]], 'meta' => ['request_id' => $requestId]],
+            'response_class' => AdoptedToolResponse::class,
+            'status' => 201,
         ],
         [
             'request' => new UpdateToolRequest(41),
@@ -443,6 +444,18 @@ function tool_inventory_request_data(array $overrides = []): array
         ],
     ], $overrides);
 }
+
+it('reads the recorded adopted Tool with the agent liveness', function (): void {
+    $recorded = tool_adopt_fixture('adopted');
+    $connector = new GatewayConnector('https://10.44.0.1');
+    $connector->withMockClient(new MockClient([AdoptToolRequest::class => MockResponse::make($recorded['body'], $recorded['status'])]));
+
+    $adopted = $connector->send(new AdoptToolRequest(2, 'apt', 'jq', '^1.7'))->dto();
+
+    expect($adopted)->toBeInstanceOf(AdoptedToolResponse::class)
+        ->and($adopted->tool->status)->toBe('installed')->and($adopted->tool->installedVersion)->toBe('1.7.1')
+        ->and($adopted->agent?->label())->toBe('online')->and($adopted->possiblyOutdated())->toBeFalse();
+});
 
 it('preserves repository definitions in install adopt and update transport', function (): void {
     $repository = ['name' => 'vendor', 'uris' => ['https://packages.example.test/apt'], 'suites' => ['preview'], 'components' => ['main'], 'signing_key' => ['url' => 'https://packages.example.test/key.gpg', 'fingerprint' => str_repeat('A', 40)]];

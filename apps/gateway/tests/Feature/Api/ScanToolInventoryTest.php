@@ -5,15 +5,13 @@ declare(strict_types=1);
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolStatus;
-use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\AptRepository;
 use App\Models\Node;
+use App\Models\NodeFact;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
-use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\ToolManagerFakeSshExecutor;
 
 beforeEach(function (): void {
@@ -116,148 +114,74 @@ describe('tool inventory authorization and input', function (): void {
 });
 
 describe('tool inventory scans', function (): void {
-    it('returns a complete empty inventory when no tools are registered', function (): void {
+    it('lists each manager the agent reported, with no packages, and reads nothing on the Node', function (): void {
         $node = scan_node('scan-mini', '10.44.0.3', 'macos', 'mini');
-        $ssh = scan_bind(scan_observations());
+        scan_fact($node, 'brew', ['formulae' => [], 'casks' => []]);
+        scan_fact($node, 'vp', ['packages' => []]);
+        $ssh = new ToolManagerFakeSshExecutor([]);
+        app()->instance(SshExecutor::class, $ssh);
 
         $response = $this->get('/api/v1/tool-inventory?node_id='.$node->id, ['Accept' => 'application/json'])->assertOk();
 
-        expect($response->json('data.managers'))->toHaveCount(4)
-            ->and($response->json('data.observed_at'))->toBe('2026-04-26T12:00:00+00:00')
-            ->and($response->json('data.managers.0.scan_state'))->toBe('complete')
+        expect($response->json('data.managers.*.manager'))->toBe(['brew', 'brew-cask', 'vp', 'apt'])
+            ->and($response->json('data.managers.*.scan_state'))->toBe(['complete', 'complete', 'complete', 'unsupported'])
+            ->and($response->json('data.observed_at'))->toBe('2026-04-26T11:59:00+00:00')
             ->and($response->json('data.managers.0.packages'))->toBe([])
-            ->and($response->json('data.managers.1.scan_state'))->toBe('complete')
-            ->and($response->json('data.managers.2.manager'))->toBe('vp')
-            ->and($response->json('data.managers.2.packages'))->toBe([])
-            ->and(Tool::query()->count())->toBe(0)
-            ->and(ToolManagerRecord::query()->count())->toBe(0);
-        scan_assert_read_only($ssh);
+            ->and($ssh->commands)->toBe([])
+            ->and(Tool::query()->count())->toBe(0)->and(ToolManagerRecord::query()->count())->toBe(0);
         record_fixture($response, 'tools/tool-scan/empty', 'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest', 'GET /api/v1/tool-inventory');
     });
 
-    it('reports scoped Vite+ roots, ownership, and Homebrew facts without host paths', function (): void {
-        $node = scan_node('scan-mini', '10.44.0.3', 'macos', 'mini');
+    it('joins the reported packages with recorded Tools and marks what Orbit cannot adopt', function (): void {
+        $node = scan_node('scan-beast', '10.44.0.3');
         $codex = scan_tool($node, ToolManagerName::Vp, '@openai/codex');
-        $ripgrep = scan_tool($node, ToolManagerName::Brew, 'ripgrep');
-        $formulae = [
-            scan_package('openssl@3', '1.0.0', 'dependency', true),
-            scan_package('ripgrep', '14.1.1'),
-            scan_package('wireguard-tools', '1.0.0', 'protected'),
-        ];
-        $casks = [
-            scan_package('docker', '4.39.0', 'authorization_required'),
-            scan_package('font-hack', '2.0.0'),
-        ];
-        $vp = [
-            ['name' => '@openai/codex', 'version' => '0.150.0'],
-            ['name' => 'pnpm', 'version' => '10.15.1'],
-            ['name' => 'typescript', 'version' => null],
-        ];
-        $ssh = scan_bind(scan_observations($formulae, $casks), new FakeAgentCommandRunner()->answer('tool.vp-inventory', ['packages' => $vp, 'scan_complete' => true]));
-        $before = Tool::query()->count();
+        scan_fact($node, 'vp', ['packages' => [['name' => '@openai/codex', 'version' => '0.150.0'], ['name' => 'pnpm', 'version' => '10.0.0']]]);
+        scan_fact($node, 'brew', ['formulae' => [
+            ['name' => 'ripgrep', 'versions' => ['14.1.0'], 'tap' => 'homebrew/core', 'on_request' => true, 'dependencies' => ['pcre2']],
+            ['name' => 'pcre2', 'versions' => ['10.44'], 'tap' => 'homebrew/core', 'on_request' => false, 'dependencies' => []],
+            ['name' => 'tool', 'versions' => ['1.0.0'], 'tap' => 'example/tap', 'on_request' => true, 'dependencies' => []],
+            ['name' => 'wireguard-tools', 'versions' => ['1.0.20250521'], 'tap' => 'homebrew/core', 'on_request' => true, 'dependencies' => []],
+        ], 'casks' => []]);
 
-        DB::flushQueryLog();
-        DB::enableQueryLog();
         $response = $this->get('/api/v1/tool-inventory?node_id='.$node->id, ['Accept' => 'application/json'])->assertOk();
 
-        $body = $response->getContent();
-        expect($response->json('data.node_id'))->toBe($node->id)
-            ->and($response->json('data.observed_at'))->toBe('2026-04-26T12:00:00+00:00')
-            ->and(array_column($response->json('data.managers'), 'manager'))->toBe(['brew', 'brew-cask', 'vp', 'apt'])
-            ->and($response->json('data.managers.0.packages.1.package'))->toBe('ripgrep')
-            ->and($response->json('data.managers.0.packages.1.registered'))->toBeTrue()
-            ->and($response->json('data.managers.0.packages.1.tool_id'))->toBe($ripgrep->id)
-            ->and($response->json('data.managers.0.packages.0.adoption_block'))->toBe('dependency')
-            ->and($response->json('data.managers.0.packages.2.adoption_block'))->toBe('protected')
-            ->and($response->json('data.managers.1.packages.0.package'))->toBe('docker')
-            ->and($response->json('data.managers.1.packages.0.package_kind'))->toBe('cask')
-            ->and($response->json('data.managers.1.packages.1.adoption'))->toBe('supported')
+        $brew = collect($response->json('data.managers.0.packages'))->keyBy('package');
+        expect($brew['ripgrep']['adoption'])->toBe('supported')->and($brew['ripgrep']['installed_version'])->toBe('14.1.0')
+            ->and($brew['pcre2']['adoption_block'])->toBe('dependency')->and($brew['pcre2']['dependency'])->toBeTrue()
+            ->and($brew['tool']['adoption_block'])->toBe('unsupported_source')
+            ->and($brew['wireguard-tools']['adoption_block'])->toBe('protected')
+            ->and($response->json('data.managers.1.scan_state'))->toBe('unsupported')
             ->and($response->json('data.managers.2.packages.0.package'))->toBe('@openai/codex')
-            ->and($response->json('data.managers.2.packages.0.package_kind'))->toBe('global')
             ->and($response->json('data.managers.2.packages.0.tool_id'))->toBe($codex->id)
-            ->and($response->json('data.managers.2.packages.0.dependency'))->toBeFalse()
             ->and($response->json('data.managers.2.packages.1.adoption_block'))->toBe('protected')
-            ->and($response->json('data.managers.2.packages.2.adoption_block'))->toBe('version_unreadable')
-            ->and($response->json('data.managers.2.packages.2.installed_version'))->toBeNull()
-            ->and($body)->not->toContain('/Users')
-            ->and($body)->not->toContain('VP_HOME')
-            ->and($body)->not->toContain('installedAt')
-            ->and($body)->not->toContain('22.21.0')
-            ->and($body)->not->toContain('ghcr.io')
-            ->and($body)->not->toContain('example.com')
-            ->and(Tool::query()->count())->toBe($before)
-            ->and($codex->refresh()->installed_version)->toBe('0.150.0');
-        scan_assert_read_only($ssh);
-        expect(app(AgentCommandRunner::class)->calls)->toBe([
-            ['node' => $node->name, 'command' => 'tool.homebrew-scan', 'input' => ['architecture' => 'arm64']],
-            ['node' => $node->name, 'command' => 'tool.vp-inventory', 'input' => []],
-        ]);
-        $writes = collect(DB::getQueryLog())
-            ->filter(static fn (array $query): bool => preg_match('/\b(insert|update|delete|replace)\b/i', $query['query']) === 1)
-            ->pluck('query')
-            ->implode("\n");
-        expect($writes)->not->toMatch('/tool_managers|\btools\b/i');
+            ->and($response->json('data.managers.3.scan_state'))->toBe('not_observed')
+            ->and($response->getContent())->not->toContain('/home/');
         record_fixture($response, 'tools/tool-scan/discovered', 'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest', 'GET /api/v1/tool-inventory');
     });
 
-    it('keeps a successful manager when another read fails or the scope conflicts', function (): void {
-        $node = scan_node('scan-mini', '10.44.0.3', 'macos', 'mini');
-        $tool = scan_tool($node, ToolManagerName::Vp, '@openai/codex');
-        $formulae = [scan_package('ripgrep', '14.1.1')];
-        $ssh = scan_bind(['formulae' => ['state' => 'complete', 'packages' => $formulae], 'casks' => ['state' => 'incomplete', 'packages' => []]], new FakeAgentCommandRunner()->refuse('tool.vp-inventory', 'tool.vp_scope_conflict'));
+    it('keeps a package whose version does not normalize adoptable, as adoption does', function (): void {
+        $node = scan_node('scan-revision', '10.44.0.3');
+        scan_fact($node, 'brew', ['formulae' => [['name' => 'node', 'versions' => ['25.8.1_1'], 'tap' => 'homebrew/core', 'on_request' => true, 'dependencies' => []]], 'casks' => []]);
+
+        $this->get('/api/v1/tool-inventory?node_id='.$node->id, ['Accept' => 'application/json'])->assertOk()
+            ->assertJsonPath('data.managers.0.packages.0.installed_version', null)
+            ->assertJsonPath('data.managers.0.packages.0.adoption', 'supported');
+    });
+
+    it('says a manager is not observed yet instead of reading the Node', function (): void {
+        $node = scan_node('scan-new', '10.44.0.3');
+        scan_fact($node, 'vp', ['packages' => []]);
+        // A fact without a scope reports that no state path exists.
+        NodeFact::query()->create(['node_id' => $node->id, 'kind' => 'packages', 'subject' => 'brew', 'digest' => str_repeat('b', 64),
+            'observed_at' => now(), 'received_at' => now(), 'data' => ['scope' => null]]);
+        $ssh = new ToolManagerFakeSshExecutor([]);
+        app()->instance(SshExecutor::class, $ssh);
 
         $response = $this->get('/api/v1/tool-inventory?node_id='.$node->id, ['Accept' => 'application/json'])->assertOk();
 
-        expect($response->json('data.managers.0.scan_state'))->toBe('complete')
-            ->and($response->json('data.managers.0.packages.0.package'))->toBe('ripgrep')
-            ->and($response->json('data.managers.1.scan_state'))->toBe('incomplete')
-            ->and($response->json('data.managers.1.packages'))->toBe([])
-            ->and($response->json('data.managers.2.scan_state'))->toBe('conflicting')
-            ->and($response->json('data.managers.2.packages'))->toBe([])
-            ->and($response->json('data.observed_at'))->toBe('2026-04-26T12:00:00+00:00')
-            ->and($response->getContent())->not->toContain('secret')
-            ->and($tool->refresh()->status)->toBe(ToolStatus::Installed);
-        scan_assert_read_only($ssh);
+        expect($response->json('data.managers.*.scan_state'))->toBe(['not_observed', 'unsupported', 'complete', 'not_observed'])
+            ->and($ssh->commands)->toBe([]);
         record_fixture($response, 'tools/tool-scan/partial', 'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest', 'GET /api/v1/tool-inventory');
-    });
-
-    it('distinguishes an unsupported manager from an absent scope on Linux', function (): void {
-        $node = scan_node('scan-linux', '10.44.0.4', 'linux', 'orbit', 'x86_64');
-        $formulae = [scan_package('ripgrep', '14.1.1')];
-        $ssh = scan_bind(scan_observations($formulae), new FakeAgentCommandRunner()
-
-            ->refuse('tool.vp-inventory', 'tool.vp_scope_absent'));
-
-        $response = $this->get('/api/v1/tool-inventory?node_id='.$node->id, ['Accept' => 'application/json'])->assertOk();
-
-        expect(array_column($response->json('data.managers'), 'scan_state'))
-            ->toBe(['complete', 'unsupported', 'absent', 'complete'])
-            ->and($response->json('data.managers.1.packages'))->toBe([])
-            ->and($response->json('data.managers.2.packages'))->toBe([])
-            ->and($response->getContent())->not->toContain('/home/linuxbrew')
-            ->and($response->getContent())->not->toContain('secret')
-            ->and(Tool::query()->count())->toBe(0);
-        scan_assert_read_only($ssh);
-        expect($ssh->commands)->toBe([]);
-        expect(app(AgentCommandRunner::class)->commands())->toBe(['tool.homebrew-scan', 'tool.vp-inventory', 'tool.apt-inventory']);
-        record_fixture($response, 'tools/tool-scan/linux', 'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest', 'GET /api/v1/tool-inventory');
-    });
-
-    it('marks a refused Vite+ inventory incomplete and keeps the other managers', function (): void {
-        $node = scan_node('scan-mini', '10.44.0.3', 'macos', 'mini');
-        $tool = scan_tool($node, ToolManagerName::Vp, '@openai/codex');
-        $formulae = [scan_package('ripgrep', '14.1.1')];
-        $casks = [scan_package('font-hack', '2.0.0')];
-        scan_bind(scan_observations($formulae, $casks), new FakeAgentCommandRunner()->refuse('tool.vp-inventory', 'tool.vp_output_invalid'));
-
-        $response = $this->get('/api/v1/tool-inventory?node_id='.$node->id, ['Accept' => 'application/json'])->assertOk();
-
-        expect($response->json('data.managers.0.scan_state'))->toBe('complete')
-            ->and($response->json('data.managers.1.scan_state'))->toBe('complete')
-            ->and($response->json('data.managers.2.scan_state'))->toBe('incomplete')
-            ->and($response->json('data.managers.2.packages'))->toBe([])
-            ->and($tool->refresh()->installed_version)->toBe('0.150.0')
-            ->and($response->getContent())->not->toContain('secret');
     });
 });
 
@@ -295,67 +219,21 @@ function scan_tool(Node $node, ToolManagerName $manager, string $package): Tool
     ]);
 }
 
-/** @param array<string, mixed> $observations */
-function scan_bind(array $observations, ?FakeAgentCommandRunner $agents = null): ToolManagerFakeSshExecutor
+/** @param array<string, mixed> $data */
+function scan_fact(Node $node, string $manager, array $data): void
 {
-    $agents ??= new FakeAgentCommandRunner()->answer('tool.vp-inventory', ['packages' => [], 'scan_complete' => true]);
-    $agents->answer('tool.homebrew-scan', $observations)->answer('tool.apt-inventory', ['packages' => []]);
-    app()->instance(AgentCommandRunner::class, $agents);
-    $ssh = new ToolManagerFakeSshExecutor([]);
-    app()->instance(SshExecutor::class, $ssh);
-
-    return $ssh;
-}
-
-function scan_observations(array $formulae = [], array $casks = []): array
-{
-    return ['formulae' => ['state' => 'complete', 'packages' => $formulae], 'casks' => ['state' => 'complete', 'packages' => $casks]];
-}
-
-function scan_package(string $name, ?string $version, ?string $block = null, bool $dependency = false): array
-{
-    return ['name' => $name, 'installed_version' => $version, 'block' => $block, 'dependency' => $dependency];
-}
-
-function scan_assert_read_only(ToolManagerFakeSshExecutor $ssh): void
-{
-    expect(json_encode($ssh->arguments()))
-        ->not->toContain('curl')
-        ->not->toContain('sudo')
-        ->not->toContain('apt-get')
-        ->not->toContain('HOMEBREW_FORCE_API_AUTO_UPDATE');
-
-    foreach ($ssh->arguments() as $arguments) {
-        expect($arguments)->not->toContain('install')
-            ->not->toContain('update')
-            ->not->toContain('upgrade')
-            ->not->toContain('uninstall')
-            ->not->toContain('autoremove');
-    }
-
-    foreach ($ssh->commands as $command) {
-        expect($command->input ?? '')
-            ->not->toContain('curl')
-            ->not->toContain('sudo')
-            ->not->toContain('apt-get')
-            ->not->toContain('install')
-            ->not->toContain('git clone')
-            ->not->toContain('checkout');
-    }
+    NodeFact::query()->updateOrCreate(['node_id' => $node->id, 'kind' => 'packages', 'subject' => $manager], [
+        'digest' => bin2hex(random_bytes(32)), 'observed_at' => now()->subMinute(), 'received_at' => now(), 'data' => ['scope' => '/', ...$data]]);
 }
 
 it('reports apt repository packages and protected prerequisites without creating intent', function (): void {
     $node = scan_node('apt-target', '10.44.0.4');
-    $agents = new FakeAgentCommandRunner()->answer('tool.apt-inventory', ['packages' => [
-        ['name' => 'rex', 'version' => '0.0.123-gabc'], ['name' => 'openssh-server', 'version' => '10.0'],
-    ]]);
-    scan_bind(scan_observations(), $agents);
-    $agents->answer('tool.vp-inventory', ['packages' => [], 'scan_complete' => true])->answer('tool.apt-inventory', ['packages' => [['name' => 'rex', 'version' => '0.0.123-gabc'], ['name' => 'openssh-server', 'version' => '10.0']]]);
+    scan_fact($node, 'apt', ['packages' => [['name' => 'rex', 'version' => '0.0.123'], ['name' => 'openssh-server', 'version' => '10.0']]]);
     $repository = AptRepository::query()->create(['node_id' => $node->id, 'name' => 'rex', 'definition' => ['name' => 'rex', 'suites' => ['preview']]]);
     $manager = $node->toolManagers()->create(['name' => 'apt', 'status' => LifecycleStatus::Active]);
     $tool = $node->tools()->create(['tool_manager_id' => $manager->id, 'apt_repository_id' => $repository->id, 'package' => 'rex', 'status' => ToolStatus::Installed]);
 
-    $this->get('/api/v1/tool-inventory?node_id='.$node->id, ['Accept' => 'application/json'])->assertOk()
+    $response = $this->get('/api/v1/tool-inventory?node_id='.$node->id, ['Accept' => 'application/json'])->assertOk()
         ->assertJsonPath('data.managers.3.manager', 'apt')
         ->assertJsonPath('data.managers.3.scan_state', 'complete')
         ->assertJsonPath('data.managers.3.packages.0.adoption_block', 'protected')
@@ -364,4 +242,5 @@ it('reports apt repository packages and protected prerequisites without creating
         ->assertJsonPath('data.managers.3.packages.1.repository.suites', ['preview'])
         ->assertJsonPath('data.managers.3.packages.1.tool_id', $tool->id);
     expect($node->tools()->count())->toBe(1);
+    record_fixture($response, 'tools/tool-scan/linux', 'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest', 'GET /api/v1/tool-inventory');
 });

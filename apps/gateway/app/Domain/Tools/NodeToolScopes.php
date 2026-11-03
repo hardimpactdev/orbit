@@ -5,14 +5,14 @@ declare(strict_types=1);
 namespace App\Domain\Tools;
 
 use App\Domain\Nodes\ManagedUserAccountResolver;
-use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
-use App\Models\ToolManagerRecord;
 use Throwable;
 
 /**
- * Where each active Tool Manager on a Linux Node keeps its state, the files the Node agent reads for its `packages`
- * facts. The agent reads the first candidate that exists; the agent's unit binds the candidates under `/home`.
+ * Where each Tool Manager a Linux Node can run keeps its state, the files the Node agent reads for its `packages`
+ * facts. Every manager is listed, recorded or not, so `tool:adopt` and `tool:scan` can see a package Orbit has never
+ * managed. The agent reads the first candidate that exists and reports nothing while none does; the agent's unit binds
+ * the candidates under `/home`.
  */
 final readonly class NodeToolScopes
 {
@@ -26,22 +26,20 @@ final readonly class NodeToolScopes
         } catch (Throwable) {
             $home = null;
         }
-        $scopes = [];
-        $names = ToolManagerRecord::query()->where('node_id', $node->id)->where('status', LifecycleStatus::Active)->orderBy('name')->pluck('name');
-        foreach ($names as $name) {
-            $paths = match ($name) {
-                'apt' => ['/var/lib/dpkg/status'],
-                'composer' => ['/opt/orbit/composer'],
-                'vp' => ['/opt/orbit/vite-plus', ...($home === null ? [] : [$home.'/.vite-plus', $home.'/.local/share/vite-plus'])],
-                'brew' => ['/home/linuxbrew/.linuxbrew'],
-                default => [],
-            };
-            if ($paths !== []) {
-                $scopes[] = ['manager' => (string) $name, 'paths' => $paths];
-            }
+        // A home that is not a plain path, such as one with a space, can't name a unit bind; its candidates go.
+        if ($home !== null && preg_match('#\A(/[A-Za-z0-9._-]+)+\z#D', $home) !== 1) {
+            $home = null;
+        }
+        if ($node->platform !== 'linux') {
+            return [];
         }
 
-        return $scopes;
+        return [
+            ['manager' => ToolManagerName::Apt->value, 'paths' => ['/var/lib/dpkg/status']],
+            ['manager' => ToolManagerName::Brew->value, 'paths' => ['/home/linuxbrew/.linuxbrew']],
+            ['manager' => ToolManagerName::Composer->value, 'paths' => ['/opt/orbit/composer']],
+            ['manager' => ToolManagerName::Vp->value, 'paths' => ['/opt/orbit/vite-plus', ...($home === null ? [] : [$home.'/.vite-plus', $home.'/.local/share/vite-plus'])]],
+        ];
     }
 
     /**

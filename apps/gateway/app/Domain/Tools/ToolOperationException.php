@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tools;
 
+use App\Data\Nodes\NodeAgentData;
 use App\Http\Responses\ApiErrorResponse;
 use App\Http\Responses\RendersApiError;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
@@ -27,6 +28,7 @@ final class ToolOperationException extends RuntimeException implements RendersAp
         ?Throwable $previous = null,
         public readonly ?int $toolId = null,
         public readonly ?string $adoptionBlock = null,
+        public readonly ?NodeAgentData $agent = null,
     ) {
         parent::__construct($message, previous: $previous);
     }
@@ -78,6 +80,11 @@ final class ToolOperationException extends RuntimeException implements RendersAp
 
         if ($this->adoptionBlock !== null) {
             $details['adoption_block'] = $this->adoptionBlock;
+        }
+
+        // An adoption refusal comes from the agent's report; while the agent is offline it is possibly outdated.
+        if ($this->agent !== null) {
+            $details['agent'] = $this->agent->toArray();
         }
 
         return ApiErrorResponse::make($request, $this->apiErrorCode(), $this->getMessage(), $details, GatewayExceptionStatus::for($this));

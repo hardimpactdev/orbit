@@ -1,0 +1,26 @@
+Node #2: agent online
+
+┌  Tool [jq] recorded as installed 1.7.1.
+│
+├  ID                  1
+│
+├  Node ID             2
+│
+├  Manager             apt
+│
+├  Package             jq
+│
+├  Constraint          ^1.7
+│
+├  Status              installed
+│
+├  Installed version   1.7.1
+│
+├  Failed operation    —
+│
+├  Error code          —
+│
+├  Outcome             applied
+│
+└  Request ID          0198e15c-bf97-7c23-8f1f-61b8fe67a844
+

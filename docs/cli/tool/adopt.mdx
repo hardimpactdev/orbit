@@ -1,18 +1,18 @@
 ---
 title: "orbit tool:adopt"
 sidebarTitle: "tool:adopt"
-description: "Take ownership of one supported installed package. The Gateway checks its live state again and records intent without reinstalling or updating it."
+description: "Take ownership of one supported installed package. The Gateway checks the Node agent's latest report and records the Tool at once, without reinstalling or updating it."
 ---
 
 ```bash
-orbit tool:adopt <package> --node=ID --manager=MANAGER [--constraint=CONSTRAINT] [--repository=JSON] [--yes] [--idempotency-key=KEY] [--json]
+orbit tool:adopt <package> --node=ID --manager=MANAGER [--constraint=CONSTRAINT] [--repository=JSON] [--yes] [--json]
 ```
 
-Use `brew` for a Core formula, `brew-cask` for a supported official macOS cask, `vp` for a package in the enrolled account's Vite+ global scope, or `apt` or `composer` on Linux. The optional SemVer constraint must accept the installed version. A repeated adoption with the same intent is unchanged. A missing or unsupported package or a conflicting constraint fails without creating a Tool. The HTTP body, outcomes, and error codes are in [Adopt a Tool](/reference/tools#adopt-a-tool).
+Use `brew` for a Core formula installed on request, `vp` for a package in the enrolled account's Vite+ global scope, or `apt` or `composer` on Linux. The optional SemVer constraint must accept the installed version. A repeated adoption with the same intent is unchanged. A missing or unsupported package or a conflicting constraint fails without creating a Tool. The HTTP body, outcomes, and error codes are in [Adopt a Tool](/reference/tools#adopt-a-tool).
 
 Without `--yes`, a terminal asks `Take ownership of package [name] (manager on Node #ID) and manage later updates and removal?` The question includes `, constraint <range>` when a constraint was supplied. The default is No. Noninteractive and JSON calls require `--yes`. Declining, Ctrl-C, or end of input exits with `input.cancelled` and sends no request. A call that cannot prompt exits with `input.confirmation_required` and sends no request.
 
-The Operation result includes the observed installed version and `outcome`. `applied` records new ownership or repairs a failed row. `unchanged` keeps existing ownership and its recorded version. Use `tool:show` to read the managed Tool after completion. A refusal prints the Gateway code and message. Its `details` keep `step`, `outcome`, `id`, and `adoption_block` when the Gateway sent those safe tokens. Node access records stay out of the CLI error.
+The first line is the Node agent's liveness, such as `Node #12: agent online`. While the agent is offline, the next line says the answer is possibly outdated. Then the CLI prints the Tool with its observed installed version and `outcome`. `applied` records new ownership or repairs a failed row. `unchanged` keeps existing ownership. There is no task to follow. A refusal prints the liveness first, then the Gateway code and message. `tool.not_observed` means the agent has not reported that manager yet; a macOS Node runs no observing agent, so its packages can't be adopted. Its `details` keep `step`, `outcome`, `id`, and `adoption_block` when the Gateway sent those safe tokens. Node access records stay out of the CLI error.
 
 ## How it works
 

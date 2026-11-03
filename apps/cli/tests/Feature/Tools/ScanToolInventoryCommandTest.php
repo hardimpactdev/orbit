@@ -33,7 +33,7 @@ afterEach(function (): void {
     }
 });
 
-it('sends only the inventory read and renders formula, cask, dependency, and unsupported rows', function (): void {
+it('sends only the inventory read and renders formula, dependency, unsupported and not observed rows', function (): void {
     $mock = MockClient::global(gateway_fixture_mock('tools/tool-scan/discovered'));
 
     expect(Artisan::call('tool:scan', ['--node' => '2']))->toBe(0);
@@ -42,19 +42,15 @@ it('sends only the inventory read and renders formula, cask, dependency, and uns
     expect($output)
         ->toContain('ripgrep')
         ->toContain('formula')
-        ->toContain('openssl@3')
+        ->toContain('pcre2')
         ->toContain('dependency')
         ->toContain('wireguard-tools')
         ->toContain('protected')
-        ->toContain('docker')
-        ->toContain('cask')
-        ->toContain('authorization_required')
-        ->toContain('font-hack')
+        ->toContain('unsupported_source')
         ->toContain('@openai/codex')
         ->toContain('pnpm')
-        ->toContain('version_unreadable')
-        ->toContain('Node #2 observed at 2026-04-26T12:00:00+00:00.')
-        ->toContain('apt is unsupported, so its package list is not an inventory.');
+        ->toContain('Node #2 observed at 2026-04-26T11:59:00+00:00.')
+        ->toContain('apt is not observed yet, so its package list is not an inventory.');
 
     expect($mock->getLastRequest()?->getMethod())
         ->toBe(Method::GET)

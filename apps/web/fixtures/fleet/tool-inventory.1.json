@@ -19,7 +19,7 @@
                 },
                 {
                     "manager": "vp",
-                    "scan_state": "absent",
+                    "scan_state": "not_observed",
                     "packages": []
                 }
             ]

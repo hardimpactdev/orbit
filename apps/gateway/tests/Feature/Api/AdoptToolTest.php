@@ -6,9 +6,14 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolStatus;
+use App\Infrastructure\AgentView\CacheAgentStateView;
+use App\Models\AptRepository;
 use App\Models\Node;
+use App\Models\NodeFact;
+use App\Models\Operation;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
+use Illuminate\Support\Carbon;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\FakeToolManager;
 
@@ -111,6 +116,82 @@ describe('tool adoption api', function (): void {
 
 });
 
+describe('adoption from the agent report', function (): void {
+    beforeEach(function (): void {
+        app()->instance(ToolManagerRegistry::class, new ToolManagerRegistry([new FakeToolManager(ToolManagerName::Apt),
+            new FakeToolManager(ToolManagerName::Composer), new FakeToolManager(ToolManagerName::Brew)]));
+        Carbon::setTestNow('2026-11-03 05:00:00');
+        app(CacheAgentStateView::class)->putSubscriber(true, true, 1);
+        seed_agent_view($this->node->id, []);
+        adopt_api_fact($this->node, 'apt', ['packages' => [['name' => 'jq', 'version' => '1.7.1']]]);
+    });
+    afterEach(fn () => Carbon::setTestNow());
+
+    it('records the reported package as an installed Tool at once, with no task', function (): void {
+        $response = $this->postJson('/api/v1/tools/adopt', adopt_api_payload($this->node, '^1.7'))->assertCreated()
+            ->assertJsonPath('data.package', 'jq')->assertJsonPath('data.status', 'installed')
+            ->assertJsonPath('data.installed_version', '1.7.1')->assertJsonPath('data.outcome', 'applied')
+            ->assertJsonPath('data.agent', ['state' => 'online', 'since' => null]);
+        expect(Operation::query()->count())->toBe(0)->and(Tool::query()->sole()->status)->toBe(ToolStatus::Installed)
+            ->and($this->node->toolManagers()->sole()->status)->toBe(LifecycleStatus::Active);
+        record_adopt_fixture($response, 'adopted');
+
+        $this->postJson('/api/v1/tools/adopt', adopt_api_payload($this->node, '^1.7'))->assertCreated()->assertJsonPath('data.outcome', 'unchanged');
+        expect(Tool::query()->count())->toBe(1);
+    });
+
+    it('answers from the last report while the agent is silent, and says so', function (): void {
+        Carbon::setTestNow('2026-11-03 05:05:00');
+        app(CacheAgentStateView::class)->putSubscriber(true, true, 1);
+
+        $this->postJson('/api/v1/tools/adopt', adopt_api_payload($this->node))->assertCreated()
+            ->assertJsonPath('data.agent', ['state' => 'offline', 'since' => '2026-11-03T05:00:00Z']);
+    });
+
+    it('refuses without recording when the report does not show an adoptable package', function (Closure $report, array $payload, string $code, ?string $block): void {
+        $report->call($this);
+
+        $response = $this->postJson('/api/v1/tools/adopt', [...adopt_api_payload($this->node), ...$payload])->assertConflict()
+            ->assertJsonPath('error.code', $code)->assertJsonPath('error.details.agent.state', 'online')
+            ->assertJsonPath('error.details.adoption_block', $block);
+        expect(Tool::query()->count())->toBe(0)->and(ToolManagerRecord::query()->count())->toBe(0);
+        if ($code === 'tool.not_observed') {
+            record_adopt_fixture($response, 'not-observed');
+        }
+    })->with([
+        'not observed yet' => [fn () => NodeFact::query()->delete(), [], 'tool.not_observed', null],
+        'not installed' => [fn () => null, ['package' => 'ripgrep'], 'tool.package_absent', null],
+        'outside the constraint' => [fn () => null, ['version_constraint' => '^2.0'], 'tool.installed_version_constraint_violated', null],
+        'unreadable version' => [fn () => adopt_api_fact(test()->node, 'apt', ['packages' => [['name' => 'jq', 'version' => '1.7.1-1ubuntu1']]]),
+            ['version_constraint' => '^1.7'], 'tool.installed_version_unparseable', null],
+        'a Composer dependency' => [fn () => adopt_api_fact(test()->node, 'composer', ['roots' => ['laravel/installer'],
+            'packages' => [['name' => 'symfony/console', 'version' => '7.3.0']]]), ['manager' => 'composer', 'package' => 'symfony/console'], 'tool.adoption_unsupported', 'dependency'],
+        'a formula from another tap' => [fn () => adopt_api_fact(test()->node, 'brew', ['formulae' => [['name' => 'jq', 'versions' => ['1.8.1'],
+            'tap' => 'example/tap', 'on_request' => true, 'dependencies' => []]], 'casks' => []]), ['manager' => 'brew'], 'tool.adoption_unsupported', 'unsupported_source'],
+        'several formula versions' => [fn () => adopt_api_fact(test()->node, 'brew', ['formulae' => [['name' => 'jq', 'versions' => ['1.7.1', '1.8.1'],
+            'tap' => 'homebrew/core', 'on_request' => true, 'dependencies' => []]], 'casks' => []]), ['manager' => 'brew'], 'tool.adoption_unsupported', 'version_unreadable'],
+    ]);
+
+    it('checks the apt source and signing key Orbit writes before recording the repository', function (bool $matches): void {
+        $key = (string) file_get_contents(base_path('tests/Fixtures/Tools/apt-signing-key.gpg'));
+        $repository = ['name' => 'vendor', 'uris' => ['https://packages.example.test/apt'], 'suites' => ['stable'], 'components' => ['main'],
+            'signing_key' => ['url' => 'https://packages.example.test/key.gpg', 'fingerprint' => $matches ? 'B9450981404CF6FEC99E5181D8861E7192E7461F' : str_repeat('A', 40)]];
+        adopt_api_fact($this->node, 'apt', ['packages' => [['name' => 'jq', 'version' => '1.7.1']],
+            'sources' => [['path' => '/etc/apt/sources.list.d/orbit-vendor.sources', 'content' => base64_encode("Types: deb\nURIs: https://packages.example.test/apt\nSuites: stable\nComponents: main\nArchitectures: amd64\nSigned-By: /etc/apt/keyrings/orbit-vendor.gpg\n")]],
+            'keys' => [['path' => '/etc/apt/keyrings/orbit-vendor.gpg', 'content' => base64_encode($key)]]]);
+
+        $response = $this->postJson('/api/v1/tools/adopt', [...adopt_api_payload($this->node), 'repository' => $repository]);
+
+        if ($matches) {
+            $response->assertCreated()->assertJsonPath('data.repository.name', 'vendor');
+            expect(AptRepository::query()->sole()->definition)->toBe($repository)->and(Tool::query()->sole()->apt_repository_id)->toBe(AptRepository::query()->sole()->id);
+        } else {
+            $response->assertConflict()->assertJsonPath('error.code', 'tool.repository_adoption_mismatch');
+            expect(AptRepository::query()->count())->toBe(0)->and(Tool::query()->count())->toBe(0);
+        }
+    })->with(['matching' => [true], 'another key' => [false]]);
+});
+
 /** @return array{node_id: int, manager: string, package: string, version_constraint: ?string} */
 function adopt_api_node(string $name, string $address): Node
 {
@@ -122,6 +203,13 @@ function adopt_api_node(string $name, string $address): Node
         'wireguard_ip' => $address,
         'ssh_host_fingerprint' => 'SHA256:'.str_repeat('A', times: 43),
     ]);
+}
+
+/** @param array<string, mixed> $data */
+function adopt_api_fact(Node $node, string $manager, array $data): void
+{
+    NodeFact::query()->updateOrCreate(['node_id' => $node->id, 'kind' => 'packages', 'subject' => $manager], [
+        'digest' => bin2hex(random_bytes(32)), 'observed_at' => now(), 'received_at' => now(), 'data' => ['scope' => '/', ...$data]]);
 }
 
 function adopt_api_payload(Node $node, ?string $constraint = null): array
@@ -175,6 +263,11 @@ function assert_adopt_error(
     if ($adoptionBlock !== null) {
         $details[] = 'adoption_block';
         $response->assertJsonPath('error.details.adoption_block', $adoptionBlock);
+    }
+
+    // The agent's liveness comes last; a Node without an observing agent has none.
+    if ($response->json('error.details.agent') !== null) {
+        $details[] = 'agent';
     }
 
     expect(array_keys($response->json('error.details')))->toBe($details);

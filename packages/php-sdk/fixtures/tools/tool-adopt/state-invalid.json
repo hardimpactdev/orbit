@@ -10,7 +10,11 @@
             "details": {
                 "step": "adopt",
                 "outcome": "manager_failed",
-                "id": 1
+                "id": 1,
+                "agent": {
+                    "state": "unknown",
+                    "since": null
+                }
             }
         }
     }

@@ -9,7 +9,7 @@
             "managers": [
                 {
                     "manager": "brew",
-                    "scan_state": "incomplete",
+                    "scan_state": "not_observed",
                     "packages": []
                 },
                 {
@@ -19,7 +19,7 @@
                 },
                 {
                     "manager": "vp",
-                    "scan_state": "conflicting",
+                    "scan_state": "not_observed",
                     "packages": []
                 }
             ]

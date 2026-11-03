@@ -6,25 +6,12 @@
     "body": {
         "data": {
             "node_id": 2,
-            "observed_at": "2026-04-26T12:00:00+00:00",
+            "observed_at": "2026-04-26T11:59:00+00:00",
             "managers": [
                 {
                     "manager": "brew",
-                    "scan_state": "complete",
-                    "packages": [
-                        {
-                            "manager": "brew",
-                            "package": "ripgrep",
-                            "package_kind": "formula",
-                            "installed_version": "14.1.1",
-                            "dependency": false,
-                            "registered": false,
-                            "tool_id": null,
-                            "adoption": "supported",
-                            "adoption_block": null,
-                            "repository": null
-                        }
-                    ]
+                    "scan_state": "not_observed",
+                    "packages": []
                 },
                 {
                     "manager": "brew-cask",
@@ -33,13 +20,43 @@
                 },
                 {
                     "manager": "vp",
-                    "scan_state": "absent",
+                    "scan_state": "not_observed",
                     "packages": []
                 },
                 {
                     "manager": "apt",
                     "scan_state": "complete",
-                    "packages": []
+                    "packages": [
+                        {
+                            "manager": "apt",
+                            "package": "openssh-server",
+                            "package_kind": "deb",
+                            "installed_version": "10.0.0",
+                            "dependency": false,
+                            "registered": false,
+                            "tool_id": null,
+                            "adoption": "unsupported",
+                            "adoption_block": "protected",
+                            "repository": null
+                        },
+                        {
+                            "manager": "apt",
+                            "package": "rex",
+                            "package_kind": "deb",
+                            "installed_version": "0.0.123",
+                            "dependency": false,
+                            "registered": true,
+                            "tool_id": 1,
+                            "adoption": "supported",
+                            "adoption_block": null,
+                            "repository": {
+                                "name": "rex",
+                                "suites": [
+                                    "preview"
+                                ]
+                            }
+                        }
+                    ]
                 }
             ]
         },

@@ -51,10 +51,9 @@ final class ToolsController extends Controller
         return response()->json(['data' => OperationData::fromModel($action->execute($request->payload()))->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
-    #[StartsOperation('tool.adopt')]
     public function adopt(AdoptToolRequest $request, AdoptToolAction $action): JsonResponse
     {
-        return response()->json(['data' => OperationData::fromModel($action->execute($request->payload()))->toArray(), 'meta' => $this->meta($request)], 202);
+        return response()->json(['data' => $action->execute($request->payload())->toArray(), 'meta' => $this->meta($request)], 201);
     }
 
     #[StartsOperation('tool.update')]

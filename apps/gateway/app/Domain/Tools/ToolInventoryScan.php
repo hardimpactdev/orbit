@@ -8,7 +8,7 @@ use InvalidArgumentException;
 
 /**
  * One manager's inventory read.
- * Absent, unsupported, incomplete, and conflicting scans carry no package facts.
+ * Unsupported and not observed scans carry no package facts.
  */
 final readonly class ToolInventoryScan
 {

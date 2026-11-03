@@ -1,20 +1,9 @@
 manifestVersion: 1
 name: '@nckrtl/tool-adopt-command'
-version: 2026.11.02.7
+version: 2026.11.03.1
 visibility: private
 license: MIT
-description: Native Tool commands and typed decisions; shared query scripts remain
-  only for frozen adoption and manager setup.
+description: Native Tool commands and typed decisions for install, update and removal.
 behaviors:
-- operations/tools/adopt.ts
 - operations/tools/remove.ts
 - operations/tools/write.ts
-additionalFiles:
-- queries/support.py
-- queries/apt.py
-- queries/composer.py
-- queries/vp.py
-- queries/brew_query.py
-- queries/brew.py
-- queries/brew_cask.py
-- apt_repository.py

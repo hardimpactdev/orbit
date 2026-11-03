@@ -7,48 +7,38 @@ use Orbit\Sdk\Responses\Tools\ToolInventoryPackageResponse;
 use Orbit\Sdk\Responses\Tools\ToolInventoryResponse;
 
 describe('tool inventory responses', function (): void {
-    it('preserves recorded formula, cask, dependency, and unsupported package facts', function (): void {
+    it('preserves recorded formula, dependency, protected and unsupported package facts', function (): void {
         $inventory = tool_inventory_from_fixture('discovered');
         $packages = tool_inventory_packages($inventory);
 
         expect($inventory->nodeId)
             ->toBe(2)
             ->and($inventory->observedAt)
-            ->toBe('2026-04-26T12:00:00+00:00')
+            ->toBe('2026-04-26T11:59:00+00:00')
             ->and(array_map(static fn (ToolInventoryManagerResponse $manager): string => $manager->manager, $inventory->managers))
             ->toBe(['brew', 'brew-cask', 'vp', 'apt'])
-            ->and($packages['brew']['openssl@3']->packageKind)
+            ->and(array_map(static fn (ToolInventoryManagerResponse $manager): string => $manager->scanState, $inventory->managers))
+            ->toBe(['complete', 'unsupported', 'complete', 'not_observed'])
+            ->and($packages['brew']['pcre2']->packageKind)
             ->toBe('formula')
-            ->and($packages['brew']['openssl@3']->dependency)
+            ->and($packages['brew']['pcre2']->dependency)
             ->toBeTrue()
-            ->and($packages['brew']['openssl@3']->adoption)
+            ->and($packages['brew']['pcre2']->adoption)
             ->toBe('unsupported')
-            ->and($packages['brew']['openssl@3']->adoptionBlock)
+            ->and($packages['brew']['pcre2']->adoptionBlock)
             ->toBe('dependency')
-            ->and($packages['brew']['ripgrep']->registered)
-            ->toBeTrue()
-            ->and($packages['brew']['ripgrep']->toolId)
-            ->toBe(2)
             ->and($packages['brew']['ripgrep']->adoption)
             ->toBe('supported')
+            ->and($packages['brew']['tool']->adoptionBlock)
+            ->toBe('unsupported_source')
             ->and($packages['brew']['wireguard-tools']->adoptionBlock)
             ->toBe('protected')
-            ->and($packages['brew-cask']['docker']->packageKind)
-            ->toBe('cask')
-            ->and($packages['brew-cask']['docker']->adoptionBlock)
-            ->toBe('authorization_required')
-            ->and($packages['brew-cask']['font-hack']->adoption)
-            ->toBe('supported')
             ->and($packages['vp']['@openai/codex']->packageKind)
             ->toBe('global')
-            ->and($packages['vp']['@openai/codex']->toolId)
-            ->toBe(1)
+            ->and($packages['vp']['@openai/codex']->registered)
+            ->toBeTrue()
             ->and($packages['vp']['pnpm']->adoptionBlock)
-            ->toBe('protected')
-            ->and($packages['vp']['typescript']->installedVersion)
-            ->toBeNull()
-            ->and($packages['vp']['typescript']->adoptionBlock)
-            ->toBe('version_unreadable');
+            ->toBe('protected');
     });
 
     it('keeps an empty completed inventory distinct from a partial scan', function (string $fixture, array $states): void {
@@ -74,16 +64,16 @@ describe('tool inventory responses', function (): void {
             ['unsupported', []],
         ]],
         'linux' => ['linux', [
-            ['complete', ['ripgrep']],
+            ['not_observed', []],
             ['unsupported', []],
-            ['absent', []],
-            ['complete', []],
+            ['not_observed', []],
+            ['complete', ['openssh-server', 'rex']],
         ]],
         'partial' => ['partial', [
-            ['complete', ['ripgrep']],
-            ['incomplete', []],
-            ['conflicting', []],
+            ['not_observed', []],
             ['unsupported', []],
+            ['complete', []],
+            ['not_observed', []],
         ]],
     ]);
 

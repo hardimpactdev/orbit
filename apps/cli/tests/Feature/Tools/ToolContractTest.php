@@ -67,5 +67,12 @@ describe('tool adopt contract', function (): void {
         'package invalid' => ['tools/tool-adopt/package-invalid'],
         'state invalid' => ['tools/tool-adopt/state-invalid'],
         'validation failed' => ['tools/tool-adopt/validation-failed'],
+        'not observed' => ['tools/tool-adopt/not-observed'],
     ]);
+
+    it('renders a recorded adoption with the agent first', function (): void {
+        $arguments = ['package' => 'jq', '--node' => '2', '--manager' => 'apt', '--constraint' => '^1.7', '--yes' => true];
+        run_contract('tools/tool-adopt/adopted', 'tool:adopt', $arguments, 'tools/tool-adopt/adopted.human.txt', 0);
+        run_contract('tools/tool-adopt/adopted', 'tool:adopt', [...$arguments, '--json' => true], 'tools/tool-adopt/adopted.json', 0);
+    });
 });

@@ -38,7 +38,7 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
     public function apply(Operation $operation, array $data): Operation
     {
         $public = ValidatedData::object($data['result'] ?? []);
-        $result = $operation->kind === 'tool.adopt' ? $public : $this->nativeResult($operation, $data, $public);
+        $result = $this->nativeResult($operation, $data, $public);
         $data['error_code'] = $result['error_code'] ?? ($data['error_code'] ?? null);
         $result = array_intersect_key($result, array_flip([
             'native_error_code', 'manager_version', 'installed_version', 'outcome', 'block', 'error_code', 'repository_removed',
@@ -163,7 +163,7 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
 
                 return;
             }
-            if ($status === OperationStatus::Cancelled || $verb === 'adopt') {
+            if ($status === OperationStatus::Cancelled) {
                 return;
             }
             $tool?->update(['status' => ToolStatus::Failed, 'installed_version' => $result['installed_version'] ?? $tool->installed_version,
@@ -181,11 +181,6 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
             return;
         }
         $repositoryId = $this->repository($operation);
-        if ($tool !== null && $verb === 'adopt' && $tool->status === ToolStatus::Installed) {
-            $tool->update(['apt_repository_id' => $repositoryId]);
-
-            return;
-        }
         if ($tool === null && $record !== null) {
             $tool = $this->createTool($operation, $record);
         }

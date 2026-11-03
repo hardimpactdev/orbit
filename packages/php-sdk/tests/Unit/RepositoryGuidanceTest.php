@@ -405,6 +405,7 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Tools\\RemoveToolRequest',
         ];
         $expectedResponses = [
+            'Orbit\\Sdk\\Responses\\Tools\\AdoptedToolResponse',
             'Orbit\\Sdk\\Responses\\Tools\\ToolInventoryManagerResponse',
             'Orbit\\Sdk\\Responses\\Tools\\ToolInventoryPackageResponse',
             'Orbit\\Sdk\\Responses\\Tools\\ToolInventoryResponse',
@@ -434,7 +435,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toHaveCount(8)
             ->toEqualCanonicalizing($expectedRequests)
             ->and($toolResponseClasses)
-            ->toHaveCount(7)
+            ->toHaveCount(8)
             ->toEqualCanonicalizing($expectedResponses);
 
         foreach (array_merge($expectedRequests, $expectedResponses) as $class) {

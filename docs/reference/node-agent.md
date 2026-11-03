@@ -115,6 +115,8 @@ The [watch list](#watch-list) names each active Tool Manager with the candidate 
 
 Each fact also names its `scope`, the path it read. On beast the apt fact is about 270 KB.
 
+[`tool:scan`](/reference/tools#discover-installed-packages) lists these facts, and [`tool:adopt`](/reference/tools#adopt-a-tool) records a Tool from them. Neither reads the Node. A manager without a fact is "not observed yet".
+
 ### Checkouts
 
 On an app-dev Node, the [watch list](#watch-list) names the `apps_root`. The agent sends one `checkout` fact per Git checkout, so each request stays small and each change writes one row. Beast, for example, has more than 300 checkouts. The `checkout` data holds:

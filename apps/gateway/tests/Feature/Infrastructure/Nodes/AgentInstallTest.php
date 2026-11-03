@@ -21,7 +21,6 @@ use App\Infrastructure\Nodes\NodeLocks;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
-use App\Models\ToolManagerRecord;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Log;
 use Tests\Support\FakeAgentCommandRunner;
@@ -106,13 +105,10 @@ it('sends the configuration, Gateway CA, and narrowed unit to the agent', functi
         ->and($input['binary_changed'])->toBeFalse();
 });
 
-it('binds back the state of the active Tool Managers that live under home, read-only', function (): void {
+it('binds back the state of every Tool Manager under home, read-only, recorded or not', function (): void {
     $runner = nodeAgentConfigured();
     $node = nodeAgentNode();
     $node->forceFill(['public_ssh_host' => '192.0.2.4'])->save();
-    foreach (['apt' => 'active', 'vp' => 'active', 'brew' => 'active', 'composer' => 'removing'] as $name => $status) {
-        ToolManagerRecord::query()->create(['node_id' => $node->id, 'name' => $name, 'status' => $status]);
-    }
 
     nodeAgentExecutor($runner)->converge($node);
 
@@ -121,7 +117,7 @@ it('binds back the state of the active Tool Managers that live under home, read-
         ->not->toContain('BindReadOnlyPaths=-/opt', 'BindReadOnlyPaths=-/var/lib/dpkg');
 });
 
-it('binds back only the Instance root under an empty home', function (?ManagedUserAccount $account, array $settings, array $present, array $absent): void {
+it('binds back only the Instance root and Homebrew under an empty home', function (?ManagedUserAccount $account, array $settings, array $present, array $absent): void {
     $runner = nodeAgentConfigured();
     $node = nodeAgentNode();
     $node->settings = $settings;
@@ -132,8 +128,8 @@ it('binds back only the Instance root under an empty home', function (?ManagedUs
         ->not->toContain(...$absent);
 })->with([
     'default root' => [new ManagedUserAccount('deploy', 'deploy', '/home/deploy'), [], ['ProtectHome=tmpfs', 'BindReadOnlyPaths=-/home/deploy/apps'], ['ProtectHome=read-only', 'ProtectHome=yes', 'SupplementaryGroups=']],
-    'unsafe home' => [new ManagedUserAccount('orbit', 'orbit', '/home/orbit dir'), [], ['ProtectHome=yes'], ['BindReadOnlyPaths=']],
-    'unknown account' => [null, [], ['ProtectHome=yes'], ['SupplementaryGroups=', 'BindReadOnlyPaths=']],
+    'unsafe home' => [new ManagedUserAccount('orbit', 'orbit', '/home/orbit dir'), [], ['ProtectHome=tmpfs', 'BindReadOnlyPaths=-/home/linuxbrew/.linuxbrew'], ['BindReadOnlyPaths=-/home/orbit dir']],
+    'unknown account' => [null, [], ['ProtectHome=tmpfs', 'BindReadOnlyPaths=-/home/linuxbrew/.linuxbrew'], ['SupplementaryGroups=', 'BindReadOnlyPaths=-/home/orbit']],
 ]);
 
 it('writes the Gateway address while the gateway role itself converges', function (): void {

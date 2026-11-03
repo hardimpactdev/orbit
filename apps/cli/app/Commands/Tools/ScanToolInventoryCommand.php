@@ -54,7 +54,7 @@ final class ScanToolInventoryCommand extends ToolCommand
             $this->humanRenderer()->table(
                 ['Manager', 'Scan state'],
                 array_map(
-                    static fn (ToolInventoryManagerResponse $manager): array => [$manager->manager, $manager->scanState],
+                    static fn (ToolInventoryManagerResponse $manager): array => [$manager->manager, self::stateLabel($manager->scanState)],
                     $response->managers,
                 ),
                 'No managers returned.',
@@ -66,7 +66,7 @@ final class ScanToolInventoryCommand extends ToolCommand
                 continue;
             }
 
-            $this->writeHumanMessage("{$manager->manager} is {$manager->scanState}, so its package list is not an inventory.");
+            $this->writeHumanMessage("{$manager->manager} is ".self::stateLabel($manager->scanState).', so its package list is not an inventory.');
         }
 
         $packages = [];
@@ -95,6 +95,12 @@ final class ScanToolInventoryCommand extends ToolCommand
         $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
+    }
+
+    /** A scan state for people: the Node agent has not reported `not_observed` managers yet. */
+    private static function stateLabel(string $state): string
+    {
+        return $state === 'not_observed' ? 'not observed yet' : $state;
     }
 
     /** @return list<bool|int|string|null> */

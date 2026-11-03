@@ -9,7 +9,11 @@
             "message": "The Tool request cannot be admitted.",
             "details": {
                 "step": "adopt",
-                "outcome": "manager_failed"
+                "outcome": "manager_failed",
+                "agent": {
+                    "state": "unknown",
+                    "since": null
+                }
             }
         }
     }

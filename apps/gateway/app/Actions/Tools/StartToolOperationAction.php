@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace App\Actions\Tools;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Data\Nodes\NodeAgentData;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ReservesRolePackages;
+use App\Domain\Tools\ToolAdoption;
+use App\Domain\Tools\ToolAdoptionBlocked;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerRegistry;
@@ -24,9 +27,10 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
+use Closure;
 use Illuminate\Support\Facades\DB;
 
-/** Validates and records intent. Performs no Node work. */
+/** Validates and records intent. Performs no Node work; adoption reads only the Node agent's report. */
 final readonly class StartToolOperationAction
 {
     public function __construct(
@@ -35,13 +39,86 @@ final readonly class StartToolOperationAction
         private ToolNodeEligibility $eligibility,
         private VersionConstraint $constraints,
         private ToolPackageProtection $protection,
+        private ToolAdoption $adoption,
     ) {}
 
     /** @param array<string, mixed>|null $repository */
     public function execute(string $verb, int $nodeId, string $managerName, string $package, ?string $constraint, ?Tool $selected = null, ?array $repository = null): Operation
     {
+        return $this->admit($verb, $nodeId, $managerName, $package, $constraint, $selected, $repository, null, function (array $admitted) use ($verb, $nodeId, $managerName, $package, $constraint): Operation {
+            ['node' => $node, 'manager' => $manager, 'record' => $record, 'tool' => $tool, 'role_owned' => $roleOwned, 'protected' => $protected,
+                'repository' => $repository, 'repository_record' => $repositoryRecord, 'repository_given' => $repositoryGiven] = $admitted;
+            // The repository's apt preference admits exactly the packages of the Tools that reference it.
+            $repositoryPackages = $repositoryRecord === null ? ($repository === null || $verb === 'remove' ? [] : [$package]) : Tool::query()
+                ->where('apt_repository_id', $repositoryRecord->id)
+                ->when($tool !== null, static fn ($query) => $query->whereKeyNot($tool?->id))->pluck('package')
+                ->when($verb !== 'remove', static fn ($packages) => $packages->push($package))
+                ->unique()->sort()->values()->all();
+            $removeRepository = $verb === 'remove' && $repositoryRecord !== null && $repositoryPackages === [];
+
+            $input = [
+                'node_id' => $nodeId, 'manager' => $managerName, 'package' => $package, 'user' => $node->user,
+                'platform' => $node->platform, 'architecture' => $node->architecture,
+                'version_constraint' => $constraint,
+                'repository' => $repository, 'repository_id' => $repositoryRecord?->id, 'remove_repository' => $removeRepository,
+                'repository_packages' => $repositoryPackages, 'repository_given' => $repositoryGiven,
+                'tool_id' => $tool?->id, 'manager_id' => $record?->id,
+                'tool_status' => $tool?->status->value, 'installed_version' => $tool?->installed_version,
+                'failed_operation' => $tool?->failed_operation?->value, 'error_code' => $tool?->error_code,
+                'protected_packages' => $protected,
+                'manager_ready' => $record?->status === LifecycleStatus::Active,
+                'ssh' => app(SwampSshExecutionInput::class)->forNode($node),
+                'setup' => $verb === 'install' ? app(ToolManagerIntent::class)->nativeInput($node, $manager->name()) : null,
+            ];
+            $requestId = request()->attributes->getString('orbit.request_id');
+            if ($verb === 'install' && $tool === null) {
+                // The reviewed install chart records the Tool as installing; a failed manager setup drops it again.
+                $record ??= ToolManagerRecord::query()->create(['node_id' => $nodeId, 'name' => $managerName, 'status' => LifecycleStatus::Provisioning]);
+                $tool = Tool::query()->create(['node_id' => $nodeId, 'tool_manager_id' => $record->id, 'package' => $package,
+                    'version_constraint' => $constraint, 'status' => ToolStatus::Installing]);
+                $input['tool_id'] = $tool->id;
+                $input['manager_id'] = $record->id;
+            }
+            // R1: a role-owned package, or a failed install that never left a version, has nothing on the Node to remove.
+            if ($verb === 'remove' && ($roleOwned || ($repository === null && $tool?->status === ToolStatus::Failed
+                && $tool->error_code === 'tool.version_probe_failed' && ! $tool->installed_version))) {
+                $operation = $this->operations->record('tool.remove', 'node_tools', $nodeId, $nodeId, $input,
+                    ['manager_version' => null, 'installed_version' => null, 'outcome' => 'applied'], 'operator', $requestId, $manager->name()->operationLockKey($nodeId));
+                $tool?->delete();
+
+                return $operation;
+            }
+
+            return $this->operations->execute('tool.'.$verb, 'node_tools', $nodeId, $nodeId, $input, 'operator', $requestId, lockKey: $manager->name()->operationLockKey($nodeId));
+        });
+    }
+
+    /**
+     * Records ownership of an installed package from the Node agent's latest report, after the same admission checks
+     * (R1: no task, no run). Refusals carry the agent's liveness.
+     *
+     * @param  array<string, mixed>|null  $repository
+     * @return array{Tool, ToolOutcome}
+     */
+    public function adopt(int $nodeId, string $managerName, string $package, ?string $constraint, ?array $repository, ?NodeAgentData $agent): array
+    {
+        return $this->admit('adopt', $nodeId, $managerName, $package, $constraint, null, $repository, $agent,
+            fn (array $admitted): array => $this->adoption->record($admitted['node'], $admitted['manager'], $admitted['record'], $admitted['tool'], $package, $constraint, $repository));
+    }
+
+    /**
+     * The shared admission checks, in one transaction with `$then`.
+     *
+     * @template T
+     *
+     * @param  array<string, mixed>|null  $repository
+     * @param  Closure(array{node: Node, manager: ToolManager, record: ?ToolManagerRecord, tool: ?Tool, role_owned: bool, protected: list<string>, repository: ?array<string, mixed>, repository_record: ?AptRepository, repository_given: bool}): T  $then
+     * @return T
+     */
+    private function admit(string $verb, int $nodeId, string $managerName, string $package, ?string $constraint, ?Tool $selected, ?array $repository, ?NodeAgentData $agent, Closure $then): mixed
+    {
         try {
-            return DB::transaction(function () use ($verb, $nodeId, $managerName, $package, $constraint, $selected, $repository): Operation {
+            return DB::transaction(function () use ($verb, $nodeId, $managerName, $package, $constraint, $selected, $repository, $then): mixed {
                 $node = Node::query()->lockForUpdate()->findOrFail($nodeId);
                 $manager = $this->manager($node, $managerName);
                 if (! $manager->validatePackage($package)) {
@@ -94,48 +171,9 @@ final readonly class StartToolOperationAction
                 }
                 $repositoryGiven = $repository !== null;
                 $repository ??= $repositoryRecord?->definition;
-                // The repository's apt preference admits exactly the packages of the Tools that reference it.
-                $repositoryPackages = $repositoryRecord === null ? ($repository === null || $verb === 'remove' ? [] : [$package]) : Tool::query()
-                    ->where('apt_repository_id', $repositoryRecord->id)
-                    ->when($tool !== null, static fn ($query) => $query->whereKeyNot($tool?->id))->pluck('package')
-                    ->when($verb !== 'remove', static fn ($packages) => $packages->push($package))
-                    ->unique()->sort()->values()->all();
-                $removeRepository = $verb === 'remove' && $repositoryRecord !== null && $repositoryPackages === [];
 
-                $input = [
-                    'node_id' => $nodeId, 'manager' => $managerName, 'package' => $package, 'user' => $node->user,
-                    'platform' => $node->platform, 'architecture' => $node->architecture,
-                    'version_constraint' => $constraint,
-                    'repository' => $repository, 'repository_id' => $repositoryRecord?->id, 'remove_repository' => $removeRepository,
-                    'repository_packages' => $repositoryPackages, 'repository_given' => $repositoryGiven,
-                    'tool_id' => $tool?->id, 'manager_id' => $record?->id,
-                    'tool_status' => $tool?->status->value, 'installed_version' => $tool?->installed_version,
-                    'failed_operation' => $tool?->failed_operation?->value, 'error_code' => $tool?->error_code,
-                    'protected_packages' => $protected,
-                    'manager_ready' => $record?->status === LifecycleStatus::Active,
-                    'ssh' => app(SwampSshExecutionInput::class)->forNode($node),
-                    'setup' => $verb === 'install' ? app(ToolManagerIntent::class)->nativeInput($node, $manager->name()) : null,
-                ];
-                $requestId = request()->attributes->getString('orbit.request_id');
-                if ($verb === 'install' && $tool === null) {
-                    // The reviewed install chart records the Tool as installing; a failed manager setup drops it again.
-                    $record ??= ToolManagerRecord::query()->create(['node_id' => $nodeId, 'name' => $managerName, 'status' => LifecycleStatus::Provisioning]);
-                    $tool = Tool::query()->create(['node_id' => $nodeId, 'tool_manager_id' => $record->id, 'package' => $package,
-                        'version_constraint' => $constraint, 'status' => ToolStatus::Installing]);
-                    $input['tool_id'] = $tool->id;
-                    $input['manager_id'] = $record->id;
-                }
-                // R1: a role-owned package, or a failed install that never left a version, has nothing on the Node to remove.
-                if ($verb === 'remove' && ($roleOwned || ($repository === null && $tool?->status === ToolStatus::Failed
-                    && $tool->error_code === 'tool.version_probe_failed' && ! $tool->installed_version))) {
-                    $operation = $this->operations->record('tool.remove', 'node_tools', $nodeId, $nodeId, $input,
-                        ['manager_version' => null, 'installed_version' => null, 'outcome' => 'applied'], 'operator', $requestId, $manager->name()->operationLockKey($nodeId));
-                    $tool?->delete();
-
-                    return $operation;
-                }
-
-                return $this->operations->execute('tool.'.$verb, 'node_tools', $nodeId, $nodeId, $input, 'operator', $requestId, lockKey: $manager->name()->operationLockKey($nodeId));
+                return $then(['node' => $node, 'manager' => $manager, 'record' => $record, 'tool' => $tool, 'role_owned' => $roleOwned, 'protected' => $protected,
+                    'repository' => $repository, 'repository_record' => $repositoryRecord, 'repository_given' => $repositoryGiven]);
             });
         } catch (ResourceOperationException $error) {
             if (! str_starts_with($error->errorCode, 'tool.')) {
@@ -148,7 +186,8 @@ final readonly class StartToolOperationAction
                 outcome: $error->errorCode === 'tool.constraint_invalid' ? ToolOutcome::ConstraintInvalid : ToolOutcome::ManagerFailed,
                 status: $error->status, nodeId: $nodeId, manager: $managerName, package: $package,
                 versionConstraint: $constraint, message: $error->getMessage(), toolId: is_int($toolId) ? $toolId : null,
-                adoptionBlock: $error->errorCode === 'tool.adoption_unsupported' ? 'protected' : null,
+                adoptionBlock: $error instanceof ToolAdoptionBlocked ? $error->block : ($error->errorCode === 'tool.adoption_unsupported' ? 'protected' : null),
+                agent: $agent,
             );
         }
     }

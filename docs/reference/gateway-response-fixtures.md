@@ -28,7 +28,7 @@ Repository URLs in fixtures name `hardimpactdev/orbit`. Recipe artifact pins kee
 
 Task group fixtures include nullable `vm_power`, separately from task status. CLI tests cover the **VM power** label for known states and omit the label and JSON field when power is null. The SDK accepts a missing power field and ignores unknown optional response fields, so a field rename does not make an older client reject the task group.
 
-Tool scan and adoption fixtures distinguish formula, cask, and Vite+ global identities, registered and informational packages, dependencies, unsupported artifacts, per-manager scan states, inspection time, and failed scans. Scan fixtures also record authorization and unmanaged-node refusals. Adoption fixtures record a created Tool, the same intent, a repaired failure, constraint conflicts and violations, a busy scope, a missing or unsupported package, and authorization failure. The CLI replays those responses for `tool:adopt`.
+Tool scan and adoption fixtures distinguish formula and Vite+ global identities, registered and informational packages, dependencies, unsupported sources, and the time of the oldest fact. Each manager has its own scan state, `not_observed` included. Scan fixtures also record authorization and unmanaged-node refusals. Adoption fixtures record an adopted Tool with the agent's liveness, a manager the agent has not reported, constraint conflicts, invalid input, an invalid state, and authorization failure. The CLI replays those responses for `tool:adopt`.
 
 Doctor fixtures record the `200` reply: the report the Gateway answers at once. It holds an informational-only healthy report or a mixed report with drift or unverifiable findings. Node fixtures include an enrolled Mac with empty roles. Web fixtures preserve registered Tools while a live inventory request fails.
 
@@ -132,7 +132,7 @@ The change cycle is: change the Gateway, re-record the fixtures, review the fixt
 
 The web app's demo mode and its tests run against the files under `apps/web/fixtures/fleet`. These files use the same format without a request class. They are written by hand as one coherent fleet, because a recorded fixture covers one route and the web app needs records that refer to each other. `bin/api-fixtures --check` validates them together with the recorded fixtures.
 
-The demo fleet has one tool inventory for each active Node. Node 1 is an empty Linux read: `brew` completed with no packages, `brew-cask` unsupported, and `vp` absent. Node 2 is a partial Linux read: `brew` incomplete, `brew-cask` unsupported, and `vp` conflicting, so none of those empty arrays is an inventory. Node 3 is unreachable and has no inventory fixture; the demo refuses a scan with `tool.node_inactive`.
+The demo fleet has one tool inventory for each active Node. Node 1 is an empty Linux read: `brew` completed with no packages, `brew-cask` unsupported, and `vp` not observed. Node 2 is a partial Linux read: `brew` not observed, `brew-cask` unsupported, and `vp` not observed, so none of those empty arrays is an inventory. Node 3 is unreachable and has no inventory fixture; the demo refuses a scan with `tool.node_inactive`.
 
 Node 4 is the macOS read: registered packages with a newer observed version, the `openssl@3` dependency, unsupported casks, a formula and a cask both named `visual-studio-code`, and `ghost`, which the demo lists as supported and then refuses on adopt. The demo adopt, update, and remove handlers change only that in-memory fleet.
 

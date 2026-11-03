@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolIntentProjection;
 use App\Domain\Tools\ToolStatus;
 use App\Http\Mcp\ToolManifest;
@@ -70,20 +69,6 @@ it('records command activity for admission without claiming synchronous package 
     Queue::assertNothingPushed();
 });
 
-it('keeps adopt admission free of package and manager mutations', function (): void {
-    $this->postJson('/api/v1/tools/adopt', ['node_id' => $this->node->id, 'manager' => 'vp', 'package' => 'is-number'])
-        ->assertAccepted()->assertJsonPath('data.kind', 'tool.adopt');
-    expect(Tool::query()->count())->toBe(0)->and($this->node->toolManagers()->count())->toBe(0);
-    $inputs = $this->socket->sent[0]['payload']['inputs'];
-    expect($this->socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-tool-adopt-209')
-        ->and($inputs['intent']['package'])->toBe('is-number')->and($inputs['ssh']['control_node_id'])->toBe(209)
-        ->and($inputs['ssh']['target']['host'])->toBe('10.44.0.3')
-        ->and($inputs['ssh']['target']['host_keys'])->toBe(['ssh-ed25519 '.$this->node->ssh_host_key]);
-    $this->node->update(['user' => 'changed', 'wireguard_ip' => '10.44.0.99']);
-    expect(app(ToolIntentProjection::class)->input(Operation::query()->sole()))->toBe(['intent' => $inputs['intent'], 'ssh' => $inputs['ssh']]);
-    Queue::assertNothingPushed();
-});
-
 it('rejects unsupported packages and constraints before admission', function (string $manager, string $package, ?string $constraint, string $code): void {
     $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => $manager, 'package' => $package, 'version_constraint' => $constraint])
         ->assertUnprocessable()->assertJsonPath('error.code', $code);
@@ -145,66 +130,6 @@ function toolOperationNode(string $name, string $address, ?int $id = null): Node
         'public_ssh_host' => '192.0.2.20', 'public_ssh_port' => 22, 'user' => 'orbit', 'wireguard_ip' => $address,
         'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG', 'ssh_host_fingerprint' => 'SHA256:'.str_repeat('a', 43)]);
 }
-
-it('projects only the selected adoption from the fixed native terminal result once', function (string $status): void {
-    $this->postJson('/api/v1/tools/adopt', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'jq'])->assertAccepted();
-    $operation = Operation::query()->sole();
-    $result = $status === 'succeeded' ? ['manager_version' => 'apt 3.0.0', 'installed_version' => '1.7.1', 'outcome' => 'applied'] : ['error_code' => 'tool.package_absent'];
-    $run = ['id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-tool-adopt-209', 'status' => $status,
-        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'tool.adopt'],
-        'startedAt' => '2026-11-01T01:00:00Z', 'completedAt' => '2026-11-01T01:00:01Z',
-        'jobs' => [['name' => 'tools', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => json_encode($result, JSON_THROW_ON_ERROR)]]]]]];
-    $this->socket->reply = static fn (array $request): array => [['id' => $request['id'], 'type' => 'workflow.history.get', 'payload' => ['data' => $run]]];
-    $projector = app(SwampCommandStep::class);
-    $projector->projectTerminal($operation, $run, ['job' => 'tools', 'step' => 'result']);
-    $projector->projectTerminal($operation, $run, ['job' => 'tools', 'step' => 'result']);
-    expect($operation->fresh()->status->value)->toBe($status)->and(Tool::query()->count())->toBe($status === 'succeeded' ? 1 : 0);
-    if ($status === 'succeeded') {
-        expect(Tool::query()->sole()->package)->toBe('jq')->and(Tool::query()->sole()->node_id)->toBe($this->node->id)
-            ->and($this->node->toolManagers()->sole()->installed_version)->toBe('apt 3.0.0');
-    } else {
-        expect($this->node->toolManagers()->count())->toBe(0);
-    }
-})->with(['succeeded', 'failed']);
-
-it('refuses native adoption without full stored host pins before creating work', function (): void {
-    $this->node->update(['ssh_host_key' => null]);
-    $this->postJson('/api/v1/tools/adopt', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'jq'])
-        ->assertStatus(503)->assertJsonPath('error.code', 'swamp.ssh_target_unavailable');
-    expect(Operation::query()->count())->toBe(0)->and($this->socket->sent)->toBe([]);
-});
-
-it('rejects the retired adoption intent and result HTTP callbacks', function (): void {
-    $this->postJson('/api/v1/tools/adopt', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'jq'])->assertAccepted();
-    $operation = Operation::query()->sole();
-    $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
-    $run = $operation->state['swamp_run_id'];
-    $path = '/api/v1/direct-operations/'.$operation->id;
-    $this->getJson($path.'?run_id='.$run)->assertForbidden();
-    $this->postJson($path.'/result', ['run_id' => $run, 'status' => 'succeeded',
-        'started_at' => '2026-11-01T01:00:00.000Z', 'finished_at' => '2026-11-01T01:00:01.000Z',
-        'result' => ['manager_version' => 'apt 3.0.0', 'installed_version' => '1.0.0']])->assertForbidden();
-    expect(Tool::query()->count())->toBe(0);
-});
-
-it('sends bound adoption cancellation to the native root and leaves terminal projection native', function (): void {
-    $this->postJson('/api/v1/tools/adopt', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'jq'])->assertAccepted();
-    $operation = Operation::query()->sole();
-    Http::fake(['https://swamp.orbit/api/v1/cancel/workflow-run/*' => Http::response(['status' => 'cancelled'])]);
-    app(CancelOperationAction::class)->execute($operation);
-    Http::assertSent(fn ($request): bool => $request->url() === 'https://swamp.orbit/api/v1/cancel/workflow-run/'.$operation->state['swamp_run_id']);
-    expect($operation->fresh()->status->terminal())->toBeFalse()->and($operation->fresh()->cancel_requested_at)->not->toBeNull();
-    expect(Tool::query()->count())->toBe(0);
-});
-
-it('retains an unconfirmed native cancellation without inventing terminal success', function (): void {
-    $this->postJson('/api/v1/tools/adopt', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'jq'])->assertAccepted();
-    $operation = Operation::query()->sole();
-    Http::fake(['https://swamp.orbit/api/v1/cancel/workflow-run/*' => Http::response([], 503)]);
-    expect(fn () => app(CancelOperationAction::class)->execute($operation))->toThrow(ResourceOperationException::class);
-    expect($operation->fresh()->status->terminal())->toBeFalse()->and($operation->fresh()->cancel_requested_at)->not->toBeNull();
-    expect(Tool::query()->count())->toBe(0);
-});
 
 it('captures native removal and projects only its selected Tool once', function (bool $failed): void {
     $record = $this->node->toolManagers()->create(['name' => 'vp', 'status' => LifecycleStatus::Active, 'installed_version' => '3.0.0']);
@@ -344,12 +269,11 @@ it('holds exactly one Node manager pair across native removal and retained write
         'remove' => $this->deleteJson('/api/v1/tools/'.$second->id),
         'update' => $this->postJson('/api/v1/tools/'.$second->id.'/update'),
         'install' => $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'composer', 'package' => 'vendor/third']),
-        'adopt' => $this->postJson('/api/v1/tools/adopt', ['node_id' => $this->node->id, 'manager' => 'composer', 'package' => 'vendor/third']),
     })->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
     expect(Operation::query()->count())->toBe(1)->and($this->socket->sent)->toHaveCount(1);
     $this->withHeader('Idempotency-Key', 'independent-manager')->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'jq'])->assertAccepted();
     expect(Operation::query()->count())->toBe(2)->and($this->socket->sent)->toHaveCount(2);
-})->with(['remove', 'update', 'install', 'adopt']);
+})->with(['remove', 'update', 'install']);
 
 it('excludes native removal while another change holds the manager', function (): void {
     $manager = $this->node->toolManagers()->create(['name' => 'composer', 'status' => LifecycleStatus::Active]);
@@ -469,8 +393,7 @@ function finishSignedToolOperation(Operation $operation, ?string $error = null, 
 {
     app(ToolIntentProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'],
         'status' => $error === null ? 'succeeded' : 'failed', 'error_code' => $error, 'started_at' => '2026-11-01T01:00:00Z', 'finished_at' => '2026-11-01T01:00:01Z',
-        'result' => $operation->kind === 'tool.adopt' ? ['manager_version' => 'apt 3.0.0', 'installed_version' => $operation->kind === 'tool.remove' ? null : '1.0.0', ...($error === null ? ['outcome' => 'applied'] : ['error_code' => $error]),
-            ...($operation->input['remove_repository'] ?? false ? ['repository_removed' => $sourceRemoved] : [])] : ToolNativeRun::result(['manager_version' => 'apt 3.0.0', 'installed_version' => $operation->kind === 'tool.remove' ? null : '1.0.0', ...($error === null ? ['outcome' => 'applied'] : ['error_code' => $error]), ...($operation->input['remove_repository'] ?? false ? ['repository_removed' => $sourceRemoved] : [])])]);
+        'result' => ToolNativeRun::result(['manager_version' => 'apt 3.0.0', 'installed_version' => $operation->kind === 'tool.remove' ? null : '1.0.0', ...($error === null ? ['outcome' => 'applied'] : ['error_code' => $error]), ...($operation->input['remove_repository'] ?? false ? ['repository_removed' => $sourceRemoved] : [])])]);
 }
 
 it('deletes the Tool but keeps its apt repository record when removing the unused source fails', function (): void {
@@ -484,15 +407,6 @@ it('deletes the Tool but keeps its apt repository record when removing the unuse
     $kept = AptRepository::query()->sole();
     $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'hello', 'repository' => signedToolRepository()])->assertAccepted();
     expect(Operation::query()->latest('id')->firstOrFail()->input['repository_id'])->toBe($kept->id);
-});
-
-it('does not reserve a repository slug after failed read only adoption', function (): void {
-    $repository = signedToolRepository();
-    $this->postJson('/api/v1/tools/adopt', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'hello', 'repository' => $repository])->assertAccepted();
-    finishSignedToolOperation(Operation::query()->sole(), 'tool.repository_adoption_mismatch');
-    expect(AptRepository::query()->count())->toBe(0);
-    $repository['suites'] = ['corrected'];
-    $this->postJson('/api/v1/tools/adopt', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'hello', 'repository' => $repository])->assertAccepted();
 });
 
 it('keeps the stored repository definition when an update fails, and stores a new one when it succeeds', function (): void {

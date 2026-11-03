@@ -6,7 +6,7 @@ Scanning installed packages...
 │
 └  Scanned installed packages.
 
-Node #2 observed at 2026-04-26T12:00:00+00:00.
+Node #2 observed at 2026-04-26T11:59:00+00:00.
  ┌───────────┬─────────────┐
  │ MANAGER   │ SCAN STATE  │
  ├───────────┼─────────────┤

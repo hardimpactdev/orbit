@@ -15,15 +15,15 @@ The `tool` family manages packages on a Node. A Tool is one package that Orbit m
 | Command | Result |
 | --- | --- |
 | [`tool:manager:list`](/cli/tool/manager-list) | List the managers a Node supports and their state. |
-| [`tool:scan`](/cli/tool/scan) | Discover installed apt, Homebrew and Vite+ packages without taking ownership. |
-| [`tool:adopt`](/cli/tool/adopt) | Register one supported installed package without changing it. |
+| [`tool:scan`](/cli/tool/scan) | List installed apt, Homebrew and Vite+ packages from the Node agent's reports, without taking ownership. |
+| [`tool:adopt`](/cli/tool/adopt) | Register one supported installed package from the Node agent's report, at once and without changing it. |
 | [`tool:install`](/cli/tool/install) | Install one package, and install its manager first when needed. |
 | [`tool:list`](/cli/tool/list) | List the Tools on a Node. |
 | [`tool:show`](/cli/tool/show) | Show one Tool. |
 | [`tool:update`](/cli/tool/update) | Update one Tool within its constraint. |
 | [`tool:remove`](/cli/tool/remove) | Remove one Tool and delete its record. |
 
-Every command accepts `--json`. Install, adopt, update, and remove follow a Swamp Operation. Human output shows its steps; JSON output is the final Operation receipt. These writes accept `--idempotency-key=KEY` to replay a start after a lost reply. Scan remains a direct read. `--node` takes a positive numeric Node ID. The CLI refuses any other value with `tool.node_id_invalid`.
+Every command accepts `--json`. Install, update, and remove follow a Swamp Operation. Human output shows its steps; JSON output is the final Operation receipt. These writes accept `--idempotency-key=KEY` to replay a start after a lost reply. Adopt answers at once from the Node agent's report and prints the agent's liveness first. Scan is a direct read of the same reports. `--node` takes a positive numeric Node ID. The CLI refuses any other value with `tool.node_id_invalid`.
 
 ## Related
 

@@ -121,7 +121,7 @@ const inventory = (): ToolInventory => ({
         },
         {
             manager: "vp",
-            scan_state: "incomplete",
+            scan_state: "not_observed",
             packages: [],
         },
     ],
@@ -139,13 +139,13 @@ describe("tool inventory", () => {
         ]);
     });
 
-    it("does not treat an incomplete manager as an empty inventory", () => {
+    it("does not treat a manager the agent has not reported as an empty inventory", () => {
         const scan = inventory();
-        scan.managers[0] = { manager: "brew", scan_state: "incomplete", packages: [] };
+        scan.managers[0] = { manager: "brew", scan_state: "not_observed", packages: [] };
 
         expect(unmanagedPackages(scan).map((pkg) => pkg.package)).toEqual(["docker"]);
         expect(managerScanNote(scan.managers[0])).toBe(
-            "brew is incomplete, so its package list is not an inventory.",
+            "brew is not observed yet, so its package list is not an inventory.",
         );
         expect(unmanagedEmpty(scan)).toBe("No packages in the completed scans.");
     });

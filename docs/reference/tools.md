@@ -23,17 +23,16 @@ Recording a development [Instance branch rename](/cli/instance/rename) does not 
 
 ## Native execution
 
-Install, update, remove, and adopt return HTTP 202 with an [Operation](/reference/operations). The Gateway validates the request, records immutable intent and the target Node, and starts one native Swamp workflow. CLI writes follow the Operation. List, show, scan and manager list keep their read paths.
+Install, update, and remove return HTTP 202 with an [Operation](/reference/operations). Adoption answers at once from the Node agent's facts; see [Adopt a Tool](#adopt-a-tool). The Gateway validates the request, records immutable intent and the target Node, and starts one native Swamp workflow. CLI writes follow the Operation. List, show, scan and manager list keep their read paths.
 
 Every step runs on control Node 209. Install, update and removal use official cfgmgmt resources and one bounded SSH argv per manager command. Official package checks supply the installed version or absence. Typed worker steps apply constraints and decode package observations; their contract test reads its version table from `composer-constraints.json`, one constraint per line. The Gateway reads the native run and fixed public captures; no result-reporting step runs. Package phases send no Python source to the Node.
 
-A signed apt source stages its key, reads it with one `gpg --with-colons --show-keys` command, and uses a native assert to require exactly the admitted primary fingerprint. Only then does it publish the keyring, package preferences and source. Completion cleanup removes the staging file, including after a failed fingerprint check. Adoption retains its shared scripts. The shared manager setup uses one version argv for readiness and official apt prerequisites. It installs each manager from pinned downloads with official `@swamp/cfgmgmt` resources and SSH argv; no installer script ships.
+A signed apt source stages its key, reads it with one `gpg --with-colons --show-keys` command, and uses a native assert to require exactly the admitted primary fingerprint. Only then does it publish the keyring, package preferences and source. Completion cleanup removes the staging file, including after a failed fingerprint check. The shared manager setup uses one version argv for readiness and official apt prerequisites. It installs each manager from pinned downloads with official `@swamp/cfgmgmt` resources and SSH argv; no installer script ships.
 
 | Workflow | Steps |
 | --- | --- |
 | Install, update | `Prepare package commands`, optional manager and signed-source setup, parallel manager and package reads, `Check the candidate`, `Choose package action`, `Apply the package`, apt check or manager query, `Decode package state`, `Assert package state` |
 | Remove | `Prepare package commands`, parallel manager and package reads, `Plan the removal`, `Choose package action`, `Remove the package`, apt check or manager query, optional source and preference removal, `Decode package state`, `Assert package state` |
-| Adopt | `assets`, `query`, `repository`, `result`, `assert`: unchanged until the [observer pass](/swamp/observer-gap) replaces it |
 
 ### Install and update steps
 
@@ -103,9 +102,7 @@ On macOS, `tool.inspect-homebrew-scope` reads the enrolled account from the nati
 
 `tool.homebrew-version` and `tool.homebrew-formula-inventory` return typed Homebrew observations. The agent verifies the scope before running Homebrew, uses the fixed environment below, and parses bounded output on the Node. Formula inventory preserves ambiguous and unreadable versions for the Gateway to report; it does not turn them into absent packages.
 
-Native adoption reads the installed version and metadata together. Its typed check returns the observed version and any adoption block. The Gateway records only the selected package after native completion.
-
-Read-only scan uses the existing cask inspector. Native cask writes use official SSH queries and separate typed policy checks and mutations. They resolve the Node's variation and check artifact destinations against the enrolled account's home and verified Homebrew prefix. Homebrew retains its package locks. Removal checks uninstall safety without applying install-time version, checksum, or disabled gates. A delisted official cask can be removed by its plain token only after its installed metadata passes those checks.
+Native cask writes use official SSH queries and separate typed policy checks and mutations. They resolve the Node's variation and check artifact destinations against the enrolled account's home and verified Homebrew prefix. Homebrew retains its package locks. Removal checks uninstall safety without applying install-time version, checksum, or disabled gates. A delisted official cask can be removed by its plain token only after its installed metadata passes those checks.
 
 Native Composer package operations use fixed shared-scope arguments through official SSH. The candidate query parses the normal dry-run and resolves an explicit no-op from installed inventory. A typed check applies the admitted version constraint and root ownership before mutation.
 
@@ -206,27 +203,27 @@ See [Deploy prerequisites](/reference/deployments#vite-store-prerequisite) for b
 
 `GET /api/v1/tool-inventory?node_id=<id>` is `tool:scan`. The CLI command is `orbit tool:scan --node=<id>`. The only input is `node_id`, a strict integer of an existing Node. Any other query or body field fails with `validation.failed` (HTTP 422). This operation is not a script API.
 
-The scan reads `brew`, `brew-cask`, and `vp` for the enrolled account, plus system apt packages on Linux. It does not inventory `composer`. It compares packages with Tool rows by Node, manager, and package. It stores nothing and creates no Tool row. It does not take a manager lock and it does not materialize a manager. A failed, malformed, or truncated read marks that manager `incomplete` and is never an empty `complete` inventory. The other managers still return their own state.
+The scan lists `brew`, `brew-cask`, `vp` and apt packages from the [Node agent's](/reference/node-agent) latest `packages` facts. It reads nothing on the Node. It does not inventory `composer`. It compares packages with Tool rows by Node, manager, and package. It stores nothing and creates no Tool row. It does not take a manager lock and it does not materialize a manager.
 
-The Gateway resolves the host itself and uses the pinned SSH identity. The response has no raw output, paths, environment values, or credentials. Registered apt packages include their declared repository URLs and pinned public signing fingerprint. Success is HTTP 200.
+The response has no paths, environment values, or credentials. Registered apt packages include their declared repository URLs and pinned public signing fingerprint. Success is HTTP 200.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `data.node_id` | integer | The Node. |
-| `data.observed_at` | string | UTC time when the read finished, such as `2026-04-26T12:00:00+00:00`. |
+| `data.observed_at` | string | UTC time of the oldest fact the scan used, such as `2026-04-26T12:00:00+00:00`. The request time when no manager was observed. |
 | `data.managers` | array | Exactly four objects, in the order `brew`, `brew-cask`, `vp`, `apt`. |
 | `data.managers[].manager` | string | `brew`, `brew-cask`, `vp`, or `apt`. |
-| `data.managers[].scan_state` | string | `complete`, `absent`, `unsupported`, `incomplete`, or `conflicting`. |
+| `data.managers[].scan_state` | string | `complete`, `unsupported`, or `not_observed`. |
 | `data.managers[].packages` | array | Package facts when `scan_state` is `complete`. Otherwise empty, and not an inventory. |
 | `meta.request_id` | string | The request id. |
 
 | Scan state | Meaning |
 | --- | --- |
-| `complete` | The read finished. The package array is the inventory and may be empty. |
-| `absent` | This platform supports the manager, but its scope is not installed. |
-| `unsupported` | This platform does not offer the manager. `brew-cask` is unsupported on Linux. |
-| `incomplete` | The read failed, the output was malformed or truncated, or the Homebrew name list and metadata disagree. |
-| `conflicting` | The scope exists on Linux or macOS, but Orbit will not adopt it or replace it. |
+| `complete` | The agent reported this manager. The package array is the inventory and may be empty. |
+| `unsupported` | This platform does not offer the manager. `brew-cask` is unsupported on Linux; `apt` is unsupported on macOS. |
+| `not_observed` | The agent has not reported this manager. `tool:scan` prints "not observed yet". |
+
+A manager is `not_observed` while the agent is new or silent, when the manager is not installed, and on a Node that runs no observing agent, such as a macOS Node. The agent watches every manager a Linux Node can run, recorded or not. A manager removed after the agent reported it keeps its last fact until the agent reports its absence.
 
 Packages inside a `complete` manager are ordered by package name, ascending. A formula and a cask that share a name stay on different managers.
 
@@ -236,28 +233,24 @@ Packages inside a `complete` manager are ordered by package name, ascending. A f
 | `package` | string | Unqualified package name. |
 | `package_kind` | string | `formula`, `cask`, `global`, or `deb`. |
 | `installed_version` | string or null | Normalized version, at most 255 characters, or null. |
-| `dependency` | boolean | True for a Homebrew dependency. False for a root formula, cask, or Vite+ package. |
+| `dependency` | boolean | True for a Homebrew formula not installed on request. False for a root formula, cask, Vite+ package, or deb. |
 | `registered` | boolean | True when a Tool row exists for this Node, manager, and package. |
 | `tool_id` | integer or null | That Tool's id, or null. |
 | `adoption` | string | `supported` or `unsupported`. |
 | `adoption_block` | string or null | Null when adoption is supported. Otherwise a block token. |
 | `repository` | object or null | Shared signed repository intent for a registered apt Tool. Null for other packages. |
 
-The block tokens are `protected`, `dependency`, `unsupported_artifact`, `unsupported_source`, `bottle_unavailable`, `version_unreadable`, and `authorization_required`. A dependency or a [protected package](#protected-packages) is never `supported`. An unsupported cask stays in the list with adoption unavailable and one of those tokens. The Node's Tools page uses this inspector.
+The block tokens are `protected`, `dependency`, `unsupported_artifact`, `unsupported_source`, `bottle_unavailable`, `version_unreadable`, and `authorization_required`. A dependency or a [protected package](#protected-packages) is never `supported`. The facts give these blocks:
 
-The scan stores a normalized SemVer version, or null. A readable formula revision such as `25.8.1_1`, and a readable cask version such as `3.003`, normalize to null and can still be `supported`. `version_unreadable` means there is no readable version string, such as `latest`. It does not mean readable text failed the SemVer check. `tool:scan` prints a null version as an em dash. The Tools page shows `unreadable`.
+- `protected`: a protected or role-owned name.
+- `unsupported_source`: a name Orbit cannot manage, or a formula from a tap other than `homebrew/core`.
+- `dependency`: a formula not installed on request.
+- `unsupported_artifact`: every cask, because the fact carries no cask artifacts.
+- `version_unreadable`: no version, several installed versions, or `latest`.
 
-`tool.homebrew-scan` inspects the scope and bottle tag once, then reads formula and cask inventories independently. A failed inventory leaves the other manager's successful result available. Inside the agent, Homebrew inventory uses two reads for each of `brew` and `brew-cask`. `info --json=v2 --formula --installed` and `info --json=v2 --cask --installed` supply metadata. `list --formula -1` and `list --cask -1` supply installed names without loading formulae or casks. Both use the usual Homebrew environment and do not set `HOMEBREW_FORCE_API_AUTO_UPDATE`.
+The scan shows a normalized SemVer version, or null when the version does not normalize, such as a Debian revision. Such a package can still be `supported`; adoption without a constraint records its raw version. `tool:scan` prints a null version as an em dash. The Tools page shows `unreadable`.
 
-Homebrew can omit an installed formula or cask from `info` and still exit 0, including when the tap is untrusted or Homebrew refuses to load it. The name stays in `list`. The scan keeps that name, with `installed_version` null and `dependency` false, because the name list does not say whether it is a dependency. Adoption is `unsupported`. The block is `unsupported_source`, or `protected` when the formula name is protected.
-
-A name present in `info` but absent from `list` makes that manager `incomplete`. A failed, malformed, or truncated name list also makes that manager `incomplete`. The scan does not report the `info` packages alone.
-
-When it checks installed packages, the Gateway skips Vite+ global names it cannot manage. An unreadable version affects only its named package. Other registered Tools stay verifiable.
-
-Vite+ reports each global root under the name it stored. A stored name that Orbit cannot manage, including a legacy npm name with capitals such as `JSONStream`, stays in that list. Its adoption is `unsupported`, its block is `unsupported_source`, and it is not registered. The `vp` scan is `incomplete` when a name is not a string, is empty, is longer than 255 characters, contains a control character, or appears twice. Those cases are not an inventory.
-
-Scan errors use the [Tool error envelope](#errors). `details.step` is `scan`, `details.outcome` is `manager_failed`, and there is no Tool `id`. A manager state of `incomplete`, `absent`, `unsupported`, or `conflicting` does not fail the HTTP request.
+Scan errors use the [Tool error envelope](#errors). `details.step` is `scan`, `details.outcome` is `manager_failed`, and there is no Tool `id`. A manager state of `unsupported` or `not_observed` does not fail the HTTP request.
 
 | Code | HTTP | When |
 | --- | --- | --- |
@@ -265,8 +258,6 @@ Scan errors use the [Tool error envelope](#errors). `details.step` is `scan`, `d
 | `tool.node_unmanaged` | 409 | The Node has no WireGuard address or no pinned SSH fingerprint. |
 | `validation.failed` | 422 | The query or body is not the one `node_id` field. |
 | `node_access.required` | 403 | The caller cannot address the Node. |
-
-Scan reads installed names and versions only. It does not run `brew update`, and it does not set `HOMEBREW_FORCE_API_AUTO_UPDATE`. A stale Homebrew API cache does not by itself make the scan `incomplete`.
 
 ## Protected packages
 
@@ -296,7 +287,7 @@ orbit tool:remove 24 --yes
 
 ## Adopt a Tool
 
-`POST /api/v1/tools/adopt` is `tool:adopt`. The CLI command is `orbit tool:adopt <package> --node=<id> --manager=<manager> [--constraint=<range>] --yes`. MCP and the Tools page call this operation. They do not get a second adoption API. Adoption installs, updates, removes, and repins nothing.
+`POST /api/v1/tools/adopt` is `tool:adopt`. The CLI command is `orbit tool:adopt <package> --node=<id> --manager=<manager> [--constraint=<range>] --yes`. MCP and the Tools page call this endpoint. They do not get a second adoption API. Adoption installs, updates, removes, and repins nothing.
 
 The JSON object allows only these fields. Any other field fails with `validation.failed` (HTTP 422).
 
@@ -307,9 +298,11 @@ The JSON object allows only these fields. Any other field fails with `validation
 | `package` | yes | string | That manager's package name, at most 255 characters. |
 | `version_constraint` | no | string or null | A SemVer range, such as `^14.0`, at most 255 characters. Omit or null for none. |
 
-The Gateway records an Operation for the Node. Swamp receives the complete admitted package intent and reads the selected package on its target through official `@swamp/ssh` from Node209. One manager query returns scope, manager version and installed facts. The typed result step checks eligibility and constraints. The managed account and full target host pins come from the canonical public SSH descriptor. Adoption requires no sudo or manager installation. The Gateway records the selected Tool only from the declared native terminal result. A discovery row is not evidence.
+The Gateway checks the [Node agent's](/reference/node-agent) latest `packages` fact for that manager and records the Tool in one short transaction. It starts no task and no Swamp run, and it reads nothing on the Node. The [adopt chart](/cli/tool/adopt) shows the flow. A discovery row is not evidence; the fact at request time is.
 
-Writes return an Operation with HTTP 202. Successful package receipts include `installed_version`, `block`, and `outcome`. Read the Tool with list or show after completion. Those reads retain these fields:
+The fact must show the package installed with exactly one version, no adoption block, and a version that fits `version_constraint`. With a `repository`, the fact must also show the apt source `/etc/apt/sources.list.d/orbit-<name>.sources` that install writes for that definition, and the keyring `/etc/apt/keyrings/orbit-<name>.gpg` with one primary key of the admitted fingerprint. The Gateway then records the repository and links it.
+
+Success is HTTP 201 with the Tool and the agent's liveness in `agent`, with `state` `online`, `offline`, `not_seen`, or `unknown`, and `since` while it is `offline`. The CLI prints the liveness first. While the agent is offline, the answer comes from the facts it reported before it went silent, and the CLI marks it possibly outdated. A Node without an observing agent has `agent: null`.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -319,20 +312,21 @@ Writes return an Operation with HTTP 202. Successful package receipts include `i
 | `package` | string | The package name. |
 | `version_constraint` | string or null | The stored SemVer range, or null. |
 | `status` | string | `installing`, `installed`, `updating`, `removing`, `failed`, or `removed`. `removed` is response-only and is never stored, so list and show never return it. Adoption success is `installed`. |
-| `installed_version` | string or null | The live version recorded at creation. It may be non-SemVer when unconstrained. |
+| `installed_version` | string or null | The version the fact shows. It may be non-SemVer when unconstrained. |
 | `failed_operation` | string or null | `install`, `update`, or `remove` after a failed mutation. Null on adoption success. |
 | `error_code` | string or null | The last mutation error, or null. |
-| `outcome` | string or null | The operation outcome. |
+| `outcome` | string or null | `applied` or `unchanged` on adoption. |
+| `agent` | object or null | Adoption only: the agent's liveness. |
 
 | Result | `outcome` | Record |
 | --- | --- | --- |
 | No Tool yet for this Node, manager, package, and constraint | `applied` | Created as `installed`. The host package is unchanged. |
-| The same constraint exists, status is `installed`, and the package is still accepted | `unchanged` | Not rewritten, including `installed_version`. |
+| The same constraint exists, status is `installed`, and the package is still accepted | `unchanged` | `installed_version` set to the reported version. |
 | The same constraint exists, status is `failed`, and the package is still accepted | `applied` | Repaired to `installed`, with the failure cleared and `installed_version` set. The host package is unchanged. |
 
-A different constraint on an existing Tool is `tool.constraint_conflict`. It does not create a second row. A row left in `installing`, `updating`, or `removing` is not repaired. Adopt returns `tool.state_invalid` and leaves that row. The caller retries the original operation or removes the Tool.
+A Tool Manager row that does not exist yet is created `active`, with no recorded manager version. A different constraint on an existing Tool is `tool.constraint_conflict`. It does not create a second row. A row left in `installing`, `updating`, or `removing` is not repaired. Adopt returns `tool.state_invalid` and leaves that row. The caller retries the original operation or removes the Tool.
 
-Admission errors use the Tool envelope. Execution errors are recorded on the Operation; the HTTP columns below apply to admission refusals. `details.step` is `adopt`. `details.id` is included only after the Gateway has found an existing Tool row. `tool.adoption_unsupported` also includes `details.adoption_block`.
+Errors use the Tool envelope. `details.step` is `adopt`. `details.id` is included only after the Gateway has found an existing Tool row. `tool.adoption_unsupported` also includes `details.adoption_block`. `details.agent` carries the agent's liveness, as on success.
 
 | Code | HTTP | `details.outcome` | When |
 | --- | --- | --- | --- |
@@ -341,23 +335,21 @@ Admission errors use the Tool envelope. Execution errors are recorded on the Ope
 | `tool.constraint_invalid` | 422 | `constraint_invalid` | The constraint is not a SemVer range. |
 | `tool.node_inactive` | 409 | `manager_failed` | The Node is not `active`. |
 | `tool.node_unmanaged` | 409 | `manager_failed` | No WireGuard address or pinned SSH fingerprint. |
-| `tool.manager_unavailable` | 409 | `manager_failed` | The scope is absent or conflicting. |
-| `tool.package_absent` | 409 | `manager_failed` | The package is not installed. |
-| `tool.version_probe_failed` | 409 | `manager_failed` | The installed version cannot be read. |
+| `tool.manager_unavailable` | 409 | `manager_failed` | The recorded Tool Manager is not `active`. |
+| `tool.not_observed` | 409 | `manager_failed` | The agent has not reported this manager yet, or the Node runs no observing agent. |
+| `tool.package_absent` | 409 | `manager_failed` | The fact does not show the package. |
 | `validation.failed` | 422 | none | The body has an unknown field or a field of the wrong type. No Tool lookup. |
 | `node_access.required` | 403 | none | The caller cannot address the Node. No Tool lookup. |
 | `tool.installed_version_unparseable` | 409 | `manager_failed` | A constraint is set and the version is not SemVer. |
 | `tool.installed_version_constraint_violated` | 409 | `manager_failed` | The installed version is outside the constraint. This is the same code install uses for that condition. |
+| `tool.repository_adoption_mismatch` | 409 | `manager_failed` | The apt source or keyring on the Node does not match the `repository`. |
 | `tool.constraint_conflict` | 409 | `manager_failed` | The existing Tool has another constraint. |
 | `tool.state_invalid` | 409 | `manager_failed` | The existing row is `installing`, `updating`, or `removing`. `details.id` is set. |
-| `tool.operation_locked` | 409 | `manager_failed` | The Tool lock or the scope lock is busy. |
 | `tool.adoption_unsupported` | 409 | `manager_failed` | The package is protected, a dependency, or otherwise has no adopt path. |
 
-`details.adoption_block` uses the scan block tokens. `brew` adoption requires an unqualified Core formula with a compatible verified bottle, so a later update has a supported path. `brew-cask` adoption requires official metadata, a supported artifact, and a checksum, and it refuses a cask that needs an interactive or administrator prompt to upgrade or remove. `vp` adoption requires a root package in the enrolled account's global scope. `apt` and `composer` can be adopted only on Linux, in the scopes above. No adoption takes dependencies or any other package.
+`details.adoption_block` uses the [scan block tokens](#discover-installed-packages). `brew` adoption requires a formula from `homebrew/core` installed on request. The fact carries no bottle metadata, so a formula without a bottle for the Node fails at its first update rather than at adoption. Every cask is `unsupported_artifact`, because the fact carries no cask artifacts. `vp` adoption requires a root package in the enrolled account's global scope. `composer` adoption requires a root package of the shared scope. `apt` and `composer` can be adopted only on Linux. No adoption takes dependencies or any other package.
 
 Install still refuses an unregistered installed package with `tool.already_installed_unmanaged` (HTTP 409). It does not adopt that package. The caller uses `tool:adopt`.
-
-For `brew-cask`, adoption requires an installed entry from `homebrew/cask`. A foreign-tap cask shown in discovery as `unsupported_source` returns `tool.package_absent` (HTTP 409) on adoption.
 
 On Linux, unconstrained adoption records the apt version string, such as `5.8.3-1`. A constraint is checked only when that version normalizes to SemVer. `^1.25` accepts `1.25.0-2ubuntu4`. A version that does not normalize returns `tool.installed_version_unparseable` and creates no Tool row.
 
@@ -575,14 +567,14 @@ Pass the JSON object with `--repository` on `tool:install`, `tool:adopt`, or `to
 
 Swamp downloads the key on Node 209 and verifies the pinned fingerprint before contacting the target Node. Official cfgmgmt `copy_file` publishes the binary keyring and `file` writes the deb822 source. It writes `/etc/apt/keyrings/orbit-<name>.gpg`, the apt preference `/etc/apt/preferences.d/orbit-<name>.pref`, and `/etc/apt/sources.list.d/orbit-<name>.sources` with a scoped `Signed-By` field. Apt refreshes only this source, keeping the indexes for other repositories, then Orbit selects its candidate, installs that exact version with normal dependency resolution and the repository preference. A failed refresh fails the step; a later run converges the admitted source, preference, and key. No downgrade is allowed. Install refuses an existing unowned package, including the distribution's unrelated `rex`; explicit adoption is still required.
 
-Removal keeps the repository while another Tool references it. The final removal deletes its source, preference, and key after confirming package absence. Adoption changes no files and requires the declared source, the matching preference, and the matching keyring to exist. Scan reports apt packages, registration, and the repository for registered Tools; it does not guess trust definitions for unregistered sources.
+Removal keeps the repository while another Tool references it. The final removal deletes its source, preference, and key after confirming package absence. Adoption changes no files. It requires the Node agent to report the declared source and a keyring with the pinned primary fingerprint; the agent does not report preferences. Scan reports apt packages, registration, and the repository for registered Tools; it does not guess trust definitions for unregistered sources.
 
 | Error | Meaning |
 | --- | --- |
 | `tool.repository_invalid` | Invalid definition or repository input for another manager |
 | `tool.repository_conflict` | The name already has a different definition, or an update changes its name |
-| `tool.repository_key_mismatch` | The downloaded or adopted key does not match the pinned primary fingerprint |
-| `tool.repository_unavailable` | Adoption cannot read the signed index |
+| `tool.repository_key_mismatch` | The downloaded key does not match the pinned primary fingerprint |
+| `tool.repository_unavailable` | Apt cannot refresh the signed index |
 | `tool.repository_failed` | An official repository step cannot fetch, write, or refresh the managed source or keyring |
 | `tool.repository_adoption_mismatch` | Adoption found a different source or keyring |
 

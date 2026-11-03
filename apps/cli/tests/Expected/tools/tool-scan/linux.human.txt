@@ -6,20 +6,22 @@ Scanning installed packages...
 │
 └  Scanned installed packages.
 
-Node #2 observed at 2026-04-26T12:00:00+00:00.
- ┌───────────┬─────────────┐
- │ MANAGER   │ SCAN STATE  │
- ├───────────┼─────────────┤
- │ brew      │ complete    │
- │ brew-cask │ unsupported │
- │ vp        │ absent      │
- │ apt       │ complete    │
- └───────────┴─────────────┘
+Node #2 observed at 2026-04-26T11:59:00+00:00.
+ ┌───────────┬──────────────────┐
+ │ MANAGER   │ SCAN STATE       │
+ ├───────────┼──────────────────┤
+ │ brew      │ not observed yet │
+ │ brew-cask │ unsupported      │
+ │ vp        │ not observed yet │
+ │ apt       │ complete         │
+ └───────────┴──────────────────┘
+brew is not observed yet, so its package list is not an inventory.
 brew-cask is unsupported, so its package list is not an inventory.
-vp is absent, so its package list is not an inventory.
- ┌─────────┬─────────┬─────────┬─────────┬────────────┬─────────┬───────────┬───────┐
- │ MANAGER │ PACKAGE │ KIND    │ VERSION │ DEPENDENCY │ TOOL ID │ ADOPTION  │ BLOCK │
- ├─────────┼─────────┼─────────┼─────────┼────────────┼─────────┼───────────┼───────┤
- │ brew    │ ripgrep │ formula │ 14.1.1  │ no         │ —       │ supported │ —     │
- └─────────┴─────────┴─────────┴─────────┴────────────┴─────────┴───────────┴───────┘
+vp is not observed yet, so its package list is not an inventory.
+ ┌─────────┬────────────────┬──────┬─────────┬────────────┬─────────┬─────────────┬───────────┐
+ │ MANAGER │ PACKAGE        │ KIND │ VERSION │ DEPENDENCY │ TOOL ID │ ADOPTION    │ BLOCK     │
+ ├─────────┼────────────────┼──────┼─────────┼────────────┼─────────┼─────────────┼───────────┤
+ │ apt     │ openssh-server │ deb  │ 10.0.0  │ no         │ —       │ unsupported │ protected │
+ │ apt     │ rex            │ deb  │ 0.0.123 │ no         │ 1       │ supported   │ —         │
+ └─────────┴────────────────┴──────┴─────────┴────────────┴─────────┴─────────────┴───────────┘
 Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

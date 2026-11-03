@@ -43,7 +43,6 @@ it('follows each Tool write and forwards its stable start key', function (string
     $mock->assertSent(ShowOperationRequest::class);
 })->with([
     ['install', InstallToolRequest::class, ['package' => 'is-number', '--node' => '2', '--manager' => 'vp']],
-    ['adopt', AdoptToolRequest::class, ['package' => 'is-number', '--node' => '2', '--manager' => 'vp', '--yes' => true]],
     ['update', UpdateToolRequest::class, ['tool' => '8']],
     ['remove', RemoveToolRequest::class, ['tool' => '8', '--yes' => true]],
 ]);
@@ -61,7 +60,7 @@ it('returns failure for a failed Tool Operation and keeps its receipt in JSON', 
         ->expectsOutput(json_encode(OperationResponse::fromGatewayData($operation, $id)->toArray(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))->assertExitCode(1);
 });
 
-it('transports a repository definition on install adopt and update', function (string $verb, string $requestClass, array $arguments): void {
+it('transports a repository definition on install and update', function (string $verb, string $requestClass, array $arguments): void {
     $repository = ['name' => 'vendor', 'uris' => ['https://packages.example.test/apt'], 'suites' => ['preview'], 'components' => ['main'], 'signing_key' => ['url' => 'https://packages.example.test/key.gpg', 'fingerprint' => str_repeat('A', 40)]];
     $operation = ['id' => 11, 'kind' => 'tool.'.$verb, 'target_type' => 'node_tools', 'target_id' => 2, 'status' => 'succeeded', 'sequence' => 3, 'result' => ['installed_version' => '1.0.0']];
     $mock = MockClient::global([$requestClass => MockResponse::make(['data' => $operation, 'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111']], 202), ShowRealtimeRequest::class => MockResponse::make([], 503), ShowOperationRequest::class => MockResponse::make(['data' => $operation, 'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111']])]);
@@ -69,9 +68,21 @@ it('transports a repository definition on install adopt and update', function (s
     $mock->assertSent(static fn ($pending): bool => $pending instanceof $requestClass && $pending->body()->all()['repository'] === $repository);
 })->with([
     ['install', InstallToolRequest::class, ['package' => 'hello', '--node' => 2, '--manager' => 'apt']],
-    ['adopt', AdoptToolRequest::class, ['package' => 'hello', '--node' => 2, '--manager' => 'apt', '--yes' => true]],
     ['update', UpdateToolRequest::class, ['tool' => 8]],
 ]);
+
+it('records an adoption at once, prints the agent first and transports its repository', function (): void {
+    $repository = ['name' => 'vendor', 'uris' => ['https://packages.example.test/apt'], 'suites' => ['preview'], 'components' => ['main'], 'signing_key' => ['url' => 'https://packages.example.test/key.gpg', 'fingerprint' => str_repeat('A', 40)]];
+    $tool = ['id' => 31, 'node_id' => 2, 'manager' => 'apt', 'package' => 'hello', 'version_constraint' => null, 'status' => 'installed', 'installed_version' => '1.0.0',
+        'failed_operation' => null, 'error_code' => null, 'outcome' => 'applied', 'repository' => $repository, 'agent' => ['state' => 'offline', 'since' => '2026-11-03T05:00:00Z']];
+    $mock = MockClient::global([AdoptToolRequest::class => MockResponse::make(['data' => $tool, 'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111']], 201)]);
+
+    $this->artisan('tool:adopt', ['package' => 'hello', '--node' => 2, '--manager' => 'apt', '--yes' => true, '--repository' => json_encode($repository, JSON_THROW_ON_ERROR)])
+        ->expectsOutputToContain('Node #2: agent offline since 2026-11-03T05:00:00Z')
+        ->expectsOutputToContain('Possibly outdated, agent silent since 2026-11-03T05:00:00Z.')->assertSuccessful();
+    $mock->assertSent(static fn ($pending): bool => $pending instanceof AdoptToolRequest && $pending->body()->all()['repository'] === $repository);
+    $mock->assertSentCount(1);
+});
 
 it('rejects malformed repository JSON before HTTP', function (string $value): void {
     $mock = MockClient::global();

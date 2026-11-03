@@ -1,10 +1,9 @@
 import { z } from "npm:zod@4.4.3";
 import * as native from "./native.ts";
-import { AdoptInput, type Context } from "./adopt.ts";
-import { homebrewRemovalBlock } from "./adopt_homebrew.ts";
-import { Step, ToolRefusal } from "./contract.ts";
+import { homebrewRemovalBlock } from "./homebrew.ts";
+import { type Context, PackageInput, Step, ToolRefusal } from "./contract.ts";
 import { writeInventory } from "./write.ts";
-export const RemoveInput = AdoptInput;
+export const RemoveInput = PackageInput;
 type Input = z.infer<typeof RemoveInput>;
 type StepValue = z.infer<typeof Step> | null;
 export type RemovalDecision = { ready: boolean; remove: boolean; error_code?: string; manager_version: string | null };

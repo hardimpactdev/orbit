@@ -64,9 +64,9 @@ A tool's name is the operation ID in the [API reference](/api/overview), `<famil
 
 `project-document-storage-show` and `project-document-storage-update` expose the Gateway-wide [Project Documents storage configuration](/reference/project-documents#private-s3-boundary). Both require Gateway access and take no Project selector. Update accepts `endpoint`, `region`, `bucket`, and the paired write-only fields `access_key_id` and `secret_access_key`. Omitting both credential fields preserves them. Results contain only redacted configuration and cleanup status; show does not probe the provider. Update verifies access before saving and returns `project_documents.storage_unavailable` without provider diagnostics on failure.
 
-`tool-scan` reads the enrolled account's Homebrew formulae, casks, and Vite+ global packages for one Node. Its only input is `node_id`. The call does not create a Tool row.
+`tool-scan` lists one Node's Homebrew formulae, casks, Vite+ global packages and apt packages from the Node agent's latest reports. Its only input is `node_id`. The call does not create a Tool row.
 
-`tool-adopt` records ownership of one installed package. Its inputs are `node_id`, `manager`, `package`, and optional `version_constraint`. The call does not install, update, or remove the package.
+`tool-adopt` records ownership of one installed package from the Node agent's latest report, at once. Its inputs are `node_id`, `manager`, `package`, optional `version_constraint` and optional `repository`. The call does not install, update, or remove the package.
 
 `websocket-app-create`, `websocket-app-list`, `websocket-app-show`, and `websocket-app-destroy` manage [Reverb apps](/reference/websocket-apps). `instance-websocket-add` and `instance-websocket-remove` write or clear an app's keys in stored Instance configuration. They accept `instance` as a positive ID or an exact Route domain, and `websocket_app` as the app name. Results omit the secret and environment values. Run `env-sync` to write the Instance's `.env`.
 

@@ -36,7 +36,7 @@ elif kind == 'tool.remove':
 
 else:
     check(installed and result.get('installed_version') == version, 'the recorded version is the dpkg version')
-    expected = {'tool.install': 'applied', 'tool.update': 'unchanged', 'tool.adopt': 'applied'}[kind]
+    expected = {'tool.install': 'applied', 'tool.update': 'unchanged'}[kind]
     check(result.get('outcome') == expected, 'outcome ' + expected)
     repository = operation['input'].get('repository')
     if repository:

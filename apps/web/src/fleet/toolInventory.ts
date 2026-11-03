@@ -13,7 +13,9 @@ export function managerScanNote(manager: ToolInventoryManager): string | null {
         return null;
     }
 
-    return `${manager.manager} is ${manager.scan_state}, so its package list is not an inventory.`;
+    const state = manager.scan_state === "not_observed" ? "not observed yet" : manager.scan_state;
+
+    return `${manager.manager} is ${state}, so its package list is not an inventory.`;
 }
 
 export function unmanagedEmpty(inventory: ToolInventory): string {

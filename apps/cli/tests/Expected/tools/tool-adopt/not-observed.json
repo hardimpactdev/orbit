@@ -1,0 +1,1 @@
+{"error":{"code":"tool.not_observed","message":"The Node agent has not reported the apt packages on this Node yet.","details":{"step":"adopt","outcome":"manager_failed"},"request_id":null}}

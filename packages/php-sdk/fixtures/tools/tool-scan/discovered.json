@@ -6,7 +6,7 @@
     "body": {
         "data": {
             "node_id": 2,
-            "observed_at": "2026-04-26T12:00:00+00:00",
+            "observed_at": "2026-04-26T11:59:00+00:00",
             "managers": [
                 {
                     "manager": "brew",
@@ -14,9 +14,9 @@
                     "packages": [
                         {
                             "manager": "brew",
-                            "package": "openssl@3",
+                            "package": "pcre2",
                             "package_kind": "formula",
-                            "installed_version": "1.0.0",
+                            "installed_version": "10.44.0",
                             "dependency": true,
                             "registered": false,
                             "tool_id": null,
@@ -28,19 +28,31 @@
                             "manager": "brew",
                             "package": "ripgrep",
                             "package_kind": "formula",
-                            "installed_version": "14.1.1",
+                            "installed_version": "14.1.0",
                             "dependency": false,
-                            "registered": true,
-                            "tool_id": 2,
+                            "registered": false,
+                            "tool_id": null,
                             "adoption": "supported",
                             "adoption_block": null,
                             "repository": null
                         },
                         {
                             "manager": "brew",
-                            "package": "wireguard-tools",
+                            "package": "tool",
                             "package_kind": "formula",
                             "installed_version": "1.0.0",
+                            "dependency": false,
+                            "registered": false,
+                            "tool_id": null,
+                            "adoption": "unsupported",
+                            "adoption_block": "unsupported_source",
+                            "repository": null
+                        },
+                        {
+                            "manager": "brew",
+                            "package": "wireguard-tools",
+                            "package_kind": "formula",
+                            "installed_version": "1.0.20250521",
                             "dependency": false,
                             "registered": false,
                             "tool_id": null,
@@ -52,33 +64,8 @@
                 },
                 {
                     "manager": "brew-cask",
-                    "scan_state": "complete",
-                    "packages": [
-                        {
-                            "manager": "brew-cask",
-                            "package": "docker",
-                            "package_kind": "cask",
-                            "installed_version": "4.39.0",
-                            "dependency": false,
-                            "registered": false,
-                            "tool_id": null,
-                            "adoption": "unsupported",
-                            "adoption_block": "authorization_required",
-                            "repository": null
-                        },
-                        {
-                            "manager": "brew-cask",
-                            "package": "font-hack",
-                            "package_kind": "cask",
-                            "installed_version": "2.0.0",
-                            "dependency": false,
-                            "registered": false,
-                            "tool_id": null,
-                            "adoption": "supported",
-                            "adoption_block": null,
-                            "repository": null
-                        }
-                    ]
+                    "scan_state": "unsupported",
+                    "packages": []
                 },
                 {
                     "manager": "vp",
@@ -100,31 +87,19 @@
                             "manager": "vp",
                             "package": "pnpm",
                             "package_kind": "global",
-                            "installed_version": "10.15.1",
+                            "installed_version": "10.0.0",
                             "dependency": false,
                             "registered": false,
                             "tool_id": null,
                             "adoption": "unsupported",
                             "adoption_block": "protected",
                             "repository": null
-                        },
-                        {
-                            "manager": "vp",
-                            "package": "typescript",
-                            "package_kind": "global",
-                            "installed_version": null,
-                            "dependency": false,
-                            "registered": false,
-                            "tool_id": null,
-                            "adoption": "unsupported",
-                            "adoption_block": "version_unreadable",
-                            "repository": null
                         }
                     ]
                 },
                 {
                     "manager": "apt",
-                    "scan_state": "unsupported",
+                    "scan_state": "not_observed",
                     "packages": []
                 }
             ]

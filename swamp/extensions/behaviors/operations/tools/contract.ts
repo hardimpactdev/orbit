@@ -27,7 +27,29 @@ export const Input = z.object({
   materialize: z.record(z.string(), z.unknown()).nullable().default(null),
 });
 export type ToolInput = z.infer<typeof Input>;
-export const Kind = z.enum(["tool.install", "tool.update", "tool.remove", "tool.adopt"]);
+const PackageFields = Input.omit({ materialize: true, intent_only: true }).extend({
+  user: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/).refine((v) => v !== "root"),
+  package: z.string().min(1).max(255),
+});
+/** apt and Composer exist only on Linux, casks only on macOS. */
+export const platformSupports = (v: { platform: string; manager: string }) =>
+  !(v.platform === "macos" && ["apt", "composer"].includes(v.manager)) &&
+  !(v.platform === "linux" && v.manager === "brew-cask");
+/** One package change on one Node: install, update or removal. */
+export const PackageInput = PackageFields.refine(platformSupports);
+export const ManagerFields = PackageFields.pick({ manager: true, user: true, platform: true });
+export const Facts = z.object({
+  error_code: z.literal("tool.version_probe_failed").optional(),
+  scope: z.enum(["present", "absent", "conflict"]).default("present"),
+  manager_version: z.string().optional(),
+  versions: z.array(z.string().nullable()).max(4096).optional(),
+  complete: z.boolean().optional(),
+  roots: z.array(z.string()).optional(),
+}).passthrough();
+export type Context = {
+  extensionFile(name: string): string;
+  writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
+};
 export const Step = z.object({ status: z.string(), outputs: z.record(z.string(), z.unknown()).optional() }).passthrough();
 /** The public JSON a phase step printed, or null when the step did not finish its phase. */
 export function printed(step: z.infer<typeof Step> | null | undefined): Record<string, unknown> | null {
