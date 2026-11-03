@@ -1,5 +1,27 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { readCopy } from "./store.ts";
+import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
+import { behavior, readCopy } from "./store.ts";
+
+Deno.test("store scopes private content to the operation and returns only size and hash", async () => {
+    const path = await Deno.makeTempFile();
+    const content = 'APP_KEY="private-import"\n';
+    await Deno.writeTextFile(path, content);
+    try {
+        const { context, getWrittenResources } = createModelTestContext();
+        const result = await behavior.methods.store.execute({ path, operation: 41 }, context);
+        const sha256 = "1c84ebc52edf0087f0bc52e780e4b1d0ed33f58d073692cd33810b3abf0ca252";
+        assertEquals(result, { size: content.length, sha256 });
+        assertEquals(getWrittenResources().map(({ specName, name, data }) => ({ specName, name, data })), [{
+            specName: "file", name: "file",
+            data: { size: content.length, sha256, content: { "41": content } },
+        }]);
+        await assertRejects(() => Deno.lstat(path), Deno.errors.NotFound);
+    } finally {
+        await Deno.remove(path).catch((error) => {
+            if (!(error instanceof Deno.errors.NotFound)) throw error;
+        });
+    }
+});
 
 Deno.test("the copy is read once, hashed and deleted", async () => {
     const path = await Deno.makeTempFile();
