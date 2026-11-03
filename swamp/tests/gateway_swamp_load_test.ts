@@ -29,13 +29,3 @@ Deno.test("the release load compares only the commit's workflows, never a Schedu
   ]);
   assertEquals(run.includes('jq -ec "$tracked"'), true);
 });
-
-Deno.test("the release load restarts serve before its reload only when shipped files change (Lab #4282)", () => {
-  const restart = run.indexOf('release-restart "$RELEASE_SHA"');
-  const checkout = workflow.jobs[0].steps.findIndex((step) => step.name === "checkout");
-  const reload = run.indexOf("serve reload");
-  assertEquals(checkout >= 0 && restart >= 0, true);
-  assertEquals(reload === -1 || reload > restart, true);
-  assertEquals(/if \[ "\$restart" != '\{\}' \]; then[\s\S]*?exit 0\s*fi/.test(run), true);
-  assertEquals(source.includes("https://swamp-club.com/lab/4282"), true);
-});

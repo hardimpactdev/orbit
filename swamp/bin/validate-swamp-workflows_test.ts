@@ -1,21 +1,14 @@
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.19";
 import { run, script } from "./gate-test-support.ts";
 const source = await Deno.readTextFile(new URL("../../.github/workflows/swamp-shape.yml", import.meta.url));
-const validate = source.split("  validate:")[1].split("  native-tests:")[0];
-Deno.test("sandbox serve uses a separate token without widening validation", async () => {
-  const native = source.split("  native-tests:")[1].split("  tests:")[0];
-  const ci = await Deno.readTextFile(new URL("../../.github/workflows/ci.yml", import.meta.url));
-  const caller = ci.split("  swamp:")[1].split("  gateway-release:")[0];
+const validate = source.split("  validate:")[1].split("  tests:")[0];
+Deno.test("validation keeps its read-only credentials while native CI is paused", () => {
   for (const key of ["API_KEY", "SIGNIN_TOKEN"]) {
     assertStringIncludes(validate, "secrets.SWAMP_" + key);
     assert(!validate.includes("secrets.SWAMP_NATIVE_" + key));
-    assertStringIncludes(native, "secrets.SWAMP_NATIVE_" + key);
-    assert(!native.includes("secrets.SWAMP_" + key));
-    assertStringIncludes(caller, "secrets.SWAMP_NATIVE_" + key);
   }
-  assertStringIncludes(native, "github.event_name == 'pull_request'");
-  assertStringIncludes(native, "github.ref == 'refs/heads/main'");
-  assert(!native.includes("continue-on-error"));
+  assert(!source.includes("  native-tests:"));
+  assert(!source.includes("  native-plan:"));
 });
 Deno.test("required validation only receives event-scoped credentials", () => {
   const shape = source.split("  shape:")[1].split("  validate:")[0], tests = source.split("  tests:")[1];
@@ -29,7 +22,7 @@ Deno.test("required validation only receives event-scoped credentials", () => {
   assertStringIncludes(validate, "github.event_name == 'pull_request'");
   assertStringIncludes(validate, "github.ref == 'refs/heads/main'");
 });
-Deno.test("native grant validation and regressions are required", async () => {
+Deno.test("native serve grant validation remains required", async () => {
   for (const required of ["python3 bin/check-grant-patterns.py --cache", "grant-validation.json"]) assertStringIncludes(validate, required);
   assert((await Deno.stat(new URL("../extensions/behaviors/operations/workflow_grant_patterns_native_test.ts", import.meta.url))).isFile);
   assert(!source.includes("check-grant-patterns.ts"));
