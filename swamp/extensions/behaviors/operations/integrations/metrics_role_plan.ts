@@ -20,7 +20,6 @@ const Service = z.object({
   argv: z.array(z.string()),
   check: z.object({
     volumes: z.array(z.string()),
-    environment: z.array(z.string()),
     restart: z.literal("unless-stopped"),
     ports: z.array(z.string()),
   }).strict(),
@@ -76,7 +75,6 @@ export const behavior = {
             image: image(s),
             check: {
               volumes: spec.volumes,
-              environment: spec.environment,
               restart: "unless-stopped" as const,
               ports: [],
             },
