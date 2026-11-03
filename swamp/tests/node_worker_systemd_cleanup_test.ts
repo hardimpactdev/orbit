@@ -58,10 +58,14 @@ Deno.test({
                 "--property=Restart=on-failure",
                 "--property=RestartSec=100ms",
                 ...properties,
-                "/usr/bin/python3",
+                Deno.execPath(),
+                "run",
+                "-A",
+                "--no-config",
+                "--no-lock",
                 fileURLToPath(
                     new URL(
-                        "fixtures/node-worker/exit_with_child.py",
+                        "fixtures/node-worker/exit_with_child.ts",
                         import.meta.url,
                     ),
                 ),

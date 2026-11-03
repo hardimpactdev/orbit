@@ -8,7 +8,14 @@ async function command(args: string[]) {
   return decoder.decode(result.stdout);
 }
 
-Deno.test("metadata-only bind keeps home hidden and read only", async () => {
+const systemd = (() => {
+  try {
+    return Deno.statSync("/run/systemd/system").isDirectory;
+  } catch {
+    return false;
+  }
+})();
+Deno.test({ name: "metadata-only bind keeps home hidden and read only", ignore: !systemd }, async () => {
   const root = await Deno.makeTempDir({ prefix: "swamp-inode-probe-", dir: Deno.env.get("HOME") });
   try {
     const probe = `${root}/empty`, secret = `${root}/operator-sentinel`;

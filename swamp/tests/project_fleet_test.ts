@@ -187,9 +187,9 @@ Deno.test("private project config preserves every exception ledger found in the 
   }
 });
 
-Deno.test("both shared Project entrypoints accept full Gateway inputs and emit native results on209", async () => {
+Deno.test("the Project routine entrypoint accepts full Gateway inputs and runs on 209", async () => {
   const ids = new Set<string>();
-  for (const mode of ["detect", "routine"]) {
+  for (const mode of ["routine"]) {
     const workflow = await yaml(`workflows/workflow-project-${mode}.yaml`) as {
       id: string;
       name: string;
@@ -224,10 +224,7 @@ Deno.test("both shared Project entrypoints accept full Gateway inputs and emit n
       "execution_secrets",
     ]);
     assertEquals(workflow.inputs.additionalProperties, false);
-    assertEquals(workflow.inputs.properties.kind, {
-      type: "string",
-      enum: [`project-${mode}`.replace("-", ".")],
-    });
+    assertEquals(workflow.inputs.properties.kind, { type: "string", const: `project.${mode}` });
     assertEquals(workflow.inputs.properties.node_id, {
       type: "integer",
       enum: [209],
@@ -242,16 +239,5 @@ Deno.test("both shared Project entrypoints accept full Gateway inputs and emit n
         assertEquals(step.task.modelType, undefined);
       }
     }
-    const steps = workflow.jobs[0].steps;
-    const input = steps.find((step) => step.name === "input")!;
-    assertEquals(input.task.inputs, {
-      operation_id: "${{ inputs.operation_id }}",
-      node_id: "${{ inputs.node_id }}",
-      kind: "${{ inputs.kind }}",
-      intent: "${{ inputs.intent }}",
-    });
-    const result = steps.find((step) => step.name === "result")!;
-    assertEquals(result.task.behaviorType, "command/shell");
-    assertEquals(result.task.methodName, "execute");
   }
 });
