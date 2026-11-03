@@ -149,11 +149,12 @@ Deno.test("registration dispatches new Processes to create and existing containe
   for (const [kind, processId] of [["create", 41], ["start", 42]] as const) {
     await repo.workflow(`operation-process-${kind}`, (definition) => {
       definition.inputs = { type: "object", additionalProperties: true };
-      definition.jobs = [{ name: "fixture", steps: [{
+      definition.jobs = definition.jobs.slice(0, 1);
+      definition.jobs[0].steps = [{
         name: "Check member dispatch",
         task: { type: "assert", expr: `inputs.kind == "process.${kind}" && inputs.intent.control.process_id == ${processId}`,
           message: "Process was sent to the wrong lifecycle child" },
-      }] }];
+      }];
     });
   }
   const { history } = await register(repo, { ...intent, protect_environment: false, run_setup: true,
