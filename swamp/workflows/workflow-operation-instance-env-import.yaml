@@ -63,15 +63,16 @@ jobs:
   - name: 'Remove the staged copy'
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: 'Copy .env to 209', condition: {type: completed}}]
-    guard: '${{ !("Stage .env for the copy" in steps) || steps["Stage .env for the copy"].status != "succeeded" }}'
+    dependsOn:
+    - {step: Stage .env for the copy, condition: {type: always}}
+    - {step: Copy .env to 209, condition: {type: always}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "env-imp-" + string(inputs.node_id) }}
       methodName: exec
       globalArgs: *ssh
-      inputs: {hosts: 'name:target', timeoutSec: 20, argv: [/usr/bin/rm, -f, --, '${{ "/tmp/orbit-env-import-" + run.id + "-node" }}']}
+      inputs: {hosts: 'name:target', timeoutSec: 20, argv: [/usr/bin/sudo, -n, --, /usr/bin/rm, -f, --, '${{ "/tmp/orbit-env-import-" + run.id + "-node" }}']}
     # The end check: the bytes go to the vault as instance-env-import.content.<operation>; only size and sha256 come back.
   - name: 'Read .env into the vault'
     labels: {role: swamp}
