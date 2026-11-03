@@ -514,3 +514,13 @@ All eight native observe/routine cases pass in 81.818 seconds. The 50 Gateway ma
 Cancellation 8618 destroyed the proof VM after the run. The first cancellation start was refused before native execution; the admitted failed Operation was identified before the new cancellation was requested.
 
 Orbit grows by 251 lines. Swamp grows by 152: behaviors add 31, workflows 22, and proof fixtures, receipts and their documentation 114; tests shrink by 14 and policy by 1. Scripts add zero. The growth supplies typed evidence, declarative input schemas, and proof coverage; the root flow loses two steps.
+
+### Node role addition: native resources
+
+`node.role_add` now freezes role-owned packages, files, accounts, services, containers and publications at admission. Official cfgmgmt resources and single-command SSH steps apply them from Node 209. Their checks feed the native terminal assertion. Node convergence owns the observer and CLI. Role additions require neither a target worker nor an observer hash, and expose no execution callback. No shipped script or rollback chain is added.
+
+The proofs exposed separate topology and kind faults. The caller-only operator needed its synthetic SSH identity removed in minimal@13. Minimal@14 gives the proof worker production's 16 dispatch slots; the shared exporter child orders downloads after package installation. The parent omits duplicate exporter Caddy and PHP publications where it already owns them, preserving its prospective certificate view. A complete Docker CE installation satisfies Docker prerequisites; bounded APT installs cannot remove or upgrade existing packages.
+
+Five passing role fixtures cover AppDev, Database, Reverb, CI and Metrics. The latest receipt is `/home/nckrtl/swamp-execution/evidence/proof/node.role_add.metrics/20261103T005940Z-minimal.json`, source `6daf44fe6f`, minimal@14: 291.56 s, including Metrics HTTPS parity. Fixture p95 is 291.56 s across five role cases, not a production estimate. The budget remains 1,800 s and queue timeout 30 s. The index records each earlier source and runtime. VM 409 is physically absent; fresh teardown operation 8708 completed after the first hub-peer check failed.
+
+Five native resource tests, 32 updated Gateway contract cases, changed-file Deno checks, PHPStan and workflow validation pass. A wider role suite was compared with unchanged main to separate stale legacy expectations from this change. The role-converge and enrollment drafts remain separate and unproved. Growth replaces the hidden role executor with placed resource steps, typed public renderers and real proof fixtures; its measured breakdown is in `swamp/proof/receipts/node-role-add.json`. This batch deletes no shipped script and retains no script gap.

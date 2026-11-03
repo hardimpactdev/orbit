@@ -63,14 +63,14 @@ it('admits the swamp role as a Caddy role of its own Node and keeps it a singlet
     $this->postJson("/api/v1/nodes/{$other->id}/roles", ['role' => 'swamp'])->assertUnprocessable();
 });
 
-it('hydrates only the existing owned hash through the real shared private reader', function (): void {
+it('keeps observer identity outside the role resource private reader', function (): void {
     $ack = $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'database'])->assertAccepted();
     $operation = Operation::query()->findOrFail($ack->json('data.id'));
     $run = 'a075eb23-7ac4-4487-80d1-57a038a92676';
     $operation->update(['state' => [...$operation->state, 'swamp_run_id' => $run]]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip])
         ->getJson("/api/v1/direct-operations/{$operation->id}/private-material?run_id={$run}")
-        ->assertOk()->assertJsonPath('data.secret_hash', str_repeat('e', 64))->assertJsonMissingPath('data.worker_credentials');
+        ->assertUnprocessable();
     $this->postJson("/api/v1/direct-operations/{$operation->id}/secret-output", ['run_id' => $run, 'outputs' => ['secret_hash' => str_repeat('f', 64)]])
         ->assertUnprocessable();
     expect($this->node->refresh()->agent_secret_hash)->toBe(str_repeat('e', 64));

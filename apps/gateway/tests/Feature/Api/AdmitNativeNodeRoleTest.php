@@ -46,28 +46,26 @@ it('records native role and footprint intent without an executor hold child or h
     $state = $operation->state;
     $state['swamp_run_id'] = 'a075eb23-7ac4-4487-80d1-57a038a92676';
     $operation->state = $state;
-    expect(NodeRoleDirectInput::ownerId($operation))->toBe($this->node->id);
+    expect(NodeRoleDirectInput::ownerId($operation))->toBeNull()
+        ->and($operation->input['native_role']['ssh']['control_node_id'])->toBe(209);
 });
 
-it('refuses unsupported or unplaced role roots before recording an Operation or assignment', function (string $reason): void {
-    $role = RoleName::Database;
-    match ($reason) {
-        'workerless' => config(['swamp_workers.nodes' => []]),
-        'identity' => $this->node->forceFill(['agent_secret_hash' => null])->save(),
-    };
-    $before = Operation::query()->count();
-    expect(fn () => app(AdmitNodeRoleOperationAction::class)->add($this->node, $role))->toThrow(ResourceOperationException::class);
-    expect(Operation::query()->count())->toBe($before)->and($this->node->roles()->where('role', RoleName::Database)->exists())->toBeFalse();
-})->with(['workerless', 'identity']);
+it('admits role resources without a target worker or observer identity', function (): void {
+    config(['swamp_workers.nodes' => []]);
+    $this->node->forceFill(['agent_secret_hash' => null])->save();
+    $operation = app(AdmitNodeRoleOperationAction::class)->add($this->node, RoleName::Database);
+    expect($operation->input['native_role']['ssh']['control_node_id'])->toBe(209)
+        ->and($operation->input['native_role'])->not->toHaveKeys(['agent', 'secret_hash', 'cli'])
+        ->and($this->node->roles()->where('role', RoleName::Database)->sole()->status->value)->toBe('provisioning');
+});
 
-it('rolls back the assignment and intent when an applicable footprint contribution is unsupported', function (): void {
+it('leaves unrelated Node footprint contributions to Node convergence', function (): void {
     $artifact = new FakeFootprintArtifact('unsupported-contribution', str_repeat('a', 64));
     FleetFixtures::bind([$artifact]);
     app()->instance(NodeConvergeInput::class, new NodeConvergeInput(app(NodeFootprint::class), app(AgentDelivery::class), [$artifact]));
-    $before = Operation::query()->count();
-    expect(fn () => app(AdmitNodeRoleOperationAction::class)->add($this->node, RoleName::Database))
-        ->toThrow(ResourceOperationException::class);
-    expect(Operation::query()->count())->toBe($before)->and($this->node->roles()->where('role', RoleName::Database)->exists())->toBeFalse();
+    $operation = app(AdmitNodeRoleOperationAction::class)->add($this->node, RoleName::Database);
+    expect($operation->input['native_role']['artifact_digests'])->not->toHaveKey('unsupported-contribution')
+        ->and($this->node->roles()->where('role', RoleName::Database)->exists())->toBeTrue();
 });
 
 it('refuses a database role with no WireGuard address before recording intent or effects', function (): void {

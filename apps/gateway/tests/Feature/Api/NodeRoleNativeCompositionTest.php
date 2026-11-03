@@ -74,20 +74,21 @@ it('freezes certificate Metrics and Gateway DNS composition in the admitted role
         ->and(array_column($snapshot['metrics_fleet']['fleet'], 'node_id'))->toBe([$this->gateway->id, $this->node->id, $vpn->id, $metrics->id])
         ->and($snapshot['gateway_dns'])->toBe(['operation' => 'converge', 'address' => $vpn->wireguard_ip, 'domain' => 'orbit']);
 
+    $frozen = $operation->fresh()->input['_role'];
     $metrics->update(['name' => 'composition-renamed-after-admission']);
     $vpn->update(['wireguard_ip' => '10.44.0.254']);
-    expect($operation->refresh()->input['_role'])->toBe($snapshot)
+    expect($operation->refresh()->input['_role'])->toBe($frozen)
         ->and(json_encode($snapshot))->not->toContain('secret_hash', 'password', 'private_key');
 });
 
-it('admits the complete fleet and keeps Metrics private material readable only by its owner', function (): void {
+it('admits the complete native fleet and refuses execution callbacks', function (): void {
     $metrics = FleetFixtures::node('composition-admitted-metrics', [RoleName::Metrics]);
     $vpn = FleetFixtures::node('composition-admitted-vpn', [RoleName::Vpn]);
     $other = FleetFixtures::node('composition-admitted-unrelated', [RoleName::Database]);
     DB::beginTransaction();
     try {
         $operation = app(AdmitNodeRoleOperationAction::class)->add($this->node, RoleName::Database);
-        $expected = [$this->node->id, $this->gateway->id, $metrics->id, $vpn->id, $other->id];
+        $expected = array_values(array_unique([$this->node->id, $this->gateway->id, $metrics->id, $vpn->id, $other->id, 209]));
         sort($expected);
         $participants = $operation->input['participant_node_ids'];
         sort($participants);
@@ -102,9 +103,14 @@ it('admits the complete fleet and keeps Metrics private material readable only b
             ->and($bindings->readable($operation, $declared, $metrics->id))->toBe(['metrics_runtime' => 'metrics.fleet_runtime'])
             ->and($bindings->readable($operation, $declared, $this->node->id))->not->toHaveKey('metrics_runtime');
         expect(fn () => $bindings->readable($operation, $declared, $other->id))->toThrow(ResourceOperationException::class);
-        $public = app(NodeRoleDirectProjection::class)->publicInput($operation, $metrics->id);
-        expect($public['role'])->toBe('database')->and($public['metrics_fleet'])->toBe($operation->input['_role']['metrics_fleet'])
-            ->and(json_encode($public))->not->toContain('$secret', 'runtime_material', 'metrics_runtime');
+        $native = app(NodeRoleDirectProjection::class)->input($operation)['intent'];
+        expect($native['role'])->toBe('database')
+            ->and(array_column($native['exporters'], 'exporter_node_id'))->toBe([
+                $this->gateway->id, $this->node->id, $metrics->id, $vpn->id, $other->id,
+            ]);
+        expect(fn () => app(NodeRoleDirectProjection::class)->publicInput($operation, $metrics->id))
+            ->toThrow(ResourceOperationException::class);
+
     } finally {
         DB::rollBack();
     }
