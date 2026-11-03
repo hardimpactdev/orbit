@@ -1,0 +1,17 @@
+{
+  "kind": "route.update",
+  "rule": 22,
+  "source_commit": "193a8c4a7fa54271541415eeefe164925c021874",
+  "release": "193a8c4",
+  "topology": "minimal@16",
+  "receipt": "/home/nckrtl/swamp-execution/evidence/proof/route.update/20261103T173851Z-minimal.json",
+  "proof_pass": true,
+  "operation_seconds": 42.8,
+  "fixture_seconds": 106.2,
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "swamp_run_id": "425b06ad-336f-46e7-b71f-3a2891927449",
+  "vm_destroyed": true,
+  "scripts_deleted": 0,
+  "named_gap": null
+}
