@@ -84,8 +84,9 @@ enum NodeFactKind: string
                 'keys.*.path' => ['required', 'string', 'starts_with:/', 'max:4096'],
                 'sources.*.sha256' => ['required', 'string', 'regex:/\\A[a-f0-9]{64}\\z/'],
                 'keys.*.sha256' => ['required', 'string', 'regex:/\\A[a-f0-9]{64}\\z/'],
-                'sources.*.content' => ['required', 'string', 'max:87384'],
-                'keys.*.content' => ['required', 'string', 'max:87384'],
+                // An empty file, such as Ubuntu's removed-keys keyring, arrives as null.
+                'sources.*.content' => ['present', 'nullable', 'string', 'max:87384'],
+                'keys.*.content' => ['present', 'nullable', 'string', 'max:87384'],
                 'formulae' => ['sometimes', 'array', 'list', 'max:5000'],
                 'formulae.*.name' => ['required', 'string', 'max:255'],
                 'formulae.*.versions' => ['present', 'array', 'list', 'max:64'],

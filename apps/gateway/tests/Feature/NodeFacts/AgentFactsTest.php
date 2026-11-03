@@ -144,7 +144,8 @@ describe('agent facts and liveness', function (): void {
         ]);
         $apt = ['kind' => 'packages', 'subject' => 'apt', 'observed_at' => '2026-11-03T00:00:00Z', 'data' => ['scope' => '/var/lib/dpkg/status',
             'packages' => [['name' => 'jq', 'version' => '1.7']], 'sources' => [],
-            'keys' => [['path' => '/etc/apt/keyrings/docker.asc', 'sha256' => str_repeat('a', 64), 'content' => base64_encode('key')]]]];
+            'keys' => [['path' => '/etc/apt/keyrings/docker.asc', 'sha256' => str_repeat('a', 64), 'content' => base64_encode('key')],
+                ['path' => '/usr/share/keyrings/ubuntu-cloudimage-removed-keys.gpg', 'sha256' => hash('sha256', ''), 'content' => '']]]];
 
         $this->postJson('/api/v1/agent/facts', $apt)->assertNoContent();
         $this->postJson('/api/v1/agent/facts', [...$apt, 'subject' => 'composer', 'data' => ['scope' => '/opt/orbit/composer', 'roots' => ['laravel/installer'],
