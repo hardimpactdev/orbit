@@ -236,11 +236,3 @@ it('admits peer DNS through its normal directed Node access without an executor 
         ->postJson('/api/v1/fleet/nodes/'.$node->id.'/peer-dns', [])->assertAccepted();
     expect(Operation::query()->count())->toBe(1)->and($agents->calls)->toBe([]);
 });
-
-it('requires explicit automatic true on the executor recipe route', function (array $payload): void {
-    [, $node] = fleetPeerDnsNodes($this);
-    $agents = new FakeAgentCommandRunner;
-    app()->instance(AgentCommandRunner::class, $agents);
-    $this->postJson('/api/v1/fleet/nodes/'.$node->id.'/recipe', $payload)->assertUnprocessable();
-    expect(Operation::query()->count())->toBe(0)->and($agents->calls)->toBe([]);
-})->with([[[]], [['automatic' => false]], [['automatic' => 1]], [['automatic' => '1']], [['automatic' => 'true']]]);

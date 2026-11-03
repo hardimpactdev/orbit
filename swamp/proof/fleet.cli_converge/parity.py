@@ -3,7 +3,7 @@ import json
 import os
 import subprocess
 
-release = json.load(open(os.path.join(os.path.dirname(__file__), '..', 'fleet.recipe', 'cli-release.json')))
+release = json.load(open(os.path.join(os.path.dirname(__file__), '..', 'fleet.cli_converge', 'cli-release.json')))
 version = f"0.{release['number']}.0"
 operation = json.load(open(os.environ['PROOF_OPERATION_FILE']))
 assert operation['status'] == 'succeeded', operation.get('error_code')

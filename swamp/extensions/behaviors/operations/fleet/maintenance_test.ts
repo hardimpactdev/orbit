@@ -29,12 +29,6 @@ class MaintenanceFixture {
     running: false,
     finished_at: null as string | null,
   }];
-  recipe = {
-    status: "ready",
-    build_id: 1,
-    node_id: 2,
-    recipe: "sha256:recipe",
-  };
   context(): Context {
     const { context } = createModelTestContext();
     return Object.assign(context, {
@@ -66,8 +60,7 @@ class MaintenanceFixture {
         date: "20261028",
         pulls: this.pulls,
       };
-    } else if (path.endsWith("/recipe/plan")) data = this.recipe;
-    else if (path.endsWith("/rollout/plan")) {
+    } else if (path.endsWith("/rollout/plan")) {
       data = {
         status: "running",
         rollout: 5,
@@ -110,14 +103,13 @@ Deno.test("lost admission retains the original path, payload and key on the next
   assertEquals(writes[0].key, writes[1].key);
   assertEquals(writes[0].body, writes[1].body);
 });
-Deno.test("a failed PR read does not block ordered recipe or rollout admissions", async () => {
+Deno.test("a failed PR read does not block rollout admissions", async () => {
   const f = new MaintenanceFixture();
   f.failPr = true;
   assertEquals(await f.tick(), {
     status: "partial",
     errors: ["fleet.github_unavailable"],
   });
-  assertEquals(f.writes("/api/v1/fleet/nodes/2/recipe").length, 1);
   assertEquals(f.writes("/api/v1/fleet/rollout").length, 1);
 });
 Deno.test("snapshot opens start at 03:00 Amsterdam in winter and summer", async () => {
@@ -151,7 +143,6 @@ Deno.test("daily opens use Gateway intent idempotency and retain no Swamp admiss
     ),
     false,
   );
-  assertEquals(f.writes("/api/v1/fleet/nodes/2/recipe").length, 1);
   assertEquals(f.writes("/api/v1/fleet/rollout").length, 2);
 });
 

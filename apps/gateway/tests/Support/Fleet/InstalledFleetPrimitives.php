@@ -49,7 +49,7 @@ final class InstalledFleetPrimitives
         Schema::shouldReceive('hasColumns')->with('operations', ['parent_operation_id', 'child_key', 'run_constraints'])->andReturn($missing !== 'columns');
         $kinds = OperationKinds::definitions();
         if ($missing !== 'kind') {
-            $kinds['node.converge'] = $kinds['fleet.recipe'] ?? $kinds['fleet.peer_dns'];
+            $kinds['node.converge'] = $kinds['fleet.peer_dns'];
         } else {
             unset($kinds['node.converge']);
         }

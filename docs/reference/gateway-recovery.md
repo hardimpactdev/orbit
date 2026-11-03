@@ -16,7 +16,7 @@ covers:
 
 This guide helps an operator keep Gateway state safe during a source update and recover when an update fails. It uses the installation layout from the [Quickstart](/quickstart). Test the procedure on a disposable copy before you rely on it for important data.
 
-Node convergence applies its recorded network part after the other footprint parts. A matching network digest and live state leave WireGuard untouched; software recipe and image rollout remain separate.
+Node convergence applies its recorded network part after the other footprint parts. A matching network digest and live state leave WireGuard untouched.
 
 ## Gateway request logs
 
@@ -1176,20 +1176,3 @@ The Instance pipeline deploys to Nodes over SSH and runs one PHP-FPM pool per In
 Converging Nodes in parallel is faster, but a bad release would break many Nodes at once. A failed Node halts the rollout, because the next Node would most likely fail the same way, and one broken Node is easier to repair than a fleet. A fleet failure never rolls the Gateway back, because the Gateway already verified and serves.
 
 An unreachable Node changed nothing, so it does not halt the fleet; the catch-up converges it. Halting on it would let one offline Node block every other. A missing CLI release is the normal state for a few minutes after each deploy, so it waits instead of failing. The rollout is off by default, so a Gateway release that adds the units does not reach Nodes before an operator prepared them.
-
-## Recipe convergence
-
-[Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) applies and verifies machine software on one Node. It shares the Node role and self-update locks with release rollout. It applies the footprint with the same steps as `node:converge`, and the Gateway refuses a recipe footprint without the agent key verifier.
-
-Release rollout updates Orbit itself, with a timer to catch up missed Nodes. [Nightly recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) waits for every configured host to promote the deployed recipe, then calls Node recipe convergence in fleet order. That page owns the schedule, night window, alerts, and recovery policy, including the guarded rebuild of a failed App-owned nightly PR on newer main. Closed PRs and PRs modified by a person are never refreshed. A mention from another issue or PR does not count as a modification.
-
-Recipe PR runs get one scoped GitHub token when they start, so a failed recipe PR is retried as a new task.
-
-When convergence stops:
-
-- If an image build fails, readiness blocks but convergence progress does not. Fix the build, then run `task-vms:build-recipe --retry`.
-- Convergence starts when every host promotes the current identity and generation.
-- If a Node visit fails or is interrupted, it stays halted for manual recovery, even after an image retry.
-- If a Node runs the Docker CE provider, recipe convergence refuses it with `docker-provider:docker-ce`. Release rollout and nightly maintenance do not change it.
-
-Converging the Gateway Node also brings its PHP to the recipe's [PHP build](/reference/compute-drivers#php-build). When that changes a PHP package, [`php.install-build`](/reference/compute-drivers#install-the-php-build) validates PHP-FPM and restarts `php8.5-fpm`, which serves the API, then checks each pool socket, `orbit-gateway` included. A failed check reinstalls the previous PHP build and restarts the service again. Converge the Gateway last and while no long request runs.
