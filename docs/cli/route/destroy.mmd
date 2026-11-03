@@ -108,9 +108,10 @@ sequenceDiagram
   %%> - an identical tuple that another Route uses stays
   %%> - on the Ingress, closes `orbit:ingress-http` and `orbit:ingress-https` when Route 14 was the last public Route
   end
-  SW->>N: Check nothing is left<br/>@swamp/cfgmgmt check absent
+  SW->>N: Check nothing is left<br/>cfgmgmt check · native assert
   %%> What it does:
-  %%> - the `check` of the file and firewall behaviors on each Node: no site block names `shop.test`, no Route 14 certificate scope, no removed tuple
+  %%> - the `check` of the file, directory and firewall behaviors on each Node: no site block names `shop.test`, no Route 14 certificate scope, no removed tuple
+  %%> - a native assertion rejects every non-compliant result; exit code zero alone is insufficient
   %%> Why:
   %%> - the Route only counts as removed when the Nodes show it
   alt every step succeeds
