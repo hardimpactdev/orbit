@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Rolls the Gateway back to a retained release when Swamp or the Gateway cannot run `gateway:release:rollback`.
+# Run it on the Gateway Node with sudo. It switches the application link, and the web link when the release keeps its
+# web build, then restarts each Gateway Process that runs from the application, such as Horizon and the scheduler.
+# It changes no schema and restores no snapshot. docs/reference/gateway-recovery.md#roll-back-without-swamp
+set -euo pipefail
+
+base=${ORBIT_RELEASE_BASE:-/home/orbit}
+id=${1:-}
+fail() { echo "gateway-rollback: $*" >&2; exit 1; }
+
+[[ $id =~ ^[0-9a-f]{12}$ ]] || { echo 'usage: sudo bin/gateway-rollback <12-digit release id>' >&2; exit 64; }
+sha=$(cat "$base/releases/$id/REVISION" 2>/dev/null) || fail "release $id is not sealed: $base/releases/$id/REVISION is missing"
+[[ $sha == "$id"* ]] || fail "release $id holds REVISION $sha"
+
+owner=$(stat -c %U "$base/orbit")
+as_owner() { if [ "$(id -un)" = "$owner" ]; then "$@"; else runuser -u "$owner" -- "$@"; fi; }
+swap() { as_owner rm -f "$1.next" && as_owner ln -s "releases/$id" "$1.next" && as_owner mv -T "$1.next" "$1"; }
+
+swap "$base/orbit"
+echo "gateway-rollback: $base/orbit -> releases/$id"
+if [ -f "$base/web/releases/$id/index.html" ]; then
+    swap "$base/web/current"
+    echo "gateway-rollback: $base/web/current -> releases/$id"
+else
+    echo "gateway-rollback: release $id keeps no web build; the web app stays as it is"
+fi
+
+application=$base/orbit/apps/gateway
+for unit in $(systemctl list-units --type=service --all --plain --no-legend 'orbit-process-*' | awk '{print $1}'); do
+    directory=$(systemctl show -p WorkingDirectory --value "$unit")
+    case $directory in "$application" | "$application"/*) systemctl restart "$unit" && echo "gateway-rollback: restarted $unit" ;; esac
+done

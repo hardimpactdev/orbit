@@ -12,7 +12,7 @@ use Saloon\Enums\Method;
 use Saloon\Http\Response;
 use Saloon\Traits\Body\HasJsonBody;
 
-/** Queues a manual deploy of one commit. The Gateway answers 202 with the queued record. */
+/** Queues a manual deploy of one commit, as the release unit or as the `gateway.release` Swamp run. The Gateway answers 202 with the record. */
 final class DeployGatewayReleaseRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
@@ -20,7 +20,7 @@ final class DeployGatewayReleaseRequest extends GatewayRequest implements HasBod
     #[\Override]
     protected Method $method = Method::POST;
 
-    public function __construct(public readonly string $commit)
+    public function __construct(public readonly string $commit, public readonly bool $swamp = false)
     {
         if (preg_match('/\A[0-9a-f]{7,40}\z/D', $commit) !== 1) {
             throw new InvalidArgumentException('Name the commit by its hex SHA (7 to 40 characters).');
@@ -37,9 +37,9 @@ final class DeployGatewayReleaseRequest extends GatewayRequest implements HasBod
         return GatewayReleaseResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
     }
 
-    /** @return array{commit: string} */
+    /** @return array{commit: string, swamp?: true} */
     protected function defaultBody(): array
     {
-        return ['commit' => $this->commit];
+        return ['commit' => $this->commit, ...$this->swamp ? ['swamp' => true] : []];
     }
 }

@@ -97,6 +97,10 @@ final readonly class RunAutomaticGatewayReleaseAction
             return $this->stalled($this->deployedCommit(), 'busy', null, 'gateway.release_queued', 'A requested release waits for its unit.');
         }
 
+        if ($this->recorder->swampRunActive()) {
+            return $this->stalled($this->deployedCommit(), 'busy', null, 'gateway.release_in_progress', 'A Swamp Gateway release is running.');
+        }
+
         try {
             $this->lock->run(fn (): array => $this->recorder->settleDead());
         } catch (GatewayReleaseException $exception) {

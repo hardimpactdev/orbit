@@ -102,8 +102,9 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
         $this->app->bind(GatewayReleaseSwampLoad::class, NativeGatewayReleaseSwampLoad::class);
         $this->app->bind(GatewayReleaseLayout::class, static fn (): GatewayReleaseLayout => GatewayReleaseLayout::fromConfig());
         $this->app->bind(GatewayReleaseObserver::class, FilesystemGatewayReleaseObserver::class);
+        $this->app->bind(GatewayReleaseWebBuild::class, GitHubArtifactWebBuild::class);
         $this->app->bind(
-            GatewayReleaseWebBuild::class,
+            GitHubArtifactWebBuild::class,
             static fn (Application $app): GitHubArtifactWebBuild => new GitHubArtifactWebBuild(
                 layout: $app->make(GatewayReleaseLayout::class),
                 commands: $app->make(GatewayReleaseCommands::class),

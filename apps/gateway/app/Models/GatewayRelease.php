@@ -112,6 +112,16 @@ final class GatewayRelease extends Model
         return null;
     }
 
+    /** A `gateway.release` Swamp run owns this record until its terminal result ends it; no release unit runs it. */
+    public function swampRunActive(): bool
+    {
+        $run = $this->phases['run'] ?? null;
+        $id = is_array($run) ? ($run['operation_id'] ?? null) : null;
+        $operation = is_int($id) ? Operation::query()->find($id) : null;
+
+        return ! $this->finished() && $operation instanceof Operation && ! $operation->status->terminal();
+    }
+
     /** Publication waiting owns no unit or live changes and can resume after process exit. */
     public function awaitingPublication(): bool
     {

@@ -1,0 +1,64 @@
+sequenceDiagram
+  %% Target design: owner decision 2026-11-03, one Swamp workflow per Gateway release (R1, beside the release unit).
+  %% A forward release never switches back: the migration ran, so a later failure pauses. docs/reference/gateway-recovery.md#release-as-a-swamp-run.
+  %% status: reviewed
+  %% command: gateway:release:deploy --swamp
+  %% kind: gateway.release
+  %% behavior name: gateway-release-<step>-209 (fixed)
+  autonumber
+  %% lane TR icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane AC icon=workflow pill=child tone=green
+  %% lane GN icon=server pill=target tone=amber
+  participant TR as CLI<br/>orbit · MCP
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant AC as Activate run<br/>child · new commit
+  participant GN as Gateway Node<br/>Node 14
+  TR->>GW: gateway:release:deploy<br/>a1b2c3d --swamp
+  %%> Command:
+  %%> - `orbit gateway:release:deploy <full sha> --swamp`
+  Note over GW: Admit the release<br/>verify agent pin · web build
+  %%> Requirements:
+  %%> - the full commit; no other release queued or running; no staged hold
+  %%> - the agent pin passes its Sigstore check; CI published the commit's web build
+  %%> Result:
+  %%> - a running release record; the pin, artifact, Horizon unit and SSH targets frozen as inputs
+  GW->>SW: Start run, full intent<br/>operation-gateway-release
+  %%> What it does:
+  %%> - at run start, mints one read token (contents, actions) into the vault
+  GW-->>TR: 202 Accepted<br/>running release record
+  SW->>GN: Build the release<br/>worktree · composer · REVISION
+  %%> What it does:
+  %%> - fetches the commit, refuses one that does not descend from the current release
+  %%> - links shared env and storage, installs dependencies, seals with `REVISION` and a cached config
+  %%> - a sealed release of the commit is reused
+  SW->>GN: Install the web build<br/>artifact · digest · rename
+  SW->>GN: Snapshot the database<br/>VACUUM INTO
+  SW->>GN: Migrate<br/>artisan migrate --isolated
+  %%> On failure:
+  %%> - from here, the release pauses with the old release live
+  Note over SW: Load Swamp on Node 209<br/>operation-gateway-swamp-load
+  %%> What it does:
+  %%> - the load child: checkout, grants the new release rendered, serve reload
+  Note over SW: Hand over the release<br/>gateway-release-activate
+  %%> Why:
+  %%> - the child runs from the definition the load installed, so the switch runs the new commit's steps
+  AC->>GN: Drain Horizon<br/>systemctl stop · SIGTERM only
+  AC->>GN: Switch the release<br/>one rename of the link
+  AC->>GN: Publish runtime files<br/>handoff --phase=serve
+  AC->>GN: Verify the Gateway<br/>/up · status version
+  AC->>GN: Move the scheduler<br/>handoff --phase=schedule
+  AC->>GN: Switch the web build<br/>one rename of the link
+  AC->>GN: Prune old releases<br/>best effort
+  alt every step succeeded
+    SW-->>GW: Run succeeded<br/>terminal result
+    Note over GW: Record verified<br/>fleet rollout follows
+  else a step before Migrate fails
+    SW--xGW: Run failed<br/>failed step
+    Note over GW: Mark failed<br/>nothing changed · rerun safe
+  else Migrate or a later step fails
+    SW--xGW: Run failed<br/>failed step
+    Note over GW: Pause automatic releases<br/>snapshot named · alert
+  end

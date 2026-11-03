@@ -17,6 +17,7 @@ final class DeployGatewayReleaseCommand extends GatewayReleaseFollowCommand
     #[\Override]
     protected $signature = 'gateway:release:deploy
         {commit? : Hex SHA of the commit to release, 7 to 40 characters}
+        {--swamp : Run the release as one Swamp workflow; needs the full 40-character SHA}
         {--json : Return the final release record as JSON}';
 
     #[\Override]
@@ -57,7 +58,7 @@ final class DeployGatewayReleaseCommand extends GatewayReleaseFollowCommand
             $connector,
             'Deploy Gateway release '.substr($commit, 0, 12),
             ['prepare', 'migrate', 'switch', 'handoff', 'verify', 'scheduler', 'web'],
-            fn (): GatewayReleaseResponse => $this->sendOrThrow($connector, new DeployGatewayReleaseRequest($commit), GatewayReleaseResponse::class),
+            fn (): GatewayReleaseResponse => $this->sendOrThrow($connector, new DeployGatewayReleaseRequest($commit, (bool) $this->option('swamp')), GatewayReleaseResponse::class),
         );
     }
 

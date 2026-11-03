@@ -23,6 +23,9 @@ use App\Infrastructure\GitHub\GitHubActionsUnavailable;
  */
 final class GitHubArtifactWebBuild implements GatewayReleaseWebBuild
 {
+    /** The largest archive a Swamp release downloads: 128 MiB, the agent install's limit. */
+    public const int ArchiveLimit = 134217728;
+
     /** Whether this attempt switched `current`, and the link target it replaced. */
     private bool $published = false;
 
@@ -127,10 +130,41 @@ final class GitHubArtifactWebBuild implements GatewayReleaseWebBuild
     }
 
     /**
-     * Finds the newest unexpired `web-dist-<sha>` artifact from a CI run on the release branch for exactly this
-     * commit, downloads it, and checks it against its required digest.
+     * The newest unexpired `web-dist-<sha>` artifact from an accepted CI run of exactly this commit, with its digest.
+     * A Swamp release downloads it on the Gateway Node; the legacy runner downloads it here.
+     *
+     * @return array{repository: string, artifact_id: int, size: int, digest: string}
+     */
+    public function select(string $sha, int $archiveLimit = self::ArchiveLimit): array
+    {
+        $repository = $this->repository();
+        $selected = $this->selectArtifact($repository, $sha, $archiveLimit);
+
+        return ['repository' => $repository->owner.'/'.$repository->name, 'artifact_id' => $selected['id'], 'size' => $selected['size'], 'digest' => $selected['digest']];
+    }
+
+    /**
+     * Downloads the selected artifact and checks it against its required digest.
      */
     private function downloadArtifact(GitHubRepository $repository, string $sha, string $archive, int $archiveLimit): string
+    {
+        $selected = $this->selectArtifact($repository, $sha, $archiveLimit);
+
+        try {
+            $digest = $this->actions->download($this->actions->archiveLocation($repository, $selected['id'], $selected['token']), $archive, $archiveLimit);
+        } catch (GitHubActionsUnavailable) {
+            throw $this->unavailable($sha);
+        }
+
+        if (! hash_equals($selected['digest'], 'sha256:'.$digest)) {
+            throw $this->invalid('The downloaded web build ['.self::artifactName($sha).'] does not match its artifact digest.');
+        }
+
+        return $digest;
+    }
+
+    /** @return array{id: int, size: int, digest: string, token: string} */
+    private function selectArtifact(GitHubRepository $repository, string $sha, int $archiveLimit): array
     {
         $name = self::artifactName($sha);
         $path = GitHubActionsReader::repositoryPath($repository);
@@ -179,22 +213,10 @@ final class GitHubArtifactWebBuild implements GatewayReleaseWebBuild
                     throw $this->invalid("The web build artifact [{$name}] has {$size} bytes; at most ".$archiveLimit.' are accepted.');
                 }
 
-                $digest = $this->actions->download($this->actions->archiveLocation($repository, $id, $token), $archive, $archiveLimit);
-
-                if (! hash_equals(strtolower($expected), 'sha256:'.$digest)) {
-                    throw $this->invalid("The downloaded web build [{$name}] does not match its artifact digest.");
-                }
-
-                return $digest;
+                return ['id' => $id, 'size' => $size, 'digest' => strtolower($expected), 'token' => $token];
             }
         } catch (GitHubActionsUnavailable) {
-            throw new GatewayReleaseException(
-                step: 'web',
-                errorCode: 'gateway.release_web_build_unavailable',
-                message: 'Cannot read the web build from GitHub Actions. Install the Gateway GitHub App on the repository with Actions read permission.',
-                status: 500,
-                sha: $sha,
-            );
+            throw $this->unavailable($sha);
         }
 
         throw new GatewayReleaseException(
@@ -204,6 +226,17 @@ final class GitHubArtifactWebBuild implements GatewayReleaseWebBuild
                 ? "The CI artifact [{$name}] has expired. Release a newer commit."
                 : "CI published no artifact [{$name}] from a run of {$this->workflow} on {$this->branch} for this commit. Release a commit whose CI run uploaded its web build.",
             status: 422,
+            sha: $sha,
+        );
+    }
+
+    private function unavailable(string $sha): GatewayReleaseException
+    {
+        return new GatewayReleaseException(
+            step: 'web',
+            errorCode: 'gateway.release_web_build_unavailable',
+            message: 'Cannot read the web build from GitHub Actions. Install the Gateway GitHub App on the repository with Actions read permission.',
+            status: 500,
             sha: $sha,
         );
     }

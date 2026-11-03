@@ -1,0 +1,228 @@
+id: 3effe849-5048-45ba-8a9a-6bc62ef70c57
+name: gateway-release-activate
+description: Switch the Gateway to a built release and hand its runtime over; the release run starts it from the new commit's definition.
+# A forward release never switches back: the migration already ran, so a failure here pauses automatic releases with
+# the new release current (docs/reference/gateway-recovery.md#deploy-a-release).
+queueTimeout: 120
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: gateway.release}
+    intent:
+      type: object
+      properties:
+        sha: {type: string, pattern: '^[a-f0-9]{40}$'}
+        id: {type: string, pattern: '^[a-f0-9]{12}$'}
+        previous: {type: string, pattern: '^[a-f0-9]{12}$'}
+        horizon_unit: {type: string, pattern: '^$|^[A-Za-z0-9@_.-]+\.service$'}
+        horizon_drain_seconds: {type: integer, minimum: 1, maximum: 3600}
+        keep: {type: integer, minimum: 2, maximum: 20}
+        ssh: {type: object}
+      required: [sha, id, previous, horizon_unit, horizon_drain_seconds, keep, ssh]
+      additionalProperties: false
+  required: [operation_id, node_id, kind, intent]
+  additionalProperties: false
+jobs:
+- name: activate
+  labels: {role: swamp}
+  steps:
+    # Horizon's running jobs finish on the release they started on: SIGTERM to the main process only, no kill and
+    # no stop timeout, until the unit's whole control group is empty.
+  - name: Drain Horizon
+    labels: {role: swamp}
+    writes: true
+    guard: ${{ inputs.intent.horizon_unit == "" }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-horizon-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: &ssh
+        name: '${{ "gateway-release-ssh-" + string(inputs.node_id) }}'
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh.target.user }}
+          port: ${{ inputs.intent.ssh.target.port }}
+          identityFile: ${{ inputs.intent.ssh.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh.target.host }}
+          transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: ${{ inputs.intent.horizon_drain_seconds + 60 }}
+        argv:
+        - /usr/bin/timeout
+        - ${{ string(inputs.intent.horizon_drain_seconds + 30) }}
+        - /bin/sh
+        - -c
+        - |
+          set -eu
+          unit=$1 drop=/run/systemd/system/$1.d
+          install -d -m 0755 "$drop"
+          # The drain policy never outlives this step, also when its timeout ends it.
+          trap 'rm -f "$drop/zz-orbit-horizon-drain.conf"; systemctl daemon-reload' EXIT
+          printf '[Service]\nKillMode=mixed\nKillSignal=SIGTERM\nSendSIGHUP=no\nSendSIGKILL=no\nTimeoutStopSec=infinity\n' > "$drop/zz-orbit-horizon-drain.conf"
+          systemctl daemon-reload
+          systemctl stop "$unit"
+          if grep -qx 'populated 1' "/sys/fs/cgroup/system.slice/$unit/cgroup.events" 2>/dev/null; then
+            echo "gateway.release_horizon_not_drained: $unit still has processes" >&2; exit 1
+          fi
+        - sh
+        - ${{ inputs.intent.horizon_unit }}
+    # One rename of the application link; Caddy resolves it per request, so PHP-FPM keeps serving.
+  - name: Switch the release
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Drain Horizon, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-switch-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        timeoutSec: 60
+        argv:
+        - /usr/bin/timeout
+        - '30'
+        - /bin/sh
+        - -c
+        - |
+          set -eu
+          base=/home/orbit
+          [ "$(cat "$base/releases/$1/REVISION" 2>/dev/null)" = "$2" ] || { echo "gateway.release_not_prepared: release $1 is not sealed" >&2; exit 1; }
+          rm -f "$base/orbit.next" && ln -s "releases/$1" "$base/orbit.next" && mv -T "$base/orbit.next" "$base/orbit"
+        - sh
+        - ${{ inputs.intent.id }}
+        - ${{ inputs.intent.sha }}
+    # The new release renders and publishes its Caddyfile, PHP-FPM pool and units, and starts Horizon.
+  - name: Publish runtime files
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Switch the release, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-serve-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        timeoutSec: 1860
+        argv: [/usr/bin/timeout, '1800', /bin/sh, -c, 'cd /home/orbit/orbit/apps/gateway && exec php8.5 artisan gateway:release:handoff --phase=serve --no-interaction', sh]
+  - name: Verify the Gateway
+    labels: {role: swamp}
+    dependsOn: [{step: Publish runtime files, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-verify-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        timeoutSec: 180
+        argv:
+        - /usr/bin/timeout
+        - '150'
+        - /bin/sh
+        - -c
+        - |
+          set -eu
+          get() { curl -fsS --cacert /etc/caddy/orbit-cert-current/root-ca.pem --max-time 15 --retry 5 --retry-delay 4 --retry-all-errors "https://gateway.orbit$1"; }
+          get /up >/dev/null || { echo "gateway.release_verify_failed: /up does not answer" >&2; exit 1; }
+          get /api/v1/gateway/status | jq -e --arg sha "$1" '(.data // .) | .status == "ok" and (.version == $sha or .version == $sha[0:12])' >/dev/null \
+            || { echo "gateway.release_verify_failed: status is not ok on $1" >&2; exit 1; }
+        - sh
+        - ${{ inputs.intent.sha }}
+    # The scheduler finishes its commands and starts on the release; then cleanups resume, other Processes restart,
+    # the Gateway Node's agent moves to the release pin, and OPcache resets.
+  - name: Move the scheduler
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Verify the Gateway, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-schedule-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        timeoutSec: 3760
+        argv: [/usr/bin/timeout, '3700', /bin/sh, -c, 'cd /home/orbit/orbit/apps/gateway && exec php8.5 artisan gateway:release:handoff --phase=schedule --no-interaction', sh]
+  - name: Switch the web build
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: Move the scheduler, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-webswitch-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        timeoutSec: 60
+        argv:
+        - /usr/bin/timeout
+        - '30'
+        - /bin/sh
+        - -c
+        - |
+          set -eu
+          web=/home/orbit/web
+          [ -f "$web/releases/$1/index.html" ] || { echo "gateway.release_web_build_missing: web build $1 is not installed" >&2; exit 1; }
+          rm -f "$web/.current.next" && ln -s "releases/$1" "$web/.current.next" && mv -T "$web/.current.next" "$web/current"
+        - sh
+        - ${{ inputs.intent.id }}
+    # Best effort: keep the newest sealed releases, the current and the previous one; a later release retries.
+  - name: Prune old releases
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    dependsOn: [{step: Switch the web build, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "gateway-release-prune-" + string(inputs.node_id) }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        timeoutSec: 360
+        argv:
+        - /usr/bin/timeout
+        - '300'
+        - /bin/bash
+        - -c
+        - |
+          set -euo pipefail
+          base=/home/orbit keep=$1 current=$2 previous=$3
+          live=$(readlink "$base/orbit"); live=${live#releases/}
+          web=$(readlink "$base/web/current" || true); web=${web#releases/}
+          kept=$(ls -1t "$base"/releases/*/REVISION | head -n "$keep" | xargs -r -n1 dirname | xargs -r -n1 basename)
+          for dir in "$base"/releases/*/; do
+            id=$(basename "$dir")
+            case " $live $current $previous $web $(echo $kept) " in *" $id "*) continue ;; esac
+            # An unsealed directory is a stopped build; it goes after an hour.
+            [ -f "$dir/REVISION" ] || [ -n "$(find "$dir" -maxdepth 0 -mmin +60)" ] || continue
+            chmod -R u+w "$dir" && rm -rf "$dir"
+            rm -rf "$base/web/releases/$id"
+          done
+          git -C "$base/shared/orbit.git" worktree prune
+          # A web build whose release is gone, such as one a failed build left, goes too; the served one stays.
+          for dir in "$base"/web/releases/*/; do
+            id=$(basename "$dir")
+            [ -d "$base/releases/$id" ] || [ "$id" = "$web" ] || rm -rf "$dir"
+          done
+        - bash
+        - ${{ string(inputs.intent.keep) }}
+        - ${{ inputs.intent.id }}
+        - ${{ inputs.intent.previous }}

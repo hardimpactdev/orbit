@@ -16,6 +16,7 @@ final class DeployGatewayReleaseRequest extends FormRequest
     {
         return [
             'commit' => ['required', 'string', 'regex:/\A[0-9a-f]{7,40}\z/D'],
+            'swamp' => ['sometimes', 'boolean:strict'],
         ];
     }
 
@@ -23,7 +24,7 @@ final class DeployGatewayReleaseRequest extends FormRequest
     public function validationData(): array
     {
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['commit']);
+            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['commit', 'swamp']);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
@@ -32,5 +33,11 @@ final class DeployGatewayReleaseRequest extends FormRequest
     public function commit(): string
     {
         return $this->string('commit')->toString();
+    }
+
+    /** Run the release as the `gateway.release` Swamp run instead of the release unit. */
+    public function swamp(): bool
+    {
+        return $this->boolean('swamp');
     }
 }
