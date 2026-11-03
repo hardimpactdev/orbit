@@ -694,7 +694,7 @@ Fresh standalone and cascade receipts on `ff8ad3169f` pass: `schedule.destroy.ti
 
 ## Node role executor cleanup
 
-The native Node parents own enrollment, convergence and relocation. Their shared certificate and publication steps leave the former relocate-direct workflow and its executor graph unused. This batch deletes that workflow, the Node dispatch and footprint helpers, the Caddy and certificate removal programs, and the retained-role Python policy. The fleet manifest drops its unused Node role entry. Sixteen matching shape-baseline entries are removed. Live grant-rendering and shipped-file release tests remain.
+The native Node parents own enrollment, convergence and relocation. Their shared certificate and publication steps leave the former relocate-direct workflow and its executor graph unused. This batch deletes that workflow, the Node dispatch and footprint helpers, the Caddy and certificate removal programs, and the retained-role Python policy. The fleet manifest drops its unused Node role entry. Sixteen matching shape-baseline entries are removed. The live tests still check grant rendering and release behavior when shipped files change.
 
 Scripts deleted: three programs, comprising one Python source file and two embedded Python programs. No script gap remains for this cut. The tests of the deleted executor and policy are removed because their code has no caller. The remaining Node, certificate and route Deno suites pass 160 cases; both live grant and release tests also pass after rebase. All 202 remaining workflows validate, and the shape and frozen-base gates pass.
 

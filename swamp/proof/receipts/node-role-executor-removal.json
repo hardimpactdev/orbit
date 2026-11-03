@@ -47,5 +47,6 @@
     "memory": "12GiB",
     "cpus": 6,
     "teardown": "succeeded"
-  }
+  },
+  "rebased_execution_files_identical": true
 }
