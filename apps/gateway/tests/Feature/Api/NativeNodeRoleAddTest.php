@@ -102,6 +102,10 @@ it('vaults complete private role files and exposes only their descriptors', func
         expect($public)->not->toContain($sent['payload']['value']);
     }
     expect($file['owner'])->toBe($role === RoleName::Metrics ? 'orbit-grafana' : $this->node->user);
+    if ($role === RoleName::Metrics) {
+        $gateway = collect($input['intent']['exporters'])->first(fn (array $exporter): bool => $exporter['service']['caddy'] !== null);
+        expect($gateway['service']['caddy']['caddy']['content'])->toContain('/etc/caddy/orbit-metrics-cert-current/');
+    }
 })->with([RoleName::WebSocket, RoleName::Metrics]);
 
 it('records only the role-owned footprint from a successful native end check', function (): void {

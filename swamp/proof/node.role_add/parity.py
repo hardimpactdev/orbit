@@ -58,6 +58,11 @@ elif role == 'metrics':
     response = run('curl', '--fail', '--silent', 'http://127.0.0.1:9090/api/v1/status/config')
     check(response.returncode == 0, 'Prometheus exposes its active configuration')
     active = json.loads(response.stdout)['data']['yaml']
+    response = subprocess.run(['curl', '--max-time', '15', '--fail', '--silent', '--show-error',
+                               '--cacert', '/home/orbit/.orbit/ca/root.pem', '--resolve',
+                               'metrics.orbit:443:10.231.0.1', 'https://metrics.orbit/api/health'],
+                              capture_output=True, text=True, check=False)
+    check(response.returncode == 0, 'the published Metrics HTTPS route serves Grafana: ' + response.stderr)
     for exporter in intent['exporters']:
         if exporter['enabled']:
             address = exporter['ssh_execution']['target']['host']

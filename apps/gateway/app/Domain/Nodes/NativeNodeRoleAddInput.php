@@ -136,7 +136,8 @@ final readonly class NativeNodeRoleAddInput
                 $exporters[] = ['exporter_node_id' => $target->id, 'enabled' => $enabled, 'metrics_address' => $metrics->wireguard_ip,
                     'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($target),
                     'runtime' => ['ssh_execution' => $metricsSsh, 'configuration' => $configuration], 'compose_only' => true,
-                    'service' => app(MetricsFleetCapture::class)->forExporter($metrics, $target, $enabled)];
+                    'service' => app(RouteRenderContext::class)->renderRoleCertificates($prospective,
+                        fn (): array => app(MetricsFleetCapture::class)->forExporter($metrics, $target, $enabled))];
             }
             $prometheus = ['node_id' => $metrics->id, 'ssh' => $metricsSsh, 'configuration' => $configuration,
                 'candidate' => '/etc/orbit/metrics/prometheus-role-'.$operation->id.'.yml', 'checks' => []];
