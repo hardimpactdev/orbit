@@ -113,7 +113,7 @@ Operation Deno unit tests, shape and workflow validation run on every CI change.
 
 Required checks target five minutes. Project checks and native workflow tests are removed from CI for now; Nick decides which checks return. Their local commands and test files remain available. Native tests use the pinned runtime and disposable repos through `swamp/tests/_support/native_harness.ts`. No new nightly workflow replaces these jobs.
 
-Native Swamp CLI suites live beside their operation family under `swamp/extensions/behaviors/operations/` and end in `_native_test.ts`. Tests of bin scripts live beside their script. The shape job names the liveness, Node 209 source and Operation schedule suites explicitly. The systemd sandbox test, `swamp-liveness_native_test.ts`, needs a systemd host and passwordless sudo, so it runs on a host. Shared test setup ends in `_fixture_test.ts` so documentation impact checks and native behavior copying treat it as test code.
+Native Swamp CLI suites live beside their operation family under `swamp/extensions/behaviors/operations/` and end in `_native_test.ts`. Tests of bin scripts live beside their script. The shape job names the liveness, Node 209 source and Operation schedule suites explicitly. Shared test setup ends in `_fixture_test.ts` so documentation impact checks and native behavior copying treat it as test code.
 
 Each main SHA has its own concurrency group in both CI and the reusable Swamp workflow. Main runs complete independently. A shared group would replace an older pending run even with `cancel-in-progress: false`; that option protects only the running job. Pull requests share a group and cancel superseded runs.
 
