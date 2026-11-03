@@ -1,7 +1,7 @@
 import { assert, assertEquals, assertFalse } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { expandGlob } from "jsr:@std/fs@1.0.19/expand-glob";
-import { ROOT } from "./_support/native_harness.ts";
+import { ROOT } from "../bin/gate-test-support.ts";
 Deno.test("operation workflows never schedule Gateway claims", async () => {
   for await (const path of expandGlob(`${ROOT}/workflows/workflow-operation-*.yaml`)) {
     const source = await Deno.readTextFile(path.path);

@@ -1,6 +1,6 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
-import type { Flow } from "../../../../tests/_support/node_host.ts";
+import type { Flow } from "../../../../bin/gate-test-support.ts";
 
 Deno.test("role checks serialize runtime files and exporter endpoints", async () => {
   const workflow = parse(await Deno.readTextFile(

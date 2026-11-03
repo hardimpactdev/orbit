@@ -1,6 +1,6 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
-import { ROOT } from "../../../tests/_support/native_harness.ts";
+import { ROOT } from "../../../bin/gate-test-support.ts";
 Deno.test("full-intent workflows accept execution_secrets; manager setup takes prepared SSH", async () => {
   const refused: string[] = [];
   for await (const file of Deno.readDir(`${ROOT}/workflows`)) {

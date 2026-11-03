@@ -6,7 +6,7 @@ The public rendering method substitutes the observed account home in a systemd u
 
 ## Private files and Docker argv
 
-Q-SECRET passed in a shared minimal@6 proof VM on Beast. The official file behavior received `vault.get` as `content`; create, changed content, drift, compliant checks and a refused write exposed no test content in data, the file changes array, histories, definitions or logs. See `swamp/proof/receipts/qsecret-file.json` and the reproducible `swamp/extensions/behaviors/operations/process-commands/cfgmgmt_file_vault_proof_test.ts` probe. Run the probe inside the disposable proof VM with `ORBIT_TEST_QSECRET_PROOF=1 deno test -A <path>`; it stays ignored during local and CI runs.
+Q-SECRET passed in a shared minimal@6 proof VM on Beast. The official file behavior received `vault.get` as `content`; create, changed content, drift, compliant checks and a refused write exposed no test content in data, the file changes array, histories, definitions or logs. The historical receipt is `swamp/proof/receipts/qsecret-file.json`; its limits and source identity stay recorded there.
 
 Both runtimes write their environment with cfgmgmt file, root owner and mode 0600. Systemd keeps its immutable EnvironmentFile. Docker receives a raw env file path in one SSH `docker run -d` argv, along with exact command argv, labels, working directory, ports and mounts. Create performs one detached run; duplicate requests join the admitted operation and native resume skips its completed steps. Update removes the old container without removing volumes before one detached run. A stopped desired state uses a separate stop. The managed env file remains 0600 until destroy, including after a failed run. The official docker_container check confirms image, restart policy and state; its private current environment is stored only in the vault. No Process Node script remains.
 
@@ -35,6 +35,6 @@ Both runtimes write their environment with cfgmgmt file, root owner and mode 060
 
 The Analytics update caller no longer copies Process scripts. Its health request uses a bounded SSH curl command.
 
-## Native verification
+## Verification
 
-Run `deno test -A swamp/extensions/behaviors/operations/process-commands/process_native_test.ts`. The harness uses the pinned Swamp runtime, or `SWAMP_BIN`, and pulls the pinned official extensions into each disposable root. The suite covers all six kinds, reruns, failure, transitional systemd state, Docker argv and environment privacy, runtime changes, mounts and Vite readiness. The process-commands Deno shard runs it in CI.
+Run the sibling `lifecycle-input_test.ts` and the installation and mount-path unit tests under `operations/processes-schedules`. They test Orbit's TypeScript logic without running Swamp. Workflow validation checks the declarations; disposable topology receipts prove Process execution.

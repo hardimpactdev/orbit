@@ -57,8 +57,7 @@ It replaces `outcome.py`; the public result and failure codes stay the same.
 
 ## Verification status
 
-Fourteen pinned native tests, twelve action tests, twelve data tests and the
-Gateway receipt tests pass. They cover failed and interrupted turns, private
+Action, data and Gateway receipt tests cover Orbit logic without a native workflow harness. They cover failed and interrupted turns, private
 receipt and diff text, the token outside curl argv, fixed codes for malformed Pi
 events, receipts and counts, each receipt rule, a stale receipt cleared before the
 turn, and a workflow that uploads no file. The extension ships no script.

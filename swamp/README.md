@@ -19,7 +19,7 @@ readiness remains separate; existing family workflows do not all conform.
 
 - `workflows/` contains native workflow definitions.
 - `extensions/behaviors/` contains typed behaviors and shared extension code.
-- `tests/` contains specifications, fixtures and the native harness.
+- `tests/` contains unit tests, script checks and their fixtures.
 - [Project configuration](docs/project-extensions.md) and
   [manifest range policy](docs/website-packages.md) describe maintenance data.
 - [Node workers](docs/node-workers.md),

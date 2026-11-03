@@ -5,7 +5,7 @@
  */
 import { assert, assertEquals, assertFalse } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.9";
-import { ROOT } from "../../../../tests/_support/native_harness.ts";
+import { ROOT } from "../../../../bin/gate-test-support.ts";
 
 const WORKFLOW = "operation-node-role-add";
 // deno-lint-ignore no-explicit-any
