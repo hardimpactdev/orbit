@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\GatewayReleases\AdmitSwampGatewayReleaseAction;
 use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
 use App\Actions\GatewayReleases\RunAutomaticGatewayReleaseAction;
+use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\GatewayReleases\GatewayReleaseAgent;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseException;
@@ -126,13 +127,26 @@ it('refuses a short commit and a second release while one runs', function (): vo
         ->toThrow(fn (GatewayReleaseException $e) => expect($e->errorCode)->toBe('gateway.release_in_progress'));
 });
 
-it('keeps the running record from settling and refuses the release unit while the run is active', function (): void {
+it('keeps the running record from settling and refuses every other release path while the run is active', function (): void {
     $record = app(AdmitSwampGatewayReleaseAction::class)->execute($this->sha);
 
     expect(app(GatewayReleaseRecorder::class)->settleDead())->toBe([])
         ->and($record->refresh()->outcome)->toBe(GatewayRelease::Running)
         ->and(fn () => app(DeployGatewayReleaseAction::class)->deploy($this->sha, false, 'deploy'))
-        ->toThrow(fn (GatewayReleaseException $e) => expect($e->errorCode)->toBe('gateway.release_in_progress'));
+        ->toThrow(fn (GatewayReleaseException $e) => expect($e->errorCode)->toBe('gateway.release_in_progress'))
+        // Rollback and adoption begin their records through the same recorder.
+        ->and(fn () => app(GatewayReleaseRecorder::class)->begin('rollback', $this->previous))
+        ->toThrow(fn (GatewayReleaseException $e) => expect($e->errorCode)->toBe('gateway.release_in_progress'))
+        ->and(GatewayRelease::query()->count())->toBe(1);
+});
+
+it('admits beside an automatic record that waits for its publication and supersedes it', function (): void {
+    $waiting = GatewayRelease::query()->create(['requested' => str_repeat('b', 40), 'trigger' => 'auto', 'outcome' => GatewayRelease::Queued,
+        'force' => false, 'duration_ms' => 0, 'phases' => ['publication' => ['outcome' => 'waiting', 'since' => now()->toISOString(), 'alerted' => false]]]);
+    $record = app(AdmitSwampGatewayReleaseAction::class)->execute($this->sha);
+
+    expect($record->outcome)->toBe(GatewayRelease::Running)
+        ->and($waiting->refresh()->outcome)->not->toBe(GatewayRelease::Queued);
 });
 
 it('keeps automatic releases busy while the run is active', function (): void {
@@ -171,3 +185,44 @@ it('fails a run that stopped before the migration and pauses one that stopped af
     'handover' => ['Hand over the release', 'paused', 'gateway.release_handoff_failed'],
     'unknown step' => ['Something else', 'paused', 'gateway.release_run_failed'],
 ]);
+
+it('names the refusal of the failed step', function (): void {
+    app(AdmitSwampGatewayReleaseAction::class)->execute($this->sha);
+    $record = swamp_release_end(Operation::query()->sole(), 'failed', ['error_code' => 'operation.native_failed',
+        'failure' => ['failed_step' => 'Build the release', 'detail' => "gateway.release_downgrade: the commit is older than the current release\n"]]);
+
+    expect($record->outcome)->toBe('failed')
+        ->and($record->error_code)->toBe('gateway.release_downgrade');
+});
+
+it('names the snapshot from before the migration on a pause', function (): void {
+    app(AdmitSwampGatewayReleaseAction::class)->execute($this->sha);
+    $record = swamp_release_end(Operation::query()->sole(), 'failed', ['error_code' => 'operation.native_failed',
+        'failure' => ['failed_step' => 'Migrate'], 'result' => ['snapshot' => "/home/orbit/.orbit/backups/pre-x.sqlite\n"]]);
+
+    expect($record->outcome)->toBe('paused')
+        ->and($record->snapshot_path)->toBe('/home/orbit/.orbit/backups/pre-x.sqlite');
+});
+
+it('pauses a cancelled or interrupted run, which may have migrated', function (string $status): void {
+    app(AdmitSwampGatewayReleaseAction::class)->execute($this->sha);
+    $record = swamp_release_end(Operation::query()->sole(), $status);
+
+    expect($record->outcome)->toBe('paused')
+        ->and($record->error_code)->toBe('gateway.release_run_failed')
+        ->and($record->migrations_ran)->toBeTrue()
+        ->and(app(GatewayReleaseRecorder::class)->swampRunActive())->toBeFalse();
+})->with(['cancelled', 'interrupted']);
+
+it('pauses the release when the run outlives its budget', function (): void {
+    app(AdmitSwampGatewayReleaseAction::class)->execute($this->sha);
+    $operation = Operation::query()->sole();
+    $operation->forceFill(['started_at' => now()->subSeconds(3001)])->save();
+    app(ExpireOperationAction::class)->execute($operation);
+    $record = GatewayRelease::query()->sole();
+
+    expect($operation->refresh()->error_code)->toBe('operation.timed_out')
+        ->and($record->outcome)->toBe('paused')
+        ->and($record->error_code)->toBe('gateway.release_run_timed_out')
+        ->and($record->phases['run'])->toMatchArray(['operation_id' => $operation->id, 'status' => 'timed_out']);
+});

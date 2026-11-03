@@ -52,7 +52,6 @@ sequenceDiagram
   AC->>GN: Move the scheduler<br/>handoff --phase=schedule
   AC->>GN: Switch the web build<br/>one rename of the link
   AC->>GN: Prune old releases<br/>best effort
-  Note over SW: Record the release<br/>sha · previous · snapshot
   alt every step succeeded
     SW-->>GW: Run succeeded<br/>terminal result
     Note over GW: Record verified<br/>fleet rollout follows

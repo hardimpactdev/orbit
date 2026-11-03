@@ -64,10 +64,11 @@ jobs:
           set -eu
           unit=$1 drop=/run/systemd/system/$1.d
           install -d -m 0755 "$drop"
+          # The drain policy never outlives this step, also when its timeout ends it.
+          trap 'rm -f "$drop/zz-orbit-horizon-drain.conf"; systemctl daemon-reload' EXIT
           printf '[Service]\nKillMode=mixed\nKillSignal=SIGTERM\nSendSIGHUP=no\nSendSIGKILL=no\nTimeoutStopSec=infinity\n' > "$drop/zz-orbit-horizon-drain.conf"
           systemctl daemon-reload
           systemctl stop "$unit"
-          rm -f "$drop/zz-orbit-horizon-drain.conf" && systemctl daemon-reload
           if grep -qx 'populated 1' "/sys/fs/cgroup/system.slice/$unit/cgroup.events" 2>/dev/null; then
             echo "gateway.release_horizon_not_drained: $unit still has processes" >&2; exit 1
           fi
@@ -216,6 +217,11 @@ jobs:
             rm -rf "$base/web/releases/$id"
           done
           git -C "$base/shared/orbit.git" worktree prune
+          # A web build whose release is gone, such as one a failed build left, goes too; the served one stays.
+          for dir in "$base"/web/releases/*/; do
+            id=$(basename "$dir")
+            [ -d "$base/releases/$id" ] || [ "$id" = "$web" ] || rm -rf "$dir"
+          done
         - bash
         - ${{ string(inputs.intent.keep) }}
         - ${{ inputs.intent.id }}

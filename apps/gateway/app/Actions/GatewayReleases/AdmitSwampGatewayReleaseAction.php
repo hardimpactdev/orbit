@@ -12,6 +12,7 @@ use App\Domain\GatewayReleases\GatewayReleaseHold;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Infrastructure\Gateway\GatewayCommandNode;
 use App\Infrastructure\Gateway\GatewayHorizon;
+use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
 use App\Infrastructure\GatewayReleases\GitHubArtifactWebBuild;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
@@ -40,6 +41,7 @@ final readonly class AdmitSwampGatewayReleaseAction
         private GatewayReleaseRecorder $recorder,
         private StartOperationAction $operations,
         private SwampSshExecutionInput $ssh,
+        private GatewayReleaseLock $lock,
     ) {}
 
     public function execute(string $commit, bool $force = false): GatewayRelease
@@ -52,16 +54,31 @@ final readonly class AdmitSwampGatewayReleaseAction
             throw new GatewayReleaseException('deploy', 'gateway.release_not_adopted', 'The Gateway is not running from a release. Run gateway:release:adopt first.');
         }
         GatewayReleaseHold::assertNone();
-        if (GatewayRelease::query()->whereIn('outcome', [GatewayRelease::Running, GatewayRelease::Queued])->exists()) {
-            throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'Another Gateway release is queued or running.', 409);
-        }
         $gateway = GatewayCommandNode::find() ?? throw new GatewayReleaseException('deploy', 'gateway.release_gateway_node_missing', 'No active Gateway Node exists.', 500);
         $delivery = $this->agent->fetch($commit, $gateway);
         $web = $this->web->select($commit);
         $horizon = GatewayHorizon::find($gateway);
+
+        // The lock keeps the release unit and a second admission out until the run owns its record.
+        return $this->lock->run(function () use ($commit, $force, $previous, $delivery, $web, $horizon, $gateway): GatewayRelease {
+            // An automatic record that waits for its commit's publication is superseded by begin().
+            if (GatewayRelease::query()->whereIn('outcome', [GatewayRelease::Running, GatewayRelease::Queued])->get()
+                ->contains(static fn (GatewayRelease $record): bool => ! $record->awaitingPublication())) {
+                throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'Another Gateway release is queued or running.', 409);
+            }
+
+            return $this->admit($commit, $force, $previous, $delivery['manifest'], $web, $horizon, $gateway);
+        });
+    }
+
+    /**
+     * @param  array{repository: string, artifact_id: int, size: int, digest: string}  $web
+     */
+    private function admit(string $commit, bool $force, string $previous, string $manifest, array $web, ?Process $horizon, Node $gateway): GatewayRelease
+    {
         $record = $this->recorder->begin('deploy', $commit, null, $force) ?? throw new GatewayReleaseException('deploy', 'gateway.release_record_failed', 'The release record cannot be written.', 500);
         try {
-            $operation = $this->start($record, $commit, $force, $previous, $delivery['manifest'], $web, $horizon, $gateway);
+            $operation = $this->start($record, $commit, $force, $previous, $manifest, $web, $horizon, $gateway);
         } catch (Throwable $exception) {
             // A run that never started changed nothing; its record must not hold the release unit back.
             $this->recorder->fail($record, $exception, retryable: true, durationMs: 0, phase: 'run');

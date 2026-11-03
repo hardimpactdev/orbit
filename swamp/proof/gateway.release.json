@@ -3,7 +3,7 @@
   "workflow": "operation-gateway-release",
   "topology": "minimal",
   "clean": true,
-  "budget_seconds": 1800,
+  "budget_seconds": 3000,
   "queue_timeout_seconds": 120,
   "before_gateway": [
     [
@@ -54,8 +54,7 @@
     {"name": "Snapshot", "job": "release", "step": "Snapshot the database", "budget_seconds": 120},
     {"name": "Migrate", "job": "release", "step": "Migrate", "budget_seconds": 300},
     {"name": "Load Swamp", "job": "release", "step": "Load Swamp on Node 209", "budget_seconds": 300},
-    {"name": "Hand over", "job": "release", "step": "Hand over the release", "budget_seconds": 900},
-    {"name": "Record", "job": "release", "step": "Record the release", "budget_seconds": 60}
+    {"name": "Hand over", "job": "release", "step": "Hand over the release", "budget_seconds": 900}
   ],
   "parity": ["swamp/proof/gateway.release/release_fixture.py", "parity"]
 }

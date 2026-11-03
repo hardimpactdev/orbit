@@ -430,15 +430,16 @@ The `operation-gateway-release` workflow runs on the swamp role's workers on Nod
 | Migrate | Runs `artisan migrate --force --isolated` from the new release. |
 | Load Swamp on Node 209 | Runs the [load workflow](#load-swamp) as a child, with the grants from the build. |
 | Hand over the release | Runs `gateway-release-activate` as a child, from the definition the load installed. |
-| Record the release | Prints the commit, the previous release and the snapshot path. |
 
 The build adds the worktree, links the shared env and storage, installs the Composer dependencies, writes the agent manifest, and seals the release with `REVISION` and a cached configuration. It reuses a sealed release of the same commit.
 
 The child drains Horizon and switches the link. It runs `gateway:release:handoff --phase=serve` and verifies `/up` and the status version. It then runs `gateway:release:handoff --phase=schedule`, switches the web build and prunes old releases.
 
-The run's end ends the record through the same recorder as the release unit. A succeeded run is `verified`, with `phases.verify.version` set, so the [fleet rollout](#fleet-rollout) follows. A step before Migrate fails the record, and nothing changed. Migrate or a later step pauses automatic releases with reason `migration_failure` and names the snapshot. A forward release never switches back.
+The run's native terminal ends the record through the same recorder as the release unit. The Gateway reads the snapshot path from the snapshot step's output. A succeeded run is `verified`, with `phases.verify.version` set, so the [fleet rollout](#fleet-rollout) follows. A step before Migrate fails the record, and nothing changed. Migrate or a later step pauses automatic releases with reason `migration_failure` and names the snapshot. A forward release never switches back. The record carries the failed step's own code when the step printed one, such as `gateway.release_downgrade`; otherwise it carries the step's code from the [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/release-deploy.mmd).
 
-While the run is active, the release unit refuses with `gateway.release_in_progress`, and settling dead records skips its record.
+A cancelled or interrupted run may have migrated, so it pauses with `gateway.release_run_failed`. The run budget is 3,000 seconds. A run that outlives it pauses with `gateway.release_run_timed_out`, even when Swamp later reports an end. Read the run before you resume.
+
+While the run is active, every release path refuses with `gateway.release_in_progress`: the release unit, rollback and adoption begin their records through the same recorder. Settling dead records skips the run's record. Admission holds the release lock until the run owns its record.
 
 ### Execution identity
 
@@ -656,7 +657,9 @@ When Swamp or the Gateway cannot run `gateway:release:rollback`, run the rollbac
 sudo /home/orbit/orbit/bin/gateway-rollback <id>
 ```
 
-It needs only the release directories. It refuses an id that is not 12 hex digits (exit 64) and a release without `REVISION` (exit 1), and then changes nothing. Otherwise it switches `/home/orbit/orbit` to `releases/<id>` with one rename, as the owner of that link. It switches `web/current` the same way when the release keeps its web build, and leaves the web app as it is otherwise. Then it restarts each `orbit-process-*` unit that runs from the application, such as Horizon and the scheduler. It changes no schema and restores no snapshot, so the database advice under [Roll back](#roll-back) holds here too.
+It needs only the release directories. It refuses an id that is not 12 hex digits (exit 64) and a release without `REVISION` (exit 1), and then changes nothing. Otherwise it switches `/home/orbit/orbit` to `releases/<id>` with one rename, as the owner of that link. It switches `web/current` the same way when the release keeps its web build, and leaves the web app as it is otherwise. Then it restarts each `orbit-process-*` unit that runs from the application, such as Horizon and the scheduler.
+
+It changes no schema and restores no snapshot, so the database advice under [Roll back](#roll-back) holds here too. It also republishes no runtime files, loads no Swamp definitions and writes no release record. When the Gateway answers again, run `gateway:release:rollback <id>` to bring the record and runtime files in line.
 
 ### Apply an env change
 

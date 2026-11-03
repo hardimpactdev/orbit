@@ -8,6 +8,7 @@ use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubTokenGrant;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationTimeout;
 use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Operations\NativeFailedStep;
 use App\Domain\Shared\ResourceOperationException;
@@ -27,7 +28,7 @@ use Throwable;
  * Actions and puts it in the vault; at its end the run's terminal result ends the release record through the same
  * recorder the legacy runner uses, so pauses, alerts and the fleet rollout follow it unchanged.
  */
-final readonly class GatewayReleaseRunProjection implements DirectOperationProjection, DirectOperationWorkflowInput
+final readonly class GatewayReleaseRunProjection implements DirectOperationProjection, DirectOperationTimeout, DirectOperationWorkflowInput
 {
     /** Each failed step, the release phase it ends and its error code. From Migrate on, migrations ran. */
     public const array Steps = [
@@ -67,29 +68,45 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
 
     public function apply(Operation $operation, array $data): Operation
     {
+        $snapshot = ValidatedData::object($data['result'] ?? [])['snapshot'] ?? null;
+        $snapshot = is_string($snapshot) && trim($snapshot) !== '' ? trim($snapshot) : null;
         $status = $data['status'] ?? null;
-        $result = $status === 'succeeded' ? array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip(['sha', 'previous', 'snapshot'])) : [];
-        $projected = app(DirectOperation::class)->project($operation, $data, $result);
-        $record = GatewayRelease::query()->find($operation->target_id);
-        if ($record instanceof GatewayRelease && ! $record->finished() && in_array($status, ['succeeded', 'failed', 'cancelled'], true)) {
-            $this->finish($record, $operation, $data);
+        $projected = app(DirectOperation::class)->project($operation, $data, $status === 'succeeded' ? ['sha' => $operation->input['sha'],
+            'previous' => $operation->input['previous'], 'snapshot' => $snapshot] : []);
+        if (in_array($status, ['succeeded', 'failed', 'cancelled', 'interrupted'], true)) {
+            $this->finish($operation, $data, $snapshot);
         }
 
         return $projected;
     }
 
-    /** @param array<string, mixed> $data */
-    private function finish(GatewayRelease $record, Operation $operation, array $data): void
+    /** The run may still be working on the Gateway Node, so its release pauses with the old or new code live. */
+    public function timedOut(Operation $operation): void
     {
+        $this->finish($operation, ['status' => 'timed_out', 'error_code' => 'operation.timed_out'], null);
+    }
+
+    /** @param array<string, mixed> $data */
+    private function finish(Operation $operation, array $data, ?string $snapshot): void
+    {
+        $record = GatewayRelease::query()->find($operation->target_id);
+        if (! $record instanceof GatewayRelease || $record->finished()) {
+            return;
+        }
         $sha = ValidatedData::string($operation->input['sha']);
-        $phases = ['run' => ['operation_id' => $operation->id, 'status' => $data['status']]];
+        $status = ValidatedData::string($data['status']);
+        $phases = ['run' => ['operation_id' => $operation->id, 'status' => $status]];
         $step = NativeFailedStep::label($data, array_keys(self::Steps));
-        [$phase, $code, $migrated] = $data['status'] === 'succeeded' ? ['verify', null, true]
-            // An unknown or cancelled step may have migrated, so it pauses like a failure after migration.
-            : ($step === null ? ['run', 'gateway.release_run_failed', true] : self::Steps[$step]);
+        // A cancelled, interrupted or expired run, or one that stopped at an unknown step, may have migrated: it pauses.
+        [$phase, $code, $migrated] = $status === 'succeeded' ? ['verify', null, true]
+            : ($step === null ? ['run', $status === 'timed_out' ? 'gateway.release_run_timed_out' : 'gateway.release_run_failed', true] : self::Steps[$step]);
+        // The step's own refusal code, such as gateway.release_downgrade, is more exact than the step's.
+        $detail = is_array($data['failure'] ?? null) && is_string($data['failure']['detail'] ?? null) ? $data['failure']['detail'] : '';
+        if ($code !== null && preg_match('/\b(gateway\.release_[a-z_]+):/', $detail, $refusal) === 1) {
+            $code = $refusal[1];
+        }
         // The fleet rollout plans from a verified record whose verify version is the commit.
-        $phases[$phase] = $code === null ? ['outcome' => 'passed', 'status' => 'ok', 'version' => $sha] : ['outcome' => 'failed', 'error_code' => $code];
-        $snapshot = $data['status'] === 'succeeded' ? ValidatedData::object($data['result'] ?? [])['snapshot'] ?? null : null;
+        $phases[$phase] = [...($phases[$phase] ?? []), ...($code === null ? ['outcome' => 'passed', 'status' => 'ok', 'version' => $sha] : ['outcome' => 'failed', 'error_code' => $code])];
         $recorder = app(GatewayReleaseRecorder::class);
         $recorder->write(new DeployedGatewayRelease(
             id: GatewayReleaseCommit::id($sha),
@@ -98,13 +115,14 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
             trigger: $record->trigger,
             migrationsRan: $migrated,
             previousId: ValidatedData::string($operation->input['previous']),
-            snapshotPath: is_string($snapshot) ? $snapshot : null,
+            // A pause names the copy from before this attempt's migration, or the clean one an earlier pause named.
+            snapshotPath: $migrated ? ($recorder->pausedSnapshot($sha) ?? $snapshot) : $snapshot,
             cleanupPaused: false,
             retryable: $code !== null && ! $migrated && app(GatewayReleaseRetry::class)->retryable($code, $sha, $record->id),
             durationMs: $record->created_at === null ? 0 : (int) $record->created_at->diffInMilliseconds(now()),
             phases: $phases,
             errorCode: $code,
-            message: $code === null ? null : "Swamp run for Operation {$operation->id} failed".($step === null ? '.' : " at {$step}."),
+            message: $code === null ? null : "Swamp run for Operation {$operation->id} ended {$status}".($step === null ? '.' : " at {$step}."),
         ), $record);
         if ($code === null && $record->trigger === 'deploy') {
             // As the legacy runner: whether this manual deploy pins an older commit decides if automation pauses.

@@ -99,9 +99,6 @@ final readonly class DeployGatewayReleaseAction
     {
         $this->owner->assertAllowed($commit);
         GatewayReleaseHold::assertNone();
-        if ($this->recorder->swampRunActive()) {
-            throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'A Swamp Gateway release is running.', 409);
-        }
         $startedAt = hrtime(true);
         $record = $trigger === 'auto'
             ? $this->recorder->queuePublication($commit)

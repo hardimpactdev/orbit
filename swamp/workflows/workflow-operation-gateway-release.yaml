@@ -95,17 +95,27 @@ jobs:
           current_sha=$(cat "$base/releases/$current/REVISION") || fail gateway.release_current_incomplete "release $current has no REVISION"
           # The GitHub token arrives on stdin and reaches git only in its environment, never in argv.
           basic=$(printf 'x-access-token:%s' "$(cat)" | base64 -w0)
-          if [ "$(cat "$release/REVISION" 2>/dev/null || true)" != "$sha" ]; then
+          if ! git -C "$repo" cat-file -e "$sha^{commit}" 2>/dev/null; then
+            GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraHeader \
+              GIT_CONFIG_VALUE_0="Authorization: Basic $basic" \
+              timeout 300 git -C "$repo" fetch --quiet --no-tags origin "$sha" || fail gateway.release_fetch_failed "git fetch of $sha failed"
+            git -C "$repo" cat-file -e "$sha^{commit}" || fail gateway.release_commit_unknown "$sha is not in origin"
+          fi
+          # As the legacy guard, for a reused release too: a release moves forward unless forced.
+          if [ "$force" != true ] && [ "$sha" != "$current_sha" ]; then
+            git -C "$repo" merge-base --is-ancestor "$current_sha" "$sha" || fail gateway.release_downgrade "$sha does not descend from the current $current_sha"
+          fi
+          cache() {
+            candidate="$app/bootstrap/cache/config.next-$RANDOM$RANDOM.php"
+            APP_CONFIG_CACHE=$candidate ORBIT_AGENT_DELIVERY=$release/apps/agent/delivery/manifest.json \
+              timeout 120 php8.5 "$app/artisan" config:cache --no-interaction --quiet || { rm -f "$candidate"; return 1; }
+            chmod 0600 "$candidate" && mv "$candidate" "$app/bootstrap/cache/config.php"
+          }
+          if [ "$(cat "$release/REVISION" 2>/dev/null || true)" = "$sha" ]; then
+            # A sealed release is reused; its configuration is cached again from the shared env file, as each release does.
+            cache || fail gateway.release_configuration_failed "config:cache failed"
+          else
             [ "$current" != "$id" ] || fail gateway.release_current_incomplete "the current release $id is not sealed"
-            if ! git -C "$repo" cat-file -e "$sha^{commit}" 2>/dev/null; then
-              GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraHeader \
-                GIT_CONFIG_VALUE_0="Authorization: Basic $basic" \
-                timeout 300 git -C "$repo" fetch --quiet --no-tags origin "$sha" || fail gateway.release_fetch_failed "git fetch of $sha failed"
-              git -C "$repo" cat-file -e "$sha^{commit}" || fail gateway.release_commit_unknown "$sha is not in origin"
-            fi
-            if [ "$force" != true ] && [ "$sha" != "$current_sha" ]; then
-              git -C "$repo" merge-base --is-ancestor "$current_sha" "$sha" || fail gateway.release_downgrade "$sha does not descend from the current $current_sha"
-            fi
             database=$(php8.5 -r '$c = require $argv[1]; echo $c["database"]["connections"]["sqlite"]["database"];' "$base/releases/$current/apps/gateway/bootstrap/cache/config.php")
             need=$(( $(stat -c %s "$database") + 1073741824 ))
             [ "$(df --output=avail -B1 "$base" | tail -1)" -ge "$need" ] || fail gateway.release_disk_low "less than $need bytes free on $base"
@@ -140,13 +150,7 @@ jobs:
               \( -type f -o -type d \) ! -type l -exec chmod a-w {} +
             chmod u+w "$release"
             printf '%s\n' "$sha" > "$release/.REVISION.next" && chmod 0644 "$release/.REVISION.next" && mv "$release/.REVISION.next" "$release/REVISION"
-            candidate="$app/bootstrap/cache/config.next-$RANDOM$RANDOM.php"
-            if ! APP_CONFIG_CACHE=$candidate ORBIT_AGENT_DELIVERY=$release/apps/agent/delivery/manifest.json \
-                timeout 120 php8.5 "$app/artisan" config:cache --no-interaction --quiet; then
-              rm -f "$candidate" "$release/REVISION"
-              fail gateway.release_configuration_failed "config:cache failed"
-            fi
-            chmod 0600 "$candidate" && mv "$candidate" "$app/bootstrap/cache/config.php"
+            cache || { rm -f "$release/REVISION"; fail gateway.release_configuration_failed "config:cache failed"; }
             chmod u-w "$release"
           fi
           # The new code renders its own grants; the load step splits the two files at the separator line.
@@ -185,6 +189,8 @@ jobs:
           web=/home/orbit/web/releases
           fail() { echo "$1: $2" >&2; exit 1; }
           [ ! -f "$web/$id/index.html" ] || exit 0
+          # A directory without index.html is a stopped install; it is replaced.
+          rm -rf "${web:?}/$id"
           [ "$size" -le 134217728 ] || fail gateway.release_web_build_invalid "artifact of $size bytes is above 128 MiB"
           work=$(mktemp -d) && trap 'rm -rf "$work"' EXIT
           umask 077
@@ -311,18 +317,3 @@ jobs:
           horizon_drain_seconds: ${{ inputs.intent.horizon_drain_seconds }}
           keep: ${{ inputs.intent.keep }}
           ssh: ${{ inputs.intent.ssh }}
-  - name: Record the release
-    labels: {role: swamp}
-    dependsOn: [{step: Hand over the release, condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: '${{ "gateway-release-record-" + string(inputs.node_id) }}'
-      methodName: execute
-      inputs:
-        env:
-          RELEASE_SHA: ${{ inputs.intent.sha }}
-          PREVIOUS: ${{ inputs.intent.previous }}
-          SNAPSHOT: ${{ steps["Snapshot the database"].outputs.stdout.trim() }}
-        run: |
-          jq -cn --arg sha "$RELEASE_SHA" --arg previous "$PREVIOUS" --arg snapshot "$SNAPSHOT" '{sha: $sha, previous: $previous, snapshot: $snapshot}'

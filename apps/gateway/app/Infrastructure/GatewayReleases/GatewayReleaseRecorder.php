@@ -109,6 +109,10 @@ final readonly class GatewayReleaseRecorder
             return null;
         }
 
+        // No release path starts while a Swamp run owns another record; the run's terminal ends it.
+        if ($this->swampRunActive($record?->id)) {
+            throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'A Swamp Gateway release is running.', 409);
+        }
         $this->supersedePublication($record?->id);
         $this->settleDead($record?->id);
 
@@ -132,9 +136,10 @@ final readonly class GatewayReleaseRecorder
     }
 
     /** Whether a `gateway.release` Swamp run owns a running record; the release unit waits for it. */
-    public function swampRunActive(): bool
+    public function swampRunActive(?int $except = null): bool
     {
-        return $this->hasRecords() && GatewayRelease::query()->where('outcome', GatewayRelease::Running)->get()
+        return $this->hasRecords() && GatewayRelease::query()->where('outcome', GatewayRelease::Running)
+            ->when($except !== null, static fn ($query) => $query->whereKeyNot($except))->get()
             ->contains(static fn (GatewayRelease $record): bool => $record->swampRunActive());
     }
 
