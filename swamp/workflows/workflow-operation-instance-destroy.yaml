@@ -376,7 +376,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: ${{ "instance-destroy-hibernation-" + string(self.file.instance_id) + "-" + string(self._index) }}
+      behaviorName: ${{ ("instance-destroy-hibernation-" + string(self.file.instance_id) + "-" + string(self._index)).split(".").join("-") }}
       methodName: apply
       globalArgs:
         path: ${{ self.file.path }}
