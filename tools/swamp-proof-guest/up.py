@@ -230,12 +230,13 @@ def swamp():
                               + f'--admins user:proof-operator --club-api-key-file {club} --trusted-hosts swamp.orbit,swamp.orbit:{PORT} '
                               + '--dispatch-env-allow=, --remote-only --hot-reload '
                               + f'--cert-file {tls}/cert.pem --key-file {tls}/key.pem --grants-file {STATE}/grants.yaml\n'),
-        # 209's worker unit: the Node SSH key arrives as the proxy-ssh-identity credential.
+        # 209's worker unit: the Node SSH key arrives as the proxy-ssh-identity credential. Production runs two workers of
+        # 8 dispatch slots each; one proof worker gets all 16, so nested child runs never queue behind their parent (version 14).
         'orbit-node-worker': ('[Unit]\nDescription=Proof Swamp worker orbit-node-209\nAfter=orbit-swamp-serve.service\n[Service]\n' + common
                               + f'WorkingDirectory={STATE}\nLoadCredential=enrollment:{STATE}/credentials/enrollment\n'
                               + f'LoadCredential=server:{STATE}/credentials/worker\nLoadCredential=proxy-ssh-identity:{IDENTITY}\n'
                               + f'ExecStart={BINARY} worker connect {URL} --token-file=%d/enrollment --server-token-file=%d/server '
-                              + f'--ca-cert={tls}/ca.pem --cache-dir={STATE}/worker-cache --label role=swamp --label node=209\n'),
+                              + f'--ca-cert={tls}/ca.pem --cache-dir={STATE}/worker-cache --concurrency 16 --label role=swamp --label node=209\n'),
     }
     for name, contents in units.items():
         Path(f'/etc/systemd/system/{name}.service').write_text(contents)
