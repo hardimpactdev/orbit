@@ -29,7 +29,7 @@
       "body": {
         "slug": "proof-source",
         "name": "Proof source",
-        "type": "monorepo",
+        "type": "laravel-app",
         "root": "public",
         "repository_url": "https://github.com/laravel/laravel.git",
         "default_branch": "13.x"
@@ -46,7 +46,7 @@
       "operation": false,
       "body": {
         "name": "prepare-env",
-        "command": "printf 'PRIVATE_SENTINEL=proof-private-setup\\n' > .env; printf 'registered-worktree\\n' > public/proof.txt",
+        "command": "cp .env.example .env; printf 'PRIVATE_SENTINEL=proof-private-setup\\n' >> .env; printf 'registered-worktree\\n' > public/proof.txt",
         "timeout_seconds": 10
       }
     },
