@@ -1,5 +1,8 @@
-import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { observed } from "./release.ts";
+import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
+import { directHttp } from "../../../../tests/_support/native_direct.ts";
+import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
+import { parse } from "jsr:@std/yaml@1.0.12";
+import { observed, windowOpen, fleetRelease } from "./release.ts";
 
 const record = { node_id: 12, outcome: "unchanged" as const, error_code: null, cli_version: "0.100.0", agent_version: null, step: "cli" as const, ok: true };
 const agent = { sha256: "b".repeat(64), version: "0.5.0" };
@@ -18,4 +21,104 @@ Deno.test("each failed observer step names its own refusal and stops the fleet",
     assertEquals(run({ running: null }).error_code, "agent.observer_unhealthy");
     assertEquals(run({ running: `${"c".repeat(64)}  /proc/41/exe\nactive\n` }).error_code, "agent.observer_unhealthy");
     assertEquals(run({ running: `${"b".repeat(64)}  /proc/41/exe\nfailed\n` }).ok, false);
+});
+
+Deno.test("every step runs on 209 and only a rollout publishes the observer", async () => {
+    const source = parse(
+        await Deno.readTextFile(
+            new URL(
+                "../../../../workflows/workflow-fleet-release-node.yaml",
+                import.meta.url,
+            ),
+        ),
+    ) as {
+        jobs: {
+            steps: {
+                name: string;
+                labels: unknown;
+                guard: string;
+                task: { behaviorType: string };
+            }[];
+        }[];
+    };
+    const steps = Object.fromEntries(
+        source.jobs.flatMap((j) => j.steps).map((s) => [s.name, s]),
+    );
+    for (const name of ["gate", "cli", "record"]) {
+        assertEquals(steps[name].labels, { role: "swamp" }, name);
+    }
+    for (
+        const name of [
+            "observer_fetch",
+            "observer_read",
+            "observer_restart",
+            "observer_check",
+            "observer",
+        ]
+    ) {
+        assertEquals(steps[name].labels, { role: "swamp" }, name);
+        assert(
+            steps[name].guard.startsWith(
+                '${{ inputs.kind != "fleet.rollout" ||',
+            ),
+            name,
+        );
+    }
+    assertEquals(
+        steps.observer_fetch.task.behaviorType,
+        "@swamp/cfgmgmt/fetch",
+    );
+});
+
+Deno.test("closed window defers shared nodes; daytime nodes bypass the window", () => {
+    for (const at of ["2026-10-31T12:30:00Z", "2026-07-01T12:30:00Z"]) {
+        assertEquals(windowOpen(false, new Date(at)), false);
+        assertEquals(windowOpen(true, new Date(at)), true);
+    }
+    for (
+        const at of [
+            "2026-10-31T02:00:00Z",
+            "2026-10-31T04:59:00Z",
+            "2026-07-01T01:00:00Z",
+            "2026-07-01T03:59:00Z",
+        ]
+    ) {
+        assertEquals(windowOpen(false, new Date(at)), true);
+    }
+    for (
+        const at of [
+            "2026-10-31T01:59:00Z",
+            "2026-10-31T05:00:00Z",
+            "2026-07-01T00:59:00Z",
+            "2026-07-01T04:00:00Z",
+        ]
+    ) {
+        assertEquals(windowOpen(false, new Date(at)), false);
+    }
+});
+
+Deno.test("closed window prevents installation and leaves the rollout running", async () => {
+    const directory = await Deno.makeTempDir();
+    const file = `${directory}/state.json`;
+    const node = { node_id: 2, user: "node", release: null, profile: "{}", skip_reason: null, plan_error: null, daytime: false, agent: null, ssh: null };
+    await Deno.writeTextFile(file, JSON.stringify({ bound: true, calls: [], operation: {
+        id: 7, kind: "fleet.rollout", node_id: 1, status: "running", cancel_requested: false, input: { nodes: [node] },
+    } }));
+    try {
+        const release = fleetRelease(() => directHttp(file), () => new Date("2026-10-31T12:30:00Z"));
+        const test = createModelTestContext({ globalArgs: { gatewayUrl: "https://gateway.invalid", caFile: "/unused" } });
+        const context = Object.assign(test.context, { extensionFile: (path: string) => new URL(path, import.meta.url).pathname }) as unknown as Parameters<typeof release.methods.prepare.execute>[1];
+        const args = { operation_id: 7, kind: "fleet.rollout" as const, node_id: 1, run_id: crypto.randomUUID() };
+        const admission = await release.methods.prepare.execute(args, context);
+        const gate = await release.methods.gate.execute({ ...args, target_node_id: 2, previous: {} }, context);
+        assertEquals(gate.install, false);
+        assertEquals([gate.result.outcome, gate.result.error_code], ["deferred", "fleet.window_closed"]);
+        await release.methods.finish.execute({ ...args, admission, node_results: { "node-0": { outputs: { record: gate.result } } } }, context);
+        const { operation } = JSON.parse(await Deno.readTextFile(file));
+        assertEquals(operation.status, "succeeded");
+        assertEquals(operation.result.rollout_status, "running");
+        assertEquals(operation.result.nodes, [gate.result]);
+    } finally {
+        await Deno.remove(directory, { recursive: true });
+    }
 });
