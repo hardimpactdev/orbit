@@ -7,6 +7,7 @@ namespace App\Domain\Instances\Deployment;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentMaterial;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationTimeout;
 use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Tools\VpEnvironment;
@@ -17,7 +18,7 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Records bounded native facts. All sequencing, runtime checks and effects belong to Swamp. */
-final readonly class InstanceDeployProjection implements DirectOperationProjection, DirectOperationWorkflowInput, NativeOperationProjection
+final readonly class InstanceDeployProjection implements DirectOperationProjection, DirectOperationTimeout, DirectOperationWorkflowInput, NativeOperationProjection
 {
     public function __construct(
         private DirectOperation $direct,
@@ -27,25 +28,21 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
         private InstanceVpEnvironmentMaterial $vp,
     ) {}
 
+    /** Both variants run natively; no step calls the Gateway back. */
     public function native(Operation $operation): bool
     {
-        return (ValidatedData::object($operation->input['deployment'])['variant'] ?? null) === 'development';
+        return true;
     }
 
     public function workflowInput(Operation $operation): array
     {
-        if ($this->native($operation)) {
-            return app(DevelopmentDeployInput::class)->workflowInput($operation);
+        if ($this->development($operation)) {
+            $input = app(DevelopmentDeployInput::class)->workflowInput($operation);
+
+            return ['intent' => [...ProductionDeployInput::placeholder(), ...$input['intent']], 'execution_secrets' => $input['execution_secrets']];
         }
-        $input = $this->intent->admitted($operation);
-        $processes = ValidatedData::object($input['deployment'])['variant'] === 'production'
-            ? $this->members->processWorkflowInput($operation) : ['members' => [], 'execution_secrets' => []];
 
-        // The workflow's development jobs read these keys even when their guards skip them; production leaves them empty.
-        $development = ['ssh_execution' => ['identity_file' => '', 'target' => ['name' => 'target', 'host' => '', 'user' => '', 'port' => 22, 'host_keys' => []]],
-            'application' => '', 'vp_setup' => null];
-
-        return ['intent' => [...$input, ...$development, 'process_members' => $processes['members']], 'execution_secrets' => $processes['execution_secrets']];
+        return app(ProductionDeployInput::class)->workflowInput($operation);
     }
 
     public function input(Operation $operation): array
@@ -61,13 +58,12 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
             $terminal = $locked->status->terminal();
             $status = ValidatedData::string($data['status']);
             $payload = ValidatedData::object($data['result'] ?? []);
-            if ($this->native($locked) && $status !== 'running') {
-                [$data, $payload] = DevelopmentDeployOutcome::from($data);
+            if ($status !== 'running') {
+                [$data, $payload] = $this->development($locked) ? DevelopmentDeployOutcome::from($data) : ProductionDeployOutcome::from($data, $locked);
             }
             $historyId = $locked->state['deployment_id'] ?? null;
             if (! is_int($historyId)) {
-                $row = $this->history->start($instance, $locked->triggered_by ?? 'operation',
-                    kind: $locked->kind === 'instance.rollback' ? 'rollback' : 'deploy', callerNodeId: $locked->callerNodeId());
+                $row = $this->history->start($instance, $locked->triggered_by ?? 'operation', callerNodeId: $locked->callerNodeId());
                 $historyId = $row->id;
                 $locked->update(['state' => [...($locked->state ?? []), 'deployment_id' => $historyId]]);
             }
@@ -75,14 +71,11 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
             $facts = ['deployment_id' => $historyId, 'release' => $text(ValidatedData::object($payload['release'] ?? [])['name'] ?? null, 128),
                 'selected_release' => $text(ValidatedData::object($payload['selected_release'] ?? [])['name'] ?? null, 128),
                 'commit' => $text($payload['commit'] ?? null, 64), 'failed_step' => $text($payload['failed_step'] ?? null, 255)];
-            if (is_string($payload['output_tail'] ?? null) && $payload['output_tail'] !== '') {
-                $facts['output_tail'] = str_replace("\0", '', $text($payload['output_tail'], 2048) ?? '');
-            }
-            if (($payload['step_outcome'] ?? null) === 'unknown') {
-                $facts['step_outcome'] = 'unknown';
+            if (isset($payload['warnings'])) {
+                $facts['warnings'] = ValidatedData::integer($payload['warnings']);
             }
             $projected = $this->direct->project($locked, $data, $status === 'running' ? [] : $facts);
-            if ($terminal) {
+            if ($terminal || $status === 'running') {
                 return $projected;
             }
             $admitted = ValidatedData::object($locked->input['deployment']);
@@ -93,9 +86,6 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
                     $path .= '/releases/'.$facts['release'];
                 }
                 $this->vp->recordReference($instance, $path, VpEnvironment::fromArray($runtime), ValidatedData::string($runtime['status']));
-            }
-            if ($status === 'running') {
-                return $projected;
             }
             if ($admitted['variant'] === 'development' && $status === 'succeeded') {
                 $instance->update(['seed_path' => $admitted['home'], 'seed_repository' => $admitted['home'], 'seed_commit' => $facts['commit']]);
@@ -108,20 +98,6 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
                 $instance->forceFill(['environment_owned_keys' => array_values(array_unique($keys)),
                     'environment_runtime_pending_at' => null])->saveOrFail();
             }
-            if (($data['error_code'] ?? null) === 'operation.native_failed' && isset($locked->input['runtime_definitions'])) {
-                $captured = ValidatedData::object($locked->input['runtime_definitions']);
-                $members = $captured['processes'];
-                if (! is_array($members) || ! array_is_list($members)) {
-                    throw new \InvalidArgumentException('Captured deployment Processes must be a list.');
-                }
-                $definitions = ValidatedData::object($payload['runtime_definitions'] ?? []);
-                $definitions['processes'] = array_map(static function (mixed $member): array {
-                    $member = ValidatedData::object($member);
-
-                    return ['process_id' => ValidatedData::integer($member['process_id']), 'ready' => false, 'error_code' => 'operation.native_failed'];
-                }, $members);
-                $payload['runtime_definitions'] = $definitions;
-            }
             if (is_array($payload['runtime_definitions'] ?? null)) {
                 $this->members->project($locked, ValidatedData::object($payload['runtime_definitions']));
             }
@@ -130,5 +106,22 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
 
             return $projected;
         });
+    }
+
+    /** A production deployment recorded its running row at admission; the expired run leaves it failed. */
+    public function timedOut(Operation $operation): void
+    {
+        $id = $operation->state['deployment_id'] ?? null;
+        if (! is_int($id)) {
+            return;
+        }
+        $this->history->recordNative(InstanceDeployment::query()->where('instance_id', $operation->target_id)->findOrFail($id), 'failed', 'operation.timed_out',
+            ['release' => $this->development($operation) ? null : InstanceDeploymentIntent::releaseName($operation), 'selected_release' => null,
+                'commit' => InstanceDeploymentIntent::commit($operation), 'failed_step' => null]);
+    }
+
+    private function development(Operation $operation): bool
+    {
+        return ValidatedData::object($operation->input['deployment'])['variant'] === 'development';
     }
 }

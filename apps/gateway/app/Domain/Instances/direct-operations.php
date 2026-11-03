@@ -61,15 +61,18 @@ return [
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-git-(?:operation|credential)-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$'], DatabaseDestroyRun::OWNED_EXECUTION_COPY]],
     'instance.deploy' => [
         'workflow' => 'operation-instance-deploy-direct',
-        // Development: the checkout's end check; the Vite+ runtime the steps ran under comes as one capture.
-        'terminal_result' => ['job' => 'development-steps', 'step' => 'Check the checkout', 'native' => true,
+        // Development ends with the checkout's end check, production with the deployment's; the Vite+ runtime the steps
+        // ran under comes as one capture. Every step runs on Node 209 over official SSH.
+        'terminal_result' => ['job' => 'deploy', 'step' => 'Check the checkout', 'alternatives' => ['Check the deployment'], 'native' => true,
             'captures' => ['vp_runtime' => ['job' => 'dev-vp-workspaces', 'step' => 'dev-vp-requirements', 'field' => 'runtime']]],
         'workflow_inputs' => true,
-        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^development-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01])$'],
-            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^development-deploy-operation-[1-9][0-9]*-credential$']],
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*$'],
+            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^development-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01])$'],
+            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^development-deploy-operation-[1-9][0-9]*-credential$'],
+            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01])$'],
+            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-deploy-operation-[1-9][0-9]*-credential$'],
+            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-environment-(?:testing-)?[1-9][0-9]*$']],
         'projection' => InstanceDeployProjection::class,
-        'private_material' => ['git_read' => 'instance.deployment', 'vp_materialize' => 'instance.deployment',
-            'environment_material' => 'instance.deployment', 'definitions_material' => 'instance.deployment'],
     ],
     // The link read back after the swap is the end check; every step runs on Node 209 over official SSH.
     'instance.rollback' => ['workflow' => 'operation-instance-rollback', 'workflow_inputs' => true,

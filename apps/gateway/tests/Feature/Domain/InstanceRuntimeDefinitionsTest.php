@@ -52,14 +52,13 @@ function native_runtime_definitions(Instance $instance): void
         'spec' => ['calendar' => 'daily', 'command' => 'printf private-schedule-value', 'timeout_seconds' => 60]]);
 }
 
-it('captures canonical production copies and private member material without runtime execution or child admission', function (): void {
+it('captures canonical production copies without runtime execution or child admission', function (): void {
     $this->mock(ProcessRuntimeManager::class)->shouldNotReceive('converge');
     $this->mock(ScheduleRuntimeManager::class)->shouldNotReceive('install');
     $this->mock(ScheduleRuntimeAccountResolver::class)->shouldNotReceive('resolve');
     $instance = native_runtime_target();
     native_runtime_definitions($instance);
     $runtime = app(InstanceRuntimeDefinitions::class)->capture($instance);
-    $material = app(InstanceRuntimeDefinitions::class)->material(native_runtime_parent($instance, $runtime));
 
     expect($runtime['processes'])->toHaveCount(2)
         ->and($runtime['schedules'])->toHaveCount(1)
@@ -69,9 +68,6 @@ it('captures canonical production copies and private member material without run
         ->and(array_key_exists('group', $runtime['schedules'][0]))->toBeFalse()
         ->and(json_encode($runtime))->not->toContain('private-schedule-value')
         ->and(json_encode($runtime))->not->toContain('private-container-value')
-        ->and(json_encode($runtime))->not->toContain('private-schedule-value')
-        ->and(json_encode($material))->toContain('private-schedule-value')
-        ->and(json_encode($material))->not->toContain('private-unit-value', 'private-container-value')
         ->and(Operation::query()->count())->toBe(0)
         ->and($instance->refresh()->runtime_definitions_captured_at)->not->toBeNull();
 });
@@ -90,7 +86,7 @@ it('rolls definition capture back with the root admission transaction', function
         ->and($instance->refresh()->runtime_definitions_captured_at)->toBeNull();
 });
 
-it('refuses private material for another parent Node or owner and changed member bytes', function (string $change): void {
+it('refuses Process inputs for another parent Node or owner and changed member bytes', function (string $change): void {
     $instance = native_runtime_target();
     native_runtime_definitions($instance);
     $aggregate = app(InstanceRuntimeDefinitions::class);
@@ -102,13 +98,10 @@ it('refuses private material for another parent Node or owner and changed member
         'kind' => $parent->kind = 'instance.destroy',
         'process-owner' => Process::query()->firstOrFail()->update(['owner_type' => Node::class, 'owner_id' => $instance->node_id]),
         'process-bytes' => Process::query()->where('runtime', 'systemd')->firstOrFail()->update(['runtime_config' => ['command' => ['/usr/bin/false']]]),
-        'schedule-owner' => Schedule::query()->firstOrFail()->update(['target_type' => Node::class, 'target_id' => $instance->node_id]),
-        'schedule-bytes' => Schedule::query()->firstOrFail()->update(['command' => 'printf changed']),
-        'terminal' => $parent->status = 'succeeded',
     };
 
-    expect(fn () => str_starts_with($change, 'process-') ? $aggregate->processWorkflowInput($parent) : $aggregate->material($parent))->toThrow(ResourceOperationException::class);
-})->with(['node', 'target', 'kind', 'process-owner', 'process-bytes', 'schedule-owner', 'schedule-bytes', 'terminal']);
+    expect(fn () => $aggregate->processWorkflowInput($parent))->toThrow(ResourceOperationException::class);
+})->with(['node', 'target', 'kind', 'process-owner', 'process-bytes']);
 
 it('captures only running active restart-on-deploy members for rollback without copying definitions', function (): void {
     $instance = native_runtime_target();
@@ -179,7 +172,7 @@ it('records native outcomes without re-rendering member configuration or requiri
     $runtime = $aggregate->capture($instance);
     $process = Process::query()->where('runtime', 'systemd')->sole();
     $schedule = Schedule::query()->sole();
-    $hash = array_values(array_filter($runtime['processes'], fn (array $entry): bool => $entry['process_id'] === $process->id))[0]['content_hash'];
+    $hash = array_first(array_filter($runtime['processes'], fn (array $entry): bool => $entry['process_id'] === $process->id))['content_hash'];
     $process->update(['runtime_config' => ['command' => ['/usr/bin/false']]]);
     $schedule->update(['command' => 'printf changed-after-execution']);
 
@@ -194,15 +187,12 @@ it('records native outcomes without re-rendering member configuration or requiri
         ->and(Operation::query()->count())->toBe(0);
 });
 
-it('accepts reordered public intent keys but preserves strict member identity types', function (): void {
+it('preserves strict member identity types under reordered public intent keys', function (): void {
     $instance = native_runtime_target();
     native_runtime_definitions($instance);
     $aggregate = app(InstanceRuntimeDefinitions::class);
     $runtime = $aggregate->capture($instance);
     $runtime['processes'] = array_map(fn (array $entry): array => array_reverse($entry, true), $runtime['processes']);
-    $runtime['schedules'] = array_map(fn (array $entry): array => array_reverse($entry, true), $runtime['schedules']);
-
-    expect(json_encode($aggregate->material(native_runtime_parent($instance, $runtime))))->toContain('private-schedule-value');
     $runtime['processes'][0]['on_demand'] = 0;
     expect(fn () => $aggregate->processWorkflowInput(native_runtime_parent($instance, $runtime)))->toThrow(ResourceOperationException::class);
 });
@@ -220,7 +210,7 @@ it('publishes full deployment Process inputs with environment-only copies withou
     $input = app(InstanceRuntimeDefinitions::class)->processWorkflowInput($parent);
     expect($input['members'])->toHaveCount(2)
         ->and(json_encode($input))->not->toContain('private-unit-value', 'private-container-value', 'private-schedule-value')
-        ->and(array_values(array_filter($input['members'], fn (array $member): bool => $member['intent']['installation']['runtime'] === 'systemd'))[0]['intent']['installation']['unit'])->toContain('[Service]', 'X-Orbit-Process-ID=')
+        ->and(array_first(array_filter($input['members'], fn (array $member): bool => $member['intent']['installation']['runtime'] === 'systemd'))['intent']['installation']['unit'])->toContain('[Service]', 'X-Orbit-Process-ID=')
         ->and($socket->sent)->toHaveCount(2)
         ->and(json_encode(array_column(array_column($socket->sent, 'payload'), 'value')))->toContain('private-unit-value')
         ->and($socket->sent[0]['payload']['value'])->not->toContain('[Service]');

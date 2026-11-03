@@ -76,16 +76,15 @@ Later stages: #1590 ran the same actions as Kit children; #1867 made development
 
 ## Swamp flow on main
 
-One workflow, `operation-instance-deploy-direct`, holds both variants. Each step guards on `intent.deployment.variant`, or, for `install-processes`, gets an empty `forEach` list, so a run executes one variant and skips the other.
+One workflow, `operation-instance-deploy-direct`, holds both variants, every step on Node 209. Each step guards on `intent.deployment.variant`, so a run executes one variant and skips the other. A development run carries the production keys empty.
 
 | Job | Placement | Steps | Runs for |
 | --- | --- | --- | --- |
 | `development-source` | Node 209; each step reaches the app-dev Node over `@swamp/ssh`, except the cleanup plan | 14 | development |
 | `development-checkout` | Node 209, over `@swamp/ssh` | 3, the cleanup a `forEach` | development |
-| `dev-vp-capture`, `dev-vp-workspaces`, `dev-vp-install` | Node 209, the shared Vite+ steps of `instance:clone` | 20 | development that needs Vite+ |
-| `development-steps` | Node 209, over `@swamp/ssh` | 4, the commands a `forEach` | development |
-| `deploy` | the production Node's own worker (`orbit-node-<node_id>`); `install-processes` runs on 209 | 3 (one is a `forEach` child workflow) | production |
-| `failure` | the production Node's own worker | 1 | production, after a failed `deploy` |
+| `dev-vp-capture`, `dev-vp-workspaces`, `dev-vp-install` | Node 209, the shared Vite+ steps of `instance:clone` | 20 | a deploy that needs Vite+; production reads its release through sudo |
+| `production-release` | Node 209, over `@swamp/ssh` and `@swamp/cfgmgmt` | 10, the release actions and links a `forEach` | production |
+| `deploy` | Node 209, over `@swamp/ssh` and `@swamp/cfgmgmt` | 4 development steps and 14 production steps | both; each step guards on the variant |
 
 ### Development
 
@@ -107,7 +106,7 @@ flowchart TD
   end
   C["job development-checkout<br/>Check the checkout lock, Clean stale directories,<br/>Check out the commit"]
   V["dev-vp jobs<br/>shared Vite+ capture and install"]
-  D["job development-steps<br/>Run the deploy steps, Read the checkout branch and commit,<br/>Check the checkout (end check)"]
+  D["job deploy<br/>Run the deploy steps, Read the checkout branch and commit,<br/>Check the checkout (end check)"]
   G["Gateway: terminal projection<br/>DevelopmentDeployOutcome, history, seed"]
 
   A2 -- "StartSwampRun: intent + vault key names" --> S1
@@ -126,31 +125,9 @@ Guards and skips:
 
 ### Production
 
-The `deploy` job runs on the production Node's own worker, not on 209. Two TypeScript behaviors do the work. Each runs several stages locally and keeps a checkpoint resource. Both read intent and private material from the Gateway and project progress back over HTTP.
+Production follows its [chart](/cli/instance/deploy) on Node 209. The Gateway freezes the intent, records the running deployment and passes every Node action as an argv list or link; the step commands, the read token and `.env` travel as vault copies. No step calls the Gateway. The `Install Process definitions` step runs the `operation-process-create` child for each captured Process. The terminal subscriber records the outcome through `ProductionDeployOutcome`; [the deploy operation](/reference/deployments#the-deploy-operation) lists each step and its error code.
 
-```mermaid
-flowchart TD
-  subgraph GW1["Gateway: admission (PHP)"]
-    A1["StartInstanceDeployAction<br/>lock Instance, snapshot intent, capture<br/>runtime definitions, environment, PHP input"]
-  end
-
-  subgraph DEP["job deploy: production Node worker"]
-    P1["prepare-production: 1 behavior step<br/>stages: source_preparation, environment_sync,<br/>vp_environment, before_activation, activation, php_refresh"]
-    P2["install-processes: forEach child workflow<br/>operation-process-create, one per Process member (on 209)"]
-    P3["finish-production: 1 behavior step<br/>stages: runtime_definitions, process_restart,<br/>after_activation, cleanup, verification"]
-    P1 --> P2 --> P3
-  end
-
-  F["job failure: report<br/>settles an inactive checkpoint"]
-  G["Gateway: deployment record, history, release"]
-
-  A1 -- "StartSwampRun" --> P1
-  P1 -. "read intent, private material,<br/>project progress (HTTP)" .-> G
-  P3 -. "project result (HTTP)" .-> G
-  DEP -- "failed" --> F -. "project failure" .-> G
-```
-
-Each stage checks for cancellation before it starts and saves its checkpoint after it ends. The checkpoint lets a restarted run continue without repeating an effect. `activation` swaps `current` to the new release. `cleanup` prunes old releases.
+Before this port, the `deploy` job ran on the production Node's own worker. Two TypeScript behaviors, `prepareProduction` and `finishProduction`, ran the stages locally with checkpoints and read intent and private material from the Gateway over HTTP; a `failure` job projected failures back.
 
 ## Mapping
 

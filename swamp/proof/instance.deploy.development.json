@@ -75,7 +75,7 @@
     },
     {
       "name": "Check the checkout",
-      "job": "development-steps",
+      "job": "deploy",
       "step": "Check the checkout",
       "budget_seconds": 60
     }

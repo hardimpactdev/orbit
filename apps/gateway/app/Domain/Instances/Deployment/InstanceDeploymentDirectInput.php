@@ -26,6 +26,6 @@ final readonly class InstanceDeploymentDirectInput
             'node_id' => $operation->node_id, 'platform' => ValidatedData::string($input['platform']),
             'architecture' => ValidatedData::string($input['architecture']), 'deployment' => $deployment,
             'commit' => InstanceDeploymentIntent::commit($operation), 'release_name' => InstanceDeploymentIntent::releaseName($operation),
-            ...array_intersect_key($input, array_flip(['environment', 'php_input', 'runtime_definitions']))];
+            ...array_intersect_key($input, array_flip(['php_input', 'runtime_definitions']))];
     }
 }

@@ -3,26 +3,24 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceDeployAction;
-use App\Domain\Instances\Deployment\InstanceDeploymentDirectInput;
-use App\Domain\Instances\Deployment\InstanceDeploymentSecrets;
-use App\Domain\Instances\Deployment\InstanceDeployProjection;
+use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
+use App\Domain\Instances\Deployment\RecordedReleases;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\ProcessRuntimeManager;
-use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
-use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
 use App\Models\Operation;
 use App\Models\Process;
 use App\Models\ProcessDefinition;
 use App\Models\Route;
-use App\Models\Schedule;
-use App\Models\ScheduleDefinition;
 use Tests\Support\FakeRoutePublicationSocket;
 
 function production_native_deploy_target(): Instance
@@ -39,11 +37,35 @@ function production_native_deploy_target(): Instance
         'provisioning_step' => 'active', 'source_is_laravel' => false]);
     ProcessDefinition::query()->create(['project_id' => $instance->project_id, 'name' => 'queue', 'environments' => ['production'],
         'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/true'], 'environment' => ['TOKEN' => 'private-member-token']]]);
-    ScheduleDefinition::query()->create(['project_id' => $instance->project_id, 'name' => 'daily', 'environments' => ['production'],
-        'spec' => ['calendar' => 'daily', 'command' => 'printf private-schedule', 'timeout_seconds' => 60]]);
     $instance->environmentValues()->create(['env_key' => 'API_TOKEN', 'env_value' => 'private-deploy-environment']);
+    store_deploy_steps($instance, [
+        ['name' => 'migrate', 'phase' => 'before_activation', 'command' => 'php artisan migrate --force # private-step-command', 'timeout_seconds' => 120],
+        ['name' => 'warm', 'phase' => 'after_activation', 'command' => 'php artisan optimize', 'timeout_seconds' => 60],
+    ]);
 
     return $instance->fresh();
+}
+
+/**
+ * Project a production terminal from Swamp run data: every named step with its status and optional stdout.
+ *
+ * @param  array<string, string|array{0:string,1:string}>  $steps
+ */
+function project_production_terminal(Operation $operation, string $status, array $steps): Operation
+{
+    $runId = $operation->state['swamp_run_id'];
+    $jobs = [['name' => 'deploy', 'steps' => array_map(static fn (string $name, string|array $step): array => ['name' => $name,
+        'status' => is_array($step) ? $step[0] : $step, 'outputs' => is_array($step) ? ['stdout' => $step[1]] : []],
+        array_keys($steps), $steps)]];
+    $history = ['id' => $runId, 'workflowName' => 'operation-instance-deploy-direct', 'status' => $status,
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
+        'startedAt' => '2026-11-02T22:00:00Z', 'completedAt' => '2026-11-02T22:01:00Z', 'jobs' => $jobs];
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $history]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.read_token' => 'synthetic-native-reader']);
+
+    return app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $runId, 'status' => $status], app(DirectOperation::class)->definition('instance.deploy')['terminal_result']);
 }
 
 beforeEach(function (): void {
@@ -55,38 +77,56 @@ beforeEach(function (): void {
     config(['swamp.run_token' => 'private.production-native.fixture']);
     $this->mock(AgentCommandRunner::class)->shouldNotReceive('run');
     $this->mock(ProcessRuntimeManager::class)->shouldNotReceive('converge');
-    $this->mock(ScheduleRuntimeManager::class)->shouldNotReceive('install');
-    $this->mock(ScheduleRuntimeAccountResolver::class)->shouldNotReceive('resolve');
 });
 
-it('admits one production parent with canonical account and private captured members', function (): void {
+it('admits one production deploy that holds the Instance, records its running row and starts the native run without secrets', function (): void {
     $instance = production_native_deploy_target();
     $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null);
-    $public = app(InstanceDeploymentDirectInput::class)->input($operation);
-    $secrets = app(InstanceDeploymentSecrets::class);
-    $environment = $secrets->resolve($operation, $instance->id, '', 'environment_material')->value;
-    $members = $secrets->resolve($operation, $instance->id, '', 'definitions_material')->value;
-    $copy = collect($this->socket->sent)->firstWhere('type', 'vault.put');
-    $submitted = collect($this->socket->sent)->firstWhere('type', 'workflow.run')['payload']['inputs'];
+    $copies = collect($this->socket->sent)->where('type', 'vault.put')->mapWithKeys(fn (array $put): array => [$put['payload']['key'] => $put['payload']['value']]);
+    $submitted = collect($this->socket->sent)->firstWhere('type', 'workflow.run')['payload'];
+    $intent = $submitted['inputs']['intent'];
+    $home = $instance->production_home;
+    $release = InstanceDeploymentIntent::releaseName($operation);
+    $directory = "{$home}/releases/{$release}";
 
-    expect($public['deployment'])->toMatchArray(['variant' => 'production', 'user' => 'orbit-app-'.$instance->project_id,
-        'home' => '/home/orbit-app-'.$instance->project_id, 'runtime_synchronous' => false])
-        ->and($public['environment'])->toMatchArray(['base' => $instance->production_home, 'user' => $instance->production_user, 'environment' => 'production'])
-        ->and($public['runtime_definitions']['processes'])->toHaveCount(1)
-        ->and($public['runtime_definitions']['schedules'])->toHaveCount(1)
-        ->and($public['php_input'])->toBeNull()
-        ->and(json_encode($public))->not->toContain('private-member-token')
-        ->and(json_encode($public))->not->toContain('private-schedule')
-        ->and(json_encode($public))->not->toContain('private-deploy-environment')
-        ->and(json_encode($members))->toContain('private-schedule')
-        ->and($copy['payload']['value'])->toContain('private-member-token')
-        ->and(json_encode($submitted))->not->toContain('private-member-token')
-        ->and(json_encode($submitted))->not->toContain('private-schedule')
+    expect($operation->lock_key)->toBe('instance:'.$instance->id)
+        ->and($operation->input['run_budget_seconds'])->toBe(900 + 120 + 60)
+        ->and(OperationRunBudgets::seconds($operation->fresh()))->toBe(1080)
+        ->and(InstanceDeployment::query()->sole()->only(['kind', 'status']))->toBe(['kind' => 'deploy', 'status' => 'running'])
+        ->and($operation->state['deployment_id'])->toBe(InstanceDeployment::query()->sole()->id)
+        ->and($operation->input['direct_environment']['keys'])->toBe(['API_TOKEN', 'APP_ENV'])
+        ->and($operation->input['php_input'])->toBeNull()
+        ->and($operation->input['runtime_definitions']['processes'])->toHaveCount(1)
+        ->and($submitted['workflowIdOrName'])->toBe('operation-instance-deploy-direct')
+        ->and($intent['production']['release_path'])->toBe($directory)
+        ->and($intent['production']['before'])->toBe([['index' => 0, 'name' => 'migrate', 'phase' => 'before_activation', 'timeout_seconds' => 120]])
+        ->and($intent['production']['after'])->toBe([['index' => 1, 'name' => 'warm', 'phase' => 'after_activation', 'timeout_seconds' => 60]])
+        ->and($intent['production']['prepare'][0]['argv'])->toContain('clone', $instance->project->repository_url, $directory)
+        ->and($intent['production']['prepare'][1]['argv'])->toContain('refs/remotes/origin/main')
+        ->and($intent['production']['links'])->toContain(['path' => "{$directory}/.env", 'target' => '../../.env'],
+            ['path' => "{$directory}/storage", 'target' => "{$home}/storage"], ['path' => "{$directory}/public/storage", 'target' => '../storage/app/public'])
+        ->and($intent['production']['grants'][0])->toBe(['/usr/bin/setfacl', '-m', 'u:caddy:--x', '--', $directory])
+        ->and($intent['production']['cleanup'])->toBe([])
+        ->and($intent['process_members'])->toHaveCount(1)
+        ->and($submitted['inputs']['execution_secrets'])->toHaveKeys(['credential', 'step_0', 'step_1', 'environment'])
+        ->and($copies['instance-deploy-operation-'.$operation->id.'-step-0'])->toBe("exec </dev/null >/dev/null 2>&1\nphp artisan migrate --force # private-step-command")
+        ->and($copies['instance-environment-'.$operation->id])->toContain('private-deploy-environment')
+        ->and(json_encode($submitted))->not->toContain('private-step-command')
         ->and(json_encode($submitted))->not->toContain('private-deploy-environment')
-        ->and($environment['values']['API_TOKEN'])->toBe('private-deploy-environment')
-        ->and(Operation::query()->count())->toBe(1)
-        ->and(InstanceDeployment::query()->count())->toBe(0)
-        ->and($instance->refresh()->runtime_definitions_captured_at)->not->toBeNull();
+        ->and(json_encode($submitted))->not->toContain('private-member-token')
+        ->and(json_encode($operation->input))->not->toContain('private-deploy-environment');
+});
+
+it('freezes the dedicated PHP-FPM service and refuses a second start while the deploy holds the Instance', function (): void {
+    $instance = production_native_deploy_target();
+    $identity = ProductionPhpRuntimeIdentity::forProvisioning($instance, '8.5');
+    $instance->update(['selected_php_version' => '8.5', ...$identity->attributes()]);
+    $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null);
+
+    expect($operation->input['php_input'])->toBe(['service' => ProductionPhpRuntimeIdentity::from($instance->fresh())->service])
+        ->and(fn () => app(StartInstanceDeployAction::class)->execute($instance, 'operator', null))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
+    expect(Operation::query()->count())->toBe(1)->and(InstanceDeployment::query()->count())->toBe(1);
 });
 
 it('rolls definition copies back when protected environment admission refuses', function (): void {
@@ -95,26 +135,8 @@ it('rolls definition copies back when protected environment admission refuses', 
 
     expect(fn () => app(StartInstanceDeployAction::class)->execute($instance, 'operator', null))
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('env.owner_unavailable'));
-    expect(Process::query()->count())->toBe(0)->and(Schedule::query()->count())->toBe(0)
-        ->and($instance->refresh()->runtime_definitions_captured_at)->toBeNull()
-        ->and(Operation::query()->count())->toBe(0);
-});
-
-it('captures the canonical pinned PHP package-only profile and dedicated runtime plan without effects', function (): void {
-    $instance = production_native_deploy_target();
-    $identity = ProductionPhpRuntimeIdentity::forProvisioning($instance, '8.5');
-    $instance->update(['selected_php_version' => '8.5', ...$identity->attributes()]);
-    $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null);
-    $php = app(InstanceDeploymentDirectInput::class)->input($operation)['php_input'];
-
-    expect($php['packages']['fpm'])->toBe('none')
-        ->and($php['packages']['versions']['8.5']['packages'])->not->toBeEmpty()
-        ->and($php['packages']['versions']['8.5']['packages'][0])->toHaveKeys(['version', 'architecture', 'url', 'sha256'])
-        ->and($php['profile'])->toHaveKeys(['version', 'runtime_ini', 'release'])
-        ->and($php['runtime'])->toMatchArray(['mode' => 'converge', 'user' => $instance->production_user, 'home' => $instance->production_home])
-        ->and($php['runtime'])->toHaveKeys(['configuration', 'application', 'initial_application'])
-        ->and($php['refresh']['deadline_seconds'])->toBe(30)
-        ->and(Operation::query()->count())->toBe(1);
+    expect(Process::query()->count())->toBe(0)->and($instance->refresh()->runtime_definitions_captured_at)->toBeNull()
+        ->and(Operation::query()->count())->toBe(0)->and(InstanceDeployment::query()->count())->toBe(0);
 });
 
 it('refuses a production account that is not the canonical admitted Project account', function (): void {
@@ -122,58 +144,74 @@ it('refuses a production account that is not the canonical admitted Project acco
     $instance->update(['production_user' => 'foreign-account', 'production_home' => '/home/foreign-account']);
     expect(fn () => app(StartInstanceDeployAction::class)->execute($instance, 'operator', null))->toThrow(ResourceOperationException::class);
     expect(Operation::query()->count())->toBe(0)->and(Process::query()->count())->toBe(0)
-        ->and(Schedule::query()->count())->toBe(0)->and($instance->refresh()->runtime_definitions_captured_at)->toBeNull();
+        ->and($instance->refresh()->runtime_definitions_captured_at)->toBeNull();
 });
 
-it('refuses private hydration after immutable production ownership changes', function (string $field): void {
+it('refuses to start a run whose deploy step changed after admission', function (): void {
     $instance = production_native_deploy_target();
     $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null);
-    match ($field) {
-        'account' => $instance->update(['production_user' => 'foreign']),
-        'home' => $instance->update(['production_home' => '/home/foreign']),
-        'repository' => $instance->project->update(['repository_url' => 'https://example.test/foreign.git']),
-        'node-user' => $instance->node->update(['user' => 'foreign']),
-    };
-    expect(fn () => app(InstanceDeploymentSecrets::class)->resolve($operation, $instance->id, '', 'environment_material'))
-        ->toThrow(ResourceOperationException::class);
-})->with(['account', 'home', 'repository', 'node-user']);
+    store_deploy_steps($instance, [['name' => 'migrate', 'phase' => 'before_activation', 'command' => 'changed', 'timeout_seconds' => 120],
+        ['name' => 'warm', 'phase' => 'after_activation', 'command' => 'php artisan optimize', 'timeout_seconds' => 60]]);
 
-it('records native partial failure and owned member outcomes without runtime revalidation', function (bool $confirmed): void {
+    expect(fn () => app(DirectOperation::class)->workflowInputs($operation->fresh()))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.execution_forbidden'));
+});
+
+it('records a succeeded deploy with its release, commit, selection, owned keys and installed Processes', function (): void {
     $instance = production_native_deploy_target();
-    $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null);
-    $operation->update(['status' => 'running', 'state' => [...$operation->state, 'swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]);
-    $process = Process::query()->sole();
-    $process->update(['runtime_config' => ['command' => ['/usr/bin/false']]]);
-    $selected = ['name' => 'reported-selected', 'commit' => str_repeat('a', 40)];
-    $data = ['run_id' => $operation->state['swamp_run_id'], 'status' => 'failed', 'error_code' => 'deployment.step_failed',
-        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-        'result' => ['release' => $selected, 'selected_release' => $selected, 'selection_confirmed' => $confirmed,
-            'commit' => $selected['commit'], 'failed_step' => 'process_restart',
-            'runtime_definitions' => ['processes' => [['process_id' => $process->id, 'ready' => true]]]]];
-    $projection = app(InstanceDeployProjection::class);
-    $result = $projection->apply($operation, $data);
-    $projection->apply($operation->fresh(), $data);
+    $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null)->fresh();
+    $release = InstanceDeploymentIntent::releaseName($operation);
+    $result = project_production_terminal($operation, 'succeeded', [
+        'Read the release commit' => ['succeeded', str_repeat('c', 40)."\n"], 'Write .env-0' => 'succeeded',
+        'Activate release' => 'succeeded', 'Swap current' => 'succeeded', 'Install Process definitions-0' => 'succeeded',
+        'Find releases in use-0' => 'failed', 'Clean up releases-0' => 'skipped', 'Check the deployment' => 'succeeded']);
 
-    expect($result->status)->toBe(OperationStatus::Failed)->and($result->lock_key)->toBeNull()
-        ->and($instance->refresh()->checkout_path)->toBe($instance->production_home.'/releases/'.($confirmed ? 'reported-selected' : 'previous'))
-        ->and($process->refresh()->status)->toBe(LifecycleStatus::Active)
-        ->and(Schedule::query()->sole()->status)->toBe(LifecycleStatus::Provisioning)
-        ->and(InstanceDeployment::query()->sole()->status)->toBe('failed')
-        ->and(InstanceDeployment::query()->count())->toBe(1)->and(Operation::query()->count())->toBe(1);
-})->with([true, false]);
+    expect($result->status)->toBe(OperationStatus::Succeeded)->and($result->lock_key)->toBeNull()
+        ->and($result->result)->toMatchArray(['release' => $release, 'selected_release' => $release, 'commit' => str_repeat('c', 40), 'failed_step' => null, 'warnings' => 1])
+        ->and(InstanceDeployment::query()->sole()->only(['status', 'release', 'selected_release', 'commit']))
+        ->toBe(['status' => 'succeeded', 'release' => $release, 'selected_release' => $release, 'commit' => str_repeat('c', 40)])
+        ->and($instance->fresh()->checkout_path)->toBe($instance->production_home.'/releases/'.$release)
+        ->and($instance->fresh()->environment_owned_keys)->toBe(['API_TOKEN', 'APP_ENV'])
+        ->and(Process::query()->sole()->status)->toBe(LifecycleStatus::Active);
+});
 
-it('keeps declared private material available after cooperative cancellation while the root remains running', function (): void {
+it('keeps the earlier selection when a before step fails and names that step', function (): void {
     $instance = production_native_deploy_target();
-    $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null);
-    $run = '552822e1-e120-4bd2-a12b-2b57a145f513';
-    $operation->update(['status' => 'running', 'cancel_requested_at' => now(),
-        'state' => [...$operation->state, 'swamp_run_id' => $run]]);
-    $schedule = Schedule::query()->sole();
-    $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip]);
+    $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null)->fresh();
+    $result = project_production_terminal($operation, 'failed', [
+        'Read the release commit' => ['succeeded', str_repeat('c', 40)], 'Write .env-0' => 'succeeded', 'Run before steps-0' => 'failed',
+        'Activate release' => 'skipped', 'Swap current' => 'skipped', 'Check the deployment' => 'skipped']);
 
-    $response = $this->getJson('/api/v1/direct-operations/'.$operation->id.'/private-material?run_id='.$run);
-    expect($response->json('error.code'))->toBeNull($response->json('error.message') ?? '');
-    $response->assertOk()->assertJsonPath('data.definitions_material.schedules.'.$schedule->id.'.command', 'printf private-schedule');
-    expect($operation->fresh()->status)->toBe(OperationStatus::Running)
-        ->and($operation->fresh()->cancel_requested_at)->not->toBeNull();
+    expect($result->status)->toBe(OperationStatus::Failed)->and($result->error_code)->toBe('deployment.step_failed')
+        ->and($result->result)->toMatchArray(['failed_step' => 'before_activation.migrate', 'selected_release' => 'initial'])
+        ->and(InstanceDeployment::query()->sole()->only(['status', 'error_code', 'selected_release']))
+        ->toBe(['status' => 'failed', 'error_code' => 'deployment.step_failed', 'selected_release' => 'initial'])
+        ->and($instance->fresh()->checkout_path)->toBe($instance->production_home.'/releases/previous')
+        ->and(Process::query()->sole()->status)->not->toBe(LifecycleStatus::Active);
+});
+
+it('keeps the new selection when a Process restart fails after activation', function (): void {
+    $instance = production_native_deploy_target();
+    $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null)->fresh();
+    $release = InstanceDeploymentIntent::releaseName($operation);
+    $result = project_production_terminal($operation, 'failed', [
+        'Activate release' => 'succeeded', 'Swap current' => 'succeeded', 'Install Process definitions-0' => 'failed',
+        'Run after steps-0' => 'skipped', 'Check the deployment' => 'skipped']);
+
+    expect($result->error_code)->toBe('process.install_failed')
+        ->and($result->result)->toMatchArray(['failed_step' => 'Install Process definitions', 'selected_release' => $release])
+        ->and($instance->fresh()->checkout_path)->toBe($instance->production_home.'/releases/'.$release)
+        ->and(Process::query()->sole()->only(['status', 'error_code']))->toBe(['status' => LifecycleStatus::Failed, 'error_code' => 'process.install_failed']);
+});
+
+it('removes only the releases a successful deploy no longer keeps', function (): void {
+    $instance = production_native_deploy_target();
+    foreach (['r1', 'r2', 'r3'] as $release) {
+        InstanceDeployment::query()->create(['instance_id' => $instance->id, 'kind' => 'deploy', 'branch' => 'main', 'release' => $release,
+            'selected_release' => $release, 'commit' => str_repeat('a', 40), 'status' => 'succeeded', 'triggered_by' => 'operator',
+            'started_at' => now(), 'finished_at' => now()]);
+    }
+
+    expect(RecordedReleases::of($instance))->toHaveKeys(['r1', 'r2', 'r3'])
+        ->and(RecordedReleases::afterDeploy($instance, 'r4'))->toBe(['previous' => 'r3', 'remove' => ['r1']]);
 });

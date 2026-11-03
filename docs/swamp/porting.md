@@ -150,11 +150,10 @@ Count the native steps of a typical run against the legacy calls, where a call i
 
 ## Run on the swamp workers
 
-Orbit runs Swamp on one Node, 209. A ported step runs on the swamp workers (`labels: {role: swamp}`) and reaches its target over SSH. The workflows below still place steps on the target Node's own worker with `labels: {node: ...}`. That worker stays enrolled until its port moves these steps, so `orbit-node-4`, `orbit-node-12` and `orbit-node-14` cannot retire yet. The deploy and Node lifecycle ports own them; each port moves its rows and deletes them here.
+Orbit runs Swamp on one Node, 209. A ported step runs on the swamp workers (`labels: {role: swamp}`) and reaches its target over SSH. The workflows below still place steps on the target Node's own worker with `labels: {node: ...}`. That worker stays enrolled until its port moves these steps, so `orbit-node-4`, `orbit-node-12` and `orbit-node-14` cannot retire yet. The Node lifecycle ports own them; each port moves its rows and deletes them here.
 
 | Workflow | Node-placed steps |
 | --- | --- |
-| `operation-instance-deploy-direct` | 3: `@nckrtl/instance-deploy-direct` prepare, finish and failure |
 | `operation-node-role-add-direct`, `-relocate-direct`, `-remove-direct` | 193: node role add, removal, metrics, publication and certificate steps |
 | `operation-node-bootstrap-host`, `-install`, `-probe`, `-verify`, `operation-node-macos-inspect`, `operation-node-prepare-php-packages` | 8: Node bootstrap |
 | `operation-node-wireguard-hub-converge` | 3: `@nckrtl/node-wireguard-direct` |

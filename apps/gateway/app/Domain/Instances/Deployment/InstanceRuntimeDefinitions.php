@@ -21,7 +21,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
-/** DB-only member intent, parent-owned private material and record projection for one native root. */
+/** DB-only member intent, child workflow inputs and record projection for one native root. */
 final readonly class InstanceRuntimeDefinitions
 {
     public function __construct(
@@ -61,29 +61,6 @@ final readonly class InstanceRuntimeDefinitions
 
         return ['processes' => [], 'schedules' => [],
             'restart' => array_values($processes->map(fn (Process $row): array => $this->processInput($row, false))->all())];
-    }
-
-    /** Existing instance.deployment private material; no leaf Operation or new secret source.
-     * @return array{schedules:array<string,array<string,mixed>>}
-     */
-    public function material(Operation $operation): array
-    {
-        $instance = $this->parent($operation);
-        if ($operation->status->terminal()) {
-            throw $this->refused();
-        }
-        $runtime = $this->admitted($operation);
-        $schedules = [];
-        foreach ($runtime['schedules'] as $entry) {
-            $id = ValidatedData::string($entry['id']);
-            $row = $this->schedules($instance)->whereKey($id)->whereNotNull('source_definition_id')->first();
-            if ($row === null || Arr::sortRecursive($this->scheduleInput($instance, $row)) !== Arr::sortRecursive($entry)) {
-                throw $this->refused();
-            }
-            $schedules[$id] = ['command' => $row->command];
-        }
-
-        return ['schedules' => $schedules];
     }
 
     /** @return array{members:list<array<string,mixed>>,execution_secrets:array<string,array{vault:string,key:string}>} */

@@ -30,13 +30,29 @@ final readonly class DevelopmentDeployOutcome
             $payload['failed_step'] = $step;
             $data = [...$data, 'error_code' => self::code($step)];
         }
-        // The steps ran under the Vite+ runtime only when every one of its installs was verified.
-        $verified = array_filter($steps, static fn (string $name): bool => str_starts_with($name, 'dev-vp-verify'), ARRAY_FILTER_USE_KEY);
-        if (is_array($result['vp_runtime'] ?? null) && $verified !== [] && $failed === []) {
-            $payload['vp_environment'] = [...ValidatedData::object($result['vp_runtime']), 'status' => 'active'];
+        $vp = self::vpEnvironment($result);
+        if ($vp !== null) {
+            $payload['vp_environment'] = $vp;
         }
 
         return [$data, $payload];
+    }
+
+    /**
+     * The Vite+ runtime the deploy steps ran under, from the shared Vite+ steps a development and a production deploy
+     * both run: only when every one of its installs was verified and no step failed.
+     *
+     * @param  array<string, mixed>  $result
+     * @return array<string, mixed>|null
+     */
+    public static function vpEnvironment(array $result): ?array
+    {
+        $steps = ValidatedData::object($result['steps'] ?? []);
+        $failed = ValidatedData::stringList(ValidatedData::object($result['summary'] ?? [])['failed_steps'] ?? []);
+        $verified = array_filter($steps, static fn (string $name): bool => str_starts_with($name, 'dev-vp-verify'), ARRAY_FILTER_USE_KEY);
+
+        return is_array($result['vp_runtime'] ?? null) && $verified !== [] && $failed === []
+            ? [...ValidatedData::object($result['vp_runtime']), 'status' => 'active'] : null;
     }
 
     /** A failed SSH step keeps no exit code, so each refusal has its own step. */

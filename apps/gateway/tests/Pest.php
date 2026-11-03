@@ -166,6 +166,8 @@ function deployment_api_fixture(): array
         'branch_override' => 'main',
         'status' => 'source_resolved',
     ]);
+    // A production deploy renders `.env` from the stored environment at admission.
+    $instance->environmentValues()->create(['env_key' => 'APP_ENV', 'env_value' => 'production']);
 
     return [$caller, $owner, $project, $instance->fresh()];
 }

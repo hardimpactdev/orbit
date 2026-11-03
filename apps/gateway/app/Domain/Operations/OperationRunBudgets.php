@@ -35,6 +35,8 @@ final class OperationRunBudgets
      */
     private const array SecondsByKind = [
         'instance.create' => 'run_budget_seconds',
+        // The deploy step timeouts plus 900 s, captured at admission (docs/reference/deployments.md#deploy).
+        'instance.deploy' => 'run_budget_seconds',
         // The Schedule's own timeout plus ScheduleFires::MarginSeconds, recorded at admission or at the fire's start.
         'schedule.run' => 'run_budget_seconds',
         // No successful run yet. Basis: the observed work of op 6592 (root 42a546fd), 2,417 s (prepare 1m57s, forward

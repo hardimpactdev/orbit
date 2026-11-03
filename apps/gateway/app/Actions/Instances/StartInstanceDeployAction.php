@@ -8,14 +8,19 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\DevelopmentDeployInput;
-use App\Domain\Instances\Deployment\InstanceDeploymentEnvironmentMaterial;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
+use App\Domain\Instances\Deployment\InstanceDeploymentRecorder;
 use App\Domain\Instances\Deployment\InstanceRuntimeDefinitions;
+use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
+use App\Domain\Instances\Environment\NativeInstanceEnvironmentSync;
+use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitCommitSha;
 use App\Domain\SourceControl\GitRepositoryIdentity;
-use App\Infrastructure\Nodes\RemotePhpPackageManager;
+use App\Domain\Tools\ToolManagerIntent;
+use App\Domain\Tools\ToolManagerName;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -23,9 +28,11 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Starts the `instance.deploy` operation (docs/reference/deployments.md#the-deploy-operation). It refuses an Instance
- * that cannot be deployed before it records anything; Swamp then executes the recorded intent. A
- * `$commit` pins the deployment to that commit of the branch; without one it deploys the branch's newest commit.
+ * Starts the `instance.deploy` operation (docs/cli/instance/deploy.mmd). It refuses an Instance that cannot be deployed
+ * before it records anything; Swamp then executes the recorded intent. A production deploy holds the Instance, freezes
+ * its Process and Schedule definitions, `.env` plan and PHP service, and records the running deployment, which pauses
+ * automatic deployment at once. A `$commit` pins the deployment to that commit of the branch; without one it deploys
+ * the branch's newest commit.
  */
 final readonly class StartInstanceDeployAction
 {
@@ -33,6 +40,7 @@ final readonly class StartInstanceDeployAction
         private InstanceDeploymentIntent $intent,
         private StartOperationAction $operations,
         private AutomaticDeployPolicyWriter $writer,
+        private InstanceDeploymentRecorder $history,
     ) {}
 
     public function execute(Instance $instance, string $triggeredBy, ?string $requestId, ?string $commit = null, ?int $callerNodeId = null): Operation
@@ -49,31 +57,38 @@ final readonly class StartInstanceDeployAction
             if ($development && $deployment['projection_route_id'] !== null) {
                 throw new ResourceOperationException('deployment.projection_pending', 'The default Route projection must finish before deployment.', 409);
             }
-            $private = ['$secret' => 'instance.deployment', 'id' => $instance->id];
+            $steps = $deployment['steps'];
+            if (! is_array($steps)) {
+                throw new \LogicException('The deployment snapshot lists its steps.');
+            }
+            // The run's budget: the deploy step timeouts plus 900 s (docs/reference/deployments.md#deploy).
             $input = ['instance_id' => $instance->id, 'deployment' => $deployment,
                 'node_id' => $instance->node_id, 'platform' => $instance->node->platform, 'architecture' => $instance->node->architecture,
-                'git_read' => $private, 'vp_materialize' => $private,
-                'environment_material' => $private, 'definitions_material' => $private,
+                'run_budget_seconds' => 900 + array_sum(array_map(static fn (mixed $step): int => ValidatedData::integer(ValidatedData::object($step)['timeout_seconds']), $steps)),
                 ...($commit === null ? [] : ['commit' => $commit])];
             if ($development) {
-                $input = array_diff_key($input, array_flip(['git_read', 'vp_materialize', 'environment_material', 'definitions_material']));
                 $input['development_runtime'] = app(DevelopmentDeployInput::class)->capture($instance, $deployment['needs_vp'] === true);
                 $input['github'] = ['$secret' => 'github.installation', 'id' => $instance->node_id];
-            }
-            if (! $development) {
+            } else {
                 $input['runtime_definitions'] = $members;
-                $input['environment'] = app(InstanceDeploymentEnvironmentMaterial::class)->capture($instance);
-                $input['php_input'] = $deployment['php'] ? [
-                    'packages' => app(RemotePhpPackageManager::class)->packagesOnlyInputForAppProd($instance->node, [ValidatedData::string($deployment['php_version'])]),
-                    'profile' => $deployment['php_profile'], 'runtime' => $deployment['php_runtime'], 'refresh' => $deployment['php_refresh'],
-                ] : null;
+                $input['direct_environment'] = app(NativeInstanceEnvironmentSync::class)->plan(
+                    app(InstanceEnvironmentContextResolver::class)->resolve($instance, requireActiveNode: true, lockRoute: true));
+                $input['php_input'] = $deployment['php'] === true ? ['service' => ProductionPhpRuntimeIdentity::from($instance)->service] : null;
+                $input['vp_setup'] = $deployment['needs_vp'] === true ? app(ToolManagerIntent::class)->nativeInput($instance->node, ToolManagerName::Vp) : null;
             }
             if ($callerNodeId !== null) {
                 $input['caller_node_id'] = $callerNodeId;
             }
+            $operation = $this->operations->execute(OperationKinds::InstanceDeploy, OperationKinds::InstanceTarget, $instance->id, $instance->node_id,
+                $input, $triggeredBy, $requestId, lockKey: $development ? null : OperationStore::lockKey(OperationKinds::InstanceTarget, $instance->id));
+            if ($development || ! $operation->wasRecentlyCreated) {
+                return $operation;
+            }
+            // The running row pauses automatic deployment now, not when the run ends.
+            $row = $this->history->start($instance, $triggeredBy, callerNodeId: $callerNodeId);
+            $operation->forceFill(['state' => [...($operation->state ?? []), 'deployment_id' => $row->id]])->save();
 
-            return $this->operations->execute(OperationKinds::InstanceDeploy, OperationKinds::InstanceTarget, $instance->id,
-                $instance->node_id, $input, $triggeredBy, $requestId);
+            return $operation;
         });
     }
 

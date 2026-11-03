@@ -9,7 +9,12 @@ import sys
 import yaml
 from native_harness import ROOT, NativeTestCase
 
-DEVELOPMENT_JOBS = ('development-source', 'development-checkout', 'dev-vp-capture', 'dev-vp-workspaces', 'dev-vp-install', 'development-steps')
+DEVELOPMENT_JOBS = ('development-source', 'development-checkout', 'production-release', 'dev-vp-capture', 'dev-vp-workspaces', 'dev-vp-install', 'deploy')
+# The empty production keys the Gateway adds to a development run (ProductionDeployInput::placeholder).
+PRODUCTION_PLACEHOLDER = {'production': {'instance_id': 0, 'user': '', 'home': '', 'release': '', 'release_path': '', 'commit': None, 'branch': '', 'credential': '',
+                                         'step_file': '', 'prepare': [], 'links': [], 'grants': [], 'steps': [], 'before': [], 'after': [], 'cleanup': []},
+                          'environment': {'instance_id': 0, 'environment': 'production', 'base': '', 'user': '', 'keys': [], 'owned_keys': [], 'sha256': '', 'testing': None},
+                          'process_members': [], 'runtime_definitions': {'restart': []}, 'php_input': None}
 
 
 class DevelopmentDeployNative(NativeTestCase):
@@ -57,7 +62,7 @@ os.execv(argv[0],argv)
         identity = self.repo / 'identity'
         identity.write_text('synthetic unused identity')
         user = os.environ.get('USER', 'orbit')
-        self.inputs = {'operation_id': 17, 'node_id': 9, 'kind': 'instance.deploy', 'execution_secrets': {}, 'intent': {
+        self.inputs = {'operation_id': 17, 'node_id': 9, 'kind': 'instance.deploy', 'execution_secrets': {}, 'intent': {**PRODUCTION_PLACEHOLDER,
             'instance_id': 4, 'commit': None, 'application': str(self.checkout), 'vp_setup': None, 'account_home': str(self.repo),
             'ssh_execution': {'identity_file': str(identity), 'target': {'name': 'target', 'user': user, 'port': 22, 'host': 'fixture.invalid',
                               'host_keys': ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG']}},
@@ -125,16 +130,13 @@ os.execv(argv[0],argv)
         self.assertEqual(history['status'], 'failed')
         self.assertFalse((self.checkout / '.git/proof-marker').exists())
 
-    def test_a_production_run_skips_every_development_job_with_its_placeholder_keys(self):
-        intent = self.inputs['intent']
-        intent.update(application='', vp_setup=None, ssh_execution={'identity_file': '', 'target': {'name': 'target', 'host': '', 'user': '', 'port': 22, 'host_keys': []}})
-        intent['deployment'].update(variant='production', steps=[{'name': 'migrate', 'phase': 'before_activation', 'required': True,
-                                                                  'timeout_seconds': 5, 'command_digest': '0' * 64}])
-        before = self.git(self.checkout, 'rev-parse', 'HEAD')
+    def test_a_development_run_skips_every_production_step(self):
         history = self.run_workflow()
         self.assertEqual(history['status'], 'succeeded', json.dumps(self.steps)[:2000])
-        self.assertEqual({step['status'] for step in self.steps.values()}, {'skipped'})
-        self.assertEqual(self.git(self.checkout, 'rev-parse', 'HEAD'), before)
+        production = [name for name in self.steps if name in ('Write the release credential', 'Remove the release credential', 'Read the release commit', 'Check for foreign keys',
+                                                               'Activate release', 'Swap current', 'Refresh PHP cache', 'Read current back', 'Check the deployment')]
+        self.assertEqual(len(production), 9)
+        self.assertEqual({self.steps[name]['status'] for name in production}, {'skipped'})
 
     def test_checks_out_when_nothing_needs_cleaning(self):
         (self.checkout / 'packages/old/node_modules/dep.js').unlink()

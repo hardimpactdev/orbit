@@ -21,6 +21,26 @@ final readonly class RecordedReleases
     /** @return array<string, string|null> each retained release name with its commit, when known */
     public static function of(Instance $instance): array
     {
+        return self::walk($instance)[0];
+    }
+
+    /**
+     * What a deploy of `$release` changes when it succeeds: the selection it replaces, and the releases its cleanup
+     * removes because the home no longer keeps them.
+     *
+     * @return array{previous:string, remove:list<string>}
+     */
+    public static function afterDeploy(Instance $instance, string $release): array
+    {
+        [$retained, $selected] = self::walk($instance);
+        $kept = self::succeed([...$retained, $release => null], $selected, $release);
+
+        return ['previous' => $selected, 'remove' => array_values(array_diff(array_keys($retained), array_keys($kept)))];
+    }
+
+    /** @return array{0: array<string, string|null>, 1: string} the retained releases and the selected one */
+    private static function walk(Instance $instance): array
+    {
         $retained = ['initial' => null];
         $selected = 'initial';
         $rows = InstanceDeployment::query()->where('instance_id', $instance->id)->orderBy('id')
@@ -41,15 +61,24 @@ final readonly class RecordedReleases
 
                 continue;
             }
-            $previous = $selected;
+            $retained = self::succeed($retained, $selected, $row->release);
             $selected = $row->release;
-            $others = array_values(array_diff(array_keys($retained), [$selected, $previous]));
-            // `initial` counts as the oldest; later names sort by the creation time they start with.
-            usort($others, static fn (string $a, string $b): int => [$a !== 'initial', $a] <=> [$b !== 'initial', $b]);
-            $keep = [$selected, $previous, ...array_slice($others, -max(0, self::Retained - count(array_unique([$selected, $previous]))))];
-            $retained = array_intersect_key($retained, array_flip($keep));
         }
 
-        return $retained;
+        return [$retained, $selected];
+    }
+
+    /**
+     * @param  array<string, string|null>  $retained
+     * @return array<string, string|null> the releases a successful deploy of `$release` keeps
+     */
+    private static function succeed(array $retained, string $previous, string $release): array
+    {
+        $others = array_values(array_diff(array_keys($retained), [$release, $previous]));
+        // `initial` counts as the oldest; later names sort by the creation time they start with.
+        usort($others, static fn (string $a, string $b): int => [$a !== 'initial', $a] <=> [$b !== 'initial', $b]);
+        $keep = [$release, $previous, ...array_slice($others, -max(0, self::Retained - count(array_unique([$release, $previous]))))];
+
+        return array_intersect_key($retained, array_flip($keep));
     }
 }

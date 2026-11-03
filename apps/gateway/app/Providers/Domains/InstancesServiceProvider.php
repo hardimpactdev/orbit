@@ -7,7 +7,6 @@ namespace App\Providers\Domains;
 use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
 use App\Domain\Instances\Dependencies\SwampDependencyReader;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
-use App\Domain\Instances\Deployment\InstanceDeploymentSecrets;
 use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentRouteProjector;
@@ -89,7 +88,7 @@ final class InstancesServiceProvider extends ServiceProvider
 
     public function register(): void
     {
-        $this->app->tag([NativeInstanceProvisioningSetup::class, InstanceDestroyTeardownSecret::class, InstanceDeploymentSecrets::class], OperationSecretSource::class);
+        $this->app->tag([NativeInstanceProvisioningSetup::class, InstanceDestroyTeardownSecret::class], OperationSecretSource::class);
         $this->app->bind(SwampDependencyReader::class, static fn (): SwampDependencyReader => new WebSocketSwampDependencyReader(
             static fn (int $limit): WebSocketClient => new StreamWebSocketClient($limit, $limit),
             Config::string('swamp.address'), Config::string('swamp.read_token'), Config::string('swamp.ca_path'),

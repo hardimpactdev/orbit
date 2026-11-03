@@ -45,11 +45,7 @@ function native_deploy_projection_fixture(TestCase $test, bool $production = fal
     $test->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip]);
     $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance',
         'target_id' => $instance->id, 'node_id' => $instance->node_id, 'status' => OperationStatus::Queued,
-        'input' => ['platform' => 'linux', 'architecture' => 'x86_64', 'instance_id' => $instance->id, 'development' => ! $production, 'deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance),
-            'git_read' => ['$secret' => 'instance.deployment', 'id' => $instance->id],
-            'vp_materialize' => ['$secret' => 'instance.deployment', 'id' => $instance->id],
-            'environment_material' => ['$secret' => 'instance.deployment', 'id' => $instance->id],
-            'definitions_material' => ['$secret' => 'instance.deployment', 'id' => $instance->id]],
+        'input' => ['platform' => 'linux', 'architecture' => 'x86_64', 'instance_id' => $instance->id, 'development' => ! $production, 'deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance)],
         'state' => ['instance_deploy_writer' => 'direct', 'swamp_run_id' => '402775cd-6ab4-46d1-a92e-f84ae368fe62']]);
     if (! $production) {
         $operation->update(['input' => [...$operation->input, 'development_runtime' => app(DevelopmentDeployInput::class)->capture($instance, $vp)]]);
@@ -80,7 +76,7 @@ function project_development_terminal(Operation $operation, string $status, ?str
         // A failed SSH step keeps no outputs on e459.
         $failed === null ? null : ['name' => $failed, 'status' => 'failed', 'outputs' => $stdout === '' ? null : ['stdout' => $stdout]],
     ]))],
-        ['name' => 'development-steps', 'steps' => [
+        ['name' => 'deploy', 'steps' => [
             ['name' => 'Read the checkout commit', 'status' => $end, 'outputs' => ['stdout' => str_repeat('a', 40)."\n", 'exitCode' => 0]],
             ['name' => 'Check the checkout', 'status' => $end, 'outputs' => []],
         ]]];
@@ -158,15 +154,6 @@ it('maps the first failed development step to its documented code', function (st
     ['Run the deploy steps-2', 1, 'deployment.step_failed'],
     ['Check the checkout', 1, 'deployment.branch_changed'],
 ]);
-
-it('leaves a production deploy held when the native root terminates before its callback', function (): void {
-    [$instance, $operation] = native_deploy_projection_fixture($this, production: true);
-    $operation->update(['status' => OperationStatus::Running, 'lock_key' => 'instance:'.$instance->id]);
-    [$result, $socket] = project_development_terminal($operation, 'succeeded');
-    expect(app(DirectOperation::class)->usesNativeTerminal($operation))->toBeFalse()
-        ->and($socket->sent)->toBeEmpty()->and($result->status)->toBe(OperationStatus::Running)
-        ->and($result->lock_key)->toBe('instance:'.$instance->id)->and(InstanceDeployment::query()->count())->toBe(0);
-});
 
 it('admits the real dev writer with only a native start and no Gateway step execution', function (): void {
     $instance = dev935_instance();
@@ -322,16 +309,6 @@ it('admits an automatic dev commit once and dispatches the direct root', functio
         ->and($operation->input['commit'])->toBe($body['commit'])
         ->and(Operation::query()->count())->toBe(1)
         ->and(collect($socket->sent)->firstWhere('type', 'workflow.run')['payload']['workflowIdOrName'])->toBe('operation-instance-deploy-direct');
-});
-
-it('records production Vite references against the native prepared release', function (): void {
-    [$instance, $operation, $path, $body, $payload] = native_deploy_projection_fixture($this, production: true);
-    $runtime = ['store' => '/opt/orbit/vite-plus', 'vp_version' => '1.4.0', 'node_version' => '24.22.0',
-        'package_manager' => 'npm', 'package_manager_version' => '11.12.0', 'package_manager_hash' => null, 'status' => 'checking'];
-
-    $this->postJson($path.'/result', [...$body, 'result' => ['release' => $payload['release'], 'vp_environment' => $runtime]])->assertOk();
-    expect($instance->fresh()->vp_environment['checkout_path'])->toBe($instance->production_home.'/releases/'.$payload['release']['name'])
-        ->and($operation->fresh()->status)->toBe(OperationStatus::Running);
 });
 
 it('copies each exact admitted command privately and refuses changed Project commands', function (): void {

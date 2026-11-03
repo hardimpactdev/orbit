@@ -105,6 +105,8 @@ final readonly class Orb220DeploymentApiFixture
             'status' => 'active',
         ]);
         $instance->update(ProductionPhpRuntimeIdentity::forProvisioning($instance, '8.5')->attributes());
+        // A production deploy renders `.env` from the stored environment at admission.
+        $instance->environmentValues()->create(['env_key' => 'APP_ENV', 'env_value' => 'production']);
         store_deploy_steps($instance, $steps ?? [
             [
                 'name' => 'prepare',
