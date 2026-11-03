@@ -26,7 +26,8 @@
       "body": {
         "project_id": "${project.id}",
         "node_id": "${node.target}",
-        "name": "r-${proof.run}"
+        "name": "r-${proof.run}",
+        "branch": "13.x"
       }
     },
     {
