@@ -277,10 +277,15 @@ Deno.test("start-commit preparation failures refuse the check", async () => {
         );
     }
     assertEquals(
-        await localResult(intent, {
-            valid: false,
-            error_code: "tasks.deliverable_invalid",
-        }, {}, outputs()),
+        await localResult(
+            intent,
+            {
+                valid: false,
+                error_code: "tasks.deliverable_invalid",
+            },
+            {},
+            outputs(),
+        ),
         { error_code: "tasks.deliverable_invalid", check_id: 5 },
     );
 });
@@ -586,4 +591,21 @@ Deno.test("handoff admission maps the mint, push and import outputs to one publi
         finish(args(shell(1, "", "fatal: unable to access"))).result.error_code,
         "tasks.push_failed",
     );
+});
+
+Deno.test("a mutating check cannot create a candidate", async () => {
+    const value = await localResult(
+        { ...input, command: "printf moved > code" },
+        valid,
+        {
+            ...snapshots(),
+            "snapshot-after-tree": ran(0, "b".repeat(40) + "\n"),
+            project: ran(0),
+        },
+        outputs({ project: "" }),
+    );
+    if (!("outcome" in value)) throw new Error("Expected local check evidence");
+    assertEquals(value.outcome, "changed");
+    assertEquals(value.commit, null);
+    assertEquals(candidateResult(input, value, {}).commit, null);
 });
