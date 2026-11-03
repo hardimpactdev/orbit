@@ -59,6 +59,9 @@ it('admits a complete public role intent and a names-only password execution cop
     expect($input['execution_secrets']['password'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'metrics-role-operation-'.$op->id]);
     expect(json_encode([$op->toArray(), $input]))->not->toContain('fixture-grafana-private-value', 'PRIVATE KEY');
     expect($op->input['caddy']['caddy']['content'] ?? json_encode($op->input['caddy']))->toContain('metrics.orbit');
+    // The Gateway renders the container plan; the workflows apply it with official behaviors only.
+    expect(array_column($input['intent']['plan']['services'], 'name'))->toBe(['orbit-metrics-prometheus', 'orbit-metrics-grafana'])
+        ->and($input['intent']['plan']['services'][1]['argv'])->toContain('GF_SERVER_HTTP_ADDR='.$this->target->wireguard_ip);
     expect(NodeRole::query()->where('role', RoleName::Metrics)->sole()->status->value)->toBe('provisioning');
     Http::assertNothingSent();
 });

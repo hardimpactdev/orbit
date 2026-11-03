@@ -304,21 +304,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/integrations/metrics_runtime_actions.ts",
-      "rule": "custom-control",
-      "count": 3,
-      "evidence": [
-        "setTimeout",
-        "sleep"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/integrations/metrics_runtime_actions.ts",
-      "rule": "inline-script",
-      "count": 55,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/integrations/metrics_system.ts",
       "rule": "multi-action",
       "count": 4,
@@ -443,20 +428,6 @@
       "evidence": [
         "<unknown> <unknown>"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/role_metrics.ts",
-      "rule": "gateway-http",
-      "count": 4,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/role_metrics.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/php/build_program.ts",

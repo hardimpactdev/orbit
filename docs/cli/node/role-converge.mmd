@@ -53,6 +53,7 @@ sequenceDiagram
   %%> - starts one Swamp run on serve (Node 209)
   %%> Inputs:
   %%> - the role plan with its files and digests, and the vault key names of the role credentials
+  %%> - for the `metrics` role, the Prometheus and Grafana container specifications and their systemd units
   %%> - Node 12's and the Metrics Node's addresses and SSH host keys; the SSH identity comes from the `swamp` role
   GW-->>CLI: 202 Accepted<br/>task #5171
   %%> What you get:
@@ -149,9 +150,6 @@ sequenceDiagram
   end
   opt role plan needs this action
   SW->>N: Start Reverb<br/>cfgmgmt systemd
-  end
-  opt role plan needs this action
-  SW->>SW: Plan Metrics containers<br/>public resource plan
   end
   opt role plan needs this action
   SW->>N: Pull Metrics images<br/>cfgmgmt docker_image
