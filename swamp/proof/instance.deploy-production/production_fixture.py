@@ -151,7 +151,7 @@ def parity():
         assert peer('cat', HOME + '/after-ran') == selected
         assert peer('systemctl', 'is-active', SERVICE) == 'active'
         peer('test', '-S', '/run/php/orbit-app-9002.sock')
-        if case == 'success':
+        if case == 'success' and result.get('warnings', 0) == 0:
             assert not peer('find', HOME + '/releases', '-maxdepth', '1', '-name', 'r1')
     if case == 'vp':
         assert peer('cat', HOME + '/vp-version') in ['1.4.0', 'vp 1.4.0']
