@@ -1,5 +1,3 @@
-node.bootstrap_probe
-node.macos_inspect
 node.worker_known_hosts
 process.install_instance_definitions
 route.withdraw

@@ -57,7 +57,7 @@ After review and fleet agent update, prove each selected Node before announcing 
 
 Unused Gateway-local bootstrap and standalone PHP-package writer scaffolds are removed. `node:add` admits its native enrollment Operation through the public API.
 
-Standalone `node.macos_inspect` runs on 209 with the admitted SSH host keys and an execution-copy bootstrap key. It reads only platform, architecture and interface addresses, then uses a native assert. It checks or installs no agent, account, package or runtime on the Mac.
+`node:add` inspects the Mac tunnel inside its own enrollment workflow on 209, using the admitted SSH host keys and an execution-copy bootstrap key. It checks no agent, account, package or runtime ownership on the Mac.
 
 ## Add a Node
 
@@ -776,7 +776,7 @@ Gateway-owned runner records and their credential flow remain in progress in [AD
 
 ### Pinned bootstrap transport
 
-The Node enrollment workflow uses `bootstrap-ssh` before its WireGuard address is available. `node.bootstrap_probe` proves the admitted host fingerprint and architecture. `node.bootstrap_install` installs the admitted agent pin only after that probe succeeds. Host, port, login and host fingerprint come from the Operation input. The worker cannot select a connection or credential. The Gateway resolves the existing SSH identity through a protected reference and refuses a different observed fingerprint before running a command. Receipt reads reuse that identity without creating or rotating credentials. These child primitives do not change the retained synchronous enrollment callers.
+The Node enrollment workflow uses `bootstrap-ssh` before its WireGuard address is available. `node:add` proves the admitted host fingerprint and architecture inside its own enrollment workflow. `node.bootstrap_install` installs the admitted agent pin only after that probe succeeds. Host, port, login and host fingerprint come from the Operation input. The worker cannot select a connection or credential. The Gateway resolves the existing SSH identity through a protected reference and refuses a different observed fingerprint before running a command. Receipt reads reuse that identity without creating or rotating credentials. These child primitives do not change the retained synchronous enrollment callers.
 
 
 ### Node lifecycle children

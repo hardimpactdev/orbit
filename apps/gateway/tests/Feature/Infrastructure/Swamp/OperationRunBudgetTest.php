@@ -6,6 +6,7 @@ use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Operations\ReadOperationAction;
 use App\Data\Operations\OperationData;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -23,6 +24,7 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Http;
 use Psr\Log\NullLogger;
+use Tests\Support\FakeDirectOperationProjection;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\FakeSwampEventSocket;
 
@@ -39,6 +41,17 @@ function budgetOperation(string $kind = 'instance.create', array $attributes = [
 }
 
 beforeEach(function (): void {
+    app()->instance(DirectOperation::class, new DirectOperation([...app()->tagged(DirectOperationContribution::class), new class implements DirectOperationContribution
+    {
+        public function definitions(): array
+        {
+            return ['test.terminal_read' => [
+                'workflow' => 'operation-test-terminal-read',
+                'projection' => FakeDirectOperationProjection::class,
+                'terminal_result' => ['job' => 'bootstrap', 'step' => 'probe-host'],
+            ]];
+        }
+    }]));
     $this->freezeSecond();
     Http::preventStrayRequests();
 });
@@ -229,7 +242,7 @@ it('uses sixty seconds for a create without a captured phase plan', function ():
 });
 
 it('retains target exclusion until exact native terminal history releases it without reopening timeout', function (string $status): void {
-    $operation = budgetOperation('node.bootstrap_probe');
+    $operation = budgetOperation('test.terminal_read');
     $this->travel(1800)->seconds();
     $expired = app(ExpireOperationAction::class)->execute($operation);
     $competing = ['kind' => 'instance.register', 'target_type' => 'node', 'target_id' => $operation->target_id,
@@ -237,7 +250,7 @@ it('retains target exclusion until exact native terminal history releases it wit
     expect(fn () => Operation::query()->create($competing))->toThrow(UniqueConstraintViolationException::class);
     $history = new FakeRoutePublicationSocket;
     $history->reply = static fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => [
-        'id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-node-bootstrap-probe', 'status' => $status,
+        'id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-test-terminal-read', 'status' => $status,
         'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
     ]]]];
     app()->instance(WebSocketClient::class, $history);
@@ -256,8 +269,8 @@ it('retains target exclusion until exact native terminal history releases it wit
 
 it('keeps budget reception live while an uncertain-start history lookup waits on the operations queue', function (): void {
     Bus::fake([RecoverUnboundSwampRun::class]);
-    $operation = budgetOperation('node.bootstrap_probe', ['attempts' => 0, 'state' => [], 'error_code' => 'swamp.start_uncertain']);
-    $operation->update(['state' => ['swamp_start' => ['key' => 'operation:'.$operation->id, 'workflow' => 'operation-node-bootstrap-probe']]]);
+    $operation = budgetOperation('test.terminal_read', ['attempts' => 0, 'state' => [], 'error_code' => 'swamp.start_uncertain']);
+    $operation->update(['state' => ['swamp_start' => ['key' => 'operation:'.$operation->id, 'workflow' => 'operation-test-terminal-read']]]);
     $history = new FakeSwampEventSocket;
     $history->onConnect = static function (): void {
         throw new RuntimeException('The observer must not read history.');
@@ -279,13 +292,13 @@ it('keeps budget reception live while an uncertain-start history lookup waits on
 it('keeps the timed out root attached until a verified native terminal receipt releases its hold', function (): void {
     config(['queue.connections.gateway.driver' => 'sync', 'swamp.run_token' => 'fixture.run',
         'swamp.read_token' => 'fixture.read', 'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/ca.pem']);
-    $operation = budgetOperation('node.bootstrap_probe');
+    $operation = budgetOperation('test.terminal_read');
     $events = new FakeSwampEventSocket;
     $history = new FakeRoutePublicationSocket;
     $nativeStatus = 'running';
     $history->reply = static function (array $request) use ($operation, &$nativeStatus): array {
         return [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => [
-            'id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-node-bootstrap-probe', 'status' => $nativeStatus,
+            'id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-test-terminal-read', 'status' => $nativeStatus,
             'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
         ]]]];
     };
@@ -300,7 +313,7 @@ it('keeps the timed out root attached until a verified native terminal receipt r
     expect($operation->fresh()->lock_key)->not->toBeNull();
     $nativeStatus = 'cancelled';
     $events->push(['type' => 'event', 'id' => $request['id'], 'event' => ['seq' => 5, 'kind' => 'completed', 'run' => [
-        'id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-node-bootstrap-probe', 'status' => 'cancelled',
+        'id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-test-terminal-read', 'status' => 'cancelled',
     ]]]);
 
     $subscriber->pass();
@@ -375,12 +388,12 @@ it('budgets only registered direct-operation kinds', function (): void {
 
 it('lets an on time native terminal win a late projection in one history read', function (string $status, int $seconds): void {
     config(['swamp.read_token' => 'fixture.read', 'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/ca.pem']);
-    $operation = budgetOperation('node.bootstrap_probe');
+    $operation = budgetOperation('test.terminal_read');
     $started = now()->toISOString();
     $completed = now()->addSeconds($seconds)->toISOString();
     $history = new FakeRoutePublicationSocket;
     $history->reply = static fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => [
-        'id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-node-bootstrap-probe', 'status' => $status,
+        'id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-test-terminal-read', 'status' => $status,
         'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
         'startedAt' => $started, 'completedAt' => $completed,
         'jobs' => [['name' => 'bootstrap', 'steps' => [['name' => 'probe-host', 'outputs' => ['exitCode' => 0,
@@ -400,16 +413,16 @@ it('lets an on time native terminal win a late projection in one history read', 
 
 it('settles a timed out unbound hold only after the exact native lookup proves absence', function (string $outcome): void {
     config(['swamp.read_token' => 'fixture.read', 'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/ca.pem']);
-    $operation = budgetOperation('node.bootstrap_probe', ['state' => [], 'attempts' => 0]);
+    $operation = budgetOperation('test.terminal_read', ['state' => [], 'attempts' => 0]);
     $run = 'a075eb23-7ac4-4487-80d1-57a038a92676';
     if (in_array($outcome, ['stale workflow', 'stale key'], true)) {
         $operation->update(['state' => ['swamp_start' => ['key' => $outcome === 'stale key' ? 'operation:another' : 'operation:'.$operation->id,
-            'workflow' => $outcome === 'stale workflow' ? 'operation-old-workflow' : 'operation-node-bootstrap-probe']]]);
+            'workflow' => $outcome === 'stale workflow' ? 'operation-old-workflow' : 'operation-test-terminal-read']]]);
     }
     $this->travel(600)->seconds();
     app(ExpireOperationAction::class)->execute($operation);
     expect($operation->fresh()->lock_key)->not->toBeNull();
-    $candidate = ['runId' => $run, 'workflowName' => 'operation-node-bootstrap-probe',
+    $candidate = ['runId' => $run, 'workflowName' => 'operation-test-terminal-read',
         'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
         'tags' => ['orbit_start_key' => 'operation:'.$operation->id]];
     if ($outcome === 'mismatch') {
@@ -499,7 +512,7 @@ it('projects queued or simultaneous terminal notices once after the deadline wit
     expect($history->sent)->toHaveCount(1);
     Http::assertNothingSent();
     expect(Activity::query()->where('command', 'instance:failure-alert')->exists())->toBeFalse();
-})->with([[true, 'node.bootstrap_probe'], [false, 'node.bootstrap_probe'], [true, 'instance.create']]);
+})->with([[true, 'test.terminal_read'], [false, 'test.terminal_read'], [true, 'instance.create']]);
 
 it('uses own history or thirty minutes for kinds without an explicit measured budget', function (string $kind): void {
     $operation = budgetOperation($kind, ['input' => []]);

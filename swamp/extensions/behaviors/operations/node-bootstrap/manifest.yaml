@@ -3,8 +3,6 @@ name: '@nckrtl/node-bootstrap-probe'
 version: 2026.11.02.2
 visibility: private
 license: MIT
-description: Public observation decoders for official SSH bootstrap and Mac inspection.
+description: Public Tool setup asset inputs for Node enrollment.
 behaviors:
-  - operations/node-bootstrap/probe_result.ts
-  - operations/node-bootstrap/macos_result.ts
   - operations/node-bootstrap/tool_setup_assets.ts

@@ -44,30 +44,3 @@ export function bootstrapProbeResult(raw: unknown) {
         }),
     };
 }
-const Result = z.object({ stdout: z.string() });
-/** Translate official SSH observations; no execution, transport or Gateway client. */
-export const behavior = {
-    type: "@nckrtl/node-bootstrap-probe-result",
-    version: "2026.10.31.1",
-    resources: {
-        result: { schema: Result, lifetime: "infinite", garbageCollection: 10 },
-    },
-    methods: {
-        read: {
-            description:
-                "Project official SSH observations into the bootstrap result",
-            arguments: Args,
-            execute: async (args: z.infer<typeof Args>, ctx: {
-                writeResource(
-                    spec: string,
-                    name: string,
-                    value: unknown,
-                ): Promise<unknown>;
-            }) => {
-                const result = bootstrapProbeResult(args);
-                await ctx.writeResource("result", "result", result);
-                return result;
-            },
-        },
-    },
-};

@@ -6,7 +6,6 @@ use App\Actions\Broadcasting\PresenceChannelSigner;
 use App\Domain\AgentView\AgentStateView;
 use App\Domain\AgentView\AgentViewFreshness;
 use App\Domain\Logs\LogStreamBroadcast;
-use App\Domain\Nodes\NodeBootstrapProjection;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Processes\ProcessRuntime;
@@ -30,6 +29,7 @@ use Illuminate\Cache\Repository as CacheRepository;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Bus;
 use Psr\Log\NullLogger;
+use Tests\Support\FakeDirectOperationProjection;
 use Tests\Support\FakeSwampEventSocket;
 
 final class FakeAgentViewSocket implements WebSocketClient
@@ -977,7 +977,7 @@ function registerSubscriberNativeKind(): void
     {
         public function definitions(): array
         {
-            return ['test.observer_record' => ['workflow' => 'operation-observer-record', 'projection' => NodeBootstrapProjection::class,
+            return ['test.observer_record' => ['workflow' => 'operation-observer-record', 'projection' => FakeDirectOperationProjection::class,
                 'terminal_result' => ['job' => 'completion', 'step' => 'result']]];
         }
     }]));

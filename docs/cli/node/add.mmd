@@ -1,8 +1,6 @@
 sequenceDiagram
   %% Target design: ADR 0243/0244 task, DECISIONS R1-R4, single-swamp-node, agent-observer-swamp-acts, root-of-trust-gateway-only, tool.manager_converge removed (shared Tool Manager setup step). docs/reference/node-provisioning.md#add-a-node.
   %% Tightened: flow-tighten 2026-11-02, rules 3, 17, 22 (cfgmgmt apt/user/fetch/file/systemd/authorized_key; Q-WGHUB hub config as file + wg syncconf; DNS record kept: a Node name is not covered by a TLD answer).
-  %% Standalone Mac inspection runs on role=swamp: Read Mac platform, Read Mac addresses, Inspect the Mac, Check the Mac. It checks no agent or runtime ownership.
-  %% Standalone bootstrap probe also runs on role=swamp, using its admitted SSH target and vault identity.
   %% The native parent owns enrollment, role children and the terminal check in one run.
   %% status: migrated
   %% command: node:add

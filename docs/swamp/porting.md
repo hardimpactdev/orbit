@@ -42,7 +42,7 @@ Use these steps in step 4 of the loop.
 
 Replace every `REPLACE_*` token, generate a new workflow UUID, and define the family's public intent schema. This example runs an action group on 209. For an effect on another Node, replace `command/shell` with official `@swamp/ssh` from 209, using the approved identity file and stored full host keys; see [Node execution](/reference/swamp-command-steps#node-execution-through-official-ssh). Use one selector in the effective placement: `target` only, and no `labels` at any inherited scope.
 
-Copy shape from the smallest clean reference that fits. [`firewall.allow`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-firewall-direct.yaml) is one plain Node change. [`route.create`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-route-create.yaml) runs one shipped script per Node in each chart step, with the one signing call to the Gateway. [`schedule.create`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-schedule-create.yaml) uses `@swamp/cfgmgmt` with `forEach`. [`instance.create`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-instance-create.yaml) is the multi-step reference for shipped scripts, guards and a result step; do not copy its step count. The guide's Template section still names `node.bootstrap_probe`, but do not copy its placement; it sets both selectors.
+Copy shape from the smallest clean reference that fits. [`firewall.allow`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-firewall-direct.yaml) is one plain Node change. [`route.create`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-route-create.yaml) runs one shipped script per Node in each chart step, with the one signing call to the Gateway. [`schedule.create`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-schedule-create.yaml) uses `@swamp/cfgmgmt` with `forEach`. [`instance.create`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-instance-create.yaml) is the multi-step reference for shipped scripts, guards and a result step; do not copy its step count. The shape guide records the bootstrap pilot evidence; use a current workflow as the template.
 
 ```yaml
 id: REPLACE_WORKFLOW_UUID
@@ -155,7 +155,7 @@ Orbit runs Swamp on one Node, 209. A ported step runs on the swamp workers (`lab
 | Workflow | Node-placed steps |
 | --- | --- |
 | `operation-node-role-add-direct`, `-relocate-direct`, `-remove-direct` | 193: node role add, removal, metrics, publication and certificate steps |
-| `operation-node-bootstrap-host`, `-install`, `-probe`, `-verify`, `operation-node-macos-inspect`, `operation-node-prepare-php-packages` | 8: Node bootstrap |
+| `operation-node-bootstrap-host`, `-install`, `-verify`, `operation-node-prepare-php-packages` | 8: Node bootstrap |
 | `operation-node-wireguard-hub-converge` | 3: `@nckrtl/node-wireguard-direct` |
 | `operation-conn-direct`, `operation-vault-direct`, `operation-dependency-merge` | 3: one step each |
 
