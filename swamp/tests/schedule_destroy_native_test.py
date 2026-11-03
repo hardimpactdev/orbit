@@ -14,7 +14,7 @@ class ScheduleDestroyNative(create.ScheduleCreateNative):
         super().setUp()
         fixture = self.repo / 'extensions/behaviors/operations/resource_fixture.ts'
         fixture.write_text('''import {z} from "npm:zod@4.4.3";
-export const behavior={type:"@fixture/schedule-resource",version:"2026.11.03.1",globalArguments:z.record(z.string(),z.unknown()),resources:{state:{schema:z.object({status:z.string(),current:z.object({loaded:z.boolean()})}),lifetime:"1d",garbageCollection:10}},methods:Object.fromEntries(["apply","check","exec"].map(method=>[method,{description:"Resource boundary",arguments:z.record(z.string(),z.unknown()),execute:async(args,ctx)=>{const drift=Deno.env.get("ORBIT_SCHEDULE_DRIFT");if(method==="exec"&&args.okExitCodes&&drift==="busy")throw new Error("service active: exit 0 refused");const bad=method==="check"&&((drift==="file"&&ctx.globalArgs.path)||(drift==="timer"&&ctx.globalArgs.service));return {dataHandles:[await ctx.writeResource("state","state",{status:bad?"non_compliant":"compliant",current:{loaded:drift==="loaded"}})]};}}]))};''')
+export const behavior={type:"@fixture/schedule-resource",version:"2026.11.03.1",globalArguments:z.record(z.string(),z.unknown()),resources:{state:{schema:z.object({status:z.string(),current:z.object({loaded:z.boolean()}),stdout:z.string()}),lifetime:"1d",garbageCollection:10}},methods:Object.fromEntries(["apply","check","exec"].map(method=>[method,{description:"Resource boundary",arguments:z.record(z.string(),z.unknown()),execute:async(args,ctx)=>{const drift=Deno.env.get("ORBIT_SCHEDULE_DRIFT");const bad=method==="check"&&((drift==="file"&&ctx.globalArgs.path)||(drift==="timer"&&ctx.globalArgs.service));return {dataHandles:[await ctx.writeResource("state","state",{status:bad?"non_compliant":"compliant",current:{loaded:drift==="loaded"},stdout:drift==="busy"?"active\\n":drift==="transition"?"activating\\n":"inactive\\n"})]};}}]))};''')
         workflow = yaml.safe_load((create.ROOT / 'workflows/workflow-operation-schedule-destroy.yaml').read_text())
         for job in workflow['jobs']:
             job.pop('labels', None)
@@ -31,15 +31,17 @@ export const behavior={type:"@fixture/schedule-resource",version:"2026.11.03.1",
         self.native_env['ORBIT_SCHEDULE_DRIFT'] = drift
         self.inputs['intent']['cascade'] = cascade
         self.cli('workflow', 'validate', 'operation-schedule-destroy')
-        reply = self.cli('workflow', 'run', 'operation-schedule-destroy', '--input', json.dumps(self.inputs), success=not drift or (drift == 'busy' and cascade))
+        reply = self.cli('workflow', 'run', 'operation-schedule-destroy', '--input', json.dumps(self.inputs), success=not drift or (drift in ['busy', 'transition'] and cascade))
         run_id = json.JSONDecoder().raw_decode(reply.stdout.lstrip())[0]['id']
         return json.loads(self.cli('workflow', 'history', 'get', run_id).stdout)
 
     def test_standalone_removal_refuses_a_busy_service_before_mutation(self):
-        history = self.run_removal('busy')
-        steps = {step['name']: step for job in history['jobs'] for step in job['steps']}
-        self.assertEqual(steps['idle']['status'], 'failed')
-        self.assertFalse(any(step['status'] == 'succeeded' for name, step in steps.items() if name != 'idle'))
+        for state in ['busy', 'transition']:
+            history = self.run_removal(state)
+            steps = {step['name']: step for job in history['jobs'] for step in job['steps']}
+            self.assertEqual(steps['idle']['status'], 'succeeded')
+            self.assertEqual(steps['Check the service is idle']['status'], 'failed')
+            self.assertFalse(any(step['status'] == 'succeeded' for name, step in steps.items() if name not in ['idle', 'Check the service is idle']))
 
     def test_standalone_and_cascade_finish_without_a_reporting_shell(self):
         for cascade in [False, True]:

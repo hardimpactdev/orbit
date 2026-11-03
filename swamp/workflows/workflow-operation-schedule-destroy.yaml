@@ -48,12 +48,21 @@ jobs:
           inputs:
             hosts: name:target
             sudo: true
-            okExitCodes: [3, 4]
-            argv: [timeout, '60', systemctl, is-active, --quiet, '${{ "orbit-schedule-" + inputs.intent.schedule.id + ".service" }}']
+            okExitCodes: [0, 3, 4]
+            argv: [timeout, '60', systemctl, is-active, '${{ "orbit-schedule-" + inputs.intent.schedule.id + ".service" }}']
+      - name: Check the service is idle
+        labels: {role: swamp}
+        guard: ${{ inputs.intent.cascade }}
+        dependsOn: [{step: idle, condition: {type: succeeded}}]
+        task:
+          type: assert
+          expr: 'steps.idle.outputs.stdout.trim() in ["inactive", "failed", "unknown"]'
+          message: The Schedule service must be idle before standalone removal.
+          severity: high
       - name: stop_timer
         writes: true
         labels: {role: swamp}
-        dependsOn: [{step: idle, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+        dependsOn: [{step: Check the service is idle, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
         task:
           type: behavior
           behaviorType: '@swamp/cfgmgmt/systemd'

@@ -32,12 +32,15 @@ sequenceDiagram
   %%> - there is no Node work, so no run starts (R1)
   %%> Not refused:
   %%> - a running fire no longer blocks destroy; `schedule.run_active` is gone
-  opt retained Node timer copy
+  alt retained Node timer copy
     GW->>SW: Start one run<br/>operation-schedule-destroy
     opt standalone removal
       SW->>N: idle
       %%> What it does:
-      %%> - one bounded SSH argv checks the service state; an active service refuses removal before mutation
+      %%> - one bounded SSH argv reads the service state
+      Note over SW: Check the service is idle
+      %%> What it does:
+      %%> - native assert accepts inactive, failed or unknown; active and transitional states refuse removal before mutation
     end
     SW->>N: stop_timer
     %%> What it does:
@@ -66,8 +69,8 @@ sequenceDiagram
     Note over GW: Delete the timer copy
     %%> Result:
     %%> - delete only after success; failure keeps the copy recorded as removing
-  end
-  GW->>SW: Remove the trigger<br/>workflow.trigger.remove
+  else a native cron Schedule
+    GW->>SW: Remove the trigger<br/>workflow.trigger.remove
   %%> What it does:
   %%> - removes the cron trigger of `schedule-7f3c…` from serve (Node 209); serve starts no new fire
   %%> - removing a trigger that is gone is safe, so a disabled Schedule takes the same path
@@ -118,4 +121,5 @@ sequenceDiagram
     Note over GW: Record the fire<br/>task #5139 · trigger: schedule
     %%> Result:
     %%> - the fire's task, recorded when it started, gets its result, although the Schedule is gone
+  end
   end
