@@ -6,11 +6,38 @@
   "budget_seconds": 1800,
   "queue_timeout_seconds": 30,
   "before_gateway": [
-    ["apt-get", "update"],
-    ["apt-get", "install", "--yes", "python3-venv"],
-    ["python3", "-m", "venv", "/opt/orbit/ansible/venv"],
-    ["/opt/orbit/ansible/venv/bin/pip", "install", "--disable-pip-version-check", "-r", "swamp/ansible/requirements.txt"],
-    ["/opt/orbit/ansible/venv/bin/ansible-galaxy", "collection", "install", "-r", "swamp/ansible/requirements.yml", "-p", "/opt/orbit/ansible/collections"],
+    [
+      "apt-get",
+      "update"
+    ],
+    [
+      "apt-get",
+      "install",
+      "--yes",
+      "python3-venv"
+    ],
+    [
+      "python3",
+      "-m",
+      "venv",
+      "/opt/orbit/ansible/venv"
+    ],
+    [
+      "/opt/orbit/ansible/venv/bin/pip",
+      "install",
+      "--disable-pip-version-check",
+      "-r",
+      "swamp/ansible/requirements.txt"
+    ],
+    [
+      "/opt/orbit/ansible/venv/bin/ansible-galaxy",
+      "collection",
+      "install",
+      "-r",
+      "swamp/ansible/requirements.yml",
+      "-p",
+      "/opt/orbit/ansible/collections"
+    ],
     [
       "runuser",
       "-u",
@@ -21,7 +48,11 @@
       "${node.gateway}",
       "websocket"
     ],
-    ["systemctl", "stop", "orbit-websocket.service"],
+    [
+      "systemctl",
+      "stop",
+      "orbit-websocket.service"
+    ],
     [
       "runuser",
       "-u",
@@ -32,9 +63,39 @@
       "${node.metrics}",
       "websocket"
     ],
-    ["incus", "file", "push", "/home/orbit/.orbit/ca/root.pem", "metrics/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"],
-    ["ufw", "allow", "in", "on", "oeproof", "proto", "tcp", "from", "10.231.0.11", "to", "10.231.0.1", "port", "443", "comment", "proof-reverb-gateway"],
-    ["incus", "exec", "metrics", "--", "sh", "-c", "sed -i '/gateway\\.orbit/d' /etc/hosts; printf '10.231.0.1 gateway.orbit\\n' >> /etc/hosts; update-ca-certificates"]
+    [
+      "incus",
+      "file",
+      "push",
+      "/home/orbit/.orbit/ca/root.pem",
+      "metrics/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"
+    ],
+    [
+      "ufw",
+      "allow",
+      "in",
+      "on",
+      "oeproof",
+      "proto",
+      "tcp",
+      "from",
+      "10.231.0.11",
+      "to",
+      "10.231.0.1",
+      "port",
+      "443",
+      "comment",
+      "proof-reverb-gateway"
+    ],
+    [
+      "incus",
+      "exec",
+      "metrics",
+      "--",
+      "sh",
+      "-c",
+      "sed -i '/gateway\\.orbit/d' /etc/hosts; printf '10.231.0.1 gateway.orbit\\n' >> /etc/hosts; update-ca-certificates"
+    ]
   ],
   "request": {
     "method": "POST",
@@ -78,5 +139,16 @@
       "budget_seconds": 60
     }
   ],
-  "parity": ["swamp/proof/node.role_add/parity.py", "metrics", "websocket"]
+  "parity": [
+    "swamp/proof/node.role_add/parity.py",
+    "metrics",
+    "websocket"
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "nodes/${node.metrics}/converge",
+      "body": {}
+    }
+  ]
 }

@@ -1,12 +1,6 @@
 ---
 - name: Create the DNS catalog folder
-  ansible.builtin.file:
-    path: /var/lib/orbit/private-dns
-    state: directory
-    owner: root
-    group: root
-    mode: "0755"
-
+  ansible.builtin.file: { path: /var/lib/orbit/private-dns, state: directory, owner: root, group: root, mode: "0755" }
 - name: Publish DNS records
   ansible.builtin.copy:
     dest: /etc/dnsmasq.d/orbit-records.conf
@@ -15,7 +9,6 @@
     group: root
     mode: "0644"
   register: dns_records
-
 - name: Publish the DNS catalog
   ansible.builtin.copy:
     dest: /var/lib/orbit/private-dns/catalog.json
@@ -24,19 +17,9 @@
     group: root
     mode: "0644"
   register: dns_catalog
-
-- name: Validate DNS configuration
-  ansible.builtin.command: /usr/sbin/dnsmasq --test
-  changed_when: false
-
+- { name: Validate DNS configuration, ansible.builtin.command: /usr/sbin/dnsmasq --test, changed_when: false }
 - name: Reload DNS after changes
   when: dns_records is changed or dns_catalog is changed
-  ansible.builtin.systemd:
-    name: dnsmasq
-    state: restarted
-
+  ansible.builtin.systemd: { name: dnsmasq, state: restarted }
 - name: Enable the DNS listener
-  ansible.builtin.systemd:
-    name: orbit-private-dns.socket
-    enabled: true
-    state: started
+  ansible.builtin.systemd: { name: orbit-private-dns.socket, enabled: true, state: started }

@@ -79,3 +79,18 @@ if 'no-drift' in sys.argv[3:]:
     check(bool(recaps), 'Ansible phase recaps were retained')
     check(all(value == '0' for value in recaps), 'the second run changed no Node state: ' + ','.join(recaps))
     print('parity: all Ansible phases changed=0')
+
+# Doctor uses real observer facts after fixture preparation installed the observer.
+from pathlib import Path
+nodes = json.loads(os.environ['PROOF_NODES'])
+doctor = subprocess.run(['runuser', '-u', 'orbit', '--', 'php', 'tools/swamp-proof-guest/gateway.php', 'request'],
+                        input=json.dumps({'method': 'POST', 'path': 'doctor', 'body': {
+                            'node_id': nodes[target]['id'], 'families': ['role']},
+                            'caller': '10.231.0.2', 'key': 'role-doctor-' + os.environ['PROOF_RUN'], 'operation': False}),
+                        capture_output=True, text=True, check=False)
+check(doctor.returncode == 0, 'Doctor request succeeded: ' + doctor.stderr)
+report = json.loads(doctor.stdout.strip().splitlines()[-1])['response']['data']
+check(report['summary']['drift'] == 0 and report['summary']['unverifiable'] == 0,
+      'Doctor reports zero role drift: ' + json.dumps(report['summary']))
+check(not any(Path('/tmp').glob('orbit-ansible-*')), 'the private Ansible run folder was removed')
+print('parity: Doctor role drift=0, unverifiable=0; private inputs removed')

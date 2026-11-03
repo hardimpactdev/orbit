@@ -1,12 +1,11 @@
 ---
 - name: Find PHP-FPM {{ php.version }}
-  ansible.builtin.stat:
-    path: /usr/sbin/php-fpm{{ php.version }}
+  ansible.builtin.stat: { path: "/usr/sbin/php-fpm{{ php.version }}" }
   register: fpm
   failed_when: not fpm.stat.executable | default(false)
 - name: Write the runtime settings
   ansible.builtin.copy:
-    dest: /etc/php/{{ php.version }}/mods-available/orbit-runtime.ini
+    dest: "/etc/php/{{ php.version }}/mods-available/orbit-runtime.ini"
     content: "{{ php.runtime_ini }}"
     owner: root
     group: root
@@ -15,25 +14,22 @@
 - name: Enable the runtime settings
   ansible.builtin.file:
     src: ../../mods-available/orbit-runtime.ini
-    dest: /etc/php/{{ php.version }}/fpm/conf.d/99-orbit-runtime.ini
+    dest: "/etc/php/{{ php.version }}/fpm/conf.d/99-orbit-runtime.ini"
     state: link
     force: true
   register: runtime_link
 - name: Set the stop timeout
   ansible.builtin.lineinfile:
-    path: /etc/php/{{ php.version }}/fpm/php-fpm.conf
+    path: "/etc/php/{{ php.version }}/fpm/php-fpm.conf"
     regexp: ^\s*process_control_timeout\s*=
     line: process_control_timeout = 30s
-    insertafter: ^\[global\]
+    insertafter: "^\\[global\\]"
   register: stop_timeout
-- name: Test PHP-FPM
-  ansible.builtin.command: /usr/sbin/php-fpm{{ php.version }} -t
-  changed_when: false
+- { name: Test PHP-FPM, ansible.builtin.command: "/usr/sbin/php-fpm{{ php.version }} -t", changed_when: false }
 - name: Enable PHP-FPM
-  ansible.builtin.systemd:
-    name: php{{ php.version }}-fpm.service
-    enabled: true
+  ansible.builtin.systemd: { name: "php{{ php.version }}-fpm.service", enabled: true }
+# systemd's module accepts one name; this reload also covers active dedicated FPM masters.
 - name: Reload PHP-FPM # noqa command-instead-of-module no-handler
   when: runtime_ini is changed or runtime_link is changed or stop_timeout is changed
-  ansible.builtin.command: systemctl try-reload-or-restart php{{ php.version }}-fpm.service orbit-*-php{{ php.version }}-fpm.service
+  ansible.builtin.command: "systemctl try-reload-or-restart php{{ php.version }}-fpm.service orbit-*-php{{ php.version }}-fpm.service"
   changed_when: true

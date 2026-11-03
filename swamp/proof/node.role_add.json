@@ -6,11 +6,38 @@
   "budget_seconds": 1800,
   "queue_timeout_seconds": 30,
   "before_gateway": [
-    ["apt-get", "update"],
-    ["apt-get", "install", "--yes", "python3-venv"],
-    ["python3", "-m", "venv", "/opt/orbit/ansible/venv"],
-    ["/opt/orbit/ansible/venv/bin/pip", "install", "--disable-pip-version-check", "-r", "swamp/ansible/requirements.txt"],
-    ["/opt/orbit/ansible/venv/bin/ansible-galaxy", "collection", "install", "-r", "swamp/ansible/requirements.yml", "-p", "/opt/orbit/ansible/collections"],
+    [
+      "apt-get",
+      "update"
+    ],
+    [
+      "apt-get",
+      "install",
+      "--yes",
+      "python3-venv"
+    ],
+    [
+      "python3",
+      "-m",
+      "venv",
+      "/opt/orbit/ansible/venv"
+    ],
+    [
+      "/opt/orbit/ansible/venv/bin/pip",
+      "install",
+      "--disable-pip-version-check",
+      "-r",
+      "swamp/ansible/requirements.txt"
+    ],
+    [
+      "/opt/orbit/ansible/venv/bin/ansible-galaxy",
+      "collection",
+      "install",
+      "-r",
+      "swamp/ansible/requirements.yml",
+      "-p",
+      "/opt/orbit/ansible/collections"
+    ],
     [
       "runuser",
       "-u",
@@ -64,5 +91,16 @@
       "budget_seconds": 60
     }
   ],
-  "parity": ["swamp/proof/node.role_add/parity.py", "peer", "app-dev"]
+  "parity": [
+    "swamp/proof/node.role_add/parity.py",
+    "peer",
+    "app-dev"
+  ],
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "nodes/${node.peer}/converge",
+      "body": {}
+    }
+  ]
 }

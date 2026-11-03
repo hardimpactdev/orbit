@@ -1,68 +1,57 @@
 ---
 - name: Start Incus
-  ansible.builtin.systemd:
-    name: incus.service
-    state: started
-    enabled: true
-
+  ansible.builtin.systemd: { name: incus.service, state: started, enabled: true }
 - name: Read CI collections
   ansible.builtin.command:
     argv: [incus, query, "/1.0/{{ item.collection }}"]
   loop:
-    - { collection: storage-pools, name: "{{ plans.ci.pool }}", create: [storage, create, "{{ plans.ci.pool }}", dir] }
-    - { collection: projects, name: "{{ plans.ci.project }}", create: [project, create, "{{ plans.ci.project }}"] }
-    - { collection: network-acls, name: "{{ plans.ci.acl }}", create: [network, acl, create, "{{ plans.ci.acl }}"] }
+    - collection: storage-pools
+      name: "{{ plans.ci.pool }}"
+      create: [storage, create, "{{ plans.ci.pool }}", dir]
+    - collection: projects
+      name: "{{ plans.ci.project }}"
+      create: [project, create, "{{ plans.ci.project }}"]
+    - collection: network-acls
+      name: "{{ plans.ci.acl }}"
+      create: [network, acl, create, "{{ plans.ci.acl }}"]
     - collection: networks
       name: "{{ plans.ci.network }}"
       create: [network, create, "{{ plans.ci.network }}", --type=bridge, ipv4.address=auto, ipv4.nat=true, ipv6.address=none]
   register: ci_collections
   changed_when: false
-
 - name: Create missing CI resources
-  ansible.builtin.command:
-    argv: "{{ ['incus', '--project', 'default'] + item.item.create }}"
+  ansible.builtin.command: { argv: "{{ ['incus', '--project', 'default'] + item.item.create }}" }
   loop: "{{ ci_collections.results }}"
   when: ('/1.0/' ~ item.item.collection ~ '/' ~ item.item.name) not in item.stdout | from_json
   changed_when: true
-
 - name: Read CI settings
-  ansible.builtin.command:
-    argv: "{{ ['incus', item.scope, 'get', item.name, item.key] }}"
-  loop: >-
-    {{ plans.ci.projectConfig | dict2items | map('combine', {'scope': 'project', 'name': plans.ci.project}) | list
-       + plans.ci.networkConfig | dict2items | map('combine', {'scope': 'network', 'name': plans.ci.network}) | list }}
+  ansible.builtin.command: { argv: "{{ ['incus', item.scope, 'get', item.name, item.key] }}" }
+  loop: "{{ plans.ci.projectConfig | dict2items | map('combine', {'scope': 'project', 'name': plans.ci.project}) | list\n   + plans.ci.networkConfig | dict2items
+    | map('combine', {'scope': 'network', 'name': plans.ci.network}) | list }}"
   register: ci_settings
   changed_when: false
-
 - name: Apply changed CI settings
-  ansible.builtin.command:
-    argv: "{{ ['incus', item.item.scope, 'set', item.item.name, item.item.key, item.item.value] }}"
+  ansible.builtin.command: { argv: "{{ ['incus', item.item.scope, 'set', item.item.name, item.item.key, item.item.value] }}" }
   loop: "{{ ci_settings.results }}"
   when: item.stdout | trim != item.item.value
   changed_when: true
-
 - name: Read the CI profile
   ansible.builtin.command:
     argv: [incus, --project, "{{ plans.ci.project }}", query, /1.0/profiles/default]
   register: ci_profile
   changed_when: false
-
 - name: Apply the CI profile
   ansible.builtin.command:
     argv: [incus, --project, "{{ plans.ci.project }}", profile, edit, default]
     stdin: "{{ plans.ci.profile | to_json }}"
-  when: >-
-    (ci_profile.stdout | from_json).config != plans.ci.profile.config
-    or (ci_profile.stdout | from_json).devices != plans.ci.profile.devices
-    or (ci_profile.stdout | from_json).description != plans.ci.profile.description
+  when: (ci_profile.stdout | from_json).config != plans.ci.profile.config or (ci_profile.stdout | from_json).devices != plans.ci.profile.devices or
+    (ci_profile.stdout | from_json).description != plans.ci.profile.description
   changed_when: true
-
 - name: Read the CI ACL
   ansible.builtin.command:
     argv: [incus, query, "/1.0/network-acls/{{ plans.ci.acl }}"]
   register: ci_acl
   changed_when: false
-
 - name: Apply CI egress rules
   vars:
     desired_acl:
@@ -73,7 +62,5 @@
   ansible.builtin.command:
     argv: [incus, network, acl, edit, "{{ plans.ci.acl }}"]
     stdin: "{{ desired_acl | to_json }}"
-  when: >-
-    (ci_acl.stdout | from_json).egress != plans.ci.egress
-    or (ci_acl.stdout | from_json).ingress != []
+  when: (ci_acl.stdout | from_json).egress != plans.ci.egress or (ci_acl.stdout | from_json).ingress != []
   changed_when: true

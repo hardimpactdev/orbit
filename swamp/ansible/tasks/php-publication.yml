@@ -9,22 +9,15 @@
     validate: "/usr/sbin/php-fpm{{ item.key }} -t -y %s"
   loop: "{{ publication.after.php.configurations | default({}) | dict2items }}"
   register: php_pools
-
 - name: Remove retired PHP pools
-  ansible.builtin.file:
-    path: "/etc/php/{{ item }}/fpm/pool.d/orbit-scopes.conf"
-    state: absent
+  ansible.builtin.file: { path: "/etc/php/{{ item }}/fpm/pool.d/orbit-scopes.conf", state: absent }
   loop: "{{ publication.before.php.configurations | difference(publication.after.php.configurations) }}"
   register: removed_pools
-
 - name: Validate PHP configurations
   ansible.builtin.command: "/usr/sbin/php-fpm{{ item }} -t"
   loop: "{{ (publication.before.php.configurations | list + publication.after.php.configurations | list) | unique }}"
   changed_when: false
-
 - name: Reload changed PHP services
-  ansible.builtin.systemd:
-    name: "php{{ item }}-fpm.service"
-    state: reloaded
+  ansible.builtin.systemd: { name: "php{{ item }}-fpm.service", state: reloaded }
   loop: "{{ (publication.before.php.configurations | list + publication.after.php.configurations | list) | unique }}"
   when: php_pools is changed or removed_pools is changed
