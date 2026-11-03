@@ -132,7 +132,12 @@ final readonly class StartDevelopmentInstanceCreateAction
             // A web-serving Project gets its Route, the derived <name>.<project-slug>.<tld> or --domain. It is reserved
             // before the environment and the Processes are captured, because its domain changes both.
             // An already active Instance runs no phase, so it reserves no Route either.
-            if ($instance->requiresRoute() && ! ($instance->status === InstanceState::Active && ! $instance->first_setup_pending)) {
+            $alreadyActive = $instance->status === InstanceState::Active && ! $instance->first_setup_pending;
+            if (! $alreadyActive) {
+                // Admitted Project facts; the Route site and the Process units render from them before the run.
+                $instance->update(['selected_php_version' => $project->php_version, 'source_is_laravel' => $project->is_laravel === true]);
+            }
+            if ($instance->requiresRoute() && ! $alreadyActive) {
                 $route = app(CreateRouteAction::class)->ensureForInstance($instance, $data->domain);
                 $input = [...$input, 'route_id' => $route->id, 'route_domain' => $route->domain,
                     ...app(NativeRouteAdmission::class)->capture('route.create', $route, ['mode' => 'converge'], $node->id)];
@@ -141,8 +146,6 @@ final readonly class StartDevelopmentInstanceCreateAction
             // An already active Instance runs no phase, so admission records no environment or Process for it.
             $input['environment_keys'] = $input['members'] = [];
             if ($input['direct_provisioning']['already_active'] !== true) {
-                // Admitted Project facts; Process units render from them before the run.
-                $instance->update(['selected_php_version' => $project->php_version, 'source_is_laravel' => $project->is_laravel === true]);
                 app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment($instance);
                 $input['environment_keys'] = app(DevelopmentCreateEnvironment::class)->admit($instance, $project);
                 $input['members'] = app(ProcessInstanceOperation::class)->capture($instance, 'process.install_instance_definitions')['members'];
