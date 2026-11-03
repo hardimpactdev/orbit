@@ -1,7 +1,6 @@
 """Reviewed registration: renamed linked source, opt-in setup/Process/Route, plain record-only adoption."""
 import json
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
