@@ -65,8 +65,9 @@ def serve():
                 data['calls'].append([self.command, path.path])
                 DATA.write_text(json.dumps(data))
                 if self.headers.get('Host') == 'github.com':
-                    expected = 'basic ' + base64.b64encode(('x-access-token:' + data['token']).encode()).decode()
-                    if self.headers.get('Authorization') != expected:
+                    expected = base64.b64encode(('x-access-token:' + data['token']).encode()).decode()
+                    scheme, _, credential = self.headers.get('Authorization', '').partition(' ')
+                    if scheme.lower() != 'basic' or credential != expected:
                         self.send_response(401)
                         self.send_header('WWW-Authenticate', 'Basic realm=proof')
                         self.send_header('Content-Length', '0')
