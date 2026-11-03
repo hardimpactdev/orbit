@@ -13,7 +13,7 @@
       "body": {
         "slug": "proof-route",
         "name": "Proof route",
-        "type": "monorepo",
+        "type": "laravel-app",
         "root": "public",
         "repository_url": "https://github.com/laravel/laravel.git",
         "default_branch": "13.x"

@@ -3,6 +3,7 @@ in native history, and a TLS handshake for the domain."""
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -33,9 +34,16 @@ def check(condition, message):
 
 
 check("PRIVATE KEY-----" not in outputs, "a private key reached native history")
+caddyfile = target("cat", "/etc/caddy/Caddyfile").stdout
 check(
-    f"https://{domain} {{" in target("cat", "/etc/caddy/Caddyfile").stdout,
+    f"https://{domain} {{" in caddyfile,
     "the Caddy site serves the domain",
+)
+roots = re.findall(r"(?m)^\s*root \* (.+)/public\s*$", caddyfile)
+check(bool(roots) and "php_fastcgi" in caddyfile, "the Route serves a PHP application")
+check(
+    any("laravel/framework" in json.loads(target("cat", root + "/composer.json").stdout).get("require", {}) for root in roots),
+    "the Route's checkout is a Laravel application",
 )
 leaves = target(
     "sh", "-c", "ls -d /etc/caddy/orbit-certificates/*/current/cert.pem"
