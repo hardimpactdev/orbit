@@ -102,6 +102,7 @@ def layout(gateway_node):
     repository = shared / 'orbit.git'
     if not repository.exists():
         orbit('git', 'clone', '--quiet', '--bare', str(SOURCE), str(repository))
+    orbit('git', '-C', str(repository), 'fetch', '--quiet', str(SOURCE), staged)
     orbit('git', '-C', str(repository), 'remote', 'set-url', 'origin', 'https://github.com/hardimpactdev/orbit.git')
     # One env file and one storage for the staged checkout and the releases: the fixtures' artisan and FPM agree.
     link(shared / 'gateway.env', SOURCE / 'apps/gateway/.env')
