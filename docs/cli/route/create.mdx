@@ -37,6 +37,12 @@ In a terminal, Orbit lists available Instances for an omitted Instance ID and pr
 
 The app form creates and activates a Route for the Instance. The Instance implies the Project and scope. An inactive Instance returns `route.target_inactive`; an Instance already targeted by another Route returns `route.target_conflict`. An identical retry for an existing active Route returns that Route. With `--web-root`, the Instance keeps its own Route and gets another site. See [Create and change targets](/reference/routes#create-and-change-targets) and [Serve several web roots](/reference/routes#serve-several-web-roots).
 
+Your caller needs access to the target Node. A Cluster-scoped Route needs an active Router; public app publication needs production targets and a serving Ingress. Orbit waits up to 30 seconds for a busy projection lock before returning `app-dev.projection_busy`.
+
+Orbit leaves private certificate keys on each Node and signs their CSRs with the Gateway's CA. The publication installs the certificate and its account copy, trusts the root, writes the PHP pools and Caddyfile, and sets `APP_URL` or the production environment. Private environment values come from the execution vault. Official cfgmgmt resources and pinned SSH commands apply the captured files; Caddy reloads after validation. The TLS probe checks the hostname and trusted chain from 209, without requiring a successful application HTTP response.
+
+A failed validation leaves the candidate Caddyfile and stops the reload. Other changes also stay for convergence; Orbit does not roll them back. Fix the cause and rerun, or use `route:destroy` to remove the retained Route and its files. Follow the returned task with `operation:show` for its failed step and error code.
+
 `--upstream` or `--process` selects the custom proxy form. Its first argument is the domain. Private publication requires `--node`. Public publication requires a numeric `--process`, with optional `--ingress`, without `--node` or `--upstream`. The Process can run on another Node outside the Cluster. See [public Process hostnames](/reference/routes#public-process-hostnames) for listener and firewall requirements.
 
 ## How it works
