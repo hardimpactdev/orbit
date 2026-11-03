@@ -79,3 +79,16 @@ jobs:
         nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
         nodeIdentityFile: '${{ inputs.intent.nodes[string(inputs.node_id)].identity_file }}', become: true}
       inputs: {}
+- name: completion
+  labels: {role: swamp}
+  dependsOn: [{job: check, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+  steps:
+  - name: Check the removal
+    labels: {role: swamp}
+    task:
+      type: assert
+      expr: >-
+        steps.filter(n, n.startsWith("caddyfile-") || n.startsWith("certificates-") || n.startsWith("lan-") || n.startsWith("ingress-")).all(n,
+          steps[n].status == "succeeded" && steps[n].outputs.status == "compliant")
+      message: A Route site, certificate scope or firewall rule remains on the Node.
+      severity: high

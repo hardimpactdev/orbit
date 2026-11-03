@@ -818,3 +818,15 @@ Four minimal@16 receipts are indexed in `swamp/proof/receipts/node-converge-netw
 The first setup exposed eager evaluation of guarded task definitions and a CEL map/null branch-type mismatch. Optional definitions now have safe typed values; DNS policy uses an empty-or-one list. The first hub fixture lacked its protected role's bootstrap DNS binding. It now seeds that binding through the existing Gateway renderer. A generic VPN-role mutation was correctly refused. Independent review found and fixed shared-parent hub reservation and a first-peer reachability assumption; the hub accepts any recorded peer's recent handshake.
 
 The updated local checker accepted the nullable expression that selects a child. Main’s frozen checker rejected it. The Gateway now captures the network mode as a scalar; both current and frozen checkers inspect the literal peer and hub children. The checker changes are removed. All four cases were re-proved at `d89d0a2f96`, with 69 affected Gateway tests and 22 Deno tests passing.
+
+## 2026-11-03: re-prove Route update from released main
+
+The [released-main receipt](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/receipts/route-update-released-rule22.json) proves `route.update` from live release `193a8c4` on minimal@16. The Laravel-app domain change took 42.8 seconds; its full fixture took 106.2 seconds. Signing, TLS and withdrawal passed their 60/30/120-second budgets. This is one sample, with observed p95 42.8 seconds, total budget 1,800 seconds and queue timeout 30 seconds. Parity confirmed the Laravel checkout and PHP block, trusted TLS, withdrawal of the old site and removal of the temporary certificate. Cancellation 9568 destroyed VM 509 at 17:40:27Z. No production Node or scale is exercised.
+
+## 2026-11-03: native Route removal checks compliance
+
+Official cfgmgmt checks can succeed while reporting drift. The removal child now asserts that each expanded file, certificate directory and firewall check is compliant. An empty check set succeeds. The seven parent steps remain unchanged; no wrapper, rollback or shipped script is added. Source removes 66 net lines before evidence.
+
+The [receipt](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/receipts/route-destroy-rule22.json) proves `route.destroy` on minimal@16 with a published Laravel-app Route. The Operation took 14.68 seconds, also the observed p95 for one sample; the fixture took 74.7 seconds. Withdrawal took 8.952 seconds and the end check 3.394 seconds, within 120/60-second phase budgets. Overall budget is 1,800 seconds; queue timeout is 30 seconds. Parity confirmed the site and both certificate copies were removed and Caddy remained valid. Cancellation 9585 destroyed VM 514.
+
+The first topology setup hit a native bundle-loading error in `node.converge`; one restage of the held VM succeeded before the Route proof. No runtime workaround was added. Forty-five Gateway cases, ten retained Deno checks, static, shape, placement, names, registry and docs gates pass. Independent review found no issue. The topology has no public edge, outside-TLD DNS or production scale. Scripts deleted: 0.
