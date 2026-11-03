@@ -31,6 +31,28 @@ export function shellSplit(line: string): string[] {
   return words;
 }
 
+/** Quote words for a POSIX shell the way Python's `shlex.join` does. */
+export function shellJoin(words: string[]): string {
+  return words.map((word) => /^[\w@%+=:,./-]+$/.test(word) ? word : `'${word.replaceAll("'", `'"'"'`)}'`).join(" ");
+}
+
+/** Run argv locally with stdin and pass its output and exit code through. */
+export async function passThrough(argv: string[], stdin: Uint8Array): Promise<never> {
+  const child = new Deno.Command(argv[0], { args: argv.slice(1), stdin: "piped", stdout: "piped", stderr: "piped" })
+    .spawn();
+  const writer = child.stdin.getWriter();
+  await writer.write(stdin);
+  await writer.close();
+  const result = await child.output();
+  await Deno.stdout.write(result.stdout);
+  await Deno.stderr.write(result.stderr);
+  Deno.exit(result.code);
+}
+
+export async function readStdinBytes() {
+  return new Uint8Array(await new Response(Deno.stdin.readable).arrayBuffer());
+}
+
 export async function readStdin() {
   return new TextDecoder().decode(await new Response(Deno.stdin.readable).arrayBuffer());
 }

@@ -13,6 +13,11 @@ type Workflow = {
   [key: string]: unknown;
 };
 export type Run = { id: string; status: string; [key: string]: unknown };
+export type History = {
+  inputs: Record<string, unknown>;
+  jobs: { name: string; steps: { name: string; status: string; outputs?: Record<string, unknown> }[] }[];
+  [key: string]: unknown;
+};
 
 const pinned = (() => {
   const source = Deno.readTextFileSync(`${ROOT}/extensions/behaviors/node-worker/config.ts`);
@@ -232,17 +237,45 @@ export class NativeRepo {
     }).spawn();
   }
 
-  /** Run a workflow and return its run record and step statuses by name. */
+  /** Run a workflow and return its run record, history and step statuses by name. */
   async runWorkflow(name: string, inputs: unknown, options: { success?: boolean } = {}) {
     const run = JSON.parse(
       (await this.cli(["workflow", "run", name, "--input", JSON.stringify(inputs)], options)).stdout,
     ) as Run;
-    const history = JSON.parse((await this.cli(["workflow", "history", "get", run.id])).stdout) as {
-      jobs: { steps: { name: string; status: string }[] }[];
-    };
+    return { run, ...await this.history(run.id) };
+  }
+
+  /** Native history of a run id, or of a workflow name's newest run, with step statuses by name. */
+  async history(runOrWorkflow: string) {
+    const history = JSON.parse((await this.cli(["workflow", "history", "get", runOrWorkflow])).stdout) as History;
     const steps: Record<string, string> = {};
     for (const job of history.jobs) for (const step of job.steps) steps[step.name] = step.status;
-    return { run, steps, history };
+    return { history, steps };
+  }
+
+  /** Replace a workflow with a one-step `command/shell` stub that accepts any input and runs `command`. */
+  async stubWorkflow(name: string, command: string) {
+    await Deno.writeTextFile(
+      `${this.dir}/workflows/workflow-${name}.yaml`,
+      stringify({
+        id: crypto.randomUUID(),
+        name,
+        inputs: { type: "object", additionalProperties: true },
+        jobs: [{
+          name: "fixture",
+          steps: [{
+            name: "result",
+            task: {
+              type: "behavior",
+              behaviorType: "command/shell",
+              behaviorName: '${{ "fixture-"+run.id }}',
+              methodName: "execute",
+              inputs: { run: command },
+            },
+          }],
+        }],
+      }),
+    );
   }
 
   /** Scan outputs and every scratch file, including native history, logs and bundles. */
