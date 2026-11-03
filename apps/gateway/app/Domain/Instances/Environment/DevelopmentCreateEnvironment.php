@@ -41,6 +41,10 @@ final readonly class DevelopmentCreateEnvironment
         $values['APP_NAME'] ??= $project->name;
         $values['APP_ENV'] ??= 'development';
         $values['APP_DEBUG'] ??= 'true';
+        if ($project->is_laravel === true && $this->domain($instance) !== null) {
+            // The Instance's own Route domain, never the template's literal URL of another Instance.
+            $values['APP_URL'] = 'https://{{instance.domain}}';
+        }
         if ($project->is_laravel === true && ($values['APP_KEY'] ?? '') === '') {
             $values['APP_KEY'] = LaravelApplicationKey::generate();
         }
@@ -64,7 +68,7 @@ final readonly class DevelopmentCreateEnvironment
         return new InstanceEnvironmentContext(
             instanceId: $instance->id, projectId: $instance->project_id, nodeId: $instance->node_id, environment: 'development',
             path: $this->directory($instance), executionUser: $instance->node->user, laravel: $instance->project->is_laravel === true,
-            routeId: null, routeDomain: null, nodeStatus: $instance->node->status->value, node: $instance->node,
+            routeId: null, routeDomain: $this->domain($instance), nodeStatus: $instance->node->status->value, node: $instance->node,
         );
     }
 
@@ -75,6 +79,14 @@ final readonly class DevelopmentCreateEnvironment
         $plan = app(InstanceTestEnvironment::class)->plan($instance->id, $this->store->values($instance));
 
         return $plan === null ? null : $this->renderer->render($this->context($instance), $plan->values);
+    }
+
+    /** The domain of the Instance's own Route, which the create reserved before admission. */
+    private function domain(Instance $instance): ?string
+    {
+        $domain = $instance->routes()->whereNull('web_root')->value('domain');
+
+        return is_string($domain) ? $domain : null;
     }
 
     public function directory(Instance $instance): string

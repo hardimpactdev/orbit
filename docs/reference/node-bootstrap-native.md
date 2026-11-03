@@ -2,22 +2,15 @@
 title: "Native Node bootstrap"
 description: "Standalone bootstrap intent, native first contact, candidate accounts, and PHP prerequisites."
 covers:
-  - apps/gateway/app/Actions/Nodes/{AdmitNodeBootstrapAction,AdmitWorkerKnownHostsAction,RecordNodeSshHostKeyAction}.php
+  - apps/gateway/app/Actions/Nodes/{AdmitWorkerKnownHostsAction,RecordNodeSshHostKeyAction}.php
   - swamp/extensions/behaviors/operations/node-bootstrap/**
   - apps/gateway/app/Domain/Nodes/WorkerKnownHosts*.php
   - apps/gateway/app/Infrastructure/Swamp/SwampWorkerKnownHostsInput.php
-  - apps/gateway/app/Domain/Nodes/{NodeBootstrapIntent,NodeBootstrapProjection,bootstrap-direct-operations}.php
 ---
 
 # Native Node bootstrap
 
-The standalone `node.bootstrap_probe` scaffold is removed: `AdmitNodeBootstrapAction` had no production caller for it. `node:add` owns its first-contact probe inside the enrollment workflow. The shared public observation decoder remains because enrollment calls it directly.
-
-The standalone `node.macos_inspect` read retains its admitted public endpoint, host keys, architecture and WireGuard address. Swamp runs official SSH on 209 with the Gateway-owned identity in an execution vault.
-
-### Mac inspection workflow
-
-`Read Mac platform` and `Read Mac addresses` run `uname -sm` and `/sbin/ifconfig` as official SSH argument lists on 209. `Inspect the Mac` shapes these public observations. `Check the Mac` is the native assert. SSH names use the effect Node ID, while the Operation keeps its Gateway identity owner. No script ships or runs on the Mac. Missing stored host keys refuse at admission. Platform, architecture and tunnel refusals keep their `node.*` codes; an SSH failure reports `node.bootstrap_channel_uncertain`.
+The standalone `node.bootstrap_probe` and `node.macos_inspect` scaffolds are removed. `git grep` found no production caller of their admission action. `node:add` owns the probe and Mac tunnel inspection in its enrollment workflow. The shared public probe decoder remains because enrollment calls it directly.
 
 ## Swamp execution copies
 

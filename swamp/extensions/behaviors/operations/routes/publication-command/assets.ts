@@ -135,9 +135,10 @@ export function composePhp(raw: unknown) {
     const value = PhpCompose.parse(raw);
     const { current: _current, account: _account, ...plan } = value;
     const { versions } = planPhp(plan);
+    // The primary gid, as route-create-site writes it into every pool.
     const account = z.object({
         user: Name,
-        group: Name,
+        group: z.string().regex(/^[0-9]{1,10}$/),
         home: z.string().startsWith("/"),
     }).strict().parse(JSON.parse(value.account));
     if (account.user !== value.user) throw new Error("php.account_conflict");

@@ -33,7 +33,7 @@ const php = (text: string) => ({
 const account = JSON.stringify({
     user: "orbit",
     home: "/home/orbit",
-    group: "orbit",
+    group: "1000",
 });
 async function caddy(content: string) {
     return {
@@ -262,7 +262,7 @@ Deno.test("PHP account and version-move policy are checked before any file opera
                 account: JSON.stringify({
                     user: "other",
                     home: "/home/other",
-                    group: "other",
+                    group: "1001",
                 }),
                 current: "{}",
             }),
@@ -285,4 +285,21 @@ Deno.test("empty enrollment PHP snapshots need no account migration or pool effe
 Deno.test("a Node without PHP pools may arrive as an empty JSON list", () => {
     const empty = { account_user: "orbit", configurations: [] };
     assertEquals(planPhp({ ...placement, before: empty, after: empty }).versions, []);
+});
+
+Deno.test("a pool that route-create-site wrote with the account gid withdraws without a revision conflict", () => {
+    const section = "[orbit-app-instance-7]\nuser = orbit\ngroup = __ORBIT_NODE_GROUP__\nchdir = /srv/apps/a\n";
+    const live = "[orbit-app-instance-7]\nuser = orbit\ngroup = 1000\nchdir = /srv/apps/a\n";
+    const { files } = composePhp({
+        ...placement,
+        before: php(section),
+        after: php(""),
+        account,
+        current: JSON.stringify({ "8.4": live }),
+    });
+    assertEquals(files, [{ version: "8.4", path: "/etc/php/8.4/fpm/pool.d/orbit-scopes.conf", content: "", ensure: "absent" }]);
+    assertThrows(
+        () => composePhp({ ...placement, before: php(section), after: php(""), account: JSON.stringify({ user: "orbit", home: "/home/orbit", group: "orbit" }), current: "{}" }),
+        Error,
+    );
 });
