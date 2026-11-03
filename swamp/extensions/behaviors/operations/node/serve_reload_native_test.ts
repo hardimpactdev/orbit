@@ -7,7 +7,7 @@ Deno.test("reload reconciles externally indexed local behavior without a run", a
   repo.env.SWAMP_HOME = `${repo.dir}/home`;
   await Deno.writeTextFile(
     `${repo.dir}/.swamp.yaml`,
-    "swampVersion: 20261031.063736.0-sha.e459d219\nrepoId: 0ef253a3-8e75-4c0e-a680-e31936096a45\ntelemetryDisabled: true\n",
+    "swampVersion: 20261103.000636.0-sha.db3f6373\nrepoId: 0ef253a3-8e75-4c0e-a680-e31936096a45\ntelemetryDisabled: true\n",
   );
   const source = `${repo.dir}/extensions/behaviors/probe.ts`;
   await Deno.mkdir(`${repo.dir}/extensions/behaviors`, { recursive: true });

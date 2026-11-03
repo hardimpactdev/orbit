@@ -115,7 +115,7 @@ jobs:
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         with:
           path: ~/.cache/orbit-shape-runtime
-          key: shape-runtime-${{ runner.os }}-${{ hashFiles('**/extensions/behaviors/node-worker/install.ts') }}
+          key: shape-runtime-${{ runner.os }}-${{ hashFiles('swamp/extensions/behaviors/node-worker/config.ts') }}
       - name: Native workflow validation with dedicated registry-read credentials
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         env:
@@ -175,7 +175,7 @@ jobs:
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         with:
           path: ~/.cache/orbit-shape-runtime
-          key: shape-runtime-${{ runner.os }}-${{ hashFiles('**/extensions/behaviors/node-worker/install.ts') }}
+          key: shape-runtime-${{ runner.os }}-${{ hashFiles('swamp/extensions/behaviors/node-worker/config.ts') }}
       - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         with:
