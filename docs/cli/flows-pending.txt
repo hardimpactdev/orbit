@@ -8,5 +8,4 @@ route.private_dns_publish
 route.public_verify
 route.withdraw
 route.workload_verify
-schedule.install_instance_definitions
 tasks.maintenance_finish

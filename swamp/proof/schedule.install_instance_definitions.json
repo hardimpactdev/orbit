@@ -1,0 +1,13 @@
+{
+  "kind": "schedule.install_instance_definitions",
+  "workflow": "operation-schedule-install-instance-definitions",
+  "topology": "minimal",
+  "clean": true,
+  "budget_seconds": 180,
+  "queue_timeout_seconds": 30,
+  "before_gateway": [["sh", "-c", "cd apps/gateway && php ../../swamp/proof/schedule.install_instance_definitions/prepare.php \"$1\" \"$2\"", "sh", "${node.target}", "${proof.run}"]],
+  "request": {"method": "GET", "path": "operations/${secret.operation}", "body": {}},
+  "expect": {"status": "succeeded"},
+  "phases": [{"name": "members", "job": "install", "step": "members-0", "budget_seconds": 120}, {"name": "check", "job": "instance", "step": "Check the members", "budget_seconds": 10}],
+  "parity": "swamp/proof/schedule.install_instance_definitions/parity.py"
+}

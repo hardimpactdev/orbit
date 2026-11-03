@@ -28,12 +28,13 @@ inputs:
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
-  - name: instance
+  - name: install
     labels: {role: swamp}
     steps:
       - name: members
         labels: {role: swamp}
         forEach: {item: member, in: '${{ inputs.intent.members }}'}
+        concurrency: 1
         task:
           type: workflow
           workflowIdOrName: operation-schedule-create
@@ -43,14 +44,15 @@ jobs:
             kind: schedule.create
             intent: ${{ self.member.intent }}
             execution_secrets: {}
-      - name: result
+  - name: instance
+    labels: {role: swamp}
+    dependsOn: [{job: install, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    steps:
+      - name: Check the members
         labels: {role: swamp}
-        dependsOn: [{step: members, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
         task:
-          type: behavior
-          behaviorType: command/shell
-          behaviorName: '${{ "schedule-def-result" }}'
-          methodName: execute
-          inputs:
-            run: |
-              printf '%s\n' '{"ready":true}'
+          type: assert
+          expr: 'steps.filter(name, name.startsWith("members")).all(name, steps[name].status == "succeeded")'
+          message: A captured Schedule definition did not finish installation.
+          severity: high
+queueTimeout: 30

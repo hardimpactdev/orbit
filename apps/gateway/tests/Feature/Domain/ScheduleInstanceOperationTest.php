@@ -7,6 +7,7 @@ use App\Domain\Schedules\ScheduleInstanceOperation;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -50,7 +51,7 @@ it('supplies public native member intent without command material or callbacks',
         ->and($operation->input)->not->toHaveKey('installations');
     $declaration = app(DirectOperation::class)->definition($operation->kind);
     expect($declaration['workflow_inputs'])->toBeTrue()
-        ->and($declaration['terminal_result'])->toBe(['job' => 'instance', 'step' => 'result'])
+        ->and($declaration['terminal_result'])->toBe(['job' => 'instance', 'step' => 'Check the members', 'native' => true])
         ->and($declaration)->not->toHaveKey('private_material');
 });
 
@@ -81,6 +82,33 @@ it('projects a native member failure while retaining its definition record', fun
         ->and($copy->error_code)->toBe('schedule.artifact_conflict')
         ->and($copy->desired_timer_state->value)->toBe('disabled');
 });
+
+it('reads native member completion once and records only the public readiness', function (string $status): void {
+    $copy = scheduleInstanceCopy($this->instance, 'native-copy');
+    $operation = scheduleInstanceParent($this->instance, $this->runtime->capture($this->instance));
+    $runId = $operation->state['swamp_run_id'];
+    $history = ['id' => $runId, 'workflowName' => 'operation-schedule-install-instance-definitions', 'status' => $status,
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
+        'startedAt' => now()->toISOString(), 'completedAt' => now()->toISOString(),
+        'jobs' => [['name' => 'instance', 'steps' => [
+            ['name' => 'members-0', 'status' => $status],
+            ['name' => 'Check the members', 'status' => $status === 'succeeded' ? 'succeeded' : 'skipped'],
+        ]]]];
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $message): array => [['type' => 'workflow.history.get', 'id' => $message['id'], 'payload' => ['data' => $history]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.read_token' => 'native-reader']);
+    $selector = app(DirectOperation::class)->definition($operation->kind)['terminal_result'];
+
+    app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $runId, 'status' => $status], $selector);
+    app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $runId, 'status' => $status], $selector);
+
+    expect($operation->fresh()->status->value)->toBe($status)
+        ->and($operation->fresh()->result)->toBe($status === 'succeeded' ? ['ready' => true] : ['error_code' => 'operation.native_failed'])
+        ->and($copy->fresh()->status->value)->toBe($status === 'succeeded' ? 'active' : 'failed')
+        ->and($copy->fresh()->desired_timer_state->value)->toBe('disabled')
+        ->and(array_column($socket->sent, 'type'))->toBe(['workflow.history.get']);
+})->with(['succeeded', 'failed']);
 
 /** @param array<string,mixed> $attributes */
 function scheduleInstanceCopy(Instance $instance, string $name, array $attributes = []): Schedule

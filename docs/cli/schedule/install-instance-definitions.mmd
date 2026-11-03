@@ -1,0 +1,44 @@
+sequenceDiagram
+  %% Target design: captured Instance Schedule definitions, flow-tighten rule 14. Native child completion is the installation receipt.
+  %% status: migrated
+  %% kind: schedule.install_instance_definitions
+  autonumber
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Target Node<br/>Instance runtime
+  Note over GW: Capture definitions<br/>Instance 42
+  %%> Requirements:
+  %%> - capture the existing definition copies and their public runtime intent
+  %%> - keep the admitted owner and Node for every member
+  GW->>SW: Start one run<br/>captured members
+  %%> Inputs:
+  %%> - each Schedule UUID, desired state and SSH host pins
+  %%> - no Schedule command or execution credential is copied into the parent
+  loop each captured copy
+    SW->>N: members
+    %%> What it does:
+    %%> - the existing child installs the captured service and timer with official cfgmgmt resources
+    %%> - copies share one Node and converge in sequence; a disabled copy stays stopped
+  end
+  Note over SW: Check the members
+  %%> What it does:
+  %%> - native assert confirms that all expanded member steps succeeded
+  %%> - an empty captured set completes without Node work
+  alt native run succeeded
+    SW-->>GW: Native completion<br/>all members installed
+    %%> Result:
+    %%> - the existing history read confirms the end check; no shell prints a completion marker
+    Note over GW: Record installed copies<br/>keep desired state
+    %%> Result:
+    %%> - mark the captured copies active without enabling a disabled timer
+  else a member failed
+    N--xSW: Native member failure
+    %%> Result:
+    %%> - keep completed Node changes and the captured definition records
+    SW--xGW: Native failed result<br/>failed step and error code
+    %%> Result:
+    %%> - mark the captured copies failed so the owner can investigate and rerun
+  end

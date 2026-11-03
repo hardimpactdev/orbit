@@ -41,6 +41,12 @@ Writes return an Operation. Create, enable and destroy answer with an Operation 
 
 Every command accepts `--json`. Output shows `desired_timer_state` apart from the lifecycle `status`, and every result includes the request ID. `schedule:destroy` asks for confirmation, and the default is No.
 
+## How it works
+
+Instance runtime preparation installs captured Schedule definition copies through one native run. A native end check confirms its member steps. The Gateway records their states from the same terminal history read.
+
+<div className="flow-at" data-chart="schedule/install-instance-definitions"></div>
+
 ## Related
 
 - [`process`](/cli/process) manages long-running services. Process commands do not operate on Schedules.
