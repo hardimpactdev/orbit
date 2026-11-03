@@ -526,3 +526,12 @@ Five passing role fixtures cover AppDev, Database, Reverb, CI and Metrics. The l
 Five native resource tests, 32 updated Gateway contract cases, changed-file Deno checks, PHPStan and workflow validation pass. A wider role suite was compared with unchanged main to separate stale legacy expectations from this change. The role-converge and enrollment drafts remain separate and unproved. Growth replaces the hidden role executor with placed resource steps, typed public renderers and real proof fixtures; its measured breakdown is in `swamp/proof/receipts/node-role-add.json`. This batch deletes no shipped script and retains no script gap.
 
 The first push for role addition failed the shape check under the prior rules: that checker allowed vault content in private file apply but not check. The current checker already treats both methods alike. Regression cases now require whole vault content, mode `0600` and control-worker placement for each method. The forward push verifies both current and prior policy against the landed rule; it changes no workflow or credential authority.
+
+
+## Rule 14: tasks.analyze captures its producer output
+
+The Gateway captures `shape.result_json` directly from its producer in the existing terminal history read; the native outcome assertion still rejects a failed analysis. A failed producer has no captured report and stays failed. The public result, closed error code and exact artifact bytes stay unchanged, including reports larger than the generic native stdout summary.
+
+Minimal@14 proof `tasks.analyze/20261103T014946Z-minimal.json` passed on `ed78065766` in 16.93 seconds (one sample, 20.0 seconds fixture wall time), with a 120-second budget and 30-second queue timeout. The synthetic analyzer's exact report digest and provenance match, the checkout and real index stay unchanged, and temporary output is removed. Four native cases cover report retention, private-output rejection and stale admission; nine Gateway cases cover success, closed failure, absent producer output and a 6,000-byte artifact. No production repository, data or scale was exercised.
+
+The workflow drops from 20 to 19 steps. Separate SSH argv steps for each snapshot and the official copy remain visible; no wrapper behavior combines them. The new command chart replaces its pending entry and accounts for 106 of the 126 net added Orbit lines. Production code drops by 13 lines. Swamp drops by five lines: behaviors zero, workflows minus 19, scripts zero, tests plus three, and proof fixtures plus 11. No shipped script or named gap is added.

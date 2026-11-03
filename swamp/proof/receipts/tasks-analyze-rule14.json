@@ -1,0 +1,17 @@
+{
+  "kind": "tasks.analyze",
+  "rule": 14,
+  "topology": "minimal",
+  "topology_version": 14,
+  "source_commit": "ed7806576600a586d5290021f2a301e6ed1c0ad2",
+  "receipt": "/home/nckrtl/swamp-execution/evidence/proof/tasks.analyze/20261103T014946Z-minimal.json",
+  "proof_pass": true,
+  "operation_seconds": 16.93,
+  "run_seconds": 20.0,
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "swamp_run_id": "9b7e8c9f-4ac8-4f0f-bf83-9a658c9b5d11",
+  "reporting_steps_removed": 1,
+  "scripts_deleted": 0,
+  "limits": "One synthetic repository analyzer on a disposable topology Node stands in for the task VM. No production data or scale; native fixtures also cover stale and private-output failures."
+}

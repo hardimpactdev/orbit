@@ -1,6 +1,6 @@
 ---
 title: Native Cluster Router transitions
-description: How a Router set or unset runs: the charts' steps, whole rendered files, and the Router the Gateway records from the result.
+description: "How a Router set or unset runs: the charts' steps, whole rendered files, and the Router the Gateway records from the result."
 ---
 
 `cluster.router_set` and `cluster.router_unset` follow their charts, [`cluster/router-set.mmd`](/cli/cluster) and [`cluster/router-unset.mmd`](/cli/cluster). Admission captures the candidate, the old Router assignments and every Cluster Route. The Gateway renders the whole files each step writes: each Node's before, prepared and lasting Caddyfile, and the private DNS records. Every step runs on Node 209 through official `@swamp/ssh` and `@swamp/cfgmgmt` behaviors with the stored host keys. Admission reads no Node account and changes no Router.
