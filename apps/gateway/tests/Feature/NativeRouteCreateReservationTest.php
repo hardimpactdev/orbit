@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Actions\Routes\CreateRouteAction;
 use App\Data\Routes\CreateRouteData;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Instances\ProductionWebRootManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Routes\RoutePublication;
@@ -61,7 +60,6 @@ it('reserves an unpublished pending Route and retries only matching immutable cr
 
 it('keeps production web root reservation in the database without host checks or runtime leases', function (): void {
     [$instance] = native_create_instance(true);
-    $this->mock(ProductionWebRootManager::class)->shouldNotReceive('assertServable');
     app()->bind(ProcessRuntimeLease::class, static fn () => throw new RuntimeException('Reservation cannot acquire an execution lease.'));
 
     $result = app(CreateRouteAction::class)->reserveForRouteCreate(new CreateRouteData('docs.private.test', RoutePublication::Private,

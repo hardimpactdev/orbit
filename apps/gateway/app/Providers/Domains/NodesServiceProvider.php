@@ -13,7 +13,6 @@ use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningLock;
 use App\Domain\Nodes\NodeRoleDependencyInspector;
-use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\RoleBaselineConverger;
@@ -27,7 +26,6 @@ use App\Infrastructure\Nodes\EloquentNodeRoleDependencyInspector;
 use App\Infrastructure\Nodes\Metrics\GrafanaPrometheusNodeMetricsReader;
 use App\Infrastructure\Nodes\NativeNodeConverger;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
-use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
 use App\Infrastructure\Nodes\NodeAgentHashSource;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Nodes\NodeLocks;
@@ -52,7 +50,6 @@ final class NodesServiceProvider extends ServiceProvider
         NodeStorageRootPreparer::class => AgentNodeStorageRootPreparer::class,
         NodeMetricsReader::class => GrafanaPrometheusNodeMetricsReader::class,
         NodeRoleDependencyInspector::class => EloquentNodeRoleDependencyInspector::class,
-        NodeRoleDependentCleaner::class => NativeNodeRoleDependentCleaner::class,
         NodeRoleFirewallManager::class => NativeNodeRoleFirewallManager::class,
         RoleBaselineConverger::class => NativeRoleBaselineConverger::class,
         GatewayPrivateDnsRoute::class => GatewayRoleBaseline::class,

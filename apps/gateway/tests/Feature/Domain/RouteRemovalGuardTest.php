@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Actions\Clusters\DestroyClusterAction;
 use App\Actions\Nodes\RemoveNodeAction;
-use App\Actions\Nodes\RemoveNodeRoleAction;
 use App\Actions\Projects\DestroyProjectAction;
 use App\Actions\Routes\CreateRouteAction;
 use App\Actions\Routes\DestroyRouteAction;
@@ -161,45 +160,6 @@ it('refuses owned Instances and member Nodes before Route ownership through remo
         ->toBeNull()
         ->and($this->route->refresh()->status)
         ->toBe(RouteStatus::Active);
-});
-
-it('runs the target-host guard before every app-role removal mode', function (
-    bool $force,
-    bool $purgeData,
-    bool $offline,
-): void {
-    expect(fn () => app(RemoveNodeRoleAction::class)->execute(
-        $this->node,
-        RoleName::AppDev,
-        force: $force,
-        purgeData: $purgeData,
-        offline: $offline,
-    ))
-        ->toThrow(NodeRoleValidationException::class, 'hosts Route targets');
-})->with([
-    'ordinary' => [false, false, false],
-    'force' => [true, false, false],
-    'purge' => [true, true, false],
-    'offline' => [true, true, true],
-]);
-
-it('refuses Ingress removal while public Routes depend on the Cluster', function (): void {
-    $cluster = Cluster::query()->create(['name' => 'ingress-public', 'state' => 'active', 'tld' => null]);
-    $ingress = route_removal_node('ingress');
-    $ingress->update(['cluster_id' => $cluster->id]);
-    $ingress->roles()->create([
-        'cluster_id' => $cluster->id,
-        'role' => RoleName::Ingress,
-        'status' => LifecycleStatus::Active,
-    ]);
-    $this->route->update([
-        'node_id' => null,
-        'cluster_id' => $cluster->id,
-        'publication' => RoutePublication::Public,
-    ]);
-
-    expect(fn () => $this->guard->assertRoleRemovable($ingress, RoleName::Ingress))
-        ->toThrow(NodeRoleValidationException::class, 'public Routes depend');
 });
 
 it('eligible Route removal deletes only owned target rows and releases unrelated resources', function (): void {

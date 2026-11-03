@@ -17,19 +17,13 @@ use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
 use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
 use App\Domain\Instances\Environment\InstanceTestEnvironmentWriter;
-use App\Domain\Instances\InstanceDestinationGuard;
 use App\Domain\Instances\InstanceDestroyTeardownSecret;
 use App\Domain\Instances\InstanceOperationAlerts;
 use App\Domain\Instances\Logs\InstanceLogReader;
 use App\Domain\Instances\NativeInstanceProvisioningSetup;
-use App\Domain\Instances\ProductionInstanceProvisioner;
-use App\Domain\Instances\ProductionInstanceSourceLifecycle;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
-use App\Domain\Instances\ProductionReleaseLayout;
 use App\Domain\Instances\ProductionRepositoryBinding;
-use App\Domain\Instances\ProductionWebRootManager;
 use App\Domain\Instances\Queue\InstanceQueueReader;
-use App\Domain\Instances\Removal\ProductionInstanceSourceRemoval;
 use App\Domain\Instances\RouteApplicationUrlWriter;
 use App\Domain\Operations\OperationSecretSource;
 use App\Infrastructure\AgentView\StreamWebSocketClient;
@@ -38,19 +32,14 @@ use App\Infrastructure\Dependencies\WebSocketSwampDependencyReader;
 use App\Infrastructure\Instances\NativeDevelopmentRouteProjector;
 use App\Infrastructure\Instances\NativeDevelopmentSourceAccess;
 use App\Infrastructure\Instances\NativeInstanceEnvironmentOperationLock;
-use App\Infrastructure\Instances\NativeProductionInstanceProvisioner;
 use App\Infrastructure\Instances\PlacementRouteApplicationUrlWriter;
-use App\Infrastructure\Instances\RecordedProductionInstanceSourceRemoval;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceConfigurator;
-use App\Infrastructure\Instances\RemoteInstanceDestinationGuard;
 use App\Infrastructure\Instances\RemoteInstanceEnvironmentAccess;
 use App\Infrastructure\Instances\RemoteInstanceLogReader;
 use App\Infrastructure\Instances\RemoteInstanceQueueReader;
 use App\Infrastructure\Instances\RemoteProductionDeployment;
-use App\Infrastructure\Instances\RemoteProductionInstanceSourceLifecycle;
 use App\Infrastructure\Instances\RemoteProductionPhpRuntimeManager;
 use App\Infrastructure\Instances\RemoteProductionRepositoryBinding;
-use App\Infrastructure\Instances\RemoteProductionWebRootManager;
 use App\Models\Operation;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
@@ -64,21 +53,15 @@ final class InstancesServiceProvider extends ServiceProvider
 
     /** @var array<class-string, class-string> */
     public array $bindings = [
-        InstanceDestinationGuard::class => RemoteInstanceDestinationGuard::class,
         InstanceEnvironmentWriter::class => RemoteInstanceEnvironmentAccess::class,
         InstanceTestEnvironmentWriter::class => RemoteInstanceEnvironmentAccess::class,
         InstanceOperationPreflight::class => RemoteInstanceEnvironmentAccess::class,
-        ProductionInstanceSourceRemoval::class => RecordedProductionInstanceSourceRemoval::class,
         DevelopmentInstanceConfigurator::class => RemoteDevelopmentInstanceConfigurator::class,
         RouteApplicationUrlWriter::class => PlacementRouteApplicationUrlWriter::class,
-        ProductionWebRootManager::class => RemoteProductionWebRootManager::class,
         ProductionRepositoryBinding::class => RemoteProductionRepositoryBinding::class,
         DevelopmentRouteProjector::class => NativeDevelopmentRouteProjector::class,
         DevelopmentSourceAccess::class => NativeDevelopmentSourceAccess::class,
-        ProductionInstanceProvisioner::class => NativeProductionInstanceProvisioner::class,
         ProductionDeployment::class => RemoteProductionDeployment::class,
-        ProductionInstanceSourceLifecycle::class => RemoteProductionInstanceSourceLifecycle::class,
-        ProductionReleaseLayout::class => RemoteProductionInstanceSourceLifecycle::class,
         ProductionPhpRuntimeManager::class => RemoteProductionPhpRuntimeManager::class,
         InstanceEnvironmentSynchronizer::class => SynchronizeInstanceEnvironmentAction::class,
         InstanceRouteEnvironmentSynchronizer::class => SynchronizeInstanceEnvironmentAction::class,

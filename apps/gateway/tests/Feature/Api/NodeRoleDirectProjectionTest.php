@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\NodeRoleDirectInput;
 use App\Domain\Nodes\NodeRoleDirectProjection;
-use App\Domain\Nodes\NodeRoleIntent;
 use App\Domain\Nodes\RoleName;
 use App\Models\Operation;
 use Tests\Support\Fleet\FleetFixtures;
@@ -19,8 +18,7 @@ beforeEach(function (): void {
     $this->operation = Operation::query()->create(['kind' => 'node.role_add', 'target_type' => 'node', 'target_id' => $this->node->id,
         'node_id' => $this->node->id, 'status' => 'running', 'sequence' => 1,
         'input' => ['node_id' => $this->node->id, 'role' => 'database', '_role' => $this->snapshot],
-        'state' => ['node_role_writer' => 'direct', 'swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
-            'role_intent' => NodeRoleIntent::capture($this->assignment, true)]]);
+        'state' => ['node_role_writer' => 'direct', 'swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]);
     $this->data = ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'status' => 'succeeded', 'error_code' => null,
         'started_at' => '2026-10-31T03:00:00Z', 'finished_at' => '2026-10-31T03:00:01Z',
         'result' => ['role_proven' => true, 'assignment_id' => $this->assignment->id, 'created' => true,

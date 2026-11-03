@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Actions\Instances\RunInstanceSetupAction;
 use App\Actions\Instances\SelectInstanceSeedAction;
 use App\Data\Instances\InstanceData;
 use App\Domain\AppDev\RuntimeConvergenceException;
@@ -146,24 +145,6 @@ it('sends an ordered snapshot of the configured commands', function (): void {
         ->and(array_column($this->transport->inputs, 'command'))->toBe(['printf first > result', 'printf second >> result']);
 });
 
-it('stops after a failed step and preserves the instance on explicit setup', function (): void {
-    $this->transport->result = static fn (): int => 41;
-    $this->transport->stderr = 'secret-output';
-    $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('broken', 'echo secret-output; exit 41'), null, null);
-    $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('later', 'touch later'), null, null);
-    try {
-        app(RunInstanceSetupAction::class)->execute($this->instance);
-        $this->fail('Setup must fail.');
-    } catch (ResourceOperationException $exception) {
-        expect($exception->errorCode)->toBe('instance.setup_step_failed')
-            ->and($exception->details)->toBe(['step' => 'broken', 'outcome' => 'failed'])
-            ->and((string) $exception)->not->toContain('secret-output');
-    }
-    expect(Instance::query()->whereKey($this->instance->id)->exists())->toBeTrue()
-
-        ->and($this->transport->inputs)->toHaveCount(1);
-});
-
 it('reports a teardown step whose command is missing as unavailable', function (): void {
     $this->transport->result = static fn (): int => 127;
     $this->transport->stderr = '/nonexistent/orbit/e2e-task-cleanup: not found';
@@ -228,12 +209,6 @@ it('reports other teardown command failures as failed', function (): void {
             expect($exception->errorCode)->toBe('instance.teardown_step_failed')
                 ->and($exception->details)->toBe(['step' => 'cleanup', 'outcome' => 'failed']);
         });
-});
-
-it('refuses setup for an unfinished instance before executing commands', function (): void {
-    $this->instance->update(['status' => InstanceState::SourceResolved]);
-    expect(fn () => app(RunInstanceSetupAction::class)->execute($this->instance))->toThrow(ResourceOperationException::class)
-        ->and($this->transport->inputs)->toBeEmpty();
 });
 
 it('does not mistake transport loss for a confirmed command failure', function (): void {

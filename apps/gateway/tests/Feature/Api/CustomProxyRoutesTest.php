@@ -18,7 +18,6 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Processes\ProcessTargetType;
-use App\Domain\Routes\CustomProxyRouteProjector;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RoutePublication;
@@ -39,7 +38,6 @@ use App\Models\Route;
 use App\Models\RouteCustomProxy;
 use App\Models\RouteTarget;
 use Illuminate\Testing\TestResponse;
-use Tests\Support\FakeCustomProxyRouteProjector;
 use Tests\Support\FakePublicRouteEdgeProjector;
 use Tests\Support\FakeRouteRemovalProjector;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
@@ -62,9 +60,7 @@ function customProxyAppRouteFixture(Project $project, Node $node, string $domain
 }
 
 beforeEach(function (): void {
-    $this->projector = new FakeCustomProxyRouteProjector;
     $this->removal = new FakeRouteRemovalProjector;
-    app()->instance(CustomProxyRouteProjector::class, $this->projector);
     app()->instance(RouteRemovalProjector::class, $this->removal);
 
     $this->gateway = Node::query()->create([

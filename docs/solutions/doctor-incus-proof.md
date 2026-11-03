@@ -2,7 +2,6 @@
 title: "Prove the verify-only Doctor on an Incus topology"
 description: "A repeatable way to prove that Doctor reports drift without repairing it, on disposable machines."
 covers:
-  - apps/gateway/app/Infrastructure/Doctor/**
   - apps/e2e/app/Console/Commands/Topology/{Acquire,Exec,Status,Release}Command.php
   - apps/e2e/app/E2E/EvidenceLog.php
 ---
