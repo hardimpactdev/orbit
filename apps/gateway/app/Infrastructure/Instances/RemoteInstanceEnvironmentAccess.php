@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Infrastructure\Instances;
 
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
-use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentValidator;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
@@ -20,27 +19,15 @@ use Throwable;
  * An Instance's `.env` and `.env.testing` through the Node agent's environment commands (docs/reference/environment-variables.md). The agent walks to the checkout or home
  * without following a link, accepts only the Instance user's regular file, and publishes a write with one rename.
  */
-final readonly class RemoteInstanceEnvironmentAccess implements InstanceEnvironmentReader, InstanceEnvironmentWriter, InstanceOperationPreflight, InstanceTestEnvironmentWriter
+final readonly class RemoteInstanceEnvironmentAccess implements InstanceEnvironmentWriter, InstanceOperationPreflight, InstanceTestEnvironmentWriter
 {
     public function __construct(private AgentCommandRunner $agents) {}
-
-    public function assertEnvironmentReadable(InstanceEnvironmentContext $context): void
-    {
-        if (($this->inspect($context, 'read-check')['state'] ?? null) !== 'ok') {
-            $this->failRead();
-        }
-    }
 
     public function assertEnvironmentWritable(InstanceEnvironmentContext $context, int $requiredCapacityBytes): void
     {
         if (($this->inspect($context, 'write-check', $requiredCapacityBytes)['state'] ?? null) !== 'ok') {
             $this->failWritePreflight();
         }
-    }
-
-    public function read(InstanceEnvironmentContext $context): string
-    {
-        return $this->readContents($this->inspect($context, 'read'));
     }
 
     public function readWritableEnvironment(InstanceEnvironmentContext $context, int $requiredCapacityBytes): string

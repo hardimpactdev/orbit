@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
-use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
@@ -34,7 +33,6 @@ beforeEach(function (): void {
     [$this->caller, $this->instance, $this->route] = database_attachment_fixture();
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
     app()->instance(InstanceOperationPreflight::class, new DatabaseAttachmentAccess);
-    app()->instance(InstanceEnvironmentReader::class, new DatabaseAttachmentAccess);
     app()->instance(InstanceEnvironmentWriter::class, new DatabaseAttachmentAccess);
 });
 
@@ -446,14 +444,9 @@ function stored_env(Instance $instance): array
         ->all();
 }
 
-final class DatabaseAttachmentAccess implements InstanceEnvironmentReader, InstanceEnvironmentWriter, InstanceOperationPreflight
+final class DatabaseAttachmentAccess implements InstanceEnvironmentWriter, InstanceOperationPreflight
 {
     use FakesEnvironmentSyncInspection;
-
-    public function assertEnvironmentReadable(InstanceEnvironmentContext $context): void
-    {
-        throw new RuntimeException('Attachment contacted the workload Node.');
-    }
 
     public function assertEnvironmentWritable(
         InstanceEnvironmentContext $context,

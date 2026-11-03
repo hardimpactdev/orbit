@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
-use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
@@ -43,7 +42,6 @@ beforeEach(function (): void {
     [$this->caller, $this->instance, $this->route] = environment_api_fixture();
     $this->access = new EnvironmentApiAccess;
     app()->instance(InstanceOperationPreflight::class, $this->access);
-    app()->instance(InstanceEnvironmentReader::class, $this->access);
     app()->instance(InstanceEnvironmentWriter::class, $this->access);
 });
 
@@ -566,7 +564,7 @@ function ambiguous_environment_target(Node $caller): array
     return [$route->domain];
 }
 
-final class EnvironmentApiAccess implements InstanceEnvironmentReader, InstanceEnvironmentWriter, InstanceOperationPreflight
+final class EnvironmentApiAccess implements InstanceEnvironmentWriter, InstanceOperationPreflight
 {
     use FakesEnvironmentSyncInspection;
 
@@ -601,11 +599,6 @@ final class EnvironmentApiAccess implements InstanceEnvironmentReader, InstanceE
     public function __construct()
     {
         $this->writeResult = InstanceEnvironmentWriteResult::changed();
-    }
-
-    public function assertEnvironmentReadable(InstanceEnvironmentContext $context): void
-    {
-        $this->preflights++;
     }
 
     public function assertEnvironmentWritable(

@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
-use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
@@ -25,7 +24,6 @@ trait ServerDatabaseFixtures
     {
 
         app()->instance(InstanceOperationPreflight::class, new ServerDatabaseEnvironmentAccess);
-        app()->instance(InstanceEnvironmentReader::class, new ServerDatabaseEnvironmentAccess);
         app()->instance(InstanceEnvironmentWriter::class, new ServerDatabaseEnvironmentAccess);
 
         $gateway = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND',
@@ -96,14 +94,9 @@ trait ServerDatabaseFixtures
     }
 }
 
-final class ServerDatabaseEnvironmentAccess implements InstanceEnvironmentReader, InstanceEnvironmentWriter, InstanceOperationPreflight
+final class ServerDatabaseEnvironmentAccess implements InstanceEnvironmentWriter, InstanceOperationPreflight
 {
     use FakesEnvironmentSyncInspection;
-
-    public function assertEnvironmentReadable(InstanceEnvironmentContext $context): void
-    {
-        throw new RuntimeException('Attachment contacted the workload Node.');
-    }
 
     public function assertEnvironmentWritable(InstanceEnvironmentContext $context, int $requiredCapacityBytes): void
     {

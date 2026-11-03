@@ -13,7 +13,6 @@ use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\DevelopmentSourceAccess;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
-use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentSynchronizer;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
@@ -67,7 +66,6 @@ final class InstancesServiceProvider extends ServiceProvider
     /** @var array<class-string, class-string> */
     public array $bindings = [
         InstanceDestinationGuard::class => RemoteInstanceDestinationGuard::class,
-        InstanceEnvironmentReader::class => RemoteInstanceEnvironmentAccess::class,
         InstanceEnvironmentWriter::class => RemoteInstanceEnvironmentAccess::class,
         InstanceTestEnvironmentWriter::class => RemoteInstanceEnvironmentAccess::class,
         InstanceOperationPreflight::class => RemoteInstanceEnvironmentAccess::class,

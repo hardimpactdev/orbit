@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
-use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
@@ -25,7 +24,6 @@ use Tests\Support\FakesEnvironmentSyncInspection;
 beforeEach(function (): void {
     $this->environment = new TestingEnvironmentAccess;
     app()->instance(InstanceOperationPreflight::class, $this->environment);
-    app()->instance(InstanceEnvironmentReader::class, $this->environment);
     app()->instance(InstanceEnvironmentWriter::class, $this->environment);
     app()->instance(InstanceTestEnvironmentWriter::class, $this->environment);
     $operator = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND',
@@ -141,7 +139,7 @@ describe('.env.testing on synchronization', function (): void {
     });
 });
 
-final class TestingEnvironmentAccess implements InstanceEnvironmentReader, InstanceEnvironmentWriter, InstanceOperationPreflight, InstanceTestEnvironmentWriter
+final class TestingEnvironmentAccess implements InstanceEnvironmentWriter, InstanceOperationPreflight, InstanceTestEnvironmentWriter
 {
     use FakesEnvironmentSyncInspection;
 
@@ -159,8 +157,6 @@ final class TestingEnvironmentAccess implements InstanceEnvironmentReader, Insta
     public bool $missing = false;
 
     public string $source = "APP_KEY=base64:kept\nAPP_URL=http://localhost\nDB_CONNECTION=sqlite\n";
-
-    public function assertEnvironmentReadable(InstanceEnvironmentContext $context): void {}
 
     public function assertEnvironmentWritable(InstanceEnvironmentContext $context, int $requiredCapacityBytes): void {}
 

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
-use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
@@ -40,7 +39,6 @@ beforeEach(function (): void {
         public function converge(?Node $pendingNode = null): void {}
     });
     app()->instance(InstanceOperationPreflight::class, new WebSocketAppsEnvironmentAccess);
-    app()->instance(InstanceEnvironmentReader::class, new WebSocketAppsEnvironmentAccess);
     app()->instance(InstanceEnvironmentWriter::class, new WebSocketAppsEnvironmentAccess);
 
     $this->caller = $this->markAsGateway(websocket_apps_node('gateway', '10.44.0.1'));
@@ -325,14 +323,9 @@ function websocket_apps_stored_env(Instance $instance): array
         ->all();
 }
 
-final class WebSocketAppsEnvironmentAccess implements InstanceEnvironmentReader, InstanceEnvironmentWriter, InstanceOperationPreflight
+final class WebSocketAppsEnvironmentAccess implements InstanceEnvironmentWriter, InstanceOperationPreflight
 {
     use FakesEnvironmentSyncInspection;
-
-    public function assertEnvironmentReadable(InstanceEnvironmentContext $context): void
-    {
-        throw new RuntimeException('Attachment contacted the workload Node.');
-    }
 
     public function assertEnvironmentWritable(InstanceEnvironmentContext $context, int $requiredCapacityBytes): void
     {

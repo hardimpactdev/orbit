@@ -7,7 +7,6 @@ use App\Actions\Instances\UpdateInstanceEnvironmentAction;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
-use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentRouteDomain;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
@@ -304,8 +303,6 @@ it('renders stored production values for candidate and previous Route domains wi
         /** @var list<string> */
         public array $domains = [];
 
-        public function assertEnvironmentReadable(InstanceEnvironmentContext $context): void {}
-
         public function assertEnvironmentWritable(
             InstanceEnvironmentContext $context,
             int $requiredCapacityBytes,
@@ -581,11 +578,9 @@ function orb212_sync_concurrency_worker(mixed $socket, string $directory, string
         {
             use FakesEnvironmentSyncInspection;
 
-            public function assertEnvironmentReadable(InstanceEnvironmentContext $context): void {}
-
             public function assertEnvironmentWritable(InstanceEnvironmentContext $context, int $requiredCapacityBytes): void {}
         });
-        $writer = new class($socket, $directory) implements InstanceEnvironmentReader, InstanceEnvironmentWriter
+        $writer = new class($socket, $directory) implements InstanceEnvironmentWriter
         {
             /** @param resource $socket */
             public function __construct(private mixed $socket, private string $directory) {}
@@ -606,7 +601,6 @@ function orb212_sync_concurrency_worker(mixed $socket, string $directory, string
                 return InstanceEnvironmentWriteResult::changed();
             }
         };
-        app()->instance(InstanceEnvironmentReader::class, $writer);
         app()->instance(InstanceEnvironmentWriter::class, $writer);
         $result = app(SynchronizeInstanceEnvironmentAction::class)->execute($instance);
     } else {

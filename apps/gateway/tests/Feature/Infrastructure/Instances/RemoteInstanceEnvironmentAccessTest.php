@@ -25,19 +25,14 @@ function environment_access_context(bool $production = false): InstanceEnvironme
     );
 }
 
-it('checks and reads the recorded file as its user, and asks a production home to be the user home', function (bool $production): void {
-    $agents = new FakeAgentCommandRunner()->answer('instance.read-environment', fn (array $input): array => $input['mode'] === 'read'
-        ? ['state' => 'ok', 'content' => base64_encode("APP_KEY=x\n"), 'installed' => false]
-        : ['state' => 'ok', 'installed' => false]);
-    $access = new RemoteInstanceEnvironmentAccess($agents);
+it('checks writability as the file user, and asks a production home to be the user home', function (bool $production): void {
+    $agents = new FakeAgentCommandRunner()->answer('instance.read-environment', ['state' => 'ok', 'installed' => false]);
     $context = environment_access_context($production);
 
-    $access->assertEnvironmentReadable($context);
-    $access->assertEnvironmentWritable($context, 4096);
+    new RemoteInstanceEnvironmentAccess($agents)->assertEnvironmentWritable($context, 4096);
 
-    expect($access->read($context))->toBe("APP_KEY=x\n")
-        ->and(array_column(array_column($agents->calls, 'input'), 'mode'))->toBe(['read-check', 'write-check', 'read'])
-        ->and($agents->calls[1]['input'])->toBe([
+    expect($agents->calls)->toHaveCount(1)
+        ->and($agents->calls[0]['input'])->toBe([
             'mode' => 'write-check', 'base' => $context->path, 'user' => $context->executionUser,
             'maximum' => InstanceEnvironmentValidator::MaximumFileBytes, 'require_home' => $production, 'required_capacity' => 4096,
         ]);
@@ -76,20 +71,6 @@ it('preserves distinct write and read refusals from a synchronization inspection
     'malformed read outcome' => [['preflight' => ['state' => 'ok'], 'existing' => 'ok'], 'env.import_preflight_failed'],
     'invalid encoding' => [['preflight' => ['state' => 'ok'], 'existing' => ['state' => 'ok', 'content' => '!']], 'env.import_preflight_failed'],
     'oversized content' => [['preflight' => ['state' => 'ok'], 'existing' => ['state' => 'ok', 'content' => base64_encode(str_repeat('x', InstanceEnvironmentValidator::MaximumFileBytes + 1))]], 'env.import_preflight_failed'],
-]);
-
-it('maps a missing file, a refusal, and a runner failure of a read to their errors', function (string $state, string $errorCode): void {
-    $agents = new FakeAgentCommandRunner()->answer('instance.read-environment', fn (): array => $state === 'runner'
-        ? throw new AgentRunnerFailure('instance.read-environment', AgentRunnerFailure::Transport, 'password=secret')
-        : ['state' => $state, 'installed' => false]);
-
-    expect(fn () => new RemoteInstanceEnvironmentAccess($agents)->read(environment_access_context()))
-        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe($errorCode)
-            ->and($exception->getMessage())->not->toContain('secret'));
-})->with([
-    'missing' => ['missing', 'env.import_source_missing'],
-    'refused' => ['refused', 'env.import_preflight_failed'],
-    'runner failure' => ['runner', 'env.import_preflight_failed'],
 ]);
 
 it('refuses a write destination the agent cannot confirm', function (): void {

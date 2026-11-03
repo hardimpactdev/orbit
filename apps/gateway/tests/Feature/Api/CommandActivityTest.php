@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
-use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
@@ -53,7 +52,6 @@ it('records environment commands without submitted imported or rejected values',
     [$caller, $instance] = command_activity_environment_fixture();
     $access = new CommandActivityEnvironmentAccess("IMPORTED={$imported}\n");
     app()->instance(InstanceOperationPreflight::class, $access);
-    app()->instance(InstanceEnvironmentReader::class, $access);
     app()->instance(InstanceEnvironmentWriter::class, $access);
 
     $this
@@ -113,7 +111,6 @@ it('records database create destroy add and remove command names and Instance ta
     [$caller, $instance] = command_activity_environment_fixture();
     $access = new CommandActivityEnvironmentAccess('');
     app()->instance(InstanceOperationPreflight::class, $access);
-    app()->instance(InstanceEnvironmentReader::class, $access);
     app()->instance(InstanceEnvironmentWriter::class, $access);
 
     $create = $this
@@ -1136,15 +1133,13 @@ function command_activity_environment_fixture(): array
     return [$caller, $instance->fresh(['node'])];
 }
 
-final readonly class CommandActivityEnvironmentAccess implements InstanceEnvironmentReader, InstanceEnvironmentWriter, InstanceOperationPreflight
+final readonly class CommandActivityEnvironmentAccess implements InstanceEnvironmentWriter, InstanceOperationPreflight
 {
     use FakesEnvironmentSyncInspection;
 
     public function __construct(
         private string $contents,
     ) {}
-
-    public function assertEnvironmentReadable(InstanceEnvironmentContext $context): void {}
 
     public function assertEnvironmentWritable(
         InstanceEnvironmentContext $context,

@@ -6,9 +6,7 @@ namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
-use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
-use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
@@ -23,9 +21,6 @@ final readonly class StartInstanceEnvironmentImportAction
     {
         if (($replay = $this->idempotency->replay('instance.env_import')) !== null) {
             return $replay;
-        }
-        if (app(DirectOperation::class)->definition('instance.env_import') === null) {
-            throw new ResourceOperationException('operation.kind_unavailable', 'Native environment import is unavailable.', 409);
         }
 
         return DB::transaction(function () use ($instance, $replace, $caller, $requestId): Operation {

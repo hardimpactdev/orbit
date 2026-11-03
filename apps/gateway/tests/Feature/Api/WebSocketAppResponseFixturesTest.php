@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
-use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
@@ -38,7 +37,6 @@ it('records the websocket app and attachment responses', function (): void {
     DB::table('websocket_registry')->update(['epoch' => '22222222-2222-4222-8222-222222222222']);
     Str::createUuidsUsingSequence(['33333333-3333-4333-8333-333333333333', '44444444-4444-4444-8444-444444444444']);
     app()->instance(InstanceOperationPreflight::class, new WebSocketAppFixtureEnvironment);
-    app()->instance(InstanceEnvironmentReader::class, new WebSocketAppFixtureEnvironment);
     app()->instance(InstanceEnvironmentWriter::class, new WebSocketAppFixtureEnvironment);
 
     $caller = Node::query()->create([
@@ -144,14 +142,9 @@ it('records the websocket app and attachment responses', function (): void {
 
 });
 
-final class WebSocketAppFixtureEnvironment implements InstanceEnvironmentReader, InstanceEnvironmentWriter, InstanceOperationPreflight
+final class WebSocketAppFixtureEnvironment implements InstanceEnvironmentWriter, InstanceOperationPreflight
 {
     use FakesEnvironmentSyncInspection;
-
-    public function assertEnvironmentReadable(InstanceEnvironmentContext $context): void
-    {
-        throw new RuntimeException('The fixture contacted the workload Node.');
-    }
 
     public function assertEnvironmentWritable(InstanceEnvironmentContext $context, int $requiredCapacityBytes): void
     {
