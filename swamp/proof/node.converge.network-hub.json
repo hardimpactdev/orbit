@@ -41,7 +41,17 @@
     "swamp/proof/node.converge.network/parity.py",
     "hub"
   ],
-  "before_gateway": [
+  "prepare": [
+    {
+      "method": "POST",
+      "path": "nodes/${node.target}/roles",
+      "body": {
+        "role": "vpn",
+        "converge_existing": true
+      }
+    }
+  ],
+  "after_prepare": [
     [
       "python3",
       "tools/swamp-proof-guest/converge-network-proof.py",
