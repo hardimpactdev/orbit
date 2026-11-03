@@ -140,7 +140,7 @@ final readonly class StartDevelopmentInstanceCreateAction
             if ($instance->requiresRoute() && ! $alreadyActive) {
                 $route = app(CreateRouteAction::class)->ensureForInstance($instance, $data->domain);
                 $input = [...$input, 'route_id' => $route->id, 'route_domain' => $route->domain,
-                    ...app(NativeRouteAdmission::class)->capture('route.create', $route, ['mode' => 'converge'], $node->id)];
+                    ...app(NativeRouteAdmission::class)->capture('route.create', $route, ['mode' => 'converge'], $node->id, preparedWorkloads: true)];
             }
             $input['direct_provisioning'] = app(NativeInstanceProvisioningIntent::class)->create($instance, $input);
             // An already active Instance runs no phase, so admission records no environment or Process for it.

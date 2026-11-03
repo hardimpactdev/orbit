@@ -275,11 +275,10 @@ final readonly class DevelopmentSiteRepository
             ->filter(
                 static fn (Instance $target): bool => (
                     is_string(app(RouteRenderContext::class)->wireguardIp($target->node))
-                    // A clone publishes its preview Route before its first success (instance.clone), and a create
-                    // publishes its Route in the same run that prepares the reserved Instance (instance.create).
+                    // A clone publishes its preview Route before its first success (instance.clone).
                     && (in_array(
                         $target->status,
-                        [InstanceState::Reserved, InstanceState::SourceResolved, InstanceState::Active],
+                        [InstanceState::SourceResolved, InstanceState::Active],
                         true,
                     ) || $target->cloneInProgress())
                 ),
