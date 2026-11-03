@@ -85,7 +85,6 @@ The Gateway refuses these requests before it changes anything:
 | `project.source_defaults_incomplete` | The Project has no valid default branch or root. |
 | `instance.node_inactive` | The Node is not an active Linux Node. |
 | `instance.node_not_app_dev` | The Node has no active `app-dev` role. |
-| `instance.node_excluded` | The Project [excludes](/reference/development-node-exclusions) the Node. |
 | `instance.path_taken` | The name is not `default`, and another managed Instance uses the path. |
 | `instance.default_path_occupied` | The name is `default`, and its path overlaps another managed Instance. Unmanaged paths are checked by Swamp after admission. |
 | `instance.candidate_required` | The Node has the active `app-prod` role. A repeat for an existing production Instance is refused the same way. Use [`instance:clone`](/reference/instance-cloning). |

@@ -747,7 +747,7 @@
     },
     {
       "source": "/decisions/0118-exclude-app-dev-nodes-per-project",
-      "destination": "/reference/development-node-exclusions"
+      "destination": "/decisions/overview#retired-decisions"
     },
     {
       "source": "/cli/workspace",

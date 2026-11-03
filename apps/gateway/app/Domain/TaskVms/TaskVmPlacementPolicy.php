@@ -6,13 +6,11 @@ namespace App\Domain\TaskVms;
 
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskWait;
-use App\Models\ProjectNodeExclusion;
 use App\Models\Task;
 use App\Models\TaskVm;
 
 /**
- * Where a task VM goes: exclude the Project's Nodes, then rank free slots. Hosts with as
- * many free slots keep their config order. A size that no host has room for overflows to UpCloud when the rules
+ * Where a task VM goes: rank free slots. Hosts with as many free slots keep their config order. A size that no host has room for overflows to UpCloud when the rules
  * allow it, else the group waits.
  */
 final readonly class TaskVmPlacementPolicy
@@ -36,7 +34,7 @@ final readonly class TaskVmPlacementPolicy
     {
         $best = null;
         $bestFree = $size->slots() - 1;
-        foreach ($this->eligibleSlots($group, $free) as $hostId => $slots) {
+        foreach ($free as $hostId => $slots) {
             if ($slots > $bestFree) {
                 [$best, $bestFree] = [$hostId, $slots];
             }
@@ -53,19 +51,6 @@ final readonly class TaskVmPlacementPolicy
             return TaskVmPlacementTarget::upCloud();
         }
         throw new TaskCapacityException(TaskWait::Capacity, self::NoCapacity);
-    }
-
-    /**
-     * Excluded hosts take no part in capacity ranking or image readiness.
-     *
-     * @param  array<int, int>  $free
-     * @return array<int, int>
-     */
-    public function eligibleSlots(Task $group, array $free): array
-    {
-        $excluded = ProjectNodeExclusion::query()->where('project_id', $group->project_id)->get(['node_id'])->keyBy('node_id')->all();
-
-        return array_diff_key($free, $excluded);
     }
 
     /**

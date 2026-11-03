@@ -17,7 +17,6 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
-use App\Domain\Projects\DevelopmentNodeExclusion;
 use App\Domain\Routes\NativeRouteTransferPlan;
 use App\Domain\Routes\NativeRouteTransferPublication;
 use App\Domain\Routes\RoutePlacement;
@@ -209,8 +208,6 @@ final readonly class StartInstanceTransferAction
         }
 
         $this->assertActiveAppDevCluster($destination, 'destination');
-        $instance->loadMissing('project');
-        app(DevelopmentNodeExclusion::class)->assertAvailable($instance->project, $destination);
     }
 
     private function assertActiveAppDevCluster(Node $node, string $role): void

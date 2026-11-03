@@ -23,9 +23,6 @@
             "cli/node/access-add",
             "cli/node/access-remove",
             "cli/node/remove",
-            "cli/node/excluded-project-add",
-            "cli/node/excluded-project-list",
-            "cli/node/excluded-project-remove",
             "cli/node/network-converge",
             "cli/node/wireguard-hub-converge"
           ]

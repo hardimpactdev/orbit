@@ -18,8 +18,6 @@ final readonly class ProjectResponse
         public ?string $defaultBranch,
         public ?string $root,
         public string $requestId,
-        /** @var list<array{project_id: int, project_slug: string, node_id: int, node_name: string, development_instance_count: int}>|null */
-        public ?array $excludedNodes = null,
         public ?string $taskCheck = null,
         public string $sourceAccess = 'github_app',
         public ?bool $taskWorkspaceRouted = null,
@@ -48,7 +46,6 @@ final readonly class ProjectResponse
             defaultBranch: is_string($data['default_branch'] ?? null) ? $data['default_branch'] : null,
             root: is_string($data['root'] ?? null) ? $data['root'] : null,
             requestId: $requestId,
-            excludedNodes: self::exclusions($data['excluded_nodes'] ?? null),
             taskCheck: is_string($data['task_check'] ?? null) ? $data['task_check'] : null,
             sourceAccess: is_string($data['source_access'] ?? null) ? $data['source_access'] : 'github_app',
             taskWorkspaceRouted: is_bool($data['task_workspace_routed'] ?? null) ? $data['task_workspace_routed'] : null,
@@ -75,45 +72,6 @@ final readonly class ProjectResponse
             ...($this->reviewAndMerge === null ? [] : ['review_and_merge' => $this->reviewAndMerge, 'merge_check' => $this->mergeCheck]),
             ...($this->maintenance === null ? [] : ['maintenance' => $this->maintenance]),
             'request_id' => $this->requestId,
-            ...($this->excludedNodes === null ? [] : ['excluded_nodes' => $this->excludedNodes]),
         ];
-    }
-
-    /**
-     * @return list<array{project_id: int, project_slug: string, node_id: int, node_name: string, development_instance_count: int}>|null
-     */
-    private static function exclusions(mixed $value): ?array
-    {
-        if (! is_array($value)) {
-            return null;
-        }
-
-        $result = [];
-
-        foreach ($value as $item) {
-            if (! is_array($item)) {
-                continue;
-            }
-
-            $projectId = $item['project_id'] ?? null;
-            $nodeId = $item['node_id'] ?? null;
-            $count = $item['development_instance_count'] ?? null;
-            $projectSlug = $item['project_slug'] ?? null;
-            $nodeName = $item['node_name'] ?? null;
-
-            if (! is_int($projectId) || ! is_int($nodeId) || ! is_int($count) || ! is_string($projectSlug) || ! is_string($nodeName)) {
-                continue;
-            }
-
-            $result[] = [
-                'project_id' => $projectId,
-                'project_slug' => $projectSlug,
-                'node_id' => $nodeId,
-                'node_name' => $nodeName,
-                'development_instance_count' => $count,
-            ];
-        }
-
-        return $result;
     }
 }

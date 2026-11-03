@@ -65,17 +65,11 @@ use Orbit\Sdk\Requests\Instances\UpdateProjectLifecycleStepRequest;
 use Orbit\Sdk\Requests\Logs\CreateLogStreamRequest;
 use Orbit\Sdk\Requests\Logs\DestroyLogStreamRequest;
 use Orbit\Sdk\Requests\Logs\RenewLogStreamRequest;
-use Orbit\Sdk\Requests\Nodes\AddNodeExcludedProjectRequest;
-use Orbit\Sdk\Requests\Nodes\ListNodeExcludedProjectsRequest;
 use Orbit\Sdk\Requests\Nodes\RelocateNodeRoleRequest;
-use Orbit\Sdk\Requests\Nodes\RemoveNodeExcludedProjectRequest;
 use Orbit\Sdk\Requests\Nodes\SetNodeWireGuardKeyRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeMetricsRequest;
 use Orbit\Sdk\Requests\Nodes\UpdateNodeRequest;
-use Orbit\Sdk\Requests\Projects\AddProjectExcludedNodeRequest;
 use Orbit\Sdk\Requests\Projects\InspectProjectMaintenanceRequest;
-use Orbit\Sdk\Requests\Projects\ListProjectExcludedNodesRequest;
-use Orbit\Sdk\Requests\Projects\RemoveProjectExcludedNodeRequest;
 use Orbit\Sdk\Requests\Projects\ShowProjectDependenciesRequest;
 use Orbit\Sdk\Requests\Projects\UpdateProjectRequest;
 use Orbit\Sdk\Requests\Schedules\CompleteScheduleRequest;
@@ -359,14 +353,6 @@ describe('repository guidance bootstrap', function (): void {
             RenewLogStreamRequest::class,
             DestroyLogStreamRequest::class,
         ];
-        $exclusionRequests = [
-            AddNodeExcludedProjectRequest::class,
-            ListNodeExcludedProjectsRequest::class,
-            RemoveNodeExcludedProjectRequest::class,
-            AddProjectExcludedNodeRequest::class,
-            ListProjectExcludedNodesRequest::class,
-            RemoveProjectExcludedNodeRequest::class,
-        ];
         $extensionRequests = [
             'Orbit\\Sdk\\Requests\\Extensions\\ListExtensionsRequest',
             'Orbit\\Sdk\\Requests\\Extensions\\EnableExtensionRequest',
@@ -393,7 +379,7 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeNetworkRequest',
             'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeWireGuardHubRequest',
         ];
-        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + count($enableRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($webSocketRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 18;
+        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($lifecycleRequests) + count($enableRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($webSocketRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 18;
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest',
@@ -493,7 +479,6 @@ describe('repository guidance bootstrap', function (): void {
             ->toHaveCount($expectedOperationCount)
             ->toContain(...$developmentDeployRequests)
             ->toContain(...$lifecycleRequests)
-            ->toContain(...$exclusionRequests)
             ->toContain(...$logRequests)
             ->toContain(...$extensionRequests)
             ->toContain(...$gatewayReleaseRequests)

@@ -21,7 +21,6 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Operations\OperationIdempotency;
-use App\Domain\Projects\DevelopmentNodeExclusion;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ProjectRoot;
@@ -80,7 +79,6 @@ final readonly class RegisterInstanceAction
         if ($caller->user === 'root' || preg_match('/\A[a-z_][a-z0-9_-]{0,31}\z/D', $caller->user) !== 1) {
             throw new ResourceOperationException('instance.source_owner_invalid', 'Registration requires the configured Node account.', 409);
         }
-        app(DevelopmentNodeExclusion::class)->assertAvailable($project, $caller);
         [$facts, $recordOnly] = $this->observed($caller, $project, $data->sourcePath);
 
         $result = DB::transaction(function () use ($caller, $project, $name, $root, $data, $requestId, $facts, $recordOnly): Operation|Instance {

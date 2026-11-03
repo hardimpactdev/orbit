@@ -36,7 +36,6 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * @property string|null $agent_secret_hash
  * @property int|null $ssh_jump_node_id
  * @property-read Collection<int, NodeRole> $roles
- * @property-read Collection<int, ProjectNodeExclusion> $projectNodeExclusions
  * @property-read Collection<int, ToolManagerRecord> $toolManagers
  * @property-read Collection<int, Tool> $tools
  * @property-read Collection<int, Node> $accessibleNodes
@@ -104,12 +103,6 @@ final class Node extends Model
     public function roles(): HasMany
     {
         return $this->hasMany(NodeRole::class);
-    }
-
-    /** @return HasMany<ProjectNodeExclusion, $this> */
-    public function projectNodeExclusions(): HasMany
-    {
-        return $this->hasMany(ProjectNodeExclusion::class);
     }
 
     /** @return BelongsTo<Cluster, $this> */

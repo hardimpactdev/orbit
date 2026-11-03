@@ -28,7 +28,7 @@ flowchart TD
     A1["Admission: caller app-dev; domain valid;<br/>Node source lock"]
     A2["Retry lookup: earlier registration evidence"]
     A3["Project match by repository identity;<br/>root check"]
-    A4["Projection lock from here: reserve members,<br/>name rules, overlap, path, guard, exclusions, seed"]
+    A4["Projection lock from here: reserve members,<br/>name rules, overlap, path, guard, seed"]
     A5["Complete: source_resolved, ports, Route"]
     A6["Active, registration_completed_at"]
     A7["Setup (optional): RunInstanceSetupAction"]
@@ -54,7 +54,7 @@ flowchart TD
 | Inspect | Worktree set and repository identity | agent | `Infrastructure/Instances/RemoteRegistrationSourceManager.php` (`inspect-registration-source`) |
 | Project | Match by repository identity; root | Gateway | `RegisterInstanceAction::resolveProject` |
 | Profile | Composer facts per member, including a nested root | agent | `RegisterInstanceAction::preflightSources` (`inspect-development-profile`) |
-| Reserve | Name and default rules, overlap, path, destination guard, exclusions, seed | Gateway | `RegisterInstanceAction::reserveMembers` |
+| Reserve | Name and default rules, overlap, path, destination guard, seed | Gateway | `RegisterInstanceAction::reserveMembers` |
 | Relocate | Adopt in place, or move with copy, verify and worktree link repair | agent | `RemoteRegistrationSourceManager.php` (`relocate-registration-source`) |
 | Complete | Laravel URL with a rollback receipt; Route publication | agent + Gateway | `RegisterInstanceAction::completeMember`, `NativeDevelopmentRouteProjector.php` |
 | Setup | Optional setup list in the same request | Gateway + agent | `RunInstanceSetupAction` |
@@ -184,7 +184,7 @@ Runs on: caller Node.
 Runs on: Gateway; the projection lock covers phases 5 to 7.
 
 - Name rules: a slug directory on the default branch becomes `default`; a name equal to the default branch converts and reports `name_converted_from`; `instance.identity_conflict`, `instance.name_invalid`.
-- A source nested in or owned by another Instance, including a record owned by create; overlap (`instance.source_conflict`); taken path (`instance.path_taken`); destination guard; Node exclusions.
+- A source nested in or owned by another Instance, including a record owned by create; overlap (`instance.source_conflict`); taken path (`instance.path_taken`); destination guard.
 - Seed selection tied to the adopted commit.
 
 ### 6. Adopt or relocate

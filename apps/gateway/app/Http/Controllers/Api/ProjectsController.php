@@ -9,10 +9,8 @@ use App\Actions\Projects\DestroyProjectAction;
 use App\Actions\Projects\ListProjectsAction;
 use App\Actions\Projects\ShowProjectAction;
 use App\Actions\Projects\UpdateProjectAction;
-use App\Data\Projects\DevelopmentNodeExclusionData;
 use App\Data\Projects\ProjectData;
 use App\Data\Projects\UpdateProjectData;
-use App\Domain\Projects\DevelopmentNodeExclusion;
 use App\Domain\Projects\ReviewAndMergeRequirements;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
@@ -21,7 +19,6 @@ use App\Http\Requests\Projects\StoreProjectRequest;
 use App\Http\Requests\Projects\UpdateProjectRequest;
 use App\Models\Node;
 use App\Models\Project;
-use App\Models\ProjectNodeExclusion;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -64,10 +61,6 @@ final class ProjectsController extends Controller
         return response()->json([
             'data' => [
                 ...ProjectData::fromModel($action->handle($project))->toArray(),
-                'excluded_nodes' => app(DevelopmentNodeExclusion::class)->forProject($project)
-                    ->map(static fn (ProjectNodeExclusion $exclusion): array => DevelopmentNodeExclusionData::fromModel($exclusion)->toArray())
-                    ->values()
-                    ->all(),
             ],
             'meta' => $this->meta($request),
         ]);

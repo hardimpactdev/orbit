@@ -158,7 +158,7 @@ Runs on: Gateway, with the Cluster Router, environment and both source locks.
 Refusals before anything moves (the CLI asks for consent first, `instance.confirmation_required`):
 
 - Source not active, removing, or production (`instance.lifecycle_conflict`, `instance.removal_conflict`, `instance.production_refused`).
-- Same Node (`instance.same_node`); destination inactive, not app-dev, excluded or outside an active Cluster (`instance.node_inactive`, `instance.node_not_app_dev`, `instance.node_excluded`, `instance.standalone_unsupported`).
+- Same Node (`instance.same_node`); destination inactive, not app-dev or outside an active Cluster (`instance.node_inactive`, `instance.node_not_app_dev`, `instance.standalone_unsupported`).
 - Name identity (`instance.identity_conflict`); destination occupied, with a rename hint (`instance.destination_exists`); domain taken (`route.domain_conflict`).
 - No authoritative Route, a replacement in progress, a web-root Route not ready, or a public web-root Route (`instance.transfer_public_web_root_route`).
 - A Schedule target in use (`schedule.target_in_use`), checked again before cutover.

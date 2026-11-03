@@ -1776,15 +1776,10 @@ def data_schema_for(route):
     if action == 'NodesController@show':
         return {'allOf': [ref('NodeData'), {'type': 'object', 'properties': {
             'access': ref('NodeAccessData'),
-            'excluded_projects': {'type': 'array', 'items': ref('DevelopmentNodeExclusionData')},
         }}]}, False
     if action == 'DatabaseServersController@show':
         return {'allOf': [ref('DatabaseServerData'), {'type': 'object', 'properties': {
             'databases': {'type': 'array', 'items': ref('DatabaseConnectionData')},
-        }}]}, False
-    if action == 'ProjectsController@show':
-        return {'allOf': [ref('ProjectData'), {'type': 'object', 'properties': {
-            'excluded_nodes': {'type': 'array', 'items': ref('DevelopmentNodeExclusionData')},
         }}]}, False
     return ref(cands[0]), is_list
 
