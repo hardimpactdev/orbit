@@ -137,7 +137,7 @@ Every Node change is an official `@swamp/cfgmgmt` behavior or one `@swamp/ssh ex
 
 A Laravel Instance registered in place can be active without a Route. If registration reserves a Route, that Route must become authoritative before the Instance activates. Other Laravel activation and Route ownership constraints still apply.
 
-[Registration](/cli/instance/register) with `--domain` runs `operation-route-create` inside its native run. Certificate signing stays bound to the registration parent. The Route preserves the checkout's `.env` and changes only application URL lines when needed. An identical registration retry reuses its reserved Route; another owner's domain is refused.
+[Registration](/cli/instance/register) with `--domain` runs `operation-route-create` inside its native run. Instance child workflows bind certificate signing to the parent Operation and its run. Create and registration may sign only their admitted forward Route leaves, never restoration leaves. The Route preserves the checkout's `.env` and changes only application URL lines when needed. An identical registration retry reuses its reserved Route; another owner's domain is refused.
 
 [Instance cloning](/reference/instance-cloning#preview-route) runs the same CSR, sign and site children for its pending preview Route inside the clone run. The clone writes the whole `.env` itself, so the preview Route's site step writes no second copy. The clone's success activates the Route.
 

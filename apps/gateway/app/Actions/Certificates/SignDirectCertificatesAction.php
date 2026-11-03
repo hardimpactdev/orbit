@@ -85,7 +85,7 @@ final readonly class SignDirectCertificatesAction
             'route.create', 'route.destroy', 'route.withdraw', 'instance.clone' => $restoring
                 ? ['route_lifecycle.route_mutations.restore.certificates']
                 : ['route_lifecycle.preparation.certificates', 'route_lifecycle.route_mutations.forward.certificates'],
-            'instance.register' => $restoring ? [] : ['route_lifecycle.preparation.certificates', 'route_lifecycle.route_mutations.forward.certificates'],
+            'instance.register', 'instance.create' => $restoring ? [] : ['route_lifecycle.preparation.certificates', 'route_lifecycle.route_mutations.forward.certificates'],
             // route.update and route.target_set never restore; they sign only their plan's leaves.
             'route.update' => $restoring ? [] : ['route_update.plan.leaves'],
             'route.target_set' => $restoring ? [] : ['route_target.plan.leaves'],
