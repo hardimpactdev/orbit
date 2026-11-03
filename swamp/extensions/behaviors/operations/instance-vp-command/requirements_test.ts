@@ -1,7 +1,7 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
 import { behavior, material, workspaceLinks } from "./requirements.ts";
-import { vpPreparationJobs } from "./steps.ts";
+import { vpInstallSteps, vpPreparationJobs } from "./steps.ts";
 const runtime = {
     store: "/home/app/.vite-plus",
     vp_version: "0.2.1",
@@ -11,6 +11,21 @@ const runtime = {
     package_manager_hash: null,
 };
 const ctx = { writeResource: () => Promise.resolve(undefined) };
+Deno.test("VP commands select the project and private store for install and read-only inventory", () => {
+    const steps = vpInstallSteps("vp", "inputs.intent") as Record<string, any>[];
+    const commands = ["vp-cli", "vp-install", "vp-inventory"].map((name) =>
+        steps.find((step) => step.name === name)!.task.inputs
+    );
+    const binary = '${{ self.runtime.store+"/bin/vp" }}';
+    assertEquals(commands.map((command) => command.argv), [
+        [binary, "--version"],
+        [binary, "-C", "${{ inputs.intent.application }}", "env", "install",
+            '${{ "node@"+self.runtime.node_version }}',
+            '${{ self.runtime.package_manager+"@"+self.runtime.package_manager_version+(self.runtime.package_manager_hash==null?"":"+"+self.runtime.package_manager_hash) }}'],
+        [binary, "-C", "${{ inputs.intent.application }}", "env", "list", "--json"],
+    ]);
+    assertEquals(commands.map((command) => command.env), Array(3).fill({ VP_HOME: "${{ self.runtime.store }}" }));
+});
 Deno.test("existing incompatible CLI refuses before project install", async () => {
     await assertRejects(
         () =>
