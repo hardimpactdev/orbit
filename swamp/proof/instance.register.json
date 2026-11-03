@@ -17,6 +17,11 @@
         "base=/home/orbit/apps/proof-source/plain-$1; linked=/home/orbit/apps/proof-source/r-$1; mkdir -p /home/orbit/apps/proof-source; git clone -q --depth=1 --branch 13.x https://github.com/laravel/laravel.git \"$base\"; git -C \"$base\" worktree add -q -b temporary-$1 \"$linked\"; git -C \"$linked\" branch -m renamed-$1",
         "sh",
         "${proof.run}"
+      ],
+      [
+        "systemctl",
+        "restart",
+        "orbit-agent"
       ]
     ]
   },
