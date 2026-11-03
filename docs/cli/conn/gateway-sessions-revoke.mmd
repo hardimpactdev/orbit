@@ -2,14 +2,14 @@ sequenceDiagram
   %% Target design: ADR 0244 task, DECISIONS R1 (an external API call is an effect, so it is a run), R2-R4. swamp/workflows/workflow-operation-conn-direct.yaml, docs/reference/conn.md#gateway-session-cleanup, conn.pairing_revoke chart.
   %% Tightened: flow-tighten 2026-11-02, rules 4, 14, 15, 16, 21 (no Gateway reads from the step, session to vault, one session list, no link step).
   %% status: migrated
-  %% command: none · Conn API (conn-environment-cleanup)
+  %% command: none · API (conn-environment-cleanup)
   %% kind: conn.gateway_sessions_revoke
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
   %% lane T3 icon=server pill=target tone=purple
-  participant CLI as Caller / MCP<br/>MCP · registration
+  participant CLI as CLI / MCP<br/>API callers
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant T3 as T3 server<br/>T3 auth API
@@ -43,7 +43,7 @@ sequenceDiagram
   %%> What you get:
   %%> - the task number, at once
   %%> Next:
-  %%> - the caller follows the task with `operation:show`
+  %%> - the requester follows `GET /api/v1/conn/operations/5181`
   SW->>T3: Revoke old sessions<br/>GET clients · POST …/revoke
   %%> How:
   %%> - the typed Conn revocation child runs HTTPS from 209, with the admin session from `vault.get`
@@ -81,9 +81,9 @@ sequenceDiagram
     %%> - safe: call cleanup again, or register again; it lists the sessions again and skips those already gone
   end
   loop every 2 s until terminal
-    CLI->>GW: operation:show #5181
+    CLI->>GW: Read Operation #5181<br/>GET conn/operations/5181
     %%> What it does:
-    %%> - asks for the task's status every 2 seconds until it has ended
+    %%> - asks for the requester's task status every 2 seconds until it has ended
     GW-->>CLI: status + result
     %%> Returns:
     %%> - the current status, and the number of revoked sessions once the task has ended
