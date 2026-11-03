@@ -172,13 +172,11 @@ Public repositories use GitHub-hosted runners, with self-hosted runners availabl
 
 The operator registers runners. The Orbit GitHub App keeps `administration: read`; runner registration adds no App permission or Gateway-held registration credential. Linux runner jobs run without host sudo inside their containers. Increase capacity when measured queueing requires it.
 
-### Self-hosted Gateway runner
-
-The fast CI gate uses hosted runners. It needs no Gateway test system packages, privileged test setup or local Swamp credentials.
-
 ### Self-hosted shard runners
 
-Existing runner provisioning remains available to other workflows. This CI workflow schedules no test shards or publishes quality-cache refs.
+The managed setup preloads every pinned action from the repository’s workflows and local composite actions into `/opt/actionarchivecache`. It uses Git fetch and Git archive, so provisioning and jobs avoid codeload downloads for those pins. The runner uses GitHub’s standard `ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE`, as in the [hosted image installer](https://github.com/actions/runner-images/blob/main/images/ubuntu/scripts/build/install-actions-cache.sh); no checkout replacement is needed.
+
+Run `tools/ci-runners/setup.sh actions NAME` after action pins change, then restart that container’s runner service once it is idle. The command is idempotent, preserves other runner environment settings, and does not restart or register a runner. `container NAME` also preloads the cache. The cache is readable by the runner and owned by root; each archive uses its pinned commit as the key.
 
 ### Agent delivery
 
