@@ -128,6 +128,7 @@ def parity():
     operation = json.loads(Path(os.environ['PROOF_OPERATION_FILE']).read_text())
     public = json.dumps(operation) + Path(os.environ['PROOF_OUTPUTS']).read_text()
     assert data['token'] not in public and data['key'] not in public
+    assert data['key'].split("'", 1)[0] not in public
     assert base64.b64encode(('x-access-token:' + data['token']).encode()).decode() not in public
     assert data['minted'] == 1
     result, case = operation['result'], data['case']
