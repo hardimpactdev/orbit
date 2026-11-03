@@ -15,6 +15,6 @@ garbageCollection:
   automatic: true
   retention: 30d
   workflowRuns: 6h
-  outputs: 1h
+  outputs: 30m
   bookkeeping: 2h
 upgradedAt: "2026-11-02T09:55:57.949Z"

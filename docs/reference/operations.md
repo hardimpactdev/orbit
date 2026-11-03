@@ -46,9 +46,9 @@ The Gateway reads the terminal `measure` output through the shared scheduled-res
 | `serve\|cpu` | Serve used more than 50% CPU over the sample |
 | `watch\|failed` | A watch run did not succeed, so the datastore is unwatched |
 
-Serve's own garbage collection keeps runs 6 hours, bookkeeping 2 hours and outputs 1 hour (`garbageCollection` in `swamp/.swamp.yaml`). Nothing reads a method output later, and a resumed run doesn't read it at all: run history, its logs and step outputs come from the run record and `data/`.
+Serve's own garbage collection keeps runs 6 hours, bookkeeping 2 hours and outputs 30 minutes (`garbageCollection` in `swamp/.swamp.yaml`). Nothing reads a method output later, and a resumed run doesn't read it at all: run history, its logs and step outputs come from the run record and `data/`.
 
-One hour is six times the longest run on Node 209 (587 s) and above the 900-second step budget. Node and Instance Schedules run as systemd timers on their Node, not as Swamp runs. Its retention pass rereads that file every hour, so a change applies at the next pass without a restart. Bookkeeping, such as step leases, is reaped by serve's worker GC, which first runs an hour after serve starts ([Lab #4287](https://swamp-club.com/lab/4287)).
+Thirty minutes is more than twice the longest run on Node 209 (790 s, a task VM image build) and twice the 900-second step budget. A day on 1 hour, through a serve and worker restart, showed no resume or missing-output failure. Node and Instance Schedules run as systemd timers on their Node, not as Swamp runs. Its retention pass rereads that file every hour, so a change applies at the next pass without a restart. Bookkeeping, such as step leases, is reaped by serve's worker GC, which first runs an hour after serve starts ([Lab #4287](https://swamp-club.com/lab/4287)).
 
 A key is filed once two fires at least 10 minutes apart report it. The first later fire that does not report a key resolves it. A replayed or older run changes nothing. Large auto-definition directories are the known cause of high serve CPU ([Lab #4280](https://swamp-club.com/lab/4280)).
 
