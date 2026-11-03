@@ -58,7 +58,9 @@ final readonly class NativeCaddyPublicationInput
                 'nodePort' => 22, 'nodeIdentityFile' => $identity['identity_file'], 'become' => true]];
     }
 
-    /** @return array{control_node_id:209,host_keys:list<string>,connection:array{nodeHost:string,nodeUser:string,nodePort:int,nodeIdentityFile:string,become:true}} */
+    /** A Node in PendingSshHostKey gets `host_keys: null`, which its run binds before use.
+     * @return array{control_node_id:209,host_keys:?list<string>,connection:array{nodeHost:string,nodeUser:string,nodePort:int,nodeIdentityFile:string,become:true}}
+     */
     public function connectionForNode(Node $node): array
     {
         $ssh = app(SwampSshExecutionInput::class)->forNode($node);

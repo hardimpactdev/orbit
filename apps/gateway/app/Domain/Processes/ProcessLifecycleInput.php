@@ -32,14 +32,18 @@ final readonly class ProcessLifecycleInput
     public function forInstanceMember(Operation $parent, array $member): array
     {
         $process = Process::query()->findOrFail($member['id']);
-        if (! in_array($parent->kind, ['process.install_instance_definitions', 'instance.create', 'instance.clone', 'instance.register'], true) || $parent->target_type !== 'instance'
-            || $parent->target_id !== ($parent->input['instance_id'] ?? null)
-            || ! Instance::isMorphType($process->owner_type) || $process->owner_id !== $parent->target_id
-            || ! Instance::query()->whereKey($parent->target_id)->where('node_id', $parent->node_id)->exists()) {
+        // tasks.provision targets its task group and runs on the VM host; its workspace Instance is on the guest.
+        $workspace = $parent->kind === 'tasks.provision' && $parent->target_type === 'task_group';
+        $instance = $workspace
+            ? Instance::query()->whereKey($parent->input['instance_id'] ?? null)->where('task_workspace_owner_id', $parent->target_id)->first()
+            : Instance::query()->whereKey($parent->target_id)->where('node_id', $parent->node_id)->first();
+        if (! in_array($parent->kind, ['process.install_instance_definitions', 'instance.create', 'instance.clone', 'instance.register', 'tasks.provision'], true)
+            || (! $workspace && ($parent->target_type !== 'instance' || $parent->target_id !== ($parent->input['instance_id'] ?? null)))
+            || $instance === null || ! Instance::isMorphType($process->owner_type) || $process->owner_id !== $instance->id) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The runtime member belongs to another owner.', 422);
         }
 
-        $view = ProcessInstanceOperation::member($parent, $member);
+        $view = ProcessInstanceOperation::member($parent, $member, $instance->node_id);
 
         return ['kind' => $view->kind, ...$this->build($view, 'process-instance-operation-'.$parent->id.'-member-'.$member['id'])];
     }

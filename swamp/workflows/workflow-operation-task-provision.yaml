@@ -70,10 +70,68 @@ jobs:
     - step: Create and prepare the VM
       condition:
         type: succeeded
+    # The Gateway left the guest's SSH targets unpinned; the VM step just pinned its key.
+  - name: Bind the workspace keys
+    labels: {role: swamp}
+    guard: '${{ inputs.intent.route == null && size(inputs.intent.processes) == 0 }}'
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-provision-data'
+      behaviorName: '${{ "tp-data-bind" }}'
+      methodName: bind
+      inputs:
+        vm: ${{ steps["Create and prepare the VM"].outputs.result }}
+        guest_node_id: ${{ inputs.intent.guest_node_id }}
+        route: ${{ inputs.intent.route }}
+        processes: ${{ inputs.intent.processes }}
+    dependsOn:
+    - step: Set up the workspace
+      condition:
+        type: succeeded
+  - name: Route the workspace
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ inputs.intent.route == null }}'
+    task:
+      type: workflow
+      workflowIdOrName: operation-route-create
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        parent_run_id: ${{ run.id }}
+        kind: route.create
+        intent: ${{ steps["Bind the workspace keys"].outputs.route }}
+        execution_secrets: ${{ inputs.intent.route_secrets }}
+    dependsOn:
+    - step: Bind the workspace keys
+      condition:
+        type: succeeded
+  - name: Create, start Processes
+    labels: {role: swamp}
+    writes: true
+    forEach:
+      item: member
+      in: ${{ inputs.intent.processes }}
+    task:
+      type: workflow
+      workflowIdOrName: operation-process-create
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: process.create
+        intent: ${{ steps["Bind the workspace keys"].outputs.processes[self._index].intent }}
+        execution_secrets: '${{ "member_" + string(self.member.id) in inputs.execution_secrets ? {"environment": inputs.execution_secrets["member_" + string(self.member.id)]} : {} }}'
+    dependsOn:
+    - step: Bind the workspace keys
+      condition:
+        type: succeeded
+    - step: Route the workspace
+      condition:
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
   - name: Check the workspace
     labels: {role: swamp}
-    # Prints the receipt and fails on its error code. A failed step keeps no stdout, so the Gateway
-    # then reads the same receipt from the workspace step, which always ends with it.
+    # Prints the whole receipt, workspace Route and Processes included; `accepted` fails the run on its error code.
     task:
       type: behavior
       behaviorType: command/shell
@@ -81,9 +139,19 @@ jobs:
       methodName: execute
       inputs:
         run: |
-          printf '%s\n' "$ORBIT_RESULT"
-          python3 -c 'import json,os,sys; sys.exit(1 if "error_code" in json.loads(os.environ["ORBIT_RESULT"]) else 0)'
+          python3 -c '
+          import json, os
+          result = json.loads(os.environ["ORBIT_RESULT"])
+          route, processes = os.environ["ORBIT_ROUTE"], [p for p in os.environ["ORBIT_PROCESSES"].split(";") if p]
+          result["route"], result["processes"] = route, processes
+          failed = "bind" if os.environ["ORBIT_BIND"] == "failed" else "route" if route == "failed" else "processes" if any(p.endswith("=failed") for p in processes) else None
+          if failed and "error_code" not in result:
+              result.update(error_code="tasks.provision_failed", failed_step=failed)
+          print(json.dumps(result))'
         env:
+          ORBIT_BIND: '${{ "Bind the workspace keys" in steps ? steps["Bind the workspace keys"].status : "skipped" }}'
+          ORBIT_ROUTE: '${{ "Route the workspace" in steps ? steps["Route the workspace"].status : "skipped" }}'
+          ORBIT_PROCESSES: '${{ steps.filter(k, k.startsWith("Create, start Processes-")).map(k, k + "=" + steps[k].status).join(";") }}'
           ORBIT_RESULT: '${{ "Set up the workspace" in steps && "outputs" in steps["Set up the workspace"] && "result" in steps["Set up the workspace"].outputs ? steps["Set up the workspace"].outputs.result.result_json : "{\"error_code\":\"tasks.provision_failed\",\"failed_step\":\"vm\"}" }}'
     dependsOn:
     - step: Create and prepare the VM
@@ -92,3 +160,19 @@ jobs:
     - step: Set up the workspace
       condition:
         type: always
+    - step: Bind the workspace keys
+      condition:
+        type: always
+    - step: Route the workspace
+      condition:
+        type: always
+    - step: Create, start Processes
+      condition:
+        type: always
+  - name: Accept the workspace
+    labels: {role: swamp}
+    task: {type: assert, expr: '!steps["Check the workspace"].outputs.stdout.contains("\"error_code\"")', severity: high, message: tasks.provision_failed}
+    dependsOn:
+    - step: Check the workspace
+      condition:
+        type: succeeded

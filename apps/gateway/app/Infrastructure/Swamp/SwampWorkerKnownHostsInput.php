@@ -21,7 +21,8 @@ final readonly class SwampWorkerKnownHostsInput
         $lines = [];
         foreach ($nodes->orderBy('wireguard_ip')->get() as $node) {
             $target = $this->ssh->forNode($node)['target'];
-            foreach ($target['host_keys'] as $key) {
+            // Every Node selected here has a recorded key, so its target is never left unpinned.
+            foreach ($target['host_keys'] ?? [] as $key) {
                 $lines[] = $target['host'].' '.$key;
             }
         }
