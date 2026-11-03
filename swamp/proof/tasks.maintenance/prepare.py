@@ -1,4 +1,4 @@
-"""Prepare a real empty Composer workspace, then admit its normal maintenance root."""
+"""Prepare a real Composer workspace with one local package, then admit its normal maintenance root."""
 import json
 import subprocess
 import sys
@@ -9,7 +9,9 @@ node, run_id = sys.argv[1:]
 workspace = '/home/orbit/proof-maintenance-' + run_id
 subprocess.run(['incus', 'exec', 'target', '--', 'install', '-d', '-o', 'orbit', '-g', 'orbit', workspace], check=True, timeout=30)
 script = '''set -eu
-printf '%s\n' '{"name":"proof/maintenance","require":{}}' > composer.json
+mkdir -p packages/fixture
+printf '%s\n' '{"name":"proof/fixture","version":"1.0.0","license":"MIT"}' > packages/fixture/composer.json
+printf '%s\n' '{"name":"proof/maintenance","require":{"proof/fixture":"1.0.0"},"repositories":[{"type":"path","url":"packages/fixture","options":{"symlink":true}}]}' > composer.json
 printf '%s\n' '/vendor/' > .gitignore
 timeout 60 composer update --no-interaction --no-install --no-progress
 git init -q -b main

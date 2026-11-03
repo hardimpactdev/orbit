@@ -19,7 +19,7 @@ app(TaskExtensionState::class)->enable();
 $node = Node::findOrFail((int) $nodeId);
 $project = Project::create(['name' => 'Maintenance proof', 'slug' => 'maintenance-proof',
     'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'task_check' => 'true']);
-$group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Maintenance proof', 'brief' => 'Empty Composer workspace.',
+$group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Maintenance proof', 'brief' => 'Composer workspace with one local package.',
     'status' => 'running', 'orchestration' => 'external', 'maintenance' => ['mode' => 'routine', 'stage' => 'tasks.maintenance',
         'project' => ['projectId' => $project->id, 'repository' => $project->repository_url, 'defaultBranch' => 'main', 'check' => 'true',
             'worker' => ['composerPaths' => ['.'], 'jsPaths' => [], 'policy' => []]], 'targets' => []]]);
