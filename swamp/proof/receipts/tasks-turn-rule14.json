@@ -1,0 +1,17 @@
+{
+  "kind": "tasks.turn",
+  "rule": 14,
+  "topology": "minimal",
+  "topology_version": 14,
+  "source_commit": "2777a2e00b2b774e4d687a93aab63993649300bb",
+  "receipt": "/home/nckrtl/swamp-execution/evidence/proof/tasks.turn/20261103T033446Z-minimal.json",
+  "proof_pass": true,
+  "operation_seconds": 31.11,
+  "run_seconds": 34.9,
+  "budget_seconds": 180,
+  "queue_timeout_seconds": 60,
+  "swamp_run_id": "bd0ec7e9-3aff-4f49-a885-43e6db2542ec",
+  "reporting_steps_removed": 1,
+  "scripts_deleted": 0,
+  "limits": "One synthetic Pi reviewer turn over real SSH and Git. Reviewer restoration, redacted receipt and diff, one accepted Pi send, and private artifact cleanup passed. Local native cases cover refusals, missing output and resume. No model provider or production repository."
+}
