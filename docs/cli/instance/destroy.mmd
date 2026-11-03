@@ -2,7 +2,7 @@ sequenceDiagram
   %% Target design: ADR 0244 task, R1-R4, single-swamp-node (@swamp/ssh from 209), DECISIONS 1 (token minted at admission, vault.get), Schedules native (Nick 2026-11-02). docs/reference/instance-removal.md.
   %% Tightened: flow-tighten 2026-11-02, rules 3, 8, 14, 17, 22 (Route first, DNS only outside the TLD, cfgmgmt absent applies, no script read, source capture, report or assert step).
   %% Decided: Nick 2026-11-02, the Route is withdrawn first, before teardown; a failed teardown leaves the site down and a rerun completes.
-  %% status: draft
+  %% status: migrated
   %% command: instance:destroy
   %% kind: instance.destroy
   autonumber

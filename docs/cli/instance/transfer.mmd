@@ -2,7 +2,7 @@ sequenceDiagram
   %% Target design: ADR 0244 task + full intent as inputs, R1-R4, single-swamp-node; DECISIONS scope (SQLite only when chosen, Schedules move, cert from destination CSR in-run), 1 (signing is the one step→Gateway call), DNS hold retired (PR #2443); tightened by flow-tighten 2026-11-02 (rules 3, 6, 8, 13); .env and Processes as in instance.create. docs/reference/instance-transfer.md.
   %% Tightened: flow-tighten 2026-11-02, rules 5, 17, 22 (destination preflight from recorded state; cfgmgmt file/systemd, Route publish as in route:create).
   %% Decided: Nick 2026-11-02, .env.testing only for an owned MySQL/PostgreSQL database, written by the same file step.
-  %% status: draft
+  %% status: migrated
   %% Interim: the run signs inside the Route child, and SQLite copies stay refused. The Swamp steps below are the real workflow steps.
   %% command: instance:transfer
   %% kind: instance.transfer

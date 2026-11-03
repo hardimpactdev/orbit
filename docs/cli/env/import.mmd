@@ -2,7 +2,7 @@ sequenceDiagram
   %% Target design: ADR 0244 task, R2-R4, orbit-gateway-renders-create-env (Gateway owns .env), DECISIONS instance.env_import (vault key instance-env-import.content.<operation_id>, read once, then deleted; retire agent command instance.read-environment). docs/reference/environment-variables.md#import.
   %% Tightened: flow-tighten 2026-11-02, rules 6, 16 (file check folded into the read).
   %% Ported: the official @swamp/ssh behavior has no read-into-vault method, so the read is three ssh steps (stage, copy, remove) and one store step on 209.
-  %% status: draft
+  %% status: migrated
   %% command: env:import
   %% kind: instance.env_import
   autonumber

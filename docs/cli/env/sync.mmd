@@ -2,7 +2,7 @@ sequenceDiagram
   %% Target design: ADR 0244 task, R1-R4, decision swamp-vault-secrets (vault.get), orbit-gateway-renders-create-env (Gateway owns .env, no read-back), DECISIONS instance.sync_environment (vault after commit, @swamp/ssh from 209, no private-material fetch, no per-Node worker). docs/reference/environment-variables.md.
   %% Tightened: flow-tighten 2026-11-02, rules 14, 22 (cfgmgmt file for both files, its check as the end check; no script read, foreign-key check, report or assert step).
   %% Decided: Nick 2026-11-02, foreign-key protection at admission from the key names the Node agent reports; .env.testing only for an owned MySQL/PostgreSQL database, in the same file step.
-  %% status: draft
+  %% status: migrated
   %% Interim: until the Node agent reports .env key names, the run reads them and checks for foreign keys before the write (Nick 2026-11-02).
   %% command: env:sync
   %% kind: instance.sync_environment
