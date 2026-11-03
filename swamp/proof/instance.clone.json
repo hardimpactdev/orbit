@@ -181,5 +181,6 @@
       "-c",
       "import sqlite3; c = sqlite3.connect('/home/orbit/proof-clone.sqlite'); c.execute('create table if not exists proof (v text)'); c.execute('delete from proof'); c.execute(\"insert into proof values ('proof-row')\"); c.commit()"
     ]
-  ]
+  ],
+  "clean": true
 }
