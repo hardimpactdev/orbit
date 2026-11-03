@@ -2,6 +2,9 @@ import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 const env = (key: string) => Deno.env.get(key)!;
 assertEquals(Deno.args.slice(0, 3), ["--yes", "--package=@bitwarden/cli@2026.6.0", "bw"]);
 const args = Deno.args.slice(3), path = env("ORBIT_BW_FIXTURE_STATE");
+// Parallel native CLI calls share one fake Vault backend.
+using lock = Deno.openSync(path + ".lock", { create: true, write: true });
+lock.lockSync(true);
 const state = JSON.parse(Deno.readTextFileSync(path));
 (state.commands ??= []).push(args);
 const save = () => Deno.writeTextFileSync(path, JSON.stringify(state));
