@@ -119,13 +119,7 @@ final readonly class NodeRoleRelocateProjection implements DirectOperationProjec
     /** @param array<string,mixed> $raw */
     private function routeFailed(array $raw): bool
     {
-        foreach (ValidatedData::object($raw['steps'] ?? []) as $name => $step) {
-            if (str_starts_with($name, self::RouteStep) && (ValidatedData::object($step)['status'] ?? null) === 'failed') {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any(ValidatedData::object($raw['steps'] ?? []), fn ($step, $name) => str_starts_with($name, self::RouteStep) && (ValidatedData::object($step)['status'] ?? null) === 'failed');
     }
 
     /** The target serves its sites and the source has withdrawn them, so later renders follow the move.
