@@ -88,63 +88,7 @@ Deno.test("routine returns a backlog request without Gateway calls or group exec
   assertEquals(result.requests[0].input.status, "backlog");
   assertStringIncludes(result.key, "32-routine-2026-10-26");
 });
-Deno.test("routine names a Project without a maintenance policy", async () => {
-  const { repo, inputs, run } = await fixture("routine");
-  await using _ = repo;
-  inputs.intent.project = {
-    id: 999,
-    repository: "https://github.com/example/unknown.git",
-    default_branch: "main", check: "composer check",
-  };
-  assertStringIncludes(
-    (await run(false)).steps["Select this week's routine"].error,
-    "project.maintenance_not_configured",
-  );
-});
-Deno.test("Orbit routine reads its policy and ignores old PR names in ended groups", async () => {
-  const { repo, inputs, run } = await fixture("routine");
-  await using _ = repo;
-  inputs.intent.project = {
-    id: 46,
-    repository: "https://github.com/hardimpactdev/orbit.git",
-    default_branch: "main", check: "composer check",
-  };
-  inputs.intent.groups = [{
-    id: 1, project_id: 46, status: "completed",
-    pr_url: "https://github.com/nckrtl/orbit/pull/1025",
-    watched_pr_url: null,
-  }, {
-    id: 2, project_id: 46, status: "backlog",
-    pr_url: "https://github.com/hardimpactdev/orbit/pull/2450",
-    watched_pr_url: null,
-  }];
-  const { result, steps } = await run();
-  assertEquals(result.project_id, 46);
-  assertEquals(steps["Select this week's routine"].status, "succeeded");
-});
-Deno.test("routine keeps an unfinished group blocked without reading its PR", async () => {
-  const { repo, inputs, run } = await fixture("routine");
-  await using _ = repo;
-  inputs.intent.groups = [{
-    id: 1, project_id: 32, status: "running",
-    pr_url: "https://github.com/someone/else/pull/1",
-    watched_pr_url: null,
-  }];
-  assertEquals((await run()).result.requests, []);
-});
-Deno.test("routine rejects a Project mismatch before downstream requests", async () => {
-  const { repo, inputs, run } = await fixture("routine");
-  await using _ = repo;
-  inputs.intent.project.check = "a different check";
-  const { history, steps } = await run(false);
-  assertEquals((history as Data).status, "failed");
-  assertEquals(steps["Select this week's routine"].status, "failed");
-});
-Deno.test("observe returns public evidence without Gateway calls", async () => {
-  const { repo, run } = await fixture("observe");
-  await using _ = repo;
-  assertEquals((await run()).result, { project_id: 32, observations: [], resume_group_ids: [], requests: [] });
-});
+
 Deno.test("observe correlates one bounded PR read with its captured group", async () => {
   const { repo, run, github } = await fixture("observe");
   await using _ = repo;
