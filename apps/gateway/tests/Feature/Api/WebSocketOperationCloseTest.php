@@ -77,6 +77,7 @@ it('fails a rotation that a newer rotation superseded and keeps the newer creden
 });
 
 it('fails with websocket.registry_pending when a process is still stale after five minutes', function (): void {
+    $this->freezeSecond();
     $id = $this->withHeader('Idempotency-Key', 'stale')->postJson('/api/v1/websocket-sync')->assertAccepted()->json('data.id');
     close_websocket_serving_runtime($this->gateway, 0);
 
