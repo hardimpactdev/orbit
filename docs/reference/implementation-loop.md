@@ -95,7 +95,7 @@ Orbit CI runs builds and static checks. Swamp changes also run the Operation Den
 | Swamp | Validate every workflow, run the Operation Deno tests, enforce the Swamp-shape gate and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Required checks | Require every selected build and static check to succeed; only an explicitly untouched job may skip |
 
-The five Swamp Deno shards use `[self-hosted, orbit-shard]` when `ORBIT_SABRE_RUNNER=true` on main and same-repository pull requests. Fork pull requests and a false variable use `ubuntu-26.04`. Docs, web, contracts and workflow validation stay hosted. `tools/test_ci_runner_policy.py` pins this routing and the fork guard. Flip `ORBIT_SABRE_RUNNER` to `false` to roll back.
+The Swamp Deno test job uses `[self-hosted, orbit-shard]` when `ORBIT_SABRE_RUNNER=true` on main and same-repository pull requests. Fork pull requests and a false variable use `ubuntu-26.04`. Docs, web, contracts and workflow validation stay hosted. `tools/test_ci_runner_policy.py` pins this routing and the fork guard. Flip `ORBIT_SABRE_RUNNER` to `false` to roll back.
 
 Runner containers are unprivileged. Install or repair their toolchain with `tools/ci-runners/setup.sh container NAME` while idle; jobs verify the managed PHP build and use fake privileged boundaries. Ordinary Deno tests need no sudo or Docker daemon; real Docker proofs run only on disposable proof VMs.
 
@@ -109,7 +109,7 @@ Swamp checks validate every workflow with the runtime pinned in `swamp/.swamp.ya
 
 The gate requires `passed`, `wouldStart` and the full grant-file count; a refusal or missing account fails Required checks. Changes to that renderer, its typed input helper or its CLI also select Swamp validation. This checks complete CEL conditions and regex safety without starting serve or changing live grants. Run the native tests for grant patterns locally.
 
-Operation Deno unit tests, shape and workflow validation run on every CI change. Unit tests use four general shards and one process shard, with four workers each. They exclude `*native_test.ts`. Both CI workflows accept GitHub’s `merge_group` event; the root CI calls Swamp once and reports `Required checks` for the batch, using `merge_group.base_sha` for its scope.
+Operation Deno unit tests, shape and workflow validation run on every CI change. Unit tests run in one job with four Deno workers. Keeping one job avoids five separate waits for the shared runner pool. They exclude `*native_test.ts`. Both CI workflows accept GitHub’s `merge_group` event; the root CI calls Swamp once and reports `Required checks` for the batch, using `merge_group.base_sha` for its scope.
 
 Required checks target five minutes. Project checks and native workflow tests are removed from CI for now; Nick decides which checks return. Their local commands and test files remain available. Native tests use the pinned runtime and disposable repos through `swamp/tests/_support/native_harness.ts`. No new nightly workflow replaces these jobs.
 
@@ -125,7 +125,7 @@ Swamp workflow validation uses the dedicated `orbit-monorepo-ci` collective toke
 
 CI never uses `pull_request_target`. The runtime and local extension tree remain pinned; validation, shape, placement and Operation tests are required, including when authentication is absent or refused. No personal key or initial-import validation exception is used.
 
-Build jobs, including Swamp validation, shape and test shards, start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for build input selection. Each uses the same `bin/ci-build-plan` policy. Scope detection and PHP syntax checks fetch only the event commit and its comparison base. The Swamp shape job keeps full history and resolves the initial import's retained comparison source before running both current and frozen rules. CI builds no Rust agent; the [release workflow](#agent-delivery) does. Gateway releases and desired fleet state use the pinned agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
+Build jobs, including Swamp validation, shape and unit tests, start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for build input selection. Each uses the same `bin/ci-build-plan` policy. Scope detection and PHP syntax checks fetch only the event commit and its comparison base. The Swamp shape job keeps full history and resolves the initial import's retained comparison source before running both current and frozen rules. CI builds no Rust agent; the [release workflow](#agent-delivery) does. Gateway releases and desired fleet state use the pinned agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
 
 CI wall time is measured from workflow creation to completion of `Required checks`, including queueing and the final gate.
 
