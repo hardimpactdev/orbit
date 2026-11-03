@@ -3,7 +3,7 @@ title: "Orbit self-update"
 description: "The desired fleet state the Gateway serves for its commit, how orbit self-update replaces the CLI from it, and how the CLI learns that a newer release exists."
 covers:
   - apps/gateway/app/{Data,Infrastructure}/Fleet/**
-  - apps/gateway/app/Domain/Fleet/{Cli,Desired,Fleet,NodeCli,NodeFootprint,NodeRecipe,RecipeDirect,RecipeMaintenance,Release}*.php
+  - apps/gateway/app/Domain/Fleet/{Cli,Desired,Fleet,NodeCli,NodeFootprint,RecipeMaintenance,Release}*.php
   - apps/gateway/app/Actions/Gateway/ShowDesiredFleetStateAction.php
   - apps/gateway/app/Http/Middleware/AnnounceDesiredCliVersion.php
   - apps/gateway/app/Console/Commands/ResolveDesiredFleetStateCommand.php
@@ -16,7 +16,7 @@ covers:
 
 `orbit self-update` updates one machine to the Gateway's release. It replaces the `orbit` binary with the CLI release that CI published for the Gateway's commit. It never touches `orbit-agent`. A Node gets the Gateway's pinned agent through [install on mismatch](/reference/node-agent#install-on-mismatch) with every agent command, so the agent is current before the fleet rollout runs `cli.self-update`. The Gateway serves what to install as the **desired fleet state**. The [fleet rollout](/reference/gateway-recovery#fleet-rollout) runs this command on each managed Node, and an operator runs it on a Mac.
 
-Node footprint convergence includes a separate network digest and live WireGuard check. CLI self-update and the software recipe retain their existing delivery paths.
+Node footprint convergence includes a separate network digest and live WireGuard check. CLI self-update retains its existing delivery path.
 
 ## Desired fleet state
 

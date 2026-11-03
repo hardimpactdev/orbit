@@ -166,22 +166,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/fleet/recipe-pr/indexes.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/fleet/recipe-pr/indexes.ts",
-      "rule": "multi-action",
-      "count": 3,
-      "evidence": [
-        "/usr/bin/gpg",
-        "/usr/bin/gpgv",
-        "/usr/bin/sha256sum"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/fleet/release.ts",
       "rule": "gateway-http",
       "count": 2,

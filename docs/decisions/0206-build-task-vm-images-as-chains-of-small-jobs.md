@@ -64,7 +64,7 @@ Superseded by [the implemented ADR 0207 contract](/reference/compute-drivers#mac
 
 A task VM boots from a base image that the same Gateway code built. Its enrollment no longer runs the `app-dev` software programs and no longer reads a manifest. It still renders and applies everything that is specific to the VM: the host key, WireGuard, the firewall, Caddy, DNS, the agent and its secret, and Pi. The manifest file, `TaskVmBakedPrograms`, and the build's `manifest` step go away.
 
-**Nightly trigger superseded by ADR 0207.** [Recipe changes](/reference/compute-drivers#build-the-base-image) trigger host builds. [Nightly maintenance](/reference/compute-drivers#nightly-recipe-maintenance) supplies the snapshot-date PR; new claims require its deployed recipe's image.
+**Nightly trigger superseded by ADR 0207.** [Recipe changes](/reference/compute-drivers#build-the-base-image) trigger host builds. New claims require the deployed recipe's image.
 
 ### Next steps in the same model
 

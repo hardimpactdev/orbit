@@ -314,7 +314,7 @@ A shared Orbit App would need a central token service that holds its private key
 
 ### A token for each operation
 
-The Gateway starts every repository read and push itself, so it can create a token at the moment of use. A Swamp run that writes to GitHub, such as a recipe PR, gets one scoped token in the vault when its run starts and revokes it when the run ends; no step asks the Gateway for another. A token stored on a Node, or refreshed there on a schedule, would rest on every Node and need recovery when it goes stale. A leaked token reads one repository for at most one hour.
+The Gateway starts every repository read and push itself, so it can create a token at the moment of use. A Swamp run that writes to GitHub gets one scoped token in the vault when its run starts and revokes it when the run ends; no step asks the Gateway for another. A token stored on a Node, or refreshed there on a schedule, would rest on every Node and need recovery when it goes stale. A leaked token reads one repository for at most one hour.
 
 ### The checkout cannot inherit the token
 

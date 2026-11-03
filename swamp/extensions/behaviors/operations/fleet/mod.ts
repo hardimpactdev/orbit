@@ -33,7 +33,7 @@ export function fleet(
     methods: {
       maintenance: {
         description:
-          "Admit scheduled recipe, DNS and ordered rollout Operations",
+          "Admit scheduled DNS and ordered rollout Operations",
         arguments: z.object({ tick: z.string().min(1) }),
         execute: (args: { tick: string }, ctx: MaintenanceContext) =>
           maintenance(args, ctx, makeHttp(ctx)),

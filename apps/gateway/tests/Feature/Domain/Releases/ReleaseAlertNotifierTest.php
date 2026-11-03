@@ -19,7 +19,6 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\UpCloudTaskVmImageBuild;
 use Illuminate\Http\Client\Request;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
@@ -303,25 +302,6 @@ it('keeps a fenced UpCloud attempt in one problem across Gateway releases and re
     $retry->update(['template_uuid' => 'verified-template']);
     expect(Artisan::call('problems:file'))->toBe(0)
         ->and($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled);
-});
-
-it('keeps a no-build nightly cycle independent of summary text and Gateway source', function (): void {
-    $this->travelTo(Carbon::parse('2026-10-18 10:00:00', 'UTC'));
-    Http::fake([RELEASE_ALERT_URL => Http::response(['ok' => true])]);
-    Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'repository_url' => 'https://example.test/orbit.git', 'default_branch' => 'main']);
-    FleetFixtures::inPlace();
-    foreach (['a', 'b'] as $letter) {
-        FleetFixtures::adopt(str_repeat($letter, 40));
-        app(RecipeMaintenanceAlerts::class)->halted('GitHub list failed: '.$letter, incident: RecipeMaintenanceAlerts::repositoryIncident('github_list_failed'));
-        expect(Artisan::call('problems:file'))->toBe(0);
-    }
-    $row = ProblemFingerprint::query()->sole();
-    expect($row->fingerprint)->toBe('release|rollout_halted|recipe-repository:hardimpactdev:orbit|nightly:20261018|github_list_failed')
-        ->and(Task::topLevel()->count())->toBe(1)
-        ->and(Task::topLevel()->sole()->brief)->toContain('GitHub list failed: b');
-    $this->travel(1)->days();
-    app(RecipeMaintenanceAlerts::class)->halted('GitHub list failed: b', incident: RecipeMaintenanceAlerts::repositoryIncident('github_list_failed'));
-    expect(ProblemFingerprint::query()->count())->toBe(2);
 });
 
 it('rejects a no-build recipe alert without an explicit identity', function (): void {

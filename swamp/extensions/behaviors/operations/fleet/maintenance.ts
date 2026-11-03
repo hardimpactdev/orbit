@@ -110,11 +110,9 @@ export async function maintenance(
   };
   const local = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Europe/Amsterdam",
-    hour: "2-digit",
     minute: "2-digit",
-    hourCycle: "h23",
   }).format(at);
-  const [hour, minute] = local.split(":").map(Number);
+  const minute = Number(local);
   if (minute % 5 === 0) {
     await independently(async () => {
       await request("GET", "/api/v1/gateway/desired-fleet-state");
@@ -134,106 +132,6 @@ export async function maintenance(
         // One admission per policy: the Gateway plans a peer only while its policy differs from the last applied one.
         target.configuration_digest,
       );
-    }
-  });
-  await independently(async () => {
-    if (minute % 5 !== 0) return;
-    const prPlan = z.object({
-      status: z.string(),
-      recipe_revision: z.string().regex(/^[a-f0-9]{64}$/).optional(),
-      serving_recipe_revision: z.string().regex(/^[a-f0-9]{64}$/).optional(),
-      base_revision: z.string().regex(/^[a-f0-9]{40}$/).optional(),
-      date: z.string().optional(),
-      pulls: z.array(
-        z.object({
-          number: z.number(),
-          variant: z.string(),
-          head_sha: z.string(),
-          checks: z.enum([
-            "passed",
-            "failed",
-            "pending",
-            "missing",
-            "unreadable",
-          ]).optional(),
-          checks_revision: z.string().regex(/^[a-f0-9]{64}$/).optional(),
-          policy_revision: z.string().regex(/^[a-f0-9]{64}$/).optional(),
-        }),
-      ).default([]),
-    }).parse(await request("GET", "/api/v1/fleet/recipe-pr/plan"));
-    if (
-      prPlan.status === "ready" &&
-      prPlan.recipe_revision && prPlan.serving_recipe_revision &&
-      prPlan.base_revision
-    ) {
-      if (hour >= 3 && minute % 5 === 0) {
-        for (const variant of ["snapshot", "artifacts"]) {
-          await request(
-            "POST",
-            "/api/v1/fleet/recipe-pr",
-            {
-              action: "open",
-              variant,
-              pull_number: 0,
-              head_sha: "",
-              date: prPlan.date,
-            },
-            `fleet:recipe-pr:open:${prPlan.date}:${variant}:${prPlan.serving_recipe_revision}`,
-          );
-        }
-      }
-      // The native behavior lock serializes GitHub writes; each action rechecks its admitted head.
-      // The merge command checks retirement first, including on this cadence’s merge tick.
-      const action =
-        ["retire", "update", "merge"][Math.floor(at.getTime() / 60_000) % 3];
-      for (const pull of prPlan.pulls) {
-        if (!pull.checks || !pull.checks_revision || !pull.policy_revision) {
-          throw new Error("fleet.recipe_pr_plan_incomplete");
-        }
-        if (
-          action === "update" &&
-          (pull.variant !== "snapshot" || pull.checks !== "failed")
-        ) continue;
-        if (
-          action === "merge" && pull.variant === "snapshot" &&
-          pull.checks !== "passed"
-        ) continue;
-        const evidence = action === "retire"
-          ? [
-            prPlan.recipe_revision,
-            prPlan.pulls.map((candidate) =>
-              `${candidate.number}:${candidate.head_sha}:${candidate.policy_revision}`
-            ).sort(),
-          ]
-          : action === "update"
-          ? [prPlan.base_revision, pull.checks_revision]
-          : pull.variant === "artifacts"
-          ? [prPlan.recipe_revision, pull.checks_revision]
-          : [pull.checks_revision];
-        const digest = Array.from(
-          new Uint8Array(
-            await crypto.subtle.digest(
-              "SHA-256",
-              new TextEncoder().encode(
-                JSON.stringify([pull.head_sha, pull.policy_revision, evidence]),
-              ),
-            ),
-          ),
-          (byte) => byte.toString(16).padStart(2, "0"),
-        ).join("");
-        await request(
-          "POST",
-          "/api/v1/fleet/recipe-pr",
-          {
-            action,
-            variant: pull.variant,
-            pull_number: pull.number,
-            head_sha: pull.head_sha,
-            date: prPlan.date,
-          },
-          `fleet:recipe-pr:${prPlan.date}:${action}:${pull.number}:${digest}`,
-        );
-      }
     }
   });
   await independently(async () => {

@@ -6,7 +6,7 @@ covers:
   - apps/gateway/config/{app,logging,retention}.php
   - apps/gateway/app/{Infrastructure/Logging/**,Infrastructure/Database/**,Providers/Domains/DatabaseServiceProvider.php}
   - apps/gateway/{app/Domain/Gateway/GatewayCacheStore.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,resources/sigstore/trusted_root.json}
-  - "{apps/gateway/app/Infrastructure/Gateway/GatewayCheckoutAccessConverger.php,apps/gateway/app/Actions/Fleet/*Rollout*.php,apps/gateway/app/Actions/Fleet/*Recipe*.php,apps/gateway/app/Actions/Fleet/AdmitFleetCliAction.php}"
+  - "{apps/gateway/app/Infrastructure/Gateway/GatewayCheckoutAccessConverger.php,apps/gateway/app/Actions/Fleet/*Rollout*.php,apps/gateway/app/Actions/Fleet/AdmitFleetCliAction.php}"
   - apps/gateway/app/**/GatewayReleases/**
   - apps/gateway/app/**/*GatewayRelease*.php
   - apps/gateway/{app/Domain/Nodes/NodeUpdat*.php,app/Data/Nodes/NodeUpdatingData.php,app/Domain/Fleet/**,app/Infrastructure/Fleet/**,app/Data/Fleet/**,app/Models/FleetRollout*.php,app/Console/Commands/FleetConvergeCommand.php,app/Http/Controllers/Api/FleetRolloutsController.php,config/fleet.php}
@@ -600,8 +600,6 @@ The new scheduler pauses document cleanup when it starts. The handoff waits for 
 
 The handoff also installs the [fleet rollout units](#units). A failure there only logs a warning. It queues [host-local recipe image builds](/reference/compute-drivers#build-the-base-image) when the deployed recipe changes. This only records and dispatches work; it never builds on the release process. A dispatch failure logs an error and the minute recipe check retries it without rolling back a healthy Gateway.
 
-Recipe fleet maintenance skips Docker CE Nodes with reason `docker-provider:docker-ce` and continues with other Nodes. A release never changes their Docker provider.
-
 When publication is needed, the Caddy handoff submits the normal
 `route.caddy_converge` native root on the Gateway Node worker. Its report records
 `caddy: submitted` and `caddy_operation_id`; the Operation records publication
@@ -944,8 +942,6 @@ An open incident keeps one linked group. Further observations update its generat
 Image-build alerts use `recipe-image:<build id>` as the resource, the build attempt as the attempt, and `build_failed` as the fault. Only failures that need operator recovery alert. An unacknowledged from-stock submission restarts on its own without an operator alert. An unacknowledged submission to reactivate a verified image set or resume a failed step alerts and needs `task-vms:build-recipe --retry`.
 
 The incident resolves when a later attempt succeeds, the desired recipe identity differs from the build, or the build row is gone. An attempt that is still running or failed does not prove recovery. A recipe revert to the failed build’s identity does not resolve the incident, even at a newer generation.
-
-Recipe alerts without a build carry an explicit identity. A PR failure uses its PR number and head. A failed repository read uses its nightly date cycle. A failed maintenance job uses its queue job UUID. Alert wording and later Gateway releases do not prove that these incidents recovered.
 
 A migration merges the old buckets based on SHA only when retained alert evidence proves their resource, attempt, and fault. It adopts only groups whose original generated content and lack of operator activity can be confirmed. Ambiguous history stays available for an operator and cannot file a new group automatically.
 
