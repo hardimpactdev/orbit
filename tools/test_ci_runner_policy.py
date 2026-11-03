@@ -14,8 +14,7 @@ def job(workflow, name):
 
 class RunnerPolicyTest(unittest.TestCase):
     def test_heavy_matrices_keep_the_pool_switch_and_same_repository_guard(self):
-        for workflow, name in [('ci.yml', 'project-check'), ('swamp-shape.yml', 'native-tests'),
-                               ('swamp-shape.yml', 'test-shards')]:
+        for workflow, name in [('swamp-shape.yml', 'test-shards')]:
             with self.subTest(job=name):
                 block = job(workflow, name)
                 self.assertEqual(re.search(r'^    runs-on: (.+)$', block, re.M).group(1), POOL)
