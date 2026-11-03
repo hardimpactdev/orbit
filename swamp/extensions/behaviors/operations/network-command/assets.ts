@@ -144,20 +144,21 @@ export const behavior = {
             arguments: z.object({
                 required: z.boolean(), observations: z.array(WireGuardObservation).min(1).max(2),
                 stdout: z.string(), hub_stdout: z.string(), addresses: z.string(),
-                dns_stdout: z.string(), policy: Policy.nullable(),
+                dns_stdout: z.string(), policy: z.array(Policy).max(1),
             }).strict(),
             execute: async (args: {
                 required: boolean; observations: z.infer<typeof WireGuardObservation>[];
                 stdout: string; hub_stdout: string; addresses: string;
-                dns_stdout: string; policy: z.infer<typeof Policy> | null;
+                dns_stdout: string; policy: z.infer<typeof Policy>[];
             }, ctx: Context) => {
                 // Evaluate every observation even when the digest changed: a foreign key must still refuse.
                 const states = [args.stdout, args.hub_stdout];
                 const wireguardMatches = args.observations.map((expected, index) =>
                     matchesWireguard(expected, states[index], args.addresses)).every(Boolean);
-                let dnsMatches = args.policy === null;
-                if (args.policy !== null && args.dns_stdout) {
-                    dnsMatches = matchesPolicy(args.policy, inspection(args.dns_stdout, args.policy.server));
+                const policy = args.policy[0];
+                let dnsMatches = policy === undefined;
+                if (policy !== undefined && args.dns_stdout) {
+                    dnsMatches = matchesPolicy(policy, inspection(args.dns_stdout, policy.server));
                 }
                 return await save(ctx, "drift", { changed: args.required || !wireguardMatches || !dnsMatches });
             },

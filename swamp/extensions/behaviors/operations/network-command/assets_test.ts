@@ -1,5 +1,5 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.19";
-import { dnsDecision, dnsResult, INSPECT, inspection, publicKey } from "./assets.ts";
+import { behavior, dnsDecision, dnsResult, INSPECT, inspection, publicKey } from "./assets.ts";
 import { workflow } from "./workflows.ts";
 const key = "A".repeat(43) + "=";
 const policy = {
@@ -126,4 +126,19 @@ Deno.test("roleless operator DNS accepts its admitted private-only uplink except
     assertThrows(() => dnsDecision(privateOnly, policy));
     assertEquals(dnsDecision(privateOnly, policy, false).changed, false);
     assertEquals(dnsResult(privateOnly, policy, false).uplink, false);
+});
+
+Deno.test("network decision repairs DNS drift without a digest change and skips a compliant hub", async () => {
+    const decisions: unknown[] = [];
+    const ctx = { writeResource: (_spec: string, _name: string, value: unknown) => {
+        decisions.push(value);
+        return Promise.resolve({});
+    } };
+    const input = { required: false, observations: [{ public_key: key, port: null, exact: true, peers: [] }],
+        stdout: `interface: orbit\n  public key: ${key}\n`, hub_stdout: "", addresses: "", dns_stdout: observed(), policy: [policy] };
+    await behavior.methods.compare.execute(input, ctx);
+    await behavior.methods.compare.execute({ ...input, dns_stdout: observed({ domains: "Link 2 (orbit): ~old" }) }, ctx);
+    await behavior.methods.compare.execute({ ...input, policy: [], dns_stdout: "" }, ctx);
+    await behavior.methods.compare.execute({ ...input, policy: [], required: true }, ctx);
+    assertEquals(decisions, [{ changed: false }, { changed: true }, { changed: false }, { changed: true }]);
 });
