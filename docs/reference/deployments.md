@@ -159,7 +159,7 @@ Deploy-step and branch changes need an access grant to the Instance's Node. The 
 
 Before a JavaScript step (`npm-build`, or a command using `vp`, Node, npm/npx, pnpm, Yarn, Bun, Vite, or Corepack), the deploy prepares the [Project environment in the vp store](/reference/tools#project-environments-in-the-vite-store) when the Project declares `vite-plus`. It runs the shared Vite+ steps that a development deploy and `instance:clone` also run. Swamp reads the new release's requirements through sudo and validates them. Swamp installs the pinned runtime in the production account’s private Vite+ cache before the application command.
 
-The shared Node manager supplies its standalone CLI. Swamp publishes only that executable to `/opt/orbit/vite-plus/bin/vp`, with mode `0755` and root ownership. A comparison skips an unchanged copy. It copies no manager credentials or private data. Application commands use the private cache.
+The shared Node manager supplies its standalone CLI. Swamp publishes only that executable to `/opt/orbit/vite-plus/bin/vp`, with mode `0755` and root ownership. A comparison skips an unchanged copy. It copies no manager credentials or private data. The first CLI invocation can bootstrap that cache; Swamp then installs the exact selected runtime versions. Application commands use the private cache.
 
 It records desired versions before installing missing content and verifies the result before allowing the step to start. It does not run package install scripts as the store owner.
 

@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: "@nckrtl/instance-vp-command"
-version: 2026.11.03.1
+version: 2026.11.03.2
 visibility: private
 license: MIT
 description: Native Project VP environment preparation through the stock CLI; manifests are read with official SSH execs.

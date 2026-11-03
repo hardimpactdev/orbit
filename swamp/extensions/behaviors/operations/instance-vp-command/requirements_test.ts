@@ -24,6 +24,14 @@ Deno.test("existing incompatible CLI refuses before project install", async () =
         runtime,
         observation: { stdout: "vp 1.4.0" },
     }, ctx);
+    await behavior.methods.cli.execute({
+        runtime,
+        observation: { stdout: "vp v1.4.0\r\n\r\nLocal vite-plus:\r\n  vite-plus Not found\r\nEnvironment:\r\n  Node.js v26.13.0\r\n" },
+    }, ctx);
+    await assertRejects(() => behavior.methods.cli.execute({
+        runtime,
+        observation: { stdout: "invalid version\nvp v1.4.0\n" },
+    }, ctx), Error, "deployment.vp_store_failed");
 });
 Deno.test("read-only inventory requires both exact installed versions", async () => {
     const inventory = {

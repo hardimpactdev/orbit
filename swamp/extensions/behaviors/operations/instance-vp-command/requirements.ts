@@ -79,7 +79,7 @@ export function material(raw: z.infer<typeof Captured>) {
 }
 export const behavior = {
     type: "@nckrtl/instance-vp-requirements",
-    version: "2026.11.03.1",
+    version: "2026.11.03.2",
     resources: {
         links: {
             schema: z.object({ links: z.array(Link) }),
@@ -178,7 +178,7 @@ export const behavior = {
                 ctx: Context,
             ) => {
                 const version = valid(
-                    args.observation.stdout.trim().replace(/^vp\s+/, ""),
+                    args.observation.stdout.trim().split(/\r?\n/, 1)[0].replace(/^vp\s+/, ""),
                 );
                 if (
                     version === null || !gte(version, args.runtime.vp_version)

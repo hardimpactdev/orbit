@@ -1419,6 +1419,7 @@ jobs:
         type: succeeded
     writes: true
   - name: dev-vp-cli
+    writes: true
     labels:
       role: swamp
     dependsOn:

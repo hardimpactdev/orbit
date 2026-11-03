@@ -331,7 +331,7 @@ sys.exit(subprocess.call(a))
         manager.parent.mkdir(parents=True)
         manager.write_text('#!' + sys.executable + '\n' + '''import json,os,sys
 with open(CALLS,'a') as f:f.write(json.dumps(['vp',os.environ.get('VP_HOME'),*sys.argv[1:]])+'\\n')
-if '--version' in sys.argv:print('vp 0.3.3')
+if '--version' in sys.argv:print('vp v0.3.3\\n\\nLocal vite-plus:\\n  vite-plus Not found\\nEnvironment:\\n  Node.js v26.13.0')
 elif 'list' in sys.argv:print('{"node":[{"version":"24.22.0"}],"package_managers":{"npm":[{"version":"11.12.0"}]}}')
 '''.replace('CALLS', repr(str(self.calls_file))))
         manager.chmod(0o755)

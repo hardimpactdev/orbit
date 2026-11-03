@@ -115,6 +115,8 @@ sequenceDiagram
     %%> What it does:
     %%> - publishes only the managed standalone binary; compare skips an unchanged copy, and no private manager data is copied
     SW->>N: dev-vp-cli<br/>ssh exec argv
+    %%> What it does:
+    %%> - reads the CLI version; the first invocation also bootstraps the app's private cache
     Note over SW: dev-vp-cli-ready<br/>typed data
     SW->>N: dev-vp-install<br/>ssh exec argv
     SW->>N: dev-vp-inventory<br/>ssh exec argv
