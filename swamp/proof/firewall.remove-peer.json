@@ -75,13 +75,14 @@
     "path": "nodes/${node.target}/firewall-rules/remove",
     "body": {
       "port": "7297",
-      "protocol": "tcp"
+      "protocol": "tcp",
+      "source": "any"
     }
   },
   "parity": [
     "swamp/proof/firewall/peer.py",
     "--removed",
-    "-7297/tcp ALLOW 10.231.0.1",
+    "+7297/tcp ALLOW 10.231.0.1",
     "-7297/tcp DENY Anywhere",
     "-7297/tcp (v6) DENY Anywhere (v6)",
     "+Anywhere ALLOW 10.231.0.0/24 # orbit:wireguard-members"
