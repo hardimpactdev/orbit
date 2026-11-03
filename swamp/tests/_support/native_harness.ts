@@ -128,12 +128,13 @@ export async function pullExtension(name: string) {
   return directory;
 }
 
-async function copyTree(from: string, to: string) {
+async function copyTree(from: string, to: string, skip: (name: string) => boolean = () => false) {
   await Deno.mkdir(to, { recursive: true });
   for await (const entry of Deno.readDir(from)) {
+    if (skip(entry.name)) continue;
     const source = `${from}/${entry.name}`;
     const target = `${to}/${entry.name}`;
-    if (entry.isDirectory) await copyTree(source, target);
+    if (entry.isDirectory) await copyTree(source, target, skip);
     else if (entry.isSymlink) await Deno.symlink(await Deno.readLink(source), target);
     else await Deno.copyFile(source, target);
   }
@@ -159,6 +160,8 @@ function contains(haystack: Uint8Array, needle: Uint8Array) {
 
 const SignerBehaviors = ["orbit-certificate-signing-http", '${{ "certificate-sign" }}'];
 
+const isTestFile = (name: string) => /_test\.(ts|py)$|_fixture\.ts$/.test(name);
+
 export class NativeRepo {
   /** Extra environment for the native process, such as a PATH with fake tools. */
   env: Record<string, string> = {};
@@ -172,7 +175,8 @@ export class NativeRepo {
 
   copyBehaviors(...families: string[]) {
     return Promise.all(families.map((family) =>
-      copyTree(`${ROOT}/extensions/behaviors/${family}`, `${this.dir}/extensions/behaviors/${family}`)
+      // Tests and their fixtures stay out: their literal fixture values would trip the private-bytes scan.
+      copyTree(`${ROOT}/extensions/behaviors/${family}`, `${this.dir}/extensions/behaviors/${family}`, isTestFile)
     ));
   }
 
