@@ -45,7 +45,7 @@ A `completed` event can carry a failed run status. Native `interrupted` remains 
 
 A successful run requires its public JSON object; a kind without a result step declares `native` instead (below).
 
-Missing, mismatched or unreadable history leaves the Operation unchanged and raises `swamp.terminal_result_unavailable`; it never triggers resubmission.
+Missing, mismatched or unreadable history leaves the Operation unchanged and raises `swamp.terminal_result_unavailable`; it never triggers resubmission. When Serve cannot be read at all (the connection fails, Serve rate-limits the request, or no reply comes), the queued projection retries every 30 seconds until the kind's run deadline. A missing or mismatched history is not retried.
 
 ### Read Swamp's run data instead of a result step
 

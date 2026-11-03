@@ -416,7 +416,7 @@ final readonly class SwampCommandStep
         $address = config('swamp.address');
         $ca = config('swamp.ca_path');
         if (! is_string($token) || $token === '' || ! is_string($address) || $address === '' || ! is_string($ca) || $ca === '') {
-            throw $this->unavailable();
+            throw new SwampTerminalReadUnavailable;
         }
         $id = bin2hex(random_bytes(16));
         try {
@@ -432,15 +432,15 @@ final readonly class SwampCommandStep
                     if (($message['type'] ?? null) === $type && is_array($payload)) {
                         return ValidatedData::object($payload);
                     }
-                    throw $this->unavailable();
+                    throw new SwampTerminalReadUnavailable;
                 }
             }
         } catch (Throwable) {
-            throw $this->unavailable();
+            throw new SwampTerminalReadUnavailable;
         } finally {
             $this->socket->close();
         }
-        throw $this->unavailable();
+        throw new SwampTerminalReadUnavailable;
     }
 
     private function unavailable(): ResourceOperationException
