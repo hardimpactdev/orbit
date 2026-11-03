@@ -135,7 +135,7 @@ A phase script may hold one fixed literal sleep shorter than a literal timeout, 
 
 | Item | Rule |
 | --- | --- |
-| Measured p95 | Take step `durationMs` and run start and end times from native history of the kind's runs. Use live runs when they exist, otherwise native harness runs. State the sample size. |
+| Measured p95 | Take step `durationMs` and run start and end times from native history of the kind's runs. Use live or disposable topology runs. State the sample size. |
 | Run budget | Every kind expires; a measured p95 with headroom wins. Otherwise 30 minutes until the first success, then 1.5× the longest success. `instance.create` has 60 s (PLAN: under 10 s; policy, not proof). |
 | Enforcement | Serve `max-run-duration` caps runs at the longest legitimate kind; the extensions lane sets it. At the kind budget the Gateway marks `operation.timed_out` and cancels (decision 4). Add no family timer or poller. |
 | No-run rows | Expire after 600 s but keep the lock until the exact native lookup by Operation id proves no run (L17-2300-OD1). Timeouts and transport errors prove nothing. |
@@ -169,11 +169,10 @@ Put each test where its project's CI runs it.
 | --- | --- |
 | `apps/gateway/tests/Feature/<Family>/*NativeTest.php`, plus `Operations/GatewayWorkflowGrantCheckTest.php` | Admission, refusal, lock key, execution copy, the input envelope, projection of success and failure, and grant coverage for the workflow and its vault keys. |
 | `swamp/extensions/behaviors/operations/<family>/*_test.ts`, and `swamp/tests` script tests | Typed behaviors with Deno; each shipped script directly, with shellcheck or ruff. |
-| `operations/<family>/*_native_test.ts` | The workflow on the shared native harness: success, refusal before any write, first-failure skip chain and public result. |
 | Parity tests from the legacy feature tests, and a generator drift test when a generator writes the workflow | Each legacy case gives the same public result natively. Committed YAML equals readable generator output. |
 | `swamp/proof/<kind>.json` (`swamp/proof/README.md`, or the v0 design on beast until it lands) | The proof file: `prepare` and `request` CLI calls, partial `envelope`, budgets, F9 phases, parity tests, `queueTimeout` and topology. No secret appears in it or in argv. |
 
-Native tests use `swamp/tests/_support/native_harness.ts`. `nativeRepo()` gives a disposable repo that runs the pinned runtime, and `fakeBinary()` writes a fake tool. A test that handles a secret sets `repo.secrets`, so the harness scans native history for it. Python native tests are being ported to Deno; add no new ones.
+Test Orbit's TypeScript logic with fast sibling `*_test.ts` files and the [official testing helpers](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/swamp/references/extension/references/model/testing.md). Keep a case only when it covers Orbit logic that another unit test does not cover. Do not add native workflow tests or test Swamp's engine, shell commands or CEL through a custom harness. Prove execution on the disposable topology.
 
 A test that starts real containers sets `ignore: Deno.env.get("ORBIT_DISPOSABLE_DOCKER") !== "1"`, so it runs only inside a proof VM and never on a shared host such as beast. It removes its containers with `docker rm --force --volumes` (#2358) in a `finally`. A killed run can skip that `finally`, which is why the test runs only on a host that is destroyed afterwards.
 
@@ -247,7 +246,7 @@ Continue ports in the approved shape while live admission proof is pending. Use 
 Check the completed port and report what the evidence proves.
 
 - [ ] Cover success and refusal. Check redacted failure detail, cancellation and interrupted projection.
-- [ ] Validate completed YAML with the pinned native runtime. Run focused native tests, script lint, and Gateway admission, identity and projection tests.
+- [ ] Validate completed YAML with the pinned native runtime. Run focused TypeScript unit tests, script lint, and Gateway admission, identity and projection tests.
 - [ ] Separate source conformance from checks, served-source uptake and live evidence. Check guard-error semantics before alleging a silent skip (#2320). Cite this page.
 
 ## Changelog

@@ -1,4 +1,4 @@
-/** One seam for local subprocesses and filesystem effects, so native tests can substitute host tools. */
+/** One seam for local subprocesses and filesystem effects, so unit tests can substitute host tools. */
 export function localCommand(
   command: string | URL,
   options?: Deno.CommandOptions,

@@ -16,10 +16,6 @@ on:
         required: true
       SWAMP_SIGNIN_TOKEN:
         required: true
-      SWAMP_NATIVE_API_KEY:
-        required: true
-      SWAMP_NATIVE_SIGNIN_TOKEN:
-        required: true
   merge_group:
     types: [checks_requested]
   schedule:
@@ -187,4 +183,4 @@ jobs:
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         env:
           DENO_JOBS: "4"
-        run: deno test --parallel -A --ignore='**/*native_test.ts' extensions/behaviors/operations
+        run: deno test --parallel -A extensions/behaviors/operations

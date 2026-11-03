@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
-import { ROOT } from "../../../../tests/_support/native_harness.ts";
+import { ROOT } from "../../../../bin/gate-test-support.ts";
 const Workflow = "operation-task-vm-cache-fill";
 
 Deno.test("the vault is read only for the GitHub token", async () => {

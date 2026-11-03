@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = (ROOT / '.github/workflows/swamp-shape.yml').read_text()
 
 
-class NativeGateTest(unittest.TestCase):
+class RequiredGateTest(unittest.TestCase):
     def test_merge_queue_has_required_checks_and_batch_scopes(self):
         caller = (ROOT / '.github/workflows/ci.yml').read_text()
         self.assertIn('  merge_group:\n    types: [checks_requested]', caller)
@@ -19,7 +19,7 @@ class NativeGateTest(unittest.TestCase):
             block = SOURCE.split(f'  {job}:\n')[1].split('    name:')[0]
             self.assertIn("if: github.event_name != 'merge_group' || github.workflow == 'CI'", block)
         secrets = caller.split('  swamp:\n')[1].split('  gateway-release:\n')[0]
-        self.assertEqual(secrets.count("github.event_name == 'merge_group'"), 4)
+        self.assertEqual(secrets.count("github.event_name == 'merge_group'"), 2)
 
     def test_merge_queue_run_for_main_builds_and_publishes_the_release_web_build(self):
         # Required checks pass in the merge queue run first, so it must hold the Gateway release's web build.
@@ -43,7 +43,7 @@ class NativeGateTest(unittest.TestCase):
         self.assertNotIn('needs:', block)
         self.assertNotIn('continue-on-error', block)
         self.assertIn('DENO_JOBS: "4"', block)
-        self.assertIn("deno test --parallel -A --ignore='**/*native_test.ts' extensions/behaviors/operations", block)
+        self.assertIn("deno test --parallel -A extensions/behaviors/operations", block)
 
 
 if __name__ == '__main__':

@@ -1,22 +1,21 @@
 import { assert, assertEquals, assertRejects, assertStringIncludes } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
-import { nativeRepo, ROOT, trackedStep } from "../../../../tests/_support/native_harness.ts";
-import { command } from "../../../../tests/_support/task_remote.ts";
+import { ROOT, trackedStep, command } from "../../../../bin/gate-test-support.ts";
 import { piFixture } from "../../../../tests/_support/task_turn.ts";
 import { difference, receipt, terminal } from "../tasks/turn.ts";
 
 async function fixture() {
-  const repo = await nativeRepo();
-  const git = async (...args: string[]) => (await command(["git", ...args], repo.dir)).stdout.trim();
+  const directory = await Deno.makeTempDir({ prefix: "task-turn-unit-" });
+  const git = async (...args: string[]) => (await command(["git", ...args], directory)).stdout.trim();
   await git("init", "-q");
   await git("config", "user.email", "test@example.invalid");
   await git("config", "user.name", "Task fixture");
-  await Deno.writeTextFile(`${repo.dir}/file`, "original\n");
+  await Deno.writeTextFile(`${directory}/file`, "original\n");
   await git("add", ".");
   await git("commit", "-qm", "Initial");
-  const root = `${repo.dir}/.git/orbit`;
+  const root = `${directory}/.git/orbit`;
   const token = ["synthetic-pi-test-token-", "with-at-least-32-characters"].join("");
-  const tools = `${repo.dir}/worker-tools`;
+  const tools = `${directory}/worker-tools`;
   await Deno.mkdir(tools);
   for (const name of ["sh", "curl", "awk"]) {
     const path = (await command(["sh", "-c", `command -v ${name}`])).stdout.trim();
@@ -26,28 +25,28 @@ async function fixture() {
     const inputs = trackedStep("operation-task-turn", name).task.inputs;
     if (["receipt_prepare", "receipt_clear"].includes(name)) {
       const argv = (inputs.argv as string[]).map((arg) =>
-        arg.replace(/^\$\{\{ inputs.intent.checkout_path \+ "([^"]*)" \}\}$/, (_, suffix) => repo.dir + suffix)
+        arg.replace(/^\$\{\{ inputs.intent.checkout_path \+ "([^"]*)" \}\}$/, (_, suffix) => directory + suffix)
       );
       assert(!argv.some((arg) => arg.includes("${{")));
       return await command(argv, undefined, undefined, success);
     }
-    await Deno.mkdir(`${repo.dir}/local`, { recursive: true });
+    await Deno.mkdir(`${directory}/local`, { recursive: true });
     const result = await command(["sh", "-c", inputs.run as string], undefined, {
       PATH: tools, ORBIT_PI_PATH: ({ session_create: "/sessions", message_send: "/sessions/session-14/messages", interrupt: "/sessions/session-14/interrupt" } as Record<string, string>)[name] ?? "",
       ORBIT_PI_SESSION: "session-14", ORBIT_PI_TURN: "operation-15", ORBIT_PI_BODY: "{}",
-      ORBIT_TERMINAL: `${repo.dir}/local/terminal.json`, ...extra,
+      ORBIT_TERMINAL: `${directory}/local/terminal.json`, ...extra,
     }, success);
     assert(!JSON.stringify(result).includes(token));
     if (name === "observe" && success) assertEquals(result.stdout, "");
     return result;
   }
   return {
-    repo, root, token, tools, git, step,
+    directory, root, token, tools, git, step,
     read: async () => JSON.parse(await receipt({ path: `${root}/receipt.json` })),
-    terminal: async () => JSON.parse(await terminal({ path: `${repo.dir}/local/terminal.json`, turn: "operation-15" })),
+    terminal: async () => JSON.parse(await terminal({ path: `${directory}/local/terminal.json`, turn: "operation-15" })),
     diff: async () => JSON.parse(await difference({ counts: `${root}/counts`, patch: `${root}/patch` })),
     env: (url: string) => ({ ORBIT_PI_TOKEN: token, ORBIT_PI_URL: url }),
-    [Symbol.asyncDispose]: () => repo[Symbol.asyncDispose](),
+    [Symbol.asyncDispose]: () => Deno.remove(directory, { recursive: true }),
   };
 }
 
@@ -113,7 +112,7 @@ Deno.test("public receipts redact private formats recursively", async () => {
 Deno.test("stale receipt links are removed without touching their targets", async () => {
   await using t = await fixture();
   await Deno.mkdir(t.root);
-  const target = `${t.repo.dir}/protected`;
+  const target = `${t.directory}/protected`;
   await Deno.writeTextFile(target, "keep");
   await Deno.symlink(target, `${t.root}/receipt.json`);
   await t.step("receipt_prepare");
@@ -130,7 +129,7 @@ Deno.test("receipts and differences sanitize VM credential formats", async () =>
   const value = (await t.read()).receipt;
   assert(!JSON.stringify(value).includes(credential));
   assertStringIncludes(value.summary, "[REDACTED]");
-  await Deno.writeTextFile(`${t.repo.dir}/file`, `MODEL_KEY=${credential}\n`);
+  await Deno.writeTextFile(`${t.directory}/file`, `MODEL_KEY=${credential}\n`);
   await t.git("add", "--all");
   const after = await t.git("write-tree");
   await Deno.writeTextFile(`${t.root}/counts`, await t.git("diff", "--numstat", "-z", before, after, "--"));
@@ -144,12 +143,14 @@ Deno.test("Pi credential reaches curl only through its environment", async () =>
   await using t = await fixture();
   await using pi = piFixture(t.token);
   const real = (await command(["sh", "-c", "command -v curl"])).stdout.trim();
-  const record = `${t.repo.dir}/curl-argv`;
-  const fake = await t.repo.fakeBinary("curl", `
+  const record = `${t.directory}/curl-argv`;
+  const fake = `${t.directory}/curl`;
+  await Deno.writeTextFile(fake, `#!/usr/bin/env -S ${Deno.execPath()} run -A --quiet --no-config --no-lock
+
 Deno.writeTextFileSync(${JSON.stringify(record)}, Deno.args.join("\\n")+"\\n", {append:true});
 const child = new Deno.Command(${JSON.stringify(real)}, {args:Deno.args,stdin:"inherit",stdout:"inherit",stderr:"inherit"}).spawn();
 Deno.exit((await child.status).code);
-`);
+`, { mode: 0o755 });
   for (const name of ["session_create", "message_send", "observe", "interrupt"]) {
     await t.step(name, { ...t.env(pi.url), PATH: `${fake.slice(0, fake.lastIndexOf("/"))}:${t.tools}` });
   }
@@ -175,7 +176,7 @@ Deno.test("observe works with the task VM tool set against the proof fixture", a
   const listener = Deno.listen({ hostname: "127.0.0.1", port: 0 });
   const port = listener.addr.port;
   listener.close();
-  const path = `${t.repo.dir}/pi_fixture.py`;
+  const path = `${t.directory}/pi_fixture.py`;
   await Deno.writeTextFile(path, source.replace('HTTPServer(("0.0.0.0", 3774), Handler)', `turn = "operation-15"\nHTTPServer(("127.0.0.1", ${port}), Handler)`));
   const child = new Deno.Command("python3", { args: ["-I", path], stdout: "null", stderr: "piped" }).spawn();
   try {

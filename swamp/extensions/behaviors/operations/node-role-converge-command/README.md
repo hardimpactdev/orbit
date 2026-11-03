@@ -7,5 +7,5 @@ containers keep their runtime identities; Node convergence owns the observer
 and CLI. The retained-role dispatcher and its add-direct workflow are removed.
 
 The tests here cover shared observer asset rendering. The role resource graph
-has native coverage in `swamp/extensions/behaviors/operations/node/role_add_native_test.ts` and real proof
+has unit coverage in `swamp/extensions/behaviors/operations/node/role_add_test.ts` and real proof
 receipts in `swamp/proof/receipts/node-role-converge.json`.
