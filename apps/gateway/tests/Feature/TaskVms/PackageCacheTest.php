@@ -3,15 +3,12 @@
 declare(strict_types=1);
 
 use App\Actions\TaskVms\ObservePackageCacheAction;
-use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\TaskVms\ComposerPackageCache;
-use App\Infrastructure\TaskVms\TaskVmPackageCache;
 use App\Jobs\TaskVms\FillTaskVmPackageCache;
 use App\Models\Node;
 use App\Models\PackageCacheEntry;
 use App\Models\PackageCacheSnapshot;
 use App\Models\Project;
-use App\Models\TaskVm;
 use Illuminate\Bus\UniqueLock;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Support\Facades\DB;
@@ -135,14 +132,4 @@ it('lists current Project usage with verified hashes and removes usage when a lo
     $this->artisan('task-vms:package-cache-usage acme/demo 1.0.0')->expectsOutput($uncached)->assertSuccessful();
     $snapshot->update(['artifacts' => []]);
     $this->artisan('task-vms:package-cache-usage acme/demo 1.0.0')->expectsOutput('{"projects":[],"cached":[]}')->assertSuccessful();
-});
-
-it('refuses Gateway workspace cache execution before any agent action', function (): void {
-    $project = Project::query()->create(['repository_url' => 'https://github.com/acme/cache.git', 'name' => 'Cache', 'slug' => 'cache']);
-    $vm = TaskVm::query()->create(['provider' => 'incus', 'name' => 'tvm-77', 'state' => 'ready', 'wireguard_ip' => '10.44.0.130']);
-    $before = $vm->fresh()->getAttributes();
-
-    expect(fn () => app(TaskVmPackageCache::class)->prepare($vm, $project))
-        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.kind_unavailable'));
-    expect($vm->fresh()->getAttributes())->toBe($before);
 });

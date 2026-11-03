@@ -2,9 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppDev\SsrPortAllocator;
-use App\Domain\AppDev\VitePortRuntime;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckOutputBuilder;
 use App\Domain\Tasks\TaskCheckProcess;
@@ -19,7 +16,6 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Tasks\TaskUnitProgram;
 use App\Models\Instance;
-use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Support\Facades\File;
@@ -29,7 +25,6 @@ use Symfony\Component\Process\Process;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeAgentCommandRunner;
-use Tests\Support\FakeVitePortRuntime;
 use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\PythonPrograms;
 
@@ -1097,27 +1092,6 @@ it('runs no project command when start and run omit the command file, and still 
 });
 
 describe('ssr port', function (): void {
-    it('starts the check of a workspace with its allocated ssr port and never the held 13719', function (): void {
-        $node = Node::query()->create(['name' => 'shared-check-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.161', 'wireguard_ip' => '10.44.0.161', 'user' => 'orbit']);
-        orbit_test_set_app_placement_role($node, false);
-        $runtime = new FakeVitePortRuntime;
-        $runtime->occupied[$node->id] = range(SsrPortAllocator::FIRST_PORT, 13719);
-        app()->instance(VitePortRuntime::class, $runtime);
-        $project = Project::query()->create(['name' => 'Recall', 'slug' => 'recall', 'repository_url' => 'git@github.com:acme/recall.git', 'default_branch' => 'main']);
-        $started = '{"pid":4100,"started":"now","head":"abc","tree":"def"}';
-        $transport = new AppDevFakeSshExecutor([new CommandResult(0, $started, '', 1, false)]);
-        $runner = check_runner($transport);
-        // A task VM Node holds one workspace, so the held ports are the only other claims on the range.
-        $instance = test_ready_task_workspace($project, $node, ['name' => 'task-a', 'checkout_path' => '/fast/apps/recall/task-a', 'branch' => 'task-a']);
-
-        $port = app(SsrPortAllocator::class)->assign($instance);
-        $runner->start($instance, 'composer check');
-
-        expect($port)->toBe(13720)
-            ->and($transport->commands[0]->input)->toContain("export ORBIT_SSR_PORT='13720'\nexport INERTIA_SSR_URL='http://127.0.0.1:13720'\n")
-            ->and($transport->commands[0]->input)->not->toContain('13719');
-    });
-
     it('hands the allocated ssr port to setup, the check, and deliverable commands', function (): void {
         $checkout = check_runner_checkout('printf "%s %s" "$ORBIT_SSR_PORT" "$INERTIA_SSR_URL" > check-ssr');
         $instance = check_runner_instance($checkout);

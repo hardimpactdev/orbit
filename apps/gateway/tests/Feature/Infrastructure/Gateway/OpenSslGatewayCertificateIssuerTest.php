@@ -8,15 +8,12 @@ use App\Infrastructure\Certificates\OpenSslGatewayCertificateIssuer;
 use App\Infrastructure\Certificates\OpenSslGatewayCertificateValidator;
 use App\Infrastructure\Files\AtomicSymlinkPublisher;
 use App\Infrastructure\Files\NativeAtomicSymlinkPublisher;
-use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
-use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\ExecutableFinder;
-use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FixtureProcessRunner;
 use Tests\Support\RootCaFixture;
 
@@ -191,40 +188,6 @@ it('publishes the Metrics leaf without replacing the Gateway certificate scope',
             ->toBeTrue()
             ->and(is_dir($caDirectory.'/metrics-versions'))
             ->toBeTrue();
-    } finally {
-        new Filesystem()->deleteDirectory($orbitHome);
-    }
-});
-
-it('keeps an issued generation stable while later certificates are published', function (): void {
-    $orbitHome = gateway_certificate_test_home();
-    $processes = new FixtureProcessRunner;
-    $issuer = new OpenSslGatewayCertificateIssuer(
-        processes: $processes,
-        validator: new OpenSslGatewayCertificateValidator($processes),
-        links: new NativeAtomicSymlinkPublisher,
-        orbitHome: $orbitHome,
-    );
-
-    try {
-        $first = $issuer->issue('gateway.orbit', '10.44.0.1');
-        $firstCertificate = file_get_contents($first->certificatePath);
-        $firstPrivateKey = file_get_contents($first->privateKeyPath);
-        $second = $issuer->issue('gateway.orbit', '10.44.0.2');
-        $publications = new FakeAgentCommandRunner()->answer('gateway.publish-certificate', ['changed' => true]);
-        new NativeGatewayCertificatePublisher($publications, $orbitHome)->publish(new Node(['name' => 'gateway']), $first);
-
-        expect($first->certificatePath)
-            ->toStartWith($orbitHome.'/ca/gateway-versions/')
-            ->not->toBe($orbitHome.'/ca/gateway-current/gateway.pem');
-        expect(dirname($first->certificatePath))
-            ->not
-            ->toBe(dirname($second->certificatePath));
-        expect(file_get_contents($first->certificatePath))
-            ->toBe($firstCertificate);
-        expect(file_get_contents($first->privateKeyPath))
-            ->toBe($firstPrivateKey);
-        expect($publications->calls[0]['input'])->toBe(['certificate' => $firstCertificate, 'key' => $firstPrivateKey, 'root_certificate' => file_get_contents($orbitHome.'/ca/root.pem')]);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }

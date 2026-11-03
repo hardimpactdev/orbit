@@ -9,7 +9,6 @@ use App\Data\Doctor\DoctorReportData;
 use App\Domain\Doctor\DatabaseConnectionDoctorIssueCode;
 use App\Domain\Doctor\DatabaseServerDoctorIssueCode;
 use App\Domain\Doctor\DoctorFamily;
-use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorIssueCodeCatalog;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\FirewallDoctorIssueCode;
@@ -134,9 +133,7 @@ it('serializes bounded doctor reports and derives status precedence', function (
                 'agent' => null,
             ]],
             'summary' => ['nodes' => 1, 'families' => 1, 'checks' => 1, 'drift' => 2, 'unverifiable' => 1, 'informational' => 0],
-        ])
-        ->and(new DoctorInspectionException()->getMessage())
-        ->toBe('');
+        ]);
 });
 
 it('keeps informational findings out of health, drift, and unverifiable counts', function (): void {

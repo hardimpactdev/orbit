@@ -156,7 +156,6 @@ it('keeps Node execution inside the agent transports across core and extensions'
         'app/Infrastructure/AppDev/DnsmasqPrivateDnsManager.php',
         'app/Infrastructure/Gateway/GatewayPrivateDnsResolver.php',
         'app/Infrastructure/Nodes/Roles/GatewayRoleBaseline.php',
-        'app/Infrastructure/WireGuard/NativeGatewayVpnConverger.php',
         // Existing Tasks workspace execution and its journal are excluded from this port.
         'app/Infrastructure/AppDev/DevelopmentSshExecutor.php',
         'app/Infrastructure/RemotePrograms/SshProgramRunner.php',

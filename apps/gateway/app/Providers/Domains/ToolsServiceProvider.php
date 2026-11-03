@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace App\Providers\Domains;
 
-use App\Domain\Tools\ToolInspector;
 use App\Domain\Tools\ToolManagerRegistry;
 use App\Infrastructure\Tools\AptToolManager;
 use App\Infrastructure\Tools\ComposerToolManager;
 use App\Infrastructure\Tools\HomebrewCaskToolManager;
 use App\Infrastructure\Tools\HomebrewToolManager;
-use App\Infrastructure\Tools\NativeToolInspector;
 use App\Infrastructure\Tools\ToolCommandBudget;
 use App\Infrastructure\Tools\VpToolManager;
 use Illuminate\Support\ServiceProvider;
@@ -19,7 +17,6 @@ final class ToolsServiceProvider extends ServiceProvider
 {
     /** @var array<class-string, class-string> */
     public array $bindings = [
-        ToolInspector::class => NativeToolInspector::class,
     ];
 
     public function register(): void

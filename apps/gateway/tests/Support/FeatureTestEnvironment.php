@@ -12,7 +12,6 @@ use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\WorkerKnownHostsPublisher;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskReviewDiff;
-use App\Domain\TaskVms\TaskVmPackageCacheMount;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
@@ -44,7 +43,6 @@ final readonly class FeatureTestEnvironment
         app()->useStoragePath($storage);
         Storage::fake('local');
         app()->instance(SshExecutor::class, new UnreachableSshExecutor);
-        app()->instance(TaskVmPackageCacheMount::class, new FakeTaskVmPackageCacheMount);
         app()->instance(HostKeyScanner::class, new FakeHostKeyScanner);
         $processes = new SshGuardedProcessRunner(app(NativeProcessRunner::class));
         app()->instance(SshGuardedProcessRunner::class, $processes);

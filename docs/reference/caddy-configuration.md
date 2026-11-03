@@ -3,7 +3,6 @@ title: "Caddy configuration"
 description: "How Orbit renders each Node's Caddyfile, submits native publication, and reports failures."
 covers:
   - apps/gateway/app/Infrastructure/Caddy/**
-  - apps/gateway/app/Infrastructure/Gateway/NativeGatewayCertificatePublisher.php
   - apps/agent/src/commands/gateway_certificate.rs
   - apps/gateway/app/Console/Commands/CaddyBuildCommand.php
   - apps/gateway/app/Infrastructure/Nodes/Roles/CaddyRoleFailure.php
