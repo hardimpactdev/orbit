@@ -9,6 +9,7 @@ use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\DestroyInstanceRequest;
 use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
 use Orbit\Sdk\Requests\Instances\TransferInstanceRequest;
+use Orbit\Sdk\Responses\Instances\InstanceRegistrationResult;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -23,6 +24,11 @@ it('preserves lifecycle admission payloads, keys and typed Operation receipts', 
     $connector = new GatewayConnector('https://gateway.example.test');
     $connector->withMockClient($mock);
     $result = $connector->send($request)->dto();
+    // A registration that needs a run answers 202 with its Operation inside the registration result.
+    if ($result instanceof InstanceRegistrationResult) {
+        expect($result->instance)->toBeNull();
+        $result = $result->operation;
+    }
     expect($result)->toBeInstanceOf(OperationResponse::class)
         ->and($result->id)->toBe(901)->and($result->kind)->toBe($kind)
         ->and($result->requestId)->toBe($requestId)

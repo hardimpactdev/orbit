@@ -5,10 +5,17 @@ declare(strict_types=1);
 namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Data\Instances\InstanceData;
 use App\Data\Instances\RegisterInstanceData;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\DefaultInstanceName;
 use App\Domain\Instances\InstancePhpVersionCatalog;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\RegistrationFacts;
+use App\Domain\NodeFacts\NodeAgentLiveness;
+use App\Domain\NodeFacts\NodeAgentState;
+use App\Domain\NodeFacts\NodeFactKind;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
@@ -20,21 +27,28 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ProjectRoot;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\NodeFact;
 use App\Models\Operation;
 use App\Models\Project;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
-/** Records registration intent. Source inspection and adoption run on the admitted Node. */
+/**
+ * Adopts an existing checkout. The Gateway checks the Node agent's `checkout` fact first. With `.env` absent or
+ * private it records the Instance at once (R1: no task, no run). A `.env` that others can read, or one an agent before
+ * 0.8.0 did not report, needs a native run that protects it.
+ */
 final readonly class RegisterInstanceAction
 {
     public function __construct(
         private StartOperationAction $operations,
         private OperationIdempotency $idempotency,
         private ManagedCheckoutOverlap $overlap,
+        private NodeAgentLiveness $liveness,
+        private RecordEventBroadcaster $broadcaster,
     ) {}
 
-    public function execute(Node $caller, RegisterInstanceData $data, ?string $requestId = null): Operation
+    public function execute(Node $caller, RegisterInstanceData $data, ?string $requestId = null): Operation|Instance
     {
         if (($replay = $this->idempotency->replay('instance.register')) !== null) {
             return $replay;
@@ -67,8 +81,9 @@ final readonly class RegisterInstanceAction
             throw new ResourceOperationException('instance.source_owner_invalid', 'Registration requires the configured Node account.', 409);
         }
         app(DevelopmentNodeExclusion::class)->assertAvailable($project, $caller);
+        [$facts, $recordOnly] = $this->observed($caller, $project, $data->sourcePath);
 
-        return DB::transaction(function () use ($caller, $project, $name, $root, $data, $requestId): Operation {
+        $result = DB::transaction(function () use ($caller, $project, $name, $root, $data, $requestId, $facts, $recordOnly): Operation|Instance {
             $instance = Instance::query()->where('node_id', $caller->id)->where('checkout_path', $data->sourcePath)->first();
             if ($instance !== null && ($instance->project_id !== $project->id || $instance->name !== $name
                 || $instance->registration_request_id === null || $instance->routes()->exists()
@@ -85,6 +100,11 @@ final readonly class RegisterInstanceAction
                 'registration_include_worktrees' => false, 'registration_original_path' => $data->sourcePath,
                 'registration_authoritative_path' => $data->sourcePath,
             ]);
+            if ($recordOnly) {
+                RegistrationFacts::activate($instance, $facts, $project->repository_url, $project->repository_identity);
+
+                return $instance->refresh();
+            }
 
             return $this->operations->execute('instance.register', 'instance', $instance->id, $caller->id, [
                 'instance_id' => $instance->id, 'project_id' => $project->id, 'node_id' => $caller->id,
@@ -96,6 +116,33 @@ final readonly class RegisterInstanceAction
                 'source_digest' => $instance->registration_source_digest,
             ], 'operator', $requestId);
         });
+        if ($result instanceof Instance) {
+            $this->broadcaster->broadcast(RecordEventType::InstanceUpdated, $result->id,
+                InstanceData::fromModel($result->load(['project', 'node', 'routes.targets']))->toArray());
+        }
+
+        return $result;
+    }
+
+    /**
+     * The checked facts of the agent's latest report of the checkout, and whether the Instance can be recorded with no
+     * run. A silent agent or a missing report can't be verified.
+     *
+     * @return array{0: array{registered:true,branch:?string,commit:string,detached:bool,digest:?string,common:string,default_branch:?string,inferred_slug:string,php_version:?string,laravel:bool}, 1: bool}
+     */
+    private function observed(Node $caller, Project $project, string $path): array
+    {
+        $fact = NodeFact::query()->where('node_id', $caller->id)->where('kind', NodeFactKind::Checkout->value)->where('subject', $path)->first();
+        if ($this->liveness->for($caller)?->state !== NodeAgentState::Online || ! $fact instanceof NodeFact) {
+            throw new ResourceOperationException('instance.source_invalid',
+                "Orbit can't verify the checkout: the Node agent has not reported it recently. Try again when the agent reports.", 409);
+        }
+        $facts = RegistrationFacts::fromAgent($fact->data, $path, $project->repository_identity, $project->type, $caller->user);
+        $env = array_key_exists('env', $fact->data) ? $fact->data['env'] : false;
+        $private = $env === null
+            || (is_array($env) && ($env['kind'] ?? null) === 'regular' && is_string($env['mode'] ?? null) && (octdec($env['mode']) & 0o077) === 0);
+
+        return [$facts, $private];
     }
 
     private function unavailable(): ResourceOperationException

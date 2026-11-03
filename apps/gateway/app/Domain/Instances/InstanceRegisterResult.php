@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Data\Instances\InstanceData;
-use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Operations\DirectOperation;
@@ -14,7 +13,6 @@ use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
 use App\Models\Node;
@@ -60,20 +58,8 @@ final readonly class InstanceRegisterResult implements DirectOperationProjection
             if ($facts !== null) {
                 $input = $operation->input;
                 $instance = Instance::query()->findOrFail($operation->target_id);
-                $instance->update([
-                    'status' => InstanceState::Active, 'provisioning_step' => 'active',
-                    'branch' => $facts['branch'], 'branch_override' => $facts['branch'],
-                    'starting_commit' => $facts['commit'],
-                    'selected_php_version' => $facts['php_version'],
-                    'source_is_laravel' => $facts['laravel'],
-                    'registration_repository_url' => $input['repository'], 'registration_repository_identity' => $input['repository_identity'],
-                    'registration_source_digest' => $facts['digest'],
-                    'registration_detached' => $facts['detached'],
-                    'registration_default_branch' => $facts['default_branch'],
-                    'registration_inferred_slug' => $facts['inferred_slug'],
-                    'registration_common_repository_path' => $facts['common'], 'registration_worktree_paths' => [$input['checkout']],
-                    'registration_relocation_state' => 'relocated', 'registration_completed_at' => now(), 'failed_step' => null, 'error_code' => null,
-                ]);
+                RegistrationFacts::activate($instance, $facts, ValidatedData::string($input['repository']),
+                    ValidatedData::nullableString($input['repository_identity']));
                 $this->broadcaster->broadcast(RecordEventType::InstanceUpdated, $instance->id,
                     InstanceData::fromModel($instance->load(['project', 'node', 'routes.targets']))->toArray());
             }
@@ -99,12 +85,7 @@ final readonly class InstanceRegisterResult implements DirectOperationProjection
         }
         // The read masks embedded credentials; a masked origin is refused.
         $origin = $read('origin');
-        try {
-            $identity = str_contains($origin, 'REDACTED@') ? null : GitRepositoryIdentity::derive($origin);
-        } catch (\InvalidArgumentException) {
-            $identity = null;
-        }
-        if ($identity !== $input['repository_identity']) {
+        if (RegistrationFacts::identity($origin) !== $input['repository_identity']) {
             throw new ResourceOperationException('instance.source_identity_invalid', 'The checkout origin is not the Project repository.', 409);
         }
         $commit = $read('commit');
@@ -114,37 +95,11 @@ final readonly class InstanceRegisterResult implements DirectOperationProjection
             throw new ResourceOperationException('instance.source_invalid', 'The checkout read is incomplete.', 422);
         }
         $branch = $read('branch') === '' ? null : $read('branch');
-        $segments = preg_split('#[/:]#', rtrim($origin, '/')) ?: [''];
-        $slug = (string) preg_replace(['/\.git\z/', '/[^a-z0-9-]+/', '/\A-|-\z/'], ['', '-', ''], strtolower(end($segments)));
+        $slug = RegistrationFacts::slug($origin);
 
         return ['registered' => true, 'branch' => $branch, 'commit' => $commit, 'detached' => $branch === null, 'digest' => $digest,
             'common' => $checkout.'/.git', 'default_branch' => preg_replace('#\Arefs/remotes/origin/#', '', $read('default')) ?: null,
             'inferred_slug' => $slug,
-            ...$this->profile($lines, ProjectType::from(ValidatedData::string($input['project_type'])))];
-    }
-
-    /**
-     * The artisan entry point and composer.json lines after the digest; a monorepo or a source without composer.json has no profile.
-     *
-     * @param  list<string>  $lines
-     * @return array{php_version:?string,laravel:bool}
-     */
-    private function profile(array $lines, ProjectType $type): array
-    {
-        $entryPoint = array_shift($lines);
-        $composer = implode("\n", $lines);
-        if ($type === ProjectType::Monorepo || $entryPoint === null || trim($composer) === '') {
-            return ['php_version' => null, 'laravel' => false];
-        }
-        if (! in_array($entryPoint, ['unsafe', 'regular', 'absent'], true) || strlen($composer) > 1048576) {
-            throw new ResourceOperationException('app-dev.source_metadata_unsafe', 'The checkout metadata is unsafe.', 422);
-        }
-        try {
-            $profile = app(ComposerSourceClassifier::class)->classify($composer, $type, $entryPoint);
-        } catch (RuntimeConvergenceException $exception) {
-            throw new ResourceOperationException($exception->errorCode, 'The development source metadata is invalid or unsupported.', 422);
-        }
-
-        return ['php_version' => $profile->phpVersion, 'laravel' => $profile->laravel];
+            ...RegistrationFacts::profile(array_shift($lines), implode("\n", $lines), ProjectType::from(ValidatedData::string($input['project_type'])))];
     }
 }

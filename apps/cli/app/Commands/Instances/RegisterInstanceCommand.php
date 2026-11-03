@@ -12,12 +12,15 @@ use App\Services\Git\GitRegistrationDiscovery;
 use App\Services\Git\GitRegistrationFacts;
 use App\Services\Git\GitRepositoryOriginPolicy;
 use App\Support\Console\ConsoleInterrupted;
+use App\Support\Console\ConsoleWriter;
 use App\Support\Console\ProgressState;
 use App\Support\Console\PromptAborted;
 use App\Support\Console\TerminalText;
 use App\Support\GatewayFailureRenderer;
 use Laravel\Prompts\ConfirmPrompt;
 use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
+use Orbit\Sdk\Responses\Instances\InstanceRegistrationResult;
+use Orbit\Sdk\Responses\Instances\InstanceResponse;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class RegisterInstanceCommand extends GatewayCommand
@@ -88,16 +91,35 @@ final class RegisterInstanceCommand extends GatewayCommand
         if ($profile === null) {
             return self::FAILURE;
         }
-        $operation = $this->send($connector, new RegisterInstanceRequest(
+        $registration = $this->send($connector, new RegisterInstanceRequest(
             sourcePath: $facts->path, includeWorktrees: $this->option('include-worktrees') === true,
             projectId: $values['projectId'], instanceName: $this->stringOption('name'), root: $values['root'],
             domain: $this->stringOption('domain'), setup: $this->option('setup') === true,
             idempotencyKey: $this->stringOption('idempotency-key'),
-        ), OperationResponse::class);
+        ), InstanceRegistrationResult::class);
+        if (! $registration instanceof InstanceRegistrationResult) {
+            return self::FAILURE;
+        }
+        // The Gateway registers a checkout with a private or absent .env at once; otherwise it starts a run.
+        if ($registration->operation instanceof OperationResponse) {
+            return $this->followOperation($connector, $profile, $registration->operation, 'Register Instance', 'Instance registration');
+        }
+        $instance = $registration->instance;
+        if (! $instance instanceof InstanceResponse) {
+            return self::FAILURE;
+        }
+        if ($this->option('json') === true) {
+            $this->writeJson($instance->toArray());
 
-        return $operation instanceof OperationResponse
-            ? $this->followOperation($connector, $profile, $operation, 'Register Instance', 'Instance registration')
-            : self::FAILURE;
+            return self::SUCCESS;
+        }
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Instance registered: {$instance->name}", [
+            'ID' => $instance->id,
+            'Selected branch' => $instance->selectedBranch,
+            'Request ID' => $instance->requestId,
+        ]));
+
+        return self::SUCCESS;
     }
 
     /**

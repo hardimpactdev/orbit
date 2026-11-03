@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\Instances;
 
 use Orbit\Sdk\GatewayRequest;
+use Orbit\Sdk\Responses\Instances\InstanceRegistrationResult;
+use Orbit\Sdk\Responses\Instances\InstanceResponse;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
@@ -40,12 +42,14 @@ final class RegisterInstanceRequest extends GatewayRequest implements HasBody
         return '/api/v1/instances/register';
     }
 
-    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): OperationResponse
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): InstanceRegistrationResult
     {
-        return OperationResponse::fromGatewayData(
-            $this->unwrapData($response),
-            $this->successRequestId($response),
-        );
+        $data = $this->unwrapData($response);
+        $requestId = $this->successRequestId($response);
+
+        return $response->status() === 201
+            ? new InstanceRegistrationResult(InstanceResponse::fromGatewayData($data, $requestId), null)
+            : new InstanceRegistrationResult(null, OperationResponse::fromGatewayData($data, $requestId));
     }
 
     /** @return array<string, bool|int|string> */

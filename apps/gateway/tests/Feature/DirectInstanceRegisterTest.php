@@ -9,18 +9,20 @@ use App\Domain\Instances\InstanceRegisterResult;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Swamp\StartSwampRun;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\NodeFact;
 use App\Models\Operation;
 use App\Models\Project;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
     $this->project = Project::query()->create(['name' => 'Register proof', 'slug' => 'register-proof', 'repository_url' => 'https://github.com/example/proof.git', 'type' => 'node-package', 'root' => '.']);
-    $this->node = Node::query()->create(['name' => 'register-dev', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'amd64', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => '10.44.0.9', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG', 'settings' => ['apps' => ['path' => '/srv/apps']]]);
+    $this->node = Node::query()->create(['name' => 'register-dev', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'amd64', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => '10.44.0.9', 'ssh_host_fingerprint' => 'SHA256:register', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG', 'settings' => ['apps' => ['path' => '/srv/apps']]]);
     orbit_test_set_app_placement_role($this->node, false);
     $this->instance = Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $this->node->id, 'name' => 'proof', 'checkout_path' => '/srv/apps/register-proof/proof', 'source_layout' => 'checkout', 'status' => 'reserved']);
     $this->operation = Operation::query()->create(['status' => 'queued', 'state' => ['swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676'], 'kind' => 'instance.register', 'target_type' => 'instance', 'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'input' => ['checkout' => $this->instance->checkout_path, 'repository' => $this->project->repository_url, 'repository_identity' => $this->project->repository_identity, 'project_type' => 'node-package']]);
@@ -33,6 +35,22 @@ function register_reads(string $checkout, array $change = []): array
     return [...['filesystem' => str_repeat('b', 64)."\nabsent\n", 'top' => $checkout."\n", 'common' => $checkout."/.git\n",
         'worktrees' => "worktree {$checkout}\nHEAD ".str_repeat('a', 40)."\nbranch refs/heads/feature\n", 'origin' => "https://github.com/example/proof.git\n",
         'branch' => "feature\n", 'commit' => str_repeat('a', 40)."\n", 'default' => "refs/remotes/origin/main\n"], ...$change];
+}
+
+/**
+ * The Node agent is online and reports one plain checkout of github.com/example/proof on branch feature.
+ *
+ * @param  array<string,mixed>  $change
+ */
+function register_report(Node $node, string $checkout, array $change = []): void
+{
+    app(CacheAgentStateView::class)->putSubscriber(true, true, 1);
+    seed_agent_view($node->id, []);
+    NodeFact::query()->updateOrCreate(['node_id' => $node->id, 'kind' => 'checkout', 'subject' => $checkout], [
+        'digest' => bin2hex(random_bytes(32)), 'observed_at' => now(), 'received_at' => now(),
+        'data' => [...['owner' => 'orbit', 'top_level' => $checkout, 'common_dir' => $checkout.'/.git', 'linked' => false, 'worktrees' => [$checkout],
+            'origin' => 'https://github.com/example/proof.git', 'branch' => 'feature', 'head' => str_repeat('a', 40), 'default_branch' => 'main',
+            'application' => $checkout, 'artisan' => 'absent', 'composer' => null, 'env' => null], ...$change]]);
 }
 
 /** @param array<string,mixed> $result */
@@ -97,7 +115,71 @@ it('returns only recorded public intent to the native reader', function (): void
         ->and(app(InstanceRegisterResult::class)->input($this->operation)['intent']['ssh_execution']['target']['host_keys'])->toBe([$this->node->ssh_host_key_type.' '.$this->node->ssh_host_key]);
 });
 
+$register = static fn (string $name = 'native'): Instance|Operation => app(RegisterInstanceAction::class)->execute(test()->node,
+    new RegisterInstanceData('/srv/apps/register-proof/'.$name, false, test()->project->id, $name, null, null, false));
+
+it('records a checkout with a private or absent .env at once, with no task', function (?array $env) use ($register): void {
+    register_report($this->node, '/srv/apps/register-proof/native', ['env' => $env]);
+
+    $instance = $register();
+
+    expect($instance)->toBeInstanceOf(Instance::class)->and(Operation::query()->count())->toBe(1)
+        ->and($instance->status->value)->toBe('active')->and($instance->branch)->toBe('feature')
+        ->and($instance->starting_commit)->toBe(str_repeat('a', 40))->and($instance->registration_default_branch)->toBe('main')
+        ->and($instance->registration_source_digest)->toBeNull()->and($instance->registration_completed_at)->not->toBeNull();
+})->with([
+    'absent .env' => [null],
+    'owner-only .env' => [['kind' => 'regular', 'mode' => '0600', 'owner' => 'orbit']],
+]);
+
+it('starts the run that protects .env when others can read it, or when an older agent did not report it', function (Closure $change) use ($register): void {
+    app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
+    config(['swamp.run_token' => 'native-register-fixture']);
+    $change->call($this);
+
+    expect($register())->toBeInstanceOf(Operation::class);
+    expect(Instance::query()->where('name', 'native')->sole()->status->value)->toBe('reserved');
+})->with([
+    'group-readable .env' => [fn () => register_report($this->node, '/srv/apps/register-proof/native', ['env' => ['kind' => 'regular', 'mode' => '0640', 'owner' => 'orbit']])],
+    'symlinked .env' => [fn () => register_report($this->node, '/srv/apps/register-proof/native', ['env' => ['kind' => 'symlink', 'mode' => '0777', 'owner' => 'orbit']])],
+    'agent before 0.8.0' => [function (): void {
+        register_report($this->node, '/srv/apps/register-proof/native');
+        $fact = NodeFact::query()->where('subject', '/srv/apps/register-proof/native')->sole();
+        $data = $fact->data;
+        unset($data['env']);
+        $fact->update(['data' => $data]);
+    }],
+]);
+
+it("can't verify a checkout the agent has not reported, and reserves nothing", function () use ($register): void {
+    app(CacheAgentStateView::class)->putSubscriber(true, true, 1);
+    seed_agent_view($this->node->id, []);
+
+    expect(fn () => $register())->toThrow(ResourceOperationException::class, "can't verify");
+    expect(Instance::query()->count())->toBe(1)->and(Operation::query()->count())->toBe(1);
+});
+
+it('refuses a reported checkout that is not one plain checkout of the Project by the Node account', function (array $change, string $code) use ($register): void {
+    register_report($this->node, '/srv/apps/register-proof/native', $change);
+
+    try {
+        $register();
+        $this->fail('Registration should refuse.');
+    } catch (ResourceOperationException $exception) {
+        expect($exception->errorCode)->toBe($code);
+    }
+    expect(Instance::query()->count())->toBe(1);
+})->with([
+    'linked worktree' => [['linked' => true], 'instance.registration_conflict'],
+    'sibling worktree' => [['worktrees' => ['/srv/apps/register-proof/native', '/srv/apps/register-proof/other']], 'instance.registration_conflict'],
+    'another repository' => [['origin' => 'https://github.com/example/other.git'], 'instance.source_identity_invalid'],
+    'masked origin' => [['origin' => 'https://REDACTED@github.com/example/proof.git'], 'instance.source_identity_invalid'],
+    'another owner' => [['owner' => 'root'], 'instance.source_owner_invalid'],
+    'no commit' => [['head' => null], 'instance.source_invalid'],
+]);
+
 it('admits and completes in-place registration through one real native HTTP root', function (): void {
+    register_report($this->node, '/srv/apps/register-proof/native', ['env' => ['kind' => 'regular', 'mode' => '0644', 'owner' => 'orbit']]);
     $gateway = $this->markAsGateway(Node::query()->create(['name' => 'register-gateway', 'status' => 'active',
         'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1']));
     $this->node->accessibleNodes()->attach($gateway);

@@ -19,7 +19,12 @@ orbit instance:register --project=ID [--idempotency-key=KEY] [options]
 | `--domain=HOST` | none | Currently unavailable. |
 | `--setup` | off | Currently unavailable. |
 
-The CLI refuses a directory outside Git and an origin with credentials before sending a request. Swamp independently checks the source and adopts it in place. Admission returns an Operation; its successful native result activates the Instance. Registration never creates a Project. Run [`project:create`](/cli/project/create) first.
+The CLI refuses a directory outside Git and an origin with credentials before sending a request. The Gateway then checks the [Node agent's report](/reference/node-agent#checkouts) of the checkout: one plain checkout, not a linked worktree, of the Project's repository, owned by the Node account. It reads nothing on the Node for that check.
+
+- When `.env` is absent or only its owner can read it, the Gateway registers the Instance at once and answers HTTP 201 with it. No task runs.
+- When others can read `.env`, or an agent before 0.8.0 did not report it, the Gateway answers HTTP 202 with an Operation. The CLI follows it: Swamp removes group and public access from `.env`, then the Instance becomes active.
+
+While the agent is silent or has not reported the checkout, registration refuses with `instance.source_invalid` and says it can't verify; nothing is reserved. Registration never creates a Project. Run [`project:create`](/cli/project/create) first.
 
 Project inference, relocation, linked worktrees, setup, domain requests and web-serving Projects return `operation.kind_unavailable` before reservation. See [Register an existing checkout](/domains/applications#register-an-existing-checkout).
 

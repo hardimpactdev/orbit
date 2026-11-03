@@ -2,7 +2,7 @@ sequenceDiagram
   %% Target design: rule 1 (read-only from Node agent reports, like tool.adopt), R1 record-only branch, R4 Node-work branch like tool.remove; .env stays the user's file; Processes from Project definitions for development (instance.create). docs/domains/applications.md#register-an-existing-checkout.
   %% Tightened: flow-tighten 2026-11-02, rules 5, 16, 22 (no Node re-read of admitted facts; cfgmgmt file mode, ssh exec setup, cfgmgmt systemd Processes).
   %% status: draft
-  %% Interim: until the Node agent reports checkouts, every registration starts a run that reads the checkout over @swamp/ssh, and the Gateway checks the read facts at the end. --setup stays refused (operation.kind_unavailable).
+  %% Implemented: the record-only branch checks the Node agent's checkout fact (agent 0.8.0 reports .env kind and mode, 2026-11-03). The run branch still carries the interim reads. --setup stays refused (operation.kind_unavailable).
   %% command: instance:register
   %% kind: instance.register
   autonumber

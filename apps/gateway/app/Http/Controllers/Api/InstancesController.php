@@ -61,11 +61,16 @@ final class InstancesController extends Controller
     {
         $caller = $request->user();
         assert($caller instanceof Node);
-        $operation = $action->execute($caller, $request->payload(), $request->attributes->getString('orbit.request_id'));
-        $primary = Instance::query()->findOrFail($operation->target_id);
-        $request->attributes->set('orbit.instance_registration', $primary);
+        $result = $action->execute($caller, $request->payload(), $request->attributes->getString('orbit.request_id'));
+        // A checkout with a private or absent .env is registered at once; otherwise a native run protects .env first.
+        if ($result instanceof Instance) {
+            $request->attributes->set('orbit.instance_registration', $result);
 
-        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
+            return response()->json(['data' => InstanceData::fromModel($result)->toArray(), 'meta' => $this->meta($request)], 201);
+        }
+        $request->attributes->set('orbit.instance_registration', Instance::query()->findOrFail($result->target_id));
+
+        return response()->json(['data' => OperationData::fromModel($result)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]
