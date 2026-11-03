@@ -37,7 +37,7 @@ elif mode in ('online', 'guest'):
     check(run('test', '-e', '/etc/orbit/agent').returncode == 1, 'observer config is absent')
     if mode == 'guest':
         check(operation['input']['intent']['task_vm_guest'] is True, 'the removed Node is a task VM guest')
-        check(operation['input']['snapshot']['task_vm_id'] is not None, 'the guest marker is captured')
+        check(operation['input']['_node_removal']['task_vm_id'] is not None, 'the guest marker is captured')
     keys = run('cat', '/home/orbit/.ssh/authorized_keys').stdout
     check('ssh-ed25519 AAAAProofUnrelated operator' in keys.splitlines(), 'the unrelated SSH key remains')
     remaining = {' '.join(line.split()[:2]) for line in keys.splitlines()}
