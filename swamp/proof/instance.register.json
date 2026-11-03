@@ -14,7 +14,7 @@
         "sh",
         "-eu",
         "-c",
-        "base=/home/orbit/apps/p-$1/plain-$1; linked=/home/orbit/apps/p-$1/r-$1; mkdir -p /home/orbit/apps/p-$1; git clone -q --depth=1 --branch 13.x https://github.com/laravel/laravel.git \"$base\"; git -C \"$base\" worktree add -q -b temporary-$1 \"$linked\"; git -C \"$linked\" branch -m renamed-$1",
+        "base=/home/orbit/apps/proof-source/plain-$1; linked=/home/orbit/apps/proof-source/r-$1; mkdir -p /home/orbit/apps/proof-source; git clone -q --depth=1 --branch 13.x https://github.com/laravel/laravel.git \"$base\"; git -C \"$base\" worktree add -q -b temporary-$1 \"$linked\"; git -C \"$linked\" branch -m renamed-$1",
         "sh",
         "${proof.run}"
       ],
@@ -32,7 +32,7 @@
       "operation": false,
       "bind": "project",
       "body": {
-        "slug": "p-${proof.run}",
+        "slug": "proof-source",
         "name": "Proof source",
         "type": "laravel-app",
         "root": "public",
@@ -83,7 +83,7 @@
       "operation": false,
       "bind": "plain",
       "body": {
-        "source_path": "/home/orbit/apps/p-${proof.run}/plain-${proof.run}",
+        "source_path": "/home/orbit/apps/proof-source/plain-${proof.run}",
         "project_id": "${project.id}"
       }
     }
@@ -93,11 +93,11 @@
     "path": "instances/register",
     "bind": "instance",
     "body": {
-      "source_path": "/home/orbit/apps/p-${proof.run}/r-${proof.run}",
+      "source_path": "/home/orbit/apps/proof-source/r-${proof.run}",
       "project_id": "${project.id}",
       "instance_name": "r-${proof.run}",
       "setup": true,
-      "domain": "r-${proof.run}.p-${proof.run}.test"
+      "domain": "r-${proof.run}.proof-source.test"
     },
     "caller": "target"
   },
@@ -142,8 +142,8 @@
       "artisan",
       "tinker",
       "--execute",
-      "App\\Models\\Node::findOrFail(${node.target})->forceFill(['tld'=>'test'])->save(); $paths=['/home/orbit/apps/p-${proof.run}/plain-${proof.run}','/home/orbit/apps/p-${proof.run}/r-${proof.run}']; $deadline=microtime(true)+110; while(App\\Models\\NodeFact::where('node_id',${node.target})->where('kind','checkout')->whereIn('subject',$paths)->count()!==2){ if(microtime(true)>$deadline){throw new RuntimeException('agent checkout report timed out');} sleep(1); } echo 'agent reported both checkouts';"
+      "App\\Models\\Node::findOrFail(${node.target})->forceFill(['tld'=>'test'])->save(); $paths=['/home/orbit/apps/proof-source/plain-${proof.run}','/home/orbit/apps/proof-source/r-${proof.run}']; $deadline=microtime(true)+110; while(App\\Models\\NodeFact::where('node_id',${node.target})->where('kind','checkout')->whereIn('subject',$paths)->count()!==2){ if(microtime(true)>$deadline){throw new RuntimeException('agent checkout report timed out');} sleep(1); } echo 'agent reported both checkouts';"
     ]
   ],
-  "clean": false
+  "clean": true
 }

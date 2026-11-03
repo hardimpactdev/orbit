@@ -8,7 +8,7 @@ from pathlib import Path
 operation = json.loads(Path(os.environ['PROOF_OPERATION_FILE']).read_text())
 outputs = Path(os.environ['PROOF_OUTPUTS']).read_text()
 checkout = operation['input']['checkout']
-domain = 'r-' + os.environ['PROOF_RUN'] + '.p-' + os.environ['PROOF_RUN'] + '.test'
+domain = 'r-' + os.environ['PROOF_RUN'] + '.proof-source.test'
 
 
 def target(*argv):
@@ -34,7 +34,7 @@ check(operation['result']['commit'] == target('runuser', '-u', 'orbit', '--', 'g
 instance = gateway("$i=App\\Models\\Instance::findOrFail(" + str(operation['target_id']) + "); echo json_encode(['status'=>$i->status->value,'layout'=>$i->source_layout,'routes'=>$i->routes->map(fn($r)=>['status'=>$r->status->value,'published'=>$r->sites_published])->all()]);")
 check(instance['status'] == 'active' and instance['layout'] == 'worktree', 'the linked Instance is active')
 check(instance['routes'] == [{'status': 'active', 'published': True}], 'the Route is active and published')
-plain = gateway("$i=App\\Models\\Instance::where('checkout_path'," + json.dumps('/home/orbit/apps/p-' + os.environ['PROOF_RUN'] + '/plain-' + os.environ['PROOF_RUN']) + ")->firstOrFail(); echo json_encode(['status'=>$i->status->value,'operations'=>App\\Models\\Operation::where('target_type','instance')->where('target_id',$i->id)->count()]);")
+plain = gateway("$i=App\\Models\\Instance::where('checkout_path'," + json.dumps('/home/orbit/apps/proof-source/plain-' + os.environ['PROOF_RUN']) + ")->firstOrFail(); echo json_encode(['status'=>$i->status->value,'operations'=>App\\Models\\Operation::where('target_type','instance')->where('target_id',$i->id)->count()]);")
 check(plain == {'status': 'active', 'operations': 0}, 'plain registration is active without an Operation or run')
 for member in operation['input']['members']:
     check(target('systemctl', 'is-active', member['input']['name']).stdout.strip() == 'active', 'the development Process is active')
