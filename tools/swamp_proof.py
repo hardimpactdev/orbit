@@ -7,8 +7,8 @@ down     cancel the task group through the normal API and confirm the VM is dest
 
 Each group's title names its lane (`swamp-proof <host>:<session>`), and up and run touch HEARTBEAT on
 the guest at their start and end. The proof-reaper Swamp schedule cancels a group whose heartbeat is
-older than an hour, or that a newer open group of its lane superseded. Before up or run takes a slot,
-every other local session idle for IDLE_SECONDS or older than MAX_SECONDS is also taken down.
+older than an hour, or that a newer open group of its lane superseded. Only the scheduled reaper
+expires other sessions; this command changes its own session only.
 """
 import argparse
 import fcntl
@@ -34,8 +34,6 @@ SOURCE = '/home/orbit/swamp-proof/src'
 # Outside the staged tree, which every up replaces; the proof-reaper schedule reads its mtime.
 HEARTBEAT = '/home/orbit/swamp-proof-activity'
 TERMINAL = {'succeeded', 'failed', 'cancelled', 'interrupted'}
-IDLE_SECONDS = 3600
-MAX_SECONDS = 8 * 3600
 
 
 class ProofError(Exception):
@@ -315,36 +313,6 @@ def down(gateway, state, session=None):
     return state
 
 
-def expired(state, now):
-    """A held VM whose session ran nothing for IDLE_SECONDS, or that is older than MAX_SECONDS."""
-    vm = state.get('vm', {})
-    if not vm.get('group_id') or vm.get('destroyed'):
-        return False
-    last = max(state.get(key) or 0 for key in ('up_started_epoch', 'last_up_started_epoch', 'ready_epoch', 'last_run_epoch'))
-    return now - last > IDLE_SECONDS or now - (state.get('up_started_epoch') or now) > MAX_SECONDS
-
-
-def reap(gateway, now=None):
-    """Take down every other expired session; a session whose command is running holds its lock and is skipped."""
-    reaped = []
-    for path in sorted(SESSION.parent.glob('*.json')):
-        if path == SESSION:
-            continue
-        with path.with_suffix('.lock').open('a') as lock:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                continue
-            state = json.loads(path.read_text())
-            if expired(state, now or time.time()):
-                try:
-                    down(gateway, state, path)
-                    reaped.append(path.stem)
-                except ProofError as error:
-                    print(f'swamp-proof: expired session {path.stem} is still up: {error}', file=sys.stderr)
-    return reaped
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest='action', required=True)
@@ -370,9 +338,6 @@ def main(argv=None):
             print('Another swamp-proof command holds the session.', file=sys.stderr)
             return 2
         try:
-            if args.action in ('up', 'run'):
-                for name in reap(Gateway()):
-                    print(f'swamp-proof: took down expired session {name}', file=sys.stderr)
             if args.action == 'up':
                 state = up(Gateway(), args.topology, args.agent_delivery)
                 print(json.dumps({key: state[key] for key in ('topology', 'topology_version', 'commit', 'vm', 'timings')}))

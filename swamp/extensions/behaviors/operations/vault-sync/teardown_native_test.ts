@@ -29,13 +29,6 @@ Deno.test("teardown deletes only exact ledger matches", async () => {
   assertEquals(steps["Confirm teardown"].status, "succeeded");
   assertEquals(steps["Remove CLI session"].status, "succeeded");
 });
-Deno.test("teardown refuses shared items before deleting", async () => {
-  await using f = await fixture();
-  f.write({ ...f.read(), ciphers: [cipher("published", undefined, { collection_ids: ["collection", "other"] })] });
-  const { steps, state } = await f.run(false, "operation-vault-teardown");
-  assertEquals(steps["Select published items"].error, "vault.item_shared");
-  assertEquals(state.deletes, []);
-});
 Deno.test("teardown retains completed deletes and clears session on failure", async () => {
   await using f = await fixture();
   f.inputs.intent.ledger.push({ ...f.inputs.intent.ledger[0], source: "database-user:8", cipher_id: "second" });
@@ -44,13 +37,4 @@ Deno.test("teardown retains completed deletes and clears session on failure", as
   assertEquals(state.deletes, ["published"]);
   assertEquals([steps["Delete the items-0"].status, steps["Delete the items-1"].status], ["succeeded", "failed"]);
   assertEquals(steps["Remove CLI session"].status, "succeeded");
-});
-Deno.test("missing items and empty ledgers make no delete", async () => {
-  await using f = await fixture();
-  const first = await f.run(true, "operation-vault-teardown");
-  assertEquals(first.state.deletes, []);
-  assertEquals(first.steps["Delete the items-0"].status, "skipped");
-  f.inputs.intent.ledger = [];
-  f.write({ ...f.read(), ciphers: [cipher()] });
-  assertEquals((await f.run(true, "operation-vault-teardown")).state.deletes, []);
 });

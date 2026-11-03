@@ -207,8 +207,19 @@ sequenceDiagram
   opt role plan needs this action
   SW->>N: Install Swamp<br/>cfgmgmt fetch
   %%> What it does:
-  %%> - installs the recipe's pinned Swamp release at `/usr/local/bin/swamp` by SHA-256; serve and the workers run it
-  %%> - a running serve or worker keeps its binary; the new one takes effect at its next restart
+  %%> - installs the recipe's pinned Swamp release by SHA-256 at `/usr/local/lib/orbit-swamp/<version>/swamp`, a path no process runs from yet
+  end
+  opt role plan needs this action
+  SW->>N: Keep the running Swamp<br/>SSH argv
+  %%> What it does:
+  %%> - while `/usr/local/bin/swamp` is still a file, renames it into a new directory under `/usr/local/lib/orbit-swamp` and links the path to the release at once; a rename keeps the inode, so a running serve or worker keeps a binary it can start children from
+  %%> Why:
+  %%> - replacing the file in place left the running workers on a deleted binary, and every 209 dispatch failed until they restarted
+  end
+  opt role plan needs this action
+  SW->>N: Link Swamp<br/>cfgmgmt link
+  %%> What it does:
+  %%> - points `/usr/local/bin/swamp`, which serve and the workers run, at the pinned release; a running process keeps the file it started from, and the new release takes effect at its next restart
   end
   opt role plan needs this action
   SW->>N: Apply Swamp identity<br/>SSH argv
@@ -233,6 +244,9 @@ sequenceDiagram
   end
   opt role plan needs this action
   SW->>N: Check Swamp binary<br/>cfgmgmt fetch
+  end
+  opt role plan needs this action
+  SW->>N: Check Swamp link<br/>cfgmgmt link
   end
   opt role plan needs this action
   SW->>N: Check Swamp identity<br/>cfgmgmt file
