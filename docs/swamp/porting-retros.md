@@ -619,7 +619,7 @@ Same-Node resource batches run one at a time to bound dispatch memory. Publicati
 
 The receipt index is `swamp/proof/receipts/node-role-converge.json`. AppDev repairs mode drift and preserves PHP-FPM PIDs (199.56 s); Reverb preserves its PID (100.51 s). Metrics preserves both container identities (146.32 s) on source `3ec41a9109`, minimal@16. The shared Metrics role-add and exporter-enable proofs pass in 148.24 s and 36.98 s. Each case has one sample; p95 across convergence fixtures is 199.56 s. The operation budget remains 1,800 s and queue timeout 30 s.
 
-Before this receipt index and retrospective, the source removes 638 net Orbit lines. Workflows remove 725 net lines and behaviors remove 350. Charts and references add 210 net lines; proof fixtures add 203 and native tests add 76. No shipped script is added or deleted and no script gap is retained. VM 464 was destroyed through normal cancellation 9073; physical absence was verified.
+Before this receipt index and retrospective, the source removes 632 net Orbit lines. Workflows remove 725 net lines and behaviors remove 350. Charts and references add 210 net lines; proof fixtures add 203 and native tests add 76. No shipped script is added or deleted and no script gap is retained. VM 464 was destroyed through normal cancellation 9073; physical absence was verified.
 
 ## 2026-11-03: Schedule definition parent reads native completion
 
