@@ -11,7 +11,7 @@ use App\Models\Node;
 /** Public first-contact input. Candidate identity is never committed here. */
 final readonly class NodeBootstrapIntent
 {
-    public const array Kinds = ['node.bootstrap_probe', 'node.macos_inspect'];
+    public const array Kinds = ['node.macos_inspect'];
 
     public function __construct(private NodeEnrollmentPolicy $policy) {}
 

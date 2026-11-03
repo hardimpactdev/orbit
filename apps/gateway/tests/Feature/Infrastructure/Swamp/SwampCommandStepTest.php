@@ -15,18 +15,30 @@ use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeDirectOperationProjection;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
+    app()->instance(DirectOperation::class, new DirectOperation([new class implements DirectOperationContribution
+    {
+        public function definitions(): array
+        {
+            return ['test.terminal_read' => [
+                'workflow' => 'operation-test-terminal-read',
+                'projection' => FakeDirectOperationProjection::class,
+                'terminal_result' => ['job' => 'bootstrap', 'step' => 'probe-host'],
+            ]];
+        }
+    }]));
     $this->node = Node::query()->create(['name' => 'command-target', 'user' => 'prior', 'platform' => 'linux', 'public_ssh_host' => '192.0.2.209']);
     $this->runId = '2a9c5e84-746a-487b-8621-4f6e1bb7d356';
     $this->operation = Operation::query()->create([
-        'kind' => 'node.bootstrap_probe', 'target_type' => 'node', 'target_id' => $this->node->id, 'node_id' => $this->node->id,
+        'kind' => 'test.terminal_read', 'target_type' => 'node', 'target_id' => $this->node->id, 'node_id' => $this->node->id,
         'input' => [], 'state' => ['swamp_run_id' => $this->runId], 'status' => OperationStatus::Running,
         'started_at' => '2026-10-31T12:00:00Z', 'sequence' => 1,
     ]);
-    $this->history = ['id' => $this->runId, 'workflowName' => 'operation-node-bootstrap-probe', 'status' => 'succeeded',
-        'inputs' => ['operation_id' => $this->operation->id, 'node_id' => $this->node->id, 'kind' => 'node.bootstrap_probe'],
+    $this->history = ['id' => $this->runId, 'workflowName' => 'operation-test-terminal-read', 'status' => 'succeeded',
+        'inputs' => ['operation_id' => $this->operation->id, 'node_id' => $this->node->id, 'kind' => 'test.terminal_read'],
         'startedAt' => '2026-10-31T12:00:00Z', 'completedAt' => '2026-10-31T12:00:01Z',
         'jobs' => [['name' => 'bootstrap', 'steps' => [
             ['name' => 'scan-host-key', 'outputs' => ['stdout' => '{"architecture":"discard"}']],
@@ -47,10 +59,10 @@ it('reads history once after a native terminal event and projects only the fixed
 
     expect($result->status)->toBe(OperationStatus::Succeeded);
     expect($result->result)->toBe(['probed' => true, 'architecture' => 'x86_64', 'public_key' => 'public-fixture']);
-    expect($this->node->fresh()->architecture)->toBe('x86_64')->and($this->node->fresh()->user)->toBe('prior');
+    expect($this->node->fresh()->user)->toBe('prior');
     expect($this->socket->sent)->toHaveCount(1);
     expect($this->socket->sent[0])->toMatchArray(['type' => 'workflow.history.get', 'payload' => ['workflowIdOrName' => $this->runId]]);
-    expect($this->socket->closed)->toBeTrue();
+    expect($this->socket->closed)->toBeFalse();
     $this->step->projectTerminal($result, $terminal, $this->selector);
     expect($this->socket->sent)->toHaveCount(1);
 });

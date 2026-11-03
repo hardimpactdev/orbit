@@ -776,7 +776,7 @@ Gateway-owned runner records and their credential flow remain in progress in [AD
 
 ### Pinned bootstrap transport
 
-The Node enrollment workflow uses `bootstrap-ssh` before its WireGuard address is available. `node.bootstrap_probe` proves the admitted host fingerprint and architecture. `node.bootstrap_install` installs the admitted agent pin only after that probe succeeds. Host, port, login and host fingerprint come from the Operation input. The worker cannot select a connection or credential. The Gateway resolves the existing SSH identity through a protected reference and refuses a different observed fingerprint before running a command. Receipt reads reuse that identity without creating or rotating credentials. These child primitives do not change the retained synchronous enrollment callers.
+The Node enrollment workflow uses `bootstrap-ssh` before its WireGuard address is available. `node:add` proves the admitted host fingerprint and architecture inside its own enrollment workflow. `node.bootstrap_install` installs the admitted agent pin only after that probe succeeds. Host, port, login and host fingerprint come from the Operation input. The worker cannot select a connection or credential. The Gateway resolves the existing SSH identity through a protected reference and refuses a different observed fingerprint before running a command. Receipt reads reuse that identity without creating or rotating credentials. These child primitives do not change the retained synchronous enrollment callers.
 
 
 ### Node lifecycle children

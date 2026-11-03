@@ -1,5 +1,5 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1";
-import { behavior, bootstrapProbeResult } from "./probe_result.ts";
+import { bootstrapProbeResult } from "./probe_result.ts";
 const sample = {
     bootstrap: { platform: "linux" as const, expected_architecture: "x86_64" },
     observation: { stdout: "Linux x86_64\n", exitCode: 0 as const },
@@ -9,19 +9,14 @@ const sample = {
         fingerprint: "SHA256:fixture",
     },
 };
-Deno.test("official SSH observations produce the existing public terminal contract", async () => {
-    const writes: unknown[] = [];
-    const result = await behavior.methods.read.execute(sample, {
-        writeResource: (...args) => Promise.resolve(writes.push(args)),
-    });
-    assertEquals(JSON.parse(result.stdout), {
+Deno.test("enrollment decodes public SSH observations", () => {
+    assertEquals(JSON.parse(bootstrapProbeResult(sample).stdout), {
         probed: true,
         architecture: "x86_64",
         host_type: "ssh-ed25519",
         public_key: "AAAA",
         host_key_fingerprint: "SHA256:fixture",
     });
-    assertEquals(writes, [["result", "result", result]]);
 });
 Deno.test("platform and architecture decisions remain in the public result decoder", () => {
     assertThrows(
