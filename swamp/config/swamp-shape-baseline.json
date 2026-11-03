@@ -392,64 +392,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/node/converge_footprint.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/converge_footprint.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/converge_local.ts",
-      "rule": "multi-action",
-      "count": 3,
-      "evidence": [
-        "/usr/bin/getent",
-        "/usr/bin/python3",
-        "/usr/bin/sudo"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/footprint_local_actions.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "/usr/bin/python3",
-        "/usr/bin/sudo"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/gateway_role_system.ts",
-      "rule": "custom-control",
-      "count": 18,
-      "evidence": [
-        "embedded-control",
-        "lock"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/gateway_role_system.ts",
-      "rule": "inline-script",
-      "count": 344,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/gateway_role_system.ts",
-      "rule": "multi-action",
-      "count": 3,
-      "evidence": [
-        "/usr/bin/python3",
-        "/usr/bin/sudo",
-        "/usr/bin/systemctl"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/node/network_native_program.ts",
       "rule": "custom-control",
       "count": 5,
@@ -509,14 +451,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/node/role_direct.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/node/role_metrics.ts",
       "rule": "gateway-http",
       "count": 4,
@@ -526,45 +460,6 @@
     },
     {
       "file": "extensions/behaviors/operations/node/role_metrics.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/role_publication.ts",
-      "rule": "gateway-http",
-      "count": 3,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/role_removal.ts",
-      "rule": "custom-control",
-      "count": 2,
-      "evidence": [
-        "setTimeout",
-        "sleep"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/role_removal.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/role_runtime_local.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/role_runtime_local.ts",
       "rule": "private-material",
       "count": 1,
       "evidence": []
@@ -691,20 +586,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/routes/caddy-program.ts",
-      "rule": "custom-control",
-      "count": 5,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/caddy-program.ts",
-      "rule": "inline-script",
-      "count": 150,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/routes/dns-publication.ts",
       "rule": "custom-control",
       "count": 5,
@@ -755,14 +636,6 @@
       "rule": "inline-script",
       "count": 214,
       "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/publication.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
     },
     {
       "file": "extensions/behaviors/operations/routes/router-lan.ts",

@@ -6,7 +6,6 @@ license: MIT
 description: Shared signed recipe policies and single-action host programs.
 behaviors:
   - operations/fleet-recipe/assets.ts
-  - operations/fleet-recipe/node_role.ts
   - operations/fleet-recipe/observer_assets.ts
   - operations/fleet/release.ts
 additionalFiles:
