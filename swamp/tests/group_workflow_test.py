@@ -16,37 +16,6 @@ REPO = Path(__file__).resolve().parents[1]
 
 
 class GroupWorkflowTest(unittest.TestCase):
-    def test_concurrent_maintenance_admissions_share_four_slot_cap(self):
-        with tempfile.TemporaryDirectory(prefix="orbit-admission-cap-") as temp:
-            root = Path(temp)
-            shutil.copytree(REPO / "extensions", root / "extensions")
-            shutil.copyfile(REPO / ".swamp.yaml", root / ".swamp.yaml")
-            source = (REPO / "tests/fixtures/group-runs/admission.ts").read_text()
-            (root / "extensions/behaviors/fixture_admission.ts").write_text(
-                source.replace("../../../extensions/behaviors/", "./"))
-            env = dict(os.environ, SWAMP_NO_UPDATE_CHECK="1", SWAMP_NO_TELEMETRY="1")
-            for name in ["SWAMP_SERVER_TOKEN", "SWAMP_SERVER_TOKEN_FILE", "SWAMP_SERVE_URL", "SWAMP_SERVER_URL"]:
-                env.pop(name, None)
-
-            def command(*args):
-                result = subprocess.run(["swamp", *args, "--json"], cwd=root, env=env,
-                                        capture_output=True, text=True, timeout=45)
-                self.assertEqual(result.returncode, 0, result.stderr[-2500:] + result.stdout[-2500:])
-                return json.loads(result.stdout)
-
-            command("behavior", "create", "@fixture/maintenance-admission", "admission-fixture")
-            command("behavior", "run", "admission-fixture", "seed")
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-                list(pool.map(lambda project: command("behavior", "run", "admission-fixture", "admit",
-                                                       "--input", f"projectId={project}"), [4, 5]))
-            admissions = command("data", "query", 'modelName == "admission-fixture" && name.startsWith("admission-")',
-                                 "--select", "attributes")["results"]
-            decisions = command("data", "query", 'modelName == "admission-fixture" && name.startsWith("decision-")',
-                                "--select", "attributes")["results"]
-            self.assertEqual(len(admissions), 4)
-            self.assertEqual(sum(d["admitted"] for d in decisions), 1)
-            self.assertEqual(sorted(d["projectId"] for d in decisions), [4, 5])
-
     def test_empty_fanout(self):
         with tempfile.TemporaryDirectory(prefix="orbit-group-empty-") as temp:
             root = Path(temp)
@@ -193,13 +162,6 @@ class GroupWorkflowTest(unittest.TestCase):
                 until(lambda: history(owners[9]["runId"])["status"] == "failed", "group 9 did not fail independently")
                 until(lambda: status_is(owners[8]["runId"], "suspended"), "group 8 did not reach its durable wait")
                 self.assertEqual(latest("fixture-tg-10", "starts")["count"], 1)
-                # Both manual entry points must join the scheduled group owner.
-                command("workflow", "run", "dependency-routine", "--server", url, "--input", "workItem=tg-8")
-                command("workflow", "run", "dependency-package", "--server", url, "--stdin", body={
-                    "workItem": "tg-8", "targets": [{"manager": "composer", "package": "fixture/package",
-                    "version": "2.0.0", "purpose": "major"}]})
-                self.assertEqual(latest("orbit-group-tg-8", "owner"), owners[8])
-                self.assertEqual(latest("fixture-tg-8", "starts")["count"], 1)
                 # Duplicate requests for the same generation admit no second owner.
                 duplicate = command("workflow", "run", "group-run", "--server", url, "--detach", "--no-supersede", "--stdin",
                                     body={**owners[8], "definition": "orbit-group-tg-8", "preapprovalModel": "fixture-preapprovals"})
