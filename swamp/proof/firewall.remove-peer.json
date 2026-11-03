@@ -3,6 +3,7 @@
   "workflow": "operation-firewall-direct",
   "topology": "minimal",
   "budget_seconds": 300,
+  "queue_timeout_seconds": 30,
   "expect": {
     "status": "succeeded"
   },
