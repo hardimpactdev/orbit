@@ -136,6 +136,8 @@ def layout(gateway_node):
     env = SOURCE / 'apps/gateway/.env'
     lines = [line for line in env.read_text().splitlines() if not line.startswith(('ORBIT_GATEWAY_CHECKOUT=', 'ORBIT_GATEWAY_WEB='))]
     env.write_text('\n'.join([*lines, f'ORBIT_GATEWAY_CHECKOUT={HOME}/orbit/apps/gateway', f'ORBIT_GATEWAY_WEB={HOME}/web']) + '\n')
+    # Every sealed release serves a cached configuration, as the release builder leaves it.
+    orbit('php', 'artisan', 'config:cache', '--no-interaction', '--quiet', cwd=HOME / 'releases' / current / 'apps/gateway')
     rendered = json.loads(orbit('php', str(SOURCE / 'tools/swamp-proof-guest/gateway.php'), 'caddyfile', cwd=SOURCE / 'apps/gateway',
                                 input=json.dumps({'node': gateway_node})).splitlines()[-1])
     if rendered['problems']:
