@@ -19,7 +19,7 @@ Deno.test("credential monitor classifies the native read steps' outputs", async 
     for (const step of workflow.jobs.flatMap((job) => job.steps) as {name:string; task:{inputs:{run:string}}}[]) {
       const inputs = step.task.inputs;
       if (step.name in fixtures) {
-        assertMatch(inputs.run, /^(SWAMP_API_KEY_FILE=\S+ )?timeout 30 \/home\/orbit\/\.local\/bin\/swamp (access|worker|auth) token list /);
+        assertMatch(inputs.run, /^(SWAMP_API_KEY_FILE=\S+ )?timeout 30 \/usr\/local\/bin\/swamp (access|worker|auth) token list /);
         inputs.run = shellJoin(["printf", "%s", JSON.stringify(fixtures[step.name])]);
       } else if (step.name === "certificate") {
         assertMatch(inputs.run, /^timeout 30 openssl x509 -enddate -noout -in /);

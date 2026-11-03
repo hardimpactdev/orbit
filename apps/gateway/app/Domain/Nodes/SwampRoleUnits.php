@@ -65,7 +65,7 @@ final class SwampRoleUnits
             ." SWAMP_HOME={$home}/.swamp SWAMP_CONFIG_DIR={$config} SWAMP_API_KEY_FILE={$config}/api-key"
             ." SWAMP_SERVER_TOKEN_FILE={$config}/serve-driver-token SWAMP_REMOTE_ONLY=1 NODE_USE_SYSTEM_CA=1"
             ." SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1\n"
-            ."ExecStart={$home}/.local/bin/swamp serve --repo-dir {$repo} --port ".self::Port.' --host 127.0.0.1'
+            ."ExecStart=/usr/local/bin/swamp serve --repo-dir {$repo} --port ".self::Port.' --host 127.0.0.1'
             ." --auth-mode token --admins user:nckrtl --club-api-key-file {$config}/api-key"
             .' --trusted-hosts swamp.orbit --trust-proxy --dispatch-env-allow=,'
             .' --max-concurrent-scheduled-runs '.self::ScheduledRuns.' --shutdown-drain-timeout 5m'

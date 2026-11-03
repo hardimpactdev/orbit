@@ -54,6 +54,9 @@ it('admits the swamp role as a Caddy role of its own Node and keeps it a singlet
         ->and($snapshot['runtime'])->toBe(['role' => 'swamp', 'node_id' => $this->node->id, 'assignment_id' => $snapshot['assignment_id'],
             'agent_sha256' => $snapshot['agent_sha256'], 'user' => $this->node->user, 'workers' => ['a', 'b'],
             'units' => SwampRoleUnits::for($this->node->user, $this->node->id),
+            // The recipe's pinned Swamp release, which the role installs at /usr/local/bin/swamp by checksum.
+            'binary' => ['url' => 'https://github.com/swamp-club/swamp/releases/download/v20261103.000636.0-sha.db3f6373/swamp-linux-x86_64',
+                'sha256' => '6e0fe06f91f07f448b7972ebcbbc4fb994422a9712f8012966c0cc07a41c42a3'],
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($this->node)]);
     expect(app(NodeRoleRuntimeSource::class)->resolveRoleMaterial($snapshot, $this->node->id)->value)->toBeNull();
 

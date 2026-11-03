@@ -948,6 +948,31 @@ jobs:
   dependsOn:
   - {job: phase_50, condition: {type: succeeded}}
   steps:
+    # The recipe's pinned release, by checksum: serve and the workers run /usr/local/bin/swamp. A running process keeps
+    # its binary; the new one takes effect at its next restart.
+  - name: Install Swamp
+    writes: true
+    labels:
+      role: swamp
+    guard: ${{ inputs.intent.runtime.swamp == null }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/fetch'
+      behaviorName: '${{ ("swamp-binary-"+string(inputs.node_id)).split(".").join("-") }}'
+      methodName: apply
+      globalArgs:
+        nodeHost: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":""} } : inputs.intent.runtime.swamp).ssh_execution.target.host }}'
+        nodeUser: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":""} } : inputs.intent.runtime.swamp).ssh_execution.target.user }}'
+        nodePort: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":""} } : inputs.intent.runtime.swamp).ssh_execution.target.port }}'
+        nodeIdentityFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":""} } : inputs.intent.runtime.swamp).ssh_execution.identity_file }}'
+        become: true
+        url: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":""} } : inputs.intent.runtime.swamp).binary.url }}'
+        path: /usr/local/bin/swamp
+        checksum: '${{ "sha256:" + (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":""} } : inputs.intent.runtime.swamp).binary.sha256 }}'
+        owner: root
+        group: root
+        mode: '0755'
+      inputs: {}
   - name: Apply Swamp identity
     writes: true
     labels:
@@ -964,6 +989,8 @@ jobs:
             : inputs.intent.runtime.swamp).user }}', /etc/orbit/node-proxy/id_ed25519, /etc/orbit/swamp-role-worker/ssh-identity]}}
   - name: Apply Swamp serve
     writes: true
+    # The unit runs /usr/local/bin/swamp, so it starts only after the binary is in place.
+    dependsOn: [{step: Install Swamp, condition: {type: succeeded}}]
     labels:
       role: swamp
     guard: ${{ inputs.intent.runtime.swamp == null }}
@@ -976,6 +1003,8 @@ jobs:
           : inputs.intent.runtime.swamp).units.serve }}', enabled: true, ensure: running}, inputs: {}}
   - name: Apply Swamp worker unit
     writes: true
+    # The unit runs /usr/local/bin/swamp, so it starts only after the binary is in place.
+    dependsOn: [{step: Install Swamp, condition: {type: succeeded}}]
     labels:
       role: swamp
     guard: ${{ inputs.intent.runtime.swamp == null }}
@@ -1053,6 +1082,28 @@ jobs:
           : inputs.intent.runtime.swamp).ssh_execution.target.port }}', nodeIdentityFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]}
           : inputs.intent.runtime.swamp).ssh_execution.identity_file }}', become: true, service: '${{ "orbit-swamp-worker@" + self.worker + ".service" }}', enabled: true, ensure: running},
       inputs: {}}
+  - name: Check Swamp binary
+    labels:
+      role: swamp
+    guard: ${{ inputs.intent.runtime.swamp == null }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/fetch'
+      behaviorName: '${{ ("swamp-binary-"+string(inputs.node_id)).split(".").join("-") }}'
+      methodName: check
+      globalArgs:
+        nodeHost: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":""} } : inputs.intent.runtime.swamp).ssh_execution.target.host }}'
+        nodeUser: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":""} } : inputs.intent.runtime.swamp).ssh_execution.target.user }}'
+        nodePort: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":""} } : inputs.intent.runtime.swamp).ssh_execution.target.port }}'
+        nodeIdentityFile: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":""} } : inputs.intent.runtime.swamp).ssh_execution.identity_file }}'
+        become: true
+        url: '${{ (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":""} } : inputs.intent.runtime.swamp).binary.url }}'
+        path: /usr/local/bin/swamp
+        checksum: '${{ "sha256:" + (inputs.intent.runtime.swamp == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[],"binary":{"url":"","sha256":""} } : inputs.intent.runtime.swamp).binary.sha256 }}'
+        owner: root
+        group: root
+        mode: '0755'
+      inputs: {}
   - name: Check Swamp identity
     labels:
       role: swamp
@@ -1073,9 +1124,9 @@ jobs:
   steps:
   - name: Check Swamp runtime
     guard: ${{ inputs.intent.runtime.swamp == null }}
-    task: {type: assert, expr: '["Check Swamp serve", "Check Swamp worker unit", "Check Swamp identity"].all(k, steps[k].outputs.status == "compliant") && (inputs.intent.runtime.swamp
+    task: {type: assert, expr: '["Check Swamp binary", "Check Swamp serve", "Check Swamp worker unit", "Check Swamp identity"].all(k, steps[k].outputs.status == "compliant") && (inputs.intent.runtime.swamp
         == null ? {"node_id":inputs.node_id,"user":inputs.intent.ssh.target.user,"ssh_execution":inputs.intent.ssh,"units":{"serve":"","worker":""},"workers":[]} : inputs.intent.runtime.swamp).workers.all(w,
-        steps["Check " + w].outputs.status == "compliant")', severity: high, message: 'The swamp role''s serve, workers or SSH identity drifted'}
+        steps["Check " + w].outputs.status == "compliant")', severity: high, message: 'The swamp role''s binary, serve, workers or SSH identity drifted'}
     labels:
       role: swamp
   labels:
