@@ -37,4 +37,4 @@ The Analytics update caller no longer copies Process scripts. Its health request
 
 ## Native verification
 
-With the repository's pinned Swamp runtime installed, run `SWAMP_BIN=/path/to/pinned/swamp python3 -m unittest discover -s swamp/extensions/behaviors/operations/process-commands -p process_native_test.py -v`. The suite pulls the pinned official extensions into each disposable root. It covers all six kinds, reruns, failure, transitional systemd state, Docker argv and environment privacy, runtime changes, mounts and Vite readiness. Native tests follow the Python test layout in the porting reference; the Deno shard has no native Swamp binary and runs the typed behavior tests.
+Run `deno test -A swamp/extensions/behaviors/operations/process-commands/process_native_test.ts`. The harness uses the pinned Swamp runtime, or `SWAMP_BIN`, and pulls the pinned official extensions into each disposable root. The suite covers all six kinds, reruns, failure, transitional systemd state, Docker argv and environment privacy, runtime changes, mounts and Vite readiness. The process-commands Deno shard runs it in CI.
