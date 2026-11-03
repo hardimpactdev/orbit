@@ -88,7 +88,7 @@
   "checks": [
     "Production native 14 cases, 398.466 seconds; real multiline CLI regression additionally passed, 27.257 seconds",
     "Development native 7 cases, 112.194 seconds",
-    "Gateway focused native admission/projection/shared start: 93 tests, 750 assertions after final rebase",
+    "Gateway native admission/projection/shared start and final-main terminal reads: 131 tests, 1041 assertions",
     "Vite data tests: 14 passed",
     "PHPStan, Pint, Rector; shape, names, placement, flows, registry, rendered grants; docs build/lint/impact passed"
   ],
