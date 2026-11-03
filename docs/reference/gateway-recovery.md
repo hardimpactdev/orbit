@@ -656,7 +656,7 @@ When Swamp or the Gateway cannot run `gateway:release:rollback`, run the rollbac
 sudo /home/orbit/orbit/bin/gateway-rollback <id>
 ```
 
-It needs only the release directories. It refuses an id that is not 12 hex digits (exit 64) and a release without `REVISION` (exit 1), and then changes nothing. Otherwise it switches `/home/orbit/orbit` to `releases/<id>` with one rename, as the owner of that link. It switches `web/current` the same way when the release keeps its web build, and leaves the web app as it is otherwise. Then it restarts each `orbit-process-*` unit that runs from the application, such as Horizon and the scheduler. It changes no schema and restores no snapshot; [Roll back](#roll-back) applies to the database as well.
+It needs only the release directories. It refuses an id that is not 12 hex digits (exit 64) and a release without `REVISION` (exit 1), and then changes nothing. Otherwise it switches `/home/orbit/orbit` to `releases/<id>` with one rename, as the owner of that link. It switches `web/current` the same way when the release keeps its web build, and leaves the web app as it is otherwise. Then it restarts each `orbit-process-*` unit that runs from the application, such as Horizon and the scheduler. It changes no schema and restores no snapshot, so the database advice under [Roll back](#roll-back) holds here too.
 
 ### Apply an env change
 
