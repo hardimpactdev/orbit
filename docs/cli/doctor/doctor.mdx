@@ -15,7 +15,7 @@ orbit doctor [--node=ID] [--family=FAMILY ...] [--json]
 
 The Gateway answers at once with the report, from the facts each Node's [agent](/reference/node-agent#facts) reported. It starts no run and never reaches a Node. Node access applies first. Nodes sort by name and ID; the family order is fixed.
 
-Each Node's report starts with its agent: online, offline since a time, or not seen. Human output prints that line first for every Node. While an agent is offline, each finding of its Node is marked "possibly outdated, agent silent since <time>": the facts stop at that time.
+Each Node's report starts with its agent: online, offline since a time, or not seen. Human output prints that line first for every Node. While an agent is offline, each finding of its Node is marked `possibly outdated, agent silent since <time>`: the facts stop at that time.
 
 Human output lists Node, Family, Status, Checked, Resource and Finding. JSON returns the same report, with node/family/check counts and counts of drift, unverifiable and informational issues. Exit 0 means the performed checks have no drift or unverifiable findings. Exit 1 means a check found drift, could not be verified, or the request failed.
 
