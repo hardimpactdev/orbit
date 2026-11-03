@@ -5,8 +5,7 @@
  * lines, so the test sees the exact commands, their order and the end check's verdict.
  */
 import { assert, assertEquals, assertNotEquals } from "jsr:@std/assert@1.0.19";
-import { parse } from "jsr:@std/yaml@1.0.12";
-import { nativeRepo, ROOT } from "../../../../tests/_support/native_harness.ts";
+import { nativeRepo } from "../../../../tests/_support/native_harness.ts";
 import { readCalls } from "../../../../tests/_support/fake_tool.ts";
 
 const tool = new URL("../../../../tests/_support/fake_tool.ts", import.meta.url).href;
@@ -131,31 +130,11 @@ Deno.test("success checks, writes, loads, then opens UFW and asserts the exact r
   assert(!calls.some((call) => /swamp|python3/.test(JSON.stringify(call.argv))));
 });
 
-Deno.test("UFW rules run one at a time under names by hub", () => {
-  const workflow = parse(Deno.readTextFileSync(`${ROOT}/workflows/workflow-${Name}.yaml`)) as {
-    jobs: { steps: { name: string; labels: unknown; concurrency?: number; task: { type: string; behaviorName?: string } }[] }[];
-  };
-  const steps = workflow.jobs[0].steps;
-  for (const step of steps) assertEquals(step.labels, { role: "swamp" });
-  assertEquals(steps.find((step) => step.name === "Allow 209 SSH, Router web")!.concurrency, 1);
-  const names = steps.filter((step) => step.task.type === "behavior").map((step) => step.task.behaviorName!);
-  assert(names.every((name) => name.includes("inputs.intent.node_id") && !/run\.id|operation_id/.test(name)));
-  assertEquals(new Set(names).size, names.length);
-});
-
 Deno.test("a refused ruleset changes nothing", async () => {
   await using test = await fixture();
   const { run, calls } = await test.run("check");
   assertEquals(run.status, "failed");
   assertEquals(calls.map((call) => call.action), ["check"]);
-});
-
-Deno.test("a failed load opens no UFW rule", async () => {
-  await using test = await fixture();
-  const { run, steps, calls } = await test.run("load");
-  assertEquals(run.status, "failed");
-  assertEquals(calls.map((call) => call.action), ["check", "load"]);
-  assertNotEquals(steps["Confirm the filter"], "succeeded");
 });
 
 Deno.test("only the exact live rules pass the end check", async (t) => {

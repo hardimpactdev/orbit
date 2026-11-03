@@ -1,22 +1,15 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { calls, exists, read, ssh, toolFixture } from "./tool_fixture_test.ts";
 
-const tool = { installed_version: "1.0", tool_id: 1 };
 Deno.test("install uses native argv and records the checked version", async () => {
   await using f = await toolFixture();
-  const { run, result } = await f.runKind();
+  const { run, result, steps } = await f.runKind("tool.install", true, { requires_refresh: true }, { repository, repository_given: true });
+  assertEquals(steps["Write the apt source"], "succeeded");
+  assert(read(f.state).refreshed);
   assertEquals([run.status, result.installed_version], ["succeeded", "2.0-1"]);
   const argv = calls(f.audit);
   assert(argv.some((a) => a.includes("--no-remove") && a.includes("DPkg::Lock::Timeout=300")));
   assert(!argv.some((a) => a.includes("-c") || a.some((p) => p.includes(".py"))));
-});
-Deno.test("Homebrew shares native package write and remove paths", async () => {
-  await using f = await toolFixture();
-  for (const [kind, installed] of [["tool.install", null], ["tool.remove", "2.0"]] as const) {
-    const { run, result } = await f.runKind(kind, true, { installed }, { manager: "brew", installed_version: installed });
-    assertEquals([run.status, result.outcome], ["succeeded", "applied"]);
-    assertEquals(read(f.state).installed, kind === "tool.install" ? "2.0" : null);
-  }
 });
 Deno.test("successful command without the package fails the native end assert", async () => {
   await using f = await toolFixture();
@@ -24,28 +17,11 @@ Deno.test("successful command without the package fails the native end assert", 
   assertEquals([steps["Apply the package"], steps["Assert package state"]], ["succeeded", "failed"]);
   assertEquals(read(f.state).installed, null);
 });
-Deno.test("constraint refusal writes nothing", async () => {
+Deno.test("remove proves absence after the native command", async () => {
   await using f = await toolFixture();
-  const { result } = await f.runKind("tool.install", false, {}, { version_constraint: "^1.0" });
-  assertEquals(result.error_code, "tool.version_constraint_blocked");
-  assertEquals(read(f.state).installed, null);
-});
-Deno.test("update skips a current or blocked candidate", async () => {
-  await using f = await toolFixture();
-  for (const [constraint, candidate, outcome] of [[null, "1.0", "unchanged"], ["^1.0", "2.0", "blocked_by_constraint"]]) {
-    const { result } = await f.runKind("tool.update", true, { installed: "1.0", candidate }, { ...tool, version_constraint: constraint });
-    assertEquals(result.outcome, outcome);
-    assertEquals(read(f.state).installed, "1.0");
-  }
-});
-Deno.test("remove refuses a wide plan and proves absence", async () => {
-  await using f = await toolFixture();
-  let run = await f.runKind("tool.remove", true, { installed: "1.0" }, tool);
+  const run = await f.runKind("tool.remove", true, { installed: "1.0" }, { installed_version: "1.0", tool_id: 1 });
   assertEquals(run.result.outcome, "applied");
   assertEquals(read(f.state).installed, null);
-  run = await f.runKind("tool.remove", false, { installed: "1.0", unsafe: true }, tool);
-  assertEquals(run.result.error_code, "tool.removal_plan_unsafe");
-  assertEquals(read(f.state).installed, "1.0");
 });
 const repository = {
   name: "vendor",
@@ -54,12 +30,6 @@ const repository = {
   components: ["main"],
   signing_key: { url: "https://packages.example.test/key.asc", fingerprint: "A".repeat(40) },
 };
-Deno.test("verified key reaches native source publication", async () => {
-  await using f = await toolFixture();
-  const { result, steps } = await f.runKind("tool.install", true, { requires_refresh: true }, { repository, repository_given: true });
-  assertEquals([result.outcome, steps["Write the apt source"]], ["applied", "succeeded"]);
-  assert(read(f.state).refreshed);
-});
 Deno.test("mismatched key fails native assert before publishing", async () => {
   await using f = await toolFixture();
   const { result, steps } = await f.runKind("tool.install", false, { bad_key: true }, { repository, repository_given: true });

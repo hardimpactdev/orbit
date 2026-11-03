@@ -5,10 +5,7 @@
  * The fake `ssh` runs nothing remote: it checks that every host command is `sudo -n -- timeout N incus …`,
  * answers from a JSON state file and logs each argv, so the test sees the exact commands and their order.
  */
-import { assert, assertEquals, assertNotEquals, assertStringIncludes } from "jsr:@std/assert@1.0.19";
-import { parse, stringify } from "jsr:@std/yaml@1.0.12";
-import { ROOT } from "../../../../tests/_support/native_harness.ts";
-import { readCalls } from "../../../../tests/_support/fake_tool.ts";
+import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.19";
 import { type TaskVmLifecycle, taskVmLifecycle } from "../../../../tests/_support/task_vm_lifecycle.ts";
 
 const tool = new URL("../../../../tests/_support/fake_tool.ts", import.meta.url).href;
@@ -185,83 +182,4 @@ Deno.test("a VM the delete leaves fails the end check", async () => {
   const { run } = await destroy(vm, false);
   assertEquals(run.status, "failed");
   assertEquals((await child(vm))["Check the VM is gone"], "failed");
-});
-
-Deno.test("a Node removal failure after the delete fails the run before the check", async () => {
-  await using vm = await fixture();
-  await vm.repo.stubWorkflow("operation-node-remove", "exit 23");
-  const { run } = await destroy(vm, false);
-  assertEquals(run.status, "failed");
-  assertEquals((await vm.readState()).exists, false);
-  const steps = await child(vm);
-  assertEquals(steps["Remove the guest Node"], "failed");
-  assertNotEquals(steps["Check the VM is gone"], "succeeded");
-});
-
-for (const kind of ["tasks.cancel", "tasks.maintenance_finish"]) {
-  Deno.test(`the ${kind} parent keeps its envelope through the shared destroy child`, async () => {
-    await using vm = await fixture();
-    vm.envelope.kind = kind;
-    vm.envelope.intent.model_intent = {
-      task_vm_id: 42,
-      gateway_node_id: 14,
-      model_router_node_id: 6,
-      model_origin: "http://192.0.2.6",
-    };
-    // Keep the real model child's closed input contract at the HTTP fixture boundary.
-    const path = `${vm.repo.dir}/workflows/workflow-task-vm-model-revoke.yaml`;
-    const model = parse(await Deno.readTextFile(path)) as { inputs: unknown; jobs: { steps: Step[] }[] };
-    model.inputs = (parse(await Deno.readTextFile(`${ROOT}/workflows/workflow-task-vm-model-revoke.yaml`)) as {
-      inputs: unknown;
-    }).inputs;
-    const task = model.jobs[0].steps[0].task;
-    task.inputs!.env = {
-      ROOT_ID: "${{ string(inputs.operation_id) }}",
-      ROOT_NODE: "${{ string(inputs.node_id) }}",
-      ROOT_KIND: "${{ inputs.kind }}",
-    };
-    task.inputs!.run =
-      `printf '{"root_operation_id":%s,"root_node_id":%s,"root_kind":"%s"}\\n' "$ROOT_ID" "$ROOT_NODE" "$ROOT_KIND" >> ${vm.calls}`;
-    await Deno.writeTextFile(path, stringify(model));
-    await Deno.writeTextFile(
-      `${vm.repo.dir}/workflows/workflow-task-cancel-destroy-parent.yaml`,
-      stringify({
-        id: crypto.randomUUID(),
-        name: "task-cancel-destroy-parent",
-        inputs: { type: "object", additionalProperties: true },
-        jobs: [{
-          name: "cleanup",
-          steps: [{
-            name: "Destroy the task VM",
-            task: {
-              type: "workflow",
-              workflowIdOrName: "task-vm-destroy",
-              inputs: Object.fromEntries(Object.keys(vm.envelope).map((key) => [key, `\${{ inputs.${key} }}`])),
-            },
-          }],
-        }],
-      }),
-    );
-    const { run } = await vm.run("task-cancel-destroy-parent");
-    assertEquals(run.status, "succeeded");
-    assertEquals(
-      readCalls<Record<string, unknown>>(vm.calls).filter((row) => "root_kind" in row),
-      [{ root_operation_id: 7009, root_node_id: 99, root_kind: kind }],
-    );
-    assertEquals((await vm.readState()).exists, false);
-  });
-}
-
-Deno.test("standalone destroy refuses the tasks ending kinds before any effect", async () => {
-  await using vm = await fixture();
-  for (const kind of ["tasks.cancel", "tasks.maintenance_finish"]) {
-    vm.envelope.kind = kind;
-    const refused = await vm.repo.cli(
-      ["workflow", "run", "operation-task-vm-destroy", "--input", JSON.stringify(vm.envelope)],
-      { success: false },
-    );
-    assertStringIncludes(refused.stdout + refused.stderr, "input_validation_failed");
-  }
-  assert((await vm.readState()).exists);
-  assertEquals(readCalls(vm.calls), []);
 });

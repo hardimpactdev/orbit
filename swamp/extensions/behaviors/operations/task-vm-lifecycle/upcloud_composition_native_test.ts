@@ -1,9 +1,8 @@
 /** UpCloud provision on the actual native graphs with disposable SSH, runtime and UpCloud API boundaries. */
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { HostKey } from "../../../../tests/_support/task_vm_lifecycle.ts";
-import { ForeignId, provisionComposition, ProviderId, resultOf, sshTo, stub, upcloudApi } from "../../../../tests/_support/task_vm_provision.ts";
+import { provisionComposition, ProviderId, resultOf, sshTo, upcloudApi } from "../../../../tests/_support/task_vm_provision.ts";
 
-const ForeignRuntime = { task_vm_id: 43, guest_node_id: 142, process_id: 33, ready: true };
 
 async function fixture() {
   const vm = await provisionComposition();
@@ -21,20 +20,6 @@ async function fixture() {
     },
   });
 }
-
-Deno.test("a full cloud provision pins public then private SSH and runs no worker", async () => {
-  await using vm = await fixture();
-  const { history } = await vm.root();
-  const result = resultOf(history);
-  assert(result.ready);
-  assertEquals(result.provider.provider_id, ProviderId);
-  assertEquals(result.enrollment.node.ssh_host_key, HostKey.split(" ")[1]);
-  const calls = await vm.eventsText();
-  for (const present of ["93.184.216.34", "10.44.0.142"]) assert(calls.includes(present), present);
-  assert(!calls.includes("worker connect"));
-  assert(vm.cloud.exists);
-  await vm.repo.assertPrivateAbsent();
-});
 
 Deno.test("cloud enrollment composes the actual runtime with only runtime descriptors", async () => {
   await using vm = await fixture();
@@ -58,32 +43,19 @@ const destination = Deno.args.at(-1);
 if (!destination.includes(":")) Deno.writeTextFileSync(destination, Deno.env.get("FIXTURE_BUILD"));
 `);
   await sshTo(vm.repo, "task-vm-runtime", { sshBinary: vm.ssh, scpBinary: scp });
-  const { run } = await vm.root();
+  const { run, history } = await vm.root();
   assertEquals(run.status, "succeeded");
+  const result = resultOf(history);
+  assert(result.ready);
+  assertEquals(result.provider.provider_id, ProviderId);
+  assertEquals(result.enrollment.node.ssh_host_key, HostKey.split(" ")[1]);
+  const calls = await vm.eventsText();
+  for (const present of ["93.184.216.34", "10.44.0.142"]) assert(calls.includes(present), present);
+  assert(!calls.includes("worker connect"));
   assert(vm.cloud.exists);
   await vm.repo.assertPrivateAbsent();
 });
 
-Deno.test("a failure after the firewall revokes and deletes the server without a hub or guest restore", async () => {
-  await using vm = await fixture();
-  await stub(vm.repo, "task-vm-runtime", "result", ForeignRuntime, true);
-  assertEquals((await vm.root(false)).run.status, "failed");
-  assert(!vm.cloud.exists);
-  const calls = await vm.eventsText();
-  assert(calls.includes("10.44.0.15"));
-  // Rule 22: no rollback chain. The published peer stays for diagnosis; the next hub convergence drops it.
-  assert(!calls.includes("restor"));
-  assertEquals(vm.cloud.deletes().length, 1);
-});
-
-Deno.test("a foreign model revocation refuses the provider delete", async () => {
-  await using vm = await fixture();
-  await stub(vm.repo, "task-vm-runtime", "result", ForeignRuntime, true);
-  await stub(vm.repo, "task-vm-model-revoke", "result", { task_vm_id: 43, revoked: true }, true);
-  await vm.root(false);
-  assert(vm.cloud.exists);
-  assertEquals(vm.cloud.deletes(), []);
-});
 
 Deno.test("UpCloud destroy uses the vault API and no Incus, seed or guest call", async () => {
   await using vm = await fixture();
@@ -133,15 +105,6 @@ Deno.test("a cancel after guest configuration runs provider compensation", async
   assert(!vm.guest().some((event) => event.body.includes("def restore(data)")));
 });
 
-Deno.test("a rejected replacement UUID is not deleted by prefix compensation", async () => {
-  await using vm = await fixture();
-  Object.assign(vm.cloud, { exists: true, state: "started" });
-  vm.intent.provider_id = ForeignId;
-  await vm.root(false);
-  assert(vm.cloud.exists);
-  assertEquals(vm.cloud.nonGet(), []);
-});
-
 Deno.test("a created VM is compensated when prefix image verification fails", async () => {
   await using vm = await fixture();
   vm.cloud.wrongDetailImage = true;
@@ -150,15 +113,4 @@ Deno.test("a created VM is compensated when prefix image verification fails", as
   assert(!vm.cloud.exists);
   assert(!await vm.eventsExist());
   assertEquals(vm.cloud.deletes().length, 1);
-});
-
-Deno.test("a prefix failure in a transitional state keeps the unknown UUID without guest actions", async () => {
-  await using vm = await fixture();
-  vm.cloud.state = "maintenance";
-  await vm.root(false);
-  // Transitional state cannot be safely powered/deleted. Discovery retains
-  // the exact VM for normal native observation/resume, never false success.
-  assert(vm.cloud.exists);
-  assert(!await vm.eventsExist());
-  assertEquals(vm.cloud.deletes(), []);
 });

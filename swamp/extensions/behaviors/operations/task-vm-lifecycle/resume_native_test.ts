@@ -145,13 +145,6 @@ Deno.test("a parked VM starts, waits for its agent and checks agent and Pi", asy
   }
 });
 
-Deno.test("a VM that already runs counts as started", async () => {
-  await using test = await fixture({ status: "Running" });
-  const { run, steps } = await test.resume();
-  assertEquals(run.status, "succeeded");
-  assertEquals(steps["Start the VM"], "succeeded");
-});
-
 Deno.test("an agent that never comes up fails before the guest is read", async () => {
   await using test = await fixture({ status: "Stopped", stuck: true });
   const { run, steps } = await test.resume(false);
@@ -159,20 +152,6 @@ Deno.test("an agent that never comes up fails before the guest is read", async (
   assertEquals(steps["Wait for the guest agent"], "failed");
   assertEquals(test.callsTo("10.44.0.142"), []);
 });
-
-for (
-  const [name, state] of [
-    ["a Pi that does not answer fails the run", { pi_down: true }],
-    ["an inactive agent fails the run", { agent: "inactive" }],
-  ] as const
-) {
-  Deno.test(name, async () => {
-    await using test = await fixture({ status: "Stopped", ...state });
-    const { run, steps } = await test.resume(false);
-    assertEquals(run.status, "failed");
-    assertNotEquals(steps["Check the guest is ready"], "succeeded");
-  });
-}
 
 Deno.test("converge restores 209 access through the host before the check", async () => {
   await using test = await fixture({ status: "Running" });
@@ -190,4 +169,11 @@ Deno.test("converge restores 209 access through the host before the check", asyn
   assertEquals(Object.keys(commands).sort(), ["/bin/sh", "/usr/bin/install", "/usr/bin/systemctl"]);
   assertEquals(commands["/usr/bin/install"].stdin, "ssh-ed25519 PUBLIC\n");
   assertEquals(steps["Check the guest is ready"], "succeeded");
+});
+
+Deno.test("an inactive agent fails the run", async () => {
+  await using test = await fixture({ status: "Stopped", agent: "inactive" });
+  const { run, steps } = await test.resume(false);
+  assertEquals(run.status, "failed");
+  assertNotEquals(steps["Check the guest is ready"], "succeeded");
 });

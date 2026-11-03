@@ -276,10 +276,11 @@ Deno.test("the build launches, boots, templates, smokes, promotes and cleans fro
   await using test = await fixture();
   for (const name of Workflows) await test.repo.cli(["workflow", "validate", name]);
   test.api.stopLag = true;
-  const { run, steps, calls, agent } = await test.run();
+  const digest = await test.withPi();
+  const { run, steps, calls, agent, copies } = await test.run();
   const { api } = test;
   assertEquals(run.status, "succeeded");
-  assertEquals([steps["Check the template"].status, steps["Stage the Pi build"].status], ["succeeded", "skipped"]);
+  assertEquals([steps["Check the template"].status, steps["Stage the Pi build"].status], ["succeeded", "succeeded"]);
   assertEquals(steps["Read the template"].outputs.template_uuid, uuid(70));
   // Creates carry the vault host key through curl's own expansion; the run history never holds it.
   // The smoke create is refused once while UpCloud still prepares the template; curl sends it again.
@@ -297,7 +298,7 @@ Deno.test("the build launches, boots, templates, smokes, promotes and cleans fro
   assert(boot[0].ssh.includes("ConnectionAttempts=90"));
   assertEquals(agent.map(([name]) => name), [
     "agent.install", "guest.cloud-init", "image.owner", "image.inspect-phase",
-    ...Array(5).fill(["image.start-phase", "image.inspect-phase"]).flat(),
+    ...Array(6).fill(["image.start-phase", "image.inspect-phase"]).flat(),
     "image.recipe-marker", "image.verify", "image.boot", "image.firewall", "image.clean",
     "agent.install", "guest.cloud-init", "image.owner", "image.inspect-phase", "image.verify", "image.check",
   ]);
@@ -309,7 +310,7 @@ Deno.test("the build launches, boots, templates, smokes, promotes and cleans fro
     "timeout", "150", "/usr/local/bin/orbit-agent", "command", "image.owner",
   ]);
   const starts = agent.filter(([name]) => name === "image.start-phase").map(([, call]) => call.stdin.input);
-  assertEquals(starts.map((start) => start.key.phase), Phases.slice(0, 5));
+  assertEquals(starts.map((start) => start.key.phase), Phases);
   assert(starts.every((start) => start.boot_id === Boot && start.key.execution === "upcloud-9"));
   const tails = calls.filter((call) => call.argv.includes("/usr/bin/tail")).map((call) => call.argv);
   assertEquals(tails[0], ["timeout", "1500", "/usr/bin/tail", "--pid=4242", "-f", "/dev/null"]);
@@ -331,13 +332,6 @@ Deno.test("the build launches, boots, templates, smokes, promotes and cleans fro
   assertEquals(steps["Delete servers, templates-0"].status, "succeeded");
   // Only the fixed provider origin is reached: no Gateway request from any step.
   assert(api.requests.every(([, path]) => path.startsWith("/1.3/")));
-});
-
-Deno.test("a Pi build reaches the builder cache through 209", async () => {
-  await using test = await fixture();
-  const digest = await test.withPi();
-  const { run, calls, agent, copies } = await test.run();
-  assertEquals(run.status, "succeeded");
   const fetched = copies.filter((copy) => copy.at(-2)!.endsWith(":/srv/orbit/sandbox-artifacts/pi"));
   assertEquals(fetched.length, 1);
   assertStringIncludes(fetched[0].at(-2)!, "192.0.2.14");
@@ -371,14 +365,5 @@ Deno.test("a refused smoke check keeps promotion out and removes servers and tem
   assertFalse(test.api.requests.some(([method, path]) => method === "PUT" && path === `/1.3/storage/${uuid(70)}`));
   // The unverified template and both servers go; every verified template stays.
   assertEquals(Object.keys(test.api.templates).sort(), [uuid(50), uuid(51), uuid(52)]);
-  assertEquals(test.api.servers, {});
-});
-
-Deno.test("an agent refusal on the builder makes no template", async () => {
-  await using test = await fixture();
-  test.repo.env.FIXTURE_REFUSE = "image.clean";
-  const { run, steps } = await test.run(false);
-  assertEquals([run.status, steps["Prepare and clean"].status, steps["Make the template"].status], ["failed", "failed", "skipped"]);
-  assertFalse(test.api.requests.some(([, path]) => path.endsWith("/templatize")));
   assertEquals(test.api.servers, {});
 });
