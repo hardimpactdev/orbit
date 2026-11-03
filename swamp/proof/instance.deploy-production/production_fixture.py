@@ -82,6 +82,7 @@ def setup(node, run, case):
     hosts.write_text('\n'.join(line for line in hosts.read_text().splitlines() if not line.startswith(('127.0.0.2 ', '10.231.0.3 '))) + '\n10.231.0.3 github.com api.github.com\n')
     # The shared Nodes are VMs. A fixture-only host address serves their local HTTPS origin.
     command(['ip', 'address', 'replace', '10.231.0.3/32', 'dev', 'lo'])
+    command(['ufw', 'allow', 'in', 'on', 'oeproof', 'from', '10.231.0.12', 'to', '10.231.0.3', 'port', '443', 'proto', 'tcp', 'comment', 'proof-private-git'])
     command(['incus', 'file', 'push', str(ca / 'root.pem'), 'peer/usr/local/share/ca-certificates/orbit-proof-fixture.crt'])
     peer('update-ca-certificates')
     peer('sh', '-c', "sed -i '/github.com/d' /etc/hosts; printf '\n10.231.0.3 github.com\n' >> /etc/hosts")
