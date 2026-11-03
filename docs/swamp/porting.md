@@ -1,23 +1,23 @@
 ---
-title: "Port a kind to Swamp"
-description: "Steps, template, native mapping and anti-patterns for porting a legacy Orbit command to a Swamp workflow."
+title: "Build a Swamp flow"
+description: "Steps, template, native mapping and anti-patterns for building the Swamp workflow of an Orbit command."
 ---
 
-# Port a kind to Swamp
+# Build a Swamp flow
 
-Start every kind PR from this page. Review every kind PR against it and the [binding shape guide](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md). Ship the Gateway admission, native workflow and old executor deletion together. Agents load it through the [swamp-port skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/swamp-port/SKILL.md). Lane 26 owns this page and adds a lesson after every merged port; the per-PR detail is in [Swamp port retros](/swamp/porting-retros). Every kind is ported inside a dev topology and its PR carries the receipt ([the loop](#port-inside-the-topology-f13)).
+Start every flow PR from this page. Review every flow PR against it and the [binding shape guide](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md). Ship the Gateway admission, the workflow and the deletion of what it replaces together. Agents load it through the [swamp-flow skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/swamp-flow/SKILL.md); the Ansible part of a flow follows the [ansible-phase skill](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/ansible-phase/SKILL.md). Add a lesson after every merged flow change; the per-PR detail is in [Swamp port retros](/swamp/porting-retros). Every flow is proved inside a dev topology, and its PR carries the receipt ([the loop](#build-inside-the-topology-f13)).
 
-## Port inside the topology (F13)
+## Build inside the topology (F13)
 
-Porting happens in a production-equivalent dev topology, never against production.
+Build and prove a flow in a production-equivalent dev topology, never against production.
 
-1. **Claim** the kind from `port-queue.md` in `~/swamp-execution` on beast; `port-queue-B.md` and `port-queue-C.md` feed it. Five topology slots exist, so at most five port lanes run at once.
-2. **Read the legacy code and tests** at `6291bb036` (F9), and write the parity tests first.
-3. **Start the topology** with `bin/swamp-proof up --topology <name>`. Never port against production serve or a 209 login.
-4. **Port** in your beast worktree with the [translation steps](#translate-a-legacy-command) and the template.
+1. **Start from the chart** in `docs/cli/<family>/<command>.mmd`. Tighten it with the `flow-tighten` skill. The chart and the command's documentation are the spec.
+2. **Write the tests first:** Gateway admission and projection tests, and the parity check for the fixture.
+3. **Start the topology** with `bin/swamp-proof up --topology <name>`. Never build against production serve or a 209 login.
+4. **Build** the workflow with the [mapping steps](#map-a-flow-to-swamp) and the template.
 5. **Run** the whole path in the topology as often as you need: request, admission, Swamp, Nodes and projection. Read full stderr and step timings.
 6. **Write the receipt** with the final run (`bin/swamp-proof receipt`) once parity passes within budget (F8). The PR carries it. Then run `bin/swamp-proof down`.
-7. **Review and merge.** Lane 26 reviews and the sub-orchestrator merges. Outage fixes and early proof PRs skip lane 26 until after merge. A live check confirms the load.
+7. **Review and merge.** An independent review checks the PR, and it lands through the merge queue. A live check confirms the load.
 
 A topology is built from Node roles (F14). Its Gateway VM carries the `gateway` and `swamp` roles, with pinned official Swamp, a local datastore and vault. Its Nodes carry what the kind needs: `app-dev`, `app-prod`, `app-prod-2`, optional `+ingress`, `router` or `database`, joined by WireGuard like the fleet.
 
@@ -25,18 +25,18 @@ Parity receives the full Operation through the JSON file named by `PROOF_OPERATI
 
 Topologies are versioned in `swamp/proof/topologies/`. A topology fault fixes the topology in the same PR and bumps its version (F12). Several kinds may share one run, and every receipt names the topology version. A topology dies after 60 minutes without a run, 8 hours at most; a one-shot proof run dies 45 minutes after creation. Known differences from production: test repositories instead of GitHub App installs, the Orbit CA instead of public certificates, and no production data or scale.
 
-A change to a Swamp workflow, behavior or script that a kind runs needs a receipt, even titled "retire" or "remove" (#2257, #2259). So does a Gateway change to a kind's admission, intent, inputs, vault pushes, minting, signing or projection; three of four create bugs were Gateway-only (#2266, #2273, #2304). Other Gateway changes need failing-without tests, docs and lane 26 review. Only deletion, docs and test PRs fix forward without a receipt, after a deletion-speed review of tests and docs. An outage fix skips the receipt only if its PR body says "merges without a topology receipt" and names the live check that follows the load (#2332).
+A change to a Swamp workflow, behavior or script that a kind runs needs a receipt, even titled "retire" or "remove" (#2257, #2259). So does a Gateway change to a kind's admission, intent, inputs, vault pushes, minting, signing or projection; three of four create bugs were Gateway-only (#2266, #2273, #2304). Other Gateway changes need failing-without tests, docs and an independent review. Only deletion, docs and test PRs fix forward without a receipt, after a deletion-speed review of tests and docs. An outage fix skips the receipt only if its PR body says "merges without a topology receipt" and names the live check that follows the load (#2332).
 
-### Translate a legacy command
+### Map a flow to Swamp
 
 Use these steps in step 4 of the loop.
-1. **Start from the legacy sequence (F9).** The legacy Gateway action and its tests are the spec. Keep every edge case, even values the Gateway rewrites first (#2304).
-2. **One legacy phase, one step.** Each legacy phase becomes one script-file step on one Node. A phase-order change needs a [documented reason](/swamp/porting-retros#documented-f9-deviations) in the PR body.
-3. **Map each phase to Swamp.** Use the [mapping table](#legacy-pattern-to-native-feature) and prefer an official model over a script. The PR names what you checked.
+1. **Start from the chart.** Its steps and phases are the spec. Keep every edge case the command documents, even values the Gateway rewrites first (#2304).
+2. **One phase, one step.** Each phase becomes one native step on one Node, or one Ansible phase step for larger idempotent Node state (rule 22 of the `flow-tighten` skill). A change to the phase order updates the chart first.
+3. **Map each phase to Swamp.** Use the [mapping table](#pattern-to-native-feature) and prefer an official model over a script. The PR names what you checked.
 4. **Write the intent.** Every non-secret field the steps need goes under `intent`, frozen at admission. Secrets become `{vault, key}` descriptors under `execution_secrets`.
-5. **Refuse first, then print the result.** The script checks preconditions before its first write. It prints one public JSON object and keeps a redacted stderr tail.
+5. **Refuse first.** A step checks its preconditions before its first write. Keep a redacted stderr tail.
 6. **Wire the Gateway.** Admission, intent, execution copies, grants and the projector; see [Fill the Gateway declaration](#fill-the-gateway-declaration).
-7. **Delete the old path in the same PR.** Remove the executor and everything only it used. An F9 rebuild deletes the old behaviors and tests it replaces (F15).
+7. **Delete what the change replaces** in the same PR: steps, behaviors, scripts and tests (F15).
 
 ## Fill the workflow
 
@@ -129,7 +129,7 @@ Pass `lockKey: OperationStore::lockKey(REPLACE_TARGET_TYPE, $id)` to `StartOpera
 
 ## Set the time budget
 
-The execution plan (`PLAN.md` on beast, F8) requires a budget for every kind. A port PR without one fails review.
+The execution plan (`PLAN.md` on beast, F8) requires a budget for every kind. A flow PR without one fails review.
 
 A phase script may hold one fixed literal sleep shorter than a literal timeout, as the DNS grace does, or poll external state, such as a VM started, at a fixed interval under coreutils `timeout <phase budget>`. A bad state exits nonzero with a readable F1 error. The PR states the interval and budget. Never poll to retry an action, to wait on Gateway or Orbit state, or outside a phase script. The shape gate accepts it ([guide rule 6](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md), #2325): a literal timeout, a shorter fixed interval, an external GET that fails on HTTP errors, and no retried requests.
 
@@ -146,7 +146,7 @@ A phase script may hold one fixed literal sleep shorter than a literal timeout, 
 
 Step count is the dominant cost of a run: op 6639 took 957 s for 4.6 s of SSH work. Until the extensions lane reports the cause, one script per Node per phase does the reads, precondition checks, writes and result JSON. Never wrap an SSH call in TypeScript envelope and decode steps; #2261 reached 66 steps that way. Use a typed step only for a result the script cannot print, and a separate check only for another Node's read. A typed result step returns `{stdout}` itself, with no `printf` step after it. Resolve assets once, outside `forEach`.
 
-Count the native steps of a typical run against the legacy calls, where a call is one host command or API request within a phase. More than about two steps per legacy call needs a written reason in the PR, and each extra step names the Node change or guard it serves. Do not count on resume as a split reason: pinned e459 loses inline SSH `globalArgs` when it resumes a failed run. Guide rule 3 says "one action group is one step", following PLAN F9 and "How a kind converts" item 2.
+Count the native steps of a typical run against its host calls, where a call is one host command or API request within a phase. More than about two steps per host call needs a written reason in the PR, and each extra step names the Node change or guard it serves. An Ansible phase counts as one step; its tasks are not steps. Do not count on resume as a split reason: pinned e459 loses inline SSH `globalArgs` when it resumes a failed run. Guide rule 3 says "one action group is one step", following PLAN F9 and "How a kind converts" item 2.
 
 ## Run on the swamp workers
 
@@ -168,7 +168,7 @@ Put each test where its project's CI runs it.
 | --- | --- |
 | `apps/gateway/tests/Feature/<Family>/*NativeTest.php`, plus `Operations/GatewayWorkflowGrantCheckTest.php` | Admission, refusal, lock key, execution copy, the input envelope, projection of success and failure, and grant coverage for the workflow and its vault keys. |
 | `swamp/extensions/behaviors/operations/<family>/*_test.ts`, and `swamp/tests` script tests | Typed behaviors with Deno; each shipped script directly, with shellcheck or ruff. |
-| Parity tests from the legacy feature tests, and a generator drift test when a generator writes the workflow | Each legacy case gives the same public result natively. Committed YAML equals readable generator output. |
+| Parity tests for the command's documented cases, and a generator drift test when a generator writes the workflow | Each documented case gives the same public result. Committed YAML equals readable generator output. |
 | `swamp/proof/<kind>.json` (`swamp/proof/README.md`, or the v0 design on beast until it lands) | The proof file: `prepare` and `request` CLI calls, partial `envelope`, budgets, F9 phases, parity tests, `queueTimeout` and topology. No secret appears in it or in argv. |
 
 Test Orbit's TypeScript logic with fast sibling `*_test.ts` files and the [official testing helpers](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/swamp/references/extension/references/model/testing.md). Keep a case only when it covers Orbit logic that another unit test does not cover. Do not add native workflow tests or test Swamp's engine, shell commands or CEL through a custom harness. Prove execution on the disposable topology.
@@ -189,18 +189,19 @@ Apply every boundary decision to admission, execution and projection. Atomic sta
 | 6. Schedules | Publish full intent and updates into native schedules. Scheduled steps never POST admissions to the Gateway. |
 | 7. Interrupted | Native `interrupted` is Gateway-terminal, projected failed. Never resume or reopen an existing Operation. Recovery uses a new admission or the family's normal retry. |
 
-## Legacy pattern to native feature
+## Pattern to native feature
 
 Use the native feature in the right column. Custom code is allowed only where the manual has a real gap; send that gap to the orchestrator with evidence before you build.
 
-| Legacy pattern | Native replacement | Manual |
+| Pattern | Native replacement | Manual |
 | --- | --- | --- |
+| Many idempotent Node-state actions: packages, files, folders, units, containers, often on several Nodes | An Ansible phase: one `command/shell` step that runs one tagged part of a repository playbook (`ansible-phase` skill) | [Workflows](https://swamp-club.com/manual/reference/workflows) |
 | Gateway reads intent or private material; secret on stdin or argv | Full intent as `inputs`; `{vault, key}` names; whole `${{ vault.get(...) }}` in `task.inputs.env` or `@swamp/ssh` `stdin` | [Inputs](https://swamp-club.com/manual/reference/workflows#inputs), [Environment mounting](https://swamp-club.com/manual/reference/vaults#environment-variable-mounting) |
-| Retry loop, `attempt < N`, or sleep and poll until ready | Retry: an idempotent step that fails when not ready, then a new admission (decision 7) or operator resume. External state: a bounded poll in the phase script, [as above](#set-the-time-budget) | [Guard](https://swamp-club.com/manual/reference/workflows#guard), [Retry failed steps](https://swamp-club.com/manual/reference/workflows#retry-failed-steps) |
+| Retry loop, `attempt < N`, or sleep and poll until ready | Retry: an idempotent step that fails when not ready, then a new admission (decision 7) or operator resume. External state: a bounded poll in the phase script, [as above](#set-the-time-budget). An Ansible readiness wait is a bounded `until` inside a phase with a literal `timeout`. | [Guard](https://swamp-club.com/manual/reference/workflows#guard), [Retry failed steps](https://swamp-club.com/manual/reference/workflows#retry-failed-steps) |
 | Wait for a free worker, or for a person | Per-kind `queueTimeout` (F8; serve default 600 s); `manual_approval` task | [queueTimeout](https://swamp-club.com/manual/reference/workflows#queuetimeout), [Manual approval](https://swamp-club.com/manual/reference/workflows#manual-approval-manual_approval) |
 | Lock file, `flock`, family busy hold | Per-behavior method lock on one shared `behaviorName`, `concurrency`, or the generic admission `lock_key`. Named apt and UFW tool locks stay | [Method locking](https://swamp-club.com/manual/reference/behavior-definitions#per-behavior-method-locking), [Concurrency](https://swamp-club.com/manual/reference/workflows#concurrency) |
 | "Already done" receipt or marker file | `guard` on public state or prior outputs | [Guard](https://swamp-club.com/manual/reference/workflows#guard) |
-| Best-effort cleanup, compensation, or a failure scope | A step on `condition: failed`, `always` or `completed`, or `allowFailure`. Compensation reruns the forward child with inverted intent (#2262). Keep the failure scope of the legacy code at `6291bb036`, not of an earlier Swamp port | [Trigger conditions](https://swamp-club.com/manual/reference/workflows#trigger-conditions), [allowFailure](https://swamp-club.com/manual/reference/workflows#allowfailure) |
+| Best-effort cleanup, compensation, or a failure scope | A step on `condition: failed`, `always` or `completed`, or `allowFailure`. Compensation reruns the forward child with inverted intent (#2262). Keep the failure scope the chart states | [Trigger conditions](https://swamp-club.com/manual/reference/workflows#trigger-conditions), [allowFailure](https://swamp-club.com/manual/reference/workflows#allowfailure) |
 | Child Operation, or a loop over items in one program | `type: workflow` child; `forEach` over `inputs` with a `behaviorName` unique per run and item | [forEach](https://swamp-club.com/manual/reference/workflows#foreach-1), [Child workflows](https://swamp-club.com/manual/reference/workflows#workflow-workflow) |
 | One program for many Nodes, or a call to another Node's agent | Placed steps in one run, each through `@swamp/ssh` from 209 | [Placement](https://swamp-club.com/manual/reference/workflows#target-2), [`@swamp/ssh`](https://github.com/swamp-club/swamp-extensions/tree/main/ssh) |
 | Precondition refusal after a write | Check first in the same script and exit with an `error_code`; an `assert` step only for another Node's read | [Assert](https://swamp-club.com/manual/reference/workflows#assert-assert) |
@@ -218,7 +219,7 @@ Each of these is a review BLOCK. Most come from the [conformance ledger](/swamp/
 | --- | --- | --- |
 | `target` and `labels` in one effective placement, or a step on the effect Node | Selectors can disagree, the top audit finding; lane 21 moves per-Node worker steps to 209 | `labels: {role: swamp}`, then `@swamp/ssh` |
 | `forEach` items or concurrent runs sharing one `behaviorName` | The model lock serializes them and later items time out | `behaviorName` unique per run and item |
-| A many-action TypeScript behavior, an agent action port, a spawn wrapper, one `exec` per listed command, a window `assert` before each phase, or a rewritten shipped script | Swamp cannot show, guard or resume the actions; the code that runs is not the linted file | One step per action group; public input as argv after the body |
+| A many-action TypeScript behavior, an agent action port, a spawn wrapper, one `exec` per listed command, a window `assert` before each phase, or a rewritten shipped script | Swamp cannot show, guard or resume the actions; the code that runs is not the linted file | One step per action group; public input as argv after the body. An Ansible phase is the approved exception: one step per phase, from a linted repository playbook. |
 | Swamp growth without a reason, or a new TypeScript behavior that native Swamp, an official extension or a shared helper could replace | `swamp/` grew +226,316 lines against Orbit −162,866; the migration total of +63,450 must turn negative (F15) | Use native Swamp, an official extension, a shared helper or a script file. A reason for growth says why none of them can do it. |
 | `forEach.in` reading outputs of a step in the same job | e459 expands it before the outputs exist | Read `inputs`, literals or an earlier job's outputs, as [`operation-instance-destroy`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-instance-destroy.yaml) does, or pass the list to a child, as [`database-clone-mysql`](https://github.com/hardimpactdev/orbit/blob/4a9f4433e0/swamp/workflows/workflow-database-clone-mysql.yaml) does |
 | Reading failed or skipped outputs, all-pairs `always` edges, the whole `${{ steps }}` map in a result step, or an echo step after it | CEL fails with `No such key`; #2261 and #2253 grew dozens of edges | Read `"x" in steps && steps.x.status` for the steps you need; chain jobs on `succeeded` |
@@ -227,22 +228,22 @@ Each of these is a review BLOCK. Most come from the [conformance ledger](/swamp/
 | A workflow that reads a vault without `vaults:` | Validate passes, the run fails (op 6413) | Declare every vault it reads; `vaults: []` when none is a convention |
 | A secret in `run:`, argv, inputs or `set -x`; a CA or GitHub App key in a vault; a secret returned from a Node | History and `ps` expose it; e459 cannot mark `@swamp/ssh` output sensitive; root-of-trust keys stay in the Gateway | `env` from `vault.get`, then stdin or a 0600 file; the mint and sign primitives; generate Gateway-owned secrets at admission; Node-held keys stay on the Node (decision 3) |
 | A failure reporter, Gateway re-read timer, binding loop or retry | Duplicates Swamp and stalls Operations | Native status and one history read per terminal delivery |
-| Redesigning the legacy sequence without a written reason | The legacy Gateway ran each kind reliably; a redesign loses edge cases | Keep the legacy phases, or give the reason in the PR |
+| Changing a flow's step order in the workflow without changing its chart first | The chart is the spec; a workflow that drifts from it loses edge cases | Update the chart first, then the workflow |
 
 ## PR and review checklist
 
-Continue ports in the approved shape while live admission proof is pending. Use this checklist for every kind PR and its review.
+Use this checklist for every flow PR and its review.
 
-- [ ] Follow the [translation steps](#translate-a-legacy-command) and avoid every [anti-pattern](#anti-patterns).
-- [ ] Keep the legacy phase order, or give a reason for each change. State the expanded step count of a typical run and the steps per legacy call.
+- [ ] Follow the [mapping steps](#map-a-flow-to-swamp) and avoid every [anti-pattern](#anti-patterns).
+- [ ] Keep the chart's phase order. State the expanded step count of a typical run and the steps per host call.
 - [ ] Name the core feature and official extension checked. Use defaults, and record each deviation's measured reason and removal condition in PLAN.
-- [ ] Delete the old executor and everything only it used. An F9 rebuild deletes the old behaviors and tests it replaces. Remove baseline rows in the last commit, after the last rebase.
+- [ ] Delete the steps, behaviors, scripts and tests the change replaces. Remove baseline rows in the last commit, after the last rebase.
 - [ ] **Growth (F15):** list `swamp/` growth per part (behaviors, workflows, scripts, tests and fixtures) next to the Orbit net. Give each growth a [reason](#anti-patterns).
 - [ ] Prove behavior with topology receipts and parity tests, not large mocked fixtures. Delete duplicate or mock-heavy tests. Keep the diff under GitHub's 20,000-line limit.
-- [ ] State the measured p95, its sample, the run budget and `queueTimeout`. A behavior-changing kind carries its [topology receipt](#port-inside-the-topology-f13). Without them the review fails.
+- [ ] State the measured p95, its sample, the run budget and `queueTimeout`. A behavior-changing flow carries its [topology receipt](#build-inside-the-topology-f13). Without them the review fails.
 - [ ] Every workflow, children included, sets an explicit `queueTimeout`.
 
-Check the completed port and report what the evidence proves.
+Check the completed flow and report what the evidence proves.
 
 - [ ] Cover success and refusal. Check redacted failure detail, cancellation and interrupted projection.
 - [ ] Validate completed YAML with the pinned native runtime. Run focused TypeScript unit tests, script lint, and Gateway admission, identity and projection tests.

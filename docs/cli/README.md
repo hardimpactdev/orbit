@@ -35,7 +35,7 @@ These rules come from the October and November 2026 decisions and from Nick's ch
 
 **The Gateway never executes work.** It checks the request, records the intent as a task (ADR 0244; today an Operation), and takes a lock per target. It passes the full intent as Swamp workflow inputs and records state only from the terminal result (R2).
 
-**Node work follows one shape (R4).** The Gateway starts one Swamp run on Node 209 and replies 202. Swamp reaches Nodes over `@swamp/ssh`, with official `@swamp/cfgmgmt/*` behaviors where they fit. A check step confirms the end state. There are no per-Node workers.
+**Node work follows one shape (R4).** The Gateway starts one Swamp run on Node 209 and replies 202. Swamp reaches Nodes over `@swamp/ssh`, with official `@swamp/cfgmgmt/*` behaviors where they fit, or runs an Ansible phase for larger idempotent Node state (rule 22 of the `flow-tighten` skill). A check step confirms the end state. There are no per-Node workers.
 
 **Steps never call the Gateway**, except for certificate signing. GitHub tokens are minted at admission. Secrets go Gateway → vault → step as vault key names, never values (R3).
 
