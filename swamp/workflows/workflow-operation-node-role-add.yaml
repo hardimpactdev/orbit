@@ -579,19 +579,6 @@ jobs:
     task: {type: behavior, behaviorType: '@swamp/cfgmgmt/systemd', behaviorName: '${{ "role-native-reverb-start-"+string(inputs.node_id) }}', methodName: apply, globalArgs: {nodeHost: '${{
           inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file
           }}', become: true, service: orbit-websocket.service, ensure: running, enabled: true}, inputs: {}}
-- name: phase_31
-  labels:
-    role: swamp
-  steps:
-  - name: Plan Metrics containers
-    labels:
-      role: swamp
-    guard: ${{ inputs.intent.runtime.metrics == null }}
-    task: {type: behavior, behaviorType: '@nckrtl/metrics-role-plan', behaviorName: '${{ "role-add-metrics-plan-"+string(inputs.node_id) }}', methodName: plan, inputs: {assignment_id: '${{
-          inputs.intent.runtime.metrics == null ? 1 : inputs.intent.runtime.metrics.assignment_id }}', address: '${{ inputs.intent.runtime.metrics == null ? "127.0.0.1" : inputs.intent.runtime.metrics.address
-          }}', files: '${{ inputs.intent.runtime.metrics == null ? [] : inputs.intent.runtime.metrics.files }}'}}
-  dependsOn:
-  - {job: reverb_start, condition: {type: succeeded}}
 - name: phase_32
   labels:
     role: swamp
@@ -603,12 +590,12 @@ jobs:
     writes: true
     forEach:
       item: service
-      in: '${{ inputs.intent.runtime.metrics == null ? [] : steps["Plan Metrics containers"].outputs.services }}'
+      in: '${{ inputs.intent.runtime.metrics == null ? [] : inputs.intent.runtime.metrics.plan.services }}'
     task: {type: behavior, behaviorType: '@swamp/cfgmgmt/docker_image', behaviorName: '${{ "role-add-metrics-image-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: apply,
       globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
           inputs.intent.ssh.identity_file }}', become: true, image: '${{ self.service.image }}', ensure: present}, inputs: {}}
   dependsOn:
-  - {job: phase_31, condition: {type: succeeded}}
+  - {job: reverb_start, condition: {type: succeeded}}
 - name: metrics_inspect
   labels:
     role: swamp
@@ -622,7 +609,7 @@ jobs:
       role: swamp
     forEach:
       item: service
-      in: '${{ inputs.intent.runtime.metrics == null ? [] : steps["Plan Metrics containers"].outputs.services }}'
+      in: '${{ inputs.intent.runtime.metrics == null ? [] : inputs.intent.runtime.metrics.plan.services }}'
     task: {type: behavior, behaviorType: '@swamp/cfgmgmt/docker_container', behaviorName: '${{ "role-converge-metrics-inspect-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: check,
       globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
           inputs.intent.ssh.identity_file }}', become: true, name: '${{ self.service.name }}', image: '${{ self.service.image }}', ensure: running, volumes: '${{ self.service.check.volumes
@@ -641,7 +628,7 @@ jobs:
     writes: true
     forEach:
       item: service
-      in: '${{ inputs.intent.runtime.metrics == null ? [] : steps["Plan Metrics containers"].outputs.services }}'
+      in: '${{ inputs.intent.runtime.metrics == null ? [] : inputs.intent.runtime.metrics.plan.services }}'
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-metrics-volume-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {
         name: '${{ "role-add-metrics-volume-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port
             }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys
@@ -659,7 +646,7 @@ jobs:
     writes: true
     forEach:
       item: service
-      in: '${{ inputs.intent.runtime.metrics == null ? [] : steps["Plan Metrics containers"].outputs.services }}'
+      in: '${{ inputs.intent.runtime.metrics == null ? [] : inputs.intent.runtime.metrics.plan.services }}'
     task: {type: behavior, behaviorType: '@swamp/cfgmgmt/docker_container', behaviorName: '${{ "role-add-metrics-remove-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: apply,
       globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
           inputs.intent.ssh.identity_file }}', become: true, name: '${{ self.service.name }}', image: '${{ self.service.image }}', ensure: absent}, inputs: {}}
@@ -681,7 +668,7 @@ jobs:
     writes: true
     forEach:
       item: service
-      in: '${{ inputs.intent.runtime.metrics == null ? [] : steps["Plan Metrics containers"].outputs.services }}'
+      in: '${{ inputs.intent.runtime.metrics == null ? [] : inputs.intent.runtime.metrics.plan.services }}'
     task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-add-metrics-run-"+string(inputs.node_id)+"-"+string(self._index) }}', methodName: exec, globalArgs: {
         name: '${{ "role-add-metrics-run-"+string(inputs.node_id)+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port
             }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys
@@ -700,7 +687,7 @@ jobs:
       role: swamp
     forEach:
       item: service
-      in: '${{ inputs.intent.runtime.metrics == null ? [] : steps["Plan Metrics containers"].outputs.services }}'
+      in: '${{ inputs.intent.runtime.metrics == null ? [] : inputs.intent.runtime.metrics.plan.services }}'
     task: {type: behavior, behaviorType: '@swamp/cfgmgmt/docker_container', behaviorName: '${{ "role-add-metrics-check-"+string(inputs.node_id) + "-"+string(self._index) }}', methodName: check,
       globalArgs: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{
           inputs.intent.ssh.identity_file }}', become: true, name: '${{ self.service.name }}', image: '${{ self.service.image }}', ensure: running, volumes: '${{ self.service.check.volumes
@@ -1616,7 +1603,7 @@ jobs:
   - {job: phase_29, condition: {type: completed}}
   - {job: phase_30, condition: {type: completed}}
   - {job: reverb_start, condition: {type: completed}}
-  - {job: phase_31, condition: {type: completed}}
+  - {job: reverb_start, condition: {type: completed}}
   - {job: phase_32, condition: {type: completed}}
   - {job: metrics_inspect, condition: {type: completed}}
   - {job: phase_33, condition: {type: completed}}

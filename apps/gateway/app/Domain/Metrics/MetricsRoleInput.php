@@ -52,6 +52,7 @@ final readonly class MetricsRoleInput
 
         return ['enabled' => $enabled, 'purge_data' => $purge, 'assignment_id' => $assignment->id, 'ssh_execution' => $ssh,
             'directories' => $dirs, 'files' => array_map(static fn (string $path, string $content): array => ['path' => $path, 'content' => $content], array_keys($files), array_values($files)),
+            'plan' => app(MetricsContainerPlan::class)->for($assignment->id, (string) $ssh['target']['host'], $files),
             'fleet' => $fleet, 'caddy' => $caddy, 'dns' => $dns, 'certificates' => $certificates,
             'gateway_ssh' => app(SwampSshExecutionInput::class)->forNode($gateway),
             'firewall' => ['port' => 3000, 'source' => $gateway->wireguard_ip, 'action' => 'allow', 'ensure' => $enabled ? 'present' : 'absent'],

@@ -22,6 +22,9 @@ const ssh = (host: string) => ({
   public_key: "public",
   target: { name: "target", host, user: "orbit", port: 22, host_keys: HOST_KEYS },
 });
+const PLAN = JSON.parse(
+  Deno.readTextFileSync(`${ROOT}/../apps/gateway/tests/Fixtures/Metrics/container-plan.json`),
+).plan;
 const connection = (host: string) => ({
   nodeHost: host,
   nodeUser: "orbit",
@@ -106,6 +109,8 @@ export function roleIntent(enabled = true, purge = false) {
     directories: [...new Set(files.map((f) => f.path.slice(0, f.path.lastIndexOf("/"))))]
       .sort((a, b) => a.split("/").length - b.split("/").length),
     files,
+    // The Gateway renders the container plan; tests/Fixtures/Metrics/container-plan.json pins its rendering.
+    plan: PLAN,
     fleet: [{
       exporter_node_id: 10,
       enabled,
@@ -180,15 +185,6 @@ export async function metricsFixture(role = false) {
     })
   ) source = source.replaceAll(key, JSON.stringify(value));
   await Deno.writeTextFile(`${repo.dir}/extensions/behaviors/fixture.ts`, source);
-  if (role) {
-    await Deno.mkdir(`${repo.dir}/extensions/behaviors/integrations`);
-    for (const file of ["metrics_role_plan.ts", "metrics_runtime_spec.ts"]) {
-      await Deno.copyFile(
-        `${ROOT}/extensions/behaviors/operations/integrations/${file}`,
-        `${repo.dir}/extensions/behaviors/integrations/${file}`,
-      );
-    }
-  }
   // Preserve child input schemas: the canonical-intent cases must validate against them.
   const stub = async (name: string) =>
     await repo.workflow(name, (workflow) => {
