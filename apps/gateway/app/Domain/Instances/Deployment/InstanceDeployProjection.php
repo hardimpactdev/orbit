@@ -7,6 +7,7 @@ namespace App\Domain\Instances\Deployment;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentMaterial;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Operations\DirectOperationTimeout;
 use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Operations\NativeOperationProjection;
@@ -18,7 +19,7 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Records bounded native facts. All sequencing, runtime checks and effects belong to Swamp. */
-final readonly class InstanceDeployProjection implements DirectOperationProjection, DirectOperationTimeout, DirectOperationWorkflowInput, NativeOperationProjection
+final readonly class InstanceDeployProjection implements DirectOperationProjection, DirectOperationStartRefusal, DirectOperationTimeout, DirectOperationWorkflowInput, NativeOperationProjection
 {
     public function __construct(
         private DirectOperation $direct,
@@ -109,6 +110,17 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
 
             return $projected;
         });
+    }
+
+    /** A definite refusal has no native effects and must not leave an admission history row running. */
+    public function refused(Operation $operation): void
+    {
+        $id = $operation->state['deployment_id'] ?? null;
+        if (! is_int($id)) {
+            return;
+        }
+        $this->history->recordNative(InstanceDeployment::query()->where('instance_id', $operation->target_id)->findOrFail($id), 'failed', $operation->error_code,
+            ['release' => null, 'selected_release' => null, 'commit' => null, 'failed_step' => 'admission']);
     }
 
     /** A production deployment recorded its running row at admission; the expired run leaves it failed. */

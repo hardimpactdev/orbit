@@ -6,6 +6,7 @@ namespace App\Infrastructure\Swamp;
 
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Operations\OperationBroadcaster;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
@@ -142,6 +143,12 @@ final readonly class StartSwampRun
             }
             app(OperationStore::class)->change($operation, ['status' => OperationStatus::Failed, 'finished_at' => now(),
                 'error_code' => $code, 'current_step' => null, 'failed_step' => null, 'lock_key' => null]);
+            if (! isset($operation->state['swamp_run_id']) && DirectOperation::owns($operation)) {
+                $projection = app(DirectOperation::class)->projection($operation);
+                if ($projection instanceof DirectOperationStartRefusal) {
+                    $projection->refused($operation);
+                }
+            }
 
             return false;
         });

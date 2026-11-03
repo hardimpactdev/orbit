@@ -642,7 +642,7 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv: ${{ ["/usr/bin/timeout", "900", "/usr/bin/sudo", "-n", "-H", "-u", inputs.intent.production.user, "--"] + self.action.argv }}
+        argv: ${{ ["/usr/bin/timeout", "900", "/usr/bin/sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "/usr/bin/env", "-C", inputs.intent.production.home] + self.action.argv }}
         okExitCodes: ${{ self.action.ok }}
         timeoutSec: 910
   - name: Remove release credential
@@ -705,7 +705,7 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv: ${{ ["/usr/bin/timeout", "900", "/usr/bin/sudo", "-n", "-H", "-u", inputs.intent.production.user, "--"] + self.action.argv }}
+        argv: ${{ ["/usr/bin/timeout", "900", "/usr/bin/sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "/usr/bin/env", "-C", inputs.intent.production.home] + self.action.argv }}
         okExitCodes: ${{ self.action.ok }}
         timeoutSec: 910
   - name: Link the release
@@ -765,8 +765,8 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv: ${{ ["/usr/bin/timeout", "30", "/usr/bin/sudo", "-n", "-H", "-u", inputs.intent.production.user, "--"] + ["/usr/bin/env", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "/usr/bin/git", "-c", "core.hooksPath=/dev/null",
-          "-C", inputs.intent.production.release_path] + ["rev-parse", "--verify", "HEAD"] }}
+        argv: ${{ ["/usr/bin/timeout", "30", "/usr/bin/sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "/usr/bin/env", "-C", inputs.intent.production.home] + ["/usr/bin/env", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null",
+          "/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-C", inputs.intent.production.release_path] + ["rev-parse", "--verify", "HEAD"] }}
         timeoutSec: 40
   - name: Read first-parent chain
     labels:
@@ -795,9 +795,9 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv: '${{ ["/usr/bin/timeout", "60", "/usr/bin/sudo", "-n", "-H", "-u", inputs.intent.production.user, "--"] + ["/usr/bin/env", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "/usr/bin/git", "-c", "core.hooksPath=/dev/null",
-          "-C", inputs.intent.production.release_path] + ["rev-list", "--first-parent", "refs/remotes/origin/" + inputs.intent.production.branch, "--not", (inputs.intent.production.commit == null ? "" : inputs.intent.production.commit)
-          + "^@"] }}'
+        argv: '${{ ["/usr/bin/timeout", "60", "/usr/bin/sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "/usr/bin/env", "-C", inputs.intent.production.home] + ["/usr/bin/env", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null",
+          "/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-C", inputs.intent.production.release_path] + ["rev-list", "--first-parent", "refs/remotes/origin/" + inputs.intent.production.branch, "--not", (inputs.intent.production.commit
+          == null ? "" : inputs.intent.production.commit) + "^@"] }}'
         timeoutSec: 70
   - name: Check the branch commit
     labels:
@@ -1343,8 +1343,8 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv: '${{ (inputs.intent.deployment.variant == "production" ? ["timeout", "60", "sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "env", "VP_HOME=" + self.runtime.store] : ["timeout", "900", "env", "VP_HOME=" +
-          self.runtime.store]) + ["binary" in self.runtime ? self.runtime.binary : self.runtime.store + "/bin/vp", "--version"] }}'
+        argv: '${{ (inputs.intent.deployment.variant == "production" ? ["timeout", "60", "sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "env", "-C", inputs.intent.production.home, "VP_HOME=" + self.runtime.store] : ["timeout",
+          "900", "env", "VP_HOME=" + self.runtime.store]) + ["binary" in self.runtime ? self.runtime.binary : self.runtime.store + "/bin/vp", "--version"] }}'
         sudo: ${{ inputs.intent.deployment.variant == "production" }}
         timeoutSec: 70
     forEach:
@@ -1396,9 +1396,9 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv: '${{ (inputs.intent.deployment.variant == "production" ? ["timeout", "900", "sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "env", "VP_HOME=" + self.runtime.store] : ["env", "VP_HOME=" + self.runtime.store])
-          + ["binary" in self.runtime ? self.runtime.binary : self.runtime.store + "/bin/vp", "-C", inputs.intent.deployment.variant == "production" ? inputs.intent.account_home : inputs.intent.application, "env", "install", "node@"+self.runtime.node_version,
-          self.runtime.package_manager+"@"+self.runtime.package_manager_version+(self.runtime.package_manager_hash==null?"":"+"+self.runtime.package_manager_hash)] }}'
+        argv: '${{ (inputs.intent.deployment.variant == "production" ? ["timeout", "900", "sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "env", "-C", inputs.intent.production.home, "VP_HOME=" + self.runtime.store] :
+          ["env", "VP_HOME=" + self.runtime.store]) + ["binary" in self.runtime ? self.runtime.binary : self.runtime.store + "/bin/vp", "-C", inputs.intent.deployment.variant == "production" ? inputs.intent.account_home : inputs.intent.application,
+          "env", "install", "node@"+self.runtime.node_version, self.runtime.package_manager+"@"+self.runtime.package_manager_version+(self.runtime.package_manager_hash==null?"":"+"+self.runtime.package_manager_hash)] }}'
         sudo: ${{ inputs.intent.deployment.variant == "production" }}
         timeoutSec: 910
     forEach:
@@ -1432,9 +1432,9 @@ jobs:
             hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv: '${{ (inputs.intent.deployment.variant == "production" ? ["timeout", "900", "sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "env", "VP_HOME=" + self.runtime.store] : ["env", "VP_HOME=" + self.runtime.store])
-          + ["binary" in self.runtime ? self.runtime.binary : self.runtime.store + "/bin/vp", "-C", inputs.intent.deployment.variant == "production" ? inputs.intent.account_home : inputs.intent.application, "env", "list", "--json"]
-          }}'
+        argv: '${{ (inputs.intent.deployment.variant == "production" ? ["timeout", "900", "sudo", "-n", "-H", "-u", inputs.intent.production.user, "--", "env", "-C", inputs.intent.production.home, "VP_HOME=" + self.runtime.store] :
+          ["env", "VP_HOME=" + self.runtime.store]) + ["binary" in self.runtime ? self.runtime.binary : self.runtime.store + "/bin/vp", "-C", inputs.intent.deployment.variant == "production" ? inputs.intent.account_home : inputs.intent.application,
+          "env", "list", "--json"] }}'
         sudo: ${{ inputs.intent.deployment.variant == "production" }}
         timeoutSec: 70
     forEach:

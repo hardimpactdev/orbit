@@ -95,3 +95,5 @@ Production deployment keeps credential apply/removal, Git clone/checkout/branch 
 Private deploy commands use the admitted app account with the rendered environment on native SSH stdin. Command output is suppressed before Bash parses the private body, including syntax errors. Could SSH support sensitive command output directly, so deploy can retain a safe failure tail without staging scripts or raw output in history?
 
 The official SSH control socket adds a random suffix below `/tmp/swamp-ssh/<name>`. A valid 58-character behavior name exceeded Linux’s Unix-socket path limit on the proof Node. The deploy uses a short SSH connection name, and reads the shared app account group once for all timer units. Could the SSH behavior hash or bound its socket directory independently of the readable behavior name?
+
+Production commands also need an explicit working directory when sudo changes from the SSH account to a private app account. `sudo -H` changes HOME but leaves the old cwd; GNU find can fail restoring that inaccessible directory. Public argv now uses `env -C <app-home>` before source and runtime preparation.

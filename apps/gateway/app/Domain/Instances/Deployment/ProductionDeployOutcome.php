@@ -6,6 +6,7 @@ namespace App\Domain\Instances\Deployment;
 
 use App\Infrastructure\Swamp\NativeRunResult;
 use App\Models\Instance;
+use App\Models\InstanceDeployment;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
@@ -72,10 +73,20 @@ final readonly class ProductionDeployOutcome
         $release = InstanceDeploymentIntent::releaseName($operation);
         $instance = Instance::query()->findOrFail($operation->target_id);
         $activated = $status('Swap current') === 'succeeded';
+        $selected = $activated ? $release : InstanceDeployment::query()->where('instance_id', $instance->id)
+            ->whereNotNull('finished_at')->whereNotNull('release')->latest('id')->value('selected_release');
+        $confirmed = $activated;
+        if ($status('Read current back') === 'succeeded') {
+            $link = trim(ValidatedData::nullableString(ValidatedData::object($steps['Read current back'] ?? [])['stdout'] ?? null) ?? '');
+            $name = str_starts_with($link, 'releases/') ? substr($link, strlen('releases/')) : null;
+            $known = [$release, ...array_keys(RecordedReleases::of($instance))];
+            $selected = $name !== null && in_array($name, $known, true) ? $name : null;
+            $confirmed = $selected !== null;
+        }
         $read = trim(ValidatedData::nullableString(ValidatedData::object($steps['Read the release commit'] ?? [])['stdout'] ?? null) ?? '');
         $payload = ['release' => ['name' => $release], 'commit' => $read !== '' ? $read : InstanceDeploymentIntent::commit($operation),
-            'selected_release' => ['name' => $activated ? $release : RecordedReleases::afterDeploy($instance, $release)['previous']],
-            'selection_confirmed' => $activated, 'failed_step' => null,
+            'selected_release' => ['name' => $selected],
+            'selection_confirmed' => $confirmed, 'failed_step' => null,
             'warnings' => count(array_filter($steps, static fn (mixed $step, string $name): bool => (str_starts_with($name, 'Find releases in use') || str_starts_with($name, 'Clean up releases'))
                 && is_array($step) && ($step['status'] ?? null) === 'failed', ARRAY_FILTER_USE_BOTH))];
         if (ValidatedData::nullableString($data['status'] ?? null) === 'failed') {

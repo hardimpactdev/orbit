@@ -14,6 +14,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Swamp\StartSwampRun;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
@@ -185,9 +186,9 @@ it('keeps the earlier selection when a before step fails and names that step', f
         'Activate release' => 'skipped', 'Swap current' => 'skipped', 'Check the deployment' => 'skipped']);
 
     expect($result->status)->toBe(OperationStatus::Failed)->and($result->error_code)->toBe('deployment.step_failed')
-        ->and($result->result)->toMatchArray(['failed_step' => 'before_activation.migrate', 'selected_release' => 'initial'])
+        ->and($result->result)->toMatchArray(['failed_step' => 'before_activation.migrate', 'selected_release' => null])
         ->and(InstanceDeployment::query()->sole()->only(['status', 'error_code', 'selected_release']))
-        ->toBe(['status' => 'failed', 'error_code' => 'deployment.step_failed', 'selected_release' => 'initial'])
+        ->toBe(['status' => 'failed', 'error_code' => 'deployment.step_failed', 'selected_release' => null])
         ->and($instance->fresh()->checkout_path)->toBe($instance->production_home.'/releases/previous')
         ->and(Process::query()->sole()->status)->not->toBe(LifecycleStatus::Active);
 });
@@ -261,4 +262,49 @@ it('passes captured Node timers to native Schedule resources and projects their 
         ->and(json_encode($submitted))->not->toContain('private-timer-command');
     project_production_terminal($operation, 'succeeded', ['Check Schedule timers-0' => 'succeeded', 'Swap current' => 'succeeded', 'Check the deployment' => 'succeeded']);
     expect(Schedule::query()->sole()->status)->toBe(LifecycleStatus::Active);
+});
+
+it('closes the production history when native admission copies are definitely refused', function (): void {
+    $instance = production_native_deploy_target();
+    $this->socket->reply = static fn (array $request): array => [['type' => 'error', 'id' => $request['id'], 'message' => 'fixture refused']];
+    expect(fn () => app(StartInstanceDeployAction::class)->execute($instance, 'operator', null))->toThrow(ResourceOperationException::class);
+    $operation = Operation::query()->sole();
+    expect($operation->status)->toBe(OperationStatus::Failed)
+        ->and($operation->state['swamp_run_id'] ?? null)->toBeNull()
+        ->and(InstanceDeployment::query()->sole()->only(['status', 'release', 'selected_release', 'failed_step']))
+        ->toBe(['status' => 'failed', 'release' => null, 'selected_release' => null, 'failed_step' => 'admission'])
+        ->and($instance->fresh()->checkout_path)->toBe($instance->checkout_path);
+});
+
+it('projects the observed old selection when the final read contradicts the swap', function (): void {
+    $instance = production_native_deploy_target();
+    $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null)->fresh();
+    $result = project_production_terminal($operation, 'failed', ['Swap current' => 'succeeded',
+        'Read current back' => ['succeeded', 'releases/initial'], 'Check the deployment' => 'failed']);
+    expect($result->result['selected_release'])->toBe('initial')
+        ->and($instance->fresh()->checkout_path)->toBe($instance->production_home.'/releases/initial');
+});
+
+it('keeps the admission history pending when native start confirmation is uncertain', function (): void {
+    $instance = production_native_deploy_target();
+    $time = 0.0;
+    $reply = $this->socket->reply;
+    $this->socket->keepConnected = true;
+    $this->socket->reply = static function (array $request) use (&$time, $reply): array {
+        if ($request['type'] === 'workflow.run') {
+            $time = 121.0;
+
+            return [];
+        }
+
+        return $reply($request);
+    };
+    $clock = static function () use (&$time): float {
+        return $time;
+    };
+    app()->instance(StartSwampRun::class, new StartSwampRun($this->socket, $clock));
+    expect(fn () => app(StartInstanceDeployAction::class)->execute($instance, 'operator', null))->toThrow(ResourceOperationException::class);
+    expect(Operation::query()->sole()->error_code)->toBe('swamp.start_uncertain')
+        ->and(InstanceDeployment::query()->sole()->status)->toBe('running')
+        ->and(InstanceDeployment::query()->sole()->finished_at)->toBeNull();
 });
