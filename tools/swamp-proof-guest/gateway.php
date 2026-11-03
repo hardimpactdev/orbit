@@ -222,8 +222,10 @@ if ($argv[1] === 'fixture') {
         $owner = $instance->authoritativeRoute() ?? throw new RuntimeException('proof.analytics_owner_missing');
         $route = Route::query()->create(['kind' => RouteKind::AnalyticsTracking, 'domain' => $spec['domain'],
             'node_id' => $owner->node_id, 'cluster_id' => $owner->cluster_id, 'publication' => $owner->publication,
-            'provenance' => RouteProvenance::Explicit, 'status' => RouteStatus::Active]);
+            'provenance' => RouteProvenance::Explicit, 'status' => RouteStatus::Pending]);
         $route->analyticsTracking()->create(['instance_id' => $instance->id]);
+        // The insert trigger refuses an active Route; it becomes active once recorded, as enable's completion makes it.
+        $route->update(['status' => RouteStatus::Active, 'sites_published' => true]);
         app(SettingRepository::class)->put(new SettingScope(SettingScopeType::Gateway), 'analytics.site.'.$instance->id,
             json_encode(['domain' => $owner->domain, 'previous_domain' => null, 'timezone' => $spec['timezone'] ?? 'Europe/Amsterdam', 'goals' => []], JSON_THROW_ON_ERROR));
     }
