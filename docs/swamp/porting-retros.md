@@ -700,4 +700,6 @@ Scripts deleted: three programs, comprising one Python source file and two embed
 
 The [receipt index](https://github.com/hardimpactdev/orbit/blob/main/swamp/proof/receipts/node-role-executor-removal.json) records a fresh `node.role_relocate` proof at `18100d06e9` on minimal@16 and Shark. It passes in 162.30 seconds. Real Metrics parity checks both target containers and readiness, then checks that both source containers and the source Prometheus configuration are absent. This is one sample, with observed p95 162.30 seconds, budget 1800 seconds and queue timeout 30 seconds. The 12 GiB, six-CPU proof VM was destroyed after the run. It exercises no production data, billed hosts or production scale.
 
+The two `role_files_native_test.ts` cases are deleted with the old workflow they load. The native parent receipts cover the resource path.
+
 Before its receipt and retro, the cleanup removes 8319 net Orbit lines. It deletes 46 files and changes five more. The Node enrollment push adds 1268 lines including its evidence; together the two batches reduce Orbit by 7051 lines before this cleanup evidence.
