@@ -16,7 +16,6 @@ use App\Data\Clusters\UpdateClusterData;
 use App\Data\Nodes\ProvisionNodeData;
 use App\Data\Routes\CreateRouteData;
 use App\Data\Routes\UpdateRouteData;
-use App\Domain\Analytics\AnalyticsTrackingRouteProjector;
 use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
@@ -52,7 +51,6 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
-use Tests\Support\FakeAnalyticsTrackingRouteProjector;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 use Tests\Support\FakeRouteRemovalProjector;
 use Tests\Support\RouteForeignChildKinds;
@@ -1413,187 +1411,6 @@ it('keeps a custom proxy Route on its member Node when a TLD-less Cluster activa
         ->toBe(['node_id' => $this->node->id, 'cluster_id' => null]);
 });
 
-it('moves an analytics tracking host with its Instance Route when the Node attaches or detaches', function (): void {
-    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $owner = app(CreateRouteAction::class)->reserveForRouteCreate(new CreateRouteData(
-
-        domain: 'site.example.test',
-        publication: RoutePublication::Private,
-        instanceId: $this->target->id,
-        nodeId: null,
-        clusterId: null,
-    ))['route'];
-    $owner->update(['status' => RouteStatus::Active]);
-    $tracking = reconciliation_tracking_route($this->target, $owner, 'analytics.site.example.test');
-    $cluster = reconciliation_active_cluster('tracking-membership', 'cluster.test');
-    bind_node_tld_projection();
-    $projector = bind_tracking_projection();
-    $settled = static fn (?int $nodeId, ?int $clusterId): array => [
-        'node_id' => $nodeId,
-        'cluster_id' => $clusterId,
-        'status' => RouteStatus::Active,
-        'transition_node_id' => null,
-        'transition_cluster_id' => null,
-        'replacement_step' => null,
-    ];
-
-    app(AttachClusterNodeAction::class)->execute($cluster, $this->node);
-
-    expect($this->node->refresh()->cluster_id)
-        ->toBe($cluster->id)
-        ->and($owner->refresh()->only(['node_id', 'cluster_id']))
-        ->toBe(['node_id' => null, 'cluster_id' => $cluster->id])
-        ->and($tracking->refresh()->only(array_keys($settled(null, null))))
-        ->toBe($settled(null, $cluster->id))
-        ->and($projector->events)
-        ->toBe([
-            "prepare:cluster-{$cluster->id}",
-            "build:cluster-{$cluster->id}",
-            'dns',
-            "withdraw:node-{$this->node->id}",
-        ]);
-
-    $projector->events = [];
-    app(DetachClusterNodeAction::class)->execute($cluster, $this->node->refresh());
-
-    expect($this->node->refresh()->cluster_id)
-        ->toBeNull()
-        ->and($owner->refresh()->only(['node_id', 'cluster_id']))
-        ->toBe(['node_id' => $this->node->id, 'cluster_id' => null])
-        ->and($tracking->refresh()->only(array_keys($settled(null, null))))
-        ->toBe($settled($this->node->id, null))
-        ->and($projector->events)
-        ->toBe([
-            "prepare:node-{$this->node->id}",
-            "build:node-{$this->node->id}",
-            'dns',
-            "withdraw:cluster-{$cluster->id}",
-        ]);
-});
-
-it('leaves a tracking host withdrawal to a later DNS move without waiting under the projection owner', function (): void {
-    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $owner = app(CreateRouteAction::class)->reserveForRouteCreate(new CreateRouteData(
-
-        domain: 'site.example.test',
-        publication: RoutePublication::Private,
-        instanceId: $this->target->id,
-        nodeId: null,
-        clusterId: null,
-    ))['route'];
-    $owner->update(['status' => RouteStatus::Active]);
-    $tracking = reconciliation_tracking_route($this->target, $owner, 'analytics.site.example.test');
-    $cluster = reconciliation_active_cluster('tracking-owner', 'cluster.test');
-    bind_node_tld_projection();
-    $projector = bind_tracking_projection();
-    $orbitHome = sys_get_temp_dir().'/orbit-tracking-owner-'.Str::uuid();
-    app()->instance(
-        DevelopmentProjectionOperationLock::class,
-        new NativeDevelopmentProjectionOperationLock($orbitHome, new CommandDeadline),
-    );
-    // Another Route command asks for the projection owner during every wait and gives up at once.
-    $now = 0.0;
-    $clock = static function () use (&$now): float {
-        return $now;
-    };
-    $contender = static function () use ($orbitHome, $clock, &$now): string {
-        $deadline = new CommandDeadline($clock);
-        $deadline->start(0.02);
-
-        try {
-            return new NativeDevelopmentProjectionOperationLock(
-                $orbitHome,
-                $deadline,
-                $clock,
-                static function (int $microseconds) use (&$now): void {
-                    $now += $microseconds / 1_000_000;
-                },
-            )->run(static fn (): string => 'served');
-        } catch (Throwable) {
-            return 'refused';
-        }
-    };
-    $served = [];
-    Sleep::whenFakingSleep(static function () use ($contender, $tracking, &$served): void {
-        $served[] = $contender();
-
-        // Another operation moves the tracking host's private DNS during the wait.
-        Route::query()->whereKey($tracking->id)->update(['transition_dns_moved_at' => now()]);
-    });
-
-    try {
-        app(AttachClusterNodeAction::class)->execute($cluster, $this->node);
-    } finally {
-        new Filesystem()->deleteDirectory($orbitHome);
-    }
-
-    Sleep::assertSleptTimes(1);
-
-    expect($served)
-        ->toBe(['served'])
-        ->and($tracking->refresh()->only(['node_id', 'cluster_id', 'transition_node_id', 'transition_cluster_id', 'replacement_step']))
-        ->toBe([
-            'node_id' => null,
-            'cluster_id' => $cluster->id,
-            'transition_node_id' => $this->node->id,
-            'transition_cluster_id' => null,
-            'replacement_step' => RouteReplacementStep::DatabaseCutover,
-        ])
-        ->and($projector->events)
-        ->not->toContain("withdraw:node-{$this->node->id}");
-});
-
-it('keeps a tracking host serving its old placement when its move fails before cutover', function (): void {
-    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $owner = app(CreateRouteAction::class)->reserveForRouteCreate(new CreateRouteData(
-
-        domain: 'site.example.test',
-        publication: RoutePublication::Private,
-        instanceId: $this->target->id,
-        nodeId: null,
-        clusterId: null,
-    ))['route'];
-    $owner->update(['status' => RouteStatus::Active]);
-    $tracking = reconciliation_tracking_route($this->target, $owner, 'analytics.site.example.test');
-    $cluster = reconciliation_active_cluster('tracking-failure', 'cluster.test');
-    bind_node_tld_projection();
-    $projector = bind_tracking_projection();
-    $projector->failAt = 'build';
-
-    expect(fn () => app(AttachClusterNodeAction::class)->execute($cluster, $this->node))
-        ->toThrow(RuntimeConvergenceException::class, 'Injected tracking build failure.');
-
-    expect($tracking->refresh()->only(['node_id', 'cluster_id', 'transition_node_id', 'transition_cluster_id', 'status']))
-        ->toBe([
-            'node_id' => $this->node->id,
-            'cluster_id' => null,
-            'transition_node_id' => null,
-            'transition_cluster_id' => null,
-            'status' => RouteStatus::Active,
-        ])
-        ->and($projector->events)
-        ->toBe([
-            "prepare:cluster-{$cluster->id}",
-            "build:cluster-{$cluster->id}",
-            "withdraw:cluster-{$cluster->id}",
-        ])
-        ->and($this->node->refresh()->cluster_id)
-        ->toBeNull();
-
-    $projector->events = [];
-    app(AttachClusterNodeAction::class)->execute($cluster, $this->node->refresh());
-
-    expect($tracking->refresh()->only(['node_id', 'cluster_id', 'transition_node_id', 'transition_cluster_id']))
-        ->toBe([
-            'node_id' => null,
-            'cluster_id' => $cluster->id,
-            'transition_node_id' => null,
-            'transition_cluster_id' => null,
-        ])
-        ->and($this->node->refresh()->cluster_id)
-        ->toBe($cluster->id);
-});
-
 it('refuses an attach before any Route moves when a later Route cannot move', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $first = app(CreateRouteAction::class)->reserveForRouteCreate(new CreateRouteData(
@@ -2215,33 +2032,6 @@ function reconciliation_routes_with_legacy(Project $project, Instance $target, b
     }
 
     return [$routes[0], $legacy];
-}
-
-function reconciliation_tracking_route(Instance $instance, Route $owner, string $domain): Route
-{
-    $route = Route::query()->create([
-        'kind' => RouteKind::AnalyticsTracking,
-        'project_id' => null,
-        'node_id' => $owner->node_id,
-        'cluster_id' => $owner->cluster_id,
-        'generation_basis_node_id' => null,
-        'domain' => $domain,
-        'provenance' => RouteProvenance::Explicit,
-        'publication' => RoutePublication::Private,
-        'status' => RouteStatus::Pending,
-    ]);
-    $route->analyticsTracking()->create(['instance_id' => $instance->id]);
-    $route->update(['status' => RouteStatus::Active]);
-
-    return $route;
-}
-
-function bind_tracking_projection(): FakeAnalyticsTrackingRouteProjector
-{
-    $projector = new FakeAnalyticsTrackingRouteProjector;
-    app()->instance(AnalyticsTrackingRouteProjector::class, $projector);
-
-    return $projector;
 }
 
 function reconciliation_update(

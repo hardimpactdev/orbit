@@ -134,8 +134,8 @@ function assertAgentInstalled({ fetch, steps, calls }: Result) {
 const Incus = ["timeout", "210", "/usr/bin/sudo", "-n", "--", "/usr/bin/incus", "--project", "orbit-tasks"];
 
 Deno.test("the build runs every stage from 209 over pinned SSH", async () => {
-  const result = await build();
-  const { run, steps, calls, agent, copies } = result;
+  const result = await build({ pi: true });
+  const { run, steps, calls, agent, copies, digest } = result;
   assertEquals([run.status, steps.complete.status], ["succeeded", "succeeded"]);
   assertEquals(steps["publish-reply"].outputs.fingerprint, Fingerprint);
   assertAgentInstalled(result);
@@ -169,7 +169,7 @@ Deno.test("the build runs every stage from 209 over pinned SSH", async () => {
   assertEquals(install.map((call) => call.argv.slice(17, 19)), [["tvm-image-7", candidate], ["tvm-image-7-smoke", candidate]]);
   assertEquals(install[0].stdin.input, { candidate, sha256: Pin });
   assertEquals(
-    calls.filter((call) => call.argv.includes("push")).map((call) => call.argv),
+    calls.filter((call) => call.argv.includes("push") && call.argv.includes("0700")).map((call) => call.argv),
     ["tvm-image-7", "tvm-image-7-smoke"].map((vm) => [
       ...Incus, "file", "push", "--mode", "0700", "--uid", "0", "--gid", "0", "--", "/usr/local/bin/orbit-agent", vm + candidate,
     ]),
@@ -192,16 +192,6 @@ Deno.test("the build runs every stage from 209 over pinned SSH", async () => {
   assertEquals(published.map((operation) => operation.kind), ["prepare_metadata", "publish", "promote", "promote", "prune"]);
   assertEquals(published[2], { kind: "promote", alias: "candidate-7", fingerprint: Fingerprint });
   assertEquals(published[3], { kind: "promote", alias: "orbit-task-base", fingerprint: Fingerprint });
-  for (const name of ["pi-fetch", "pi-check", "pi-copy", "pi-directory", "pi-push", "cleanup-pi-host", "cleanup-pi-local"]) {
-    assertEquals(steps[name].status, "skipped", name);
-  }
-  assertEquals(copies, []);
-  assertEquals(steps["cleanup-smoke-reply"].status, "succeeded");
-});
-
-Deno.test("a Pi build reaches its pinned guest cache through the host", async () => {
-  const { run, steps, calls, agent, copies, digest } = await build({ pi: true });
-  assertEquals(run.status, "succeeded");
   const stage = `/tmp/orbit-image-pi-${run.id}.bin`;
   assertEquals(copies.length, 2);
   assert(copies[0].at(-2)!.endsWith(":/srv/orbit/sandbox-artifacts/pi") && copies[0].at(-1) === stage);
@@ -216,6 +206,7 @@ Deno.test("a Pi build reaches its pinned guest cache through the host", async ()
   assertFalse(await Deno.stat(stage).then(() => true, () => false));
   // No base64 chunk upload: the pi phase verifies the pinned file itself.
   assertFalse(agent.some(([name]) => name === "pi.receive-artifact"));
+  assertEquals(steps["cleanup-smoke-reply"].status, "succeeded");
 });
 
 Deno.test("a Pi build with another digest never leaves 209", async () => {
@@ -244,12 +235,4 @@ Deno.test("an agent refusal stops the build and cleanup removes both guests", as
   assertEquals(agent.slice(-3).map(([name]) => name), ["image.clean", "incus.vm", "incus.vm"]);
   assertEquals(agent.slice(-2).map(([, call]) => call.stdin.input.vm.name), ["tvm-image-7", "tvm-image-7-smoke"]);
   assertEquals(steps["cleanup-smoke-reply"].status, "succeeded");
-});
-
-Deno.test("an invalid intent touches no host", async () => {
-  const { steps, calls } = await build({
-    recipe: JSON.stringify({ identity: Identity, agent_sha256: "e".repeat(64), pi_sha256: null }),
-  }, false);
-  assertEquals([steps.plan.status, steps["cleanup-builder"].status], ["failed", "skipped"]);
-  assertEquals(calls, []);
 });

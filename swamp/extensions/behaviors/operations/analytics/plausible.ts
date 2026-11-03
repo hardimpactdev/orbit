@@ -21,11 +21,9 @@ export const Goal = z.discriminatedUnion("goal_type", [
     z.object({ goal_type: z.literal("Goal.Revenue"), goal: RevenueData })
         .strict(),
 ]);
-export type GoalIntent = z.infer<typeof Goal>;
 export const Site = z.object({
     domain: Domain,
     previous_domain: z.string().nullable().default(null),
     timezone: z.string().min(1).max(100),
     goals: z.array(Goal).max(100).default([]),
 }).strict();
-export type SiteIntent = z.input<typeof Site>;

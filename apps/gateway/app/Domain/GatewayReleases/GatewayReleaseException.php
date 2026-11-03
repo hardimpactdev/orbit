@@ -11,7 +11,7 @@ use Throwable;
 /**
  * A Gateway release step that refused or failed. `step` names the release phase, so the release
  * record and the command output say where it stopped. `phase` holds what the step observed, such as
- * the smoke report, and the release record keeps it with the failed phase.
+ * the foreign key violations a recovery found, and the release record keeps it with the failed phase.
  */
 final class GatewayReleaseException extends ResourceOperationException
 {

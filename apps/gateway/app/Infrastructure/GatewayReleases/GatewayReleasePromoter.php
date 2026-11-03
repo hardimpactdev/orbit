@@ -8,18 +8,15 @@ use App\Domain\GatewayReleases\DeployedGatewayRelease;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
-use App\Domain\GatewayReleases\GatewayReleaseSmoke;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
 use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
 use App\Models\GatewayRelease;
-use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Switches to a prepared release, hands the runtime over, verifies, switches the web app, then
- * runs smoke. Verify and smoke see the new release. Smoke runs only after the web switch, and it
- * checks that the scheduler and agent view started after the handoff began.
+ * Switches to a prepared release, hands the runtime over, verifies, then switches the web app.
+ * Verify sees the new release.
  *
  * Any failure after the switch, expected or not, is handled the same way: without migrations the
  * previous release becomes current again and its runtime handoff repeats; after migrations the
@@ -41,7 +38,6 @@ final readonly class GatewayReleasePromoter
         private GatewayReleaseRuntime $runtime,
         private GatewayReleaseVerifier $verifier,
         private GatewayReleaseWebBuild $web,
-        private GatewayReleaseSmoke $smoke,
         private GatewayReleaseRecorder $recorder,
         private GatewayReleaseBuilder $builder,
         private int $keptReleases,
@@ -97,7 +93,6 @@ final readonly class GatewayReleasePromoter
                 return $release;
             }
             $step = 'handoff';
-            $handoffAt = CarbonImmutable::now('UTC');
             $phases['handoff'] = $this->runtime->handoff($id);
             $this->recorder->progress($record, $phases);
             $step = 'verify';
@@ -113,8 +108,6 @@ final readonly class GatewayReleasePromoter
             $step = 'web';
             $phases['web'] = $this->publishWeb($id, $sha, $trigger);
             $this->recorder->progress($record, $phases);
-            $step = 'smoke';
-            $phases['smoke'] = $this->smoke->run($id, $sha, $handoffAt, $phases['web']['outcome'] === 'kept' ? ['web'] : []);
         } catch (Throwable $exception) {
             $this->fail(
                 exception: GatewayReleaseException::fromThrowable($exception, $step, $sha),

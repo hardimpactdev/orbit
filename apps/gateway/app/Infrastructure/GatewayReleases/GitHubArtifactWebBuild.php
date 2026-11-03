@@ -17,8 +17,9 @@ use App\Infrastructure\GitHub\GitHubActionsUnavailable;
  * validation, installation, publication, and retention on the Gateway Node.
  *
  * CI's `Required checks` job needs the Web job, and the Web job uploads the artifact before it
- * succeeds. A commit whose checks passed therefore has the artifact, so a missing or expired one
- * fails the commit instead of waiting for it. GitHub that cannot be read is retried later.
+ * succeeds, in the merge queue run as well as on `main`. A commit whose checks passed therefore has
+ * the artifact, so a missing or expired one fails the commit instead of waiting for it. GitHub that
+ * cannot be read is retried later.
  */
 final class GitHubArtifactWebBuild implements GatewayReleaseWebBuild
 {
@@ -163,7 +164,7 @@ final class GitHubArtifactWebBuild implements GatewayReleaseWebBuild
                 if (! is_int($id) || $id < 1 || ! is_int($size) || ! is_array($run)
                     || ($run['head_sha'] ?? null) !== $sha || ! is_int($run['id'] ?? null)
                     || ! is_int($run['repository_id'] ?? null) || ($run['head_repository_id'] ?? null) !== $run['repository_id']
-                    || ($run['head_branch'] ?? null) !== $this->branch
+                    || ! is_string($run['head_branch'] ?? null) || ! $this->releaseBranch($run['head_branch'])
                     || ! $this->ciRun($path, $run['id'], $sha, $run['repository_id'], $token)) {
                     continue;
                 }
@@ -220,9 +221,9 @@ final class GitHubArtifactWebBuild implements GatewayReleaseWebBuild
     }
 
     /**
-     * Only a run of the CI workflow on the release branch of this repository counts: a push, or a manual dispatch, for
-     * exactly this commit. A pull request from a fork runs in this repository too, but its run has another event, branch,
-     * or head repository.
+     * Only a run of the CI workflow on the release branch of this repository counts, for exactly this commit: a push or
+     * a manual dispatch on the branch, or the merge queue run whose tested commit the queue then puts on the branch. A
+     * pull request from a fork runs in this repository too, but its run has another event, branch, or head repository.
      */
     private function ciRun(string $path, int $runId, string $sha, int $repositoryId, string $token): bool
     {
@@ -230,13 +231,32 @@ final class GitHubArtifactWebBuild implements GatewayReleaseWebBuild
         $repository = $run['repository'] ?? null;
         $head = $run['head_repository'] ?? null;
 
+        $event = $run['event'] ?? null;
+        $branch = $run['head_branch'] ?? null;
+        $accepted = is_string($branch) && match ($event) {
+            'push', 'workflow_dispatch' => $branch === $this->branch,
+            'merge_group' => $this->queueBranch($branch),
+            default => false,
+        };
+
         return ($run['id'] ?? null) === $runId
-            && in_array($run['event'] ?? null, ['push', 'workflow_dispatch'], true)
-            && ($run['head_branch'] ?? null) === $this->branch
+            && $accepted
             && ($run['path'] ?? null) === $this->workflow
             && ($run['head_sha'] ?? null) === $sha
             && is_array($repository) && ($repository['id'] ?? null) === $repositoryId
             && is_array($head) && ($head['id'] ?? null) === $repositoryId;
+    }
+
+    /** The release branch itself, or one of its merge queue branches. */
+    private function releaseBranch(string $branch): bool
+    {
+        return $branch === $this->branch || $this->queueBranch($branch);
+    }
+
+    /** A branch GitHub's merge queue creates to test a commit before it puts it on the release branch. */
+    private function queueBranch(string $branch): bool
+    {
+        return str_starts_with($branch, 'gh-readonly-queue/'.$this->branch.'/');
     }
 
     private function invalid(string $message): GatewayReleaseException

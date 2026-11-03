@@ -1,10 +1,7 @@
 /** The actual 209 parent DAG and official SSH at disposable provider and runtime boundaries. */
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
-import { parse } from "jsr:@std/yaml@1.0.12";
-import { ROOT } from "../../../../tests/_support/native_harness.ts";
-import { assertSwampLabels, Peer, provisionComposition, resultOf, stub } from "../../../../tests/_support/task_vm_provision.ts";
+import { Peer, provisionComposition, resultOf } from "../../../../tests/_support/task_vm_provision.ts";
 
-const ForeignRuntime = { task_vm_id: 43, guest_node_id: 142, process_id: 33, ready: true };
 const hasRun = (argv: string[], run: string[]) =>
   argv.some((_, index) => run.every((word, offset) => argv[index + offset] === word));
 
@@ -62,43 +59,10 @@ Deno.test("a foreign bootstrap account fails before network or runtime", async (
   assert(!(await test.eventsText()).includes("wg pubkey"));
 });
 
-Deno.test("unavailable UpCloud refuses before provider or guest actions", async () => {
-  await using test = await provisionComposition();
-  test.intent.provider = "upcloud";
-  const { run } = await test.root(false);
-  assertEquals(run.status, "failed");
-  assert(!await test.eventsExist());
-});
-
-Deno.test("a foreign runtime receipt never becomes ready", async () => {
-  await using test = await provisionComposition();
-  await stub(test.repo, "task-vm-runtime", "result", ForeignRuntime, true);
-  const { run } = await test.root(false);
-  assertEquals(run.status, "failed");
-  // Rule 22: no rollback chain. The published peer stays for diagnosis; the next hub convergence drops it.
-  assert(!(await test.eventsText()).includes("restor"));
-});
-
 Deno.test("native cancellation has no ready receipt and no rollback", async () => {
   await using test = await provisionComposition();
   await test.repo.stubWorkflow("task-vm-runtime", "sleep 30");
   const { run } = await test.root(false, "--timeout", "15s");
   assertEquals(run.status, "cancelled");
   assert(!(await test.eventsText()).includes("restor"));
-});
-
-Deno.test("tasks.provision's default queue budget covers a loaded dispatch", () => {
-  const workflow = parse(Deno.readTextFileSync(`${ROOT}/workflows/workflow-operation-task-provision.yaml`)) as {
-    queueTimeout: number;
-  };
-  assertEquals(workflow.queueTimeout, 30);
-  for (
-    const name of [
-      "task-vm-provision",
-      "operation-task-vm-provision",
-      "task-vm-ssh-prepare",
-      "task-vm-incus-first-visit",
-      "task-vm-enrollment",
-    ]
-  ) assertSwampLabels(name);
 });

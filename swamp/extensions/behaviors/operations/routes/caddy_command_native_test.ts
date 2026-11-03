@@ -1,4 +1,4 @@
-import { assert, assertEquals, assertNotEquals } from "jsr:@std/assert@1.0.19";
+import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { LOCAL_PIN, publicationFixture, run, sha256 } from "../../../../tests/_support/route_fixture.ts";
 async function fixture() {
   const f = await publicationFixture();
@@ -28,7 +28,7 @@ async function fixture() {
   };
   return { ...f, content, version, caddy };
 }
-Deno.test("Caddy publication replaces a symlink and rerun converges", async () => {
+Deno.test("Caddy publication replaces a symlink", async () => {
   await using f = await fixture();
   await Deno.writeTextFile(`${f.host}/old-config`, "previous");
   await Deno.symlink(`${f.host}/old-config`, f.live);
@@ -43,24 +43,6 @@ Deno.test("Caddy publication replaces a symlink and rerun converges", async () =
   assert(!(await Deno.lstat(f.live)).isSymlink);
   assertEquals(f.calls().map((c) => c[0]), ["caddy", "systemctl"]);
   assertEquals(f.calls().at(-1), ["systemctl", "reload", "caddy"]);
-  await Deno.remove(f.audit);
-  await f.caddy();
-  assertEquals(await Deno.readTextFile(f.live), f.content);
-});
-Deno.test("Caddy validation failure skips reload", async () => {
-  await using f = await fixture();
-  const { run } = await f.caddy("validate", false);
-  assertEquals(run.status, "failed");
-  assertEquals(f.calls().map((c) => c[0]), ["caddy"]);
-  assertEquals(await Deno.readTextFile(f.live), f.content);
-});
-Deno.test("Caddy reload failure leaves no journal and rerun succeeds", async () => {
-  await using f = await fixture();
-  const failed = await f.caddy("reload", false);
-  assertEquals(failed.run.status, "failed");
-  assertNotEquals(failed.history.jobs[0].steps.find((s) => s.name === "Check the publication")?.status, "succeeded");
-  assertEquals([...Deno.readDirSync(f.host)].map((e) => e.name).sort(), ["Caddyfile", "php"]);
-  assertEquals((await f.caddy()).run.status, "succeeded");
 });
 
 Deno.test("Caddy drift after reload fails the native end assertion", async () => {

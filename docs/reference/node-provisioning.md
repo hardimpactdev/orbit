@@ -570,7 +570,7 @@ A new Swamp release reaches serve and its workers through the role, with one res
 1. Merge the pin change in the recipe and the other pins. The release handoff rebuilds the task VM images.
 2. Converge the role: `orbit node:role:add <node> swamp --converge`. Nothing restarts; the running processes keep their release.
 3. When `operation:list --status=running` is empty, restart serve, which drains in-flight runs, then both workers: `systemctl restart orbit-swamp-serve`, then `systemctl restart orbit-swamp-worker@a orbit-swamp-worker@b`. The workers retry until serve listens.
-4. Check that each process runs the pinned file (`readlink /proc/<pid>/exe`), and run the release smoke.
+4. Check that each process runs the pinned file (`readlink /proc/<pid>/exe`).
 
 Earlier releases stay in `/usr/local/lib/orbit-swamp`, about 400 MB each. Rollback points the link at one and restarts the same way. Remove an old release or `replaced-*` directory by hand once no process runs from it: no `/proc/*/exe` names it.
 

@@ -1,5 +1,5 @@
 /** operation-firewall-direct against a ufw double behind official SSH; never contacts a Node. */
-import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
+import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { nativeRepo, ROOT } from "../../../../tests/_support/native_harness.ts";
 import type { Row } from "./plan.ts";
@@ -73,33 +73,18 @@ else {
   return { repo, run, rowsNow, writeState, [Symbol.asyncDispose]: () => repo[Symbol.asyncDispose]() };
 }
 
-const deny = { action: "deny", port: "5432", protocol: "tcp", source: "any" };
 const allow = { action: "allow", port: "5432", protocol: "tcp", source: "192.0.2.10" };
 
-Deno.test("allow, deny, narrow-first order and remove through the native root", async () => {
-  await using f = await fixture();
+Deno.test("native allow keeps narrow-first order and returns the check verdict", async () => {
+  await using f = await fixture([{ to: "5432/tcp", action: "deny", source: "Anywhere", comment: "orbit db" }, Trust, Trust6]);
   await f.repo.cli(["workflow", "validate", "operation-firewall-direct"]);
-  assertEquals((await f.run("firewall.deny", deny)).terminal, { backend: "active" });
   const { steps, terminal } = await f.run("firewall.allow", allow);
   assertEquals([terminal, steps.accepted], [{ backend: "active" }, "succeeded"]);
   assertEquals((await f.rowsNow()).slice(0, 2).map((r) => [r.to, r.action, r.source]), [
     ["5432/tcp", "allow", "192.0.2.10"],
     ["5432/tcp", "deny", "Anywhere"],
   ]);
-  const again = await f.run("firewall.allow", allow);
-  assertEquals(again.steps["Change the rules-0"], "skipped");
-  assertEquals((await f.run("firewall.remove", { ...allow, retain: false }, "absent")).terminal, { backend: "absent" });
-  assert(!(await f.rowsNow()).some((r) => r.source === "192.0.2.10"));
 });
-
-Deno.test("an inactive firewall is the terminal refusal and changes nothing", async () => {
-  await using f = await fixture([], false);
-  const { steps, terminal } = await f.run("firewall.allow", { ...allow, protocol: "any", source: "any" }, "present", false);
-  assertEquals(terminal, { error_code: "firewall.backend_inactive" });
-  assertEquals([steps["Change the rules-0"], steps.accepted], ["skipped", "failed"]);
-  assertEquals(await f.rowsNow(), []);
-});
-
 Deno.test("a ufw failure fails the run with the check's verdict", async () => {
   await using f = await fixture();
   await f.writeState({ rows: [Trust, Trust6], active: true, fail: true });

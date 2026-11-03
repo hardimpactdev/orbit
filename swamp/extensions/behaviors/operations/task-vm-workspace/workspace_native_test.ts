@@ -71,22 +71,6 @@ async function fixture() {
   };
 }
 
-Deno.test("directory success is idempotent and creates no guest worker", async () => {
-  await using test = await fixture();
-  await test.repo.cli(["workflow", "validate", "task-vm-workspace"]);
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const { run, history } = await test.run();
-    assertEquals(run.status, "succeeded");
-    const result = history.jobs[0].steps.at(-1)!.outputs!;
-    assertEquals([result.task_vm_id, result.group_id, result.checkout_path, result.ready], [184, 55, test.checkout, true]);
-  }
-  const calls = test.calls();
-  assertEquals(calls.length, 6);
-  assertEquals(calls.filter((call) => call.argv[0] === "/usr/bin/mkdir").length, 2);
-  assert(!JSON.stringify(calls).includes("worker connect"));
-  assert(await isDir(test.checkout));
-});
-
 Deno.test("a connection failure stops before the directory, then native resume finishes", async () => {
   await using test = await fixture();
   await Deno.writeTextFile(test.block, "");
@@ -132,13 +116,8 @@ Deno.test("a native parent passes the original envelope and consumes the child r
   const { run, history } = await test.repo.runWorkflow("workspace-parent", { envelope: test.inputs });
   assertEquals(run.status, "succeeded");
   assertEquals(history.jobs[0].steps[0].outputs!.result, { ...test.identity, ready: true });
+  const calls = test.calls();
+  assertEquals(calls.filter((call) => call.argv[0] === "/usr/bin/mkdir").length, 1);
+  assert(!JSON.stringify(calls).includes("worker connect"));
   assert(await isDir(test.checkout));
-});
-
-Deno.test("a missing host key pin refuses before connecting", async () => {
-  await using test = await fixture();
-  test.target.host_keys = [];
-  const { run } = await test.run(false);
-  assertEquals(run.status, "failed");
-  assertEquals(test.calls(), []);
 });

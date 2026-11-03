@@ -1,7 +1,9 @@
 """route.create on the target: the Caddy site, a leaf that the Orbit root verifies, the account copy, no private key
 in native history, and a TLS handshake for the domain."""
 
+import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -9,6 +11,10 @@ from pathlib import Path
 domain = "r-" + os.environ["PROOF_RUN"] + ".proof.test"
 outputs = Path(os.environ["PROOF_OUTPUTS"]).read_text()
 ROOT = "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"
+operation = json.loads(Path(os.environ["PROOF_OPERATION_FILE"]).read_text())
+assert operation["kind"] == "route.create" and operation["status"] == "succeeded", operation["status"]
+assert operation["result"] == {"ready": True, "route_id": operation["target_id"]}, operation["result"]
+assert operation["input"]["route_create"]["probe_ssh"]["control_node_id"] == 209
 
 
 def target(*argv, stdin=""):
@@ -18,6 +24,7 @@ def target(*argv, stdin=""):
         capture_output=True,
         text=True,
         check=False,
+        timeout=30,
     )
 
 
@@ -27,9 +34,17 @@ def check(condition, message):
 
 
 check("PRIVATE KEY-----" not in outputs, "a private key reached native history")
+caddyfile = target("cat", "/etc/caddy/Caddyfile").stdout
 check(
-    f"https://{domain} {{" in target("cat", "/etc/caddy/Caddyfile").stdout,
+    f"https://{domain} {{" in caddyfile,
     "the Caddy site serves the domain",
+)
+site = caddyfile.split(f"https://{domain} {{", 1)[1].split("\n# orbit: ", 1)[0]
+roots = re.findall(r"(?m)^\s*root \* (.+)/public\s*$", site)
+check(len(roots) == 1 and "php_fastcgi" in site, "the requested Route serves a PHP application")
+check(
+    all("laravel/framework" in json.loads(target("cat", root + "/composer.json").stdout).get("require", {}) for root in roots),
+    "the Route's checkout is a Laravel application",
 )
 leaves = target(
     "sh", "-c", "ls -d /etc/caddy/orbit-certificates/*/current/cert.pem"

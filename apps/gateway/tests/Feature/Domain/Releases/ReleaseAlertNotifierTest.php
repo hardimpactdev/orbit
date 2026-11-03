@@ -41,7 +41,7 @@ beforeEach(function (): void {
 
 function release_alert(
     ReleaseAlertKind $kind = ReleaseAlertKind::ReleaseFailed,
-    string $summary = 'Smoke check web.index failed.',
+    string $summary = 'Verify found an old version.',
     ?string $evidenceUrl = 'https://github.com/hardimpactdev/orbit/actions/runs/42',
 ): ReleaseAlert {
     return new ReleaseAlert(
@@ -81,9 +81,9 @@ describe('a raised alert', function (): void {
                     'event' => 'release.alert',
                     'kind' => 'release_failed',
                     'subject' => $subject,
-                    'summary' => 'Smoke check web.index failed.',
+                    'summary' => 'Verify found an old version.',
                     'evidence_url' => 'https://github.com/hardimpactdev/orbit/actions/runs/42',
-                    'text' => 'Release failed for gateway hardimpactdev/orbit@0123456789ab: Smoke check web.index failed. https://github.com/hardimpactdev/orbit/actions/runs/42',
+                    'text' => 'Release failed for gateway hardimpactdev/orbit@0123456789ab: Verify found an old version. https://github.com/hardimpactdev/orbit/actions/runs/42',
                     'occurred_at' => now()->utc()->format('Y-m-d\TH:i:s\Z'),
                     'request_id' => $activity->request_id,
                     'activity_id' => $activity->id,
@@ -108,7 +108,7 @@ describe('a raised alert', function (): void {
             ->and($activity->properties?->toArray())->toBe([
                 'kind' => 'release_failed',
                 'subject' => $subject,
-                'summary' => 'Smoke check web.index failed.',
+                'summary' => 'Verify found an old version.',
                 'evidence_url' => 'https://github.com/hardimpactdev/orbit/actions/runs/42',
                 'problem' => ['outcome' => 'done', 'fingerprint' => $fingerprint],
                 'webhook' => ['outcome' => 'done'],
@@ -116,7 +116,7 @@ describe('a raised alert', function (): void {
             ->and($problem->fingerprint)->toBe($fingerprint)
             ->and($problem->source)->toBe(ProblemSource::Release)
             ->and($problem->occurrences)->toBe(1)
-            ->and($problem->evidence['summary'] ?? null)->toBe('Smoke check web.index failed.')
+            ->and($problem->evidence['summary'] ?? null)->toBe('Verify found an old version.')
             ->and($problem->evidence['release_repository'] ?? null)->toBe('hardimpactdev/orbit')
             ->and($problem->evidence['release_id'] ?? null)->toBe('17')
             ->and($problem->evidence['evidence_urls'] ?? null)->toBe(['https://github.com/hardimpactdev/orbit/actions/runs/42'])
@@ -151,13 +151,13 @@ describe('a raised alert', function (): void {
     it('redacts credentials in the summary and cuts it at 1000 characters', function (): void {
         Http::fake([RELEASE_ALERT_URL => Http::response(['ok' => true])]);
 
-        app(ReleaseAlertNotifier::class)->alert(release_alert(summary: 'Smoke failed with token=s3cr3tTokenValue99 '.str_repeat('x', 1200)));
+        app(ReleaseAlertNotifier::class)->alert(release_alert(summary: 'Verify failed with token=s3cr3tTokenValue99 '.str_repeat('x', 1200)));
 
         $summary = release_alert_activity()->properties?->get('summary');
 
         expect($summary)->toBeString()
             ->and($summary)->not->toContain('s3cr3tTokenValue99')
-            ->and($summary)->toStartWith('Smoke failed with token=[REDACTED] ')
+            ->and($summary)->toStartWith('Verify failed with token=[REDACTED] ')
             ->and(mb_strlen((string) $summary))->toBe(1003)
             ->and($summary)->toEndWith('...');
         Http::assertSent(fn (Request $request): bool => ! str_contains($request->body(), 's3cr3tTokenValue99'));
@@ -270,8 +270,8 @@ it('keeps one incident across Gateway source changes and separates resource atte
         app(ReleaseAlertNotifier::class)->alert(new ReleaseAlert(
             ReleaseAlertKind::ReleaseFailed,
             new ReleaseAlertSubject('gateway', 'hardimpactdev/orbit', $sha, $attempt),
-            'Smoke failed.',
-            new ReleaseIncident('gateway', $attempt, 'smoke'),
+            'Verify failed.',
+            new ReleaseIncident('gateway', $attempt, 'verify'),
         ));
     }
 

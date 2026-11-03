@@ -5,12 +5,10 @@ declare(strict_types=1);
 use App\Actions\GatewayReleases\ConfigureGatewayReleaseAction;
 use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
 use App\Actions\GatewayReleases\RollbackGatewayReleaseAction;
-use App\Actions\GatewayReleases\SmokeGatewayReleaseAction;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseInventory;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
-use App\Domain\GatewayReleases\GatewayReleaseSmoke;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
 use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
@@ -22,12 +20,9 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseRecovery;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRestore;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSwitcher;
-use App\Infrastructure\GatewayReleases\ScriptGatewayReleaseSmoke;
-use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Models\Activity;
 use App\Models\GatewayRelease;
 use App\Models\Node;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Schema;
 use Tests\Support\FakeAgentCommandRunner;
@@ -47,11 +42,11 @@ afterEach(function (): void {
 });
 
 describe('gateway:release:deploy', function (): void {
-    it('switches to the release only after prepare, verifies, then publishes the web app before smoke', function (): void {
+    it('switches to the release only after prepare, verifies, then publishes the web app', function (): void {
         adopt_release($this->fixture);
         $sha = $this->fixture->commit('Second release');
         $order = new ReleaseSteps;
-        $action = release_deployer($this->fixture, passing_verifier($order), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order));
+        $action = release_deployer($this->fixture, passing_verifier($order), recording_runtime($order), new OpenReleaseDatabase, recording_web($order));
 
         $this->fixture->agents->calls = $this->fixture->accessGrants = [];
         $deployed = $action->execute($sha);
@@ -62,7 +57,7 @@ describe('gateway:release:deploy', function (): void {
             ->and($deployed->sha)->toBe($sha)
             ->and($this->fixture->layout->currentReleaseId())->toBe($deployed->id)
             // Verify runs before the scheduler drain, so a broken release is found without waiting for it.
-            ->and($order->steps)->toBe(['handoff:'.$deployed->id, 'verify', 'schedule:'.$deployed->id, 'web:publish', 'smoke'])
+            ->and($order->steps)->toBe(['handoff:'.$deployed->id, 'verify', 'schedule:'.$deployed->id, 'web:publish'])
             ->and(array_column($mutations, 'command'))->toBe([
                 'gateway.prepare-release', 'gateway.finish-release', 'gateway.refresh-release-configuration', 'gateway.switch-release',
             ])
@@ -81,7 +76,7 @@ describe('gateway:release:deploy', function (): void {
         $order = new ReleaseSteps;
         $verifier = passing_verifier($order);
         $verifier->failSha = $sha;
-        $action = release_rollback($this->fixture, $verifier, recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order));
+        $action = release_rollback($this->fixture, $verifier, recording_runtime($order), new OpenReleaseDatabase, recording_web($order));
 
         $exception = release_failure(fn () => $action->execute(substr($sha, 0, 12)));
         $record = GatewayRelease::query()->first();
@@ -98,94 +93,6 @@ describe('gateway:release:deploy', function (): void {
                 'handoff:'.$first,
             ])
             ->and(Activity::query()->value('status'))->toBe('failed');
-    });
-
-    it('runs smoke only after the web switch and switches back when smoke fails', function (): void {
-        $first = adopt_release($this->fixture);
-        $sha = $this->fixture->commit('Smoke fails');
-        $this->fixture->builder()->prepare($sha);
-        $order = new ReleaseSteps;
-        $smoke = recording_smoke($order);
-        $smoke->fail = true;
-        $action = release_rollback($this->fixture, passing_verifier($order), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), $smoke);
-
-        expect(release_failure(fn () => $action->execute(substr($sha, 0, 12)))->step)->toBe('smoke')
-            ->and($this->fixture->layout->currentReleaseId())->toBe($first)
-            // The scheduler already moved, so switch-back moves it back too.
-            ->and($order->steps)->toBe([
-                'handoff:'.substr($sha, 0, 12),
-                'verify',
-                'schedule:'.substr($sha, 0, 12),
-                'web:publish',
-                'smoke',
-                'web:restore',
-                'handoff:'.$first,
-                'schedule:'.$first,
-            ]);
-    });
-
-    it('stores the smoke report on the release record and smokes against the handoff time', function (): void {
-        adopt_release($this->fixture);
-        $sha = $this->fixture->commit('Smoked release');
-        $order = new ReleaseSteps;
-        $smoke = recording_smoke($order);
-        $before = new DateTimeImmutable('now', new DateTimeZone('UTC'));
-        $action = release_deployer($this->fixture, passing_verifier($order), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), $smoke);
-
-        $deployed = $action->execute($sha);
-        $phases = GatewayRelease::query()->first()->phases;
-
-        expect($deployed->outcome)->toBe('verified')
-            ->and($phases['smoke'])->toBe(['outcome' => 'passed', 'report' => ['passed' => true, 'expected_sha' => $sha]])
-            ->and($smoke->since)->toBeInstanceOf(DateTimeImmutable::class)
-            ->and($smoke->since >= $before)->toBeTrue()
-            ->and($smoke->since <= new DateTimeImmutable('now', new DateTimeZone('UTC')))->toBeTrue();
-    });
-
-    it('keeps the smoke report of a failed smoke on the switched-back record', function (): void {
-        $first = adopt_release($this->fixture);
-        $sha = $this->fixture->commit('Smoke fails without migrations');
-        $this->fixture->builder()->prepare($sha);
-        $order = new ReleaseSteps;
-        $smoke = recording_smoke($order);
-        $smoke->fail = true;
-        $action = release_rollback($this->fixture, passing_verifier($order), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), $smoke);
-
-        $exception = release_failure(fn () => $action->execute(substr($sha, 0, 12)));
-        $record = GatewayRelease::query()->first();
-
-        expect($exception->errorCode)->toBe('gateway.release_smoke_failed')
-            ->and($record->outcome)->toBe('switched_back')
-            ->and($record->migrations_ran)->toBeFalse()
-            ->and($record->phases['smoke'])->toBe([
-                'report' => ['passed' => false, 'failed_checks' => ['web']],
-                'outcome' => 'failed',
-                'error_code' => 'gateway.release_smoke_failed',
-            ])
-            ->and($this->fixture->layout->currentReleaseId())->toBe($first)
-            ->and(array_slice($order->steps, -3))->toBe(['web:restore', 'handoff:'.$first, 'schedule:'.$first]);
-    });
-
-    it('pauses on the new release when smoke fails after migrations ran', function (): void {
-        $first = adopt_release($this->fixture);
-        $sha = $this->fixture->commit('Smoke fails after migrations');
-        $order = new ReleaseSteps;
-        $database = new OpenReleaseDatabase;
-        $smoke = recording_smoke($order);
-        $smoke->fail = true;
-        $action = release_deployer($this->fixture, passing_verifier($order), recording_runtime($order), $database, recording_web($order), $smoke);
-
-        $exception = release_failure(fn () => $action->execute($sha));
-        $record = GatewayRelease::query()->first();
-
-        expect($exception->step)->toBe('smoke')
-            ->and($record->outcome)->toBe('paused')
-            ->and($record->migrations_ran)->toBeTrue()
-            ->and($record->phases['smoke']['report'])->toBe(['passed' => false, 'failed_checks' => ['web']])
-            ->and($this->fixture->layout->currentReleaseId())->toBe(substr($sha, 0, 12))
-            ->and(is_file($this->fixture->base.'/home/gateway-release.paused'))->toBeTrue()
-            ->and($order->steps)->toBe(['handoff:'.substr($sha, 0, 12), 'verify', 'schedule:'.substr($sha, 0, 12), 'web:publish', 'smoke'])
-            ->and($order->steps)->not->toContain('handoff:'.$first);
     });
 
     it('removes the web build of a release it prunes', function (): void {
@@ -209,7 +116,7 @@ describe('gateway:release:deploy', function (): void {
         $database = new OpenReleaseDatabase;
         $verifier = passing_verifier($order);
         $verifier->failSha = $sha;
-        $action = release_deployer($this->fixture, $verifier, recording_runtime($order), $database, recording_web($order), recording_smoke($order));
+        $action = release_deployer($this->fixture, $verifier, recording_runtime($order), $database, recording_web($order));
 
         $exception = release_failure(fn () => $action->execute($sha));
         $record = GatewayRelease::query()->first();
@@ -231,7 +138,7 @@ describe('gateway:release:deploy', function (): void {
         $sha = $this->fixture->commit('Interrupted');
         $switcher = new GatewayReleaseSwitcher($this->fixture->layout, $this->fixture->releaseCommands(new FakeAgentCommandRunner()->refuse('gateway.switch-release', 'gateway.release_switch_failed')));
         $order = new ReleaseSteps;
-        $action = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order), $switcher);
+        $action = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), $switcher);
 
         expect(release_failure(fn () => $action->execute($sha))->errorCode)->toBe('gateway.release_switch_failed')
             ->and($this->fixture->layout->currentReleaseId())->toBe($first)
@@ -244,7 +151,7 @@ describe('gateway:release:deploy', function (): void {
         $this->fixture->agents->refuse('gateway.prepare-release', 'gateway.release_dependencies_failed', ['sha' => $sha]);
 
         $order = new ReleaseSteps;
-        $exception = release_failure(fn () => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order))->execute($sha));
+        $exception = release_failure(fn () => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order))->execute($sha));
 
         expect($exception->errorCode)->toBe('gateway.release_dependencies_failed')
             ->and($this->fixture->layout->currentReleaseId())->toBe($first)
@@ -276,7 +183,7 @@ describe('gateway:release:deploy', function (): void {
             public function prune(array $retained): void {}
         };
 
-        $exception = release_failure(fn () => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, $web, recording_smoke($order))->execute($sha));
+        $exception = release_failure(fn () => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, $web)->execute($sha));
 
         expect($exception->errorCode)->toBe($errorCode)
             ->and($this->fixture->layout->currentReleaseId())->toBe($first)
@@ -296,7 +203,7 @@ describe('gateway:release:deploy', function (): void {
         $sha = $this->fixture->commit('Locked');
         $lock = new GatewayReleaseLock($this->fixture->base.'/home/gateway-release.lock');
         $order = new ReleaseSteps;
-        $action = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order), lock: $lock);
+        $action = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), lock: $lock);
 
         $exception = $lock->run(fn (): GatewayReleaseException => release_failure(fn () => $action->execute($sha)));
 
@@ -309,10 +216,10 @@ describe('gateway:release:deploy', function (): void {
         $sha = $this->fixture->commit('Migrated forward');
         $database = new OpenReleaseDatabase;
         $order = new ReleaseSteps;
-        $deployed = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), $database, recording_web($order), recording_smoke($order))->execute($sha);
+        $deployed = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), $database, recording_web($order))->execute($sha);
         $database->migrated = false;
         $database->failMigrate = true;
-        $rollback = release_rollback($this->fixture, passing_verifier(), recording_runtime($order), $database, recording_web($order), recording_smoke($order));
+        $rollback = release_rollback($this->fixture, passing_verifier(), recording_runtime($order), $database, recording_web($order));
 
         $rolled = $rollback->execute($first);
 
@@ -329,7 +236,7 @@ describe('gateway:release:deploy', function (): void {
         $sha = $this->fixture->commit('Release that prunes');
         $order = new ReleaseSteps;
 
-        release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order))->execute($sha);
+        release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order))->execute($sha);
 
         expect($order->pruned)->toEqualCanonicalizing([$first, substr($sha, 0, 12)]);
     });
@@ -341,7 +248,7 @@ describe('gateway:release:deploy', function (): void {
         $this->fixture->incomplete('aaaaaaaaaaaa', time() - GatewayReleasePromoter::IncompleteReleaseSeconds - 60);
         $this->fixture->incomplete('bbbbbbbbbbbb', time() - GatewayReleasePromoter::IncompleteReleaseSeconds + 600);
 
-        $deployed = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order))->execute($sha);
+        $deployed = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order))->execute($sha);
         $removed = array_column(array_column(array_filter($this->fixture->agents->calls,
             static fn (array $call): bool => $call['command'] === 'gateway.remove-release'), 'input'), 'release');
 
@@ -356,20 +263,11 @@ describe('gateway:release:deploy', function (): void {
         adopt_release($this->fixture);
         $sha = $this->fixture->commit('Release over an incomplete current one');
         $order = new ReleaseSteps;
-        $smoke = new readonly class($this->fixture) implements GatewayReleaseSmoke
-        {
-            public function __construct(private GatewayReleaseFixture $fixture) {}
+        $verifier = passing_verifier();
+        // The switch made this release current; the agent now reports it without REVISION and old, as after a broken repair.
+        $verifier->onVerify = fn () => $this->fixture->incomplete(substr($sha, 0, 12), time() - GatewayReleasePromoter::IncompleteReleaseSeconds - 60);
 
-            public function run(string $id, string $sha, ?DateTimeImmutable $since = null, array $skip = []): array
-            {
-                // The switch made this release current; the agent now reports it without REVISION and old, as after a broken repair.
-                $this->fixture->incomplete($id, time() - GatewayReleasePromoter::IncompleteReleaseSeconds - 60);
-
-                return ['outcome' => 'passed', 'report' => ['passed' => true]];
-            }
-        };
-
-        $deployed = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), $smoke)->execute($sha);
+        $deployed = release_deployer($this->fixture, $verifier, recording_runtime($order), new OpenReleaseDatabase, recording_web($order))->execute($sha);
 
         expect($deployed->outcome)->toBe('verified')
             ->and($this->fixture->layout->currentReleaseId())->toBe(substr($sha, 0, 12))
@@ -377,7 +275,7 @@ describe('gateway:release:deploy', function (): void {
             ->and($order->steps)->not->toContain('web:remove:'.substr($sha, 0, 12));
 
         $next = $this->fixture->commit('Release over an incomplete previous one');
-        $deployed = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order))->execute($next);
+        $deployed = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order))->execute($next);
 
         expect($deployed->outcome)->toBe('verified')
             ->and($deployed->previousId)->toBe(substr($sha, 0, 12))
@@ -389,19 +287,10 @@ describe('gateway:release:deploy', function (): void {
         adopt_release($this->fixture);
         $sha = $this->fixture->commit('Release while the inventory turns unreadable');
         $order = new ReleaseSteps;
-        $smoke = new readonly class($this->fixture, $inventory) implements GatewayReleaseSmoke
-        {
-            public function __construct(private GatewayReleaseFixture $fixture, private Closure $inventory) {}
+        $verifier = passing_verifier();
+        $verifier->onVerify = fn () => $this->fixture->observed = fn (): GatewayReleaseInventory => $inventory(substr($sha, 0, 12));
 
-            public function run(string $id, string $sha, ?DateTimeImmutable $since = null, array $skip = []): array
-            {
-                $this->fixture->observed = fn (): GatewayReleaseInventory => ($this->inventory)($id);
-
-                return ['outcome' => 'passed', 'report' => ['passed' => true]];
-            }
-        };
-
-        $deployed = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), $smoke)->execute($sha);
+        $deployed = release_deployer($this->fixture, $verifier, recording_runtime($order), new OpenReleaseDatabase, recording_web($order))->execute($sha);
 
         expect($deployed->outcome)->toBe('verified')
             ->and($this->fixture->agents->commands())->not->toContain('gateway.remove-release')
@@ -415,35 +304,31 @@ describe('gateway:release:deploy', function (): void {
         $first = adopt_release($this->fixture);
         $sha = $this->fixture->commit('Release to roll back from');
         $order = new ReleaseSteps;
-        release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order))->execute($sha);
+        release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order))->execute($sha);
         $web = new RollbackWebBuild($order);
-        $smoke = recording_smoke($order);
 
-        $rolled = release_rollback($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, $web, $smoke)->execute($first);
+        $rolled = release_rollback($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, $web)->execute($first);
 
         expect($rolled->outcome)->toBe('verified')
             ->and($rolled->phases['web'])->toBe(['outcome' => 'published', 'installed' => true])
-            ->and($web->installed)->toBe([$first])
-            ->and($smoke->skip)->toBe([]);
+            ->and($web->installed)->toBe([$first]);
     });
 
     it('keeps the web app and rolls the code back when CI no longer has the web build', function (): void {
         $first = adopt_release($this->fixture);
         $sha = $this->fixture->commit('Release to roll back from');
         $order = new ReleaseSteps;
-        release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order))->execute($sha);
+        release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order))->execute($sha);
         $web = new RollbackWebBuild($order);
         $web->installFails = true;
-        $smoke = recording_smoke($order);
 
-        $rolled = release_rollback($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, $web, $smoke)->execute($first);
+        $rolled = release_rollback($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, $web)->execute($first);
 
         expect($rolled->outcome)->toBe('verified')
             ->and($rolled->phases['web']['outcome'])->toBe('kept')
             ->and($rolled->phases['web']['error_code'])->toBe('gateway.release_web_build_missing')
             ->and($rolled->phases['web']['warning'])->toContain('stays as it was')
             ->and($this->fixture->layout->currentReleaseId())->toBe($first)
-            ->and($smoke->skip)->toBe(['web'])
             ->and($order->steps)->not->toContain('web:restore');
     });
 
@@ -451,7 +336,7 @@ describe('gateway:release:deploy', function (): void {
         adopt_release($this->fixture);
         $sha = $this->fixture->commit('Swamp source');
         $swamp = new ReleaseTestSwampLoad;
-        $deployed = release_deployer($this->fixture, passing_verifier(), recording_runtime(new ReleaseSteps), new OpenReleaseDatabase, recording_web(new ReleaseSteps), recording_smoke(new ReleaseSteps), swamp: $swamp)->execute($sha);
+        $deployed = release_deployer($this->fixture, passing_verifier(), recording_runtime(new ReleaseSteps), new OpenReleaseDatabase, recording_web(new ReleaseSteps), swamp: $swamp)->execute($sha);
 
         expect($deployed->outcome)->toBe('verified')
             ->and($swamp->loaded)->toBe([$sha])
@@ -465,7 +350,7 @@ describe('gateway:release:deploy', function (): void {
         $sha = $this->fixture->commit('Swamp refuses');
         $order = new ReleaseSteps;
 
-        $exception = release_failure(fn () => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order), swamp: new ReleaseTestSwampLoad(fails: true))->execute($sha));
+        $exception = release_failure(fn () => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), swamp: new ReleaseTestSwampLoad(fails: true))->execute($sha));
         $record = GatewayRelease::query()->latest('id')->first();
 
         expect($exception->errorCode)->toBe('gateway.release_swamp_load_failed')
@@ -482,7 +367,7 @@ describe('gateway:release:deploy', function (): void {
         $web = new RollbackWebBuild($order);
         $web->vanishes = true;
 
-        $exception = release_failure(fn () => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, $web, recording_smoke($order))->execute($sha));
+        $exception = release_failure(fn () => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, $web)->execute($sha));
 
         expect($exception->errorCode)->toBe('gateway.release_web_build_missing')
             ->and($web->installs)->toBe(1)
@@ -495,7 +380,7 @@ describe('gateway:release:deploy', function (): void {
         $sha = $this->fixture->commit('Handoff crashes');
         $this->fixture->builder()->prepare($sha);
         $order = new ReleaseSteps;
-        $action = release_rollback($this->fixture, passing_verifier($order), recording_runtime($order, crashOn: substr($sha, 0, 12)), new OpenReleaseDatabase, recording_web($order), recording_smoke($order));
+        $action = release_rollback($this->fixture, passing_verifier($order), recording_runtime($order, crashOn: substr($sha, 0, 12)), new OpenReleaseDatabase, recording_web($order));
 
         $exception = release_failure(fn () => $action->execute(substr($sha, 0, 12)));
         $record = GatewayRelease::query()->sole();
@@ -515,7 +400,7 @@ describe('gateway:release:deploy', function (): void {
         $sha = $this->fixture->commit('Migrated, then the handoff crashes');
         $order = new ReleaseSteps;
         $database = new OpenReleaseDatabase;
-        $action = release_deployer($this->fixture, passing_verifier($order), recording_runtime($order, crashOn: substr($sha, 0, 12)), $database, recording_web($order), recording_smoke($order));
+        $action = release_deployer($this->fixture, passing_verifier($order), recording_runtime($order, crashOn: substr($sha, 0, 12)), $database, recording_web($order));
 
         release_failure(fn () => $action->execute($sha));
 
@@ -530,7 +415,7 @@ describe('gateway:release:deploy', function (): void {
         $switcher = new GatewayReleaseSwitcher($this->fixture->layout, $this->fixture->releaseCommands(new FakeAgentCommandRunner()->refuse('gateway.switch-release', 'gateway.release_switch_failed')));
         $database = new OpenReleaseDatabase;
         $order = new ReleaseSteps;
-        $action = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), $database, recording_web($order), recording_smoke($order), $switcher);
+        $action = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), $database, recording_web($order), $switcher);
 
         expect(release_failure(fn () => $action->execute($sha))->errorCode)->toBe('gateway.release_switch_failed')
             ->and($this->fixture->layout->currentReleaseId())->toBe($first)
@@ -544,7 +429,7 @@ describe('gateway:release:deploy', function (): void {
         $database = new OpenReleaseDatabase;
         $database->unreadable = new RuntimeException('database is locked');
         $order = new ReleaseSteps;
-        $action = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), $database, recording_web($order), recording_smoke($order));
+        $action = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), $database, recording_web($order));
 
         $exception = release_failure(fn () => $action->execute($sha));
         $record = GatewayRelease::query()->sole();
@@ -560,7 +445,7 @@ describe('gateway:release:deploy', function (): void {
     it('ends a refused rollback as a failed retryable record with no commit and changes nothing', function (): void {
         $first = adopt_release($this->fixture);
         $order = new ReleaseSteps;
-        $rollback = release_rollback($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order));
+        $rollback = release_rollback($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order));
 
         $exception = release_failure(fn () => $rollback->execute('0123456789ab'));
 
@@ -579,7 +464,7 @@ describe('gateway:release:deploy', function (): void {
         $first = adopt_release($this->fixture);
         $sha = $this->fixture->commit('Second release');
         $order = new ReleaseSteps;
-        release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order))->execute($sha);
+        release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order))->execute($sha);
         $this->fixture->agents->calls = [];
         $this->fixture->agents->answer('gateway.refresh-release-configuration', function (array $input) use ($first, $sha): array {
             expect($input['release'])->toBe($first);
@@ -587,7 +472,7 @@ describe('gateway:release:deploy', function (): void {
 
             return ['changed' => true];
         });
-        $rollback = release_rollback($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order));
+        $rollback = release_rollback($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order));
 
         $rollback->execute($first);
         $mutations = array_values(array_filter($this->fixture->agents->commands(),
@@ -621,7 +506,7 @@ describe('gateway:release:deploy', function (): void {
 
         foreach (range(1, 4) as $index) {
             $sha = $this->fixture->commit('Release '.$index);
-            $ids[] = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order))->execute($sha)->id;
+            $ids[] = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order))->execute($sha)->id;
         }
 
         expect(Config::integer('orbit.gateway_releases.keep'))->toBe(3)
@@ -637,7 +522,7 @@ describe('gateway:release:deploy', function (): void {
 
         foreach (range(1, 3) as $index) {
             $sha = $this->fixture->commit('Release '.$index);
-            $ids[] = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order), keptReleases: 1)->execute($sha)->id;
+            $ids[] = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), keptReleases: 1)->execute($sha)->id;
         }
 
         expect($this->fixture->layout->retainedReleaseIds())->toEqualCanonicalizing([$ids[3], $ids[2]])
@@ -664,7 +549,7 @@ describe('gateway:release:deploy', function (): void {
             return ['source' => $current, 'source_sha' => $this->fixture->layout->preparedCommit($current)];
         });
         $order = new ReleaseSteps;
-        $action = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order));
+        $action = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order));
 
         $refused = release_failure(fn () => $action->execute($older));
 
@@ -686,7 +571,7 @@ describe('gateway:release:deploy', function (): void {
         $database = new OpenReleaseDatabase;
         $order = new ReleaseSteps;
 
-        $exception = release_failure(fn () => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), $database, recording_web($order), recording_smoke($order))->execute($sha));
+        $exception = release_failure(fn () => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), $database, recording_web($order))->execute($sha));
 
         expect($exception->errorCode)->toBe('gateway.release_configuration_failed')
             ->and($database->migrated)->toBeFalse()
@@ -702,7 +587,7 @@ describe('gateway:release:deploy', function (): void {
         $database->failMigrate = true;
         $order = new ReleaseSteps;
 
-        $exception = release_failure(fn () => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), $database, recording_web($order), recording_smoke($order))->execute($sha));
+        $exception = release_failure(fn () => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), $database, recording_web($order))->execute($sha));
 
         expect($exception->errorCode)->toBe('gateway.release_migrate_failed')
             ->and($this->fixture->layout->currentReleaseId())->toBe($current)
@@ -718,7 +603,7 @@ describe('gateway:release:deploy', function (): void {
         $database->failMigrate = true;
         $database->directory = $this->fixture->base.'/home';
         $order = new ReleaseSteps;
-        $deploy = fn (): GatewayReleaseException => release_failure(fn () => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), $database, recording_web($order), recording_smoke($order))->execute($sha));
+        $deploy = fn (): GatewayReleaseException => release_failure(fn () => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), $database, recording_web($order))->execute($sha));
 
         $deploy();
         $deploy();
@@ -739,7 +624,7 @@ describe('gateway:release:deploy', function (): void {
         $verifier->failSha = $sha;
         $database = new OpenReleaseDatabase;
         $database->unreadable = new RuntimeException('database is locked');
-        $action = release_deployer($this->fixture, $verifier, recording_runtime($order), $database, recording_web($order), recording_smoke($order));
+        $action = release_deployer($this->fixture, $verifier, recording_runtime($order), $database, recording_web($order));
 
         foreach (range(1, 3) as $attempt) {
             release_failure(fn () => $action->execute($sha));
@@ -766,7 +651,7 @@ describe('gateway:release:deploy', function (): void {
         $verifier = passing_verifier($order);
         $verifier->failSha = $sha;
 
-        $exception = release_failure(fn () => release_rollback($this->fixture, $verifier, recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order), $switcher)->execute(substr($sha, 0, 12)));
+        $exception = release_failure(fn () => release_rollback($this->fixture, $verifier, recording_runtime($order), new OpenReleaseDatabase, recording_web($order), $switcher)->execute(substr($sha, 0, 12)));
         $record = GatewayRelease::query()->sole();
 
         expect($exception->errorCode)->toBe('gateway.release_switch_back_failed')
@@ -799,7 +684,7 @@ describe('gateway:release:deploy', function (): void {
         $this->fixture->builder()->prepare($sha);
         $order = new ReleaseSteps;
 
-        release_failure(fn () => release_rollback($this->fixture, passing_verifier($order), recording_runtime($order, scheduleCrashOn: substr($sha, 0, 12)), new OpenReleaseDatabase, recording_web($order), recording_smoke($order))->execute(substr($sha, 0, 12)));
+        release_failure(fn () => release_rollback($this->fixture, passing_verifier($order), recording_runtime($order, scheduleCrashOn: substr($sha, 0, 12)), new OpenReleaseDatabase, recording_web($order))->execute(substr($sha, 0, 12)));
 
         expect($order->steps)->toBe([
             'handoff:'.substr($sha, 0, 12), 'verify', 'schedule:'.substr($sha, 0, 12),
@@ -811,14 +696,14 @@ describe('gateway:release:deploy', function (): void {
     it('keeps the previous release when pruning, also when it is the oldest one', function (): void {
         $order = new ReleaseSteps;
         $oldest = adopt_release($this->fixture);
-        $deploy = fn (int $kept): DeployGatewayReleaseAction => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order), keptReleases: $kept);
+        $deploy = fn (int $kept): DeployGatewayReleaseAction => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), keptReleases: $kept);
         $ids = [];
 
         foreach (['B', 'C'] as $name) {
             $ids[$name] = $deploy(5)->execute($this->fixture->commit($name))->id;
         }
 
-        release_rollback($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order))->execute($oldest);
+        release_rollback($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order))->execute($oldest);
         $latest = $deploy(1)->execute($this->fixture->commit('D'))->id;
 
         expect($this->fixture->layout->retainedReleaseIds())->toEqualCanonicalizing([$latest, $oldest])
@@ -828,14 +713,14 @@ describe('gateway:release:deploy', function (): void {
     it('keeps no more than three releases after a rollback to an older one', function (): void {
         $order = new ReleaseSteps;
         $oldest = adopt_release($this->fixture);
-        $deploy = fn (): DeployGatewayReleaseAction => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order));
+        $deploy = fn (): DeployGatewayReleaseAction => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order));
         $ids = [];
 
         foreach (['B', 'C'] as $name) {
             $ids[$name] = $deploy()->execute($this->fixture->commit($name))->id;
         }
 
-        release_rollback($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order))->execute($oldest);
+        release_rollback($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order))->execute($oldest);
         $latest = $deploy()->execute($this->fixture->commit('D'))->id;
 
         // The newest three would be D, C, and B; the previous release, the oldest one, takes the place of B.
@@ -853,7 +738,6 @@ describe('gateway:release:deploy', function (): void {
             recording_runtime($order = new ReleaseSteps),
             new OpenReleaseDatabase,
             recording_web($order),
-            recording_smoke($order),
         ));
 
         $this->artisan('gateway:release:deploy', ['commit' => $sha])
@@ -874,71 +758,6 @@ describe('gateway:release:deploy', function (): void {
     });
 });
 
-describe('gateway:release:smoke', function (): void {
-    it('prints the smoke report of the live release and changes nothing', function (): void {
-        $id = adopt_release($this->fixture);
-        $sha = (string) $this->fixture->layout->preparedCommit($id);
-        $this->app->instance(SmokeGatewayReleaseAction::class, new SmokeGatewayReleaseAction(
-            $this->fixture->layout,
-            command_smoke($this->fixture, passed: true),
-        ));
-
-        $exitCode = Artisan::call('gateway:release:smoke');
-        $printed = json_decode(Artisan::output(), true);
-
-        expect($exitCode)->toBe(0)
-            ->and($printed)->toBe(['release' => $id, 'sha' => $sha, 'outcome' => 'passed', 'report' => ['schema' => 1, 'passed' => true, 'checks' => []]]);
-
-        $this->artisan('gateway:release:smoke', ['commit' => substr($sha, 0, 7), '--since' => '2026-10-07T06:00:00Z'])
-            ->expectsOutputToContain('"sha":"'.substr($sha, 0, 7).'"')
-            ->assertExitCode(0);
-
-        expect(GatewayRelease::query()->count())->toBe(0)
-            ->and(file_get_contents($this->fixture->base.'/smoke-args'))->toContain("--since\n2026-10-07T06:00:00Z");
-    });
-
-    it('prints the failed report and exits 1, and refuses a time without a zone', function (): void {
-        adopt_release($this->fixture);
-        $this->app->instance(SmokeGatewayReleaseAction::class, new SmokeGatewayReleaseAction(
-            $this->fixture->layout,
-            command_smoke($this->fixture, passed: false),
-        ));
-
-        $exitCode = Artisan::call('gateway:release:smoke');
-        $printed = json_decode(Artisan::output(), true);
-
-        expect($exitCode)->toBe(1)
-            ->and($printed['error_code'])->toBe('gateway.release_smoke_failed')
-            ->and($printed['step'])->toBe('smoke')
-            ->and($printed['detail']['report']['failed_checks'])->toBe(['web']);
-
-        $this->artisan('gateway:release:smoke', ['--since' => '2026-10-07 06:00'])
-            ->expectsOutputToContain('"error_code":"gateway.release_since_invalid"')
-            ->assertExitCode(2);
-    });
-});
-
-/** A smoke runner for a current path whose REVISION names the current release and whose smoke command records its arguments. */
-function command_smoke(GatewayReleaseFixture $fixture, bool $passed): ScriptGatewayReleaseSmoke
-{
-    $current = $fixture->layout->currentPath();
-    $script = $current.'/bin/gateway-smoke';
-    mkdir($current.'/bin', 0755, true);
-    file_put_contents($current.'/REVISION', $fixture->preparedSha($fixture->currentId())."\n");
-    $report = $passed
-        ? '{"schema":1,"passed":true,"checks":{}}'
-        : '{"schema":1,"passed":false,"error":"checks_failed","failed_checks":["web"],"message":"1 of 7 checks did not pass: web."}';
-    file_put_contents($script, "#!/usr/bin/env bash\nprintf '%s\\n' \"\$@\" > ".escapeshellarg($fixture->base.'/smoke-args')."\necho '".$report."'\n".($passed ? '' : "exit 1\n"));
-    chmod($script, 0755);
-
-    return new ScriptGatewayReleaseSmoke(
-        layout: $fixture->layout,
-        processes: new NativeProcessRunner,
-        origin: 'https://gateway.orbit',
-        webRoot: $fixture->base.'/web',
-    );
-}
-
 function adopt_release(GatewayReleaseFixture $fixture): string
 {
     $id = $fixture->builder()->prepare($fixture->commit('Adopted release'))->id;
@@ -953,7 +772,6 @@ function release_deployer(
     GatewayReleaseRuntime $runtime,
     GatewayReleaseDatabase $database,
     GatewayReleaseWebBuild $web,
-    GatewayReleaseSmoke $smoke,
     ?GatewayReleaseSwitcher $switcher = null,
     ?GatewayReleaseLock $lock = null,
     ?int $keptReleases = null,
@@ -972,7 +790,6 @@ function release_deployer(
             $runtime,
             $verifier,
             $web,
-            $smoke,
             $recorder,
             $builder,
             $keptReleases ?? Config::integer('orbit.gateway_releases.keep'),
@@ -992,7 +809,6 @@ function release_rollback(
     GatewayReleaseRuntime $runtime,
     GatewayReleaseDatabase $database,
     GatewayReleaseWebBuild $web,
-    GatewayReleaseSmoke $smoke,
     ?GatewayReleaseSwitcher $switcher = null,
 ): RollbackGatewayReleaseAction {
     $builder = $fixture->builder($web);
@@ -1007,7 +823,6 @@ function release_rollback(
             $runtime,
             $verifier,
             $web,
-            $smoke,
             $recorder,
             $builder,
             Config::integer('orbit.gateway_releases.keep'),
@@ -1022,12 +837,19 @@ function passing_verifier(?ReleaseSteps $order = null): GatewayReleaseVerifier
     {
         public ?string $failSha = null;
 
+        /** @var (Closure(): mixed)|null runs when verify starts */
+        public ?Closure $onVerify = null;
+
         public function __construct(private readonly ?ReleaseSteps $order) {}
 
         public function verify(string $sha): array
         {
             if ($this->order instanceof ReleaseSteps) {
                 $this->order->steps[] = 'verify';
+            }
+
+            if ($this->onVerify !== null) {
+                ($this->onVerify)();
             }
 
             if ($this->failSha === $sha) {
@@ -1103,34 +925,6 @@ function recording_web(ReleaseSteps $order): GatewayReleaseWebBuild
         public function prune(array $retained): void
         {
             $this->order->pruned = $retained;
-        }
-    };
-}
-
-function recording_smoke(ReleaseSteps $order): GatewayReleaseSmoke
-{
-    return new class($order) implements GatewayReleaseSmoke
-    {
-        public bool $fail = false;
-
-        public function __construct(private readonly ReleaseSteps $order) {}
-
-        public ?DateTimeImmutable $since = null;
-
-        /** @var list<string> */
-        public array $skip = [];
-
-        public function run(string $id, string $sha, ?DateTimeImmutable $since = null, array $skip = []): array
-        {
-            $this->order->steps[] = 'smoke';
-            $this->since = $since;
-            $this->skip = $skip;
-
-            if ($this->fail) {
-                throw new GatewayReleaseException('smoke', 'gateway.release_smoke_failed', 'Smoke failed.', phase: ['report' => ['passed' => false, 'failed_checks' => ['web']]]);
-            }
-
-            return ['outcome' => 'passed', 'report' => ['passed' => true, 'expected_sha' => $sha]];
         }
     };
 }

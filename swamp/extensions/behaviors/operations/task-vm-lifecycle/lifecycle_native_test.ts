@@ -4,29 +4,18 @@ import { lastOutputs, taskVmLifecycle } from "../../../../tests/_support/task_vm
 
 const count = (calls: string[][], word: string) => calls.filter((argv) => argv.includes(word)).length;
 
-Deno.test("power start, stop and absent delete are idempotent", async () => {
+Deno.test("power start returns a settled receipt", async () => {
   await using vm = await taskVmLifecycle();
   await vm.repo.cli(["workflow", "validate", "task-vm-provider-power"]);
-  for (const action of ["start", "start", "stop", "stop", "delete", "delete"]) {
-    vm.envelope.action = action;
-    const { run, history } = await vm.run();
-    assertEquals(run.status, "succeeded");
-    const receipt = lastOutputs(history);
-    assertEquals(receipt.action, action);
-    assert(receipt.settled);
-  }
-  const calls = vm.argvCalls();
-  assertEquals([count(calls, "start"), count(calls, "stop"), count(calls, "delete")], [1, 1, 1]);
-});
-
-Deno.test("a delayed start waits for running without repeating the start write", async () => {
-  await using vm = await taskVmLifecycle();
-  await vm.writeState({ status: "Stopped", exists: true, remaining_start_reads: 1 });
+  await Deno.writeTextFile(vm.lost, "");
+  vm.envelope.action = "start";
   const { run, history } = await vm.run();
   assertEquals(run.status, "succeeded");
-  assert(lastOutputs(history).running);
-  assertEquals(count(vm.argvCalls(), "start"), 1);
-  assertEquals((await vm.readState()).status, "Running");
+  const receipt = lastOutputs(history);
+  assertEquals(receipt.action, "start");
+  assert(receipt.settled && receipt.running);
+  const calls = vm.argvCalls();
+  assertEquals([count(calls, "start"), count(calls, "stop"), count(calls, "delete")], [1, 0, 0]);
 });
 
 Deno.test("a start timeout fails and native resume does not repeat the start", async () => {
@@ -51,14 +40,6 @@ Deno.test("a start timeout fails and native resume does not repeat the start", a
   );
   assertEquals(resumed.status, "succeeded");
   assertEquals(count(vm.argvCalls(), "start"), 1);
-});
-
-Deno.test("a lost action reply uses the actual power observation", async () => {
-  await using vm = await taskVmLifecycle();
-  await Deno.writeTextFile(vm.lost, "");
-  const { run } = await vm.run();
-  assertEquals(run.status, "succeeded");
-  assertEquals((await vm.readState()).status, "Running");
 });
 
 Deno.test("the park root stops the VM, keeps the original envelope and refuses an ineligible VM", async () => {

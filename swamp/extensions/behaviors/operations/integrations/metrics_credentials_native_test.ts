@@ -106,20 +106,6 @@ await passThrough(argv, await readStdinBytes());`,
     throw error;
   }
 }
-Deno.test("credential reset changes and verifies without public secret bytes", async () => {
-  await using f = await fixture();
-  assertEquals((await f.run()).run.status, "succeeded");
-  assertEquals(f.state.current, f.pending);
-  assertEquals(f.state.applied, 1);
-  assertEquals(f.calls(), ["probe", "apply", "confirm"]);
-});
-Deno.test("already applied credentials skip the password write", async () => {
-  await using f = await fixture();
-  f.state.current = f.pending;
-  assertEquals((await f.run()).run.status, "succeeded");
-  assertEquals(f.state.applied, 0);
-  assertEquals(f.calls(), ["probe", "confirm"]);
-});
 Deno.test("refused credential write has no confirmation or false success", async () => {
   await using f = await fixture();
   f.state.failApply = true;
@@ -132,9 +118,12 @@ Deno.test("fresh reset after uncertain confirmation observes the same pending pa
   f.state.failConfirm = true;
   assertEquals((await f.run(false)).run.status, "failed");
   assertEquals(f.state.applied, 1);
+  assertEquals(f.state.current, f.pending);
+  assertEquals(f.calls(), ["probe", "apply", "confirm"]);
   f.state.failConfirm = false;
   assertEquals((await f.run()).run.status, "succeeded");
   assertEquals(f.state.applied, 1);
+  assertEquals(f.calls(), ["probe", "apply", "confirm", "probe", "confirm"]);
 });
 Deno.test("native credential assertion rejects an unexpected success status", async () => {
   await using f = await fixture();

@@ -69,7 +69,7 @@ final class RollbackGatewayReleaseCommand extends GatewayReleaseFollowCommand
         return $this->followRelease(
             $connector,
             'Roll back Gateway to release '.$release,
-            ['switch', 'handoff', 'verify', 'scheduler', 'web', 'smoke'],
+            ['switch', 'handoff', 'verify', 'scheduler', 'web'],
             fn (): GatewayReleaseResponse => $this->sendOrThrow($connector, new RollbackGatewayReleaseRequest($release), GatewayReleaseResponse::class),
         );
     }

@@ -18,6 +18,8 @@ A Route is a domain that reaches an Instance or a Node service. This page explai
 
 The Gateway validates Route changes and records intent as an Operation. Each available kind runs one native Swamp DAG, with Node effects as placed steps. The Gateway keeps Route state, ownership checks, read APIs and minimal result projection. Kinds whose native conversion is incomplete return `operation.kind_unavailable`; there is no polled fallback. Certificate signing runs in Swamp on the control worker.
 
+Route creation uses official cfgmgmt resources and pinned SSH argv commands. Its TLS probe runs on 209 over its captured SSH connection, verifies the hostname and Orbit CA, and ignores the application HTTP status. A failed Caddy validation stops the reload and leaves the candidate for convergence; there is no rollback.
+
 Domain, publication and web-root updates use the Route admission action. The Gateway renders every file the run writes: each Node's whole Caddyfile, PHP pools, `APP_URL` lines and certificate leaves.
 
 The run follows the chart [`route/update.mmd`](/cli/route). It publishes the new site beside the old one, writes the new `APP_URL`, and probes TLS. Then it opens or closes the public edge, moves private DNS outside the TLD, waits the DNS grace, and withdraws the old site. There is no rollback.
@@ -764,7 +766,7 @@ Shared native Route publication artifacts contain only affected Caddy groups, PH
 
 The Gateway captures `target_instance_ids`, `previous_target_instance_ids`, and `removed_instance_ids` at admission. The plan retains every admitted placement in `placements` and removed target snapshots in `detached_instances`, with `instance_id`, `node_id`, and `checkout_path` captured before association changes. A target disposition retains its previous ownership proof after associations change. Recovery preserves these snapshots after a removed Instance disappears. A replacement also records `candidate_route_id`. Secret environment values remain Gateway references.
 
-Analytics publication uses `route.analytics_publish` with `{route_id}`. Host relocation uses `route.analytics_host_prepare` and `route.analytics_host_withdraw`, also with `{route_id}`. These Operations use the stored serving Node. Host preparation issues the private Router leaf before the site is published. Public Ingress keeps Caddy automatic HTTPS. `route.analytics_remove` withdraws the stored edge and tracking Route.
+An analytics tracking host is published and withdrawn with its Instance's analytics enable and disable runs; it has no Operation kind of its own. Public Ingress keeps Caddy automatic HTTPS.
 
 A `node.add` parent may update a generated Route domain with exactly `{route_id, domain}` when that Route records the parent Node as its generation basis. The tuple `{route_id, domain, node_id}` must match `state.enrollment_intent.route_changes`. The child Node follows normal Route admission: the first workload Node from target Instances ordered by Instance ID, then the Route Node, stored Router, or custom-proxy Node. The generation basis does not override current placement. The Node family retains the original TLD and Cluster until these children succeed.
 
@@ -784,13 +786,13 @@ A single target binding grants development source access when the Route is not a
 
 A target pool stages workload sites under temporary certificate scopes before the Router selects them; [Native Route targets](/reference/native-route-targets) describes the steps. A new version of a certificate scope that a site still names installs only after the cutover, so the old site keeps a matching certificate until it leaves.
 
-Cluster Router set and unset each start one native `operation-cluster-router` run. Admission captures the candidate, obsolete assignments, workload Nodes, edge Nodes, DNS Nodes and certificate leaves before committing intent.
+Cluster Router set starts one native `operation-cluster-router` run, and unset starts one `operation-cluster-router-unset` run. Admission captures the candidate, obsolete assignments, workload Nodes, edge Nodes, DNS Nodes and certificate leaves before committing intent.
 
 Native certificate children own issuance, inspection, trust installation and activation. The retained Node residue cleanup path only removes an admitted certificate scope after Caddy withdrawal. It resolves the admitted user locally and refuses a supplied home that does not match that account. It cannot request, publish, trust or reload certificates.
 
 Admission records each configured Node user from the database without looking up the account on that Node. The native worker resolves its account home and group before installing prerequisites or removing old certificates.
 
-The shared `node-caddy-package` workflow installs the pinned Caddy package; official cfgmgmt `fetch` checks its SHA-256 pin. Placed steps install the role prerequisites, reconcile Router and workload firewall rules, publish certificates and Caddy, select the Router, publish private DNS and retire the old baseline after DNS expiry. Swamp runs the system commands directly. The Gateway records Router selection and cleanup checkpoints; it creates no child Operations and checks no execution receipts.
+The shared `node-caddy-package` workflow installs the pinned Caddy package; official cfgmgmt `fetch` checks its SHA-256 pin. Placed steps install the role prerequisites, reconcile Router and workload firewall rules, publish certificates and Caddy, select the Router, publish private DNS and retire the old baseline after DNS expiry. Swamp runs the system commands directly. The Gateway records the result only from the terminal run; it creates no child Operations and checks no execution receipts.
 
 It commits the new Router before publishing private DNS from that stored selection. A DNS failure after this commit recovers forward. A failed restoration before commit keeps the candidate serving until DNS restoration and the cache wait are proven. The old Router keeps serving until Swamp waits for the DNS grace period and the Gateway confirms it elapsed. Assignment rows are deleted only after their removal children succeed. A fully withdrawn candidate repeats preparation before it serves again.
 
