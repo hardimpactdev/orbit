@@ -37,6 +37,8 @@ ASSETS = STATE / 'assets'
 ORIGIN = STATE / 'git/hardimpactdev/orbit.git'
 LISTEN = '127.0.0.2'
 ARTIFACT, RUN = 4242, 777
+# The root server reads the orbit-owned origin.
+TRUSTED = {'GIT_CONFIG_COUNT': '1', 'GIT_CONFIG_KEY_0': 'safe.directory', 'GIT_CONFIG_VALUE_0': '*'}
 account = pwd.getpwnam('orbit')
 
 
@@ -143,6 +145,8 @@ def layout(gateway_node):
 
 def setup(gateway_node):
     STATE.mkdir(parents=True, mode=0o700, exist_ok=True)
+    # The orbit account builds the target commit and its origin; this root fixture reads them.
+    os.chown(STATE, account.pw_uid, account.pw_gid)
     if (STATE / 'pid').exists():
         try:
             os.kill(int((STATE / 'pid').read_text()), signal.SIGTERM)
@@ -161,9 +165,8 @@ def setup(gateway_node):
     orbit('git', '-C', str(work), '-c', 'user.name=Proof', '-c', 'user.email=proof@example.invalid', 'commit', '--quiet', '--allow-empty', '-m', 'Proof release')
     target = orbit('git', '-C', str(work), 'rev-parse', 'HEAD')
     shutil.rmtree(STATE / 'git', ignore_errors=True)
-    ORIGIN.parent.mkdir(parents=True, exist_ok=True)
-    command(['git', 'init', '--quiet', '--bare', '--initial-branch=main', str(ORIGIN)])
-    command(['git', '-C', str(work), 'push', '--quiet', str(ORIGIN), 'HEAD:refs/heads/main'])
+    orbit('git', 'init', '--quiet', '--bare', '--initial-branch=main', str(ORIGIN))
+    orbit('git', '-C', str(work), 'push', '--quiet', str(ORIGIN), 'HEAD:refs/heads/main')
     # The serve checkout's origin is the load proof's local mirror; it needs the target commit too.
     mirror = SOURCE.parent / 'release-origin.git'
     orbit('git', '-C', str(work), 'push', '--quiet', str(mirror), 'HEAD:refs/heads/release')
@@ -218,7 +221,8 @@ def serve():
                     prefix = '/hardimpactdev/orbit/'
                     if path.path.startswith(prefix + 'raw/'):
                         sha, _, file = path.path[len(prefix + 'raw/'):].partition('/')
-                        shown = subprocess.run(['git', '--git-dir', str(ORIGIN), 'show', f'{sha}:{file}'], capture_output=True, timeout=30, check=False)
+                        shown = subprocess.run(['git', '--git-dir', str(ORIGIN), 'show', f'{sha}:{file}'], capture_output=True, timeout=30, check=False,
+                                           env={**os.environ, **TRUSTED})
                         return self.send(shown.stdout, 200 if shown.returncode == 0 else 404, 'text/plain')
                     if path.path.startswith(prefix + 'releases/download/'):
                         asset = ASSETS / path.path[len(prefix + 'releases/download/'):]
@@ -230,7 +234,7 @@ def serve():
                         self.send_header('Content-Length', '0')
                         self.end_headers()
                         return None
-                    env = {**os.environ, 'GIT_PROJECT_ROOT': str(STATE / 'git'), 'GIT_HTTP_EXPORT_ALL': '1', 'PATH_INFO': path.path,
+                    env = {**os.environ, **TRUSTED, 'GIT_PROJECT_ROOT': str(STATE / 'git'), 'GIT_HTTP_EXPORT_ALL': '1', 'PATH_INFO': path.path,
                            'QUERY_STRING': path.query, 'REQUEST_METHOD': self.command, 'CONTENT_TYPE': self.headers.get('Content-Type', ''),
                            'CONTENT_LENGTH': str(len(raw)), 'REMOTE_USER': 'proof', 'REMOTE_ADDR': '127.0.0.1'}
                     reply = subprocess.run(['/usr/lib/git-core/git-http-backend'], input=raw, capture_output=True, env=env, timeout=120, check=True).stdout
