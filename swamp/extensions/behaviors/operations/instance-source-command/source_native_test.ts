@@ -49,6 +49,8 @@ async function fixture() {
   const calls = `${repo.dir}/calls.jsonl`;
   await Deno.mkdir(`${repo.dir}/tools`);
   const sudo = await repo.fakeBinary("tools/sudo", SUDO(calls));
+  // The official group behavior creates orbit-env through sudo sh -c on a Node that lacks it.
+  await repo.fakeBinary("tools/groupadd", "Deno.exit(0);");
   await repo.fakeBinary("tools/ssh", PATH_SSH(sudo));
   repo.env.PATH = `${repo.dir}/tools:${Deno.env.get("PATH")}`;
   const ssh = await repo.fakeBinary("ssh", SSH(sudo));

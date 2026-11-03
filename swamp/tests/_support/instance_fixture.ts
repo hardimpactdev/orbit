@@ -25,7 +25,8 @@ export async function instanceFixture(...families: string[]) {
   await repo.copyBehaviors(...families);
   const user = new TextDecoder().decode(new Deno.Command("id", { args: ["-un"] }).outputSync().stdout).trim();
   const ts = (name: string, source: string) => repo.fakeBinary(`tools/${name}`, source);
-  for (const name of ["chown", "chgrp"]) await ts(name, "Deno.exit(0);");
+  // groupadd: the official group behavior creates orbit-env through sudo sh -c on a Node that lacks it.
+  for (const name of ["chown", "chgrp", "groupadd"]) await ts(name, "Deno.exit(0);");
   const calls = `${repo.dir}/calls.jsonl`;
   const fail = `${repo.dir}/fail`;
   await ts(
