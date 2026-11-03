@@ -104,12 +104,12 @@ sequenceDiagram
   %%> Why reload:
   %%> - a reload keeps open connections; Caddy is never restarted (rule 7)
   %%> Refuses:
-  %%> - a validation error; the old Caddyfile stays in place
+  %%> - a validation error stops the reload; the written candidate stays for convergence
   %%> Why one step:
   %%> - same Node, back to back; the certificate never sits on the Node without its site
-  SW->>N: Probe the site over TLS<br/>openssl s_client · SNI shop.test
+  SW->>N: Probe the site over TLS<br/>@swamp/ssh exec · SNI shop.test
   %%> What it does:
-  %%> - connects from 209 to the workload, or the Router, on port 443 with the Route domain as SNI
+  %%> - runs one pinned SSH argv on 209, connecting to the workload or Router on port 443 with the Route domain as SNI
   %%> - requires a chain the Orbit root trusts
   %%> Why:
   %%> - the Route only counts as served when the probe passes

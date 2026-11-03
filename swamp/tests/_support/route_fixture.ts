@@ -89,6 +89,7 @@ export async function routeFixture(kind: "create" | "update" | "target-set" | "r
       route_id: 14,
       domain: "shop.test",
       root_certificate: "",
+      probe_ssh: { identity_file: identity, target: { host: "node-209.invalid", user: "orbit", port: 22, host_keys: [PIN] } },
       nodes,
       ...empty([...SITE, "ingress_ports", "probes", "ingress", "dns"]),
     }

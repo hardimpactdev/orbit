@@ -1,6 +1,7 @@
 """route.create on the target: the Caddy site, a leaf that the Orbit root verifies, the account copy, no private key
 in native history, and a TLS handshake for the domain."""
 
+import json
 import os
 import subprocess
 import sys
@@ -9,6 +10,10 @@ from pathlib import Path
 domain = "r-" + os.environ["PROOF_RUN"] + ".proof.test"
 outputs = Path(os.environ["PROOF_OUTPUTS"]).read_text()
 ROOT = "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"
+operation = json.loads(Path(os.environ["PROOF_OPERATION_FILE"]).read_text())
+assert operation["kind"] == "route.create" and operation["status"] == "succeeded", operation["status"]
+assert operation["result"] == {"ready": True, "route_id": operation["target_id"]}, operation["result"]
+assert operation["input"]["route_create"]["probe_ssh"]["control_node_id"] == 209
 
 
 def target(*argv, stdin=""):
@@ -18,6 +23,7 @@ def target(*argv, stdin=""):
         capture_output=True,
         text=True,
         check=False,
+        timeout=30,
     )
 
 

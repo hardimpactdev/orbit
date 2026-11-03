@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Routes;
 
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Route;
 use App\Support\ValidatedData;
@@ -17,6 +18,16 @@ use App\Support\ValidatedData;
 final readonly class NativeRouteCreatePlan
 {
     private const string CaddyCertificates = '/etc/caddy/orbit-certificates';
+
+    /** @param array<string,mixed> $lifecycle
+     * @return array<string,mixed>
+     */
+    public function forCreate(Route $route, array $lifecycle): array
+    {
+        $plan = $this->build($route, $lifecycle);
+
+        return [...$plan, 'probe_ssh' => $plan['probes'] === [] ? (object) [] : app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail(209))];
+    }
 
     /** @param array<string,mixed> $lifecycle
      * @return array<string,mixed>

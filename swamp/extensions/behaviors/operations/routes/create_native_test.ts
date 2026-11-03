@@ -47,7 +47,31 @@ Deno.test("failed Route create command stops PHP tests and probes", async () => 
 Deno.test("failed Route create TLS probe fails the run", async () => {
   await using f = await routeFixture("create");
   f.intent.probes = [{ node_id: 7, address: "127.0.0.1", domain: "shop.test" }];
-  const { run, steps } = await f.perform(0, false);
+  const { run, steps } = await f.perform(1, false);
   assertEquals(run.status, "failed");
   assert(Object.entries(steps).some(([n, s]) => n.startsWith("Probe the site over TLS") && s.status === "failed"));
+});
+
+Deno.test("Route create probes TLS from the pinned control host with literal argv", async () => {
+    await using f = await routeFixture("create");
+    const domain = "shop.test; printf should-not-run";
+    f.intent.probes = [{ node_id: 7, address: "10.44.0.7", domain }];
+    const { run, calls } = await f.perform();
+    assertEquals(run.status, "succeeded");
+    assertEquals(calls, [[
+        "timeout",
+        "20",
+        "openssl",
+        "s_client",
+        "-no_ign_eof",
+        "-connect",
+        "10.44.0.7:443",
+        "-servername",
+        domain,
+        "-verify_hostname",
+        domain,
+        "-verify_return_error",
+        "-CAfile",
+        "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt",
+    ]]);
 });
