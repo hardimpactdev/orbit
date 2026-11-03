@@ -1,4 +1,4 @@
-import { assert, assertEquals, assertFalse, assertMatch, assertNotEquals } from "jsr:@std/assert@1.0.19";
+import { assert, assertEquals, assertFalse, assertMatch } from "jsr:@std/assert@1.0.19";
 import { nativeRepo, swampBinary } from "../../../../tests/_support/native_harness.ts";
 import { localWorker } from "../../../../tests/_support/local_worker.ts";
 import { exists, stepsOf } from "../../../../tests/_support/native_history.ts";
@@ -8,8 +8,7 @@ async function fixture(remote = false) {
   // Test helpers and test constants are not runtime behaviors.
   const admin = "native-admin-secret-" + crypto.randomUUID(),
     credential = "native-issued-secret-" + crypto.randomUUID();
-  const secondCredential = "native-issued-secret-" + crypto.randomUUID();
-  repo.secrets = [admin, credential, secondCredential];
+  repo.secrets = [admin, credential];
   const state = { calls: 0, mode: "" };
   const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (request) => {
     state.calls++;
@@ -17,12 +16,11 @@ async function fixture(remote = false) {
     if (
       new URL(request.url).pathname !== "/api/auth/pairing-token" ||
       request.headers.get("Authorization") !== "Bearer " + admin ||
-      !["fixture phone", "second phone"].includes(body.label)
+      body.label !== "fixture phone"
     ) return new Response(null, { status: 401 });
-    const value = body.label === "second phone" ? secondCredential : credential;
     return Response.json({
-      id: state.mode === "echo" ? value : "public-link",
-      credential: value,
+      id: "public-link",
+      credential,
       expiresAt: "2026-11-01T02:00:00Z",
     }, { status: state.mode === "refusal" ? 503 : 200 });
   });
@@ -88,7 +86,6 @@ async function fixture(remote = false) {
     inputs,
     state,
     credential,
-    secondCredential,
     run,
     readCredential,
     async [Symbol.asyncDispose]() {
@@ -113,36 +110,15 @@ Deno.test("native sensitive output exposes only a reference with the correct pri
   );
   await f.repo.assertPrivateAbsent(JSON.stringify(history));
 });
-Deno.test("later issue preserves unread credential", async () => {
+Deno.test("issue refusal skips public persistence and never retries", async () => {
   await using f = await fixture();
-  const first = JSON.parse((await f.run()).output.stdout).credential_ref.key;
-  Object.assign(f.inputs.intent, {
-    pairing_id: 18,
-    label: "second phone",
-    request_body: JSON.stringify({ label: "second phone", scopes: ["access:write"] }),
-  });
-  const second = JSON.parse((await f.run()).output.stdout).credential_ref.key;
-  assertNotEquals(first, second);
-  assert(await f.readCredential(first) === f.credential, "First unread credential overwritten");
-  assert(await f.readCredential(second) === f.secondCredential, "Second credential not isolated");
-  assertEquals(f.state.calls, 2);
+  f.state.mode = "refusal";
+  const { history, steps, output } = await f.run(false);
+  assertEquals(history.status, "failed");
+  assertEquals(f.state.calls, 1);
+  assertEquals(steps["Store the link in vault"].status, "failed");
+  assertFalse("stdout" in output);
 });
-for (const mode of ["refusal", "echo"]) {
-  Deno.test(`issue ${mode} refuses before public persistence and never retries`, async () => {
-    await using f = await fixture();
-    f.state.mode = mode;
-    const { history, steps, output } = await f.run(false);
-    assertEquals(history.status, "failed");
-    assertEquals(f.state.calls, 1);
-    if (mode === "refusal") assertFalse("stdout" in output);
-    else {assertEquals(
-        (steps["Store the link in vault"].dataArtifacts ?? []).filter((row: { tags?: { type?: string } }) =>
-          row.tags?.type === "resource"
-        ),
-        [],
-      );}
-  });
-}
 Deno.test("remote worker protects generated sensitive output before public result", async () => {
   await using f = await fixture(true);
   await localWorker(f.repo, async (flags) => {

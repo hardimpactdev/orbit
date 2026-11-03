@@ -3,12 +3,12 @@ title: "Feature delivery"
 description: "How a change reaches main: review evidence, merge, CI, local checks, worktrees, and the shared main caches."
 covers:
   - apps/docs/app/Documentation/{AdrLifecycle,DocsImpact}.php
-  - bin/{review-check,project-vocabulary,bug-repro,task-group-check,pr-head-check,deploy-verify,test,ci-cache-ref,check-pest-shards,worktree-cache,worktree-create,worktree-remove,check-classification-fakes,check-processes,quality-scope,php-build}
+  - bin/{review-check,project-vocabulary,bug-repro,task-group-check,pr-head-check,deploy-verify,test,ci-cache-ref,worktree-cache,worktree-create,worktree-remove,check-classification-fakes,check-processes,quality-scope,php-build}
   - "{swamp/bin/{check-grant-patterns,validate-swamp-workflows}.py,tools/{check-processes,rector-cache}.php}"
   - tools/check_budget.py
   - "{apps/*,packages/php-sdk}/rector.php"
   - tools/{phpstan/**,ci-runners/{setup.sh,javascript.py},agent_command.py}
-  - .github/{workflows/*.yml,actions/{php,no-sudo,ci-scope}/action.yml}
+  - .github/{workflows/*.yml,actions/{php,ci-scope}/action.yml}
   - apps/gateway/{phpunit.xml,database/migrations/2026_12_04_000000_seed_schema_baseline_reference_rows.php,tests/Support/TestDatabaseEnvironment.php,tests/Support/TestDatabaseGuard.php,tests/Support/PythonPrograms.php,tests/Support/FixtureProcessRunner.php,tests/Support/GatewayReleaseFixture.php,tests/Support/TaskSchedulerTickFixtures.php,tests/Feature/Domain/TaskWorkspaceTmpdirTest.php,tests/Feature/Infrastructure/Instances/DevelopmentSourceRemovalCommandTest.php}
 ---
 
@@ -81,7 +81,7 @@ After the merge, keep the review evidence and release the resources allocated to
 
 ## CI
 
-Orbit CI runs builds and static checks. Swamp changes also run the Operation Deno tests. Pull requests, pushes to `main`, task handoff pushes and manual runs use the same fast gate. There is no nightly test run.
+Orbit CI runs builds and static checks. Swamp changes also run the Operation Deno tests. Pull requests, merge queue batches, pushes to `main`, task handoff pushes and manual runs use the same gate. Swamp also runs its full native suite daily.
 
 | Check | Work |
 | --- | --- |
@@ -104,13 +104,21 @@ Runner containers are unprivileged. Install or repair their toolchain with `tool
 
 Swamp source lives under `swamp/`. Swamp-only changes select the Swamp checks and skip PHP and Gateway builds. Changing `swamp/config/gateway-workflow-grants.json` also selects Generated contracts. That job checks the intended policy against the loaded Gateway declarations. Every main commit builds and uploads Web and becomes a Gateway release, Swamp-only ones too, because the release [loads Swamp](/reference/gateway-recovery#load-swamp).
 
-The Swamp shape job runs its gate, Python analyzer, frozen-base policy, shard and validation CI regression tests through Deno. Tests live beside the checked scripts in `swamp/bin/` and run one file at a time. Python helpers run as subprocesses with assertions in Deno. These regression tests use disposable fixtures and do not run the Swamp CLI.
+The Swamp shape job runs its gate, Python analyzer, frozen-base policy and validation CI regression tests through Deno. Tests live beside the checked scripts in `swamp/bin/` and run one file at a time. Python helpers run as subprocesses with assertions in Deno. These regression tests use disposable fixtures and do not run the Swamp CLI.
 
 Swamp checks validate every workflow with the runtime pinned in `swamp/.swamp.yaml` and enforce the Swamp-shape baseline. The downloaded runtime is cached under a key of the node-worker pin file, `swamp/extensions/behaviors/node-worker/config.ts`, so a pin change downloads the new runtime once. The validation job uses a disposable hosted runner, where the pinned PHP setup action can install PHP without changing a restricted self-hosted runner. It also runs that pinned binary's `serve check-config` against disposable grant files rendered by the Gateway's production `SwampGrantRenderer` through `apps/gateway/bin/render-swamp-grants` (PHP 8.5, no Laravel boot or deployment credentials) from every `swamp/config/*grants*.json` input.
 
 The gate requires `passed`, `wouldStart` and the full grant-file count; a refusal or missing account fails Required checks. Changes to that renderer, its typed input helper or its CLI also select Swamp validation. This checks complete CEL conditions and regex safety without starting serve or changing live grants. The native grant-pattern regressions run with the other native tests.
 
-Operation Deno tests run in parallel shards with four workers per job: four general shards and one for process commands. A shard's directory leaves the matrix when its tests go. The shards skip native workflow tests (`*native_test.ts`). Those run the pinned runtime against disposable repos through `swamp/tests/_support/native_harness.ts`. The runtime refuses every command without an account, so they run in four `Swamp native tests` shards, each of which also pulls the pinned registry extensions. Both matrices finish all shards after a failure; the aggregate fails if any shard fails, cancels or skips. `Required checks` remains the single aggregate for all selected jobs.
+Operation Deno unit tests, shape and workflow validation run on every CI change. Unit tests use four general shards and one process shard, with four workers each. They exclude `*native_test.ts`. Native tests run the pinned runtime against disposable repos through `swamp/tests/_support/native_harness.ts`. A pull request selects the changed operation families, their workflow roots and proof fixtures. A merge queue batch uses the same selection against `merge_group.base_sha`.
+
+Both CI workflows accept GitHub’s `merge_group` event; the root CI calls Swamp once and reports `Required checks` for the batch. Shared helpers, harness, pins, CI definitions and unknown runtime inputs select all native files; documentation alone selects none. Removed native files leave the plan automatically.
+
+Native files are assigned to at most four shards by measured per-file case time, longest first. The initial timings come from main CI `41623850432`; new files use 60 seconds until measured. Each shard still uses Deno’s own runner with four workers and writes a JUnit timing artifact. Both matrices finish after a shard fails. The aggregate permits a skipped native matrix only when the plan explicitly selected no native files; a failed plan or selected shard fails Required checks.
+
+A squash push to main can reuse a successful same-repository pull-request CI run. Its `swamp-native-tested-tree` artifact must name the exact landed Git tree and the squash commit’s parent. Main also reuses a successful merge queue run when its artifact names the exact landed tree, including a batch of several PRs. A stale PR base, different tree, missing artifact or unproven run runs the full suite.
+
+Main keeps the cheap Swamp gates and required release builds; it skips the repeated native suite only with this evidence. The standalone Swamp workflow also runs the full native suite daily at 03:17 UTC; its credentials stay split between registry-read validation and native sandbox tests.
 
 Native Swamp CLI suites live beside their operation family under `swamp/extensions/behaviors/operations/` and end in `_native_test.ts`; CI discovers them under `extensions/`. Tests of bin scripts live beside their script. The shape job names the liveness, Node 209 source and Operation schedule suites explicitly. The systemd sandbox test, `swamp-liveness_native_test.ts`, needs a systemd host and passwordless sudo, so it runs on a host, not in CI. Shared test setup ends in `_fixture_test.ts` so documentation impact checks and native behavior copying treat it as test code.
 

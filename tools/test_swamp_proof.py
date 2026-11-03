@@ -87,6 +87,20 @@ class Down(unittest.TestCase):
         with self.assertRaisesRegex(swamp_proof.ProofError, 'did not destroy'):
             self.run_down(['succeeded'], group={'status': 'cancelled', 'vm_power': 'running'})
 
+    def test_up_does_not_read_or_expire_another_lanes_session(self):
+        import contextlib
+        import io
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            session = Path(directory) / 'mine.json'
+            other = Path(directory) / 'other.json'
+            other.write_text('not this lane; not readable JSON')
+            state = {'topology': 'minimal', 'topology_version': 16, 'commit': 'c', 'vm': {}, 'timings': []}
+            with patch.object(swamp_proof, 'SESSION', session), patch.object(swamp_proof, 'Gateway'), \
+                    patch.object(swamp_proof, 'up', return_value=state), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(swamp_proof.main(['--session', 'mine', 'up']), 0)
+            self.assertEqual(other.read_text(), 'not this lane; not readable JSON')
+
 
 class Reuse(unittest.TestCase):
     """Consecutive kinds share one up; a clean fixture restages fresh Nodes only after an earlier run."""
@@ -205,50 +219,6 @@ class Lifecycle(unittest.TestCase):
         self.assertEqual([calls[0], calls[-1]], [touch, touch])
         self.assertTrue(calls[1][2].endswith('run.py'))
         self.assertFalse(swamp_proof.HEARTBEAT.startswith('/home/orbit/swamp-proof/'), 'stage replaces that tree')
-
-
-class Reap(unittest.TestCase):
-    """up and run take down other sessions that are idle for an hour or older than eight hours."""
-
-    def test_only_expired_unlocked_sessions_go_down(self):
-        import fcntl
-        import json
-        import tempfile
-        now = 100_000.0
-        with tempfile.TemporaryDirectory() as folder:
-            folder = Path(folder)
-            sessions = {
-                'mine': {'vm': {'group_id': 1}, 'up_started_epoch': now - 99_000},
-                'idle': {'vm': {'group_id': 2}, 'up_started_epoch': now - 4000, 'ready_epoch': now - 3700},
-                'busy': {'vm': {'group_id': 3}, 'up_started_epoch': now - 4000, 'last_run_epoch': now - 60},
-                'old': {'vm': {'group_id': 4}, 'up_started_epoch': now - 30_000, 'last_run_epoch': now - 60},
-                'gone': {'vm': {'group_id': 5, 'destroyed': True}, 'up_started_epoch': now - 99_000},
-                'held': {'vm': {'group_id': 6}, 'up_started_epoch': now - 99_000},
-            }
-            for name, state in sessions.items():
-                (folder / f'{name}.json').write_text(json.dumps(state))
-            downed = []
-            with (folder / 'held.lock').open('a') as held, \
-                    patch.object(swamp_proof, 'SESSION', folder / 'mine.json'), \
-                    patch.object(swamp_proof, 'down', side_effect=lambda gateway, state, path: downed.append(path.stem)):
-                fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                self.assertEqual(swamp_proof.reap(object(), now), ['idle', 'old'])
-            self.assertEqual(downed, ['idle', 'old'])
-
-    def test_a_failed_takedown_is_reported_and_the_rest_continue(self):
-        import json
-        import tempfile
-        with tempfile.TemporaryDirectory() as folder:
-            folder = Path(folder)
-            for name in ('a', 'b'):
-                (folder / f'{name}.json').write_text(json.dumps({'vm': {'group_id': 1}, 'up_started_epoch': 0}))
-
-            def down(gateway, state, path):
-                if path.stem == 'a':
-                    raise swamp_proof.ProofError('cancel ended failed')
-
-            with patch.object(swamp_proof, 'SESSION', folder / 'mine.json'), patch.object(swamp_proof, 'down', side_effect=down):
-                self.assertEqual(swamp_proof.reap(object(), 100_000.0), ['b'])
 
 
 if __name__ == '__main__':
