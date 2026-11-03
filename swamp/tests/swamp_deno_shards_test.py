@@ -61,21 +61,30 @@ class DenoShards(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 covered.extend(int(value) for value in re.findall(r"COVERED_FILE_(\d+)", result.stdout))
             self.assertCountEqual(covered, range(identifier))
+            # Native workflow tests need the account-gated runtime; the shards skip them.
+            for path, _count in groups:
+                (files / path / "zz_native_test.ts").write_text('Deno.test("native", () => { throw new Error("ran"); });\n')
+            for shard in shards:
+                result = run(shard)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             (files / "00_test.ts").write_text('Deno.test("real failure", () => { throw new Error("expected"); });\n')
             self.assertNotEqual(run(shards[0]).returncode, 0)
 
     def test_aggregate_requires_success_from_the_entire_matrix(self):
         aggregate = self.jobs["tests"]
         self.assertEqual(aggregate["name"], "Swamp Deno tests")
-        self.assertEqual(aggregate["needs"], ["test-shards"])
+        self.assertEqual(aggregate["needs"], ["test-shards", "native-tests"])
         self.assertEqual(aggregate["if"], "always()")
         self.assertNotIn("continue-on-error", aggregate)
         step = aggregate["steps"][0]
         self.assertEqual(step["env"]["SHARDS_RESULT"], "${{ needs.test-shards.result }}")
-        for state in ("success", "failure", "cancelled", "skipped", "", "unknown"):
-            result = subprocess.run(["bash", "-e", "-o", "pipefail", "-c", step["run"]],
-                                    env=dict(os.environ, SHARDS_RESULT=state), capture_output=True, text=True)
-            self.assertEqual(result.returncode == 0, state == "success", state)
+        self.assertEqual(step["env"]["NATIVE_RESULT"], "${{ needs.native-tests.result }}")
+        for shards in ("success", "failure", "cancelled", "skipped", "", "unknown"):
+            for native in ("success", "failure", "skipped", ""):
+                result = subprocess.run(["bash", "-e", "-o", "pipefail", "-c", step["run"]],
+                                        env=dict(os.environ, SHARDS_RESULT=shards, NATIVE_RESULT=native),
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode == 0, shards == native == "success", (shards, native))
 
 
 if __name__ == "__main__":

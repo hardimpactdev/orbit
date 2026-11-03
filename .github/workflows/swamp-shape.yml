@@ -139,8 +139,10 @@ jobs:
             ${{ runner.temp }}/workflow-validation.json
             ${{ runner.temp }}/grant-validation.json
 
-  native-extensions:
-    name: Swamp native test extensions
+  native-tests:
+    # The pinned runtime refuses every command without an account, so native workflow
+    # tests run here with the same event-scoped read token as validation.
+    name: Swamp native tests
     runs-on: ubuntu-26.04
     defaults:
       run:
@@ -159,39 +161,44 @@ jobs:
         with:
           deno-version: v2.9.8
           cache: true
-      - name: Pull the pinned registry extensions for native tests
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
-        env:
-          SWAMP_RUNTIME_CACHE: ${{ runner.temp }}/native-runtime
-          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_API_KEY || '' }}
-          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_SIGNIN_TOKEN || '' }}
-        run: deno run -A tests/_support/native_harness.ts
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         with:
-          name: swamp-native-extensions
-          path: ${{ runner.temp }}/native-runtime/pulled
-          include-hidden-files: true
-          retention-days: 1
+          path: ~/.cache/orbit-shape-runtime
+          key: shape-runtime-${{ runner.os }}-${{ hashFiles('**/extensions/behaviors/node-worker/install.ts') }}
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
+        with:
+          php-version: "8.5"
+          coverage: none
+      - name: Run the native workflow tests
+        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
+        env:
+          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_API_KEY || '' }}
+          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_SIGNIN_TOKEN || '' }}
+        run: |
+          deno run -A tests/_support/native_harness.ts
+          mapfile -t files < <(git ls-files '*_native_test.ts')
+          DENO_JOBS=4 deno test --parallel -A "${files[@]}"
 
   tests:
     name: Swamp Deno tests
-    needs: [test-shards]
+    needs: [test-shards, native-tests]
     if: always()
     runs-on: ubuntu-26.04
     steps:
-      - name: Require every Operations shard
+      - name: Require every Operations shard and the native tests
         env:
           SHARDS_RESULT: ${{ needs.test-shards.result }}
+          NATIVE_RESULT: ${{ needs.native-tests.result }}
         run: |
-          if [[ "$SHARDS_RESULT" != success ]]; then
-            echo "::error::Operations shards did not all succeed ($SHARDS_RESULT)"
+          if [[ "$SHARDS_RESULT" != success || "$NATIVE_RESULT" != success ]]; then
+            echo "::error::Operations shards ($SHARDS_RESULT) or native tests ($NATIVE_RESULT) did not succeed"
             exit 1
           fi
 
   test-shards:
     name: Swamp Deno shard ${{ matrix.name }}
-    needs: [native-extensions]
     runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
@@ -233,17 +240,6 @@ jobs:
         with:
           deno-version: v2.9.8
           cache: true
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
-        with:
-          path: ~/.cache/orbit-shape-runtime
-          key: shape-runtime-${{ runner.os }}-${{ hashFiles('**/extensions/behaviors/node-worker/install.ts') }}
-      # Native tests copy these; the shards themselves never hold registry credentials.
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
-        with:
-          name: swamp-native-extensions
-          path: ~/.cache/orbit-shape-runtime/pulled
       - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         with:
@@ -265,6 +261,8 @@ jobs:
           DENO_TEST_PATH: ${{ matrix.path }}
           DENO_IGNORE: ${{ matrix.ignore }}
         run: |
-          args=(--parallel -A --shard="$DENO_SHARD")
-          if [[ -n "$DENO_IGNORE" ]]; then args+=(--ignore="$DENO_IGNORE"); fi
+          # Native workflow tests need the account-gated runtime; the native tests job runs them.
+          ignore='**/*_native_test.ts'
+          if [[ -n "$DENO_IGNORE" ]]; then ignore="$ignore,$DENO_IGNORE"; fi
+          args=(--parallel -A --shard="$DENO_SHARD" --ignore="$ignore")
           deno test "${args[@]}" "$DENO_TEST_PATH"

@@ -106,7 +106,7 @@ class ScopeActionTest(unittest.TestCase):
         self.assertIn('changed-only: true', swamp)
         source = (ROOT / '.github/workflows/swamp-shape.yml').read_text()
         self.assertIn('working-directory: ${{ github.workspace }}', ACTION)
-        for name, end in [('shape', 'validate'), ('validate', 'native-extensions'), ('native-extensions', 'tests'), ('test-shards', None)]:
+        for name, end in [('shape', 'validate'), ('validate', 'native-tests'), ('native-tests', 'tests'), ('test-shards', None)]:
             job = source.split('  ' + name + ':\n', 1)[1]
             if end:
                 job = job.split('  ' + end + ':\n', 1)[0]
