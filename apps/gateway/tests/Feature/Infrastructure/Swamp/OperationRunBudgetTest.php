@@ -338,6 +338,16 @@ it('expires never-started native admissions on the first observer startup with n
     ['vault.sync', 'queued', false, false],
 ]);
 
+it('keeps a fleet rollout visiting Nodes running past the minutes its deferred runs took', function (): void {
+    $operation = budgetOperation('fleet.rollout', ['input' => []]);
+    $this->travel(301)->seconds();
+    app(ExpireOperationAction::class)->execute($operation);
+    expect($operation->fresh()->status)->toBe(OperationStatus::Running);
+    $this->travel(600 - 301)->seconds();
+
+    expect(app(ExpireOperationAction::class)->execute($operation)->error_code)->toBe('operation.timed_out');
+});
+
 it('keeps a long native kind running past the default budget until its measured budget', function (): void {
     $operation = budgetOperation('task_vm.image_build', ['input' => []]);
     $this->travel(301)->seconds();

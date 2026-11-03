@@ -88,6 +88,8 @@ An explicit kind budget wins. Long-running kinds have a fixed budget in the same
 
 `tool.install` and `tool.update` have a provisional 1,500 seconds. A Tool write runs its bounded phases in turn: the [signed repository](/reference/tools#signed-apt-repositories) prepare (180 seconds), the candidate query (120 seconds) and the mutation (900 seconds). Measured brew installs took 471 to 578 seconds. The budget is replaced by the 14-day p95 once repository installs have native history.
 
+`fleet.rollout` has a provisional 600 seconds. Its first successes deferred every Node outside the maintenance window in seconds, so a budget derived from them cut off the first real visit at three minutes. One visit of seven Nodes, four of them converged, took 187 seconds; a whole fleet converging at that pace, times 1.5, rounds up to 600. A 14-day p95 replaces it once windowed visits have history.
+
 `instance.rollback` has a provisional 900 seconds, the legacy rollback deadline and its [chart](/cli/instance/rollback)'s budget. A first success replaces it with a p95.
 
 `task_vm.fill_package_cache` has a provisional 2,100 seconds: the legacy fill's single 1,700-second budget plus margin for the run start and the end check. Each batch is bounded on the host by `timeout 1530`. A first success replaces it with a p95.

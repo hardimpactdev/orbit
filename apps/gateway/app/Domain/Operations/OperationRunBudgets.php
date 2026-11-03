@@ -42,6 +42,11 @@ final class OperationRunBudgets
         // first success.
         'cluster.router_set' => 3900,
         'cluster.router_unset' => 3900,
+        // Its first successes deferred every Node outside the window in about 35 s, so the derived budget timed out
+        // the first real visit at 3 min (op 8821). Basis: op 8837 visited 7 Nodes one after another in 187 s, 4 of them
+        // converged; a full fleet of 7 converging at the same pace takes about 330 s, x 1.5, rounded up to five minutes.
+        // Replace with the 14-day p95 once windowed visits have history.
+        'fleet.rollout' => 600,
         'node.converge' => 3900,
         // No native run yet. Basis: the legacy rollback deadline of 900 s (docs/reference/deployments.md#deploy) and the chart's
         // budget. Replace with the 14-day p95 after the first success.
