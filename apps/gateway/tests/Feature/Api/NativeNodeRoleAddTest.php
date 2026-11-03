@@ -171,7 +171,6 @@ it('removes the native Gateway DNS unit along with the retired resolver drop-in'
             '/etc/systemd/system/wg-quick@orbit.service.d/orbit-gateway-dns.conf');
 });
 
-
 it('converges a role on a Node with other roles without an observer identity or a target worker', function (): void {
     $this->node->roles()->create(['role' => RoleName::Database, 'status' => 'active']);
     $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);

@@ -15,7 +15,6 @@ use App\Domain\Nodes\NativeNodeRoleRemovalInput;
 use App\Domain\Nodes\NodeRoleCertificateInput;
 use App\Domain\Nodes\NodeRoleDirectInput;
 use App\Domain\Nodes\NodeRoleMetricsInput;
-use App\Domain\Nodes\NodeRolePlacement;
 use App\Domain\Nodes\NodeRolePublicationInput;
 use App\Domain\Nodes\NodeRoleRelocateInput;
 use App\Domain\Nodes\NodeRoleRemoveInput;
