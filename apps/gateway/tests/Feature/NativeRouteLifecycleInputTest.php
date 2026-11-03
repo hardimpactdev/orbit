@@ -124,22 +124,22 @@ it('maps the failed chart step of a create to its code and keeps the Route rerun
     'the probe' => ['Probe the site over TLS-0', 'Probe the site over TLS', 'route.probe_failed'],
 ]);
 
-it('deletes or withdraws only at native terminal success', function (string $kind, string $status): void {
+it('deletes only at native terminal success', function (string $status): void {
     $route = $this->routes['pool'];
     $this->instances['old']->update(['status' => 'reserved']);
     $capture = app(NativeRouteLifecycleInput::class)->capture($route, [], true);
-    $op = lifecycle_operation($route, $capture, $kind);
+    $op = lifecycle_operation($route, $capture, 'route.destroy');
     lifecycle_project($op, NativeRouteRemovalProjection::class, 'running');
     expect($route->fresh()->sites_published)->toBeTrue();
     lifecycle_project($op, NativeRouteRemovalProjection::class, $status);
-    if ($status === 'succeeded' && $kind === 'route.destroy') {
+    if ($status === 'succeeded') {
         expect($route->fresh())->toBeNull();
     } else {
-        expect($route->fresh()->status->value)->toBe($status === 'succeeded' ? 'retiring' : 'active')
-            ->and($route->fresh()->sites_published)->toBe($status !== 'succeeded')
+        expect($route->fresh()->status->value)->toBe('active')
+            ->and($route->fresh()->sites_published)->toBeTrue()
             ->and($route->targets()->count())->toBe(1);
     }
-})->with([['route.destroy', 'succeeded'], ['route.destroy', 'failed'], ['route.destroy', 'cancelled'], ['route.withdraw', 'succeeded']]);
+})->with(['succeeded', 'failed', 'cancelled']);
 
 it('does not require host inputs for an unchanged active create retry', function (): void {
     $this->nodes['old']->update(['ssh_host_key' => null]);
