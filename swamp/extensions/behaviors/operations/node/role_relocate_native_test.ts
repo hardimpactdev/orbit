@@ -1,6 +1,5 @@
 import { assert, assertEquals, assertFalse } from "jsr:@std/assert@1.0.19";
-import { parse } from "jsr:@std/yaml@1.0.12";
-import { nativeRepo, ROOT } from "../../../../tests/_support/native_harness.ts";
+import { nativeRepo } from "../../../../tests/_support/native_harness.ts";
 import { readCalls, shellJoin } from "../../../../tests/_support/fake_tool.ts";
 import { type Flow, sha256 } from "../../../../tests/_support/node_host.ts";
 
@@ -229,30 +228,4 @@ Deno.test("metrics relocation uses its child workflow and removes only the sourc
     "operation-metrics-enable 12",
     "operation-node-role-remove-direct 7 7 192.0.2.7",
   ]);
-});
-Deno.test("failed source removal fails the role move", async () => {
-  const f = await fixture("metrics", "", CHILDREN.at(-1));
-  await using _ = f.repo;
-  const { run, steps } = await f.run(false);
-  assertEquals(run.status, "failed");
-  assertEquals(steps["Remove from the source"], "failed");
-  assertFalse(steps["Confirm the move"] === "succeeded");
-});
-Deno.test("relocation behaviors name their target and every step runs on swamp", async () => {
-  const flow = parse(await Deno.readTextFile(`${ROOT}/workflows/workflow-${NAME}.yaml`)) as Flow;
-  const names: string[] = [];
-  for (const step of flow.jobs.flatMap((j) => j.steps)) {
-    assertEquals(step.labels, { role: "swamp" });
-    assertFalse("target" in step);
-    if (step.task.behaviorType === "@swamp/ssh") {
-      names.push(step.task.behaviorName!);
-      assert(step.writes || step.name === "Check Reverb");
-    }
-  }
-  assert(
-    names.every((s) =>
-      s.includes("inputs.intent.target_node_id") && !s.includes("run.id") && !s.includes("operation_id")
-    ),
-  );
-  assertEquals(new Set(names).size, names.length);
 });

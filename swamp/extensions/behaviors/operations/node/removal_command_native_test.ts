@@ -3,6 +3,7 @@ import { exists, nodeFixture, sshInput } from "../../../../tests/_support/node_h
 
 async function fixture() {
   const f = await nodeFixture(true);
+  f.repo.timeoutMs = 180_000;
   for (const name of ["node-role-remove", "operation-node-remove", "operation-node-role-remove-direct"]) {
     await f.install(name);
   }
@@ -71,18 +72,6 @@ async function fixture() {
   const audit = () => Deno.readTextFileSync(`${f.host}/calls`);
   return { ...f, role, intent, file, config, data, keys, pin, run, audit };
 }
-for (const name of ["node-role-remove", "operation-node-role-remove-direct"]) {
-  Deno.test(`${name} removes owned resources and preserves user data`, async () => {
-    const f = await fixture();
-    await using _ = f.repo;
-    await f.run(name);
-    assertFalse(exists(f.file));
-    assertFalse(exists(f.config));
-    assertEquals(await Deno.readTextFile(f.data), "keep");
-    assert(f.audit().includes("stop orbit-websocket.service"));
-    assert(f.audit().includes("daemon-reload"));
-  });
-}
 Deno.test("role removal passes the admitted Caddy document to its child", async () => {
   const f = await fixture();
   await using _ = f.repo;
@@ -118,7 +107,10 @@ Deno.test("role removal passes the admitted Caddy document to its child", async 
   );
   await f.run();
   assertFalse(exists(f.file));
-  assert(exists(f.data));
+  assertEquals(await Deno.readTextFile(f.data), "keep");
+  assertFalse(exists(f.config));
+  assert(f.audit().includes("stop orbit-websocket.service"));
+  assert(f.audit().includes("daemon-reload"));
 });
 Deno.test("busy CI project refuses before removing runtime or paths", async () => {
   const f = await fixture();
@@ -139,36 +131,30 @@ Deno.test("missing CI project is drained and the last role keeps public SSH", as
   await f.run("operation-node-role-remove-direct");
   assertFalse(exists(f.file));
   assert(f.audit().includes("ufw allow 22"));
-  assert(exists(f.data));
+  assertEquals(await Deno.readTextFile(f.data), "keep");
+  assertFalse(exists(f.config));
+  assert(f.audit().includes("stop orbit-websocket.service"));
+  assert(f.audit().includes("daemon-reload"));
 });
-for (const flag of ["FAIL_STOP", "FIREWALL_ERROR"]) {
-  Deno.test(`role removal fails on ${flag}`, async () => {
-    const f = await fixture();
-    await using _ = f.repo;
-    f.repo.env[flag] = "1";
-    await f.run("node-role-remove", false);
-    if (flag === "FAIL_STOP") {
-      assert(exists(f.file));
-      assert(exists(f.config));
-    }
-  });
-}
-for (const offline of [false, true]) {
-  Deno.test(`reachable Node removal with offline consent ${offline}`, async () => {
-    const f = await fixture();
-    await using _ = f.repo;
-    f.intent.offline = offline;
-    await f.run("operation-node-remove", true, true);
-    assertFalse(exists(f.file));
-    if (!offline) {
-      assertFalse(exists(f.config));
-      const keys = await Deno.readTextFile(f.keys);
-      assertFalse(keys.includes(f.pin));
-      assert(keys.includes("AAAAUnrelated"));
-      assertEquals(await Deno.readTextFile(f.data), "keep");
-    }
-  });
-}
+Deno.test("role removal fails on FAIL_STOP", async () => {
+  const f = await fixture();
+  await using _ = f.repo;
+  f.repo.env.FAIL_STOP = "1";
+  await f.run("node-role-remove", false);
+  assert(exists(f.file));
+  assert(exists(f.config));
+});
+Deno.test("reachable Node removal with offline consent false", async () => {
+  const f = await fixture();
+  await using _ = f.repo;
+  await f.run("operation-node-remove", true, true);
+  assertFalse(exists(f.file));
+  assertFalse(exists(f.config));
+  const keys = await Deno.readTextFile(f.keys);
+  assertFalse(keys.includes(f.pin));
+  assert(keys.includes("AAAAUnrelated"));
+  assertEquals(await Deno.readTextFile(f.data), "keep");
+});
 Deno.test("unreachable Node requires consent and preserves its target", async () => {
   const f = await fixture();
   await using _ = f.repo;

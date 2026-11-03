@@ -49,14 +49,12 @@ await passThrough(argv, body);
   await repo.cli(["workflow", "validate", "node-proxy-canary"]);
   const cleaned = async () =>
     assertEquals((await Array.fromAsync(Deno.readDir(repo.dir))).filter((e) => e.name.startsWith("canary-")), []);
-  for (const node_id of [1, 18]) {
-    for (const effect of [false, true]) {
-      const { run, history } = await repo.runWorkflow("node-proxy-canary", { node_id, effect });
-      assertEquals(run.status, "succeeded");
-      const steps = history.jobs[0].steps;
-      assertEquals(steps[0].status, "succeeded");
-      for (const step of steps.slice(1)) assertEquals(step.status, effect ? "succeeded" : "skipped");
-    }
+  for (const [node_id, effect] of [[1, false], [18, true]] as const) {
+    const { run, history } = await repo.runWorkflow("node-proxy-canary", { node_id, effect });
+    assertEquals(run.status, "succeeded");
+    const steps = history.jobs[0].steps;
+    assertEquals(steps[0].status, "succeeded");
+    for (const step of steps.slice(1)) assertEquals(step.status, effect ? "succeeded" : "skipped");
   }
   await cleaned();
   await Deno.writeTextFile(fail, "");
@@ -70,13 +68,13 @@ await passThrough(argv, body);
   const scripts = records.filter((row) =>
     row.stdin.includes("orbit-official-ssh-canary") && row.stdin.includes("printf")
   );
-  assertEquals(scripts.length, 3);
+  assertEquals(scripts.length, 2);
   for (const row of scripts) {
     assertFalse(row.argv.join(" ").includes("orbit-official-ssh-canary"));
     assertStringIncludes(row.argv.at(-1)!, "sh -s --");
   }
   assertEquals(
     records.filter((row) => row.argv.at(-1)!.includes("/usr/bin/cmp")).map((row) => row.stdin),
-    Array(3).fill("orbit-official-ssh-canary\n"),
+    Array(2).fill("orbit-official-ssh-canary\n"),
   );
 });

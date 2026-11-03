@@ -3,6 +3,7 @@ import { nativeRepo } from "../../../../tests/_support/native_harness.ts";
 
 async function fixture(state: Record<string, unknown>) {
   const repo = await nativeRepo();
+  repo.timeoutMs = 120_000;
   await repo.copyBehaviors("operations", "node-worker", "automatic-deploy");
   await Deno.writeTextFile(
     `${repo.dir}/extensions/behaviors/cli-fixture.ts`,

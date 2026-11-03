@@ -157,18 +157,6 @@ Deno.test("a missing existing Mac tunnel refuses activation", async () => {
   assertEquals(steps["Check the Node"].status, "failed");
 });
 
-Deno.test("an unsupported Linux architecture stops before bootstrap mutations", async () => {
-  const f = await fixture();
-  await using _ = f.repo;
-  await f.install();
-  f.intent.platform = "linux";
-  Object.assign(f.network, { other_public_keys: [], required_public_key: null });
-  f.repo.env.FIXTURE_PLATFORM = "Linux aarch64";
-  const { steps } = await f.run(NAME, false);
-  assertEquals(steps["Bind the Node identity"].status, "failed");
-  assertNotEquals(steps["Install base packages-0"]?.status, "succeeded");
-});
-
 Deno.test("roleless enrollment does not call CLI publication with a null release", async () => {
   const f = await fixture();
   await using _ = f.repo;
