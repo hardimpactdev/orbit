@@ -16,7 +16,8 @@ declare(strict_types=1);
  *            extensions: [name], task_groups: [attributes + subtasks: [attributes] + taskable?: {instance: id}],
  *            instances: [attributes], deployments: [attributes], task_vms: [attributes], operations: [attributes],
  *            clusters: [{name, tld?, node_ids, router_node_id}], routes: [{id, attributes}],
- *            instance_updates: [{id, attributes}], node_updates: [{id, attributes}], websocket?: node_id, analytics_tracking: [{instance_id, domain, timezone?}]}: the records a kind fixture
+ *            instance_updates: [{id, attributes}], node_updates: [{id, attributes}], websocket?: node_id, analytics_tracking: [{instance_id, domain, timezone?}],
+ *            gateway_settings: [{key, value, secret?}], task_vm_image_builds: [attributes, with id to change a recorded build]}: the records a kind fixture
  *            needs beyond the seed, such as the VPN hub, peers with keys and the VPN subnet, a Project under the fixed
  *            id its Swamp configuration names, an extension, or a task group's owned workspace (the group and its
  *            subtasks, its Instance, its task VM and its provision Operation) for kinds that run in it.
@@ -31,6 +32,7 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
+use App\Domain\Settings\SettingValueProtection;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
@@ -50,6 +52,7 @@ use App\Models\Project;
 use App\Models\Route;
 use App\Models\Task;
 use App\Models\TaskVm;
+use App\Models\TaskVmImageBuild;
 use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Http\Request;
@@ -192,6 +195,15 @@ if ($argv[1] === 'fixture') {
     // The same for a topology Node, such as the LAN address a Cluster Router needs.
     foreach ($input['node_updates'] ?? [] as $node) {
         Node::query()->findOrFail((int) $node['id'])->forceFill($node['attributes'])->save();
+    }
+    // Gateway-scope settings an extension's setup leaves, such as the ai-router origin and management key a task VM claim reads.
+    foreach ($input['gateway_settings'] ?? [] as $setting) {
+        app(SettingRepository::class)->put(new SettingScope(SettingScopeType::Gateway), $setting['key'], $setting['value'],
+            ($setting['secret'] ?? false) === true ? SettingValueProtection::Secret : SettingValueProtection::Plain);
+    }
+    // Task VM image builds as a finished build leaves them, such as a promoted base of an older recipe; an id changes a recorded build.
+    foreach ($input['task_vm_image_builds'] ?? [] as $build) {
+        (TaskVmImageBuild::query()->find($build['id'] ?? null) ?? new TaskVmImageBuild)->forceFill($build)->save();
     }
         // An active Cluster with its member Nodes and its Router, for kinds that move work between Nodes, such as transfer.
     foreach ($input['clusters'] ?? [] as $spec) {

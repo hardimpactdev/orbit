@@ -36,6 +36,7 @@
             "capacity_wait_reason": null,
             "vm_power": null,
             "preview": false,
+            "current_recipe": false,
             "review_and_merge": null,
             "orchestration": "external"
         },

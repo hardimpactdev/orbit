@@ -9,8 +9,7 @@ Loading tasks status...
 
 ┌  Extension: tasks
 │
-├  Status      enabled
-│
+└  Status   enabled
 
 No groups are asking for assistance.
 Review and merge

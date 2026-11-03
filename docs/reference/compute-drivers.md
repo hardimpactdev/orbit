@@ -26,7 +26,7 @@ The repository's machine software recipe is [`apps/gateway/resources/machine-sof
 
 The recipe pins both the Vite+ runtime (`vp`) and CLI (`vp-cli`) to `1.4.0`. Project lockfiles stay independent: [deployment admission](/reference/tools#project-environments-in-the-vite-store) accepts a manager at least as new as the Project's locked Vite+ release, including Projects on `1.2.x`. A recipe update does not update those lockfiles.
 
-The loader and validator define the recipe contract. [Recipe image builds](#build-the-base-image) use that document for a host-local base image. [Node convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) applies its role tools to production Nodes. Claims require the [current recipe](#claims-require-the-current-recipe), and topologies [copy their Nodes from its topology seed](#prepare-the-topology).
+The loader and validator define the recipe contract. [Recipe image builds](#build-the-base-image) use that document for a host-local base image. [Node convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) applies its role tools to production Nodes. Claims use the [current recipe](#claims-use-the-current-recipe), or for a day the host's [last promoted image](#image-fallback), and topologies [copy their Nodes from its topology seed](#prepare-the-topology).
 
 ### Recipe schema
 
@@ -471,7 +471,7 @@ Task VM enrollment trusts the [base image](#build-the-base-image) that the same 
 
 Enrollment still renders and applies everything that is specific to the VM: the host key, WireGuard, the firewall, Caddy, DNS, the agent and its secret, and Pi.
 
-New claims [require the deployed recipe](#claims-require-the-current-recipe). The base includes both selectable PHP versions, now `8.5` and `8.4`, and Rust with Cargo, clippy, and rustfmt. The Instance's [PHP runtime check](/reference/php-runtime#development-runtime) verifies installed packages without repeating an installation.
+New claims [use the deployed recipe](#claims-use-the-current-recipe), or a recent [fallback image](#image-fallback). The base includes both selectable PHP versions, now `8.5` and `8.4`, and Rust with Cargo, clippy, and rustfmt. The Instance's [PHP runtime check](/reference/php-runtime#development-runtime) verifies installed packages without repeating an installation.
 
 Enrollment uses the host as [SSH jump host](/reference/node-provisioning#enroll-through-a-jump-host) until WireGuard is up.
 
@@ -849,7 +849,7 @@ A medium or large VM holds test Nodes, so it boots with a clone of the [topology
 2. A retried create finds the clone and copies nothing.
 3. The launch adds the clone as the disk device `topology-seed` in the `devices` of the instance YAML on stdin, beside its `config`.
 
-When the host has no seed for the VM's base image, create fails with `task_vm.topology_seed_missing`, and nothing launches. A normal VM gets no clone, and an UpCloud VM is always normal. The [claim gate](#claims-require-the-current-recipe) needs a promoted base, and promotion needs the seed, so a claimed VM always finds one.
+When the host has no seed for the VM's base image, create fails with `task_vm.topology_seed_missing`, and nothing launches. A normal VM gets no clone, and an UpCloud VM is always normal. The [claim gate](#claims-use-the-current-recipe) needs a promoted base, and promotion needs the seed, so a claimed VM always finds one.
 
 When the launch fails and the project has no `orbit-task-base` alias, create fails with `task_vm.base_image_missing`. [Build the recipe](#build-the-base-image) on the host. Orbit never falls back to the stock image: a VM from it has no `openssh-server`, so it cannot enroll.
 
@@ -1258,11 +1258,21 @@ A terminal failed or cancelled Node Operation halts the sequence. An interrupted
 
 Release alerts record Activity, file an assistance problem, and send the configured signed webhook. Nodes after the failure stay untouched; earlier changes remain. There is no automatic retry or rollback. Investigate with Doctor and the report, then converge manually or merge a recipe correction. Pinning the previous snapshot through a PR is manual recovery; retained images can be reused. A new desired generation starts a new sequence. Each admission checks the deployed identity so an older release cannot advance it.
 
-### Claims require the current recipe
+### Claims use the current recipe
 
-A new Incus claim requires a succeeded, promoted base image for the deployed recipe on its selected host. Fresh claims use that image's fingerprint. The VM records `recipe_identity` and `image_fingerprint` at allocation; launch uses the fingerprint, so a later alias move cannot change the selected image. Enrollment checks the observed fingerprint and trusts the image's software, as ADR 0206 requires. There is no full-enrollment fallback for stale images.
+A new Incus claim uses a succeeded, promoted base image for the deployed recipe on its selected host. The VM records `recipe_identity`, `image_fingerprint`, `image_build_id`, and `image_fallback` at allocation; launch uses the fingerprint, so a later alias move cannot change the selected image. Enrollment checks the observed fingerprint and trusts the image's software, as ADR 0206 requires. There is no full-enrollment fallback for stale images.
 
-A host still building, missing, or failing the current recipe cannot serve a new claim. The group's `capacity_wait_reason` says `Task VM: waiting for recipe <12-character digest> images on <host>.` Another host with a ready current base can serve it. Image unavailability never triggers UpCloud overflow. An existing group keeps its VM and recorded recipe across recipe changes, failures, parking, and resume. UpCloud claims also require a verified template for the current recipe.
+An existing group keeps its VM and recorded image across recipe changes, failures, parking, and resume. UpCloud claims require a verified template for the current recipe; they never take a fallback image.
+
+#### Image fallback
+
+While a host builds the current recipe, or after that build failed, a new claim on that host starts from the host's last promoted base image if that image was promoted at most one day ago. The VM then records that image's own recipe identity and build, with `image_fallback` true. A [`tasks.provision` result](/reference/tasks#provision-an-external-group) reports the same four facts under `image`.
+
+A group created with `current_recipe: true` (`tasks:create --current-recipe`) needs the new recipe. It never takes a fallback image and waits as before. Proof topologies and ordinary tasks leave the field false.
+
+A host with no current image and no promoted image under a day old cannot serve a new claim. The group's `capacity_wait_reason` says `Task VM: waiting for recipe <12-character digest> images on <host>.` Another host with a usable image can serve it. Image unavailability never triggers UpCloud overflow.
+
+A fallback image is safe for enrollment: enrollment installs the pinned agent from its artifact URL and checks its digest, and the runtime step installs the pinned Pi build, before either is used. Pruning keeps the current and previous promoted base images and every image an existing VM uses, so the fallback image stays while a claim can select it or a VM runs from it.
 
 ### Add a task VM host
 

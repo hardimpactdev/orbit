@@ -188,6 +188,7 @@ it('ignores intermediate VM claims until the original native root is terminal', 
 });
 
 it('records VM and workspace readiness together and repeats the result without another effect', function (): void {
+    $this->vm->update(['image_build_id' => 41, 'image_fallback' => true]);
     $operation = app(StartTaskProvisionAction::class)->execute($this->group, 'fixture', null);
     $source = ['branch' => 'task-'.$this->group->id, 'commit' => str_repeat('a', 40), 'php_version' => null, 'laravel' => false];
     $data = ['run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded',
@@ -200,8 +201,11 @@ it('records VM and workspace readiness together and repeats the result without a
         ->and($this->vm->fresh()->state)->toBe(TaskVmState::Ready)
         ->and($this->group->fresh()->status->value)->toBe('running')
         ->and($this->group->fresh()->taskable->starting_commit)->toBe($source['commit'])
-        ->and($this->group->fresh()->taskable->status->value)->toBe('source_resolved');
+        ->and($this->group->fresh()->taskable->status->value)->toBe('source_resolved')
+        ->and($operation->fresh()->result['image'])->toBe(['recipe_identity' => 'sha256:'.str_repeat('b', 64),
+            'fingerprint' => str_repeat('a', 64), 'build_id' => 41, 'fallback' => true]);
     $projection->apply($operation->fresh(), $data);
+    expect($operation->fresh()->result['image']['build_id'])->toBe(41);
     expect(Instance::query()->count())->toBe(1)->and(Operation::query()->count())->toBe(1);
     $child = Task::query()->create(['parent_id' => $this->group->id, 'position' => 1, 'title' => 'Analyze', 'brief' => 'Analyze source.', 'status' => 'running']);
     $analysis = app(TaskAnalysisIntent::class)->start($this->group->fresh(), new StartTaskAnalysisData(

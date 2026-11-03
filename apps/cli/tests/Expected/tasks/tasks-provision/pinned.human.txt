@@ -15,11 +15,17 @@ Loading operation...
 │
 ├  Status             succeeded
 │
+├  Error code         —
+│
 ├  Current step       —
+│
+├  Step started       —
+│
+├  Step observed      —
 │
 ├  Failed step        —
 │
-├  Error code         —
+├  Error detail       —
 │
 ├  Result             {"instance_id":1,"node_id":1,"starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","analysi
 │                     s_base":{"base":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","instance_id":1,"repository":"git@githu
@@ -39,12 +45,4 @@ Loading operation...
 │
 └  Finished           2026-11-01T10:00:00+00:00
 
- ┌─────────────────┬───────────┬───────────────────────────┬───────────────────────────┬───────┐
- │ STEP            │ STATUS    │ STARTED                   │ FINISHED                  │ ERROR │
- ├─────────────────┼───────────┼───────────────────────────┼───────────────────────────┼───────┤
- │ provision       │ succeeded │ 2026-11-01T10:00:00+00:00 │ 2026-11-01T10:00:00+00:00 │ —     │
- │ workspace       │ succeeded │ 2026-11-01T10:00:00+00:00 │ 2026-11-01T10:00:00+00:00 │ —     │
- │ workspace_lease │ succeeded │ 2026-11-01T10:00:00+00:00 │ 2026-11-01T10:00:00+00:00 │ —     │
- │ route           │ succeeded │ 2026-11-01T10:00:00+00:00 │ 2026-11-01T10:00:00+00:00 │ —     │
- └─────────────────┴───────────┴───────────────────────────┴───────────────────────────┴───────┘
 Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

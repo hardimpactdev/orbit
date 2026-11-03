@@ -10,6 +10,7 @@ use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
+use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -29,6 +30,9 @@ final readonly class TaskVmProvisionProjection implements DirectOperationProject
         return DB::transaction(function () use ($operation, $data): Operation {
             $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $result = ValidatedData::object($data['result'] ?? []);
+            if (($data['status'] ?? null) === 'succeeded') {
+                $result = [...$result, 'image' => TaskVm::query()->findOrFail($operation->target_id)->imageReceipt()];
+            }
             if ($operation->status->terminal()) {
                 return app(DirectOperation::class)->project($operation, $data, $result);
             }

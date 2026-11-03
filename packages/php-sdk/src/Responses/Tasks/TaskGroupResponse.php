@@ -45,6 +45,7 @@ final readonly class TaskGroupResponse
         public bool $preview = false,
         public ?TaskReviewAndMergeResponse $reviewAndMerge = null,
         public string $orchestration = 'tick',
+        public bool $currentRecipe = false,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -83,6 +84,7 @@ final readonly class TaskGroupResponse
             requestId: $requestId,
             capacityWaitReason: TaskFields::nullableText($data, 'capacity_wait_reason'),
             preview: ($data['preview'] ?? false) === true,
+            currentRecipe: ($data['current_recipe'] ?? false) === true,
             vmPower: in_array($data['vm_power'] ?? null, ['running', 'stopped', 'destroyed'], true) ? $data['vm_power'] : null,
             reviewAndMerge: TaskReviewAndMergeResponse::fromGatewayData($data['review_and_merge'] ?? null, $requestId),
         );
@@ -139,6 +141,7 @@ final readonly class TaskGroupResponse
             ...($this->capacityWaitReason === null ? [] : ['capacity_wait_reason' => $this->capacityWaitReason]),
             ...($this->vmPower === null ? [] : ['vm_power' => $this->vmPower]),
             'preview' => $this->preview,
+            'current_recipe' => $this->currentRecipe,
             ...($this->reviewAndMerge === null ? [] : ['review_and_merge' => $this->reviewAndMerge->toArray()]),
             'request_id' => $this->requestId,
         ];

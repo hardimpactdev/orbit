@@ -5,7 +5,7 @@ description: "Create a task. It starts in `backlog` unless you ask for `todo`."
 ---
 
 ```bash
-orbit tasks:create [title] [--project=ID] [--brief=TEXT] [--status=STATUS] [--orchestration=MODE] [--subtasks=FILE] [--preview] [--json]
+orbit tasks:create [title] [--project=ID] [--brief=TEXT] [--status=STATUS] [--orchestration=MODE] [--subtasks=FILE] [--preview] [--current-recipe] [--json]
 ```
 
 | Input | Default | Meaning |
@@ -17,6 +17,7 @@ orbit tasks:create [title] [--project=ID] [--brief=TEXT] [--status=STATUS] [--or
 | `--subtasks=FILE` | none | JSON file with an ordered array of at most 50 objects, each with a string `title` and `brief` and an optional `deliverables` array. |
 | `--orchestration=MODE` | `external` | Swamp executes task groups. The only supported mode is `external`; any other value returns `tasks.orchestration_invalid`. Topologies are not supported. |
 | `--preview` | off | Keep the task's sandbox running during review. See [Request a preview](/reference/compute-drivers#request-a-preview). |
+| `--current-recipe` | off | The task needs the current machine recipe. Its VM waits for the current recipe image and never starts from a fallback image. See [Image fallback](/reference/compute-drivers#image-fallback). |
 
 ```bash
 orbit tasks:create "Add tasks CLI" --project=1 --brief="$(cat brief.md)"

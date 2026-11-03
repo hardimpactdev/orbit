@@ -67,6 +67,7 @@ final readonly class CreateTaskGroupAction
             'brief' => $data->brief,
             'status' => $data->status,
             'preview' => $data->preview,
+            'current_recipe' => $data->currentRecipe,
             'implementer_model' => $this->model('implementer_model', TaskAgentDefaults::ImplementerModel),
             'reviewer_model' => $this->model('reviewer_model', TaskAgentDefaults::ReviewerModel),
         ]);

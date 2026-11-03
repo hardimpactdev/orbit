@@ -47,6 +47,7 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `title`, `brief` | both | Short name, and the goal and acceptance |
 | `status` | both | Lifecycle state |
 | `orchestration` | task | `external` (the default and only value). Create sets it; it never changes |
+| `current_recipe` | task | Whether the task needs the current machine recipe. Create sets it, default `false`. When `true`, provision never starts its VM from a [fallback image](/reference/compute-drivers#image-fallback) and waits for the current recipe image |
 | `parent_id` | subtask | The top-level task. Null on a top-level task |
 | `assistance_requested`, `assistance_reason` | both | Whether the record asks an operator for help, and why. See the [assistance lifecycle](#assistance-and-resolution) for ended tasks and cleanup failures |
 | `assistance_kind`, `assistance_question` | both | The typed [assistance cause](#direction-requests) and the one question for a `direction` request. Other kinds have no question |
@@ -125,13 +126,15 @@ Separate steps on Node 209 clone source and copy a Git bundle through official S
 
 Each captured Project setup command then runs in order as `env -C <checkout> … /bin/bash -lc <command>`, as the VM's managed user, with its own timeout. Setup receives empty `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`, `COMPOSER_NO_INTERACTION=1`, `ORBIT_CHECK_PROCESSES=1` and `COMPOSER_CACHE_DIR`. The checkout's `.env` is not exported into its environment; tools read it themselves. The command's output never reaches native history; the source run keeps a redacted tail of at most 4 KiB per command ([command output](#keep-command-output-out-of-run-history)). For the proof Project, the [proof club credential](/reference/gateway-environment) reaches the VM on SSH stdin of one more exec; no script runs there either.
 
-Full capacity or a missing promoted image for the current recipe returns HTTP 409 `tasks.capacity_unavailable`, with the placement reason in the message and `details.reason`. It leaves the group unchanged and records no VM, workspace or Operation. The orchestrator can try the same admission key after capacity or the required image becomes available.
+Full capacity, or no usable promoted image, returns HTTP 409 `tasks.capacity_unavailable`, with the placement reason in the message and `details.reason`. It leaves the group unchanged and records no VM, workspace or Operation. The orchestrator can try the same admission key after capacity or the required image becomes available. While a host builds the current recipe, or after its build failed, the host's last promoted image serves a new VM when it is at most one day old, unless the group set `current_recipe`. See [Image fallback](/reference/compute-drivers#image-fallback).
 
 The native parent currently supports unrouted workspaces without Project Process or Schedule definitions. Other workspaces return `operation.kind_unavailable` before reserving capacity. It uses the child-observed SSH host key and the captured Node 209 identity; it issues no guest worker credentials.
 
 Task VMs reuse WireGuard addresses. Official `@swamp/ssh` pins the observed host key per step, but the official cfgmgmt behaviors check keys against the 209 worker account's `known_hosts`. So enrollment first replaces any entry for the guest's address with its observed key, and destroy removes the address again.
 
-Success leaves the group `running` and its workspace `source_resolved`. The task branch starts at the pinned start commit. The workspace step refuses a checkout on any other commit. No subtask or check starts. The operation result includes `{ instance_id, node_id, starting_commit, analysis_base }`, naming the workspace Instance, guest Node, start commit and immutable analysis pin. The operation stays running until both VM enrollment and workspace setup finish. A failed native run ends the group `failed`; cancellation ends it `cancelled`. Neither result claims that the VM was destroyed. Cleanup remains a separate native operation.
+Success leaves the group `running` and its workspace `source_resolved`. The task branch starts at the pinned start commit. The workspace step refuses a checkout on any other commit. No subtask or check starts. The operation result includes `{ instance_id, node_id, starting_commit, analysis_base, image }`, naming the workspace Instance, guest Node, start commit, immutable analysis pin and the image the VM got. The operation stays running until both VM enrollment and workspace setup finish. A failed native run ends the group `failed`; cancellation ends it `cancelled`. Neither result claims that the VM was destroyed. Cleanup remains a separate native operation.
+
+`image` is `{ recipe_identity, fingerprint, build_id, fallback }`, copied from the VM row. `fallback` is `true` when the VM started from the host's last promoted image instead of the current recipe's; `recipe_identity` then names that older recipe. A `task_vm.provision` result carries the same `image`.
 
 ##### Optional Swamp worker
 
@@ -178,6 +181,12 @@ For example, this successful result names a starting commit on a divergent works
     "instance_id": 634,
     "repository": "https://github.com/example/project.git",
     "branch": "task-2074"
+  },
+  "image": {
+    "recipe_identity": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "fingerprint": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "build_id": 412,
+    "fallback": true
   }
 }
 ```
@@ -490,7 +499,9 @@ List, show, and `tasks:question:list` accept any authorized peer. Update and the
 
 Each MCP tool name is the operation name with hyphens, such as `tasks-subtask-create`. The paths keep the `task-groups` segment. `{group}` is the top-level task id, and `{task}` is the subtask id.
 
-Create requires `project_id`, `title` (at most 160 characters), and `brief` (at most 8,000 characters). The Project must read its repository through the GitHub App. A Project with [`source_access: gh_cli`](/reference/projects#source-access) cannot start a task, because Orbit publishes only through the App. It accepts an ordered `tasks` array of at most 50 `{title, brief, deliverables}` objects and a `status` of `backlog` or `todo`. The status defaults to `backlog`. Create with `status: todo` records work for Swamp to admit. Create accepts only `orchestration: external`, which is also the default. The API, PHP SDK, CLI option `tasks:create --orchestration`, and MCP expose this field. Update cannot change it. List accepts `project_id` and `status` filters. Show returns the task and its subtasks in position order.
+Create requires `project_id`, `title` (at most 160 characters), and `brief` (at most 8,000 characters). The Project must read its repository through the GitHub App. A Project with [`source_access: gh_cli`](/reference/projects#source-access) cannot start a task, because Orbit publishes only through the App. It accepts an ordered `tasks` array of at most 50 `{title, brief, deliverables}` objects and a `status` of `backlog` or `todo`. The status defaults to `backlog`. Create with `status: todo` records work for Swamp to admit. Create accepts only `orchestration: external`, which is also the default. The API, PHP SDK, CLI option `tasks:create --orchestration`, and MCP expose this field. Update cannot change it.
+
+Create also accepts a strict boolean `current_recipe` (CLI `--current-recipe`, default `false`) for a task that needs the current machine recipe; update cannot change it. List accepts `project_id` and `status` filters. Show returns the task and its subtasks in position order.
 
 Update changes a task's `title`, `brief`, or `status`. Title and brief change only in `backlog`. Status updates start no work.
 

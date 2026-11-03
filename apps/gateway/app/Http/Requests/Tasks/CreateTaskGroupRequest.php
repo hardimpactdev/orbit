@@ -38,6 +38,7 @@ final class CreateTaskGroupRequest extends FormRequest
             'status' => ['sometimes', 'string', Rule::in([TaskGroupStatus::Backlog->value, TaskGroupStatus::Todo->value])],
             'orchestration' => ['sometimes', 'string', Rule::enum(TaskOrchestration::class)],
             'preview' => ['sometimes', 'boolean:strict'],
+            'current_recipe' => ['sometimes', 'boolean:strict'],
             'tasks' => ['sometimes', 'array', 'max:50'],
             'tasks.*.title' => ['required', 'string', 'max:160'],
             'tasks.*.brief' => ['required', 'string', 'max:8000'],
@@ -69,6 +70,7 @@ final class CreateTaskGroupRequest extends FormRequest
                 'status',
                 'orchestration',
                 'preview',
+                'current_recipe',
                 'tasks',
             ]);
         } catch (UnexpectedValueException $exception) {
@@ -101,6 +103,7 @@ final class CreateTaskGroupRequest extends FormRequest
             status: TaskGroupStatus::from($this->string('status', TaskGroupStatus::Backlog->value)->toString()),
             tasks: $tasks,
             preview: $this->boolean('preview'),
+            currentRecipe: $this->boolean('current_recipe'),
             orchestration: TaskOrchestration::from($this->string('orchestration', TaskOrchestration::External->value)->toString()),
         );
     }

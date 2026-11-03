@@ -58,7 +58,9 @@ use Throwable;
  * @property string|null $image_fingerprint
  * @property string|null $error_code
  * @property string|null $error_message
- * @property string|null $recipe_identity
+ * @property string|null $recipe_identity the recipe of the image the VM got, which is older than the current recipe on a fallback
+ * @property int|null $image_build_id the promoted image build the VM got
+ * @property bool $image_fallback whether the VM got the host's last promoted image instead of the current recipe's
  * @property Carbon|null $ready_at when the VM last became `ready`: its first preparation, or its last resume
  * @property Carbon|null $stop_confirmed_at
  * @property Carbon|null $destroyed_at
@@ -81,7 +83,7 @@ final class TaskVm extends Model
     protected $fillable = [
         'group_id', 'host_node_id', 'node_id', 'provider', 'size', 'topology', 'topology_state', 'topology_run', 'topology_started_at', 'topology_error',
         'publish_commit', 'publish_branch', 'publish_state', 'publish_error', 'publish_error_code', 'publish_queued_at', 'publish_started_at', 'provider_id', 'provider_bootstrap', 'ssh_host_key', 'name', 'state', 'address', 'wireguard_ip',
-        'pi_token', 'model_key', 'worker_stop_required', 'ai_router_origin', 'claimed_at', 'warmed_at', 'image_fingerprint', 'recipe_identity',
+        'pi_token', 'model_key', 'worker_stop_required', 'ai_router_origin', 'claimed_at', 'warmed_at', 'image_fingerprint', 'recipe_identity', 'image_build_id', 'image_fallback',
         'error_code', 'error_message', 'ready_at', 'destroyed_at', 'stop_confirmed_at',
     ];
 
@@ -89,9 +91,9 @@ final class TaskVm extends Model
     #[\Override]
     protected $hidden = ['pi_token', 'model_key', 'provider_bootstrap'];
 
-    /** @var array<string, string> */
+    /** @var array<string, mixed> */
     #[\Override]
-    protected $attributes = ['size' => 'normal'];
+    protected $attributes = ['size' => 'normal', 'image_fallback' => false];
 
     /** @return array<string, string> */
     #[\Override]
@@ -111,6 +113,8 @@ final class TaskVm extends Model
             'model_key' => 'encrypted',
             'provider_bootstrap' => 'encrypted:array',
             'worker_stop_required' => 'boolean',
+            'image_build_id' => 'integer',
+            'image_fallback' => 'boolean',
             'claimed_at' => 'datetime',
             'warmed_at' => 'datetime',
             'ready_at' => 'datetime',
@@ -153,6 +157,17 @@ final class TaskVm extends Model
     public function recordError(Throwable $exception): void
     {
         $this->update(self::errorFrom($exception));
+    }
+
+    /**
+     * The image the VM got, as a provision result reports it. Allocation fixes these columns, so a replay reads the same.
+     *
+     * @return array{recipe_identity:string|null,fingerprint:string|null,build_id:int|null,fallback:bool}
+     */
+    public function imageReceipt(): array
+    {
+        return ['recipe_identity' => $this->recipe_identity, 'fingerprint' => $this->image_fingerprint,
+            'build_id' => $this->image_build_id, 'fallback' => $this->image_fallback];
     }
 
     /** The recorded absence waits for the host sweep's verdict; only that verdict may fail a missing VM. */

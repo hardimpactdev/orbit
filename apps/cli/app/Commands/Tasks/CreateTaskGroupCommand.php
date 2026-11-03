@@ -27,6 +27,7 @@ final class CreateTaskGroupCommand extends TaskCommand
         {--orchestration= : external (default; Swamp executes task groups)}
         {--subtasks= : JSON file with an ordered array of objects that each hold a title, a brief, and optional deliverables}
         {--preview : Keep the sandbox running during review}
+        {--current-recipe : Wait for the current machine recipe image; never start from a fallback image}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -93,6 +94,7 @@ final class CreateTaskGroupCommand extends TaskCommand
                 tasks: $subtasks,
                 preview: $this->option('preview') === true ? true : null,
                 orchestration: is_string($orchestration) ? $orchestration : null,
+                currentRecipe: $this->option('current-recipe') === true ? true : null,
             ),
             TaskGroupResponse::class,
             ['Create task group', 'Creating task group', 'Created task group'],

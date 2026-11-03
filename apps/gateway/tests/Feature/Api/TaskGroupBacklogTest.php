@@ -716,6 +716,19 @@ it('refuses preview changes for ended groups', function (TaskGroupStatus $status
     expect($group->fresh()->preview)->toBeFalse();
 })->with([TaskGroupStatus::Completed, TaskGroupStatus::Cancelled, TaskGroupStatus::Failed]);
 
+it('stores the current recipe declaration on groups only and defaults it to false', function (?bool $current): void {
+    $data = backlog_group($this, ['One'], $current === null ? [] : ['current_recipe' => $current]);
+    expect($data['current_recipe'])->toBe($current ?? false);
+    $group = Task::topLevel()->findOrFail($data['id']);
+    expect($group->current_recipe)->toBe($current ?? false)->and($group->tasks()->firstOrFail()->current_recipe)->toBeNull();
+})->with([true, false, null]);
+
+it('requires a strict JSON boolean for the current recipe declaration', function (mixed $value): void {
+    $this->postJson('/api/v1/task-groups', [
+        'project_id' => $this->appRecord->id, 'title' => 'Invalid', 'brief' => 'Invalid flag.', 'current_recipe' => $value,
+    ])->assertUnprocessable()->assertJsonStructure(['error' => ['details' => ['current_recipe']]]);
+})->with([0, 1, 'true', null, [[]]]);
+
 it('requires a strict JSON boolean for preview intent', function (mixed $value): void {
     $data = backlog_group($this);
     $this->patchJson('/api/v1/task-groups/'.$data['id'], ['preview' => $value])->assertUnprocessable();

@@ -170,11 +170,9 @@ it('generates and retains one encrypted bootstrap pair for a new UpCloud VM', fu
 it('fails the UpCloud operation before its run when its bootstrap vault copy is refused', function (): void {
     configureNativeUpCloudProvision();
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = static function (array $message): array {
-        return $message['payload']['key'] === 'task-vm-provider-bootstrap-'.test()->vm->id
-            ? [['type' => 'error', 'id' => $message['id'], 'error' => 'denied']]
-            : nativeProvisionVaultReply($message);
-    };
+    $socket->reply = (static fn (array $message): array => $message['payload']['key'] === 'task-vm-provider-bootstrap-'.test()->vm->id
+        ? [['type' => 'error', 'id' => $message['id'], 'error' => 'denied']]
+        : nativeProvisionVaultReply($message));
     app()->instance(WebSocketClient::class, $socket);
     expect(fn () => app(StartTaskVmProvisionAction::class)->execute($this->vm->id))->toThrow(ResourceOperationException::class);
     expect(Operation::query()->where('kind', 'task_vm.provision')->sole())
@@ -220,7 +218,8 @@ it('projects native outcome once without running provider or guest work', functi
         'result' => $status === 'succeeded' ? nativeProvisionReceipt($operation) : []];
     $projection = app(TaskVmProvisionProjection::class);
     $projection->apply($operation, $data);
-    expect($operation->fresh()->status)->toBe(OperationStatus::from($status))->and($this->vm->fresh()->state)->toBe($state);
+    expect($operation->fresh()->status)->toBe(OperationStatus::from($status))->and($this->vm->fresh()->state)->toBe($state)
+        ->and($operation->fresh()->result['image'] ?? null)->toBe($status === 'succeeded' ? $this->vm->fresh()->imageReceipt() : null);
     $before = $this->vm->fresh()->getRawOriginal();
     $projection->apply($operation->fresh(), $data);
     expect($this->vm->fresh()->getRawOriginal())->toBe($before);
@@ -228,11 +227,14 @@ it('projects native outcome once without running provider or guest work', functi
 })->with([['succeeded', TaskVmState::Ready], ['failed', TaskVmState::Failed], ['cancelled', TaskVmState::Provisioning]]);
 
 it('records native success without Gateway runtime revalidation', function (): void {
+    $this->vm->update(['image_build_id' => 7, 'image_fallback' => true]);
     $operation = savedNativeProvisionIntent();
     $this->vm->update(['state' => 'ready']);
     app(TaskVmProvisionProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded',
         'started_at' => '2026-10-31T00:00:00.000Z', 'finished_at' => '2026-10-31T00:00:01.000Z', 'result' => nativeProvisionReceipt($operation)]);
-    expect($operation->fresh()->status)->toBe(OperationStatus::Succeeded)->and($this->vm->fresh()->state)->toBe(TaskVmState::Ready);
+    expect($operation->fresh()->status)->toBe(OperationStatus::Succeeded)->and($this->vm->fresh()->state)->toBe(TaskVmState::Ready)
+        ->and($operation->fresh()->result['image'])->toBe(['recipe_identity' => $this->vm->recipe_identity,
+            'fingerprint' => $this->vm->image_fingerprint, 'build_id' => 7, 'fallback' => true]);
 });
 
 it('starts and deduplicates the native root without creating children or provider effects', function (): void {

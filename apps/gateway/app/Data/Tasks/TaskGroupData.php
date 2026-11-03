@@ -54,6 +54,7 @@ final class TaskGroupData extends Data
         public ?string $capacityWaitReason = null,
         public ?VmPower $vmPower = null,
         public bool $preview = false,
+        public bool $currentRecipe = false,
         public ?TaskReviewAndMergeData $reviewAndMerge = null,
         public TaskOrchestration $orchestration = TaskOrchestration::External,
     ) {}
@@ -79,6 +80,7 @@ final class TaskGroupData extends Data
             capacityWaitReason: $group->capacity_wait_reason,
             vmPower: self::vmPower($group),
             preview: $group->preview ?? false,
+            currentRecipe: $group->current_recipe ?? false,
             reviewAndMerge: TaskReviewAndMergeData::fromModel($group),
 
             id: $group->id,

@@ -9,8 +9,7 @@ Loading tasks status...
 
 ┌  Extension: tasks
 │
-├  Status      disabled
-│
+└  Status   disabled
 
 No groups are asking for assistance.
 Workspace leases

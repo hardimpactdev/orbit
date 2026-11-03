@@ -1,12 +1,8 @@
-Waiting for a worker...
-Parking task VM...
+Park running...
 
 ┌  Park task group [1]
 │
-├  ● Started on a worker
-│    Operation 1.
-│
-├  ● Parked task VM
+├  ● Park complete
 │
 └  Park succeeded.
 

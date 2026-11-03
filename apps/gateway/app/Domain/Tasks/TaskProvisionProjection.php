@@ -14,6 +14,7 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
+use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -39,6 +40,9 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
             $result = $data['result'] = self::receipt(ValidatedData::object($data['result'] ?? []));
             if (in_array($data['status'], ['failed', 'interrupted'], true) && is_string($result['error_code'] ?? null)) {
                 $data['error_code'] = $result['error_code'];
+            }
+            if ($data['status'] === 'succeeded') {
+                $result = $data['result'] = [...$result, 'image' => TaskVm::query()->findOrFail(ValidatedData::integer($operation->input['task_vm_id']))->imageReceipt()];
             }
             if ($operation->status->terminal()) {
                 return app(DirectOperation::class)->project($operation, $data, $result);

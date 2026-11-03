@@ -1,18 +1,8 @@
-Waiting for a worker...
-Waiting for workspace...
-Analyzing repository...
-Retaining complete evidence...
+Analysis running...
 
 ┌  Analyze task group [1]
 │
-├  ● Started on a worker
-│    Operation 2.
-│
-├  ● Workspace ready
-│
-├  ● Analyzed repository
-│
-├  ● Retained complete evidence
+├  ● Analysis complete
 │
 └  Analysis requires action. This is not approval.
 

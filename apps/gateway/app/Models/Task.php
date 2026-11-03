@@ -99,6 +99,7 @@ use LogicException;
  * @property string|null $watched_pr_state
  * @property string|null $watched_pr_completion
  * @property bool|null $preview
+ * @property bool|null $current_recipe
  * @property string $implementer_model
  * @property string $reviewer_model
  * @property int|null $reviewer_agent_thread_id
@@ -153,6 +154,7 @@ final class Task extends Model
         'taskable_id',
         'pr_url',
         'preview',
+        'current_recipe',
         'implementer_model',
         'reviewer_model',
         'reviewer_agent_thread_id',
@@ -284,6 +286,7 @@ final class Task extends Model
         'merged_sha',
         'merged_at',
         'preview',
+        'current_recipe',
         'implementer_model',
         'reviewer_model',
         'reviewer_agent_thread_id',
@@ -591,6 +594,7 @@ final class Task extends Model
             'status' => TaskLevelStatusCast::class,
             'merge_status' => TaskMergeStatus::class,
             'preview' => 'boolean',
+            'current_recipe' => 'boolean',
             'watched_pr_number' => 'integer',
             'agent_unavailable_since' => 'datetime',
             'agent_unavailable_notified_at' => 'datetime',
@@ -659,6 +663,7 @@ final class Task extends Model
                 'implementer_agent_driver' => 'pi',
                 'reviewer_agent_driver' => 'pi',
                 'preview' => false,
+                'current_recipe' => false,
                 'assistance_requested' => false,
                 'implementer_model' => TaskAgentDefaults::ImplementerModel,
                 'reviewer_model' => TaskAgentDefaults::ReviewerModel,

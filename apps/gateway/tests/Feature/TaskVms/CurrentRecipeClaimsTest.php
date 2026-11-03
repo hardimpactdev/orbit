@@ -12,6 +12,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
+use App\Models\TaskVmImageBuild;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\TaskVmRecipeImages;
@@ -32,21 +33,21 @@ function currentRecipeClaimGroup(): Task
     return Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Recipe claim', 'brief' => 'Build', 'status' => 'reserved']);
 }
 
-it('waits for building, failed, missing, or unpromoted current recipe images despite an older succeeded build', function (?string $state): void {
+it('waits for building, failed, missing, or unpromoted current recipe images despite an older build promoted over a day ago', function (?string $state): void {
     Queue::fake();
     $host = currentRecipeClaimHost();
     $group = currentRecipeClaimGroup();
     TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($host->id)],
         'upcloud' => new TaskVmUpCloud(true, [$group->project_id], '/test/token', 1, 'nl-ams1', 'STARTER-2xCPU-4GB', 30, '01000000-0000-4000-8000-000030260200')]);
     $build = TaskVmRecipeImages::ready($host->id);
-    $build->update(['recipe_identity' => 'sha256:'.str_repeat('b', 64)]);
+    $build->update(['recipe_identity' => 'sha256:'.str_repeat('b', 64), 'promoted_at' => now()->subDay()->subMinute()]);
     if ($state !== null) {
         $current = TaskVmRecipeImages::ready($host->id);
         $current->update(['state' => $state === 'unpromoted' ? 'succeeded' : $state, 'promoted_at' => null]);
     }
     $identity = app(RecipeLoader::class)->load()->identity;
 
-    expect(fn () => app(AllocateTaskVmAction::class)->execute($group))->toThrow(TaskCapacityException::class,
+    expect(fn () => app(AllocateTaskVmAction::class)->capture($group))->toThrow(TaskCapacityException::class,
         'Task VM: waiting for recipe '.substr($identity, 7, 12).' images on beast.');
     expect(TaskVm::query()->count())->toBe(0);
     Queue::assertNothingPushed();
@@ -58,9 +59,11 @@ it('records a current recipe and base fingerprint and keeps its VM across a depl
     $group = currentRecipeClaimGroup();
     $build = TaskVmRecipeImages::ready($host->id);
 
-    $vm = app(AllocateTaskVmAction::class)->execute($group);
+    $vm = app(AllocateTaskVmAction::class)->capture($group);
     expect($vm->recipe_identity)->toBe($build->recipe_identity)
-        ->and($vm->image_fingerprint)->toBe(str_repeat('a', 64));
+        ->and($vm->image_fingerprint)->toBe(str_repeat('a', 64))
+        ->and($vm->image_build_id)->toBe($build->id)
+        ->and($vm->image_fallback)->toBeFalse();
     $vm->update(['state' => $state]);
     $directory = sys_get_temp_dir().'/orbit-claim-recipe-'.bin2hex(random_bytes(6));
     $release = $directory.'/releases/current/apps/gateway';
@@ -72,7 +75,7 @@ it('records a current recipe and base fingerprint and keeps its VM across a depl
     config(['orbit.gateway_checkout' => $directory.'/orbit/apps/gateway']);
     try {
         expect(app(RecipeImageBuilds::class)->currentRecipe()->identity)->not->toBe($build->recipe_identity);
-        expect(app(AllocateTaskVmAction::class)->execute($group)->id)->toBe($vm->id);
+        expect(app(AllocateTaskVmAction::class)->capture($group)->id)->toBe($vm->id);
         expect($vm->refresh()->recipe_identity)->toBe($build->recipe_identity);
         expect($vm->state)->toBe($state);
     } finally {
@@ -87,7 +90,7 @@ it('uses another current host while one host builds', function (): void {
     TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($building->id), TaskVmSettingsBuilder::host($ready->id, ['cidr' => '10.251.78.0/24'])]]);
     TaskVmRecipeImages::ready($ready->id);
 
-    expect(app(AllocateTaskVmAction::class)->execute(currentRecipeClaimGroup())->host_node_id)->toBe($ready->id);
+    expect(app(AllocateTaskVmAction::class)->capture(currentRecipeClaimGroup())->host_node_id)->toBe($ready->id);
 });
 
 it('keeps the promoted image until a cold candidate succeeds and promotes', function (string $state, bool $promoted, bool $replacement): void {
@@ -101,7 +104,7 @@ it('keeps the promoted image until a cold candidate succeeds and promotes', func
         'image_fingerprint' => str_repeat('b', 64), 'images' => $images]);
     $candidate->save();
 
-    $vm = app(AllocateTaskVmAction::class)->execute(currentRecipeClaimGroup());
+    $vm = app(AllocateTaskVmAction::class)->capture(currentRecipeClaimGroup());
 
     expect($vm->image_fingerprint)->toBe(str_repeat($replacement ? 'b' : 'a', 64));
 })->with([
@@ -110,3 +113,69 @@ it('keeps the promoted image until a cold candidate succeeds and promotes', func
     'unpromoted' => ['succeeded', false, false],
     'promoted' => ['succeeded', true, true],
 ]);
+
+/** A promoted build of an older recipe on the host, as a build of the current recipe runs or fails. */
+function currentRecipeClaimPreviousImage(Node $host, DateTimeInterface $promotedAt): TaskVmImageBuild
+{
+    $build = TaskVmRecipeImages::ready($host->id, str_repeat('c', 64));
+    $build->update(['recipe_identity' => 'sha256:'.str_repeat('b', 64), 'promoted_at' => $promotedAt]);
+
+    return $build;
+}
+
+it('starts from the host last promoted image under a day old while the current recipe builds or failed', function (?string $state): void {
+    Queue::fake();
+    $host = currentRecipeClaimHost();
+    $previous = currentRecipeClaimPreviousImage($host, now()->subHours(23));
+    if ($state !== null) {
+        TaskVmRecipeImages::ready($host->id)->update(['state' => $state, 'promoted_at' => null]);
+    }
+
+    $vm = app(AllocateTaskVmAction::class)->capture(currentRecipeClaimGroup());
+
+    expect($vm->host_node_id)->toBe($host->id)
+        ->and($vm->image_fingerprint)->toBe(str_repeat('c', 64))
+        ->and($vm->recipe_identity)->toBe('sha256:'.str_repeat('b', 64))
+        ->and($vm->recipe_identity)->not->toBe(app(RecipeLoader::class)->load()->identity)
+        ->and($vm->image_build_id)->toBe($previous->id)
+        ->and($vm->image_fallback)->toBeTrue()
+        ->and($vm->fresh()->image_fallback)->toBeTrue();
+})->with(['running', 'failed', null]);
+
+it('takes the newest promoted image as the fallback', function (): void {
+    Queue::fake();
+    $host = currentRecipeClaimHost();
+    currentRecipeClaimPreviousImage($host, now()->subHours(3));
+    $newest = TaskVmRecipeImages::ready($host->id, str_repeat('d', 64));
+    $newest->update(['recipe_identity' => 'sha256:'.str_repeat('e', 64), 'promoted_at' => now()->subHour()]);
+
+    $vm = app(AllocateTaskVmAction::class)->capture(currentRecipeClaimGroup());
+
+    expect($vm->image_build_id)->toBe($newest->id)->and($vm->image_fingerprint)->toBe(str_repeat('d', 64));
+});
+
+it('keeps a group that declared the current recipe waiting despite a fresh fallback image', function (): void {
+    Queue::fake();
+    $host = currentRecipeClaimHost();
+    currentRecipeClaimPreviousImage($host, now()->subHour());
+    $group = currentRecipeClaimGroup();
+    $group->update(['current_recipe' => true]);
+    $identity = app(RecipeLoader::class)->load()->identity;
+
+    expect(fn () => app(AllocateTaskVmAction::class)->capture($group))->toThrow(TaskCapacityException::class,
+        'Task VM: waiting for recipe '.substr($identity, 7, 12).' images on beast.');
+    expect(TaskVm::query()->count())->toBe(0);
+});
+
+it('prefers the current recipe image over a newer promoted image of another recipe', function (): void {
+    Queue::fake();
+    $host = currentRecipeClaimHost();
+    currentRecipeClaimPreviousImage($host, now()->subHour());
+    $current = TaskVmRecipeImages::ready($host->id);
+    $current->update(['promoted_at' => now()->subHours(5)]);
+
+    $vm = app(AllocateTaskVmAction::class)->capture(currentRecipeClaimGroup());
+
+    expect($vm->image_build_id)->toBe($current->id)->and($vm->image_fingerprint)->toBe(str_repeat('a', 64))
+        ->and($vm->recipe_identity)->toBe($current->recipe_identity)->and($vm->image_fallback)->toBeFalse();
+});

@@ -595,6 +595,7 @@ final class TaskPromptsCommand extends TaskCommand
 {
     use ConfirmsTaskChanges;
 
+    #[Override]
     protected $signature = 'test:task-prompts {--scenario=} {--yes} {--json}';
 
     public function __construct(private readonly Terminal $terminal)
@@ -878,6 +879,13 @@ it('requests a preview on task group creation', function (): void {
     expect(json_decode($mock->getLastRequest()?->body()->all(), true, flags: JSON_THROW_ON_ERROR)['preview'])->toBeTrue();
 });
 
+it('declares the current recipe on task group creation only when asked', function (bool $current): void {
+    $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-create/created'));
+    expect(Artisan::call('tasks:create', ['title' => 'Recipe', '--project' => '1', '--brief' => 'Needs the new image.', '--json' => true, ...($current ? ['--current-recipe' => true] : [])]))->toBe(0);
+    $body = json_decode($mock->getLastRequest()?->body()->all(), true, flags: JSON_THROW_ON_ERROR);
+    expect($current ? $body['current_recipe'] : array_key_exists('current_recipe', $body))->toBe($current);
+})->with([true, false]);
+
 describe('declared topology', function (): void {
     it('sends a declaration and an explicit empty update', function (): void {
         $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-subtask-create/created'));
@@ -905,7 +913,7 @@ it('sends the requested orchestration mode when creating a group', function (str
     expect(Artisan::call('tasks:create', ['title' => 'Work', '--project' => '1', '--brief' => 'Brief', '--orchestration' => $mode, '--json' => true]))->toBe(0);
     $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateTaskGroupRequest
         && json_decode((string) $request->body(), true, flags: JSON_THROW_ON_ERROR)['orchestration'] === $mode);
-})->with(['tick', 'external']);
+})->with(['external']);
 
 it('refuses an unknown orchestration mode before contacting the Gateway', function (): void {
     $mock = MockClient::global([]);

@@ -9,8 +9,7 @@ Loading tasks status...
 
 ┌  Extension: tasks
 │
-├  Status      enabled
-│
+└  Status   enabled
 
 Failures
 

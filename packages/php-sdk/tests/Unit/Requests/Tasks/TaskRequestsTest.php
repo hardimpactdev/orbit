@@ -97,6 +97,8 @@ describe('task transport', function (): void {
             ->toBe('{"project_id":1,"title":"Title","brief":"Brief"}')
             ->and(new CreateTaskGroupRequest(1, 'Title', 'Brief', 'todo', tasks: [new SubtaskInput('One', 'First.')])->body()->all())
             ->toBe('{"project_id":1,"title":"Title","brief":"Brief","status":"todo","tasks":[{"title":"One","brief":"First."}]}')
+            ->and(new CreateTaskGroupRequest(1, 'Title', 'Brief', currentRecipe: true)->body()->all())
+            ->toBe('{"project_id":1,"title":"Title","brief":"Brief","current_recipe":true}')
             ->and(new CreateTaskGroupRequest(1, 'Title', 'Brief', tasks: [])->body()->all())
             ->toBe('{"project_id":1,"title":"Title","brief":"Brief","tasks":[]}')
             ->and(new CreateTaskGroupRequest(1, 'Title', 'Brief')->headers()->get('Content-Type'))

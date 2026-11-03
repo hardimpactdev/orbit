@@ -1,19 +1,9 @@
-Waiting for a worker...
-Waiting for workspace...
-Analyzing repository...
+Analysis running...
 
 ┌  Analyze task group [1]
 │
-├  ● Started on a worker
-│    Operation 2.
-│
-├  ● Workspace ready
-│
-├  ● Analyzing repository
+├  ● Analysis running
 │    tasks.analysis_report_too_large
-│
-├  ● Retain complete evidence
-│    Not reached.
 │
 └  Analysis failed.
 

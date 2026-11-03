@@ -23,7 +23,11 @@ use Illuminate\Contracts\Database\ConcurrencyErrorDetector;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
-/** Gives a group a new task VM of its declared size. Placement is serialized by the database transaction. */
+/**
+ * Gives a group a new task VM of its declared size. Placement is serialized by the database transaction. An Incus host
+ * serves the promoted image of the current recipe; without one, it serves its last promoted image when that image is at
+ * most one day old, unless the group declared `current_recipe`.
+ */
 final readonly class AllocateTaskVmAction
 {
     public function __construct(
@@ -98,12 +102,19 @@ final readonly class AllocateTaskVmAction
                 if (! array_key_exists($host->nodeId, $free)) {
                     continue;
                 }
-                $build = TaskVmImageBuild::query()->where('host_node_id', $host->nodeId)
-                    ->where('recipe_identity', $recipe->identity)->where('state', TaskVmImageBuildState::Succeeded)
-                    ->whereNotNull('promoted_at')->orderByDesc('promoted_at')->latest('id')->first();
+                $promoted = TaskVmImageBuild::query()->where('host_node_id', $host->nodeId)->where('state', TaskVmImageBuildState::Succeeded)
+                    ->whereNotNull('promoted_at')->orderByDesc('promoted_at')->latest('id');
+                $build = (clone $promoted)->where('recipe_identity', $recipe->identity)->first();
+                $fallback = false;
+                if (! $build instanceof TaskVmImageBuild && $group->current_recipe !== true) {
+                    // While the current recipe builds or after its build failed, the host's last promoted image serves for one day.
+                    $build = $promoted->first();
+                    $build = $build?->promoted_at?->gte(now()->subDay()) === true ? $build : null;
+                    $fallback = true;
+                }
                 $base = $build?->images['base'] ?? null;
-                if ($base !== null && $base['project'] === $host->project && $base['type'] === 'virtual-machine') {
-                    $images[$host->nodeId] = $base['fingerprint'];
+                if ($build !== null && $base !== null && $base['project'] === $host->project && $base['type'] === 'virtual-machine') {
+                    $images[$host->nodeId] = ['build' => $build, 'fingerprint' => $base['fingerprint'], 'fallback' => $fallback];
                 } else {
                     unset($free[$host->nodeId]);
                     $waiting[] = $node->name;
@@ -120,12 +131,14 @@ final readonly class AllocateTaskVmAction
                 }
                 throw $exception;
             }
-            $fingerprint = $target->hostNodeId !== null ? $images[$target->hostNodeId] : ($resolvedIdentity === $recipe->identity ? $template : null);
+            $image = $target->hostNodeId !== null ? $images[$target->hostNodeId] : null;
+            $fingerprint = $image !== null ? $image['fingerprint'] : ($resolvedIdentity === $recipe->identity ? $template : null);
             if ($fingerprint === null) {
                 throw new TaskCapacityException(TaskWait::Capacity, 'Task VM: waiting for recipe '.substr($recipe->identity, 7, 12).' template on UpCloud.');
             }
             $vm = $this->record->execute($group, $target, $size);
-            $vm->update(['recipe_identity' => $recipe->identity, 'image_fingerprint' => $fingerprint]);
+            $vm->update(['recipe_identity' => $image !== null ? $image['build']->recipe_identity : $recipe->identity, 'image_fingerprint' => $fingerprint,
+                'image_build_id' => $image !== null ? $image['build']->id : null, 'image_fallback' => $image !== null && $image['fallback']]);
             $admit?->__invoke($vm);
 
             return $vm;

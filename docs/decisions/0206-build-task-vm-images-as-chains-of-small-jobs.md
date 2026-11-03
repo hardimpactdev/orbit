@@ -86,6 +86,7 @@ The remaining step is to move the [UpCloud builder](/reference/compute-drivers#b
 - **Superseded by ADR 0207:** new tools are pinned recipe inputs, applied by the recipe phases.
 - **Superseded by ADR 0207:** current-image incremental builds and weekly full builds. Recipe builds start from stock with pinned inputs.
 - **Superseded by ADR 0207:** new claims wait for the deployed recipe; running groups keep their recorded recipe.
+- **Amended 2026-11-02:** a new claim falls back to its host's last promoted image when that image is at most one day old, unless the group sets `current_recipe`. See [Image fallback](/reference/compute-drivers#image-fallback).
 - **Superseded by ADR 0207 and the queue update:** two `builds` workers run host-local chains in parallel. A release waits for active steps, not whole chains.
 - This change removes the image manifest, the image host lock with its expiry time, the build's signal trap and `failed()` cleanup, and the stage runner of the base image build.
 

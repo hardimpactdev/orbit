@@ -23,6 +23,7 @@ final class CreateTaskGroupData extends Data
         public TaskGroupStatus $status,
         public array $tasks,
         public bool $preview = false,
+        public bool $currentRecipe = false,
         public TaskOrchestration $orchestration = TaskOrchestration::External,
     ) {}
 }
