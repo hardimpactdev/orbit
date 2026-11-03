@@ -1,5 +1,3 @@
-import { copy } from "jsr:@std/fs@1.0.20/copy";
-import { pullExtension, swampBinary } from "./_support/native_harness.ts";
 // Routing regressions for the orbit-groups factory: the real factory, driver and
 // Gateway client, run by swamp in a throwaway copy of this repo against a fake
 // Gateway. Every case runs as its own group, and one driver tick steps them all.
@@ -9,7 +7,7 @@ import { type Scenario, startFakeGateway } from "./_support/fake_gateway.ts";
 import { analysisFixture } from "./_support/analysis_fixture.ts";
 import { canonical, planConsentNote, sha256 } from "../extensions/behaviors/_lib/repository_analysis.ts";
 
-const REPO = new URL("../", import.meta.url).pathname;
+const REPO = new URL("..", import.meta.url).pathname;
 
 const SCENARIOS: Record<number, Scenario & { approve?: string[]; end: (s: Seen) => boolean }> = {
   101: { firstReview: "changes_requested", end: (s) => s.stage === "completed" },
@@ -37,7 +35,7 @@ interface Seen {
 }
 
 async function swamp(cwd: string, ...args: string[]): Promise<string> {
-  const out = await new Deno.Command(await swampBinary(), { args, cwd, stdin: "null", stdout: "piped", stderr: "piped" }).output();
+  const out = await new Deno.Command("swamp", { args, cwd, stdin: "null", stdout: "piped", stderr: "piped" }).output();
   const text = new TextDecoder().decode(out.stdout) + new TextDecoder().decode(out.stderr);
   if (!out.success) throw new Error(`swamp ${args.join(" ")} failed:\n${text.slice(-2000)}`);
   return text;
@@ -59,19 +57,21 @@ async function copyRepo(gatewayUrl: string): Promise<string> {
     } catch { /* deleted in the working tree */ }
   }
   await Deno.mkdir(`${dir}/.swamp`, { recursive: true });
-  const upstream = JSON.parse(await Deno.readTextFile(`${REPO}/extensions/models/upstream_extensions.json`));
-  for (const name of Object.keys(upstream)) {
-    const installed = await pullExtension(name);
-    await copy(`${installed}/.swamp/pulled-extensions/${name}`, `${dir}/.swamp/pulled-extensions/${name}`);
-  }
+  // Copy an already-installed official extension into this disposable test only.
+  // This performs no install or write in the source/live checkout.
+  const installed = Deno.env.get("SWAMP_TEST_EXTENSIONS") ?? `${REPO}/.swamp/pulled-extensions`;
+  const copy = await new Deno.Command("cp", { args: ["-r", installed, `${dir}/.swamp/`] }).output();
+  assert(copy.success, "provide existing official extensions via SWAMP_TEST_EXTENSIONS; tests never install packages");
   const def = `${dir}/models/@nckrtl/orbit-gateway/orbit-gateway.yaml`;
   await Deno.writeTextFile(def, (await Deno.readTextFile(def)).replace(/gatewayUrl: .*/, `gatewayUrl: ${gatewayUrl}`));
   return dir;
 }
 
+const haveSwamp = (await new Deno.Command("sh", { args: ["-c", "command -v swamp"], stdout: "null", stderr: "null" }).output()).success;
 
 Deno.test({
   name: "orbit-groups routes every case: failures, retries, the handoff streak guard, and per-subtask caps",
+  ignore: !haveSwamp,
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
@@ -204,6 +204,7 @@ Deno.test({
 
 Deno.test({
   name: "real factory binds plan consent to exact digest and scope, never a generic preapproval or replaced plan",
+  ignore: !haveSwamp,
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
@@ -284,6 +285,7 @@ Deno.test({
 
 Deno.test({
   name: "real factory binds plan consent to the latest decision after rejection",
+  ignore: !haveSwamp,
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async (t) => {
@@ -379,6 +381,7 @@ Deno.test({
 
 Deno.test({
   name: "real factory consumes public immutable provision identity and failed analysis metadata",
+  ignore: !haveSwamp,
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
@@ -459,6 +462,7 @@ Deno.test({
 
 Deno.test({
   name: "real factory parks a failed edited author until retry approval and reanalyzes its terminal candidate",
+  ignore: !haveSwamp,
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
