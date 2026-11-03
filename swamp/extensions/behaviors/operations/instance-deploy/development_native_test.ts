@@ -82,6 +82,7 @@ await passThrough(argv, await readStdinBytes());
   };
   return { f, inputs, checkout, target, onBranch, offBranch, command, run };
 }
+const BRANCH_CHECKS = ["Count commits after it", "Read the branch ancestor", "Check it is on the branch"];
 Deno.test("development deploy cleans removed directories, preserves environment and hides private commands", async () => {
   const { f, checkout, target, command, run } = await fixture();
   await using _ = f;
@@ -97,6 +98,12 @@ Deno.test("development deploy cleans removed directories, preserves environment 
   assertFalse(exists(`${checkout}/packages`));
   assert(exists(`${checkout}/.env`));
   assertEquals(steps["Check the checkout"].status, "succeeded");
+  const names = [
+    "Write release credential", "Remove release credential", "Read the release commit", "Check for foreign keys",
+    "Activate release", "Swap current", "Refresh PHP cache", "Read current back", "Check the deployment",
+  ];
+  assertEquals(names.map((n) => steps[n].status), Array(9).fill("skipped"));
+  assertEquals(BRANCH_CHECKS.map((name) => steps[name].status), ["skipped", "skipped", "skipped"]);
 });
 Deno.test("tracked changes stop development deploy before any change", async () => {
   const { f, checkout, command, run } = await fixture();
@@ -117,41 +124,18 @@ Deno.test("a failed required development deploy command skips the rest", async (
   await run(false);
   assertFalse(exists(`${checkout}/.git/proof-marker`));
 });
-Deno.test("development deploy skips every production step", async () => {
-  const { f, run } = await fixture();
-  await using _ = f;
-  const { steps } = await run();
-  const names = [
-    "Write release credential", "Remove release credential", "Read the release commit", "Check for foreign keys",
-    "Activate release", "Swap current", "Refresh PHP cache", "Read current back", "Check the deployment",
-  ];
-  assertEquals(names.map((n) => steps[n].status), Array(9).fill("skipped"));
-});
-const BRANCH_CHECKS = ["Count commits after it", "Read the branch ancestor", "Check it is on the branch"];
-Deno.test("development deploy without a pinned commit skips the branch membership checks", async () => {
-  const { f, checkout, target, run } = await fixture();
-  await using _ = f;
-  const { steps } = await run();
-  assertEquals(BRANCH_CHECKS.map((name) => steps[name].status), ["skipped", "skipped", "skipped"]);
-  assertEquals(git(checkout, "rev-parse", "HEAD"), target);
-});
 Deno.test("a pinned development commit runs the branch membership checks", async () => {
-  const { f, inputs, offBranch, onBranch, run } = await fixture();
+  const { f, inputs, checkout, offBranch, onBranch, run } = await fixture();
   await using _ = f;
+  await Deno.remove(`${checkout}/packages/old/node_modules`, { recursive: true });
   inputs.intent.commit = onBranch;
   let { steps } = await run();
   assertEquals(BRANCH_CHECKS.map((name) => steps[name].status), ["succeeded", "succeeded", "succeeded"]);
+  assertEquals(git(checkout, "rev-parse", "HEAD"), onBranch);
   inputs.intent.commit = offBranch;
   ({ steps } = await run(false));
   assertEquals(steps["Check it is on the branch"].status, "failed");
   assertEquals(steps["Read the local branch"].status, "skipped");
-});
-Deno.test("development deploy checks out when nothing needs cleaning", async () => {
-  const { f, checkout, target, run } = await fixture();
-  await using _ = f;
-  await Deno.remove(`${checkout}/packages/old/node_modules`, { recursive: true });
-  await run();
-  assertEquals(git(checkout, "rev-parse", "HEAD"), target);
 });
 Deno.test("best effort timeout continues and a command cannot read its own rest", async () => {
   const { f, inputs, checkout, command, run } = await fixture();
