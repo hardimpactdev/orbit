@@ -66,3 +66,20 @@ describe('the stored environment values a log redacts', function (): void {
         expect(app(LogRedactor::class)->valuesFor($process))->toBe(['https://hooks.slack.com/services/x', 'token-value-123']);
     });
 });
+
+describe('known values that overlap', function (): void {
+    it('redacts the union of overlapping and adjacent values without a remainder', function (string $first, string $second, string $output): void {
+        expect(app(LogRedactor::class)->redact("{$output}\nsafe diagnostic", [$first, $second]))
+            ->toBe("[REDACTED]\nsafe diagnostic");
+    })->with([
+        'suffix overlap' => ['abcdefgh', 'fghijk', 'abcdefghijk'],
+        'prefix overlap' => ['xab', 'abcdefghi', 'xabcdefghi'],
+        'longer overlap' => ['abcde', 'defghijk', 'abcdefghijk'],
+        'self overlap' => ['aba', 'bab', 'ababa'],
+        'adjacent' => ['abc', 'def', 'abcdef'],
+    ]);
+
+    it('does not match a value inside an inserted marker', function (): void {
+        expect(app(LogRedactor::class)->redact('secret-value R', ['secret-value', 'R']))->toBe('[REDACTED] [REDACTED]');
+    });
+});

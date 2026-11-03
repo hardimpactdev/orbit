@@ -77,6 +77,44 @@ final readonly class LogRedactor
     /** @param list<string> $values */
     public function redact(#[SensitiveParameter] string $text, #[SensitiveParameter] array $values): string
     {
-        return $this->sanitizer->redactText($values === [] ? $text : str_replace(search: $values, replace: '[REDACTED]', subject: $text));
+        return $this->sanitizer->redactText($values === [] ? $text : self::replaceCovered($text, $values));
+    }
+
+    /**
+     * Replace the union of every occurrence of every value with one marker per covered range. Replacing
+     * value by value would leave the remainder of an overlapping value, such as `ijk` from `fghijk`
+     * after `abcdefgh` in `abcdefghijk`, and could match a value inside an inserted marker.
+     *
+     * @param  list<string>  $values
+     */
+    private static function replaceCovered(#[SensitiveParameter] string $text, #[SensitiveParameter] array $values): string
+    {
+        $ends = [];
+
+        foreach ($values as $value) {
+            if ($value === '') {
+                continue;
+            }
+
+            for ($start = strpos($text, $value); $start !== false; $start = strpos($text, $value, $start + 1)) {
+                $ends[$start] = max($ends[$start] ?? 0, $start + strlen($value));
+            }
+        }
+
+        ksort($ends);
+        $redacted = '';
+        $cursor = 0;
+        $coveredTo = -1;
+
+        foreach ($ends as $start => $end) {
+            if ($start > $coveredTo) {
+                $redacted .= substr($text, $cursor, $start - $cursor).'[REDACTED]';
+            }
+
+            $coveredTo = max($coveredTo, $end);
+            $cursor = $coveredTo;
+        }
+
+        return $redacted.substr($text, $cursor);
     }
 }
